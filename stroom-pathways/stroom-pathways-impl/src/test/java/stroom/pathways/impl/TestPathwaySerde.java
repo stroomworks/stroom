@@ -27,6 +27,11 @@ import stroom.pathways.impl.events.PathwayRootDiscoveryEvent;
 import stroom.pathways.impl.events.RequiredConstraintAbsentEvent;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
+import stroom.pathways.shared.pathway.LockState;
+import stroom.pathways.shared.pathway.NamePathKey;
+import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.planb.impl.db.HashClashCommitRunnable;
 import stroom.planb.impl.db.LmdbWriter;
@@ -159,6 +164,49 @@ public class TestPathwaySerde {
         });
 
         assertThat(readStr).isEqualTo(randomNanoTimeStr);
+    }
+
+    @Test
+    void testPathwayLocksRoundTrip() {
+        final PathwaySerde serde = new PathwaySerde(new ByteBufferFactoryImpl());
+
+        final Constraint constraint = Constraint.builder()
+                .name("attribute.x")
+                .value(new StringValue("v1"))
+                .optional(true)
+                .locks(PathwayLocks.builder().optional(LockState.LOCKED).build())
+                .build();
+
+        final PathNode root = PathNode.builder()
+                .uuid(UUID.randomUUID().toString())
+                .name("root")
+                .path(List.of("root"))
+                .constraints(Map.of("attribute.x", constraint))
+                .locks(PathwayLocks.builder().nodeDiscovery(LockState.UNLOCKED).build())
+                .childLockDefaults(PathwayLocks.builder().value(LockState.LOCKED).build())
+                .build();
+
+        final Pathway pathway = Pathway.builder()
+                .name("root")
+                .createTime(NanoTimeUtil.now())
+                .updateTime(NanoTimeUtil.now())
+                .lastUsedTime(NanoTimeUtil.now())
+                .pathKey(new NamePathKey("root"))
+                .root(root)
+                .locks(PathwayLocks.builder().value(LockState.LOCKED).build())
+                .childLockDefaults(PathwayLocks.builder().constraintDiscovery(LockState.LOCKED).build())
+                .build();
+
+        final AtomicReference<ByteBuffer> ref = new AtomicReference<>();
+        serde.writePathway(pathway, ref::set);
+        final Pathway result = serde.readPathway(ref.get());
+
+        assertThat(result.getLocks().getValue()).isEqualTo(LockState.LOCKED);
+        assertThat(result.getChildLockDefaults().getConstraintDiscovery()).isEqualTo(LockState.LOCKED);
+        assertThat(result.getRoot().getLocks().getNodeDiscovery()).isEqualTo(LockState.UNLOCKED);
+        assertThat(result.getRoot().getChildLockDefaults().getValue()).isEqualTo(LockState.LOCKED);
+        assertThat(result.getRoot().getConstraints().get("attribute.x").getLocks().getOptional())
+                .isEqualTo(LockState.LOCKED);
     }
 
     private void assertEventSerdeRoundTrip(final PathwayEvent expectedEvent, final Map<String, String> uuidToNameMap) {

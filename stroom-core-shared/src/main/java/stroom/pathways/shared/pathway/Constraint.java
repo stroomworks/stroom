@@ -34,14 +34,20 @@ public class Constraint {
     private final ConstraintValue value;
     @JsonProperty
     private final boolean optional;
+    @JsonProperty
+    private final PathwayLocks locks;
 
     @JsonCreator
     public Constraint(@JsonProperty("name") final String name,
                       @JsonProperty("value") final ConstraintValue value,
-                      @JsonProperty("optional") final boolean optional) {
+                      @JsonProperty("optional") final boolean optional,
+                      @JsonProperty("locks") final PathwayLocks locks) {
         this.name = name;
         this.value = value;
         this.optional = optional;
+        this.locks = locks != null
+                ? locks
+                : PathwayLocks.builder().build();
     }
 
     public String getName() {
@@ -56,6 +62,10 @@ public class Constraint {
         return optional;
     }
 
+    public PathwayLocks getLocks() {
+        return locks;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -67,12 +77,13 @@ public class Constraint {
         final Constraint that = (Constraint) o;
         return optional == that.optional &&
                Objects.equals(name, that.name) &&
-               Objects.equals(value, that.value);
+               Objects.equals(value, that.value) &&
+               Objects.equals(locks, that.locks);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, value, optional);
+        return Objects.hash(name, value, optional, locks);
     }
 
     @Override
@@ -81,6 +92,7 @@ public class Constraint {
                "name='" + name + '\'' +
                ", value=" + value +
                ", optional=" + optional +
+               ", locks=" + locks +
                '}';
     }
 
@@ -97,6 +109,7 @@ public class Constraint {
         private String name;
         private ConstraintValue value;
         private boolean optional;
+        private PathwayLocks locks;
 
         public Builder() {
         }
@@ -105,6 +118,7 @@ public class Constraint {
             this.name = constraint.name;
             this.value = constraint.value;
             this.optional = constraint.optional;
+            this.locks = constraint.locks;
         }
 
         public Builder name(final String name) {
@@ -122,6 +136,11 @@ public class Constraint {
             return self();
         }
 
+        public Builder locks(final PathwayLocks locks) {
+            this.locks = locks;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -131,7 +150,8 @@ public class Constraint {
             return new Constraint(
                     name,
                     value,
-                    optional);
+                    optional,
+                    locks);
         }
     }
 }

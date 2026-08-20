@@ -36,6 +36,7 @@ import stroom.pathways.shared.pathway.ConstraintValue;
 import stroom.pathways.shared.pathway.IntegerRange;
 import stroom.pathways.shared.pathway.IntegerSet;
 import stroom.pathways.shared.pathway.IntegerValue;
+import stroom.pathways.shared.pathway.LockState;
 import stroom.pathways.shared.pathway.LongRange;
 import stroom.pathways.shared.pathway.LongSet;
 import stroom.pathways.shared.pathway.LongValue;
@@ -44,6 +45,7 @@ import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathNodeSequence;
+import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -82,14 +84,15 @@ public class NodeMutatorImpl {
                             final PathKey pathKey,
                             final PathNode pathNode,
                             final MessageReceiver messageReceiver,
-                            final PathwaysDoc pathwaysDoc) {
+                            final PathwaysDoc pathwaysDoc,
+                            final PathwayLocks pathwayLocks) {
         final Span root = trace.root();
 
         final PathNode node;
         if (pathNode == null) {
 //            messageReceiver.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
             node = new PathNode(root.getName());
-            if (pathwaysDoc.isAllowPathwayCreation()) {
+            if (pathwaysDoc.getPathwayDiscovery() != LockState.LOCKED) {
                 messageReceiver.event(pathwaysDoc, root.getName(),
                         new PathwayRootDiscoveryEvent(node.getUuid(), node.getName(), PathwayEventType.MUTATION));
             } else {
@@ -102,7 +105,8 @@ public class NodeMutatorImpl {
 
         final Map<PathKey, Map<String, Map<PathKey, PathNodeSequence>>> maps = new HashMap<>();
         final Map<String, Map<PathKey, PathNodeSequence>> map = maps.computeIfAbsent(pathKey, k -> new HashMap<>());
-        return walk(trace, root, node, map, messageReceiver, pathwaysDoc);
+        final PathwayLocks inheritedLocks = pathwayLocks.withFallback(pathwaysDoc.getLocks());
+        return walk(trace, root, node, map, messageReceiver, pathwaysDoc, inheritedLocks);
 
 
 //        final Map<PathKey, Map<String, Map<PathKey, PathNodeSequence>>> maps = new HashMap<>();
@@ -117,12 +121,16 @@ public class NodeMutatorImpl {
                           final PathNode parentNode,
                           final Map<String, Map<PathKey, PathNodeSequence>> map,
                           final MessageReceiver messageReceiver,
-                          final PathwaysDoc pathwaysDoc) {
+                          final PathwaysDoc pathwaysDoc,
+                          final PathwayLocks inheritedLocks) {
+        final PathwayLocks effectiveLocks = parentNode.getLocks().withFallback(inheritedLocks);
+
         final PathNode.Builder pathNodeBuilder = addConstraints(parentNode,
                                                                 parentSpan,
                                                                 trace.root().getName(),
                                                                 messageReceiver,
-                                                                pathwaysDoc);
+                                                                pathwaysDoc,
+                                                                effectiveLocks);
 
         final List<Span> childSpans = trace.children(parentSpan);
         final List<Span> sortedSpans = new ArrayList<>(childSpans);
@@ -138,7 +146,7 @@ public class NodeMutatorImpl {
 
         // Get current path node list.
         final PathNodeSequence pathNodeList = innerMap.get(pathKey);
-        if (pathNodeList == null && !pathwaysDoc.isAllowPathwayMutation()) {
+        if (pathNodeList == null && effectiveLocks.getNodeDiscovery() == LockState.LOCKED) {
             messageReceiver.event(pathwaysDoc, trace.root().getName(),
                     new NodeDiscoveryEvent(parentNode.getUuid(), null, pathKey.toString(), PathwayEventType.VIOLATION));
 
@@ -155,7 +163,13 @@ public class NodeMutatorImpl {
                     final List<String> path = new ArrayList<>(parentNode.getPath());
                     path.add(span.getName());
 //                    messageReceiver.log(Severity.INFO, () -> "Adding new path: " + path);
-                    pathNode = new PathNode(span.getName(), path);
+                    pathNode = PathNode.builder()
+                            .uuid(UUID.randomUUID().toString())
+                            .name(span.getName())
+                            .path(path)
+                            .locks(bornNodeLocks(parentNode))
+                            .childLockDefaults(parentNode.getChildLockDefaults())
+                            .build();
                     messageReceiver.event(pathwaysDoc, trace.root().getName(),
                             new NodeDiscoveryEvent(parentNode.getUuid(),
                                                    pathNode.getUuid(),
@@ -165,7 +179,8 @@ public class NodeMutatorImpl {
                 }
 
                 // Follow the path deeper.
-                final PathNode updated = walk(trace, span, pathNode, map, messageReceiver, pathwaysDoc);
+                final PathNode updated = walk(trace, span, pathNode, map, messageReceiver, pathwaysDoc,
+                        effectiveLocks);
                 childNodes.add(updated);
             }
 
@@ -183,7 +198,8 @@ public class NodeMutatorImpl {
                                             final Span span,
                                             final String rootName,
                                             final MessageReceiver messageReceiver,
-                                            final PathwaysDoc pathwaysDoc) {
+                                            final PathwaysDoc pathwaysDoc,
+                                            final PathwayLocks effectiveLocks) {
         final PathNode.Builder pathNodeBuilder = pathNode.copy();
 
 //        // Add additional span info if wanted.
@@ -221,7 +237,8 @@ public class NodeMutatorImpl {
                     false,
                     rootName,
                     messageReceiver,
-                    pathwaysDoc);
+                    pathwaysDoc,
+                    effectiveLocks);
 
         // Set or expand flags.
         setOrExpand(constraints,
@@ -231,7 +248,8 @@ public class NodeMutatorImpl {
                     false,
                     rootName,
                     messageReceiver,
-                    pathwaysDoc);
+                    pathwaysDoc,
+                    effectiveLocks);
 
         // Set or expand kind.
         setOrExpand(constraints,
@@ -241,7 +259,8 @@ public class NodeMutatorImpl {
                     false,
                     rootName,
                     messageReceiver,
-                    pathwaysDoc);
+                    pathwaysDoc,
+                    effectiveLocks);
 
         // Create attribute sets.
         final Map<String, KeyValue> attributes = span
@@ -253,7 +272,7 @@ public class NodeMutatorImpl {
         final Map<String, Constraint> newConstraints = new HashMap<>(constraints.size());
         constraints.forEach((key, value) -> {
             if (!attributes.containsKey(key) && !value.isOptional() && key.startsWith("attribute.")) {
-                if (!pathwaysDoc.isAllowConstraintMutation()) {
+                if (value.getLocks().withFallback(effectiveLocks).getOptional() == LockState.LOCKED) {
 //                    messageReceiver.log(Severity.ERROR, () ->
 //                            "Attribute required: " + pathNode.getPath() + " " + key);
                     messageReceiver.event(pathwaysDoc, rootName, new RequiredConstraintAbsentEvent(
@@ -266,7 +285,8 @@ public class NodeMutatorImpl {
 //                    messageReceiver.log(Severity.INFO, () -> "Making constraint optional: " +
 //                                                             pathNode.getPath() + " " +
 //                                                             key);
-                    newConstraints.put(key, new Constraint(value.getName(), value.getValue(), true));
+                    newConstraints.put(key,
+                            new Constraint(value.getName(), value.getValue(), true, value.getLocks()));
                     messageReceiver.event(pathwaysDoc, rootName, new ConstraintMutationEvent(
                             pathNode.getUuid(),
                             pathNode.getName(),
@@ -288,7 +308,8 @@ public class NodeMutatorImpl {
                                                                       optional,
                                                                       rootName,
                                                                       messageReceiver,
-                                                                      pathwaysDoc)
+                                                                      pathwaysDoc,
+                                                                      effectiveLocks)
         );
 
         pathNodeBuilder.constraints(newConstraints);
@@ -302,7 +323,8 @@ public class NodeMutatorImpl {
                              final boolean optional,
                              final String rootName,
                              final MessageReceiver messageReceiver,
-                             final PathwaysDoc pathwaysDoc) {
+                             final PathwaysDoc pathwaysDoc,
+                             final PathwayLocks effectiveLocks) {
         final Supplier<String> location = () -> pathNode.getPath() + " " + name;
         final Constraint constraint = constraints.get(name);
 
@@ -341,7 +363,8 @@ public class NodeMutatorImpl {
                                 optional,
                                 rootName,
                                 messageReceiver,
-                                pathwaysDoc);
+                                pathwaysDoc,
+                                effectiveLocks);
                     } else if (val.getBoolValue() != null) {
                         setOrExpand(constraints,
                                 pathNode,
@@ -350,7 +373,8 @@ public class NodeMutatorImpl {
                                 optional,
                                 rootName,
                                 messageReceiver,
-                                pathwaysDoc);
+                                pathwaysDoc,
+                                effectiveLocks);
                     } else if (val.getIntValue() != null) {
                         setOrExpand(constraints,
                                 pathNode,
@@ -359,7 +383,8 @@ public class NodeMutatorImpl {
                                 optional,
                                 rootName,
                                 messageReceiver,
-                                pathwaysDoc);
+                                pathwaysDoc,
+                                effectiveLocks);
                     }
                     //Changes handled by the unwrap sub-call
                     newConstraintValue = null;
@@ -375,10 +400,13 @@ public class NodeMutatorImpl {
                 return;
             }
 
-            final Constraint newConstraint = new Constraint(name, newConstraintValue, opt);
+            final Constraint newConstraint = new Constraint(name, newConstraintValue, opt,
+                    constraint == null
+                            ? bornConstraintLocks(pathNode)
+                            : constraint.getLocks());
             //New constraint discovered
             if (constraint == null) {
-                final boolean creationAllowed = pathwaysDoc.isAllowConstraintCreation();
+                final boolean creationAllowed = effectiveLocks.getConstraintDiscovery() != LockState.LOCKED;
                 if (creationAllowed) {
                     constraints.put(name, newConstraint);
                 }
@@ -390,7 +418,8 @@ public class NodeMutatorImpl {
                 ));
             //Constraint mutation
             } else {
-                final boolean mutationAllowed = pathwaysDoc.isAllowConstraintMutation();
+                final boolean mutationAllowed =
+                        constraint.getLocks().withFallback(effectiveLocks).getValue() != LockState.LOCKED;
                 if (mutationAllowed) {
                     constraints.put(name, newConstraint);
                 }
@@ -403,6 +432,24 @@ public class NodeMutatorImpl {
                 ));
             }
         }
+    }
+
+    private PathwayLocks bornConstraintLocks(final PathNode pathNode) {
+        // Only value/optional apply to a constraint; the discovery defaults are for child nodes.
+        final PathwayLocks childLockDefaults = pathNode.getChildLockDefaults();
+        return PathwayLocks.builder()
+                .value(childLockDefaults.getValue())
+                .optional(childLockDefaults.getOptional())
+                .build();
+    }
+
+    private PathwayLocks bornNodeLocks(final PathNode parentNode) {
+        // Only the discovery states apply to a node; value/optional are for child constraints.
+        final PathwayLocks childLockDefaults = parentNode.getChildLockDefaults();
+        return PathwayLocks.builder()
+                .nodeDiscovery(childLockDefaults.getNodeDiscovery())
+                .constraintDiscovery(childLockDefaults.getConstraintDiscovery())
+                .build();
     }
 
     private ConstraintValue getConstraintValue(final Constraint constraint) {

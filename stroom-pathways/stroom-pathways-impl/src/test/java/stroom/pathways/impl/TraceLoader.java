@@ -33,6 +33,7 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.otel.trace.TraceRoot;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.planb.shared.PlanBDoc;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -168,7 +169,8 @@ public class TraceLoader {
         for (final Trace trace : traces) {
             final Span root = trace.root();
             final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));
-            pathRoots.put(pathKey, traceProcessor.process(trace, pathKey, null, messageReceiver, PATHWAYS_DOC));
+            pathRoots.put(pathKey, traceProcessor.process(trace, pathKey, null, messageReceiver, PATHWAYS_DOC,
+                    PathwayLocks.builder().build()));
         }
         return pathRoots;
     }

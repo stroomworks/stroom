@@ -43,13 +43,19 @@ public class PathNode {
     private final List<PathNodeSequence> targets;
     @JsonProperty
     private final Map<String, Constraint> constraints;
+    @JsonProperty
+    private final PathwayLocks locks;
+    @JsonProperty
+    private final PathwayLocks childLockDefaults;
 
     @JsonCreator
     public PathNode(@JsonProperty("uuid") final String uuid,
                     @JsonProperty("name") final String name,
                     @JsonProperty("path") final List<String> path,
                     @JsonProperty("targets") final List<PathNodeSequence> targets,
-                    @JsonProperty("constraints") final Map<String, Constraint> constraints) {
+                    @JsonProperty("constraints") final Map<String, Constraint> constraints,
+                    @JsonProperty("locks") final PathwayLocks locks,
+                    @JsonProperty("childLockDefaults") final PathwayLocks childLockDefaults) {
         this.uuid = uuid;
         this.name = name;
         this.path = path;
@@ -57,23 +63,21 @@ public class PathNode {
                 ? new ArrayList<>()
                 : new ArrayList<>(targets);
         this.constraints = constraints;
+        this.locks = locks != null
+                ? locks
+                : PathwayLocks.builder().build();
+        this.childLockDefaults = childLockDefaults != null
+                ? childLockDefaults
+                : PathwayLocks.builder().build();
     }
 
     public PathNode(final String name,
                     final List<String> path) {
-        this.uuid = UUID.randomUUID().toString();
-        this.name = name;
-        this.path = path;
-        this.targets = new ArrayList<>();
-        this.constraints = null;
+        this(UUID.randomUUID().toString(), name, path, null, null, null, null);
     }
 
     public PathNode(final String name) {
-        this.uuid = UUID.randomUUID().toString();
-        this.name = name;
-        this.path = Collections.singletonList(name);
-        this.targets = new ArrayList<>();
-        this.constraints = null;
+        this(name, Collections.singletonList(name));
     }
 
     public String getUuid() {
@@ -94,6 +98,14 @@ public class PathNode {
 
     public Map<String, Constraint> getConstraints() {
         return constraints;
+    }
+
+    public PathwayLocks getLocks() {
+        return locks;
+    }
+
+    public PathwayLocks getChildLockDefaults() {
+        return childLockDefaults;
     }
 
     @Override
@@ -143,6 +155,8 @@ public class PathNode {
         private List<String> path;
         private List<PathNodeSequence> targets;
         private Map<String, Constraint> constraints;
+        private PathwayLocks locks;
+        private PathwayLocks childLockDefaults;
 
         public Builder() {
         }
@@ -153,6 +167,8 @@ public class PathNode {
             this.path = pathNode.path;
             this.targets = pathNode.targets;
             this.constraints = pathNode.constraints;
+            this.locks = pathNode.locks;
+            this.childLockDefaults = pathNode.childLockDefaults;
         }
 
         public Builder uuid(final String uuid) {
@@ -180,6 +196,16 @@ public class PathNode {
             return self();
         }
 
+        public Builder locks(final PathwayLocks locks) {
+            this.locks = locks;
+            return self();
+        }
+
+        public Builder childLockDefaults(final PathwayLocks childLockDefaults) {
+            this.childLockDefaults = childLockDefaults;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -191,7 +217,9 @@ public class PathNode {
                     name,
                     path,
                     targets,
-                    constraints);
+                    constraints,
+                    locks,
+                    childLockDefaults);
         }
     }
 }

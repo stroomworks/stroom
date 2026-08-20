@@ -163,10 +163,6 @@ public class TestPathwayProcessor {
                             PathwaysDoc.builder()
                                     .uuid(UUID.randomUUID().toString())
                                     .name("Dummy DocRef")
-                                    .allowPathwayCreation(true)
-                                    .allowPathwayMutation(true)
-                                    .allowConstraintCreation(true)
-                                    .allowConstraintMutation(true)
                                     .build(),
                             messageReceiver));
             writer.commit();

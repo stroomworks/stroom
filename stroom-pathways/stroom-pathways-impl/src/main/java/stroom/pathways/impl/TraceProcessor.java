@@ -26,6 +26,7 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.planb.impl.db.LmdbWriter;
 import stroom.planb.impl.db.trace.NanoTimeUtil;
 import stroom.planb.impl.db.trace.PathwaysDb;
@@ -115,7 +116,11 @@ public class TraceProcessor {
             Pathway pathway = pathways.get(writer.getWriteTxn(), keyByteBuffer, valueByteBuffer -> {
                 if (valueByteBuffer == null) {
 //                    messageReceiver.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
-                    final PathNode pathNode = new PathNode(root.getName());
+                    final PathwayLocks childLockDefaults = doc.getChildLockDefaults();
+                    final PathNode pathNode = new PathNode(root.getName())
+                            .copy()
+                            .childLockDefaults(childLockDefaults)
+                            .build();
                     messageReceiver.event(doc, root.getName(), new PathwayRootDiscoveryEvent(
                             pathNode.getUuid(),
                             pathNode.getName(),
@@ -129,13 +134,14 @@ public class TraceProcessor {
                             .lastUsedTime(nanoTime)
                             .pathKey(pathKey)
                             .root(pathNode)
+                            .childLockDefaults(childLockDefaults)
                             .build();
                 }
                 return pathwaySerde.readPathway(valueByteBuffer);
             });
 
             PathNode pathNode = pathway.getRoot();
-            pathNode = nodeMutator.process(trace, pathKey, pathNode, messageReceiver, doc);
+            pathNode = nodeMutator.process(trace, pathKey, pathNode, messageReceiver, doc, pathway.getLocks());
 
             // Update pathway in database.
             final Instant now = Instant.now();

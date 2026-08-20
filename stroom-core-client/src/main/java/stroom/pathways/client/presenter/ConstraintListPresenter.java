@@ -223,7 +223,7 @@ public class ConstraintListPresenter
 
     private void onAdd() {
         final NanoTime now = NanoTime.ofMillis(System.currentTimeMillis());
-        constraintEditPresenter.read(new Constraint("New", null, false));
+        constraintEditPresenter.read(new Constraint("New", null, false, null));
         constraintEditPresenter.show("New Constraint", e -> {
             try {
                 if (e.isOk()) {

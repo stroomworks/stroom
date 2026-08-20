@@ -20,7 +20,9 @@ import stroom.docref.DocRef;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
+import stroom.pathways.shared.pathway.LockState;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.util.shared.time.SimpleDuration;
 import stroom.util.shared.time.TimeUnit;
 
@@ -47,11 +49,6 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class PathwaysDoc extends AbstractDoc {
 
-    private static final boolean DEFAULT_ALLOW_PATHWAY_CREATION = true;
-    private static final boolean DEFAULT_ALLOW_PATHWAY_MUTATION = true;
-    private static final boolean DEFAULT_ALLOW_CONSTRAINT_CREATION = true;
-    private static final boolean DEFAULT_ALLOW_CONSTRAINT_MUTATION = true;
-
     public static final String TYPE = "Pathways";
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.PATHWAYS_DOCUMENT_TYPE;
 
@@ -62,13 +59,11 @@ public class PathwaysDoc extends AbstractDoc {
     @JsonProperty
     private final List<Pathway> pathways;
     @JsonProperty
-    private final boolean allowPathwayCreation;
+    private final PathwayLocks locks;
     @JsonProperty
-    private final boolean allowPathwayMutation;
+    private final PathwayLocks childLockDefaults;
     @JsonProperty
-    private final boolean allowConstraintCreation;
-    @JsonProperty
-    private final boolean allowConstraintMutation;
+    private final LockState pathwayDiscovery;
     @JsonProperty
     private final DocRef tracesDocRef;
     @JsonProperty
@@ -87,10 +82,9 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("description") final String description,
                        @JsonProperty("temporalOrderingTolerance") final SimpleDuration temporalOrderingTolerance,
                        @JsonProperty("pathways") final List<Pathway> pathways,
-                       @JsonProperty("allowPathwayCreation") final Boolean allowPathwayCreation,
-                       @JsonProperty("allowPathwayMutation") final Boolean allowPathwayMutation,
-                       @JsonProperty("allowConstraintCreation") final Boolean allowConstraintCreation,
-                       @JsonProperty("allowConstraintMutation") final Boolean allowConstraintMutation,
+                       @JsonProperty("locks") final PathwayLocks locks,
+                       @JsonProperty("childLockDefaults") final PathwayLocks childLockDefaults,
+                       @JsonProperty("pathwayDiscovery") final LockState pathwayDiscovery,
                        @JsonProperty("tracesDocRef") final DocRef tracesDocRef,
                        @JsonProperty("infoFeed") final DocRef infoFeed,
                        @JsonProperty("processingNode") final String processingNode) {
@@ -98,14 +92,15 @@ public class PathwaysDoc extends AbstractDoc {
         this.description = description;
         this.temporalOrderingTolerance = temporalOrderingTolerance;
         this.pathways = pathways;
-        this.allowPathwayCreation =
-                Objects.requireNonNullElse(allowPathwayCreation, DEFAULT_ALLOW_PATHWAY_CREATION);
-        this.allowPathwayMutation =
-                Objects.requireNonNullElse(allowPathwayMutation, DEFAULT_ALLOW_PATHWAY_MUTATION);
-        this.allowConstraintCreation =
-                Objects.requireNonNullElse(allowConstraintCreation, DEFAULT_ALLOW_CONSTRAINT_CREATION);
-        this.allowConstraintMutation =
-                Objects.requireNonNullElse(allowConstraintMutation, DEFAULT_ALLOW_CONSTRAINT_MUTATION);
+        this.locks = locks != null
+                ? locks
+                : PathwayLocks.builder().build();
+        this.childLockDefaults = childLockDefaults != null
+                ? childLockDefaults
+                : PathwayLocks.builder().build();
+        this.pathwayDiscovery = pathwayDiscovery != null
+                ? pathwayDiscovery
+                : LockState.INHERIT;
         this.tracesDocRef = tracesDocRef;
         this.infoFeed = infoFeed;
         this.processingNode = processingNode;
@@ -139,20 +134,16 @@ public class PathwaysDoc extends AbstractDoc {
         return pathways;
     }
 
-    public boolean isAllowPathwayCreation() {
-        return allowPathwayCreation;
+    public PathwayLocks getLocks() {
+        return locks;
     }
 
-    public boolean isAllowPathwayMutation() {
-        return allowPathwayMutation;
+    public PathwayLocks getChildLockDefaults() {
+        return childLockDefaults;
     }
 
-    public boolean isAllowConstraintCreation() {
-        return allowConstraintCreation;
-    }
-
-    public boolean isAllowConstraintMutation() {
-        return allowConstraintMutation;
+    public LockState getPathwayDiscovery() {
+        return pathwayDiscovery;
     }
 
     public DocRef getTracesDocRef() {
@@ -179,13 +170,12 @@ public class PathwaysDoc extends AbstractDoc {
             return false;
         }
         final PathwaysDoc that = (PathwaysDoc) o;
-        return allowPathwayCreation == that.allowPathwayCreation &&
-               allowPathwayMutation == that.allowPathwayMutation &&
-               allowConstraintCreation == that.allowConstraintCreation &&
-               allowConstraintMutation == that.allowConstraintMutation &&
-               Objects.equals(description, that.description) &&
+        return Objects.equals(description, that.description) &&
                Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance) &&
                Objects.equals(pathways, that.pathways) &&
+               Objects.equals(locks, that.locks) &&
+               Objects.equals(childLockDefaults, that.childLockDefaults) &&
+               pathwayDiscovery == that.pathwayDiscovery &&
                Objects.equals(tracesDocRef, that.tracesDocRef) &&
                Objects.equals(infoFeed, that.infoFeed) &&
                Objects.equals(processingNode, that.processingNode);
@@ -197,10 +187,9 @@ public class PathwaysDoc extends AbstractDoc {
                 description,
                 temporalOrderingTolerance,
                 pathways,
-                allowPathwayCreation,
-                allowPathwayMutation,
-                allowConstraintCreation,
-                allowConstraintMutation,
+                locks,
+                childLockDefaults,
+                pathwayDiscovery,
                 tracesDocRef,
                 infoFeed,
                 processingNode);
@@ -212,10 +201,9 @@ public class PathwaysDoc extends AbstractDoc {
                "description='" + description + '\'' +
                ", temporalOrderingTolerance=" + temporalOrderingTolerance +
                ", pathways=" + pathways +
-               ", allowPathwayCreation=" + allowPathwayCreation +
-               ", allowPathwayMutation=" + allowPathwayMutation +
-               ", allowConstraintCreation=" + allowConstraintCreation +
-               ", allowConstraintMutation=" + allowConstraintMutation +
+               ", locks=" + locks +
+               ", childLockDefaults=" + childLockDefaults +
+               ", pathwayDiscovery=" + pathwayDiscovery +
                ", tracesDocRef=" + tracesDocRef +
                ", infoFeed=" + infoFeed +
                ", processingNode=" + processingNode +
@@ -236,10 +224,9 @@ public class PathwaysDoc extends AbstractDoc {
         private String description;
         private SimpleDuration temporalOrderingTolerance = new SimpleDuration(0L, TimeUnit.NANOSECONDS);
         private List<Pathway> pathways;
-        private boolean allowPathwayCreation = true;
-        private boolean allowPathwayMutation = true;
-        private boolean allowConstraintCreation = true;
-        private boolean allowConstraintMutation = true;
+        private PathwayLocks locks;
+        private PathwayLocks childLockDefaults;
+        private LockState pathwayDiscovery;
         private DocRef tracesDocRef;
         private DocRef infoFeed;
         private String processingNode;
@@ -252,10 +239,9 @@ public class PathwaysDoc extends AbstractDoc {
             this.description = pathwaysDoc.description;
             this.temporalOrderingTolerance = pathwaysDoc.temporalOrderingTolerance;
             this.pathways = pathwaysDoc.pathways;
-            this.allowPathwayCreation = pathwaysDoc.allowPathwayCreation;
-            this.allowPathwayMutation = pathwaysDoc.allowPathwayMutation;
-            this.allowConstraintCreation = pathwaysDoc.allowConstraintCreation;
-            this.allowConstraintMutation = pathwaysDoc.allowConstraintMutation;
+            this.locks = pathwaysDoc.locks;
+            this.childLockDefaults = pathwaysDoc.childLockDefaults;
+            this.pathwayDiscovery = pathwaysDoc.pathwayDiscovery;
             this.tracesDocRef = pathwaysDoc.tracesDocRef;
             this.infoFeed = pathwaysDoc.infoFeed;
             this.processingNode = pathwaysDoc.processingNode;
@@ -276,23 +262,18 @@ public class PathwaysDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder allowPathwayCreation(final boolean allowPathwayCreation) {
-            this.allowPathwayCreation = allowPathwayCreation;
+        public Builder locks(final PathwayLocks locks) {
+            this.locks = locks;
             return self();
         }
 
-        public Builder allowPathwayMutation(final boolean allowPathwayMutation) {
-            this.allowPathwayMutation = allowPathwayMutation;
+        public Builder childLockDefaults(final PathwayLocks childLockDefaults) {
+            this.childLockDefaults = childLockDefaults;
             return self();
         }
 
-        public Builder allowConstraintCreation(final boolean allowConstraintCreation) {
-            this.allowConstraintCreation = allowConstraintCreation;
-            return self();
-        }
-
-        public Builder allowConstraintMutation(final boolean allowConstraintMutation) {
-            this.allowConstraintMutation = allowConstraintMutation;
+        public Builder pathwayDiscovery(final LockState pathwayDiscovery) {
+            this.pathwayDiscovery = pathwayDiscovery;
             return self();
         }
 
@@ -328,10 +309,9 @@ public class PathwaysDoc extends AbstractDoc {
                     description,
                     temporalOrderingTolerance,
                     pathways,
-                    allowPathwayCreation,
-                    allowPathwayMutation,
-                    allowConstraintCreation,
-                    allowConstraintMutation,
+                    locks,
+                    childLockDefaults,
+                    pathwayDiscovery,
                     tracesDocRef,
                     infoFeed,
                     processingNode);

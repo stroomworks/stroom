@@ -31,6 +31,7 @@ import stroom.pathways.shared.pathway.DoubleValue;
 import stroom.pathways.shared.pathway.IntegerRange;
 import stroom.pathways.shared.pathway.IntegerSet;
 import stroom.pathways.shared.pathway.IntegerValue;
+import stroom.pathways.shared.pathway.LockState;
 import stroom.pathways.shared.pathway.LongRange;
 import stroom.pathways.shared.pathway.LongSet;
 import stroom.pathways.shared.pathway.LongValue;
@@ -42,6 +43,7 @@ import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -67,6 +69,8 @@ import java.util.function.Function;
 
 public class PathwaySerde {
 
+    private static final byte VERSION = 1;
+
     private final ByteBufferFactory byteBufferFactory;
     private int bufferSize = 128;
 
@@ -80,6 +84,10 @@ public class PathwaySerde {
     }
 
     private Pathway readPathway(final Input input) {
+        final byte version = input.readByte();
+        if (version != VERSION) {
+            throw new IllegalStateException("Unsupported pathway serialisation version: " + version);
+        }
         return Pathway.builder()
                 .name(input.readString())
                 .createTime(readNanoTime(input))
@@ -87,6 +95,8 @@ public class PathwaySerde {
                 .lastUsedTime(readNanoTime(input))
                 .pathKey(readPathKey(input))
                 .root(readPathNode(input))
+                .locks(readPathwayLocks(input))
+                .childLockDefaults(readPathwayLocks(input))
                 .build();
     }
 
@@ -110,6 +120,8 @@ public class PathwaySerde {
                 .path(readStrings(input))
                 .targets(readList(input, this::readPathNodeSequence))
                 .constraints(readConstraints(input))
+                .locks(readPathwayLocks(input))
+                .childLockDefaults(readPathwayLocks(input))
                 .build();
     }
 
@@ -158,7 +170,21 @@ public class PathwaySerde {
                 .name(input.readString())
                 .value(readConstraintValue(input))
                 .optional(input.readBoolean())
+                .locks(readPathwayLocks(input))
                 .build();
+    }
+
+    private PathwayLocks readPathwayLocks(final Input input) {
+        return PathwayLocks.builder()
+                .value(readLockState(input))
+                .optional(readLockState(input))
+                .nodeDiscovery(readLockState(input))
+                .constraintDiscovery(readLockState(input))
+                .build();
+    }
+
+    private LockState readLockState(final Input input) {
+        return LockState.values()[input.readByte()];
     }
 
     //Package private so PathwayEventsSerde can reuse
@@ -197,12 +223,15 @@ public class PathwaySerde {
     }
 
     private void writePathway(final Pathway pathway, final Output output) {
+        output.writeByte(VERSION);
         output.writeString(pathway.getName());
         writeNanoTime(pathway.getCreateTime(), output);
         writeNanoTime(pathway.getUpdateTime(), output);
         writeNanoTime(pathway.getLastUsedTime(), output);
         writePathKey(pathway.getPathKey(), output);
         writePathNode(pathway.getRoot(), output);
+        writePathwayLocks(pathway.getLocks(), output);
+        writePathwayLocks(pathway.getChildLockDefaults(), output);
     }
 
     private void writeNanoTime(final NanoTime nanoTime, final Output output) {
@@ -231,6 +260,8 @@ public class PathwaySerde {
         writeList(pathNode.getTargets(), output, this::writePathNodeSequence);
 //        writeList(pathNode.getSpans(), output, this::writeSpan);
         writeConstraints(pathNode.getConstraints(), output);
+        writePathwayLocks(pathNode.getLocks(), output);
+        writePathwayLocks(pathNode.getChildLockDefaults(), output);
     }
 
     private void writePathNodeSequence(final PathNodeSequence pathNodeSequence, final Output output) {
@@ -289,6 +320,18 @@ public class PathwaySerde {
         writeString(constraint.getName(), output);
         writeConstraintValue(constraint.getValue(), output);
         output.writeBoolean(constraint.isOptional());
+        writePathwayLocks(constraint.getLocks(), output);
+    }
+
+    private void writePathwayLocks(final PathwayLocks locks, final Output output) {
+        writeLockState(locks.getValue(), output);
+        writeLockState(locks.getOptional(), output);
+        writeLockState(locks.getNodeDiscovery(), output);
+        writeLockState(locks.getConstraintDiscovery(), output);
+    }
+
+    private void writeLockState(final LockState lockState, final Output output) {
+        output.writeByte(lockState.ordinal());
     }
 
     //Package private so PathwayEventsSerde can reuse

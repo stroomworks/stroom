@@ -41,6 +41,10 @@ public class Pathway {
     private final PathKey pathKey;
     @JsonProperty
     private final PathNode root;
+    @JsonProperty
+    private final PathwayLocks locks;
+    @JsonProperty
+    private final PathwayLocks childLockDefaults;
 
     @JsonCreator
     public Pathway(@JsonProperty("name") final String name,
@@ -48,13 +52,21 @@ public class Pathway {
                    @JsonProperty("updateTime") final NanoTime updateTime,
                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
                    @JsonProperty("pathKey") final PathKey pathKey,
-                   @JsonProperty("root") final PathNode root) {
+                   @JsonProperty("root") final PathNode root,
+                   @JsonProperty("locks") final PathwayLocks locks,
+                   @JsonProperty("childLockDefaults") final PathwayLocks childLockDefaults) {
         this.name = name;
         this.createTime = createTime;
         this.updateTime = updateTime;
         this.lastUsedTime = lastUsedTime;
         this.pathKey = pathKey;
         this.root = root;
+        this.locks = locks != null
+                ? locks
+                : PathwayLocks.builder().build();
+        this.childLockDefaults = childLockDefaults != null
+                ? childLockDefaults
+                : PathwayLocks.builder().build();
     }
 
     public String getName() {
@@ -81,6 +93,14 @@ public class Pathway {
         return root;
     }
 
+    public PathwayLocks getLocks() {
+        return locks;
+    }
+
+    public PathwayLocks getChildLockDefaults() {
+        return childLockDefaults;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -95,12 +115,14 @@ public class Pathway {
                Objects.equals(updateTime, pathway.updateTime) &&
                Objects.equals(lastUsedTime, pathway.lastUsedTime) &&
                Objects.equals(pathKey, pathway.pathKey) &&
-               Objects.equals(root, pathway.root);
+               Objects.equals(root, pathway.root) &&
+               Objects.equals(locks, pathway.locks) &&
+               Objects.equals(childLockDefaults, pathway.childLockDefaults);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, createTime, updateTime, lastUsedTime, pathKey, root);
+        return Objects.hash(name, createTime, updateTime, lastUsedTime, pathKey, root, locks, childLockDefaults);
     }
 
     @Override
@@ -112,6 +134,8 @@ public class Pathway {
                ", lastUsedTime=" + lastUsedTime +
                ", pathKey=" + pathKey +
                ", root=" + root +
+               ", locks=" + locks +
+               ", childLockDefaults=" + childLockDefaults +
                '}';
     }
 
@@ -131,6 +155,8 @@ public class Pathway {
         private NanoTime lastUsedTime;
         private PathKey pathKey;
         private PathNode root;
+        private PathwayLocks locks;
+        private PathwayLocks childLockDefaults;
 
         public Builder() {
         }
@@ -142,6 +168,8 @@ public class Pathway {
             this.lastUsedTime = pathway.lastUsedTime;
             this.pathKey = pathway.pathKey;
             this.root = pathway.root;
+            this.locks = pathway.locks;
+            this.childLockDefaults = pathway.childLockDefaults;
         }
 
         public Builder name(final String name) {
@@ -174,6 +202,16 @@ public class Pathway {
             return self();
         }
 
+        public Builder locks(final PathwayLocks locks) {
+            this.locks = locks;
+            return self();
+        }
+
+        public Builder childLockDefaults(final PathwayLocks childLockDefaults) {
+            this.childLockDefaults = childLockDefaults;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -186,7 +224,9 @@ public class Pathway {
                     updateTime,
                     lastUsedTime,
                     pathKey,
-                    root);
+                    root,
+                    locks,
+                    childLockDefaults);
         }
     }
 }
