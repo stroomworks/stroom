@@ -121,7 +121,7 @@ public class DateTimeFormatter {
             if (c == '[') {
                 final int close = momentPattern.indexOf(']', i);
                 if (close > i) {
-                    masked.append('\uE000').append(literals.size()).append('\uE001');
+                    masked.append('\uE000').append(literals.size()).append('\uE001'); // mask sentinels
                     literals.add(momentPattern.substring(i, close + 1));
                     i = close + 1;
                     continue;
@@ -141,9 +141,9 @@ public class DateTimeFormatter {
         // bare. A single pass cannot do both - a leading "not preceded by a letter" guard
         // is evaluated at the start of the match, so with ":ss" it rejects the match that
         // would have eaten the colon and then accepts the one that leaves it behind.
-        p = p.replaceAll("[^A-Za-z\uE000\uE001]S{1,9}", "");
+        p = p.replaceAll("[^A-Za-z\uE000\uE001]S{1,9}", ""); // sentinels are not separators
         p = p.replaceAll("(?<![A-Za-z])S{1,9}(?![A-Za-z])", "");
-        p = p.replaceAll("[^A-Za-z\uE000\uE001]ss(?![A-Za-z])", "");
+        p = p.replaceAll("[^A-Za-z\uE000\uE001]ss(?![A-Za-z])", ""); // sentinels are not separators
         p = p.replaceAll("(?<![A-Za-z])ss(?![A-Za-z])", "");
 
         // Tidy up whatever the removals left dangling.
@@ -153,7 +153,7 @@ public class DateTimeFormatter {
 
         // Restore the literals.
         for (int n = 0; n < literals.size(); n++) {
-            p = p.replace("\uE000" + n + "\uE001", literals.get(n));
+            p = p.replace("\uE000" + n + "\uE001", literals.get(n)); // unmask
         }
 
         // If nothing time-bearing survived, the pattern was too specialised to shorten.

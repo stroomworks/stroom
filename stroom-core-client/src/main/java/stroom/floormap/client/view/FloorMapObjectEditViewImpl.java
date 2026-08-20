@@ -450,6 +450,16 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     @Override
     public double[] getWorldToMapMatrix() {
+        final String invalid = getGeometryFieldError();
+        if (invalid != null) {
+            // Unreachable via the OK path, which checks getGeometryFieldError() first.
+            // Fail loudly rather than substituting a default: the silent fallbacks below
+            // used to turn a typo in a position box into a move to 0 m, and a typo in the
+            // rotation box into 0 degrees, with nothing shown to the user.
+            throw new IllegalStateException(
+                    "Geometry field '" + invalid + "' is not a valid number; "
+                    + "check getGeometryFieldError() first");
+        }
         final double[] scale = typedScale();
         final double sX = scale[0];
         final double sY = scale[1];
@@ -607,8 +617,74 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         return FloorMapMeasurementUnits.orDefault(measurementUnits);
     }
 
+    @Override
+    public String getGeometryFieldError() {
+        // Mirrors exactly which boxes getWorldToMapMatrix() actually reads, so the user is
+        // never blocked on a value that is about to be ignored:
+        //  - a box still holding the text this dialog wrote is not parsed at all, it yields
+        //    the loaded value, so it cannot be wrong however odd the formatting looks;
+        //  - the size and scale boxes are alternatives, not both - typedScale() reads the
+        //    scale boxes only for a fact with no measurable extent, and the size boxes only
+        //    for one that has it.
+        if (isEdited(posX, shownPosX) && !isFiniteNumber(posX)) {
+            return "Position X";
+        }
+        if (isEdited(posY, shownPosY) && !isFiniteNumber(posY)) {
+            return "Position Y";
+        }
+        if (baseSize == null) {
+            if (!isFiniteNumber(w2mSx)) {
+                return "Scale X";
+            }
+            if (!isFiniteNumber(w2mSy)) {
+                return "Scale Y";
+            }
+        } else {
+            if (isEdited(sizeW, shownSizeW) && !isFiniteNumber(sizeW)) {
+                return "Width";
+            }
+            if (isEdited(sizeH, shownSizeH) && !isFiniteNumber(sizeH)) {
+                return "Height";
+            }
+        }
+        if (!isFiniteNumber(w2mRot)) {
+            return "Rotation";
+        }
+        return null;
+    }
+
+    /** Whether the user has changed a box away from the text this dialog last wrote. */
+    private boolean isEdited(final TextBox box, final String shownText) {
+        return !boxText(box).equals(shownText);
+    }
+
+    /**
+     * Whether the box holds a number the geometry can actually be built from. Blank fails:
+     * an empty position box is not "leave it alone" - the untouched case is handled by
+     * {@link #isEdited}. NaN and infinity fail too; either would poison the matrix and make
+     * the object unselectable and invisible.
+     */
+    private boolean isFiniteNumber(final TextBox box) {
+        try {
+            final double value = Double.parseDouble(boxText(box));
+            return !Double.isNaN(value) && !Double.isInfinite(value);
+        } catch (final NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /** The trimmed text of a box, never {@code null}. */
+    private String boxText(final TextBox box) {
+        return box.getText() == null
+                ? ""
+                : box.getText().trim();
+    }
+
     /**
      * Parses a double from the given string, returning {@code defaultVal} on failure.
+     *
+     * <p>Reached only for values {@link #getGeometryFieldError()} has already accepted, so
+     * the default is a backstop rather than the silent correction it once was.</p>
      */
     private double parseDouble(final String val, final double defaultVal) {
         try {

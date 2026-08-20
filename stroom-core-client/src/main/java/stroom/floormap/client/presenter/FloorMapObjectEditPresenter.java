@@ -373,6 +373,17 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                     e::reset);
                             return;
                         }
+                        final String badGeometryField = getView().getGeometryFieldError();
+                        if (badGeometryField != null) {
+                            // Checked before reading the matrix, for the same reason as the
+                            // effective time below: the geometry boxes are free text, and a
+                            // parse failure used to be silently replaced by a default and
+                            // saved as a deliberate edit.
+                            AlertEvent.fireError(this,
+                                    badGeometryField + " must be a number.",
+                                    e::reset);
+                            return;
+                        }
                         if (!getView().isEffectiveTimeValid()) {
                             // Checked before reading the value: DateTimeBox yields null for a
                             // cleared or unparseable field, and unboxing that threw an NPE from
@@ -779,7 +790,26 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
          */
         void setChooseImgView(Widget widget);
 
-        /** Returns the 6-element world-to-map affine transformation matrix. */
+        /**
+         * The display name of the first geometry field holding something that is not a
+         * usable number, or {@code null} when they are all fine.
+         *
+         * <p>Must be checked before {@link #getWorldToMapMatrix()}: the position, size,
+         * scale and rotation boxes are free text, and each one silently became a default
+         * on a parse failure - a typo in a position box moved the object to 0 m, a typo in
+         * the rotation box straightened it - so a mistake was committed as a real edit
+         * with nothing shown to the user.</p>
+         *
+         * @return the offending field's label, e.g. {@code "Position X"}, or {@code null}
+         */
+        String getGeometryFieldError();
+
+        /**
+         * Returns the 6-element world-to-map affine transformation matrix.
+         *
+         * @throws IllegalStateException if a geometry field is not a usable number — call
+         *                               {@link #getGeometryFieldError()} first
+         */
         double[] getWorldToMapMatrix();
 
         /** Sets the 6-element world-to-map affine transformation matrix. */

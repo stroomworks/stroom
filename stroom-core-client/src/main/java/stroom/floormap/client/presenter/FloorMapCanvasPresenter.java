@@ -1281,6 +1281,31 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     return;
                 }
             }
+            // Escape during a transform or vertex drag cancels the gesture, before the
+            // clear-selection branch below can see it.
+            //
+            // Without this, those gestures fell through to clear-selection, which only
+            // *accidentally* cancelled MOVING, SCALING and ROTATING - their mouseup commit
+            // happens to check the selection, so emptying it suppressed the write. The
+            // vertex commit does not check the selection (it gates on moved/inserted, the
+            // editing key and locked layers), so Escape mid-vertex-drag looked like a
+            // cancel and then persisted the new geometry anyway on mouseup. Cancelling
+            // explicitly makes all four behave the same and stops the correctness of the
+            // other three resting on a coincidence.
+            //
+            // A second Escape then clears the selection, as before.
+            if (editMode
+                    && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
+                    && (gesture == Gesture.MOVING
+                        || gesture == Gesture.SCALING
+                        || gesture == Gesture.ROTATING
+                        || gesture == Gesture.MOVING_VERTEX)) {
+                abortGesture();
+                // The abandoned preview - a displaced object, or a dragged vertex - is
+                // still painted until something repaints.
+                redraw();
+                return;
+            }
             if (editMode
                     && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
                     && !selectedObjectIds.isEmpty()) {
