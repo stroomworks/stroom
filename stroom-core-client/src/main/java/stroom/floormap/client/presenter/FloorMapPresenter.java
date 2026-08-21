@@ -320,18 +320,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     }
 
     /**
-     * Saves the assets associated with the document.
-     * Called indirectly via {@link #flushEditorThenSaveAssets}, which is the method
-     * referenced by {@link #getPostSaveCallback()}.
-     * @param document The document that was written by all the data in all the tabs.
-     * @param callback Thing to call when the assets have been saved.
-     */
-    @SuppressWarnings("unused")
-    public void saveAssets(final FloorMapDoc document, final Consumer<FloorMapDoc> callback) {
-        documentAssetPresenter.onSave(document, callback);
-    }
-
-    /**
      * Called by DocumentPlugin to do a SaveAs to a new document.
      * Specified in getPostSaveAsCallback().
      * @param document The new document to save to.
