@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.FloorMapCellHtml;
 import stroom.floormap.client.presenter.FloorMapTrackingPresenter.FloorMapTrackingView;
 import stroom.floormap.shared.FloorMapAreaCellText;
@@ -96,15 +97,23 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     private static final String NO_AREA = "—";
 
     /**
-     * Element id of the entity grid, so the canvas can name it as the map's text
-     * alternative via {@code aria-describedby}.
+     * This grid's element id, so the canvas can name it as the map's text alternative
+     * via {@code aria-describedby}. Minted per instance, not a constant.
      *
-     * <p>A fixed id rather than a generated one because the reference crosses
-     * presenters: the canvas has no handle on this object, and threading one
-     * through purely to learn a string would couple the two for nothing. The Map
-     * tab has a single Tracking panel, so the id cannot collide with itself.</p>
+     * <p>A previous version of this comment argued for a fixed id: the reference
+     * crosses presenters, so threading a handle through "purely to learn a string"
+     * looked like coupling for nothing, and the Map tab has only one Tracking panel so the id
+     * "cannot collide with itself". The second half is true and beside the point —
+     * Stroom opens documents in tabs, so the collision is with <em>another
+     * document's</em> grid, not with this one's. Two floor maps open at once gave two
+     * elements the same id, and each canvas's {@code aria-describedby} then resolved
+     * to whichever came first in the DOM. Nothing looks wrong to a sighted user; the
+     * screen reader simply describes the wrong map.</p>
+     *
+     * <p>The coupling objection also does not hold: the consumer already holds this
+     * presenter (FloorMapMapPresenter.floorMapTrackingPresenter), so it reads the id from the instance.</p>
      */
-    private static final String GRID_ELEMENT_ID = "floormap-tracking-grid";
+    private final String gridElementId = FloorMapAria.uniqueId("floormap-tracking-grid");
 
     private final MyDataGrid<EntityEntry> dataGrid;
     private final ListDataProvider<EntityEntry> dataProvider = new ListDataProvider<>();
@@ -165,7 +174,7 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         // The grid is the map's text equivalent — a navigable row per entity with
         // its type and containing area — so it needs a stable id for the canvas to
         // point aria-describedby at. See getGridElementId().
-        dataGrid.getElement().setId(GRID_ELEMENT_ID);
+        dataGrid.getElement().setId(gridElementId);
         view.setGridView(dataGrid);
         initGridColumns();
         dataProvider.addDataDisplay(dataGrid);
@@ -318,8 +327,8 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
      *
      * @return the grid's element id
      */
-    public static String getGridElementId() {
-        return GRID_ELEMENT_ID;
+    public String getGridElementId() {
+        return gridElementId;
     }
 
     /**

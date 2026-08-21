@@ -32,6 +32,7 @@ import stroom.floormap.shared.FloorMapDocSession;
 import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
+import stroom.floormap.shared.FloorMapFactTableParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapGroup;
@@ -39,16 +40,16 @@ import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapGroupSnapshot;
 import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
-import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.Column;
 import stroom.query.api.DestroyReason;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.Param;
 import stroom.query.api.Result;
-import stroom.query.api.Row;
 import stroom.query.api.TableResult;
 import stroom.query.api.TimeRange;
+import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
@@ -69,7 +70,7 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -77,9 +78,17 @@ import java.util.Map;
 /**
  * Presenter for the Map (visualisation) tab of a {@link FloorMapDoc}.
  *
- * <p>This presenter coordinates the floor-map canvas, timeline scrubber, and object
- * properties editor. Facts are loaded by running a StroomQL query via
- * {@link QueryModel}. Results are parsed by {@link #parseFacts(TableResult)}.</p>
+ * <p>This presenter coordinates the floor-map canvas and the timeline scrubber. Facts are
+ * loaded by running a StroomQL query via {@link QueryModel}. Results are parsed by
+ * {@link #parseFacts(TableResult)}.</p>
+ *
+ * <p>The Map tab is <strong>read-only</strong>. Unlike
+ * {@link FloorMapEditorPresenter}, it sets no edit mode and installs none of the canvas's
+ * mutation handlers - no drag, geometry, area or scale handler - so nothing here can alter a
+ * fact. Inspection is served by the hover tooltip, the cluster member panel and the Tracking
+ * grid. This paragraph used to claim the presenter coordinated the "object properties
+ * editor": it held an instance of that dialog, configured it on every document read, and
+ * never showed it.</p>
  *
  * <h3>Layout slots</h3>
  * <ul>
@@ -105,7 +114,6 @@ public class FloorMapMapPresenter
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
-    private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapTrackingPresenter floorMapTrackingPresenter;
     private final FloorMapLayersPresenter floorMapLayersPresenter;
     private final FloorMapGroupsPresenter floorMapGroupsPresenter;
@@ -233,7 +241,7 @@ public class FloorMapMapPresenter
      * @return the active {@link FloorMapFieldMapping} list; may be {@code null}
      *         for legacy documents
      */
-    private List<stroom.floormap.shared.FloorMapFieldMapping> valueSchema() {
+    private List<FloorMapFieldMapping> valueSchema() {
         return getEntity().getValueSchema();
     }
 
@@ -256,7 +264,6 @@ public class FloorMapMapPresenter
                                 final ResultStoreModel resultStoreModel,
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
-                                final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
                                 final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
                                 final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider,
                                 final Provider<FloorMapGroupsPresenter> floorMapGroupsPresenterProvider,
@@ -267,12 +274,6 @@ public class FloorMapMapPresenter
         this.floorMapClusterPresenter = floorMapClusterPresenter;
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
-        this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        // Let the properties dialog state an image's real-world size: the canvas
-        // has already measured any image it has drawn, so this needs no second
-        // load.
-        this.floorMapObjectEditPresenter.setAspectRatioResolver(
-                floorMapCanvasPresenter::getImageAspectRatio);
         this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
         this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
         this.floorMapGroupsPresenter = floorMapGroupsPresenterProvider.get();
@@ -547,7 +548,7 @@ public class FloorMapMapPresenter
         // exposed as a single summarised image; this is what tells a screen-reader
         // user that the row-by-row detail behind that summary exists, and where.
         floorMapCanvasPresenter.setTextAlternativeId(
-                FloorMapTrackingPresenter.getGridElementId());
+                floorMapTrackingPresenter.getGridElementId());
     }
 
     /**
@@ -585,11 +586,6 @@ public class FloorMapMapPresenter
         histogramQueryHelper.reset();
         factsHistogramQueryHelper.init(docRef);
         factsHistogramQueryHelper.reset();
-
-        if (document.getFactsStoreRef() != null) {
-            floorMapObjectEditPresenter.setMapName(document.getFactsStoreRef().getName());
-        }
-        floorMapObjectEditPresenter.setFloorMapDoc(document);
 
         // A (re-)opened document starts with a fresh entity roster and no
         // inherited area containment.
@@ -691,13 +687,18 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Returns the facts query to execute, falling back to a default template
-     * derived from the configured temporal store if no custom query is set.
+     * Returns the facts query to execute, built from the document's value schema on
+     * every call.
      *
-     * @return the StroomQL query text, or {@code null} if no store is configured
+     * <p>There is no custom-query override and no store-derived template: the query
+     * text is always generated by
+     * {@link FloorMapQueryBuilder#buildFactsQuery(List, ValueFormat)} from the schema
+     * and the document's value format. </p>
+     *
+     * @return the StroomQL query text, or {@code null} if the value schema is empty
      */
     private String getFactsQueryToUse() {
-        final java.util.List<stroom.floormap.shared.FloorMapFieldMapping> schema = valueSchema();
+        final List<FloorMapFieldMapping> schema = valueSchema();
         if (schema == null || schema.isEmpty()) {
             return null;
         }
@@ -851,6 +852,15 @@ public class FloorMapMapPresenter
     }
 
     /**
+     * The schema roles that map onto columns of the facts query's result table. Area roles
+     * are absent from pre-area schemas, so their aliases can be null and simply go
+     * unmatched.
+     */
+    private static final List<Role> FACT_COLUMN_ROLES = List.of(
+            Role.TYPE, Role.POSITION, Role.IMAGE, Role.WORLD_TO_MAP,
+            Role.GEOMETRY, Role.FILL, Role.OPACITY, Role.LABEL);
+
+    /**
      * Parses a {@link TableResult} from the facts StroomQL query into canvas-renderable
      * objects. Maps column names to schema roles to extract key, type, coordinates,
      * image, and transformation matrices.
@@ -862,111 +872,30 @@ public class FloorMapMapPresenter
      * @param tableResult the query result table to parse
      */
     private void parseFacts(final TableResult tableResult) {
-        int keyIdx = -1;
-        int typeIdx = -1;
-        int labelIdx = -1;
-        int coordsIdx = -1;
-        int imgIdx = -1;
-        int worldToMapIdx = -1;
-        int geometryIdx = -1;
-        int fillIdx = -1;
-        int opacityIdx = -1;
-
-        final List<Column> columns = tableResult.getColumns();
-        if (columns == null) {
+        // Same guard as publishEventEntities: a facts result already in flight when the
+        // tab was closed has nothing left to update, and this presenter is not unbound
+        // on close so the callback still arrives.
+        if (closed || getEntity() == null) {
             return;
         }
-
-        final stroom.floormap.shared.ValueFormat vf = getEntity().getValueFormat();
-        // Area roles are absent from pre-area schemas, so their aliases may be
-        // null — matched columns simply stay at -1.
-        // All aliases are resolved once, before the loop. Each one costs a linear
-        // scan of the schema, so resolving them per column made this O(columns ×
-        // schema) for no benefit — the aliases do not vary by column.
-        final String typeAlias = columnAliasForRole(Role.TYPE, vf);
-        final String positionAlias = columnAliasForRole(Role.POSITION, vf);
-        final String imageAlias = columnAliasForRole(Role.IMAGE, vf);
-        final String worldToMapAlias = columnAliasForRole(Role.WORLD_TO_MAP, vf);
-        final String geometryAlias = columnAliasForRole(Role.GEOMETRY, vf);
-        final String fillAlias = columnAliasForRole(Role.FILL, vf);
-        final String opacityAlias = columnAliasForRole(Role.OPACITY, vf);
-        // LABEL supplies the user-facing area name in the tracking panel. Like
-        // the area roles it may be unmapped, so the alias can be null.
-        final String labelAlias = columnAliasForRole(Role.LABEL, vf);
-        for (int i = 0; i < columns.size(); i++) {
-            final String colName = columns.get(i).getName();
-            if (colName.equalsIgnoreCase("Key")) {
-                keyIdx = i;
-            } else if (colName.equalsIgnoreCase(typeAlias)) {
-                typeIdx = i;
-            } else if (colName.equalsIgnoreCase(positionAlias)) {
-                coordsIdx = i;
-            } else if (colName.equalsIgnoreCase(imageAlias)) {
-                imgIdx = i;
-            } else if (colName.equalsIgnoreCase(worldToMapAlias)) {
-                worldToMapIdx = i;
-            } else if (colName.equalsIgnoreCase(labelAlias)) {
-                labelIdx = i;
-            } else if (colName.equalsIgnoreCase(geometryAlias)) {
-                geometryIdx = i;
-            } else if (colName.equalsIgnoreCase(fillAlias)) {
-                fillIdx = i;
-            } else if (colName.equalsIgnoreCase(opacityAlias)) {
-                opacityIdx = i;
+        // Column matching and row parsing live in FloorMapFactTableParser, on the JVM side
+        // of the fence, so they can be tested. What stays here is the part that genuinely
+        // needs the presenter: resolving aliases from the document's schema, and the side
+        // effects below.
+        final ValueFormat vf = getEntity().getValueFormat();
+        final Map<Role, String> aliasByRole = new HashMap<>();
+        for (final Role role : FACT_COLUMN_ROLES) {
+            final String alias = columnAliasForRole(role, vf);
+            if (alias != null) {
+                aliasByRole.put(role, alias);
             }
         }
 
-        // The query returns every effective-time shard of every key (rows are in
-        // ascending effective-time order), so collapse to one fact per key — a
-        // later shard overwrites the earlier one. This shows a single current
-        // instance per object rather than every time version at once; distinct
-        // keys (e.g. several backgrounds) are preserved.
-        final Map<String, Fact> factsByKey = new LinkedHashMap<>();
-
-        if (tableResult.getRows() != null) {
-            for (final Row row : tableResult.getRows()) {
-                final List<String> values = row.getValues();
-                final String key = keyIdx != -1 && values.size() > keyIdx ? values.get(keyIdx) : null;
-                final String type = typeIdx != -1 && values.size() > typeIdx ? values.get(typeIdx) : "";
-                final String img = imgIdx != -1 && values.size() > imgIdx ? values.get(imgIdx) : null;
-
-                // Every row is a fact placed by its WORLD_TO_MAP matrix — a
-                // background is simply an image fact, not a special case.
-                double worldX = 0;
-                double worldY = 0;
-                if (coordsIdx != -1 && values.size() > coordsIdx) {
-                    final double[] xy = parseCoords(values.get(coordsIdx));
-                    if (xy != null) {
-                        worldX = xy[0];
-                        worldY = xy[1];
-                    }
-                }
-
-                FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-                if (worldToMapIdx != -1 && values.size() > worldToMapIdx) {
-                    worldToMap = parseMatrix(values.get(worldToMapIdx));
-                }
-
-                final double[][] vertices = geometryIdx != -1 && values.size() > geometryIdx
-                        ? parseVertices(values.get(geometryIdx))
-                        : null;
-                final String fill = fillIdx != -1 && values.size() > fillIdx
-                        ? values.get(fillIdx)
-                        : null;
-                final Double opacity = opacityIdx != -1 && values.size() > opacityIdx
-                        ? parseNullableDouble(values.get(opacityIdx))
-                        : null;
-
-                final String label = labelIdx != -1 && values.size() > labelIdx
-                        ? values.get(labelIdx)
-                        : null;
-
-                factsByKey.put(key, new Fact(key, type, img, worldToMap,
-                        new double[]{worldX, worldY}, vertices, fill, opacity, label));
-            }
-        }
-
-        final List<Fact> facts = new ArrayList<>(factsByKey.values());
+        final List<Fact> facts = FloorMapFactTableParser.parse(
+                tableResult.getColumns(),
+                tableResult.getRows(),
+                aliasByRole,
+                Console::error);
 
         // Facts paint in the configured type z-order (order backgrounds first on
         // the Settings tab so they sit behind); events draw on top.
@@ -1025,6 +954,7 @@ public class FloorMapMapPresenter
             && !lastRawEventObjects.isEmpty()
             && lastFacts != null
             && !lastFacts.isEmpty()) {
+            //noinspection SequencedCollectionMethodCanBeUsed
             Console.error("Floor map: none of the " + lastRawEventObjects.size()
                           + " event entities could be placed. Their location column names objects"
                           + " like '" + lastRawEventObjects.get(0).getLocationRef()
@@ -1157,36 +1087,6 @@ public class FloorMapMapPresenter
         floorMapGroupsPresenter.setRoster(entities, this::entityDisplayName);
     }
 
-    /**
-     * Parses a comma-separated string representation of a 2D affine transformation
-     * matrix {@code [a, b, c, d, e, f]} into a {@link FloorMapTransformationMatrix}.
-     * Handles optional square brackets and quotes in the input.
-     *
-     * @param str the matrix string to parse, e.g. {@code "[1,0,0,1,100,200]"}
-     * @return the parsed matrix, or {@link FloorMapTransformationMatrix#identity()}
-     *         if the string is {@code null}, empty, or unparseable
-     */
-    private FloorMapTransformationMatrix parseMatrix(final String str) {
-        if (str == null || str.trim().isEmpty()) {
-            return FloorMapTransformationMatrix.identity();
-        }
-        try {
-            final String clean = str.replace("[", "").replace("]", "").replace("\"", "");
-            final String[] parts = clean.split(",");
-            if (parts.length >= 6) {
-                final double a = Double.parseDouble(parts[0].trim());
-                final double b = Double.parseDouble(parts[1].trim());
-                final double c = Double.parseDouble(parts[2].trim());
-                final double d = Double.parseDouble(parts[3].trim());
-                final double e = Double.parseDouble(parts[4].trim());
-                final double f = Double.parseDouble(parts[5].trim());
-                return new FloorMapTransformationMatrix(a, b, c, d, e, f);
-            }
-        } catch (final Exception e) {
-            Console.error("Failed to parse matrix string: " + str, e);
-        }
-        return FloorMapTransformationMatrix.identity();
-    }
 
     /**
      * The query column alias for a role, or {@code null} when the schema does
@@ -1198,75 +1098,8 @@ public class FloorMapMapPresenter
         return path != null ? FloorMapQueryBuilder.buildColumnAlias(path, vf) : null;
     }
 
-    /**
-     * Parses a flat comma-separated area geometry string
-     * {@code "[x0, y0, x1, y1, ...]"} into vertex pairs. Returns {@code null}
-     * for a missing/short array (fewer than 3 vertices); a trailing odd value
-     * is ignored — matching {@code FloorMapEntryParser}'s behaviour.
-     */
-    private double[][] parseVertices(final String str) {
-        if (str == null || str.trim().isEmpty()) {
-            return null;
-        }
-        try {
-            final String clean = str.replace("[", "").replace("]", "").replace("\"", "");
-            final String[] parts = clean.split(",");
-            final int count = parts.length / 2;
-            if (count < 3) {
-                return null;
-            }
-            final double[][] vertices = new double[count][];
-            for (int i = 0; i < count; i++) {
-                vertices[i] = new double[]{
-                        Double.parseDouble(parts[i * 2].trim()),
-                        Double.parseDouble(parts[i * 2 + 1].trim())};
-            }
-            return vertices;
-        } catch (final Exception e) {
-            Console.error("Failed to parse geometry string: " + str, e);
-            return null;
-        }
-    }
 
-    /**
-     * Parses a double, returning {@code null} for blank or unparseable input.
-     */
-    private Double parseNullableDouble(final String str) {
-        if (str == null || str.trim().isEmpty()) {
-            return null;
-        }
-        try {
-            return Double.parseDouble(str.trim());
-        } catch (final NumberFormatException e) {
-            return null;
-        }
-    }
 
-    /**
-     * Parses a comma-separated string representation of 2D coordinates {@code [x, y]}
-     * into a double array. Handles optional square brackets and quotes in the input.
-     *
-     * @param str the coordinate string to parse, e.g. {@code "[100.5, 200.3]"}
-     * @return a two-element array {@code {x, y}}, or {@code null} if the string is
-     *         {@code null}, empty, or unparseable
-     */
-    private double[] parseCoords(final String str) {
-        if (str == null || str.trim().isEmpty()) {
-            return null;
-        }
-        try {
-            final String clean = str.replace("[", "").replace("]", "").replace("\"", "");
-            final String[] parts = clean.split(",");
-            if (parts.length >= 2) {
-                final double x = Double.parseDouble(parts[0].trim());
-                final double y = Double.parseDouble(parts[1].trim());
-                return new double[]{x, y};
-            }
-        } catch (final Exception e) {
-            Console.error("Failed to parse coordinates string: " + str, e);
-        }
-        return null;
-    }
 
     /**
      * Initialises the timeline range to ±24 hours around the currently selected time,
@@ -1332,7 +1165,7 @@ public class FloorMapMapPresenter
         for (final Map.Entry<String, String> entry : vars.entrySet()) {
             resolved = resolved.replace(
                     "param('" + entry.getKey() + "')",
-                    "\"" + entry.getValue() + "\"");
+                    "\"" + QuotedStringUtil.escapeDoubleQuoted(entry.getValue()) + "\"");
         }
         return resolved;
     }

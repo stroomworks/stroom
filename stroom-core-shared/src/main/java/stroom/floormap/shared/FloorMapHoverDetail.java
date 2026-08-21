@@ -74,10 +74,10 @@ public final class FloorMapHoverDetail {
      * @return the caption, or {@code null} when there is neither
      */
     public static String caption(final String id, final String name) {
-        if (isBlank(name)) {
+        if (isNotBlank(name)) {
             return name.trim();
         }
-        return isBlank(id)
+        return isNotBlank(id)
                 ? id.trim()
                 : null;
     }
@@ -114,16 +114,16 @@ public final class FloorMapHoverDetail {
                                      final String caption) {
         final List<String> lines = new ArrayList<>();
 
-        if (isBlank(type)) {
+        if (isNotBlank(type)) {
             lines.add("Type: " + type.trim());
         }
         lines.addAll(areaLines(areaNames));
-        if (isBlank(positionText)) {
+        if (isNotBlank(positionText)) {
             lines.add("Position: " + positionText.trim());
         }
         // The caption is already the id for an unnamed entity; saying it twice
         // would push the useful lines further from the pointer for nothing.
-        if (isBlank(id) && !id.trim().equals(caption)) {
+        if (isNotBlank(id) && !id.trim().equals(caption)) {
             lines.add("Id: " + id.trim());
         }
         return Collections.unmodifiableList(lines);
@@ -148,7 +148,7 @@ public final class FloorMapHoverDetail {
         }
         final List<String> named = new ArrayList<>(areaNames.size());
         for (final String name : areaNames) {
-            if (isBlank(name)) {
+            if (isNotBlank(name)) {
                 named.add(name.trim());
             }
         }
@@ -156,6 +156,7 @@ public final class FloorMapHoverDetail {
             return Collections.singletonList(NO_AREA);
         }
         if (named.size() == 1) {
+            //noinspection SequencedCollectionMethodCanBeUsed
             return Collections.singletonList("Inside " + named.get(0));
         }
         final List<String> lines = new ArrayList<>(named.size() + 1);
@@ -168,7 +169,8 @@ public final class FloorMapHoverDetail {
         return Collections.unmodifiableList(lines);
     }
 
-    private static boolean isBlank(final String s) {
+    /** {@code true} if {@code s} is non-null and holds something other than whitespace. */
+    private static boolean isNotBlank(final String s) {
         return s != null && !s.trim().isEmpty();
     }
 }

@@ -66,8 +66,12 @@ import java.util.function.Consumer;
  * {@link #getHiddenTypes()} / {@link #getDimmedTypes()} and forwards them to
  * {@code FloorMapCanvasPresenter.setLayerVisibility(...)}.</p>
  *
- * <p>Editor-only controls (reorder, lock, appearance) will be added here in a
- * later increment; {@link #setEditorMode(boolean)} distinguishes the tabs.</p>
+ * <p>Editor-only controls are implemented here and shown when
+ * {@link #setEditorMode(boolean)} is set: drag-and-keyboard reordering (which
+ * rewrites the document's {@link TypeStyle} order, so it persists), a per-layer
+ * lock that stops its items being moved on the canvas, and an appearance dialog
+ * per layer. The lock is transient client-side state; the order and appearance
+ * are document edits.</p>
  */
 public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersView> {
 
@@ -257,7 +261,12 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         final Set<String> saved = new HashSet<>();
         for (int i = 0; i < layers.size(); i++) {
             final TypeStyle ts = layers.get(i);
-            if (ts.getType() != null) {
+            // Null-tolerant because this runs on every document read: a stored typeStyles
+            // array carrying a literal null would otherwise take out the whole Layers
+            // panel on open, rather than costing one row. Note the filtering here is
+            // load-bearing beyond this loop — moveBy() relies on a null-typed layer having
+            // no row, and therefore no grip to reorder from.
+            if (ts != null && ts.getType() != null) {
                 saved.add(ts.getType());
                 list.add(buildRow(ts, i));
             }

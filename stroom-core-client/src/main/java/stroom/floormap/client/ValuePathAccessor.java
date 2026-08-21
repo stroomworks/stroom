@@ -42,8 +42,17 @@ public final class ValuePathAccessor {
     /**
      * Parses a raw JSON string into a mutable {@link JSONObject}.
      *
+     * <p><strong>Throws on malformed JSON; it does not return {@code null}.</strong> The
+     * delegate is {@link JSONParser#parseStrict(String)}, which raises an unchecked
+     * exception. {@code null} is returned only for null, empty, or valid-but-non-object
+     * input. Note the difference from the similarly-named {@code JsonValueAccessor.parse},
+     * which does catch - two entry points with the same name and opposite failure
+     * contracts, so check which one you are holding.</p>
+     *
      * @param raw the raw JSON string; must start with {@code {}
-     * @return the parsed object, or {@code null} if parsing fails
+     * @return the parsed object, or {@code null} if {@code raw} is null/empty or does not
+     *         parse to an object
+     * @throws com.google.gwt.core.client.JavaScriptException if {@code raw} is malformed
      */
     public static JSONObject parse(final String raw) {
         if (raw == null || raw.isEmpty()) {
@@ -88,9 +97,10 @@ public final class ValuePathAccessor {
         if (value != null) {
             json.put(key, value);
         } else {
-            // Remove the key entirely when setting to null.
-            // Note: json.put(key, null) would insert a JSONNull value
-            // rather than removing the key.
+            // Remove the key entirely when setting to null. GWT's JSONObject.put maps a
+            // null value onto a native `delete`, so this really does remove the property
+            // rather than storing a JSONNull - which is the opposite of what the name
+            // suggests, and the opposite of what a JVM Map would do.
             if (json.containsKey(key)) {
                 json.put(key, null);
             }

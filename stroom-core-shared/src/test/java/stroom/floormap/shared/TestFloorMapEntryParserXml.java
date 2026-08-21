@@ -263,6 +263,102 @@ class TestFloorMapEntryParserXml {
     // -----------------------------------------------------------------------
 
     /**
+     * A value written as a CDATA section reads exactly like plain text.
+     *
+     * <p>CDATA and text differ only in how the source document escapes them; to a
+     * reader they are the same string. Ignoring CDATA made such a value read as
+     * absent, so a fact whose type or image was wrapped in CDATA lost it.</p>
+     */
+    @Test
+    void testParse_cdataValuesAreRead() {
+        final String xml = "<entry><type><![CDATA[gate]]></type>"
+                + "<img><![CDATA[floor1.png]]></img>"
+                + "<coords>50,75</coords></entry>";
+
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("cdata-fact", 100, xml)), SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getType()).isEqualToIgnoringCase("gate");
+        assertThat(facts.getFirst().getImage()).isEqualTo("floor1.png");
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
+     * Re-serialising after an edit must not destroy CDATA content or comments.
+     *
+     * <p>This is the regression test for the data loss that a plain object drag used
+     * to cause: the editor re-serialises the whole value on every transform, and the
+     * serialiser emitted only element and text nodes, so the contents of every CDATA
+     * section and comment were silently dropped from the saved document.</p>
+     *
+     * <p>CDATA content is preserved as escaped text rather than as a CDATA section.
+     * The two forms are equivalent to any XML reader, and escaping avoids having to
+     * split the payload around a literal {@code ]]>}. What must survive is the
+     * <em>content</em>, and it does.</p>
+     */
+    @Test
+    void testSerialize_preservesCdataContentAndComments() {
+        final String xml = "<entry><type><![CDATA[gate & co]]></type>"
+                + "<!-- provenance: imported 2026-01-01 -->"
+                + "<coords>50,75</coords></entry>";
+
+        final ParsedValue parsed = ACCESSOR.parse(xml);
+        assertThat(parsed).isNotNull();
+
+        // Simulate what an object drag does: touch one field, then re-serialise.
+        ACCESSOR.setArray(parsed, "/entry/coords", new double[]{10, 20});
+        final String round = ACCESSOR.serialize(parsed);
+
+        assertThat(round)
+                .as("CDATA content must survive, escaped rather than deleted")
+                .contains("gate &amp; co");
+        assertThat(round)
+                .as("comments must survive")
+                .contains("<!-- provenance: imported 2026-01-01 -->");
+        assertThat(round)
+                .as("the edited field is written back (setArray emits doubles)")
+                .contains("10.0,20.0");
+
+        // And the round-tripped document still parses to the same fact.
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("round", 100, round)), SCHEMA, ACCESSOR, warnings::add);
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getType()).isEqualToIgnoringCase("gate & co");
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
+     * An element that is present but holds an unreadable matrix is corrupt data and
+     * is reported, whereas an element that is simply absent is not — the same
+     * present-versus-absent distinction the JSON parser draws.
+     */
+    @Test
+    void testParse_malformedMatrixIsReported_absentMatrixIsNot() {
+        final List<Fact> bad = FloorMapEntryParser.parse(
+                List.of(entry("bad", 100,
+                        "<entry><type>gate</type><coords>1,2</coords>"
+                                + "<tm-world-to-map>2,0,x,2,10,20</tm-world-to-map></entry>")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(bad).isEmpty();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst()).contains("bad");
+
+        warnings.clear();
+
+        final List<Fact> absent = FloorMapEntryParser.parse(
+                List.of(entry("fine", 100,
+                        "<entry><type>gate</type><coords>1,2</coords></entry>")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(absent).hasSize(1);
+        assertThat(absent.getFirst().getWorldToMap())
+                .isEqualTo(FloorMapTransformationMatrix.identity());
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
      * An entry whose value is not valid XML is skipped (excluded from the
      * result) while other, well-formed entries still parse, and a warning is
      * emitted for the bad one.

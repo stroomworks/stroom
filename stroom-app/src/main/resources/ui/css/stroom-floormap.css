@@ -189,52 +189,6 @@
     position: relative;
 }
 
-/* Wrapper that stacks the canvas and the hover tooltip on top of each other. */
-.stroom-floormap-timeline-histogram-canvas-wrapper {
-    position: relative;
-    width: 100%;
-    height: 48px;
-}
-
-/* The canvas itself fills the container exactly. */
-.stroom-floormap-timeline-histogram-canvas {
-    display: block;
-    width: 100%;
-    height: 48px;
-    cursor: pointer; /* indicates click-to-seek */
-    /* Subtle gradient fade at the bottom to blend into the scrubber bar. */
-    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
-    mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
-}
-
-/* Hover tooltip shown above the histogram bars while the user moves over them */
-/* The accent here — and in the scrub tooltip, area-draw hint, gesture readout and hover
-   tooltip below — comes from --button-default-primary__color, not --blue-500. These are
-   small text on the page background, so they owe 4.5:1 (WCAG 1.4.3), and --blue-500
-   measures 3.12:1 on the light theme's white. The border and caret follow the same token
-   to keep each tooltip one colour. See the speed badge above for the full reasoning. */
-.stroom-floormap-timeline-histogram-tooltip {
-    position: absolute;
-    top: 2px;
-    left: 0;
-    background-color: var(--page__background-color);
-    color: var(--floormap-accent__color);
-    border: 1px solid var(--floormap-accent__color);
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 500;
-    padding: 1px 5px;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.1s ease;
-    z-index: 15;
-}
-
-.stroom-floormap-timeline-histogram-tooltip--visible {
-    opacity: 1;
-}
-
 /* Date labels row below the bar — same grid column as the bar, so the labels
    sit exactly under the bar ends. */
 .stroom-floormap-timeline-date-labels-row {
@@ -469,8 +423,7 @@
     .stroom-floormap-timeline-speed-badge,
     .stroom-floormap-timeline-step-button,
     .stroom-floormap-timeline-settings-button,
-    .stroom-floormap-timeline-scrub-tooltip,
-    .stroom-floormap-timeline-histogram-tooltip {
+    .stroom-floormap-timeline-scrub-tooltip {
         transition: none;
     }
 }
@@ -487,101 +440,6 @@
     flex-grow: 1;
     min-height: 250px;
     height: 100%;
-}
-
-.stroom-floormap-background-list-group {
-    flex-grow: 1;
-    max-width: none;
-}
-
-.stroom-floormap-background-list-group > div {
-    width: 100%;
-}
-
-.stroom-floormap-settings-button-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-}
-
-.stroom-floormap-settings-button-row .wide-control {
-    flex-grow: 1;
-    min-width: 100px;
-}
-
-.stroom-floormap-settings-button-row .timeline-date-box {
-    flex-shrink: 0;
-    width: 220px;
-}
-
-.stroom-floormap-settings-button-row .stroom-button {
-    white-space: nowrap;
-    height: 28px;
-    padding: 0 16px;
-    min-width: 80px;
-    width: auto;
-}
-
-/* Container for the whole settings block */
-.stroom-floormap-settings-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    width: 100%;
-}
-
-/* A single horizontal row of input groups */
-.stroom-floormap-settings-row {
-    display: flex;
-    align-items: flex-end;
-    gap: 12px;
-    width: 100%;
-    max-width: 800px;
-    justify-content: flex-start;
-}
-
-/* Vertically stacks a label and its input */
-.stroom-floormap-input-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.stroom-floormap-input-group .wide-control {
-    width: 100%;
-}
-
-/* Forces the image text box to take up remaining space */
-.stroom-floormap-input-group.flex-grow {
-    flex-grow: 1;
-}
-
-/* Groups the action buttons together at the end of the row */
-.stroom-floormap-actions-group {
-    display: flex;
-    gap: 8px;
-    align-self: flex-end;
-}
-
-/* Ensure consistent label styling */
-.stroom-floormap-input-group .stroom-label {
-    font-size: 0.85em;
-    font-weight: 600;
-    color: var(--text-color--low-emphasis);
-}
-
-/* Width for the rotation spinner in settings */
-.stroom-floormap-rotation-spinner {
-    width: 80px;
-}
-
-.stroom-floormap-settings-preview {
-    width: 250px;
-    height: 250px;
-    object-fit: contain;
-    border: 1px solid var(--control__border-color);
-    background-color: #eee;
 }
 
 /* ============================================================

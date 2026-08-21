@@ -32,23 +32,29 @@ import com.gwtplatform.mvp.client.ViewImpl;
  *
  * <h3>Layout</h3>
  * <pre>
- * ┌──────────────────────────────────────────────────────┐
- * │                  Map Canvas  (MAIN)                  │  fills upper area
- * ├──────────────────────────────────────────────────────┤
- * │              Timeline control (TIMELINE)             │  fixed ~60 px
- * ├─────────────────────────┬────────────────────────────┤  ◄─ draggable
- * │    Fact List            │       Time List            │  ~1/3 total height
- * │   (FACT_LIST)           │      (TIME_LIST)           │
- * └─────────────────────────┴────────────────────────────┘
- *           ~50% width      ▲         ~50% width
- *                           └── draggable
+ * ┌─────────────────────────────────────────┬────────────┐
+ * │            Map Canvas  (MAIN)           │    DOCK    │  canvas fills,
+ * │                                         │            │  dock east
+ * ├─────────────────────────────────────────┴────────────┤  ◄─ draggable
+ * │              Timeline control (TIMELINE)             │  fixed, see
+ * ├───────────────────────────┬──────────────────────────┤  TIMELINE_HEIGHT
+ * │      Fact List            │        Time List         │  ~1/3 total height
+ * │     (FACT_LIST)           │       (TIME_LIST)        │
+ * └───────────────────────────┴──────────────────────────┘
+ *          ~50% width         ▲         ~50% width
+ *                             └── draggable
  * </pre>
  *
- * Uses three nested {@link ThinSplitLayoutPanel}s:
+ * Uses three nested {@link ThinSplitLayoutPanel}s plus a {@link DockLayoutPanel}:
  * <ul>
  *   <li><b>Outer (vertical)</b> — top area vs bottom strip (draggable).</li>
- *   <li><b>Top-inner (vertical)</b> — canvas (fill) above timeline (fixed south, no splitter).</li>
- *   <li><b>Bottom-inner (horizontal)</b> — two equal columns, Fact List | Time List (draggable).</li>
+ *   <li><b>Top-inner (horizontal)</b> — canvas (fill) beside the right-hand dock
+ *       (fixed east, hideable via the toolbar toggle).</li>
+ *   <li><b>Bottom-inner (horizontal)</b> — two equal columns, Fact List | Time List
+ *       (draggable).</li>
+ *   <li><b>{@code DockLayoutPanel}</b> — combines the timeline (fixed north) with the
+ *       bottom-inner columns; this is why the timeline is not a child of the top
+ *       area even though it is drawn directly beneath the canvas.</li>
  * </ul>
  */
 public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorView {

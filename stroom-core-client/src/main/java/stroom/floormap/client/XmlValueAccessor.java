@@ -18,6 +18,7 @@ package stroom.floormap.client;
 
 import stroom.floormap.shared.ParsedValue;
 import stroom.floormap.shared.ValueAccessor;
+import stroom.floormap.shared.XmlValueText;
 
 import com.google.gwt.xml.client.Document;
 import com.google.gwt.xml.client.Element;
@@ -90,6 +91,20 @@ public final class XmlValueAccessor implements ValueAccessor {
         return new ParsedValue(doc);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>XML element text and attribute values carry no type, so anything present
+     * is a string: a field holding {@code 5} reads back as {@code "5"}, and CDATA
+     * reads exactly as the text it wraps.</p>
+     *
+     * <p>This is the counterpart to {@code JsonValueAccessor.getString}, which
+     * returns {@code null} for a present-but-non-string value because JSON
+     * <em>is</em> typed. The two therefore disagree for the same logical field.
+     * That asymmetry is a property of the formats rather than a defect in either
+     * implementation, and it is asserted from both sides in the accessor contract
+     * tests so that neither gets "corrected" into agreement with the other.</p>
+     */
     @Override
     public String getString(final ParsedValue value,
                             final String path) {
@@ -107,6 +122,24 @@ public final class XmlValueAccessor implements ValueAccessor {
         final Element elem = findChildElement(
                 target.parent, target.localName);
         return elem != null ? getTextContent(elem) : null;
+    }
+
+    @Override
+    public boolean hasValue(final ParsedValue value, final String path) {
+        final Document doc = asDoc(value);
+        if (doc == null || path == null) {
+            return false;
+        }
+        final PathTarget target = resolvePath(doc, path);
+        if (target == null) {
+            return false;
+        }
+        if (target.isAttribute) {
+            // getAttribute returns "" for a missing attribute as well as for an
+            // empty one, so ask the node directly.
+            return target.parent.hasAttribute(target.localName);
+        }
+        return findChildElement(target.parent, target.localName) != null;
     }
 
     @Override
@@ -149,7 +182,7 @@ public final class XmlValueAccessor implements ValueAccessor {
         if (text == null || text.isEmpty()) {
             return null;
         }
-        return parseCommaSeparated(text);
+        return XmlValueText.parseCommaSeparatedNumbers(text);
     }
 
     @Override
@@ -344,15 +377,21 @@ public final class XmlValueAccessor implements ValueAccessor {
     }
 
     /**
-     * Gets the concatenated text content of an element's direct
-     * text nodes.
+     * Gets the concatenated character data of an element's direct child nodes.
+     *
+     * <p>CDATA sections count as character data. XML draws a distinction between
+     * a text node and a CDATA section, but that distinction is purely about
+     * escaping in the source document — to anything reading the value they are the
+     * same string. Ignoring CDATA here made a value written as
+     * {@code <![CDATA[...]]>} read as absent.</p>
      */
     private static String getTextContent(final Element elem) {
         final StringBuilder sb = new StringBuilder();
         final NodeList children = elem.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node child = children.item(i);
-            if (child.getNodeType() == Node.TEXT_NODE) {
+            final short type = child.getNodeType();
+            if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
                 sb.append(child.getNodeValue());
             }
         }
@@ -377,25 +416,21 @@ public final class XmlValueAccessor implements ValueAccessor {
     }
 
     /**
-     * Parses a comma-separated string of numbers.
-     */
-    private static double[] parseCommaSeparated(final String text) {
-        final String[] parts = text.split(",");
-        final double[] result = new double[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            try {
-                result[i] = Double.parseDouble(parts[i].trim());
-            } catch (final NumberFormatException e) {
-                result[i] = 0;
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Serialises an element and its children to an XML string.
-     * GWT does not provide a built-in DOM serialiser, so this is
-     * a simple recursive implementation.
+     * Serialises an element and its children to an XML string. GWT provides no
+     * built-in DOM serialiser, so this is a simple recursive implementation.
+     *
+     * <p>Handles four node types: elements, text, CDATA sections and comments.
+     * The first two were once the only ones handled, which meant a load-edit-save
+     * round trip silently deleted the <em>contents</em> of every CDATA section and
+     * every comment — and since the editor re-serialises on any object drag, that
+     * happened on the most ordinary edit there is.</p>
+     *
+     * <p>CDATA content is re-emitted as escaped text rather than as a CDATA
+     * section. The two are equivalent to every XML reader, and escaping avoids
+     * having to split the payload around any literal {@code ]]>} it contains, so
+     * the value survives exactly while the form is normalised. Comments are
+     * re-emitted as comments, since unlike CDATA there is no equivalent form to
+     * fall back on.</p>
      */
     private static String serializeElement(final Element elem) {
         final StringBuilder sb = new StringBuilder();
@@ -410,7 +445,7 @@ public final class XmlValueAccessor implements ValueAccessor {
                 final Node attr = attrs.item(i);
                 sb.append(" ").append(attr.getNodeName())
                         .append("=\"")
-                        .append(escapeXml(attr.getNodeValue()))
+                        .append(XmlValueText.escapeXml(attr.getNodeValue()))
                         .append("\"");
             }
         }
@@ -422,30 +457,19 @@ public final class XmlValueAccessor implements ValueAccessor {
             sb.append(">");
             for (int i = 0; i < children.getLength(); i++) {
                 final Node child = children.item(i);
-                if (child.getNodeType() == Node.ELEMENT_NODE) {
+                final short type = child.getNodeType();
+                if (type == Node.ELEMENT_NODE) {
                     sb.append(serializeElement((Element) child));
-                } else if (child.getNodeType() == Node.TEXT_NODE) {
-                    sb.append(escapeXml(child.getNodeValue()));
+                } else if (type == Node.TEXT_NODE
+                        || type == Node.CDATA_SECTION_NODE) {
+                    sb.append(XmlValueText.escapeXml(child.getNodeValue()));
+                } else if (type == Node.COMMENT_NODE) {
+                    sb.append("<!--").append(child.getNodeValue()).append("-->");
                 }
             }
             sb.append("</").append(elem.getTagName()).append(">");
         }
         return sb.toString();
-    }
-
-    /**
-     * Escapes XML special characters.
-     */
-    private static String escapeXml(final String text) {
-        if (text == null) {
-            return "";
-        }
-        return text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
     }
 
     /**

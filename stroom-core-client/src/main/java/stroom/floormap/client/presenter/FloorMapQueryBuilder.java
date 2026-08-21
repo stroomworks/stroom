@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.ValueFormat;
+import stroom.query.api.token.QuotedStringUtil;
 
 import java.util.List;
 
@@ -61,7 +62,13 @@ public final class FloorMapQueryBuilder {
             }
             final String expr = buildExtractExpression(path, format);
             final String alias = buildColumnAlias(path, format);
-            sb.append(", \n  ").append(expr).append(" as ").append(alias);
+            // Quoted at the point of emission, not inside buildColumnAlias: the alias is
+            // also the name the results are matched back by, and the server reports it
+            // unescaped, so the two must agree on the bare form. StroomQL accepts a quoted
+            // string after AS (TokenType.ALL_STRINGS includes DOUBLE_QUOTED_STRING) and
+            // takes the column name from its unescaped text.
+            sb.append(", \n  ").append(expr).append(" as \"")
+                    .append(QuotedStringUtil.escapeDoubleQuoted(alias)).append("\"");
         }
         return sb.toString();
     }
@@ -87,46 +94,69 @@ public final class FloorMapQueryBuilder {
         return switch (format) {
             case JSON -> {
                 final String key = ValuePathAccessor.toKey(path);
-                if (needsQuoting(key)) {
-                    // Field access on a quoted key needs the leading dot:
-                    // ."tm-world-to-map". Without it the jq expression is just
-                    // a string literal that evaluates to itself.
-                    yield "jq(Value, \".\\\"" + key + "\\\"\")";
-                } else {
-                    yield "jq(Value, \"" + path + "\")";
-                }
+                // Build the jq expression first, then escape it once for the
+                // enclosing StroomQL literal. Doing both levels inline produced
+                // backslash soup and, more importantly, escaped neither: a path
+                // containing a quote closed the StroomQL literal early.
+                final String jq = needsQuoting(key)
+                        // Field access on a quoted key needs the leading dot:
+                        // ."tm-world-to-map". Without it the jq expression is just
+                        // a string literal that evaluates to itself.
+                        ? "." + '"' + QuotedStringUtil.escapeDoubleQuoted(key) + '"'
+                        : path;
+                yield "jq(Value, \"" + QuotedStringUtil.escapeDoubleQuoted(jq) + "\")";
             }
-            case XML -> "xpath(Value, \"" + path + "\")";
+            case XML -> "xpath(Value, \""
+                    + QuotedStringUtil.escapeDoubleQuoted(path) + "\")";
         };
     }
 
     /**
-     * Derives a SQL-safe column alias from a schema path.
+     * Derives the column alias for a schema path.
      *
-     * <p>For JSON, strips the leading dot and replaces hyphens with
-     * underscores (e.g. {@code ".tm-world-to-map"} →
-     * {@code "tm_world_to_map"}).</p>
+     * <p>This is the <strong>bare</strong> name, not quoted. It is used for two things that
+     * must agree: {@link #buildFactsQuery} emits it after {@code AS} (quoting it there),
+     * and the results are matched back to their roles by comparing it against the column
+     * names the server reports — which are the unescaped form. Quoting here would break
+     * that comparison.</p>
      *
-     * <p>For XML, takes the last path segment and strips any leading
-     * {@code @} for attributes (e.g. {@code "/entry/@type"} →
-     * {@code "type"}).</p>
+     * <p><strong>The mapping is injective:</strong> two different paths always give two
+     * different aliases. That matters more than a tidy name, because the consumer looks a
+     * column up <em>by</em> alias, so two paths sharing one alias do not merely produce an
+     * odd heading — they make two roles resolve to the same column, and the map silently
+     * draws with the wrong data. Two previous behaviours broke injectivity:</p>
+     *
+     * <ul>
+     *   <li>JSON replaced hyphens with underscores, so {@code .a-b} and {@code .a_b} both
+     *       became {@code a_b}. The key is now used verbatim; a heading reads
+     *       {@code tm-world-to-map} rather than {@code tm_world_to_map}, which is also
+     *       closer to what the field is actually called.</li>
+     *   <li>XML took only the last segment, so {@code /entry/type} and
+     *       {@code /entry/meta/type} both became {@code type}. The path is now used with
+     *       only its leading {@code /} removed.</li>
+     * </ul>
+     *
+     * <p>The XML change costs some brevity in the results table — a heading reads
+     * {@code entry/type} rather than {@code type}. A friendlier scheme would have to
+     * disambiguate duplicates across the whole schema, and the obvious way to do that
+     * (suffixing {@code _2}) makes the alias depend on schema <em>order</em>, so
+     * reordering rows in the Settings grid would silently reassign columns. A stable,
+     * order-independent alias is worth a longer heading.</p>
+     *
+     * <p>Special characters need no escaping here: whatever the path contains, the alias is
+     * quoted where it is emitted.</p>
      *
      * @param path   the schema path
      * @param format the value serialisation format
-     * @return the SQL-safe column alias
+     * @return the bare column alias; quote it before putting it in query text
      */
     public static String buildColumnAlias(final String path,
                                           final ValueFormat format) {
         return switch (format) {
-            case JSON -> ValuePathAccessor.toKey(path).replace("-", "_");
-            case XML -> {
-                final String last = path.contains("/")
-                        ? path.substring(path.lastIndexOf('/') + 1)
-                        : path;
-                yield last.startsWith("@")
-                        ? last.substring(1)
-                        : last;
-            }
+            case JSON -> ValuePathAccessor.toKey(path);
+            case XML -> path.startsWith("/")
+                    ? path.substring(1)
+                    : path;
         };
     }
 

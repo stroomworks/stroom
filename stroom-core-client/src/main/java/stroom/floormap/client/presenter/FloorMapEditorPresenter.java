@@ -56,7 +56,6 @@ import stroom.sqlstore.shared.TemporalStoreTimeRange;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.TemporalEntry;
-import stroom.util.shared.TemporalEntryId;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.help.client.HelpButton;
@@ -92,19 +91,24 @@ import javax.inject.Provider;
  *
  * <h3>Layout</h3>
  * <pre>
- * ┌──────────────────────────────────────────────────────┐
- * │                  Map Canvas  (MAIN)                  │
- * ├──────────────────────────────────────────────────────┤
+ * ┌─────────────────────────────────────────┬────────────┐
+ * │            Map Canvas  (MAIN)           │    DOCK    │
+ * ├─────────────────────────────────────────┴────────────┤ ◄─ draggable
  * │              Timeline control (TIMELINE)             │  fixed height
- * ├────────────────────┬────────────────┬────────────────┤
- * │    Fact List       │   Time List    │   Properties   │
- * │   (FACT_LIST)      │  (TIME_LIST)   │  (PROPERTIES)  │
- * └────────────────────┴────────────────┴────────────────┘
+ * ├───────────────────────────┬──────────────────────────┤
+ * │        Fact List          │        Time List         │
+ * │       (FACT_LIST)         │       (TIME_LIST)        │
+ * └───────────────────────────┴──────────────────────────┘
  * </pre>
  *
+ * <p>Object properties are <em>not</em> a slot: they open as a modal dialog
+ * ({@code FloorMapObjectEditPresenter}), so there is no {@code PROPERTIES}
+ * region to lay out. The right-hand dock holds the Layers and Groups panels.</p>
+ *
  * <h3>Shared selection model (single source of truth)</h3>
- * <p>All inter-panel state lives here. Child panels signal changes to this
- * presenter only; they never call each other directly.</p>
+ * <p>The state itself lives in {@link FloorMapEditorModel}, which this presenter
+ * owns and is the only thing that mutates. Child panels signal changes to this
+ * presenter only; they never call each other directly. What the model holds:</p>
  *
  * <ul>
  *   <li>{@code selectedFactKey} — key of the selected fact, or {@code null}</li>
@@ -330,7 +334,7 @@ public class FloorMapEditorPresenter
         // its Tracking grid for the same purpose; on the Editor tab the Fact List
         // is the navigable row-per-object view of what the canvas is drawing.
         floorMapCanvasPresenter.setTextAlternativeId(
-                FloorMapFactListPresenter.getGridElementId());
+                floorMapFactListPresenter.getGridElementId());
         // Properties are shown as a modal dialog — no slot needed.
     }
 
@@ -764,7 +768,16 @@ public class FloorMapEditorPresenter
         } else {
             final long min = range.getMinEffectiveTimeMs();
             final long max = range.getMaxEffectiveTimeMs();
-            floorMapTimelinePresenter.setTimeRange(min, max);
+            if (min < max) {
+                floorMapTimelinePresenter.setTimeRange(min, max);
+            } else {
+                // A store holding a single effective time reports min == max, which is not
+                // a usable playback range — a zero-length range leaves the step buttons and
+                // the progress bar with nowhere to move, and makes playback wrap on every
+                // frame. Show a window around that instant instead, matching what the
+                // no-data branch above does.
+                floorMapTimelinePresenter.setTimeRange(min - ONE_DAY_MS, max + ONE_DAY_MS);
+            }
             floorMapTimelinePresenter.setCurrentTime(max);
             model.setSelectedTime(max);
         }
@@ -1187,14 +1200,15 @@ public class FloorMapEditorPresenter
                         return false;
                     }
 
-                    // When the effective time changed, a "move" deletes the
-                    // original version; a "clone" keeps it alongside the new one.
-                    if (!clone && timeChanged) {
-                        model.getPendingChanges().recordDeletion(new TemporalEntryId(
-                                saved.getMap(), saved.getKey(),
-                                entry.getEffectiveTimeMs()));
+                    // A "move" takes the version to its new time and removes the old
+                    // shard; a "clone" leaves the original alongside the new one. The
+                    // delete-and-upsert pairing a move needs lives in the model, so it
+                    // cannot be half-applied from here.
+                    if (clone || !timeChanged) {
+                        model.stageUpdate(saved);
+                    } else {
+                        model.stageVersionMove(saved, entry.getEffectiveTimeMs());
                     }
-                    model.getPendingChanges().recordUpdate(saved);
                     setDirty(true);
                     refreshTimeListAtTime(saved.getEffectiveTimeMs());
                     refreshCanvas();
@@ -1236,7 +1250,7 @@ public class FloorMapEditorPresenter
                 "Add Time Properties",
                 newEntry,
                 saved -> {
-                    model.getPendingChanges().recordCreation(saved);
+                    model.stageCreation(saved);
                     setDirty(true);
                     loadAtTime(model.getSelectedTime());
                     refreshTimeListAtTime(model.getSelectedTime());
@@ -1464,19 +1478,41 @@ public class FloorMapEditorPresenter
                     .icon(SvgImage.EDIT)
                     .text("Edit Properties")
                     .command(() -> {
+                        final String editMapName = getMapName();
+                        if (editMapName == null) {
+                            return;
+                        }
                         // Select through the one selection path so *every* side
                         // effect happens — notably
                         // FloorMapObjectEditPresenter.setObject, without which the
                         // dialog writes under whatever key it was last given.
+                        // This must also come before the fetch: fetchTimeList drops
+                        // a response whose key is not the current selection, so
+                        // selecting second would discard the very list we asked for.
                         applySelection(Collections.singletonList(objectId));
 
-                        // Edit the shard the canvas is showing (active at the
-                        // scrubber), not the first key match (which could be a
-                        // historical shard under a pending time-version).
-                        final TemporalEntry active = model.activeMergedEntryForKey(objectId);
-                        if (active != null) {
-                            onEditTimeInTimeList(active);
-                        }
+                        // Then FETCH before opening, for the same reason as "Add
+                        // Time Version" below. The dialog's same-time overwrite
+                        // guard reads the merged time list, and until this fetch
+                        // lands that list still holds the *previously* selected
+                        // fact's shards. Opening immediately let a move onto an
+                        // occupied time pass the guard, which deletes the original
+                        // shard and upserts over the version already at that time,
+                        // collapsing two versions into one with nothing reported.
+                        fetchTimeList(editMapName, objectId, () -> {
+                            // Resolved inside the callback, not before it: picking
+                            // the shard from the pre-fetch list could hand the
+                            // dialog one belonging to the previous selection.
+                            //
+                            // Edit the shard the canvas is showing (active at the
+                            // scrubber), not the first key match (which could be a
+                            // historical shard under a pending time-version).
+                            final TemporalEntry active =
+                                    model.activeMergedEntryForKey(objectId);
+                            if (active != null) {
+                                onEditTimeInTimeList(active);
+                            }
+                        });
                     })
                     .build());
 
@@ -1593,7 +1629,7 @@ public class FloorMapEditorPresenter
                     "Add Object",
                     entry,
                     saved -> {
-                        model.getPendingChanges().recordCreation(saved);
+                        model.stageCreation(saved);
                         setDirty(true);
                         model.setSelectedFactKey(saved.getKey());
 
@@ -1724,7 +1760,7 @@ public class FloorMapEditorPresenter
                     "Add Area",
                     entry,
                     saved -> {
-                        model.getPendingChanges().recordCreation(saved);
+                        model.stageCreation(saved);
                         setDirty(true);
                         model.setSelectedFactKey(saved.getKey());
 
@@ -1784,7 +1820,7 @@ public class FloorMapEditorPresenter
                     valueSchema(),
                     ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
 
-            model.getPendingChanges().recordCreation(newEntry);
+            model.stageCreation(newEntry);
             setDirty(true);
             model.setSelectedFactKey(newKey);
             loadAtTime(model.getSelectedTime());

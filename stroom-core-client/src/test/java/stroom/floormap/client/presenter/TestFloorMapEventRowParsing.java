@@ -52,12 +52,12 @@ class TestFloorMapEventRowParsing {
                 LOCATION_COLUMN);
 
         assertThat(parsed).hasSize(1);
-        assertThat(parsed.get(0).getLocationRef()).isNull();
-        assertThat(parsed.get(0).getX()).isEqualTo(120.5);
+        assertThat(parsed.getFirst().getLocationRef()).isNull();
+        assertThat(parsed.getFirst().getX()).isEqualTo(120.5);
 
         final List<FloorMapObject> placed = FloorMapLocationResolver.resolve(parsed, facts());
-        assertThat(placed.get(0).getX()).isEqualTo(120.5);
-        assertThat(placed.get(0).getY()).isEqualTo(340);
+        assertThat(placed.getFirst().getX()).isEqualTo(120.5);
+        assertThat(placed.getFirst().getY()).isEqualTo(340);
     }
 
     /**
@@ -72,13 +72,13 @@ class TestFloorMapEventRowParsing {
                 LOCATION_COLUMN);
 
         assertThat(parsed).hasSize(1);
-        assertThat(parsed.get(0).getLocationRef()).isEqualTo("G-MAIN_ENTRANCE");
+        assertThat(parsed.getFirst().getLocationRef()).isEqualTo("G-MAIN_ENTRANCE");
 
         final List<FloorMapObject> placed = FloorMapLocationResolver.resolve(parsed, facts());
         assertThat(placed).hasSize(1);
-        assertThat(placed.get(0).getId()).isEqualTo("joe.blogs@example.org");
-        assertThat(placed.get(0).getX()).isEqualTo(10);
-        assertThat(placed.get(0).getY()).isEqualTo(20);
+        assertThat(placed.getFirst().getId()).isEqualTo("joe.blogs@example.org");
+        assertThat(placed.getFirst().getX()).isEqualTo(10);
+        assertThat(placed.getFirst().getY()).isEqualTo(20);
     }
 
     /** An email entity id with no type column still reads as a person. */
@@ -89,7 +89,7 @@ class TestFloorMapEventRowParsing {
                 ENTITY_COLUMN,
                 LOCATION_COLUMN);
 
-        assertThat(parsed.get(0).getType()).isEqualTo("person");
+        assertThat(parsed.getFirst().getType()).isEqualTo("person");
     }
 
     /**
@@ -125,7 +125,8 @@ class TestFloorMapEventRowParsing {
                 FloorMapTransformationMatrix.identity(), new double[]{10, 20}));
     }
 
-    private static Row row(final String entityId, final String location) {
+    private static Row row(@SuppressWarnings("SameParameterValue") final String entityId,
+                           final String location) {
         return Row.builder()
                 .values(Arrays.asList(entityId, location))
                 .build();

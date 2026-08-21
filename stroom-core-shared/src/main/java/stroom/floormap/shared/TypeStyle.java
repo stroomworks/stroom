@@ -244,6 +244,14 @@ public class TypeStyle {
         final Set<String> present = new LinkedHashSet<>();
         if (existing != null) {
             for (final TypeStyle style : existing) {
+                // Skip a null element rather than dereferencing it. Nothing in the
+                // application produces one, but a hand-edited or badly imported document
+                // can carry a literal null in the typeStyles array, and the sibling
+                // walkers over this same list (colourForType, withAreaStyle,
+                // FloorMapDocSession.hasAreaStyle) all guard for it — this one did not.
+                if (style == null) {
+                    continue;
+                }
                 result.add(style);
                 if (style.getType() != null) {
                     present.add(style.getType());

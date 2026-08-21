@@ -17,6 +17,8 @@
 package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
+import stroom.document.client.event.ChangeEvent;
+import stroom.document.client.event.HasChangeHandlers;
 import stroom.entity.client.presenter.HasClose;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
@@ -36,6 +38,7 @@ import stroom.task.client.TaskMonitorFactory;
 
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
+import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
@@ -57,7 +60,7 @@ import javax.inject.Inject;
  */
 public class FloorMapQueryPresenter
         extends MyPresenterWidget<FloorMapQueryView>
-        implements HasToolbar, HasClose {
+        implements HasToolbar, HasClose, HasChangeHandlers {
 
     private final QueryEditPresenter queryEditPresenter;
     private String currentEntityColumn;
@@ -360,6 +363,30 @@ public class FloorMapQueryPresenter
                 .eventsQueryTimeRange(queryEditPresenter.getTimeRange())
                 .eventsQueryTablePreferences(queryEditPresenter.write())
                 .build();
+    }
+
+    /**
+     * Registers a handler for changes to <em>this tab's</em> query.
+     *
+     * <p>Delegates to the embedded {@link QueryEditPresenter}, whose own
+     * {@code addChangeHandler} uses {@code addHandlerToSource} — so the handler
+     * fires only for this query editor.</p>
+     *
+     * <p>This exists so callers do not have to reach the shared event bus for the
+     * same purpose. {@code ChangeEvent} is fired application-wide — by editor and
+     * theme preferences, dictionary lists, expression editors and query result
+     * tables, some of them on every keystroke — so a bus-level subscription hears
+     * all of it and cannot tell which document, or which feature, it came from.
+     * {@link FloorMapPresenter} previously did exactly that to detect an edit to
+     * the Events Query tab, and consequently marked the floor map dirty whenever
+     * anything anywhere in the application changed.</p>
+     *
+     * @param handler notified when this tab's query changes
+     * @return the registration; unregister it to stop listening
+     */
+    @Override
+    public HandlerRegistration addChangeHandler(final ChangeEvent.ChangeHandler handler) {
+        return queryEditPresenter.addChangeHandler(handler);
     }
 
     public String getQuery() {

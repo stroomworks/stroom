@@ -185,4 +185,30 @@ class TestFact {
         assertThat(fact.withVertices(new double[][]{{-1, -1}, {1, -1}, {1, 1}})
                 .getLabel()).isEqualTo("Loading Bay");
     }
+
+    /**
+     * A singular placement matrix is reported as unusable, so the renderer and hit-testing
+     * both refuse the fact instead of disagreeing about it.
+     */
+    @Test
+    void testHasUsablePlacement() {
+        assertThat(new Fact("ok", "t", null, FloorMapTransformationMatrix.identity(),
+                new double[]{1, 2}).hasUsablePlacement()).isTrue();
+
+        // The all-zero matrix: an image emits matrix(0,0,0,0,0,0) and is not drawn by the
+        // browser, while a point transforms to (0,0) whatever its own coords say.
+        assertThat(new Fact("zero", "t", null,
+                new FloorMapTransformationMatrix(0, 0, 0, 0, 0, 0),
+                new double[]{1, 2}).hasUsablePlacement()).isFalse();
+
+        // Collapsed on one axis only - still singular, still cannot place a 2D shape.
+        assertThat(new Fact("flat", "t", null,
+                new FloorMapTransformationMatrix(1, 0, 0, 0, 0, 0),
+                new double[]{1, 2}).hasUsablePlacement()).isFalse();
+
+        // A translation-only matrix is invertible, so it stays usable.
+        assertThat(new Fact("moved", "t", null,
+                new FloorMapTransformationMatrix(1, 0, 0, 1, 50, 50),
+                new double[]{1, 2}).hasUsablePlacement()).isTrue();
+    }
 }

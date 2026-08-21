@@ -24,9 +24,6 @@ import stroom.annotation.impl.AnnotationValues;
 import stroom.annotation.impl.AnnotationValues.FieldValueEntry;
 import stroom.annotation.impl.dao.AnnotationEventLinkCache.AnnotationEventLink;
 import stroom.annotation.impl.db.AnnotationDbConnProvider;
-import stroom.annotation.impl.db.jooq.tables.AnnotationDataLink;
-import stroom.annotation.impl.db.jooq.tables.AnnotationLink;
-import stroom.annotation.impl.db.jooq.tables.AnnotationTagLink;
 import stroom.annotation.impl.db.jooq.tables.records.AnnotationDataLinkRecord;
 import stroom.annotation.impl.db.jooq.tables.records.AnnotationEntryRecord;
 import stroom.annotation.impl.db.jooq.tables.records.AnnotationLinkRecord;
@@ -162,6 +159,11 @@ import static stroom.annotation.impl.db.jooq.tables.AnnotationTagLink.ANNOTATION
  * Best for large result sets with filtering.
  */
 // Make this a singleton so we don't keep recreating the mappers.
+// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
+// The only local divergence in this file is the identifier `value` renamed to `val`, for
+// compatibility with recent JDKs. Verified behaviour-neutral: neutralise that one rename and
+// the diff against the merge base is empty. Same workaround as RowValueFilter. If upstream has
+// done the same rename, or no longer needs it, take their version wholesale.
 @SuppressWarnings("checkstyle:FileLength")
 @Singleton
 class AnnotationDaoImpl implements AnnotationDao, Clearable {

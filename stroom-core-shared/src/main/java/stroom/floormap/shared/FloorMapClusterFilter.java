@@ -267,7 +267,7 @@ public final class FloorMapClusterFilter {
         }
         return NO_AREA.equals(area)
                 ? member.getAreaNames().isEmpty()
-                : member.getAreaNames().contains(area);
+                : containsIgnoreCase(member.getAreaNames(), area);
     }
 
     private static boolean matchesGroup(final FloorMapClusterMember member, final String group) {
@@ -276,7 +276,30 @@ public final class FloorMapClusterFilter {
         }
         return NO_GROUP.equals(group)
                 ? member.getGroupNames().isEmpty()
-                : member.getGroupNames().contains(group);
+                : containsIgnoreCase(member.getGroupNames(), group);
+    }
+
+    /**
+     * Case-insensitive membership test, so matching agrees with the case-insensitive
+     * de-duplication that built the options.
+     *
+     * <p>The two used to disagree, and the disagreement lost data silently.
+     * {@link #areaOptions} and {@link #groupOptions} collect names into a
+     * {@code TreeSet(String.CASE_INSENSITIVE_ORDER)}, so "Lobby" and "lobby" collapse
+     * into whichever spelling was seen first and only that one is offered. Matching
+     * with a case-sensitive {@code List.contains} then kept only the members spelled
+     * that way — so a user selecting the sole option the dropdown offered silently
+     * lost every member whose stored name differed only in case, with the filter
+     * reporting no reason. Either half could have been changed; matching
+     * case-insensitively is the one that keeps every member reachable.</p>
+     */
+    private static boolean containsIgnoreCase(final List<String> names, final String target) {
+        for (final String name : names) {
+            if (name != null && name.equalsIgnoreCase(target)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

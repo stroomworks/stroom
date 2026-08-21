@@ -169,20 +169,55 @@ public final class FloorMapEntryParser {
     /**
      * Parses a 6-element transformation matrix from a numeric array at the
      * given path. Returns {@link FloorMapTransformationMatrix#identity()} if
-     * the path is null or the array is missing/malformed.
+     * the path is null or the array is missing/malformed — an absent matrix
+     * means "place this fact without transforming it", which is a legitimate
+     * state.
+     *
+     * <p>A matrix that <em>is</em> present but unusable is a different matter and
+     * is rejected. "Unusable" covers three cases: the value cannot be read as six
+     * numbers at all, there are fewer than six of them, or the six form a
+     * degenerate transform that collapses the fact to a single point. All three
+     * can only be corrupt data, and all three used to be accepted silently — the
+     * degenerate case then went on to quietly mis-transform every coordinate
+     * derived from it, including coordinates the vertex editor writes back to the
+     * document. Throwing means the caller's per-entry handler skips the entry and
+     * reports it, so the user learns which row is bad rather than wondering why an
+     * object sits at the origin.</p>
+     *
+     * <p>The distinction that matters is <em>present</em> versus
+     * <em>absent</em>, which is why this consults
+     * {@link ValueAccessor#hasValue} rather than inferring absence from a
+     * {@code null} array. Data arriving from a stream may legitimately omit the
+     * matrix, and that must stay silent; data that is there but wrong must not.</p>
+     *
+     * @throws IllegalArgumentException if a matrix is present but unusable
      */
     private static FloorMapTransformationMatrix parseMatrix(
             final ValueAccessor accessor, final ParsedValue parsed,
             final String path) {
-        if (path == null) {
+        if (path == null || !accessor.hasValue(parsed, path)) {
+            // Role not mapped, or the row simply does not carry a matrix. Placing the
+            // fact untransformed is the correct reading of "no transform supplied".
             return FloorMapTransformationMatrix.identity();
         }
         final double[] arr = accessor.getArray(parsed, path);
-        if (arr != null && arr.length >= 6) {
-            return new FloorMapTransformationMatrix(
-                    arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
+        if (arr == null) {
+            throw new IllegalArgumentException(
+                    "world-to-map matrix at '" + path + "' is present but is not a "
+                            + "readable numeric array");
         }
-        return FloorMapTransformationMatrix.identity();
+        if (arr.length < 6) {
+            throw new IllegalArgumentException(
+                    "world-to-map matrix at '" + path + "' needs 6 values but has "
+                            + arr.length);
+        }
+        final FloorMapTransformationMatrix matrix = new FloorMapTransformationMatrix(
+                arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
+        if (!matrix.hasInverse()) {
+            throw new IllegalArgumentException(
+                    "world-to-map matrix at '" + path + "' is not invertible: " + matrix);
+        }
+        return matrix;
     }
 
     /**

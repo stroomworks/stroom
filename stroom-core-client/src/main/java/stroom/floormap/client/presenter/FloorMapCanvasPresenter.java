@@ -1135,8 +1135,24 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     selectedObjectIds.add(clickSelectId);
                     fireSelectionChanged();
                 } else if (!selectedObjectIds.isEmpty()) {
+                    if (trackedObjectId != null) {
+                        // Tracking owns the highlight, so a click on empty canvas must not
+                        // clear it. Doing so left trackedObjectId set with nothing
+                        // highlighted: the camera kept following, and the Tracking panel's
+                        // row stayed selected while the map showed no selection. That is
+                        // exactly the state handleViewKeys() declines to create, which is
+                        // why Escape is not handled on the Map tab — stopping a follow goes
+                        // through the Tracking panel, which keeps both ends in step.
+                        // A stray click should not be a second, silent way in.
+                        return;
+                    }
                     selectedObjectIds.clear();
                     fireSelectionChanged();
+                    // Repaint explicitly rather than relying on the selection handler:
+                    // only the Editor tab installs one (FloorMapEditorPresenter:293), so on
+                    // the Map tab fireSelectionChanged() notifies nobody and the cleared
+                    // highlight stayed painted until something unrelated redrew.
+                    redraw();
                 }
             }
         }));
@@ -1264,6 +1280,31 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     finishAreaDrawing();
                     return;
                 }
+            }
+            // Escape during a transform or vertex drag cancels the gesture, before the
+            // clear-selection branch below can see it.
+            //
+            // Without this, those gestures fell through to clear-selection, which only
+            // *accidentally* cancelled MOVING, SCALING and ROTATING - their mouseup commit
+            // happens to check the selection, so emptying it suppressed the write. The
+            // vertex commit does not check the selection (it gates on moved/inserted, the
+            // editing key and locked layers), so Escape mid-vertex-drag looked like a
+            // cancel and then persisted the new geometry anyway on mouseup. Cancelling
+            // explicitly makes all four behave the same and stops the correctness of the
+            // other three resting on a coincidence.
+            //
+            // A second Escape then clears the selection, as before.
+            if (editMode
+                    && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
+                    && (gesture == Gesture.MOVING
+                        || gesture == Gesture.SCALING
+                        || gesture == Gesture.ROTATING
+                        || gesture == Gesture.MOVING_VERTEX)) {
+                abortGesture();
+                // The abandoned preview - a displaced object, or a dragged vertex - is
+                // still painted until something repaints.
+                redraw();
+                return;
             }
             if (editMode
                     && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
@@ -2042,7 +2083,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private boolean selectionTransformable() {
         for (final Fact fact : facts) {
+            // At least one *unlocked* fact must be transformable. A locked one does not
+            // count: the mouseup commit filters it out, so handles shown for an
+            // all-locked selection were live to the touch and could never do anything -
+            // a full gesture with a live preview, then nothing persisted. A mixed
+            // selection still gets handles, correctly, for its unlocked members.
             if (selectedObjectIds.contains(fact.getKey())
+                    && !lockedKeys.contains(fact.getKey())
                     && (fact.hasImage() || fact.hasVertices())) {
                 return true;
             }
@@ -2152,6 +2199,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void beginVertexEdit(final int index, final boolean insert) {
         final Fact area = selectedAreaFact();
         if (area == null || index < 0 || lockedKeys.contains(area.getKey())) {
+            isDragging = false;
+            gesture = Gesture.NONE;
+            return;
+        }
+        // Dragging a vertex converts screen coordinates into the fact's local space
+        // through the inverse of this matrix, and persists the result. A
+        // non-invertible matrix would make that conversion meaningless, so refuse the
+        // edit rather than write coordinates in the wrong space back to the document.
+        // FloorMapEntryParser rejects non-invertible matrices at parse time, so this is
+        // defence in depth against a matrix composed in the UI.
+        if (!area.getWorldToMap().hasInverse()) {
             isDragging = false;
             gesture = Gesture.NONE;
             return;
@@ -2648,9 +2706,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /**
      * Returns the facts to render, applying any in-progress transform gesture:
-     * each selected fact's world-to-map matrix is composed as
+     * each selected, unlocked fact's world-to-map matrix is composed as
      * {@code pendingTransform · oldMatrix} so a move/scale/rotate is shown live.
      * On release the same transform is persisted via {@link DragHandler#onTransform}.
+     *
+     * <p>Items on a locked layer are excluded, matching the mouseup commit, which
+     * filters {@link #lockedKeys} out of the transform. Without that the preview and
+     * the commit disagreed: a selection containing both locked and unlocked items -
+     * reachable by locking a layer after selecting, or by Shift-clicking a locked
+     * item, which is deliberately allowed - showed the locked ones tracking the drag
+     * and then snapping back on release, with nothing said. Locked now means locked
+     * from the first pixel.</p>
      */
     private List<Fact> factsForDraw() {
         final boolean editingVertices = editingAreaKey != null && workingVertices != null;
@@ -2662,7 +2728,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             if (editingVertices && editingAreaKey.equals(fact.getKey())) {
                 // Live vertex-edit preview.
                 out.add(fact.withVertices(workingVertices));
-            } else if (pendingTransform != null && selectedObjectIds.contains(fact.getKey())) {
+            } else if (pendingTransform != null
+                       && selectedObjectIds.contains(fact.getKey())
+                       && !lockedKeys.contains(fact.getKey())) {
                 out.add(fact.withWorldToMap(
                         pendingTransform.multiply(fact.getWorldToMap())));
             } else {
@@ -3092,8 +3160,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 ? name
                 : id;
         final String areaKey = areaMembership.getInnermostAreaKey(id);
+        // Resolve the area's key to its name. The key is an opaque generated id, so
+        // reading it aloud ("in area-7f3a...") is noise; the name is what a sighted
+        // user reads off the map, which is the whole point of this method. The
+        // sibling containingAreaNames already resolves the same way.
         return areaKey != null
-                ? displayName + ", in " + areaKey
+                ? displayName + ", in " + displayNameOrId(areaKey)
                 : displayName;
     }
 
@@ -3553,6 +3625,28 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param typeStyles      per-type presentation settings (default graphic
          *                        shape/colour for imageless facts); may be {@code null}
          * @param showGrid        {@code true} to draw the (non-interactive) grid overlay
+         * @param dimmedTypes     the types the user has pushed into the background from the
+         *                        Layers panel, drawn at reduced opacity. Applies to facts,
+         *                        events <em>and</em> cluster glyphs, so a dimmed layer does
+         *                        not reappear at full strength once its members merge. May
+         *                        be {@code null}, meaning nothing is dimmed
+         * @param marqueeRectPx   the rubber-band selection rectangle
+         *                        {@code {minX, minY, maxX, maxY}} in element pixels, already
+         *                        normalised so the mins are the mins whichever way the drag
+         *                        went, or {@code null} when no marquee is in progress
+         * @param drawSelectionHandles
+         *                        {@code true} to draw the selection frame and its handles.
+         *                        Distinct from the selection being non-empty: the caller
+         *                        suppresses it while a marquee is being dragged, so the
+         *                        frame does not fight the rubber band for the user's
+         *                        attention
+         * @param scaleRotateEnabled
+         *                        {@code true} when the selection contains at least one
+         *                        <em>unlocked</em> fact with an image or an outline, so
+         *                        scale and rotate handles are worth offering. False leaves
+         *                        the move-only frame - handles that cannot act on anything
+         *                        are worse than no handles, because they invite a gesture
+         *                        that then does nothing
          * @param areaDraftPx     the in-progress area-drawing polyline in element
          *                        pixels ({@code [x0, y0, x1, y1, ...]}, last point =
          *                        live cursor), or {@code null} when not drawing
@@ -3565,6 +3659,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                        tell apart. Members must <strong>not</strong> be
          *                        drawn individually — the cluster glyph stands in
          *                        for them. Never {@code null}
+         * @param highlight       resolves the non-selection highlight for each entity -
+         *                        a group's own colour, or area-containment green when the
+         *                        entity is inside an area holding the tracked entity,
+         *                        whichever the resolver says wins. Selection styling still
+         *                        takes precedence over both; never {@code null}
          * @param measureLinePx   the in-progress Set Scale line
          *                        {@code {x0, y0, x1, y1}} in element pixels, or
          *                        {@code null} when not measuring

@@ -18,7 +18,6 @@ package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
 import stroom.document.asset.client.presenter.DocumentAssetPresenter;
-import stroom.document.client.event.ChangeEvent;
 import stroom.entity.client.presenter.AbstractTabProvider;
 import stroom.entity.client.presenter.DocTabPresenter;
 import stroom.entity.client.presenter.DocTabProvider;
@@ -138,7 +137,14 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             @Override
             protected FloorMapQueryPresenter createPresenter() {
                 eventsQueryPresenter = floorMapQueryPresenterProvider.get();
-                registerHandler(eventBus.addHandler(ChangeEvent.getType(), () -> fireDirtyEvent(true)));
+                // Scope this to the tab's own query editor. A bus-level
+                // addHandler(ChangeEvent.getType(), ...) hears ChangeEvent from the whole
+                // application — theme and editor preferences, dictionary lists, expression
+                // editors, query result tables, some of them per keystroke — so it marked
+                // this floor map dirty, and triggered a full document write-diff, whenever
+                // anything anywhere changed. addChangeHandler delegates to
+                // QueryEditPresenter.addHandlerToSource, so only an edit here fires it.
+                registerHandler(eventsQueryPresenter.addChangeHandler(() -> fireDirtyEvent(true)));
                 return eventsQueryPresenter;
             }
 
@@ -311,18 +317,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     @Override
     public BiConsumer<FloorMapDoc, Consumer<FloorMapDoc>> getPostSaveAsCallback() {
         return this::saveAsAssets;
-    }
-
-    /**
-     * Saves the assets associated with the document.
-     * Called indirectly via {@link #flushEditorThenSaveAssets}, which is the method
-     * referenced by {@link #getPostSaveCallback()}.
-     * @param document The document that was written by all the data in all the tabs.
-     * @param callback Thing to call when the assets have been saved.
-     */
-    @SuppressWarnings("unused")
-    public void saveAssets(final FloorMapDoc document, final Consumer<FloorMapDoc> callback) {
-        documentAssetPresenter.onSave(document, callback);
     }
 
     /**

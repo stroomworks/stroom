@@ -190,9 +190,12 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * Sets the floor-map document and configures the asset dropdown to list
      * assets belonging to that document.
      *
-     * <p>If {@code floorMapDoc} is {@code null}, subsequent calls to
-     * {@link #pathForRole(Role)} will fall back to the default value schema,
-     * and the asset dropdown will show no assets.</p>
+     * <p>A {@code null} document is <strong>not</strong> a supported state for
+     * editing. There is no fallback to a default value schema: the next call to
+     * {@link #pathForRole(Role)} throws {@link NullPointerException}, as its own
+     * {@code @throws} records, and {@code buildValue} and {@code resetInputs} do
+     * the same. Passing {@code null} is only safe when clearing a dialog that will
+     * not be shown again before a real document is set.</p>
      *
      * @param floorMapDoc the floor-map document, or {@code null} to clear
      */
@@ -350,19 +353,48 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 .onShow(e -> getView().setEnabled(true))
                 .onHideRequest(e -> {
                     if (e.isOk()) {
+                        // Every path that declines to close MUST call e.reset(). Clicking OK
+                        // puts the dialog into its in-progress state - both buttons disabled
+                        // and OK showing a spinner (OkCancelContent.onDialogAction) - and only
+                        // reset() or hide() releases it. Returning without either leaves the
+                        // dialog open but dead: Escape is the only way out, and it discards
+                        // everything the user typed. The three sibling dialogs
+                        // (FloorMapSetScalePresenter, FloorMapGroupEditPresenter,
+                        // FloorMapLayerStylePresenter) all pass e::reset for this reason.
                         final String type = getView().getType();
                         if (type == null || type.trim().isEmpty()) {
                             AlertEvent.fireError(this,
                                     "Object type must not be empty. "
                                     + "Please enter a type (e.g. 'gate', 'camera', 'person').",
-                                    null);
+                                    e::reset);
                             return;
                         }
                         if (isArea(type) && !getView().isOpacityValid()) {
                             AlertEvent.fireError(this,
                                     "Area fill opacity must be a number between 0 and 1, "
                                     + "or empty for the default.",
-                                    null);
+                                    e::reset);
+                            return;
+                        }
+                        final String badGeometryField = getView().getGeometryFieldError();
+                        if (badGeometryField != null) {
+                            // Checked before reading the matrix, for the same reason as the
+                            // effective time below: the geometry boxes are free text, and a
+                            // parse failure used to be silently replaced by a default and
+                            // saved as a deliberate edit.
+                            AlertEvent.fireError(this,
+                                    badGeometryField + " must be a number.",
+                                    e::reset);
+                            return;
+                        }
+                        if (!getView().isEffectiveTimeValid()) {
+                            // Checked before reading the value: DateTimeBox yields null for a
+                            // cleared or unparseable field, and unboxing that threw an NPE from
+                            // inside this handler - before any validation ran, and with the
+                            // buttons already disabled.
+                            AlertEvent.fireError(this,
+                                    "Effective From Time must be a valid date and time.",
+                                    e::reset);
                             return;
                         }
                         final long time = getView().getEffectiveTime();
@@ -373,15 +405,20 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                     + "Do you want to move the version to the new time? "
                                     + "(OK to move, Cancel to create a new cloned version at the new time)",
                                     move -> {
-                                        // Keep the dialog open when the handler
-                                        // rejects, so the user's input survives.
+                                        // Keep the dialog open when the handler rejects, so the
+                                        // user's input survives - but reset it, or "open" means
+                                        // "open and unusable".
                                         if (onSave.onSave(buildEntry(time, key), !move)) {
                                             e.hide();
+                                        } else {
+                                            e.reset();
                                         }
                                     });
                         } else {
                             if (onSave.onSave(buildEntry(time, key), false)) {
                                 e.hide();
+                            } else {
+                                e.reset();
                             }
                         }
                     } else {
@@ -623,7 +660,20 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      */
     public interface FloorMapObjectEditView extends View {
 
-        /** Returns the effective-time value entered by the user, in epoch milliseconds. */
+        /**
+         * Whether the effective-time field currently holds a parseable date-time.
+         *
+         * <p>{@code DateTimeBox} yields {@code null} for text it cannot parse and for a
+         * cleared box, so this must be checked before {@link #getEffectiveTime()}.</p>
+         */
+        boolean isEffectiveTimeValid();
+
+        /**
+         * Returns the effective-time value entered by the user, in epoch milliseconds.
+         *
+         * @throws IllegalStateException if the field is empty or unparseable — call
+         *                               {@link #isEffectiveTimeValid()} first
+         */
         long getEffectiveTime();
 
         /** Sets the effective-time field to the given epoch-millisecond value. */
@@ -743,7 +793,26 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
          */
         void setChooseImgView(Widget widget);
 
-        /** Returns the 6-element world-to-map affine transformation matrix. */
+        /**
+         * The display name of the first geometry field holding something that is not a
+         * usable number, or {@code null} when they are all fine.
+         *
+         * <p>Must be checked before {@link #getWorldToMapMatrix()}: the position, size,
+         * scale and rotation boxes are free text, and each one silently became a default
+         * on a parse failure - a typo in a position box moved the object to 0 m, a typo in
+         * the rotation box straightened it - so a mistake was committed as a real edit
+         * with nothing shown to the user.</p>
+         *
+         * @return the offending field's label, e.g. {@code "Position X"}, or {@code null}
+         */
+        String getGeometryFieldError();
+
+        /**
+         * Returns the 6-element world-to-map affine transformation matrix.
+         *
+         * @throws IllegalStateException if a geometry field is not a usable number — call
+         *                               {@link #getGeometryFieldError()} first
+         */
         double[] getWorldToMapMatrix();
 
         /** Sets the 6-element world-to-map affine transformation matrix. */

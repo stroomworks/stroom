@@ -316,7 +316,7 @@ class TestFloorMapPendingChanges {
         // panels reload after a successful save.
         assertThat(pendingChanges.getChanges()).hasSize(1);
         assertThat(pendingChanges.isDirty()).isTrue();
-        final PendingChange remaining = pendingChanges.getChanges().get(0);
+        final PendingChange remaining = pendingChanges.getChanges().getFirst();
         assertThat(remaining).isInstanceOf(Deletion.class);
         assertThat(((Deletion) remaining).getId().getKey()).isEqualTo("stagedDuringFlush");
     }

@@ -32,7 +32,7 @@ class TestFloorMapScreenGeometry {
     private static final double TOL = 1e-6;
 
     /** No aspect ratios known (square fallback). */
-    private static final FloorMapScreenGeometry.AspectRatioSource NO_AR = url -> null;
+    private static final FloorMapScreenGeometry.AspectRatioSource NO_AR = ignored -> null;
 
     private FloorMapScreenGeometry geometry(final double scale, final double ox, final double oy) {
         return new FloorMapScreenGeometry(scale, ox, oy, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR, null);
@@ -54,7 +54,8 @@ class TestFloorMapScreenGeometry {
                 new double[]{x, y});
     }
 
-    private static Fact areaFact(final String key, final double[][] verts) {
+    private static Fact areaFact(@SuppressWarnings("SameParameterValue") final String key,
+                                 final double[][] verts) {
         return new Fact(key, "area", null, FloorMapTransformationMatrix.identity(),
                 null, verts, null, null);
     }
@@ -208,6 +209,54 @@ class TestFloorMapScreenGeometry {
         Assertions.assertNotNull(b);
         assertThat(b[2] - b[0]).isCloseTo(OBJECT_SIZE, within(TOL));
         assertThat(b[3] - b[1]).isCloseTo(OBJECT_SIZE, within(TOL));
+    }
+
+    /**
+     * The projection flips Y, and the exposed method agrees with the bounds computed
+     * internally.
+     *
+     * <p>The last pair of assertions is the point of extracting this: the same formula
+     * previously existed as three hand-written copies, one of them in the view where nothing
+     * could test it. Tying the public method to {@code factScreenBounds} means a change to
+     * one that does not match the other fails here.</p>
+     */
+    @Test
+    void testMapToScreen_flipsYAndMatchesTheInternalProjection() {
+        final FloorMapScreenGeometry g = geometry(2, 100, 50);
+
+        // x: 100 + 2*10 = 120.  y: 50 - 2*10 = 30 (map space is Y-up, screen is Y-down).
+        assertThat(g.mapToScreen(10, 10)).containsExactly(120.0, 30.0);
+        assertThat(g.mapToScreenX(10)).isEqualTo(120.0);
+        assertThat(g.mapToScreenY(10)).isEqualTo(30.0);
+
+        // The static form with an explicit viewport must agree.
+        assertThat(FloorMapScreenGeometry.mapToScreen(10, 10, 2, 100, 50))
+                .containsExactly(120.0, 30.0);
+
+        // And it must agree with the bounds the class computes for a point fact there:
+        // the AABB is centred on the projected anchor.
+        final double[] bounds = g.factScreenBounds(pointFact("f", 10, 10));
+        assertThat((bounds[0] + bounds[2]) / 2).isCloseTo(120.0, within(TOL));
+        assertThat((bounds[1] + bounds[3]) / 2).isCloseTo(30.0, within(TOL));
+    }
+
+    /**
+     * A fact the renderer will not draw is not selectable by marquee either.
+     *
+     * <p>Its screen bounds are a zero-size box at the origin, so before this it was caught
+     * by almost any marquee — the user could rubber-band an object they could not see, then
+     * drag it. Drawing and hit-testing now agree, via {@link Fact#hasUsablePlacement()}.</p>
+     */
+    @Test
+    void testHitTestRect_ignoresFactsWithNoUsablePlacement() {
+        final Fact placeable = pointFact("visible", 0, 0);
+        final Fact singular = new Fact("invisible", "t", null,
+                new FloorMapTransformationMatrix(0, 0, 0, 0, 0, 0),
+                new double[]{0, 0});
+
+        assertThat(geometry(1, 0, 0)
+                .hitTestRect(List.of(placeable, singular), new double[]{-40, -40, 40, 40}))
+                .containsExactly("visible");
     }
 
     /** A wide graphic is caught by a marquee that overlaps only its outer edge. */
