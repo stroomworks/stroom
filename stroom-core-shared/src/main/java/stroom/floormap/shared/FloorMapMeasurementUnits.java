@@ -157,10 +157,21 @@ public class FloorMapMeasurementUnits {
     private static final int INPUT_DECIMALS = 4;
 
     /**
-     * Above this magnitude the digit-assembly path would overflow a {@code long},
-     * so formatting falls back to {@link String#valueOf(double)}. No real map is
-     * anywhere near it; the guard exists so a nonsense scale factor produces
-     * nonsense text rather than silently wrong digits.
+     * A policy ceiling, not an overflow bound: above this magnitude the formatters stop
+     * pretending to render exact digits and fall back to
+     * {@link String#valueOf(double)}, so a nonsense scale factor produces obviously
+     * nonsense text. No real map is anywhere near it.
+     *
+     * <p>This used to be documented as the point where "the digit-assembly path would
+     * overflow a {@code long}", and it is not — it was about four orders of magnitude too
+     * high for {@link #INPUT_DECIMALS}. With four decimal places
+     * {@code Math.round(abs * 1e4)} saturates {@code long} from roughly {@code 9.2234e14},
+     * which is <em>below</em> this ceiling, so the window in between assembled its digits
+     * from {@link Long#MAX_VALUE}: {@code formatForInput(9.5e14)} returned
+     * {@code "922337203685477.5807"} — exactly the silently-wrong output the guard was
+     * meant to prevent. The real overflow guard now lives in
+     * {@link #formatToDecimals(double, int)}, derived from the arithmetic it protects, so
+     * this constant can no longer be set to a wrong value and break correctness.</p>
      */
     private static final double MAX_EXACT_MAGNITUDE = 1.0e15;
 
@@ -445,10 +456,21 @@ public class FloorMapMeasurementUnits {
      * Rounds to {@code decimals} places and assembles the digits from a
      * {@code long}, so no binary-representation noise or scientific notation can
      * reach the UI.
+     *
+     * <p>Falls back to {@link String#valueOf(double)} when the scaled value would not fit
+     * in a {@code long}. The bound is computed from {@code decimals} rather than being a
+     * fixed number, because it depends on it: at {@code decimals = 4} the limit is about
+     * {@code 9.2234e14}, at {@code decimals = 0} it is about {@code 9.2234e18}. A single
+     * hardcoded ceiling cannot be right for both, and {@link Math#round(double)} does not report
+     * saturation — it silently returns {@link Long#MAX_VALUE}, which the digit assembly
+     * below would then format as though it were the user's number.</p>
      */
     private static String formatToDecimals(final double value, final int decimals) {
         final double abs = Math.abs(value);
         final double multiplier = Math.pow(10, decimals);
+        if (abs > Long.MAX_VALUE / multiplier) {
+            return String.valueOf(value);
+        }
         final long scaled = Math.round(abs * multiplier);
         final long divisor = (long) multiplier;
         final long whole = scaled / divisor;
