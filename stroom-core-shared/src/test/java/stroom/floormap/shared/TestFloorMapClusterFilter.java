@@ -183,6 +183,63 @@ class TestFloorMapClusterFilter {
         assertThat(FloorMapClusterFilter.filter(members, null, "Office", null)).isEmpty();
     }
 
+    /**
+     * The option offered for a name spelled inconsistently keeps <em>every</em> member with
+     * that name, whatever its case.
+     *
+     * <p>This is the whole point of matching case-insensitively. The options are collected
+     * into a {@code TreeSet(String.CASE_INSENSITIVE_ORDER)}, so "Lobby" and "lobby" collapse
+     * to a single offered option — and matching used to use a case-sensitive
+     * {@code List.contains}, so selecting that one option silently dropped the member stored
+     * under the other spelling. There is no third option to pick instead and no message: the
+     * member is simply not in the list.</p>
+     */
+    @Test
+    void testCaseVariantAreaNamesAreAllKeptByTheOfferedOption() {
+        final List<FloorMapClusterMember> members = Arrays.asList(
+                member("1", "Alice", Collections.singletonList("Lobby"), null),
+                member("2", "Bob", Collections.singletonList("lobby"), null),
+                member("3", "Carol", Collections.singletonList("Office"), null));
+
+        // Exactly one option is offered for the two spellings.
+        assertThat(FloorMapClusterFilter.areaOptions(members))
+                .containsExactly("Any area", "Lobby", "Office");
+
+        // ...and it must reach both of them.
+        assertThat(names(FloorMapClusterFilter.filter(members, null, "Lobby", null)))
+                .containsExactly("Alice", "Bob");
+    }
+
+    /** The same for groups, which share the de-duplication and had the same mismatch. */
+    @Test
+    void testCaseVariantGroupNamesAreAllKeptByTheOfferedOption() {
+        final List<FloorMapClusterMember> members = Arrays.asList(
+                member("1", "Alice", null, Collections.singletonList("Security")),
+                member("2", "Bob", null, Collections.singletonList("SECURITY")),
+                member("3", "Carol", null, Collections.singletonList("Maintenance")));
+
+        assertThat(FloorMapClusterFilter.groupOptions(members))
+                .containsExactly("Any group", "Maintenance", "Security");
+
+        assertThat(names(FloorMapClusterFilter.filter(members, null, null, "Security")))
+                .containsExactly("Alice", "Bob");
+    }
+
+    /**
+     * A selection whose case matches no stored spelling still matches, so the filter cannot
+     * be broken by the option list being rebuilt from a differently-cased first sighting.
+     */
+    @Test
+    void testAreaSelectionIgnoresCaseEntirely() {
+        final List<FloorMapClusterMember> members = Collections.singletonList(
+                member("1", "Alice", Collections.singletonList("Loading Bay"), null));
+
+        assertThat(FloorMapClusterFilter.filter(members, null, "LOADING BAY", null)).hasSize(1);
+        assertThat(FloorMapClusterFilter.filter(members, null, "loading bay", null)).hasSize(1);
+        // Still a name test, not a substring one.
+        assertThat(FloorMapClusterFilter.filter(members, null, "Loading", null)).isEmpty();
+    }
+
     /** The "in none" options select exactly the members with nothing. */
     @Test
     void testNoneOptions() {
