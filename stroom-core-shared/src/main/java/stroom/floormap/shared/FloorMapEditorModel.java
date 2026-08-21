@@ -81,9 +81,13 @@ public class FloorMapEditorModel {
     /**
      * Currently selected fact keys, in selection order. Backs both the
      * single-select façade ({@link #getSelectedFactKey()} /
-     * {@link #setSelectedFactKey(String)}) used by the current UI and the
-     * multi-select API ({@link #getSelectedFactKeys()} etc.) that a future
-     * rubber-band / modifier-key UI will drive. A {@link java.util.LinkedHashSet}
+     * {@link #setSelectedFactKey(String)}) and the multi-select API
+     * ({@link #getSelectedFactKeys()} etc.). Both are live: marquee and
+     * Shift/Ctrl multi-select have shipped in the canvas, and
+     * {@code FloorMapEditorPresenter} reads {@code getSelectedFactKeys()} to
+     * drive the canvas selection, the Fact List, and a
+     * {@code size() > 1} branch for the multi-object context menu.
+     * A {@link java.util.LinkedHashSet}
      * so the first-selected key can serve as the "primary" selection for the
      * properties panel and time list.
      */
@@ -237,11 +241,14 @@ public class FloorMapEditorModel {
     }
 
     /**
-     * Called when the time list entries are fetched for the selected fact.
-     * Stores the entries, sorts them, and returns them merged with pending
-     * changes for UI display.
+     * Called when the time list entries are fetched for the selected fact. Stores them and
+     * sorts them by effective time.
      *
-     * @param entries the server-sourced entries for the selected fact
+     * <p>Returns nothing and merges nothing: the Javadoc here used to say it "returns them
+     * merged with pending changes for UI display", which is what
+     * {@link #buildMergedTimeList()} does. Call that for the display list.</p>
+     *
+     * @param entries the server-sourced entries for the selected fact; {@code null} clears
      */
     public void onTimeListFetched(final List<TemporalEntry> entries) {
         if (entries != null) {
