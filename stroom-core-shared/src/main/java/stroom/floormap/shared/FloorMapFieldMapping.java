@@ -246,7 +246,7 @@ public class FloorMapFieldMapping {
         }
         if (isRoleMissing(result, Role.GEOMETRY)) {
             result.add(new FloorMapFieldMapping(
-                    siblingPath(result, format, "geometry"), Role.GEOMETRY, "Geometry", null));
+                    siblingPath(result, format, FloorMapJsonKeys.GEOMETRY), Role.GEOMETRY, "Geometry", null));
         }
         if (isRoleMissing(result, Role.FILL)) {
             result.add(new FloorMapFieldMapping(
@@ -254,7 +254,7 @@ public class FloorMapFieldMapping {
         }
         if (isRoleMissing(result, Role.OPACITY)) {
             result.add(new FloorMapFieldMapping(
-                    siblingPath(result, format, "opacity"), Role.OPACITY, "Opacity", null));
+                    siblingPath(result, format, FloorMapJsonKeys.OPACITY), Role.OPACITY, "Opacity", null));
         }
         return result;
     }
