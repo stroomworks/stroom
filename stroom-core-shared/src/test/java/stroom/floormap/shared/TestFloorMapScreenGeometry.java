@@ -211,6 +211,25 @@ class TestFloorMapScreenGeometry {
         assertThat(b[3] - b[1]).isCloseTo(OBJECT_SIZE, within(TOL));
     }
 
+    /**
+     * A fact the renderer will not draw is not selectable by marquee either.
+     *
+     * <p>Its screen bounds are a zero-size box at the origin, so before this it was caught
+     * by almost any marquee — the user could rubber-band an object they could not see, then
+     * drag it. Drawing and hit-testing now agree, via {@link Fact#hasUsablePlacement()}.</p>
+     */
+    @Test
+    void testHitTestRect_ignoresFactsWithNoUsablePlacement() {
+        final Fact placeable = pointFact("visible", 0, 0);
+        final Fact singular = new Fact("invisible", "t", null,
+                new FloorMapTransformationMatrix(0, 0, 0, 0, 0, 0),
+                new double[]{0, 0});
+
+        assertThat(geometry(1, 0, 0)
+                .hitTestRect(List.of(placeable, singular), new double[]{-40, -40, 40, 40}))
+                .containsExactly("visible");
+    }
+
     /** A wide graphic is caught by a marquee that overlaps only its outer edge. */
     @Test
     void testHitTestRect_catchesTheWideGraphicsEdge() {

@@ -262,6 +262,12 @@ public final class FloorMapScreenGeometry {
             return hits;
         }
         for (final Fact fact : facts) {
+            // A fact the renderer refuses to draw must not be selectable either; see
+            // Fact.hasUsablePlacement(). Its bounds would be a zero-size box at the origin,
+            // which almost every marquee overlaps.
+            if (!fact.hasUsablePlacement()) {
+                continue;
+            }
             final double[] b = factScreenBounds(fact);
             if (b[0] <= rectPx[2] && b[2] >= rectPx[0]
                     && b[1] <= rectPx[3] && b[3] >= rectPx[1]) {

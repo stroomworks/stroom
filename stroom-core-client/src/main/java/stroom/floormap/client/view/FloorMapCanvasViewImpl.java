@@ -41,6 +41,7 @@ import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapZOrder;
 import stroom.floormap.shared.TypeStyle;
+import stroom.util.client.Console;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
@@ -1169,6 +1170,16 @@ public class FloorMapCanvasViewImpl
                             final List<TypeStyle> typeStyles,
                             final double scale,
                             final FloorMapHighlight highlight) {
+        if (!fact.hasUsablePlacement()) {
+            // Skip rather than draw it wrongly, and say so: silently dropping an object the
+            // user can see in the Fact List is its own kind of confusing. Warning per frame
+            // is acceptable because this cannot happen to well-formed data - the parser
+            // rejects an unusable matrix - so a repeating warning means a document written
+            // before that check, or a hand-edited store value of six valid zeros.
+            Console.warn(() -> "Skipping fact '" + fact.getKey()
+                               + "': its world-to-map matrix is singular, so it cannot be placed");
+            return;
+        }
         // One resolved colour per fact — group membership or area containment,
         // whichever the highlight resolver says wins. Null means no highlight.
         final String highlightColour = highlight.colourFor(fact.getKey());
