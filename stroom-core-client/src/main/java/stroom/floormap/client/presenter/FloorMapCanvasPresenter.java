@@ -3625,6 +3625,28 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param typeStyles      per-type presentation settings (default graphic
          *                        shape/colour for imageless facts); may be {@code null}
          * @param showGrid        {@code true} to draw the (non-interactive) grid overlay
+         * @param dimmedTypes     the types the user has pushed into the background from the
+         *                        Layers panel, drawn at reduced opacity. Applies to facts,
+         *                        events <em>and</em> cluster glyphs, so a dimmed layer does
+         *                        not reappear at full strength once its members merge. May
+         *                        be {@code null}, meaning nothing is dimmed
+         * @param marqueeRectPx   the rubber-band selection rectangle
+         *                        {@code {minX, minY, maxX, maxY}} in element pixels, already
+         *                        normalised so the mins are the mins whichever way the drag
+         *                        went, or {@code null} when no marquee is in progress
+         * @param drawSelectionHandles
+         *                        {@code true} to draw the selection frame and its handles.
+         *                        Distinct from the selection being non-empty: the caller
+         *                        suppresses it while a marquee is being dragged, so the
+         *                        frame does not fight the rubber band for the user's
+         *                        attention
+         * @param scaleRotateEnabled
+         *                        {@code true} when the selection contains at least one
+         *                        <em>unlocked</em> fact with an image or an outline, so
+         *                        scale and rotate handles are worth offering. False leaves
+         *                        the move-only frame - handles that cannot act on anything
+         *                        are worse than no handles, because they invite a gesture
+         *                        that then does nothing
          * @param areaDraftPx     the in-progress area-drawing polyline in element
          *                        pixels ({@code [x0, y0, x1, y1, ...]}, last point =
          *                        live cursor), or {@code null} when not drawing
@@ -3637,6 +3659,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                        tell apart. Members must <strong>not</strong> be
          *                        drawn individually — the cluster glyph stands in
          *                        for them. Never {@code null}
+         * @param highlight       resolves the non-selection highlight for each entity -
+         *                        a group's own colour, or area-containment green when the
+         *                        entity is inside an area holding the tracked entity,
+         *                        whichever the resolver says wins. Selection styling still
+         *                        takes precedence over both; never {@code null}
          * @param measureLinePx   the in-progress Set Scale line
          *                        {@code {x0, y0, x1, y1}} in element pixels, or
          *                        {@code null} when not measuring

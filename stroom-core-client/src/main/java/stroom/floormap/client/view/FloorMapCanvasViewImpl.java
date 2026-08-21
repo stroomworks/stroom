@@ -577,29 +577,19 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * Rebuilds the entire SVG DOM to reflect the current map state.
+     * {@inheritDoc}
      *
-     * <p>The SVG structure is {@code <svg> → <g pan/zoom> → [facts…, events…]}.
-     * Each image fact is wrapped in its own {@code <g matrix>} and scales with
-     * the map; imageless facts and events are anchored in map space but drawn at
-     * a fixed screen size (see {@link #fixedSizeTransform}).</p>
+     * <p>Rebuilds the entire SVG DOM. The structure is
+     * {@code <svg> → <g pan/zoom> → [facts…, events…]}. Each image fact is wrapped in its
+     * own {@code <g matrix>} and scales with the map; imageless facts and events are
+     * anchored in map space but drawn at a fixed screen size (see
+     * {@link #fixedSizeTransform}).</p>
      *
-     * @param scale            current zoom factor (1.0 = 100 %)
-     * @param x                horizontal pan offset in SVG user-units
-     * @param y                vertical pan offset in SVG user-units
-     * @param facts            the facts to render, already in paint (z) order
-     * @param events           the event/person overlay objects (map coordinates)
-     * @param selectedObjectIds IDs of the currently selected objects (all highlighted)
-     * @param typeStyles       per-type presentation settings (default graphic shape/colour)
-     * @param showGrid         {@code true} to draw the (non-interactive) grid overlay
-     * @param areaOverlay      area-containment decorations, used here for the
-     *                         occupant-count badges; never {@code null}
-     * @param clusterOverlay   which entities are merged into summary glyphs;
-     *                         members are skipped and the cluster drawn in their
-     *                         place; never {@code null}
-     * @param highlight        resolves the non-selection highlight for each entity —
-     *                         group colour or area-containment green, whichever wins;
-     *                         never {@code null}
+     * <p>The parameters are documented once, on
+     * {@code FloorMapCanvasPresenter.FloorMapCanvasView#draw}. They were duplicated here,
+     * and the two copies had drifted into documenting different subsets of the seventeen -
+     * eleven here, thirteen there, four documented in neither. With seventeen parameters
+     * that is not a mistake anyone was going to notice, so there is now one copy.</p>
      */
     @Override
     public void draw(final double scale,
