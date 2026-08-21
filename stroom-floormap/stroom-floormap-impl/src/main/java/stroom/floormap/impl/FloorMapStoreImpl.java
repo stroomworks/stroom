@@ -54,6 +54,7 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
                       final SecurityContext securityContext,
                       final Provider<FloorMapProcessors> floorMapProcessorsProvider) {
         super(storeFactory,
+                securityContext,
                 serialiser,
                 FloorMapDoc.TYPE,
                 FloorMapDoc::builder,
