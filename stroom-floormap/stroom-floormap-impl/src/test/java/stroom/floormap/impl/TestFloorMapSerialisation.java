@@ -95,6 +95,71 @@ class TestFloorMapSerialisation {
     }
 
     /**
+     * A document written before {@code temporalStoreRef} was renamed must still find
+     * its facts store.
+     *
+     * <p>The rename is carried by a single {@code @JsonAlias("temporalStoreRef")} on
+     * the {@code factsStoreRef} constructor parameter. Nothing else migrates the field
+     * and nothing else was pinning it, so deleting that one annotation — or renaming
+     * the parameter without moving the alias with it — would silently detach every
+     * pre-rename document from its store. The map would then open with no facts and no
+     * error, which reads as "the data is gone" rather than "the document did not
+     * load".</p>
+     */
+    @Test
+    void testLegacyTemporalStoreRefMigratesToFactsStoreRef() {
+        final String legacyJson = "{"
+                                  + "\"uuid\":\"map-uuid-456\","
+                                  + "\"name\":\"MyFloorMap\","
+                                  + "\"temporalStoreRef\":{"
+                                  + "\"type\":\"SqlTemporalStore\","
+                                  + "\"uuid\":\"store-uuid-123\","
+                                  + "\"name\":\"StoreName\"}"
+                                  + "}";
+
+        final FloorMapDoc deserialized = JsonUtil.readValue(legacyJson, FloorMapDoc.class);
+
+        assertThat(deserialized.getFactsStoreRef()).isNotNull();
+        assertThat(deserialized.getFactsStoreRef().getUuid()).isEqualTo("store-uuid-123");
+        assertThat(deserialized.getFactsStoreRef().getType()).isEqualTo("SqlTemporalStore");
+        assertThat(deserialized.getFactsStoreRef().getName()).isEqualTo("StoreName");
+        // The alias feeds the facts store only — the events store has no alias and a
+        // legacy document never named one.
+        assertThat(deserialized.getEventsStoreRef()).isNull();
+    }
+
+    /**
+     * The migration completes on the next save: the document is rewritten under the
+     * new name, and reading it back a second time still resolves the store.
+     *
+     * <p>This is the half that makes the rename one-way. If the field were written
+     * back under the alias, the old name would live on in newly-saved documents for
+     * ever and the alias could never be retired.</p>
+     */
+    @Test
+    void testMigratedFactsStoreRefIsRewrittenUnderTheNewName() {
+        final String legacyJson = "{"
+                                  + "\"uuid\":\"map-uuid-456\","
+                                  + "\"name\":\"MyFloorMap\","
+                                  + "\"temporalStoreRef\":{"
+                                  + "\"type\":\"SqlTemporalStore\","
+                                  + "\"uuid\":\"store-uuid-123\","
+                                  + "\"name\":\"StoreName\"}"
+                                  + "}";
+
+        final FloorMapDoc migrated = JsonUtil.readValue(legacyJson, FloorMapDoc.class);
+        final String rewritten = JsonUtil.writeValueAsString(migrated);
+
+        assertThat(rewritten).contains("factsStoreRef");
+        assertThat(rewritten).doesNotContain("temporalStoreRef");
+
+        // And it survives the second read, which is what the user actually depends on.
+        final FloorMapDoc reread = JsonUtil.readValue(rewritten, FloorMapDoc.class);
+        assertThat(reread.getFactsStoreRef()).isEqualTo(migrated.getFactsStoreRef());
+        assertThat(reread.getFactsStoreRef().getUuid()).isEqualTo("store-uuid-123");
+    }
+
+    /**
      * Groups are configuration stored on the document, so they must survive a
      * write/read cycle intact — ids included, since a lost id would orphan the
      * group's identity.

@@ -290,13 +290,89 @@ class TestFloorMapEditorModel {
     /**
      * Key generation avoids colliding with a key already known to the model
      * from previously-fetched server entries.
+     *
+     * <p>Uses a scripted {@link Random} so the collision actually happens. With a
+     * real {@code Random} the first draw has a 1-in-99,999 chance of hitting the
+     * pre-seeded number, so the assertion passed whether or not the collision check
+     * existed — the test attested to nothing. Here the first draw is forced to
+     * collide, so removing the check in {@code generateObjectKey} fails this test.</p>
      */
     @Test
     void testGenerateObjectKey_avoidsExisting() {
-        // Pre-populate the server entries so the model knows which keys exist
-        model.onEntriesFetched(List.of(entry("gate-12345", 100, "{}")));
-        final String key = model.generateObjectKey("gate");
-        assertThat(key).isNotEqualTo("gate-12345");
+        final FloorMapEditorModel m = modelWithRandom(new ScriptedRandom(12345, 54321));
+        m.onEntriesFetched(List.of(entry("gate-12345", 100, "{}")));
+        assertThat(m.generateObjectKey("gate")).isEqualTo("gate-54321");
+    }
+
+    /**
+     * A key known only from the selected fact's time list is still avoided.
+     *
+     * <p>This is the case the old implementation missed: it built its key set from
+     * the time-filtered canvas snapshot alone, so a shard of the selected fact
+     * sitting outside that snapshot was invisible and could be collided with.</p>
+     */
+    @Test
+    void testGenerateObjectKey_avoidsKeyKnownOnlyFromSelectedFactTimeList() {
+        final FloorMapEditorModel m = modelWithRandom(new ScriptedRandom(12345, 54321));
+        // Deliberately NOT in the canvas snapshot — only in the selected fact's shards.
+        m.onTimeListFetched(List.of(entry("gate-12345", 9_000_000, "{}")));
+        assertThat(m.generateObjectKey("gate")).isEqualTo("gate-54321");
+    }
+
+    /**
+     * A key staged for deletion is not handed out again.
+     *
+     * <p>{@code applyTo} removes a deleted entry from the merged list, so the key
+     * looks free. Reusing it would race the flush — whether the new object survived
+     * would depend on the order the server applied the delete and the create.</p>
+     */
+    @Test
+    void testGenerateObjectKey_avoidsKeyPendingDeletion() {
+        final FloorMapEditorModel m = modelWithRandom(new ScriptedRandom(12345, 54321));
+        final TemporalEntry doomed = entry("gate-12345", 100, "{}");
+        m.onEntriesFetched(List.of(doomed));
+        m.stageTimeEntryDeletion(doomed);
+        assertThat(m.generateObjectKey("gate")).isEqualTo("gate-54321");
+    }
+
+    /**
+     * A selected key is avoided even when the snapshot no longer contains it, which
+     * is reachable when a selection outlives the fetch it was made against.
+     */
+    @Test
+    void testGenerateObjectKey_avoidsSelectedKeyMissingFromSnapshot() {
+        final FloorMapEditorModel m = modelWithRandom(new ScriptedRandom(12345, 54321));
+        m.setSelectedFactKey("gate-12345");
+        m.onEntriesFetched(List.of());
+        assertThat(m.generateObjectKey("gate")).isEqualTo("gate-54321");
+    }
+
+    /** A model with a specific {@link Random}, sharing this test's warning collector. */
+    private FloorMapEditorModel modelWithRandom(final Random random) {
+        return new FloorMapEditorModel(random, warnings::add);
+    }
+
+    /**
+     * A {@link Random} yielding preset values from {@code nextInt(int)}, repeating the
+     * last once exhausted, so a test can force a key collision on demand.
+     */
+    private static final class ScriptedRandom extends Random {
+
+        private static final long serialVersionUID = 1L;
+
+        private final int[] values;
+        private int index;
+
+        private ScriptedRandom(final int... values) {
+            this.values = values;
+        }
+
+        @Override
+        public int nextInt(final int bound) {
+            final int value = values[Math.min(index, values.length - 1)];
+            index++;
+            return value;
+        }
     }
 
     // -----------------------------------------------------------------------
