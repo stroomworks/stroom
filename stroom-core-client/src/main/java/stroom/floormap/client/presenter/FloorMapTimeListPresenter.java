@@ -20,6 +20,7 @@ import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.shared.FloorMapEditorModel;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.JSONUtil;
@@ -329,8 +330,8 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
             if (value.trim().startsWith("{")) {
                 final JSONObject json = JSONUtil.getObject(JSONUtil.parse(value));
                 if (json != null) {
-                    final String name = JSONUtil.getString(json.get("name"));
-                    final String type = JSONUtil.getString(json.get("type"));
+                    final String name = JSONUtil.getString(json.get(FloorMapJsonKeys.NAME));
+                    final String type = JSONUtil.getString(json.get(FloorMapJsonKeys.TYPE));
                     final StringBuilder sb = new StringBuilder();
                     if (type != null && !type.isEmpty()) {
                         sb.append(type);
