@@ -168,15 +168,18 @@ public final class FloorMapScreenGeometry {
     }
 
     /**
-     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}},
-     * or {@code null} if the fact has no matrix. Dispatch order matches the
-     * renderer: image wins over vertices, else a fixed-size glyph box.
+     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}};
+     * never {@code null}. Dispatch order matches the renderer: image wins over
+     * vertices, else a fixed-size glyph box.
+     *
+     * <p>This used to document a {@code null} return "if the fact has no matrix",
+     * which cannot happen: {@link Fact}'s canonical constructor - the only way to
+     * build one, including via {@code withWorldToMap} and {@code withVertices} -
+     * substitutes {@link FloorMapTransformationMatrix#identity()} for a null
+     * matrix. The claim had propagated into null checks at the call sites.</p>
      */
     public double[] factScreenBounds(final Fact fact) {
         final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
-        if (w2m == null) {
-            return null;
-        }
         if (!fact.hasImage() && fact.hasVertices()) {
             final double[] acc = newBoundsAccumulator();
             for (final double[] v : fact.getVertices()) {
@@ -260,7 +263,7 @@ public final class FloorMapScreenGeometry {
         }
         for (final Fact fact : facts) {
             final double[] b = factScreenBounds(fact);
-            if (b != null && b[0] <= rectPx[2] && b[2] >= rectPx[0]
+            if (b[0] <= rectPx[2] && b[2] >= rectPx[0]
                     && b[1] <= rectPx[3] && b[3] >= rectPx[1]) {
                 hits.add(fact.getKey());
             }
@@ -284,13 +287,11 @@ public final class FloorMapScreenGeometry {
         for (final Fact f : facts) {
             if (selectedIds.contains(f.getKey())) {
                 final double[] b = factScreenBounds(f);
-                if (b != null) {
-                    acc[0] = Math.min(acc[0], b[0]);
-                    acc[1] = Math.min(acc[1], b[1]);
-                    acc[2] = Math.max(acc[2], b[2]);
-                    acc[3] = Math.max(acc[3], b[3]);
-                    any = true;
-                }
+                acc[0] = Math.min(acc[0], b[0]);
+                acc[1] = Math.min(acc[1], b[1]);
+                acc[2] = Math.max(acc[2], b[2]);
+                acc[3] = Math.max(acc[3], b[3]);
+                any = true;
             }
         }
         if (!any) {
