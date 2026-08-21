@@ -96,10 +96,12 @@ import java.util.Objects;
  *   <li>{@link #getValueFormat()} → defaults to {@link ValueFormat#JSON}</li>
  *   <li>{@link #getMatrix()} → never null; the constructor defaults a
  *       {@code null} input to {@link FloorMapTransformationMatrix#identity()}</li>
+ *   <li>{@link #getValueSchema()} → defaults to
+ *       {@link FloorMapFieldMapping#initialValueSchema()} when the stored schema is
+ *       {@code null} <em>or empty</em>, so legacy documents still parse</li>
  * </ul>
- * <p>All other getters — including {@link #getValueSchema()} — return
- * exactly what was passed to the constructor and <strong>may return
- * {@code null}</strong>; see each getter's Javadoc for details.</p>
+ * <p>All other getters return exactly what was passed to the constructor and
+ * <strong>may return {@code null}</strong>; see each getter's Javadoc for details.</p>
  *
  * <h3>Immutability and Builder</h3>
  * <p>All fields are {@code final}. Mutation is done via the copy-builder
@@ -298,6 +300,9 @@ public class FloorMapDoc extends AbstractDoc {
      * <ul>
      *   <li>{@link #getValueFormat()} returns {@link ValueFormat#JSON}
      *       if the stored field is {@code null}</li>
+     *   <li>{@link #getValueSchema()} returns
+     *       {@link FloorMapFieldMapping#initialValueSchema()} if the stored field is
+     *       {@code null} or empty</li>
      * </ul>
      *
      * <p><strong>Back-compatibility:</strong> The {@code factsStoreRef}
@@ -508,10 +513,6 @@ public class FloorMapDoc extends AbstractDoc {
      * <p>This method never returns {@code null}. If no explicit format has
      * been set (i.e. the underlying field is {@code null}), it defaults to
      * {@link ValueFormat#JSON}.</p>
-     *
-     * <p><strong>Note:</strong> only {@link ValueFormat#JSON} is currently
-     * implemented. Selecting {@link ValueFormat#XML} in the Settings tab
-     * will cause the parser to silently skip all entries.</p>
      *
      * @return the configured {@link ValueFormat}, or {@link ValueFormat#JSON}
      *         if none was specified; never {@code null}

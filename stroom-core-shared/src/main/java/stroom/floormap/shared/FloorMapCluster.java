@@ -55,8 +55,9 @@ public final class FloorMapCluster {
     private final String focusedMemberId;
 
     /**
-     * @param key             the cluster's identity for this frame — the seed
-     *                        member's id (see {@link #getKey()})
+     * @param key             the cluster's identity for this frame — its
+     *                        <em>lowest</em> member id, not the seed's; see
+     *                        {@link #getKey()}, which explains why
      * @param type            the shared entity type, or {@code null} when the
      *                        members carry no type
      * @param memberIds       the member ids, already sorted and unmodifiable

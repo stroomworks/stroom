@@ -50,9 +50,15 @@ import stroom.widget.util.client.SafeHtmlUtil;
  * <p>Uses SVG {@code <pattern>} elements with a {@code patternTransform}
  * that aligns the grid with the map coordinate system. The grid rects use
  * {@code width="100%" height="100%"} so the grid always extends to the
- * edges of the viewport regardless of pan/zoom. Grid lines use
- * {@code vector-effect="non-scaling-stroke"} so they remain a constant
- * pixel width.</p>
+ * edges of the viewport regardless of pan/zoom.</p>
+ *
+ * <p>Grid lines hold a constant screen-pixel width, but <em>not</em> via
+ * {@code vector-effect="non-scaling-stroke"} — that has no effect inside a
+ * {@code <pattern>} tile, because the tile is rasterised once in pattern
+ * coordinate space and then tiled. The stroke widths are instead divided by
+ * the effective scale so they work out to a fixed pixel width once the
+ * pattern transform has been applied. That arithmetic is the reason
+ * {@code MAJOR_SCREEN_PX / effectiveScale} appears in {@code appendGrid}.</p>
  *
  * <p>This method should be called at the <strong>SVG root level</strong>,
  * outside the pan/zoom and matrix transform groups.</p>

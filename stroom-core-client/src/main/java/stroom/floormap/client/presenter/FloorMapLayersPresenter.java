@@ -66,8 +66,12 @@ import java.util.function.Consumer;
  * {@link #getHiddenTypes()} / {@link #getDimmedTypes()} and forwards them to
  * {@code FloorMapCanvasPresenter.setLayerVisibility(...)}.</p>
  *
- * <p>Editor-only controls (reorder, lock, appearance) will be added here in a
- * later increment; {@link #setEditorMode(boolean)} distinguishes the tabs.</p>
+ * <p>Editor-only controls are implemented here and shown when
+ * {@link #setEditorMode(boolean)} is set: drag-and-keyboard reordering (which
+ * rewrites the document's {@link TypeStyle} order, so it persists), a per-layer
+ * lock that stops its items being moved on the canvas, and an appearance dialog
+ * per layer. The lock is transient client-side state; the order and appearance
+ * are document edits.</p>
  */
 public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersView> {
 

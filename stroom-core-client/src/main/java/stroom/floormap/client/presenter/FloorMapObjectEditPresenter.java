@@ -190,9 +190,12 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * Sets the floor-map document and configures the asset dropdown to list
      * assets belonging to that document.
      *
-     * <p>If {@code floorMapDoc} is {@code null}, subsequent calls to
-     * {@link #pathForRole(Role)} will fall back to the default value schema,
-     * and the asset dropdown will show no assets.</p>
+     * <p>A {@code null} document is <strong>not</strong> a supported state for
+     * editing. There is no fallback to a default value schema: the next call to
+     * {@link #pathForRole(Role)} throws {@link NullPointerException}, as its own
+     * {@code @throws} records, and {@code buildValue} and {@code resetInputs} do
+     * the same. Passing {@code null} is only safe when clearing a dialog that will
+     * not be shown again before a real document is set.</p>
      *
      * @param floorMapDoc the floor-map document, or {@code null} to clear
      */

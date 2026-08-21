@@ -92,19 +92,24 @@ import javax.inject.Provider;
  *
  * <h3>Layout</h3>
  * <pre>
- * ┌──────────────────────────────────────────────────────┐
- * │                  Map Canvas  (MAIN)                  │
- * ├──────────────────────────────────────────────────────┤
+ * ┌─────────────────────────────────────────┬────────────┐
+ * │            Map Canvas  (MAIN)           │    DOCK    │
+ * ├─────────────────────────────────────────┴────────────┤ ◄─ draggable
  * │              Timeline control (TIMELINE)             │  fixed height
- * ├────────────────────┬────────────────┬────────────────┤
- * │    Fact List       │   Time List    │   Properties   │
- * │   (FACT_LIST)      │  (TIME_LIST)   │  (PROPERTIES)  │
- * └────────────────────┴────────────────┴────────────────┘
+ * ├───────────────────────────┬──────────────────────────┤
+ * │        Fact List          │        Time List         │
+ * │       (FACT_LIST)         │       (TIME_LIST)        │
+ * └───────────────────────────┴──────────────────────────┘
  * </pre>
  *
+ * <p>Object properties are <em>not</em> a slot: they open as a modal dialog
+ * ({@code FloorMapObjectEditPresenter}), so there is no {@code PROPERTIES}
+ * region to lay out. The right-hand dock holds the Layers and Groups panels.</p>
+ *
  * <h3>Shared selection model (single source of truth)</h3>
- * <p>All inter-panel state lives here. Child panels signal changes to this
- * presenter only; they never call each other directly.</p>
+ * <p>The state itself lives in {@link FloorMapEditorModel}, which this presenter
+ * owns and is the only thing that mutates. Child panels signal changes to this
+ * presenter only; they never call each other directly. What the model holds:</p>
  *
  * <ul>
  *   <li>{@code selectedFactKey} — key of the selected fact, or {@code null}</li>
