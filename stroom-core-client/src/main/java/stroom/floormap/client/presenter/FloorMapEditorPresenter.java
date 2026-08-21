@@ -1478,19 +1478,41 @@ public class FloorMapEditorPresenter
                     .icon(SvgImage.EDIT)
                     .text("Edit Properties")
                     .command(() -> {
+                        final String editMapName = getMapName();
+                        if (editMapName == null) {
+                            return;
+                        }
                         // Select through the one selection path so *every* side
                         // effect happens — notably
                         // FloorMapObjectEditPresenter.setObject, without which the
                         // dialog writes under whatever key it was last given.
+                        // This must also come before the fetch: fetchTimeList drops
+                        // a response whose key is not the current selection, so
+                        // selecting second would discard the very list we asked for.
                         applySelection(Collections.singletonList(objectId));
 
-                        // Edit the shard the canvas is showing (active at the
-                        // scrubber), not the first key match (which could be a
-                        // historical shard under a pending time-version).
-                        final TemporalEntry active = model.activeMergedEntryForKey(objectId);
-                        if (active != null) {
-                            onEditTimeInTimeList(active);
-                        }
+                        // Then FETCH before opening, for the same reason as "Add
+                        // Time Version" below. The dialog's same-time overwrite
+                        // guard reads the merged time list, and until this fetch
+                        // lands that list still holds the *previously* selected
+                        // fact's shards. Opening immediately let a move onto an
+                        // occupied time pass the guard, which deletes the original
+                        // shard and upserts over the version already at that time,
+                        // collapsing two versions into one with nothing reported.
+                        fetchTimeList(editMapName, objectId, () -> {
+                            // Resolved inside the callback, not before it: picking
+                            // the shard from the pre-fetch list could hand the
+                            // dialog one belonging to the previous selection.
+                            //
+                            // Edit the shard the canvas is showing (active at the
+                            // scrubber), not the first key match (which could be a
+                            // historical shard under a pending time-version).
+                            final TemporalEntry active =
+                                    model.activeMergedEntryForKey(objectId);
+                            if (active != null) {
+                                onEditTimeInTimeList(active);
+                            }
+                        });
                     })
                     .build());
 
