@@ -664,24 +664,27 @@ public class FloorMapEditorModel {
     // -----------------------------------------------------------------------
 
     /**
-     * Generates a unique object key with the given prefix, guaranteed not to
-     * clash with any key currently known to the editor.
+     * Generates an object key with the given prefix, checked against every key this
+     * model can see — see {@link #knownKeys()} for exactly which sources that is.
      *
      * <p>The returned key has the form {@code prefix-NNNNN} where {@code NNNNN}
      * is a random integer. If the generated key already exists, a new random
      * suffix is tried until a unique key is found (up to a safety limit of
      * 1000 attempts).</p>
      *
+     * <p><strong>Not a global uniqueness guarantee, and it cannot be one.</strong>
+     * The model only knows the keys it has been given, so a fact all of whose shards
+     * fall after the current scrubber position — never fetched, so never seen — can
+     * still be collided with. That collision is silent rather than an error: the new
+     * shard is upserted onto the existing fact at flush time, merging two objects.
+     * Only the server can rule it out. What this method does guarantee is that it
+     * checks everything the client holds, which it previously did not.</p>
+     *
      * @param prefix a human-readable prefix (e.g. {@code "new"}, {@code "gate-1-copy"})
      * @return a key string suitable for use as a temporal-store fact key
      */
     public String generateObjectKey(final String prefix) {
-        final List<TemporalEntry> merged =
-                pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final Set<String> existingKeys = new HashSet<>();
-        for (final TemporalEntry e : merged) {
-            existingKeys.add(e.getKey());
-        }
+        final Set<String> existingKeys = knownKeys();
 
         final int maxAttempts = 1_000;
         for (int i = 0; i < maxAttempts; i++) {
@@ -694,6 +697,72 @@ public class FloorMapEditorModel {
 
         // Extremely unlikely fallback — append a timestamp to guarantee uniqueness
         return prefix + "-" + System.currentTimeMillis();
+    }
+
+    /**
+     * Every fact key this model holds, from all four sources it can see.
+     *
+     * <p>Key generation used to consult only the first of these, which meant a new
+     * object could be handed a key already in use by a fact that happened to be
+     * off-snapshot — silently merging the two at flush time. The sources are:</p>
+     *
+     * <ul>
+     *   <li>the canvas snapshot for the current time, with pending changes applied —
+     *       what the user can see;</li>
+     *   <li>{@code serverEntriesForSelectedFact} — every shard of the selected fact,
+     *       including those at times outside the snapshot;</li>
+     *   <li>the keys named by each staged change, <em>including deletions</em>.
+     *       {@code applyTo} removes a deleted entry from the merged list, so without
+     *       this a key mid-delete looks free, and reusing it would race the flush:
+     *       whether the object survives would depend on the order the server applies
+     *       the delete and the create;</li>
+     *   <li>{@link #selectedFactKeys} — cheap, and covers a selection that outlived
+     *       the snapshot it was made against.</li>
+     * </ul>
+     *
+     * @return a mutable set of known keys; never {@code null}
+     */
+    private Set<String> knownKeys() {
+        final Set<String> keys = new HashSet<>();
+        addKeys(keys, pendingChanges.applyTo(serverEntriesAtCurrentTime));
+        addKeys(keys, serverEntriesForSelectedFact);
+
+        for (final FloorMapPendingChanges.PendingChange change : pendingChanges.getChanges()) {
+            if (change instanceof FloorMapPendingChanges.Creation) {
+                addKey(keys, ((FloorMapPendingChanges.Creation) change).getEntry());
+            } else if (change instanceof FloorMapPendingChanges.Update) {
+                addKey(keys, ((FloorMapPendingChanges.Update) change).getEntry());
+            } else if (change instanceof FloorMapPendingChanges.Deletion) {
+                final TemporalEntryId id = ((FloorMapPendingChanges.Deletion) change).getId();
+                if (id != null && id.getKey() != null) {
+                    keys.add(id.getKey());
+                }
+            }
+        }
+
+        for (final String selected : selectedFactKeys) {
+            if (selected != null) {
+                keys.add(selected);
+            }
+        }
+        return keys;
+    }
+
+    /** Adds every non-null key in {@code entries} to {@code keys}; tolerates a null list. */
+    private static void addKeys(final Set<String> keys, final List<TemporalEntry> entries) {
+        if (entries == null) {
+            return;
+        }
+        for (final TemporalEntry entry : entries) {
+            addKey(keys, entry);
+        }
+    }
+
+    /** Adds {@code entry}'s key if both the entry and its key are non-null. */
+    private static void addKey(final Set<String> keys, final TemporalEntry entry) {
+        if (entry != null && entry.getKey() != null) {
+            keys.add(entry.getKey());
+        }
     }
 
     // -----------------------------------------------------------------------
