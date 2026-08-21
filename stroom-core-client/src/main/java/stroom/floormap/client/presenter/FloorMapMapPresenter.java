@@ -79,9 +79,17 @@ import java.util.Map;
 /**
  * Presenter for the Map (visualisation) tab of a {@link FloorMapDoc}.
  *
- * <p>This presenter coordinates the floor-map canvas, timeline scrubber, and object
- * properties editor. Facts are loaded by running a StroomQL query via
- * {@link QueryModel}. Results are parsed by {@link #parseFacts(TableResult)}.</p>
+ * <p>This presenter coordinates the floor-map canvas and the timeline scrubber. Facts are
+ * loaded by running a StroomQL query via {@link QueryModel}. Results are parsed by
+ * {@link #parseFacts(TableResult)}.</p>
+ *
+ * <p>The Map tab is <strong>read-only</strong>. Unlike
+ * {@link FloorMapEditorPresenter}, it sets no edit mode and installs none of the canvas's
+ * mutation handlers - no drag, geometry, area or scale handler - so nothing here can alter a
+ * fact. Inspection is served by the hover tooltip, the cluster member panel and the Tracking
+ * grid. This paragraph used to claim the presenter coordinated the "object properties
+ * editor": it held an instance of that dialog, configured it on every document read, and
+ * never showed it.</p>
  *
  * <h3>Layout slots</h3>
  * <ul>
@@ -107,7 +115,6 @@ public class FloorMapMapPresenter
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
-    private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapTrackingPresenter floorMapTrackingPresenter;
     private final FloorMapLayersPresenter floorMapLayersPresenter;
     private final FloorMapGroupsPresenter floorMapGroupsPresenter;
@@ -258,7 +265,6 @@ public class FloorMapMapPresenter
                                 final ResultStoreModel resultStoreModel,
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
-                                final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
                                 final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
                                 final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider,
                                 final Provider<FloorMapGroupsPresenter> floorMapGroupsPresenterProvider,
@@ -269,12 +275,6 @@ public class FloorMapMapPresenter
         this.floorMapClusterPresenter = floorMapClusterPresenter;
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
-        this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        // Let the properties dialog state an image's real-world size: the canvas
-        // has already measured any image it has drawn, so this needs no second
-        // load.
-        this.floorMapObjectEditPresenter.setAspectRatioResolver(
-                floorMapCanvasPresenter::getImageAspectRatio);
         this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
         this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
         this.floorMapGroupsPresenter = floorMapGroupsPresenterProvider.get();
@@ -587,11 +587,6 @@ public class FloorMapMapPresenter
         histogramQueryHelper.reset();
         factsHistogramQueryHelper.init(docRef);
         factsHistogramQueryHelper.reset();
-
-        if (document.getFactsStoreRef() != null) {
-            floorMapObjectEditPresenter.setMapName(document.getFactsStoreRef().getName());
-        }
-        floorMapObjectEditPresenter.setFloorMapDoc(document);
 
         // A (re-)opened document starts with a fresh entity roster and no
         // inherited area containment.
