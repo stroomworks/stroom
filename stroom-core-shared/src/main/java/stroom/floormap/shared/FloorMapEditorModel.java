@@ -208,6 +208,16 @@ public class FloorMapEditorModel {
         this.serverEntriesForSelectedFact = entries != null ? entries : new ArrayList<>();
     }
 
+    /**
+     * The staged-edit buffer, for the flush path — which needs {@code getChanges()} and
+     * {@code clearSent(int)}.
+     *
+     * <p>To <em>stage</em> an edit, prefer {@link #stageCreation(TemporalEntry)},
+     * {@link #stageUpdate(TemporalEntry)} and
+     * {@link #stageVersionMove(TemporalEntry, long)} over reaching through this accessor.
+     * They keep the rules about what a given edit consists of in one place; see
+     * {@code stageVersionMove} for the case where that actually matters.</p>
+     */
     public FloorMapPendingChanges getPendingChanges() {
         return pendingChanges;
     }
@@ -664,6 +674,51 @@ public class FloorMapEditorModel {
             }
         }
         return deletedIndex - 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // Staging edits
+    // -----------------------------------------------------------------------
+
+    /** Stages a newly created entry. */
+    public void stageCreation(final TemporalEntry entry) {
+        pendingChanges.recordCreation(entry);
+    }
+
+    /**
+     * Stages an edit to an entry that stays at its current effective time - including a
+     * clone, which adds a version at a new time without removing the one it came from.
+     */
+    public void stageUpdate(final TemporalEntry saved) {
+        pendingChanges.recordUpdate(saved);
+    }
+
+    /**
+     * Stages a version <em>move</em>: {@code saved} takes its new effective time and the
+     * shard at {@code fromTimeMs} goes away.
+     *
+     * <p>This exists because a move is two buffer operations that must travel together - a
+     * deletion of the old shard and an upsert of the new one - and nothing about the buffer
+     * enforces that. The pairing used to live at the call site as two adjacent statements
+     * under an {@code if}, which meant a caller could record the upsert and forget the
+     * deletion; the user would have asked for a version to move and got a second version
+     * instead, with no error. The rule belongs with the buffer, not with whoever is calling
+     * it.</p>
+     *
+     * <p>A move to the time it is already at is not a move: that degrades to a plain
+     * {@link #stageUpdate(TemporalEntry)} rather than deleting and re-adding the same
+     * shard, so the verb is safe to call without the caller first checking whether the time
+     * really changed.</p>
+     *
+     * @param saved      the entry as edited, carrying its new effective time
+     * @param fromTimeMs the effective time the entry is moving away from
+     */
+    public void stageVersionMove(final TemporalEntry saved, final long fromTimeMs) {
+        if (saved.getEffectiveTimeMs() != fromTimeMs) {
+            pendingChanges.recordDeletion(new TemporalEntryId(
+                    saved.getMap(), saved.getKey(), fromTimeMs));
+        }
+        pendingChanges.recordUpdate(saved);
     }
 
     // -----------------------------------------------------------------------

@@ -264,6 +264,65 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // Staging edits
+    // -----------------------------------------------------------------------
+
+    /**
+     * A version move stages both halves: the old shard is deleted and the entry reappears
+     * at its new time.
+     *
+     * <p>This was previously two adjacent statements in the presenter, so nothing could
+     * check that both happened. Recording only the upsert leaves the original in place —
+     * the user asks for a version to move and gets a second version instead, silently.</p>
+     */
+    @Test
+    void testStageVersionMove_removesTheOldShardAndAddsTheNew() {
+        final TemporalEntry original = entry("gate-1", 1_000L, "{}");
+        model.onEntriesFetched(List.of(original));
+
+        final TemporalEntry moved = entry("gate-1", 5_000L, "{\"moved\":true}");
+        model.stageVersionMove(moved, original.getEffectiveTimeMs());
+
+        final List<TemporalEntry> merged =
+                model.getPendingChanges().applyTo(List.of(original));
+        assertThat(merged).hasSize(1);
+        //noinspection SequencedCollectionMethodCanBeUsed
+        assertThat(merged.get(0).getEffectiveTimeMs()).isEqualTo(5_000L);
+    }
+
+    /**
+     * A "move" to the time the entry is already at is not a move: it must not delete and
+     * re-add the same shard, so the verb is safe to call without the caller first checking
+     * whether the time actually changed.
+     */
+    @Test
+    void testStageVersionMove_sameTimeIsAPlainUpdate() {
+        final TemporalEntry original = entry("gate-1", 1_000L, "{}");
+        model.onEntriesFetched(List.of(original));
+
+        model.stageVersionMove(entry("gate-1", 1_000L, "{\"edited\":true}"), 1_000L);
+
+        assertThat(model.getPendingChanges().getChanges())
+                .as("no deletion should be staged")
+                .allSatisfy(change -> assertThat(change)
+                        .isNotInstanceOf(FloorMapPendingChanges.Deletion.class));
+        final List<TemporalEntry> merged =
+                model.getPendingChanges().applyTo(List.of(original));
+        assertThat(merged).hasSize(1);
+    }
+
+    /** A clone keeps the original alongside the new version. */
+    @Test
+    void testStageUpdate_doesNotRemoveAnything() {
+        final TemporalEntry original = entry("gate-1", 1_000L, "{}");
+        model.onEntriesFetched(List.of(original));
+
+        model.stageUpdate(entry("gate-1", 5_000L, "{}"));
+
+        assertThat(model.getPendingChanges().applyTo(List.of(original))).hasSize(2);
+    }
+
+    // -----------------------------------------------------------------------
     // Key generation
     // -----------------------------------------------------------------------
 

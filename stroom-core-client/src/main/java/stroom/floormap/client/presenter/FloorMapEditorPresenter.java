@@ -56,7 +56,6 @@ import stroom.sqlstore.shared.TemporalStoreTimeRange;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.TemporalEntry;
-import stroom.util.shared.TemporalEntryId;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.help.client.HelpButton;
@@ -1201,14 +1200,15 @@ public class FloorMapEditorPresenter
                         return false;
                     }
 
-                    // When the effective time changed, a "move" deletes the
-                    // original version; a "clone" keeps it alongside the new one.
-                    if (!clone && timeChanged) {
-                        model.getPendingChanges().recordDeletion(new TemporalEntryId(
-                                saved.getMap(), saved.getKey(),
-                                entry.getEffectiveTimeMs()));
+                    // A "move" takes the version to its new time and removes the old
+                    // shard; a "clone" leaves the original alongside the new one. The
+                    // delete-and-upsert pairing a move needs lives in the model, so it
+                    // cannot be half-applied from here.
+                    if (clone || !timeChanged) {
+                        model.stageUpdate(saved);
+                    } else {
+                        model.stageVersionMove(saved, entry.getEffectiveTimeMs());
                     }
-                    model.getPendingChanges().recordUpdate(saved);
                     setDirty(true);
                     refreshTimeListAtTime(saved.getEffectiveTimeMs());
                     refreshCanvas();
@@ -1250,7 +1250,7 @@ public class FloorMapEditorPresenter
                 "Add Time Properties",
                 newEntry,
                 saved -> {
-                    model.getPendingChanges().recordCreation(saved);
+                    model.stageCreation(saved);
                     setDirty(true);
                     loadAtTime(model.getSelectedTime());
                     refreshTimeListAtTime(model.getSelectedTime());
@@ -1629,7 +1629,7 @@ public class FloorMapEditorPresenter
                     "Add Object",
                     entry,
                     saved -> {
-                        model.getPendingChanges().recordCreation(saved);
+                        model.stageCreation(saved);
                         setDirty(true);
                         model.setSelectedFactKey(saved.getKey());
 
@@ -1760,7 +1760,7 @@ public class FloorMapEditorPresenter
                     "Add Area",
                     entry,
                     saved -> {
-                        model.getPendingChanges().recordCreation(saved);
+                        model.stageCreation(saved);
                         setDirty(true);
                         model.setSelectedFactKey(saved.getKey());
 
@@ -1820,7 +1820,7 @@ public class FloorMapEditorPresenter
                     valueSchema(),
                     ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
 
-            model.getPendingChanges().recordCreation(newEntry);
+            model.stageCreation(newEntry);
             setDirty(true);
             model.setSelectedFactKey(newKey);
             loadAtTime(model.getSelectedTime());

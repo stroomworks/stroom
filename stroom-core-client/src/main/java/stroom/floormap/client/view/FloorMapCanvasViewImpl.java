@@ -2200,10 +2200,12 @@ public class FloorMapCanvasViewImpl
         final List<FloorMapLabelPlacement.Label> candidates =
                 new ArrayList<>(pendingCaptions.size());
         for (final PendingCaption caption : pendingCaptions) {
-            // Map anchor to screen, matching the draw transform: map space is Y-up,
-            // the SVG is Y-down.
-            final double screenX = offsetX + scale * caption.mapX;
-            final double screenY = offsetY - scale * caption.mapY;
+            // Map anchor to screen through the shared projection, so this cannot drift
+            // from the one the geometry class uses for bounds and hit-testing.
+            final double[] screen = FloorMapScreenGeometry.mapToScreen(
+                    caption.mapX, caption.mapY, scale, offsetX, offsetY);
+            final double screenX = screen[0];
+            final double screenY = screen[1];
             candidates.add(new FloorMapLabelPlacement.Label(
                     caption.key,
                     screenX,
