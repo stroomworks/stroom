@@ -350,22 +350,48 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 .onShow(e -> getView().setEnabled(true))
                 .onHideRequest(e -> {
                     if (e.isOk()) {
+                        // Every rejection below hands e::reset to the alert, so the
+                        // OK/Cancel buttons come back live once it is dismissed.
+                        // Without it the dialog is left with both buttons disabled
+                        // and OK spinning — Escape the only way out, taking
+                        // everything the user typed with it.
                         final String type = getView().getType();
                         if (type == null || type.trim().isEmpty()) {
                             AlertEvent.fireError(this,
                                     "Object type must not be empty. "
                                     + "Please enter a type (e.g. 'gate', 'camera', 'person').",
-                                    null);
+                                    e::reset);
                             return;
                         }
                         if (isArea(type) && !getView().isOpacityValid()) {
                             AlertEvent.fireError(this,
                                     "Area fill opacity must be a number between 0 and 1, "
                                     + "or empty for the default.",
-                                    null);
+                                    e::reset);
                             return;
                         }
-                        final long time = getView().getEffectiveTime();
+                        // Geometry before the effective time: a bad number here
+                        // used to be swallowed by the parse default, moving the
+                        // object to 0 m or resetting its scale as though that is
+                        // what had been asked for.
+                        final String geometryError = getView().validateGeometry();
+                        if (geometryError != null) {
+                            AlertEvent.fireError(this, geometryError, e::reset);
+                            return;
+                        }
+                        final Long typedTime = getView().getEffectiveTime();
+                        if (typedTime == null) {
+                            AlertEvent.fireError(this,
+                                    "Effective From Time must be a date and time. "
+                                    + "Pick one with the calendar button, or clear the "
+                                    + "field and re-enter it.",
+                                    e::reset);
+                            return;
+                        }
+                        // Unboxed deliberately: TemporalEntry.getEffectiveTimeMs()
+                        // is a Long, and comparing two of them with != asks whether
+                        // they are the same object, not the same instant.
+                        final long time = typedTime;
                         if (askMoveOrClone && entry != null && entry.getEffectiveTimeMs() != time) {
                             // Effective time changed — ask whether to move or clone.
                             ConfirmEvent.fire(this,
@@ -377,11 +403,15 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                         // rejects, so the user's input survives.
                                         if (onSave.onSave(buildEntry(time, key), !move)) {
                                             e.hide();
+                                        } else {
+                                            e.reset();
                                         }
                                     });
                         } else {
                             if (onSave.onSave(buildEntry(time, key), false)) {
                                 e.hide();
+                            } else {
+                                e.reset();
                             }
                         }
                     } else {
@@ -623,8 +653,12 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      */
     public interface FloorMapObjectEditView extends View {
 
-        /** Returns the effective-time value entered by the user, in epoch milliseconds. */
-        long getEffectiveTime();
+        /**
+         * Returns the effective-time value entered by the user, in epoch
+         * milliseconds, or {@code null} when the box is empty or holds
+         * something that is not a date and time.
+         */
+        Long getEffectiveTime();
 
         /** Sets the effective-time field to the given epoch-millisecond value. */
         void setEffectiveTime(long timeMS);
@@ -712,6 +746,18 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
          * stored value the picker cannot represent survives unrelated edits.
          */
         boolean isFillDirty();
+
+        /**
+         * Checks every geometry box the form is currently offering — position,
+         * rotation, and whichever of size / scale is on show.
+         *
+         * @return a message naming the first unacceptable field, or {@code null}
+         *         when they are all fit to save. A box still holding exactly the
+         *         text it was populated with is untouched and always passes: the
+         *         displayed value is rounded for legibility and is not what gets
+         *         saved, so it is not the user's input to reject.
+         */
+        String validateGeometry();
 
         /** Returns the area fill opacity, or {@code null} when unset (default). */
         Double getOpacity();

@@ -17,9 +17,11 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.shared.FloorMapEditorModel;
+import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
@@ -40,7 +42,6 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -71,10 +72,14 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     private Runnable addConsumer;
     private Consumer<TemporalEntry> deleteConsumer;
 
+    private final DateTimeFormatter dateTimeFormatter;
+
     @Inject
     public FloorMapTimeListPresenter(final EventBus eventBus,
-                                     final FloorMapTimeListView view) {
+                                     final FloorMapTimeListView view,
+                                     final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
+        this.dateTimeFormatter = dateTimeFormatter;
 
         dataGrid = new MyDataGrid<>(this);
         dataGrid.setSelectionModel(selectionModel);
@@ -101,6 +106,12 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     @Override
     protected void onBind() {
         super.onBind();
+
+        // The Effective Time column is rendered from the user's date/time
+        // preference, so a change to it has to redraw the rows already shown.
+        //noinspection unused e
+        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(),
+                e -> dataGrid.redraw()));
 
         //noinspection unused
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
@@ -297,7 +308,14 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
             @Override
             public String getValue(final TemporalEntry entry) {
-                return new Date(entry.getEffectiveTimeMs()).toString();
+                // The user's own date/time preference, as everywhere else in
+                // Stroom. Date.toString() ignored it entirely, so this column
+                // was the one place reading in the browser locale's format.
+                final String formatted =
+                        dateTimeFormatter.format(entry.getEffectiveTimeMs());
+                return formatted != null
+                        ? formatted
+                        : "";
             }
         };
         dataGrid.addColumn(timeColumn, "Effective Time");

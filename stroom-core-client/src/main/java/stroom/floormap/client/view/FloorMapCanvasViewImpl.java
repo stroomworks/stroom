@@ -743,8 +743,11 @@ public class FloorMapCanvasViewImpl
                 final Fact areaFact = singleSelectedArea();
                 appendSelectionHandles(svg, scaleRotateEnabled, areaFact != null);
                 // Per-vertex move + midpoint insert handles for a single area,
-                // painted over the frame so they win the mousedown.
-                if (areaFact != null) {
+                // painted over the frame so they win the mousedown. Suppressed
+                // along with the scale/rotate handles: scaleRotateEnabled is
+                // false for a locked layer, and a handle that cannot edit
+                // anything should not be offered.
+                if (areaFact != null && scaleRotateEnabled) {
                     appendAreaHandles(svg, areaFact);
                 }
             }
@@ -2001,7 +2004,7 @@ public class FloorMapCanvasViewImpl
                 // a white-outlined teardrop and the icon is knocked out of it in
                 // white. Both are authored on the same grid, so one transform
                 // places the pair into the glyph box.
-                appendIconMarker(objGroup, icon, id, fillColour, half,
+                appendIconMarker(objGroup, icon, id, fillColour,
                         bordered ? stroke : null);
             } else if (shape == TypeStyle.Shape.PIN) {
                 objGroup.elem(SafeHtmlUtil.from("path"),
@@ -2352,7 +2355,6 @@ public class FloorMapCanvasViewImpl
                                   final FloorMapIcon icon,
                                   final String id,
                                   final String fillColour,
-                                  final double half,
                                   final String stroke) {
         parent.elem(markerGroup -> {
             if (stroke != null) {
@@ -2378,7 +2380,7 @@ public class FloorMapCanvasViewImpl
                 SafeHtmlUtil.from("g"),
                 new Attribute("transform", FloorMapMarker.iconTransform()));
         }, SafeHtmlUtil.from("g"),
-                new Attribute("transform", FloorMapIcon.transform(half)));
+                new Attribute("transform", FloorMapIcon.transform(30.0)));
     }
 
     /**

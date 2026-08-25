@@ -16,12 +16,13 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
 import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
+import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.Preset;
 import stroom.svg.shared.SvgImage;
-import stroom.widget.datepicker.client.UTCDate;
 import stroom.widget.help.client.HelpButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
 import stroom.widget.menu.client.presenter.Item;
@@ -82,6 +83,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     private static final double PLAYBACK_QUERY_INTERVAL_MS = 300.0;
 
     private final FloorMapTimelineSettingsPresenter settingsPresenter;
+    private final DateTimeFormatter dateTimeFormatter;
 
     private long startTime;
     private long endTime;
@@ -120,9 +122,11 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     @Inject
     public FloorMapTimelinePresenter(final EventBus eventBus,
                                      final FloorMapTimelineView view,
-                                     final FloorMapTimelineSettingsPresenter settingsPresenter) {
+                                     final FloorMapTimelineSettingsPresenter settingsPresenter,
+                                     final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
         this.settingsPresenter = settingsPresenter;
+        this.dateTimeFormatter = dateTimeFormatter;
 
         view.setScrubHandler(percentage -> {
             // Visual-only update during drag — no data query fired.
@@ -158,8 +162,15 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         // does — they hold the colour they were painted with until something
         // repaints them. Same pattern the dashboard's visualisations use.
         //noinspection unused e
-        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(),
-                e -> getView().redrawHistogram()));
+        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(), e -> {
+            getView().redrawHistogram();
+            // Every time on the strip is rendered from the user's date/time
+            // preference, so a change to it has to be re-applied to the ones
+            // already on screen — the axis labels and the scrubber pill — rather
+            // than waiting for the next thing that happens to move the time.
+            updateDateLabels();
+            updateProgress();
+        }));
 
         // Forward date changes from the settings popup back to the timeline.
         //noinspection unused e
@@ -183,6 +194,19 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         }));
 
         getView().setPlayPauseHandler(() -> {
+            // Starting playback over a range that is empty or back-to-front has
+            // nowhere to advance to: every frame overshoots the end at once, so
+            // a looping timeline re-wraps to the start on each one — which resets
+            // the query throttle and turns playback into a per-frame query storm
+            // over whatever range was last valid. Refuse it instead, and say why.
+            if (!playing && hasPlayableRange()) {
+                AlertEvent.fireWarn(this,
+                        "The timeline has no range to play. Set a start time that "
+                        + "is earlier than the end time in the timeline settings, "
+                        + "or use Show All to fit the range to the data.",
+                        null);
+                return;
+            }
             playing = !playing;
             if (playing) {
                 getView().setPlayPausePreset(PAUSE_PRESET);
@@ -464,23 +488,22 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
      * canvas's accessible summary and its spoken time announcements have to read
      * the same as the labels under the bar, or a screen-reader user and a sighted
      * user comparing notes are looking at two different clocks.</p>
+     *
+     * <p>Rendered through the user's own date/time preference, like every other
+     * time in Stroom — in the shortened form that drops the seconds and the
+     * zone, since the axis and the scrubber pill have no room for them. Field
+     * order, separators and the 12/24-hour choice are the user's throughout, so
+     * this is the same format as the rest of the application in a narrower
+     * space, not a second format of its own.</p>
      */
     public String formatTime(final long millis) {
         if (millis <= 0) {
             return "";
         }
-        // Use GWT's UTCDate to build an ISO-style string without needing DateTimeFormat.
-        final UTCDate date = UTCDate.create(millis);
-        if (date == null) {
-            return "";
-        }
-        // Build "yyyy-MM-dd HH:mm" style
-        final int year = date.getFullYear();
-        final int month = date.getMonth() + 1; // 0-indexed
-        final int day = date.getDate();
-        final int hour = date.getHours();
-        final int min = date.getMinutes();
-        return pad4(year) + "-" + pad2(month) + "-" + pad2(day) + " " + pad2(hour) + ":" + pad2(min);
+        final String formatted = dateTimeFormatter.formatShort(millis);
+        return formatted != null
+                ? formatted
+                : "";
     }
 
     /**
@@ -505,24 +528,33 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         return "x" + speed;
     }
 
-    private static String pad2(final int value) {
-        return value < 10 ? "0" + value : String.valueOf(value);
-    }
-
-    private static String pad4(final int value) {
-        if (value < 10) {
-            return "000" + value;
-        } else if (value < 100) {
-            return "00" + value;
-        } else if (value < 1000) {
-            return "0" + value;
-        }
-        return String.valueOf(value);
+    /**
+     * Whether the timeline has a range playback can actually advance through:
+     * both boundaries set, and the start before the end.
+     *
+     * <p>A cleared date box reads back as {@code 0} (see the settings view's
+     * {@code getTimeOrZero}), which is why an unset boundary is rejected here
+     * rather than merely a back-to-front pair.</p>
+     */
+    private boolean hasPlayableRange() {
+        return startTime <= 0 || endTime <= startTime;
     }
 
     private final AnimationScheduler.AnimationCallback playbackCallback = new AnimationScheduler.AnimationCallback() {
         @Override
         public void execute(final double timestamp) {
+            // The range can be edited while playing — stop rather than spin, for
+            // the same reason play refuses to start without one.
+            if (playing && hasPlayableRange()) {
+                playing = false;
+                getView().setPlayPausePreset(PLAY_PRESET);
+                lastFrameTime = 0;
+                lastQueryWallClockTime = 0;
+                if (playStateChangeHandler != null) {
+                    playStateChangeHandler.accept(false);
+                }
+                return;
+            }
             if (playing) {
                 if (lastFrameTime > 0) {
                     final double delta = timestamp - lastFrameTime;

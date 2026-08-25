@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
+import stroom.floormap.shared.FloorMapFieldValidation;
 import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -267,7 +268,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     @Override
-    public long getEffectiveTime() {
+    public Long getEffectiveTime() {
         return effectiveTimeBox.getValue();
     }
 
@@ -412,6 +413,58 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         } catch (final NumberFormatException e) {
             return false;
         }
+    }
+
+    @Override
+    public String validateGeometry() {
+        // Position is offered for every fact type.
+        String error = checkNumber(posX, shownPosX, "Position X", false);
+        if (error == null) {
+            error = checkNumber(posY, shownPosY, "Position Y", false);
+        }
+        if (error == null) {
+            error = checkNumber(w2mRot, null, "Rotation", false);
+        }
+        if (error != null) {
+            return error;
+        }
+        // Size and scale are two statements of one thing and only one is ever
+        // on show (see setBaseSize) — validate whichever the user can actually
+        // type into, or a hidden box would block a save it does not contribute to.
+        if (baseSize != null) {
+            error = checkNumber(sizeW, shownSizeW, "Width", true);
+            if (error == null) {
+                error = checkNumber(sizeH, shownSizeH, "Height", true);
+            }
+        } else {
+            error = checkNumber(w2mSx, null, "Scale X", true);
+            if (error == null) {
+                error = checkNumber(w2mSy, null, "Scale Y", true);
+            }
+        }
+        return error;
+    }
+
+    /**
+     * Checks one geometry box against
+     * {@link FloorMapFieldValidation#checkNumber}, which holds the rules and the
+     * wording. A box still holding exactly the text that was written into it is
+     * untouched and is passed over there — the displayed value is rounded for
+     * legibility and is not what gets saved (see {@link #typedPositionMapUnits}),
+     * so it is not the user's input to reject.
+     *
+     * @param box       the box to check
+     * @param shownText the text last written into it, or {@code null} when the
+     *                  box has no such tracking
+     * @param label     the field's name, as it appears on the form
+     * @param positive  whether the value must be greater than zero
+     * @return the message to show, or {@code null} when the box is acceptable
+     */
+    private static String checkNumber(final TextBox box,
+                                      final String shownText,
+                                      final String label,
+                                      final boolean positive) {
+        return FloorMapFieldValidation.checkNumber(box.getText(), shownText, label, positive);
     }
 
     @Override

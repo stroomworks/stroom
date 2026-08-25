@@ -48,13 +48,35 @@ public class DateTimeFormatter {
     }
 
     public String format(final Long ms) {
+        return format(ms, false);
+    }
+
+    /**
+     * Formats a timestamp the same way {@link #format(Long)} does, but with the
+     * seconds, any sub-second digits and the zone dropped.
+     *
+     * <p>For labels that have to be short — a chart axis, a scrubber pill — and
+     * where the second and the zone are noise. Field order, separators and the
+     * 12/24-hour choice all still come from the user's preference, so a shortened
+     * label reads as the same format as the full one, not a different one.</p>
+     *
+     * @param ms the instant, or {@code null}
+     * @return the formatted instant, or {@code null} when {@code ms} is null
+     */
+    public String formatShort(final Long ms) {
+        return format(ms, true);
+    }
+
+    private String format(final Long ms, final boolean shortForm) {
         if (ms == null) {
             return null;
         }
 
         final TimeZoneSettings tz = getTimeZoneSettings();
 
-        String pattern = tz.pattern;
+        String pattern = shortForm
+                ? dropSecondsAndZone(tz.pattern)
+                : tz.pattern;
 
         // If UTC then just display the `Z` suffix.
         if (Use.UTC.equals(tz.use)) {
@@ -138,16 +160,10 @@ public class DateTimeFormatter {
 
                 final UserTimeZone timeZone = userPreferences.getTimeZone();
                 if (timeZone != null) {
-                    if (timeZone.getUse() != null) {
-                        use = timeZone.getUse();
-                    }
+                    use = timeZone.getUse();
 
-                    if (timeZone.getOffsetHours() != null) {
-                        offsetMinutes += timeZone.getOffsetHours() * 60;
-                    }
-                    if (timeZone.getOffsetMinutes() != null) {
-                        offsetMinutes += timeZone.getOffsetMinutes();
-                    }
+                    offsetMinutes += timeZone.getOffsetHours() * 60;
+                    offsetMinutes += timeZone.getOffsetMinutes();
 
                     zoneId = timeZone.getId();
                 }
@@ -158,6 +174,34 @@ public class DateTimeFormatter {
         }
 
         return new TimeZoneSettings(use, pattern, offsetMinutes, zoneId);
+    }
+
+    /**
+     * Strips the seconds, sub-seconds and zone from an already-converted
+     * moment.js pattern, leaving everything that decides how the rest of it
+     * reads — field order, separators, and whether the hour is 12- or 24-hour —
+     * exactly as the user set it.
+     *
+     * <p>Examples: {@code YYYY-MM-DD[T]HH:mm:ss.SSSZ} becomes
+     * {@code YYYY-MM-DD[T]HH:mm}, and {@code MM/DD/YYYY hh:mm:ss a} becomes
+     * {@code MM/DD/YYYY hh:mm a}.</p>
+     */
+    static String dropSecondsAndZone(final String pattern) {
+        String shortened = pattern;
+        // Zone first, so that the seconds it usually follows are left at the end
+        // of the pattern where the "not part of a longer run of letters" guard
+        // below can see them. Taken with any space in front of it. Applied
+        // before format() brackets a UTC "Z" into the literal "[Z]", so every Z
+        // still standing here is the token rather than the suffix.
+        shortened = shortened.replaceAll(" *Z+(?![A-Za-z])", "");
+        shortened = shortened.replaceAll(" *z+(?![A-Za-z])", "");
+        // Then sub-seconds, which would otherwise be left dangling by the
+        // removal of the seconds they hang off. Each is taken with whatever
+        // single character separates it from the field before — patterns are not
+        // all colon-separated, and a stray separator reads as a typo.
+        shortened = shortened.replaceAll("[^A-Za-z0-9]?S+(?![A-Za-z])", "");
+        shortened = shortened.replaceAll("[^A-Za-z0-9]?ss(?![A-Za-z])", "");
+        return shortened.trim();
     }
 
     String convertJavaDateTimePattern(final String pattern) {
