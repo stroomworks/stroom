@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,11 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.ArrayList;
 import java.util.List;
 
+// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
+// The only local divergence in this file is the identifier `value` renamed to `val`, for
+// compatibility with recent JDKs. Verified behaviour-neutral: neutralise that one rename and
+// the diff against the merge base is empty. Same workaround as RowValueFilter. If upstream has
+// done the same rename, or no longer needs it, take their version wholesale.
 public abstract class AbstractNotificationListPresenter<D extends AbstractAnalyticRuleDoc>
         extends DocPresenter<PagerView, D> {
 
@@ -243,8 +248,6 @@ public abstract class AbstractNotificationListPresenter<D extends AbstractAnalyt
                         .rightAligned()
                         .build(),
                 ColumnSizeConstants.MEDIUM_COL);
-
-        DataGridUtil.addEndColumn(dataGrid);
     }
 
     private String getDestinationAsString(final NotificationConfig row) {

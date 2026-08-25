@@ -27,6 +27,7 @@ import stroom.floormap.shared.FloorMapAreaOverlay;
 import stroom.floormap.shared.FloorMapCluster;
 import stroom.floormap.shared.FloorMapClusterLabel;
 import stroom.floormap.shared.FloorMapClusterOverlay;
+import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapGeometry;
 import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapIcon;
@@ -40,6 +41,7 @@ import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapZOrder;
 import stroom.floormap.shared.TypeStyle;
+import stroom.util.client.Console;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
@@ -246,6 +248,17 @@ public class FloorMapCanvasViewImpl
      * changes only when the document is read or recalibrated.
      */
     private FloorMapMeasurementUnits measurementUnits;
+
+    /**
+     * Id for this canvas's grid {@code <pattern>}, minted once per view.
+     *
+     * <p>Per instance rather than a shared constant because inline SVG resolves ids
+     * document-wide: with two canvases attached — two open floor maps, or one
+     * document's Map and Editor tabs — the second would fill its background with the
+     * first's pattern and inherit its pan and zoom. Stable across frames rather than
+     * minted per draw, so redrawing does not leak ids.</p>
+     */
+    private final String gridPatternId = FloorMapAria.uniqueId("floormap-grid-major");
 
     /**
      * Resolves an entity id to its display name, for captioning a cluster drawn
@@ -501,15 +514,31 @@ public class FloorMapCanvasViewImpl
     /**
      * Handles resize events. If the parent container has no size yet (e.g. during
      * initial attachment), the call is deferred until layout completes.
+     *
+     * <p>The retry stops if the widget is detached. Without that check the deferred
+     * call re-queued itself unconditionally, so a canvas that never gets laid out —
+     * a document opened into a hidden or closed tab — rescheduled forever and kept
+     * the view, and through it the presenter, reachable for the rest of the
+     * session.</p>
      */
     @Override
     public void onResize() {
+        if (!svgContainer.isAttached()) {
+            // Nothing to size, and nothing will ever size it. A later attach fires
+            // onResize again through the normal widget lifecycle.
+            return;
+        }
+
         final Element parent = svgContainer.getElement().getParentElement();
+        if (parent == null) {
+            return;
+        }
         final int width = parent.getOffsetWidth();
         final int height = parent.getOffsetHeight();
 
         // Defer if the parent hasn't been laid out yet — retry once the browser
-        // gives it a size.
+        // gives it a size. Guarded by the isAttached() check above, so a canvas that
+        // is never laid out stops retrying instead of spinning for the session.
         if (width <= 0 || height <= 0) {
             Scheduler.get().scheduleDeferred((this::onResize));
             return;
@@ -548,29 +577,19 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * Rebuilds the entire SVG DOM to reflect the current map state.
+     * {@inheritDoc}
      *
-     * <p>The SVG structure is {@code <svg> → <g pan/zoom> → [facts…, events…]}.
-     * Each image fact is wrapped in its own {@code <g matrix>} and scales with
-     * the map; imageless facts and events are anchored in map space but drawn at
-     * a fixed screen size (see {@link #fixedSizeTransform}).</p>
+     * <p>Rebuilds the entire SVG DOM. The structure is
+     * {@code <svg> → <g pan/zoom> → [facts…, events…]}. Each image fact is wrapped in its
+     * own {@code <g matrix>} and scales with the map; imageless facts and events are
+     * anchored in map space but drawn at a fixed screen size (see
+     * {@link #fixedSizeTransform}).</p>
      *
-     * @param scale            current zoom factor (1.0 = 100 %)
-     * @param x                horizontal pan offset in SVG user-units
-     * @param y                vertical pan offset in SVG user-units
-     * @param facts            the facts to render, already in paint (z) order
-     * @param events           the event/person overlay objects (map coordinates)
-     * @param selectedObjectIds IDs of the currently selected objects (all highlighted)
-     * @param typeStyles       per-type presentation settings (default graphic shape/colour)
-     * @param showGrid         {@code true} to draw the (non-interactive) grid overlay
-     * @param areaOverlay      area-containment decorations, used here for the
-     *                         occupant-count badges; never {@code null}
-     * @param clusterOverlay   which entities are merged into summary glyphs;
-     *                         members are skipped and the cluster drawn in their
-     *                         place; never {@code null}
-     * @param highlight        resolves the non-selection highlight for each entity —
-     *                         group colour or area-containment green, whichever wins;
-     *                         never {@code null}
+     * <p>The parameters are documented once, on
+     * {@code FloorMapCanvasPresenter.FloorMapCanvasView#draw}. They were duplicated here,
+     * and the two copies had drifted into documenting different subsets of the seventeen -
+     * eleven here, thirteen there, four documented in neither. With seventeen parameters
+     * that is not a mistake anyone was going to notice, so there is now one copy.</p>
      */
     @Override
     public void draw(final double scale,
@@ -611,7 +630,7 @@ public class FloorMapCanvasViewImpl
             if (showGrid) {
                 FloorMapGrid.appendGrid(
                         svg, FloorMapTransformationMatrix.identity(), scale, x, y,
-                        measurementUnits);
+                        measurementUnits, gridPatternId);
             }
 
             // Pan/zoom group.
@@ -829,7 +848,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("font-family", "sans-serif"),
                     new Attribute("font-weight", "600"),
                     new Attribute("paint-order", "stroke"),
-                    new Attribute("stroke", "var(--page__background-color)"),
+                    new Attribute("style", "stroke: var(--page__background-color)"),
                     new Attribute("stroke-width", "3"),
                     new Attribute("pointer-events", "none"));
         }
@@ -1144,6 +1163,16 @@ public class FloorMapCanvasViewImpl
                             final List<TypeStyle> typeStyles,
                             final double scale,
                             final FloorMapHighlight highlight) {
+        if (!fact.hasUsablePlacement()) {
+            // Skip rather than draw it wrongly, and say so: silently dropping an object the
+            // user can see in the Fact List is its own kind of confusing. Warning per frame
+            // is acceptable because this cannot happen to well-formed data - the parser
+            // rejects an unusable matrix - so a repeating warning means a document written
+            // before that check, or a hand-edited store value of six valid zeros.
+            Console.warn(() -> "Skipping fact '" + fact.getKey()
+                               + "': its world-to-map matrix is singular, so it cannot be placed");
+            return;
+        }
         // One resolved colour per fact — group membership or area containment,
         // whichever the highlight resolver says wins. Null means no highlight.
         final String highlightColour = highlight.colourFor(fact.getKey());
@@ -1809,7 +1838,10 @@ public class FloorMapCanvasViewImpl
 
         appendStyledGlyph(parent, fact.getKey(), fact.getType(), mapX, mapY,
                 isSelected, highlightColour, typeStyles, scale);
-        collectCaption(fact.getKey(), shortLabel(fact.getKey()), fact.getType(),
+        collectCaption(fact.getKey(),
+                FloorMapEntityList.captionFor(
+                        fact.getKey(), fact.getLabelOrNull(), entityNameResolver),
+                fact.getType(),
                 mapX, mapY, typeStyles, CAPTION_PRIORITY_FACT);
     }
 
@@ -1846,7 +1878,9 @@ public class FloorMapCanvasViewImpl
             // the glyph itself is fixed screen size.
             appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
                     isSelected, highlightColour, typeStyles, scale);
-            collectCaption(obj.getId(), shortLabel(obj.getId()), obj.getType(),
+            collectCaption(obj.getId(),
+                    FloorMapEntityList.captionFor(obj.getId(), null, entityNameResolver),
+                    obj.getType(),
                     obj.getX(), obj.getY(), typeStyles,
                     isSelected
                             ? CAPTION_PRIORITY_FOCUSED
@@ -2159,10 +2193,12 @@ public class FloorMapCanvasViewImpl
         final List<FloorMapLabelPlacement.Label> candidates =
                 new ArrayList<>(pendingCaptions.size());
         for (final PendingCaption caption : pendingCaptions) {
-            // Map anchor to screen, matching the draw transform: map space is Y-up,
-            // the SVG is Y-down.
-            final double screenX = offsetX + scale * caption.mapX;
-            final double screenY = offsetY - scale * caption.mapY;
+            // Map anchor to screen through the shared projection, so this cannot drift
+            // from the one the geometry class uses for bounds and hit-testing.
+            final double[] screen = FloorMapScreenGeometry.mapToScreen(
+                    caption.mapX, caption.mapY, scale, offsetX, offsetY);
+            final double screenX = screen[0];
+            final double screenY = screen[1];
             candidates.add(new FloorMapLabelPlacement.Label(
                     caption.key,
                     screenX,
@@ -2285,16 +2321,6 @@ public class FloorMapCanvasViewImpl
                                              final double scale) {
         final double inv = 1.0 / scale;
         return "translate(" + mapX + "," + mapY + ") scale(" + inv + "," + (-inv) + ")";
-    }
-
-    /**
-     * Short display label: the part before {@code '@'} for email-like ids, or the
-     * full id otherwise.
-     */
-    private static String shortLabel(final String id) {
-        final String rawId = id != null ? id : "";
-        final int atIdx = rawId.indexOf('@');
-        return atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
     }
 
     /**

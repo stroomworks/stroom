@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import stroom.ui.config.shared.UserPreferences;
 import stroom.util.shared.NullSafe;
 import stroom.widget.customdatebox.client.MomentJs;
 
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -47,36 +49,125 @@ public class DateTimeFormatter {
                 ")";
     }
 
-    public String format(final Long ms) {
-        return format(ms, false);
+    // STROOMWORKS-LOCAL: formatCompact and toCompactPattern are a local addition -
+    // KEEP LOCAL ON MERGE FROM master. Upstream has only format(Long). FloorMap's timeline
+    // axis and scrub tooltip cannot fit the user's full pattern, but must still show the
+    // same instant, zone and field order as every other time in the UI - they previously
+    // hand-rolled UTC and ignored the user's preferences entirely. Dropping these breaks that.
+    /**
+     * Formats {@code ms} like {@link #format(Long)} but without sub-minute precision or a
+     * time-zone suffix, for places with a hard width limit.
+     *
+     * <p>The pattern is <strong>derived from the user's own</strong> rather than replaced,
+     * so their field order, separators and 12- or 24-hour choice are all preserved:
+     * {@code dd/MM/yyyy HH:mm:ss} yields {@code 20/08/2026 09:26}, and
+     * {@code MM/dd/yyyy hh:mm:ss a} yields {@code 08/20/2026 09:26 am}. That matters because
+     * the user's {@code dateTimePattern} preference is the only date-localisation mechanism
+     * Stroom has — there is no locale detection — so imposing a fixed pattern here would
+     * override the one control they have.</p>
+     *
+     * <p><strong>"Compact" means less precision, not a guaranteed width.</strong> A verbose
+     * preference such as {@code EEEE, dd MMMM yyyy HH:mm:ss} still yields a long string;
+     * seconds and zone are dropped, day and month names are the user's business.</p>
+     *
+     * @param ms epoch milliseconds, or {@code null}
+     * @return the formatted time, or {@code null} if {@code ms} is {@code null}
+     */
+    public String formatCompact(final Long ms) {
+        if (ms == null) {
+            return null;
+        }
+        final TimeZoneSettings tz = getTimeZoneSettings();
+        // Shortening removes the zone token, so the UTC `Z` -> `[Z]` handling that
+        // format(Long) needs does not apply here.
+        return MomentJs.nativeToDateString(
+                ms, tz.use.getDisplayValue(), toCompactPattern(tz.pattern),
+                tz.zoneId, tz.offsetMinutes);
     }
 
     /**
-     * Formats a timestamp the same way {@link #format(Long)} does, but with the
-     * seconds, any sub-second digits and the zone dropped.
+     * Strips sub-minute precision and any time-zone token from a Moment.js pattern,
+     * leaving everything else — including literals and separators — untouched.
      *
-     * <p>For labels that have to be short — a chart axis, a scrubber pill — and
-     * where the second and the zone are noise. Field order, separators and the
-     * 12/24-hour choice all still come from the user's preference, so a shortened
-     * label reads as the same format as the full one, not a different one.</p>
+     * <p>Package-private so it can be unit-tested directly, as
+     * {@link #convertJavaDateTimePattern(String)} is: the rendering around it needs
+     * Moment.js and so cannot run on the JVM.</p>
      *
-     * @param ms the instant, or {@code null}
-     * @return the formatted instant, or {@code null} when {@code ms} is null
+     * <p>Bracketed literals are masked before matching, so a literal {@code [T]} or a
+     * literal containing {@code ss} is never mistaken for a token. If stripping would leave
+     * nothing usable — a pattern that was <em>only</em> seconds, say — the original is
+     * returned rather than an empty pattern.</p>
+     *
+     * @param momentPattern a Moment.js pattern, or {@code null}
+     * @return the shortened pattern, or {@code null} if the input was {@code null}
      */
-    public String formatShort(final Long ms) {
-        return format(ms, true);
+    String toCompactPattern(final String momentPattern) {
+        if (momentPattern == null) {
+            return null;
+        }
+
+        // Mask [literals] so their contents cannot match a token below. The sentinels are
+        // private-use characters, not control characters: String.trim() strips anything
+        // <= U+0020, so a low sentinel at the end of a pattern was eaten before it could be
+        // unmasked - silently corrupting any pattern that ended in a literal. The sentinels are
+        // private-use characters rather than control characters: String.trim() strips
+        // anything <= U+0020, so a low sentinel at the end of the pattern was eaten before
+        // it could be unmasked.
+        final List<String> literals = new ArrayList<>();
+        final StringBuilder masked = new StringBuilder();
+        int i = 0;
+        while (i < momentPattern.length()) {
+            final char c = momentPattern.charAt(i);
+            if (c == '[') {
+                final int close = momentPattern.indexOf(']', i);
+                if (close > i) {
+                    masked.append('\uE000').append(literals.size()).append('\uE001'); // mask sentinels
+                    literals.add(momentPattern.substring(i, close + 1));
+                    i = close + 1;
+                    continue;
+                }
+            }
+            masked.append(c);
+            i++;
+        }
+
+        String p = masked.toString();
+
+        // Order matters. Zone first: a trailing zone token otherwise sits immediately
+        // after the seconds and blocks the "not followed by a letter" guard below.
+        p = p.replaceAll("\\s*(ZZ|Z|zz|z)", "");
+
+        // Then precision, each in two passes: with its separator where there is one, then
+        // bare. A single pass cannot do both - a leading "not preceded by a letter" guard
+        // is evaluated at the start of the match, so with ":ss" it rejects the match that
+        // would have eaten the colon and then accepts the one that leaves it behind.
+        p = p.replaceAll("[^A-Za-z\uE000\uE001]S{1,9}", ""); // sentinels are not separators
+        p = p.replaceAll("(?<![A-Za-z])S{1,9}(?![A-Za-z])", "");
+        p = p.replaceAll("[^A-Za-z\uE000\uE001]ss(?![A-Za-z])", ""); // sentinels are not separators
+        p = p.replaceAll("(?<![A-Za-z])ss(?![A-Za-z])", "");
+
+        // Tidy up whatever the removals left dangling.
+        p = p.replaceAll("\\s{2,}", " ");
+        p = p.replaceAll("[\\s.,:;#/\\-]+$", "");
+        p = p.trim();
+
+        // Restore the literals.
+        for (int n = 0; n < literals.size(); n++) {
+            p = p.replace("\uE000" + n + "\uE001", literals.get(n)); // unmask
+        }
+
+        // If nothing time-bearing survived, the pattern was too specialised to shorten.
+        return p.matches(".*[YMDHhmAa].*") ? p : momentPattern;
     }
 
-    private String format(final Long ms, final boolean shortForm) {
+    public String format(final Long ms) {
         if (ms == null) {
             return null;
         }
 
         final TimeZoneSettings tz = getTimeZoneSettings();
 
-        String pattern = shortForm
-                ? dropSecondsAndZone(tz.pattern)
-                : tz.pattern;
+        String pattern = tz.pattern;
 
         // If UTC then just display the `Z` suffix.
         if (Use.UTC.equals(tz.use)) {
@@ -174,34 +265,6 @@ public class DateTimeFormatter {
         }
 
         return new TimeZoneSettings(use, pattern, offsetMinutes, zoneId);
-    }
-
-    /**
-     * Strips the seconds, sub-seconds and zone from an already-converted
-     * moment.js pattern, leaving everything that decides how the rest of it
-     * reads — field order, separators, and whether the hour is 12- or 24-hour —
-     * exactly as the user set it.
-     *
-     * <p>Examples: {@code YYYY-MM-DD[T]HH:mm:ss.SSSZ} becomes
-     * {@code YYYY-MM-DD[T]HH:mm}, and {@code MM/DD/YYYY hh:mm:ss a} becomes
-     * {@code MM/DD/YYYY hh:mm a}.</p>
-     */
-    static String dropSecondsAndZone(final String pattern) {
-        String shortened = pattern;
-        // Zone first, so that the seconds it usually follows are left at the end
-        // of the pattern where the "not part of a longer run of letters" guard
-        // below can see them. Taken with any space in front of it. Applied
-        // before format() brackets a UTC "Z" into the literal "[Z]", so every Z
-        // still standing here is the token rather than the suffix.
-        shortened = shortened.replaceAll(" *Z+(?![A-Za-z])", "");
-        shortened = shortened.replaceAll(" *z+(?![A-Za-z])", "");
-        // Then sub-seconds, which would otherwise be left dangling by the
-        // removal of the seconds they hang off. Each is taken with whatever
-        // single character separates it from the field before — patterns are not
-        // all colon-separated, and a stray separator reads as a typo.
-        shortened = shortened.replaceAll("[^A-Za-z0-9]?S+(?![A-Za-z])", "");
-        shortened = shortened.replaceAll("[^A-Za-z0-9]?ss(?![A-Za-z])", "");
-        return shortened.trim();
     }
 
     String convertJavaDateTimePattern(final String pattern) {

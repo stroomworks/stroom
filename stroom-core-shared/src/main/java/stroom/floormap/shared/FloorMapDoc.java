@@ -31,6 +31,8 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -94,10 +96,12 @@ import java.util.Objects;
  *   <li>{@link #getValueFormat()} → defaults to {@link ValueFormat#JSON}</li>
  *   <li>{@link #getMatrix()} → never null; the constructor defaults a
  *       {@code null} input to {@link FloorMapTransformationMatrix#identity()}</li>
+ *   <li>{@link #getValueSchema()} → defaults to
+ *       {@link FloorMapFieldMapping#initialValueSchema()} when the stored schema is
+ *       {@code null} <em>or empty</em>, so legacy documents still parse</li>
  * </ul>
- * <p>All other getters — including {@link #getValueSchema()} — return
- * exactly what was passed to the constructor and <strong>may return
- * {@code null}</strong>; see each getter's Javadoc for details.</p>
+ * <p>All other getters return exactly what was passed to the constructor and
+ * <strong>may return {@code null}</strong>; see each getter's Javadoc for details.</p>
  *
  * <h3>Immutability and Builder</h3>
  * <p>All fields are {@code final}. Mutation is done via the copy-builder
@@ -296,6 +300,9 @@ public class FloorMapDoc extends AbstractDoc {
      * <ul>
      *   <li>{@link #getValueFormat()} returns {@link ValueFormat#JSON}
      *       if the stored field is {@code null}</li>
+     *   <li>{@link #getValueSchema()} returns
+     *       {@link FloorMapFieldMapping#initialValueSchema()} if the stored field is
+     *       {@code null} or empty</li>
      * </ul>
      *
      * <p><strong>Back-compatibility:</strong> The {@code factsStoreRef}
@@ -385,9 +392,9 @@ public class FloorMapDoc extends AbstractDoc {
         this.eventsQueryTablePreferences = eventsQueryTablePreferences;
 
         this.valueFormat = valueFormat;
-        this.valueSchema = valueSchema;
-        this.typeStyles = typeStyles;
-        this.groups = groups;
+        this.valueSchema = copyOrNull(valueSchema);
+        this.typeStyles = copyOrNull(typeStyles);
+        this.groups = copyOrNull(groups);
         this.measurementUnits = measurementUnits;
     }
 
@@ -507,10 +514,6 @@ public class FloorMapDoc extends AbstractDoc {
      * been set (i.e. the underlying field is {@code null}), it defaults to
      * {@link ValueFormat#JSON}.</p>
      *
-     * <p><strong>Note:</strong> only {@link ValueFormat#JSON} is currently
-     * implemented. Selecting {@link ValueFormat#XML} in the Settings tab
-     * will cause the parser to silently skip all entries.</p>
-     *
      * @return the configured {@link ValueFormat}, or {@link ValueFormat#JSON}
      *         if none was specified; never {@code null}
      */
@@ -535,9 +538,10 @@ public class FloorMapDoc extends AbstractDoc {
      */
     public List<FloorMapFieldMapping> getValueSchema() {
         if (valueSchema == null || valueSchema.isEmpty()) {
+            // initialValueSchema() is already a List.of(...), so immutable.
             return FloorMapFieldMapping.initialValueSchema();
         }
-        return valueSchema;
+        return Collections.unmodifiableList(valueSchema);
     }
 
     /**
@@ -547,7 +551,7 @@ public class FloorMapDoc extends AbstractDoc {
      * @return the type styles, or {@code null} if none have been configured
      */
     public List<TypeStyle> getTypeStyles() {
-        return typeStyles;
+        return unmodifiableOrNull(typeStyles);
     }
 
     /**
@@ -556,7 +560,7 @@ public class FloorMapDoc extends AbstractDoc {
      * @return the groups, or {@code null} if none have been defined
      */
     public List<FloorMapGroup> getGroups() {
-        return groups;
+        return unmodifiableOrNull(groups);
     }
 
     /**
@@ -671,6 +675,34 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
+     * Defensive copy that preserves {@code null}.
+     *
+     * <p>The document's collections used to be stored and handed out by reference, which made it
+     * immutable only by convention — every caller had to remember to copy before mutating, and two
+     * documents built from one builder shared list instances. The invariant now lives here instead
+     * of in the eight-or-so presenter call sites that were upholding it.</p>
+     *
+     * <p>{@code null} is preserved rather than normalised to an empty list because the getters
+     * distinguish the two: {@code null} means "never configured" and is what
+     * {@link #getTypeStyles()} and {@link #getGroups()} document as their absent value.</p>
+     */
+    private static <T> List<T> copyOrNull(final List<T> list) {
+        return list != null ? new ArrayList<>(list) : null;
+    }
+
+    /**
+     * Unmodifiable view that preserves {@code null}.
+     *
+     * <p>A copy on the way in stops a caller's later edits reaching the document; this stops a
+     * caller editing the document's own list. The elements are safe without copying because
+     * {@link TypeStyle}, {@link FloorMapGroup} and {@link FloorMapFieldMapping} expose no setters,
+     * so a copy of the list is effectively a deep copy from outside.</p>
+     */
+    private static <T> List<T> unmodifiableOrNull(final List<T> list) {
+        return list != null ? Collections.unmodifiableList(list) : null;
+    }
+
+    /**
      * Returns a new empty {@link Builder}.
      *
      * @return a fresh builder; never {@code null}
@@ -734,12 +766,12 @@ public class FloorMapDoc extends AbstractDoc {
             this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
             this.valueFormat = doc.valueFormat;
-            this.valueSchema = doc.valueSchema;
-            this.typeStyles = doc.typeStyles;
+            this.valueSchema = copyOrNull(doc.valueSchema);
+            this.typeStyles = copyOrNull(doc.typeStyles);
             // Every tab's onWrite returns doc.copy()...build(), so a field missed
             // here is silently deleted whenever the user saves from any tab that
             // does not itself write it.
-            this.groups = doc.groups;
+            this.groups = copyOrNull(doc.groups);
             this.measurementUnits = doc.measurementUnits;
         }
 
@@ -888,7 +920,7 @@ public class FloorMapDoc extends AbstractDoc {
          * @return this builder
          */
         public Builder valueSchema(final List<FloorMapFieldMapping> valueSchema) {
-            this.valueSchema = valueSchema;
+            this.valueSchema = copyOrNull(valueSchema);
             return self();
         }
 
@@ -900,7 +932,7 @@ public class FloorMapDoc extends AbstractDoc {
          * @return this builder
          */
         public Builder typeStyles(final List<TypeStyle> typeStyles) {
-            this.typeStyles = typeStyles;
+            this.typeStyles = copyOrNull(typeStyles);
             return self();
         }
 
@@ -911,7 +943,7 @@ public class FloorMapDoc extends AbstractDoc {
          * @return this builder
          */
         public Builder groups(final List<FloorMapGroup> groups) {
-            this.groups = groups;
+            this.groups = copyOrNull(groups);
             return self();
         }
 

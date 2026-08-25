@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,6 +79,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master.
+// Part of "Make the Visualisation Asset system generic" - upstream's VisualisationAsset*
+// classes were generalised into the shared stroom.document.asset subsystem so FloorMap can
+// carry assets too. Upstream still has the visualisation-specific version, so a merge will
+// try to reinstate it; keep this side and re-point any new upstream code at document.asset.
 public class VisPresenter
         extends AbstractComponentPresenter<VisPresenter.VisView>
         implements ResultComponent, StatusHandler, HasComponentSelection {

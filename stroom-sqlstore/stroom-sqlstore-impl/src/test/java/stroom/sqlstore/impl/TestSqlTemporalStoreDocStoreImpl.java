@@ -19,6 +19,8 @@ package stroom.sqlstore.impl;
 import stroom.docref.DocRef;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
+import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.util.shared.EntityServiceException;
 
@@ -55,6 +57,11 @@ class TestSqlTemporalStoreDocStoreImpl {
     private Store<SqlTemporalStoreDoc> mockStore;
     @Mock
     private StoreFactory mockStoreFactory;
+    // Upstream moved document authorisation into AbstractDocumentStore, which now takes a
+    // SecurityContext. These tests exercise the duplicate-name guard only, so the mock is
+    // never stubbed - it just has to be there for the constructor.
+    @Mock
+    private SecurityContext mockSecurityContext;
 
     // -----------------------------------------------------------------------
     // createDocument
@@ -127,6 +134,10 @@ class TestSqlTemporalStoreDocStoreImpl {
         final DocRef self = docRef("uuid-self", "myMap");
         when(mockStore.list()).thenReturn(List.of(self));
         when(mockStore.renameDocument(self, "myMap")).thenReturn(self);
+        // AbstractDocumentStore.renameDocument now checks EDIT before delegating, so the
+        // duplicate-name guard under test is only reached by a user who may edit.
+        when(mockSecurityContext.hasDocumentPermission(self, DocumentPermission.EDIT))
+                .thenReturn(true);
 
         assertThat(getStore().renameDocument(self, "myMap")).isEqualTo(self);
     }
@@ -139,7 +150,8 @@ class TestSqlTemporalStoreDocStoreImpl {
         when(mockStoreFactory.<SqlTemporalStoreDoc, SqlTemporalStoreDoc.Builder>createStore(
                 any(), eq(SqlTemporalStoreDoc.TYPE), any(), any(), any()))
                 .thenReturn(mockStore);
-        return new SqlTemporalStoreDocStoreImpl(mockStoreFactory, mockSerialiser);
+        return new SqlTemporalStoreDocStoreImpl(
+                mockStoreFactory, mockSecurityContext, mockSerialiser);
     }
 
     private static DocRef docRef(final String uuid, final String name) {

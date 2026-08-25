@@ -83,10 +83,10 @@ class TestFloorMapLocationResolver {
                 Collections.singletonList(pointFact("DSK-L1-03", 300, 400)));
 
         assertThat(placed).hasSize(1);
-        assertThat(placed.get(0).getId()).isEqualTo("user-42");
-        assertThat(placed.get(0).getType()).isEqualTo("person");
-        assertThat(placed.get(0).getX()).isEqualTo(300);
-        assertThat(placed.get(0).getY()).isEqualTo(400);
+        assertThat(placed.getFirst().getId()).isEqualTo("user-42");
+        assertThat(placed.getFirst().getType()).isEqualTo("person");
+        assertThat(placed.getFirst().getX()).isEqualTo(300);
+        assertThat(placed.getFirst().getY()).isEqualTo(400);
     }
 
     /**
@@ -103,9 +103,9 @@ class TestFloorMapLocationResolver {
         final List<FloorMapObject> after = FloorMapLocationResolver.resolve(
                 events, Collections.singletonList(pointFact("DSK-L1-03", 900, 100)));
 
-        assertThat(before.get(0).getX()).isEqualTo(300);
-        assertThat(after.get(0).getX()).isEqualTo(900);
-        assertThat(after.get(0).getY()).isEqualTo(100);
+        assertThat(before.getFirst().getX()).isEqualTo(300);
+        assertThat(after.getFirst().getX()).isEqualTo(900);
+        assertThat(after.getFirst().getY()).isEqualTo(100);
     }
 
     /** A fact placed by its matrix is followed there, not to its raw world coords. */
@@ -118,8 +118,8 @@ class TestFloorMapLocationResolver {
                 Collections.singletonList(entityAt("DSK-L1-03")),
                 Collections.singletonList(moved));
 
-        assertThat(placed.get(0).getX()).isEqualTo(60);
-        assertThat(placed.get(0).getY()).isEqualTo(80);
+        assertThat(placed.getFirst().getX()).isEqualTo(60);
+        assertThat(placed.getFirst().getY()).isEqualTo(80);
     }
 
     /** An entity that brought its own coordinates is left exactly where it is. */
@@ -174,8 +174,8 @@ class TestFloorMapLocationResolver {
                 Collections.singletonList(entityAt("BAY")),
                 Collections.singletonList(area));
 
-        assertThat(placed.get(0).getX()).isEqualTo(100);
-        assertThat(placed.get(0).getY()).isEqualTo(100);
+        assertThat(placed.getFirst().getX()).isEqualTo(100);
+        assertThat(placed.getFirst().getY()).isEqualTo(100);
     }
 
     /** Null in, empty out — the caller always has a list to push. */
@@ -223,6 +223,7 @@ class TestFloorMapLocationResolver {
         return object;
     }
 
+    @SuppressWarnings("SameParameterValue")
     private static Fact pointFact(final String key, final double x, final double y) {
         return new Fact(key, "desk", null,
                 FloorMapTransformationMatrix.identity(), new double[]{x, y});

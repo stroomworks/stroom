@@ -24,7 +24,6 @@
                 <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
                 <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
                 <g:Label ui:field="scrubTooltip" addStyleNames="stroom-floormap-timeline-scrub-tooltip" />
-                <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
             </g:FlowPanel>
         </g:FlowPanel>
 

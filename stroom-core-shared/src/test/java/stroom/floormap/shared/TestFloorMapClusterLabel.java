@@ -152,9 +152,9 @@ class TestFloorMapClusterLabel {
                                 new FloorMapObject("bob", "user", 1, 0)),
                         10,
                         null)
-                .getClusters().get(0);
+                .getClusters().getFirst();
 
-        assertThat(FloorMapClusterLabel.captionFor(cluster, id -> "Ignored"))
+        assertThat(FloorMapClusterLabel.captionFor(cluster, ignored -> "Ignored"))
                 .isEqualTo("2 users");
     }
 
@@ -182,9 +182,9 @@ class TestFloorMapClusterLabel {
 
         assertThat(FloorMapClusterLabel.captionFor(cluster, null))
                 .isEqualTo("alice@example.com + 2 others");
-        assertThat(FloorMapClusterLabel.captionFor(cluster, id -> null))
+        assertThat(FloorMapClusterLabel.captionFor(cluster, ignored -> null))
                 .isEqualTo("alice@example.com + 2 others");
-        assertThat(FloorMapClusterLabel.captionFor(cluster, id -> "   "))
+        assertThat(FloorMapClusterLabel.captionFor(cluster, ignored -> "   "))
                 .isEqualTo("alice@example.com + 2 others");
     }
 
@@ -198,7 +198,7 @@ class TestFloorMapClusterLabel {
                                 new FloorMapObject("carol", "user", 2, 0)),
                         10,
                         Collections.singleton("alice@example.com"))
-                .getClusters().get(0);
+                .getClusters().getFirst();
     }
 
     /** A cluster small enough to list in full is listed in full. */
@@ -224,7 +224,7 @@ class TestFloorMapClusterLabel {
         final List<String> lines = FloorMapClusterLabel.hoverNames(names, 20);
 
         assertThat(lines).hasSize(21);
-        assertThat(lines.get(0)).isEqualTo("user0");
+        assertThat(lines.getFirst()).isEqualTo("user0");
         assertThat(lines.get(19)).isEqualTo("user19");
         assertThat(lines.get(20)).isEqualTo("…and 380 more — click to see all");
     }

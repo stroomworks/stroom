@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,6 +144,13 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.inject.Singleton;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master
+// Local change: opening a document routes through
+// plugin.getInitialisationHandler().showInitialisationDialog(...) rather than calling
+// plugin.open(...) directly, so a document type can require configuration first. This is the
+// call site that makes DocumentPlugin.getInitialisationHandler() do anything; FloorMap uses it
+// to prompt for its Facts/Events stores. Upstream calls open() directly - restoring that
+// silently disables the dialog for every document type that relies on it.
 @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
 @Singleton
 public class DocumentPluginEventManager extends Plugin {

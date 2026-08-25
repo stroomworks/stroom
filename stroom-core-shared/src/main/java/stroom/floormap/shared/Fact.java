@@ -254,6 +254,28 @@ public final class Fact {
     }
 
     /**
+     * Whether this fact's {@code worldToMap} can actually place it.
+     *
+     * <p>A singular matrix - the all-zero one being the common case - collapses the fact to
+     * nothing, and it fails in two different silent ways depending on the fact. An image or
+     * area emits {@code matrix(0,0,0,0,0,0)}, a non-invertible CTM, so the browser declines
+     * to draw it while it stays hit-testable as a zero-size box: an object the user can
+     * select but cannot see. An imageless point instead transforms to {@code (0,0)}
+     * whatever its own coordinates say, so it piles up at the origin and looks like an
+     * object legitimately placed there.</p>
+     *
+     * <p>Both are worth refusing rather than drawing wrongly, so the renderer skips these
+     * and hit-testing ignores them. This predicate exists so those two decisions cannot
+     * drift apart - a fact that is not drawn must not be selectable, which is precisely the
+     * combination that made the original behaviour so hard to make sense of.</p>
+     *
+     * @return {@code true} when the matrix is usable
+     */
+    public boolean hasUsablePlacement() {
+        return worldToMap.hasInverse();
+    }
+
+    /**
      * Returns a copy of this fact with a different placement matrix — used for
      * live transform previews. All other fields (including area geometry) are
      * carried over unchanged.

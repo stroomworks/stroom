@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master.
+// Part of adding the SQL Temporal Store, which upstream does not have. FloorMap stores its
+// facts and events in one, so dropping these hunks breaks reference-data lookup, XSLT lookup
+// or the store's Data tab depending on the file. Upstream's version must not simply win here.
 public class ReferenceData {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(ReferenceData.class);

@@ -50,9 +50,15 @@ import stroom.widget.util.client.SafeHtmlUtil;
  * <p>Uses SVG {@code <pattern>} elements with a {@code patternTransform}
  * that aligns the grid with the map coordinate system. The grid rects use
  * {@code width="100%" height="100%"} so the grid always extends to the
- * edges of the viewport regardless of pan/zoom. Grid lines use
- * {@code vector-effect="non-scaling-stroke"} so they remain a constant
- * pixel width.</p>
+ * edges of the viewport regardless of pan/zoom.</p>
+ *
+ * <p>Grid lines hold a constant screen-pixel width, but <em>not</em> via
+ * {@code vector-effect="non-scaling-stroke"} — that has no effect inside a
+ * {@code <pattern>} tile, because the tile is rasterised once in pattern
+ * coordinate space and then tiled. The stroke widths are instead divided by
+ * the effective scale so they work out to a fixed pixel width once the
+ * pattern transform has been applied. That arithmetic is the reason
+ * {@code MAJOR_SCREEN_PX / effectiveScale} appears in {@code appendGrid}.</p>
  *
  * <p>This method should be called at the <strong>SVG root level</strong>,
  * outside the pan/zoom and matrix transform groups.</p>
@@ -66,6 +72,17 @@ public final class FloorMapGrid {
      * {@code --floormap-grid__background-color} so the grid respects
      * light/dark themes.
      */
+    // These three are emitted as `style="stroke: var(...)"` rather than as
+    // `stroke="var(...)"`. CSS Custom Properties defines var() substitution for property
+    // declarations; whether a presentation *attribute* substitutes is not something the
+    // specs clearly guarantee, and implementations have differed. Chromium resolves both
+    // forms (measured), so the attribute form was not broken here - but the style form is
+    // the one that is actually defined, and it costs nothing.
+    //
+    // Safe to raise the precedence this way because nothing in the stylesheet targets these
+    // elements: the grid lines and background rect carry no class, and the tokens below are
+    // already the theme indirection (--floormap-grid__major-stroke -> --vis-axis__color), so
+    // there is no rule for an inline style to override.
     private static final String BG_FILL = "var(--floormap-grid__background-color)";
     /**
      * Major grid line colour — references the CSS variable
@@ -103,8 +120,6 @@ public final class FloorMapGrid {
      */
     static final double TARGET_MAX_PX = 400.0;
 
-    // -- Pattern ID (unique within a single SVG document) ------------------
-    private static final String MAJOR_PATTERN_ID = "grid-major";
 
     private FloorMapGrid() {
         // utility class
@@ -132,13 +147,24 @@ public final class FloorMapGrid {
      *                   {@code null} on a map with no scale set — in which case
      *                   the default scale (one centimetre per map unit) applies.
      *                   Sizes the grid decade; the grid itself carries no text
+     * @param patternId  id for the {@code <pattern>} this appends, and for the
+     *                   {@code url(#...)} that fills the overlay rect with it. Must be
+     *                   unique across the whole page, not merely within the enclosing
+     *                   {@code <svg>}: for inline SVG, id resolution is document-wide,
+     *                   so two canvases using one id makes the second rect pick up the
+     *                   first canvas's pattern — including its {@code patternTransform},
+     *                   which encodes that canvas's pan and zoom. The grid then visibly
+     *                   scrolls with the wrong map. Callers should mint one id per view
+     *                   instance and reuse it across frames rather than generating a
+     *                   fresh one per draw.
      */
     public static void appendGrid(final HtmlBuilder builder,
                                   final FloorMapTransformationMatrix matrix,
                                   final double userZoom,
                                   final double panX,
                                   final double panY,
-                                  final FloorMapMeasurementUnits units) {
+                                  final FloorMapMeasurementUnits units,
+                                  final String patternId) {
 
         // -- 1. Compute effective pixels-per-world-unit ----------------------
         //    matrixScale = scale factor of the map-to-screen affine matrix
@@ -194,7 +220,7 @@ public final class FloorMapGrid {
                                 new Attribute("y1", pos),
                                 new Attribute("x2", formatDouble(majorWorldSpacing)),
                                 new Attribute("y2", pos),
-                                new Attribute("stroke", MINOR_STROKE),
+                                new Attribute("style", "stroke: " + MINOR_STROKE),
                                 new Attribute("stroke-opacity", minorOpacityStr),
                                 new Attribute("stroke-width", minorStrokeWidth));
                         // Vertical minor line
@@ -203,7 +229,7 @@ public final class FloorMapGrid {
                                 new Attribute("y1", "0"),
                                 new Attribute("x2", pos),
                                 new Attribute("y2", formatDouble(majorWorldSpacing)),
-                                new Attribute("stroke", MINOR_STROKE),
+                                new Attribute("style", "stroke: " + MINOR_STROKE),
                                 new Attribute("stroke-opacity", minorOpacityStr),
                                 new Attribute("stroke-width", minorStrokeWidth));
                     }
@@ -216,7 +242,7 @@ public final class FloorMapGrid {
                         new Attribute("y1", "0"),
                         new Attribute("x2", formatDouble(majorWorldSpacing)),
                         new Attribute("y2", "0"),
-                        new Attribute("stroke", MAJOR_STROKE),
+                        new Attribute("style", "stroke: " + MAJOR_STROKE),
                         new Attribute("stroke-width", majorStrokeWidth));
                 // Vertical major line
                 gridPattern.elem(SafeHtmlUtil.from("line"),
@@ -224,12 +250,12 @@ public final class FloorMapGrid {
                         new Attribute("y1", "0"),
                         new Attribute("x2", "0"),
                         new Attribute("y2", formatDouble(majorWorldSpacing)),
-                        new Attribute("stroke", MAJOR_STROKE),
+                        new Attribute("style", "stroke: " + MAJOR_STROKE),
                         new Attribute("stroke-width", majorStrokeWidth));
 
             },
                     SafeHtmlUtil.from("pattern"),
-                    new Attribute("id", MAJOR_PATTERN_ID),
+                    new Attribute("id", patternId),
                     new Attribute("width", formatDouble(majorWorldSpacing)),
                     new Attribute("height", formatDouble(majorWorldSpacing)),
                     new Attribute("patternUnits", "userSpaceOnUse"),
@@ -243,13 +269,13 @@ public final class FloorMapGrid {
         builder.elem(SafeHtmlUtil.from("rect"),
                 new Attribute("width", "100%"),
                 new Attribute("height", "100%"),
-                new Attribute("fill", BG_FILL));
+                new Attribute("style", "fill: " + BG_FILL));
 
         // -- 5. Grid overlay — fills entire viewport ------------------------
         builder.elem(SafeHtmlUtil.from("rect"),
                 new Attribute("width", "100%"),
                 new Attribute("height", "100%"),
-                new Attribute("fill", "url(#" + MAJOR_PATTERN_ID + ")"),
+                new Attribute("fill", "url(#" + patternId + ")"),
                 new Attribute("pointer-events", "none"));
     }
 

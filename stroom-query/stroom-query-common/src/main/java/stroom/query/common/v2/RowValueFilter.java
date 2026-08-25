@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
 
+// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
+// Local rename (value -> val) from "Change value to val to avoid errors in recent Java versions".
+// A language-compatibility workaround, not a behavioural change, so upstream's version should win
+// once they build against the same JDK.
 public class RowValueFilter {
 
     public static boolean matches(final List<Column> columns) {

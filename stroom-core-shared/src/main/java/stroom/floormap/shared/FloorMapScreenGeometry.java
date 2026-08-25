@@ -168,15 +168,18 @@ public final class FloorMapScreenGeometry {
     }
 
     /**
-     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}},
-     * or {@code null} if the fact has no matrix. Dispatch order matches the
-     * renderer: image wins over vertices, else a fixed-size glyph box.
+     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}};
+     * never {@code null}. Dispatch order matches the renderer: image wins over
+     * vertices, else a fixed-size glyph box.
+     *
+     * <p>This used to document a {@code null} return "if the fact has no matrix",
+     * which cannot happen: {@link Fact}'s canonical constructor - the only way to
+     * build one, including via {@code withWorldToMap} and {@code withVertices} -
+     * substitutes {@link FloorMapTransformationMatrix#identity()} for a null
+     * matrix. The claim had propagated into null checks at the call sites.</p>
      */
     public double[] factScreenBounds(final Fact fact) {
         final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
-        if (w2m == null) {
-            return null;
-        }
         if (!fact.hasImage() && fact.hasVertices()) {
             final double[] acc = newBoundsAccumulator();
             for (final double[] v : fact.getVertices()) {
@@ -195,8 +198,8 @@ public final class FloorMapScreenGeometry {
         final double[] pos = fact.getPosition();
         final double[] mapPt = w2m.transformPoint(
                 pos != null ? pos[0] : 0, pos != null ? pos[1] : 0);
-        final double sx = offsetX + scale * mapPt[0];
-        final double sy = offsetY - scale * mapPt[1];
+        final double sx = mapToScreenX(mapPt[0]);
+        final double sy = mapToScreenY(mapPt[1]);
         // A layer that draws an image occupies the area-matched graphic box, which
         // is not square; measuring it as a square would put the marquee hit area
         // and the selection frame in the wrong place.
@@ -259,8 +262,14 @@ public final class FloorMapScreenGeometry {
             return hits;
         }
         for (final Fact fact : facts) {
+            // A fact the renderer refuses to draw must not be selectable either; see
+            // Fact.hasUsablePlacement(). Its bounds would be a zero-size box at the origin,
+            // which almost every marquee overlaps.
+            if (!fact.hasUsablePlacement()) {
+                continue;
+            }
             final double[] b = factScreenBounds(fact);
-            if (b != null && b[0] <= rectPx[2] && b[2] >= rectPx[0]
+            if (b[0] <= rectPx[2] && b[2] >= rectPx[0]
                     && b[1] <= rectPx[3] && b[3] >= rectPx[1]) {
                 hits.add(fact.getKey());
             }
@@ -284,13 +293,11 @@ public final class FloorMapScreenGeometry {
         for (final Fact f : facts) {
             if (selectedIds.contains(f.getKey())) {
                 final double[] b = factScreenBounds(f);
-                if (b != null) {
-                    acc[0] = Math.min(acc[0], b[0]);
-                    acc[1] = Math.min(acc[1], b[1]);
-                    acc[2] = Math.max(acc[2], b[2]);
-                    acc[3] = Math.max(acc[3], b[3]);
-                    any = true;
-                }
+                acc[0] = Math.min(acc[0], b[0]);
+                acc[1] = Math.min(acc[1], b[1]);
+                acc[2] = Math.max(acc[2], b[2]);
+                acc[3] = Math.max(acc[3], b[3]);
+                any = true;
             }
         }
         if (!any) {
@@ -333,9 +340,68 @@ public final class FloorMapScreenGeometry {
         return new double[]{Double.MAX_VALUE, Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE};
     }
 
+    /**
+     * Projects a point from map space to screen space.
+     *
+     * <p>The Y flip is the whole reason this exists as a named method: map space is Y-up and
+     * the SVG viewport is Y-down, so the correct projection is {@code +} on X and {@code -}
+     * on Y. Get that wrong and objects still appear on the map, just mirrored about the
+     * horizontal axis - which on a symmetrical floor plan can go unnoticed indefinitely.
+     * This class owned the formula but kept it private, so callers needing a point-level
+     * projection re-derived it by hand.</p>
+     *
+     * <p><strong>Not the same as
+     * {@link FloorMapViewport#mapToScreen(double, double, FloorMapTransformationMatrix)}</strong>,
+     * despite the name. That one takes a point in a fact's <em>world</em> frame and applies
+     * the background matrix first, so the Y flip is already inside the matrix and the
+     * projection that follows is {@code +} on both axes. This one takes a point already in
+     * <em>map</em> space and so must apply the flip itself. Using either where the other
+     * belongs produces a vertically mirrored result, which is why both spell out which
+     * space they expect.</p>
+     *
+     * @param mapX the x coordinate in map space
+     * @param mapY the y coordinate in map space
+     * @return {@code {screenX, screenY}}
+     */
+    public double[] mapToScreen(final double mapX, final double mapY) {
+        return new double[]{mapToScreenX(mapX), mapToScreenY(mapY)};
+    }
+
+    /**
+     * Projects a point with an explicit viewport, for callers holding scale and pan directly
+     * rather than a {@code FloorMapScreenGeometry}.
+     *
+     * @param mapX    the x coordinate in map space
+     * @param mapY    the y coordinate in map space
+     * @param scale   pixels per map unit
+     * @param offsetX the pan offset in screen pixels
+     * @param offsetY the pan offset in screen pixels
+     * @return {@code {screenX, screenY}}
+     */
+    public static double[] mapToScreen(final double mapX,
+                                       final double mapY,
+                                       final double scale,
+                                       final double offsetX,
+                                       final double offsetY) {
+        return new double[]{offsetX + scale * mapX, offsetY - scale * mapY};
+    }
+
+    /**
+     * The X half of {@link #mapToScreen(double, double)}, allocation-free for the render
+     * path - {@code expandScreen} runs once per vertex per fact per frame.
+     */
+    public double mapToScreenX(final double mapX) {
+        return offsetX + scale * mapX;
+    }
+
+    /** The Y half of {@link #mapToScreen(double, double)}, including the Y-up to Y-down flip. */
+    public double mapToScreenY(final double mapY) {
+        return offsetY - scale * mapY;
+    }
+
     private void expandScreen(final double[] acc, final double mapX, final double mapY) {
-        final double sx = offsetX + scale * mapX;
-        final double sy = offsetY - scale * mapY;
+        final double sx = mapToScreenX(mapX);
+        final double sy = mapToScreenY(mapY);
         acc[0] = Math.min(acc[0], sx);
         acc[1] = Math.min(acc[1], sy);
         acc[2] = Math.max(acc[2], sx);

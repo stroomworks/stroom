@@ -120,7 +120,7 @@ class TestFloorMapGroup {
         assertThat(after.get(1).getName()).isEqualTo("Night Security");
         assertThat(after.get(1).getMemberIds()).containsExactly("gate-3");
         // Position preserved — a rename must not reorder the panel.
-        assertThat(after.get(0).getId()).isEqualTo("g1");
+        assertThat(after.getFirst().getId()).isEqualTo("g1");
     }
 
     /**
@@ -136,7 +136,7 @@ class TestFloorMapGroup {
         final List<FloorMapGroup> after = FloorMapGroup.replace(groups,
                 FloorMapGroup.find(groups, "g2").withMember("gate-3"));
 
-        assertThat(after.get(0).getMemberIds()).containsExactly("gate-1");
+        assertThat(after.getFirst().getMemberIds()).containsExactly("gate-1");
         assertThat(after.get(1).getMemberIds()).containsExactly("gate-2", "gate-3");
     }
 
@@ -159,8 +159,7 @@ class TestFloorMapGroup {
         final List<FloorMapGroup> after = FloorMapGroup.without(groups, "g1");
 
         assertThat(after).hasSize(1);
-        //noinspection SequencedCollectionMethodCanBeUsed
-        assertThat(after.get(0).getId()).isEqualTo("g2");
+        assertThat(after.getFirst().getId()).isEqualTo("g2");
     }
 
     /** A hand-edited document with no id still opens: the name stands in. */

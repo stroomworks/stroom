@@ -81,12 +81,42 @@ public interface ValueAccessor {
      * XML, this expects comma-separated numbers in the element text
      * content.</p>
      *
+     * <p><strong>All or nothing.</strong> If any element is not a number the
+     * whole array is malformed and {@code null} is returned. Implementations
+     * must not substitute a default for the offending element: callers such as
+     * {@code FloorMapEntryParser.parseMatrix} cannot distinguish a fabricated
+     * zero from a real one, so a partial parse silently produces valid-looking
+     * but wrong geometry.</p>
+     *
      * @param value the parsed value to read from
      * @param path  the format-specific path
      * @return the numeric array, or {@code null} if not found or
      *         malformed
      */
     double[] getArray(ParsedValue value, String path);
+
+    /**
+     * Whether a value exists at the given path at all, regardless of whether it
+     * can be read as any particular type.
+     *
+     * <p>This exists to separate two states that the typed getters have to
+     * conflate. {@link #getArray} returns {@code null} both for "there is
+     * nothing here" and for "there is something here but it is not a numeric
+     * array", and callers need to treat those very differently: a stream can
+     * legitimately omit a field, in which case a sensible default applies
+     * silently, whereas a field that is present but unreadable is corrupt data
+     * that the user needs to be told about.</p>
+     *
+     * <p>An explicit JSON {@code null} counts as absent — it is the format's way
+     * of saying "no value" — as does an attribute or element that is not there.
+     * An empty string or an empty array counts as <em>present</em>: something was
+     * written, it just cannot be used.</p>
+     *
+     * @param value the parsed value to inspect
+     * @param path  the format-specific path
+     * @return {@code true} if anything is present at {@code path}
+     */
+    boolean hasValue(ParsedValue value, String path);
 
     /**
      * Writes a numeric array at the given path.

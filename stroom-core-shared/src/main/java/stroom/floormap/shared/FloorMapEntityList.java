@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * Accumulating roster of every entity seen on a floor map — moving entities
@@ -39,6 +40,56 @@ import java.util.Objects;
 public class FloorMapEntityList {
 
     private final Map<String, EntityEntry> byId = new HashMap<>();
+
+    /**
+     * The text to caption an entity with on the canvas.
+     *
+     * <p>Precedence, and the reasoning for it:</p>
+     * <ol>
+     *   <li><strong>The fact's {@code LABEL}.</strong> This is the name the user
+     *       typed into the properties dialog's Name field, so it is the most
+     *       specific answer available and it is what they expect to see.</li>
+     *   <li><strong>The owning tab's resolver.</strong> Live event entities have no
+     *       {@link Fact} behind them, so the resolver is the only source of a name
+     *       for them.</li>
+     *   <li><strong>The key, shortened.</strong> Last resort — see
+     *       {@link #displayName(String)}.</li>
+     * </ol>
+     *
+     * <p>The label deliberately outranks the resolver here, which is the opposite
+     * of the order the hover tooltip uses. The reason is that the roster's resolver
+     * returns a <em>key-derived</em> name for everything except areas (see
+     * {@link #displayNameFor}), and that name is never blank — so consulting the
+     * resolver first would silently discard a user-supplied label for every object
+     * and background. Putting the resolver first would make this method a no-op for
+     * exactly the facts it exists to serve.</p>
+     *
+     * @param id       the entity id; may be {@code null}
+     * @param label    the fact's {@code LABEL} value, or {@code null} when it has
+     *                 none or there is no fact (a live event entity)
+     * @param resolver the owning tab's name resolver, or {@code null}
+     * @return the caption text; never {@code null}, though it may be empty when
+     *         {@code id} is
+     */
+    public static String captionFor(final String id,
+                                    final String label,
+                                    final Function<String, String> resolver) {
+        if (isUsableText(label)) {
+            return label.trim();
+        }
+        if (resolver != null) {
+            final String resolved = resolver.apply(id);
+            if (isUsableText(resolved)) {
+                return resolved.trim();
+            }
+        }
+        final String shortened = displayName(id);
+        return shortened != null ? shortened : "";
+    }
+
+    private static boolean isUsableText(final String text) {
+        return text != null && !text.trim().isEmpty();
+    }
 
     /**
      * Derives the short display name for an entity id, matching the rule used

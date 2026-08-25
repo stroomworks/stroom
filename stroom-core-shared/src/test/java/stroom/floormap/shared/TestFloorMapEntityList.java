@@ -185,8 +185,7 @@ class TestFloorMapEntityList {
 
         final List<EntityEntry> entities = entityList.getEntities();
         assertThat(entities).hasSize(1);
-        //noinspection SequencedCollectionMethodCanBeUsed
-        assertThat(entities.get(0).getType()).isEqualTo("vehicle");
+        assertThat(entities.getFirst().getType()).isEqualTo("vehicle");
     }
 
     // -----------------------------------------------------------------------
@@ -375,8 +374,7 @@ class TestFloorMapEntityList {
 
         final List<EntityEntry> entities = entityList.getEntities();
         assertThat(entities).hasSize(1);
-        //noinspection SequencedCollectionMethodCanBeUsed
-        assertThat(entities.get(0).getType()).isEqualTo("vehicle");
+        assertThat(entities.getFirst().getType()).isEqualTo("vehicle");
     }
 
     /**
@@ -495,4 +493,83 @@ class TestFloorMapEntityList {
         assertThat(a).hasSameHashCodeAs(b);
         assertThat(a).isNotEqualTo(c);
     }
+    // -----------------------------------------------------------------------
+    // captionFor (canvas caption text)
+    // -----------------------------------------------------------------------
+
+    /**
+     * A user-supplied {@code LABEL} wins, which is the whole point of the field.
+     *
+     * <p>Regression test for a real gap: the canvas caption path used to shorten the
+     * key and ignore the label entirely, so an object the user had named "Loading
+     * Bay" was captioned "gate-1" while the hover tooltip for the same object said
+     * "Loading Bay".</p>
+     */
+    @Test
+    void testCaptionFor_prefersTheFactLabel() {
+        assertThat(FloorMapEntityList.captionFor("gate-1@100", "Loading Bay", null))
+                .isEqualTo("Loading Bay");
+    }
+
+    /**
+     * The label must beat the resolver, not the other way round.
+     *
+     * <p>This is the subtle one. The roster's resolver returns a key-derived name for
+     * everything except areas, and that name is never blank — so a resolver-first
+     * precedence would silently discard every user-supplied label. Consulting the
+     * resolver first would make the method useless for exactly the facts it exists
+     * to serve.</p>
+     */
+    @Test
+    void testCaptionFor_labelBeatsAKeyDerivedResolver() {
+        assertThat(FloorMapEntityList.captionFor(
+                "gate-1@100", "Loading Bay", FloorMapEntityList::displayName))
+                .isEqualTo("Loading Bay");
+    }
+
+    /**
+     * With no label — a live event entity, which has no {@link Fact} behind it — the
+     * resolver is the only source of a name.
+     */
+    @Test
+    void testCaptionFor_fallsBackToTheResolver() {
+        assertThat(FloorMapEntityList.captionFor("user-42@100", null, ignored -> "Alice"))
+                .isEqualTo("Alice");
+    }
+
+    /** A blank label or a blank resolver result is not a name. */
+    @Test
+    void testCaptionFor_blankValuesAreSkipped() {
+        assertThat(FloorMapEntityList.captionFor("user-42@100", "   ", ignored -> "Alice"))
+                .isEqualTo("Alice");
+        assertThat(FloorMapEntityList.captionFor("user-42@100", null, ignored -> "  "))
+                .isEqualTo("user-42");
+        assertThat(FloorMapEntityList.captionFor("user-42@100", null, ignored -> null))
+                .isEqualTo("user-42");
+    }
+
+    /** With nothing else available the key is shortened at the {@code @}. */
+    @Test
+    void testCaptionFor_lastResortIsTheShortenedKey() {
+        assertThat(FloorMapEntityList.captionFor("user-42@100", null, null))
+                .isEqualTo("user-42");
+        assertThat(FloorMapEntityList.captionFor("plain-id", null, null))
+                .isEqualTo("plain-id");
+    }
+
+    /** Never returns null, so a caller can hand the result straight to the renderer. */
+    @Test
+    void testCaptionFor_nullIdYieldsEmptyNotNull() {
+        assertThat(FloorMapEntityList.captionFor(null, null, null)).isEmpty();
+    }
+
+    /** Values are trimmed, so stray whitespace cannot shift a caption's placement. */
+    @Test
+    void testCaptionFor_trimsWhitespace() {
+        assertThat(FloorMapEntityList.captionFor("k", "  Loading Bay  ", null))
+                .isEqualTo("Loading Bay");
+        assertThat(FloorMapEntityList.captionFor("k", null, ignored -> "  Alice  "))
+                .isEqualTo("Alice");
+    }
+
 }

@@ -47,7 +47,12 @@ public class MapValueAccessor implements ValueAccessor {
         try {
             @SuppressWarnings("unchecked")
             final Map<String, Object> map = JsonUtil.readValue(raw, Map.class);
-            return new ParsedValue(map);
+            // Production requires an object: JSONParser yields a JSONValue and the
+            // accessor keeps it only if isObject() succeeds. Jackson maps the literal
+            // "null" to a null Map, which wrapped in a ParsedValue produced a
+            // non-null handle that blew up on first use instead of being rejected
+            // here.
+            return map != null ? new ParsedValue(map) : null;
         } catch (final Exception e) {
             return null;
         }
@@ -65,7 +70,11 @@ public class MapValueAccessor implements ValueAccessor {
         }
         final Map<String, Object> map = asMap(value);
         final Object val = map.get(toKey(path));
-        return val != null ? val.toString() : null;
+        // Only an actual string is a string. Production JsonValueAccessor asks
+        // JSONValue.isString() and returns null for anything else, so stringifying
+        // here (a number 5 reading back as "5.0") made every test using this double
+        // assert behaviour the browser never exhibits.
+        return val instanceof String ? (String) val : null;
     }
 
     @Override
@@ -83,6 +92,17 @@ public class MapValueAccessor implements ValueAccessor {
     }
 
     @Override
+    public boolean hasValue(final ParsedValue value, final String path) {
+        if (value == null || path == null) {
+            return false;
+        }
+        final Map<String, Object> map = asMap(value);
+        final String key = toKey(path);
+        // A stored null mirrors an explicit JSON null, which production treats as absent.
+        return map.containsKey(key) && map.get(key) != null;
+    }
+
+    @Override
     public double[] getArray(final ParsedValue value, final String path) {
         if (value == null || path == null) {
             return null;
@@ -91,9 +111,22 @@ public class MapValueAccessor implements ValueAccessor {
         final Object val = map.get(toKey(path));
         if (val instanceof List<?>) {
             @SuppressWarnings("PatternVariableCanBeUsed") final List<?> list = (List<?>) val;
+            if (list.isEmpty()) {
+                // Production JsonValueAccessor treats an empty array as absent.
+                return null;
+            }
             final double[] result = new double[list.size()];
             for (int i = 0; i < list.size(); i++) {
-                result[i] = ((Number) list.get(i)).doubleValue();
+                final Object element = list.get(i);
+                if (!(element instanceof Number)) {
+                    // Match the ValueAccessor contract, and production: one bad element
+                    // makes the whole array malformed. This double used to throw a
+                    // ClassCastException here, which made the parser skip the entry —
+                    // the opposite of what production did, so the tests were asserting
+                    // behaviour the browser never exhibited.
+                    return null;
+                }
+                result[i] = ((Number) element).doubleValue();
             }
             return result;
         }

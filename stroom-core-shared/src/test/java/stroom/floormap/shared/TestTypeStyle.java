@@ -20,6 +20,7 @@ import stroom.floormap.shared.TypeStyle.Shape;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,6 +82,30 @@ class TestTypeStyle {
     }
 
     /**
+     * A null element in the stored list is skipped, not dereferenced.
+     *
+     * <p>Nothing in the application produces one — every producer builds elements
+     * explicitly — so this guards against a hand-edited or badly imported document
+     * carrying a literal {@code null} in its {@code typeStyles} array. The three sibling
+     * walkers over this same list ({@code colourForType}, {@code withAreaStyle},
+     * {@code FloorMapDocSession.hasAreaStyle}) all guard for it; {@code merge} did not.</p>
+     *
+     * <p>Uses {@code Arrays.asList} rather than {@code List.of}, which rejects nulls.</p>
+     */
+    @Test
+    void testMerge_nullElementIsSkipped() {
+        final List<TypeStyle> existing =
+                Arrays.asList(new TypeStyle("gate", null, null), null, new TypeStyle("camera", null, null));
+
+        final List<TypeStyle> merged = TypeStyle.merge(existing, List.of("sensor"));
+
+        assertThat(types(merged))
+                .as("the null is dropped, the real entries and the discovered type survive")
+                .containsExactly("gate", "camera", "sensor");
+        assertThat(merged).doesNotContainNull();
+    }
+
+    /**
      * The "area" style is inserted directly after the last background entry —
      * areas must paint above the floor plan but beneath everything else.
      */
@@ -114,7 +139,7 @@ class TestTypeStyle {
         final List<TypeStyle> result = TypeStyle.withAreaStyle(existing);
 
         assertThat(result).isEqualTo(existing);
-        assertThat(result.get(0).getColour()).isEqualTo("#123456");
+        assertThat(result.getFirst().getColour()).isEqualTo("#123456");
     }
 
     @Test
@@ -212,6 +237,6 @@ class TestTypeStyle {
     void testMerge_discoveredTypesHaveNoGraphic() {
         final List<TypeStyle> result = TypeStyle.merge(null, List.of("van"));
 
-        assertThat(result.get(0).hasGraphic()).isFalse();
+        assertThat(result.getFirst().hasGraphic()).isFalse();
     }
 }

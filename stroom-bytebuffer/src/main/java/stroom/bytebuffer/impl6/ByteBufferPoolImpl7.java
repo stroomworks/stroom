@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
+// The only local divergence in this file is the identifier `value` renamed to `val`, for
+// compatibility with recent JDKs. Verified behaviour-neutral: neutralise that one rename and
+// the diff against the merge base is empty. Same workaround as RowValueFilter. If upstream has
+// done the same rename, or no longer needs it, take their version wholesale.
 @Singleton
 public class ByteBufferPoolImpl7 implements ByteBufferPool {
 

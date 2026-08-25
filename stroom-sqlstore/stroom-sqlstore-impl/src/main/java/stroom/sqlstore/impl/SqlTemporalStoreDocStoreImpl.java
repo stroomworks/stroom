@@ -19,6 +19,7 @@ package stroom.sqlstore.impl;
 import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.StoreFactory;
+import stroom.security.api.SecurityContext;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.util.shared.EntityServiceException;
 
@@ -35,8 +36,10 @@ public class SqlTemporalStoreDocStoreImpl
     @Inject
     public SqlTemporalStoreDocStoreImpl(
             final StoreFactory storeFactory,
+            final SecurityContext securityContext,
             final SqlTemporalStoreSerialiser serialiser) {
         super(storeFactory,
+                securityContext,
                 serialiser,
                 SqlTemporalStoreDoc.TYPE,
                 SqlTemporalStoreDoc::builder,

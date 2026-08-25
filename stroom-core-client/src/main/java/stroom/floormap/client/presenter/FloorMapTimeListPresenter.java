@@ -21,6 +21,7 @@ import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.shared.FloorMapEditorModel;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.JSONUtil;
@@ -308,14 +309,12 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
             @Override
             public String getValue(final TemporalEntry entry) {
-                // The user's own date/time preference, as everywhere else in
-                // Stroom. Date.toString() ignored it entirely, so this column
-                // was the one place reading in the browser locale's format.
-                final String formatted =
-                        dateTimeFormatter.format(entry.getEffectiveTimeMs());
-                return formatted != null
-                        ? formatted
-                        : "";
+                // The platform formatter, as every other grid in Stroom uses: it honours
+                // the user's configured time zone and pattern. This column used
+                // new Date(ms).toString(), which is browser-local and verbose, so the
+                // effective times here disagreed with the timeline, the canvas and the
+                // user's own preference.
+                return dateTimeFormatter.format(entry.getEffectiveTimeMs());
             }
         };
         dataGrid.addColumn(timeColumn, "Effective Time");
@@ -338,8 +337,8 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
             if (value.trim().startsWith("{")) {
                 final JSONObject json = JSONUtil.getObject(JSONUtil.parse(value));
                 if (json != null) {
-                    final String name = JSONUtil.getString(json.get("name"));
-                    final String type = JSONUtil.getString(json.get("type"));
+                    final String name = JSONUtil.getString(json.get(FloorMapJsonKeys.NAME));
+                    final String type = JSONUtil.getString(json.get(FloorMapJsonKeys.TYPE));
                     final StringBuilder sb = new StringBuilder();
                     if (type != null && !type.isEmpty()) {
                         sb.append(type);

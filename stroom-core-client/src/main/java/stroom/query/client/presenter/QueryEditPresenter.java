@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2022 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@ import stroom.query.api.Param;
 import stroom.query.api.QLVisResult;
 import stroom.query.api.Result;
 import stroom.query.api.TimeRange;
+import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.QueryEditPresenter.QueryEditView;
 import stroom.query.client.view.QueryResultTabsView;
 import stroom.query.shared.QueryTablePreferences;
@@ -397,6 +398,17 @@ public class QueryEditPresenter
         }
     }
 
+    // STROOMWORKS-LOCAL: signature diverges from upstream — KEEP LOCAL ON MERGE FROM master.
+    // Upstream declares run(boolean incremental, boolean storeHistory, Function<...>) and passes
+    // (true, true) from all three of its call sites, so neither flag was ever variable; they are
+    // hardcoded at the startNewSearch call below instead. The change is behaviour-preserving, so
+    // taking upstream's signature back would only reintroduce two constants — but if upstream
+    // ever starts passing something other than true, restore the parameters and thread them
+    // through.
+    // The expressionDecorator parameter below is unused, here and upstream (always called with
+    // Function.identity()). Left in place deliberately: removing it would be a third rewrite of
+    // a shared signature for no behavioural gain, and is better fixed upstream.
+    @SuppressWarnings("unused")
     private void run(final Function<ExpressionOperator, ExpressionOperator> expressionDecorator) {
         // Clear the table selection and any markers.
         queryResultPresenter.clear();
@@ -406,10 +418,17 @@ public class QueryEditPresenter
         // Destroy any previous query.
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
 
+        // STROOMWORKS-LOCAL: added for FloorMap in commit d2ecee9a35 — KEEP LOCAL ON MERGE FROM
+        // master. Upstream has no param() substitution at all. Dropping this block breaks
+        // FloorMap's param('FactStore') / param('EventStore') references, which are how a floor
+        // map selects its temporal stores, so upstream's version must NOT win here.
+        //
         // Substitute param('key') references with quoted values so that
         // the from clause (which only accepts string literals) resolves correctly.
         // The params are also passed natively to the search model so that
         // param() calls in expressions work via the standard Stroom mechanism.
+        // Values are escaped for the literal they land in — a store name containing a quote
+        // would otherwise terminate it early and produce malformed query text.
         String queryText = editorPresenter.getText();
         List<Param> params = null;
         if (queryVariables != null && !queryVariables.isEmpty()) {
@@ -418,7 +437,7 @@ public class QueryEditPresenter
                 params.add(new Param(entry.getKey(), entry.getValue()));
                 queryText = queryText.replace(
                         "param('" + entry.getKey() + "')",
-                        "\"" + entry.getValue() + "\"");
+                        "\"" + QuotedStringUtil.escapeDoubleQuoted(entry.getValue()) + "\"");
             }
         }
         queryModel.startNewSearch(

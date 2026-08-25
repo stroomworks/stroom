@@ -432,4 +432,58 @@ class TestFloorMapMeasurementUnits {
         assertThat(FloorMapMeasurementUnits.formatForInput(0.0001)).isEqualTo("0.0001");
         assertThat(FloorMapMeasurementUnits.formatForInput(0.1 + 0.2)).isEqualTo("0.3");
     }
+
+    /**
+     * Nothing in the window below {@link Long#MAX_VALUE} may emit corrupted digits.
+     *
+     * <p>{@code formatForInput} rounds into a {@code long} after multiplying by 1e4, so the
+     * product saturates from about {@code 9.2234e14}. The magnitude ceiling was set at
+     * {@code 1e15} — above the saturation point — so this window assembled its digits from
+     * {@code Long.MAX_VALUE} and {@code formatForInput(9.5e14)} returned
+     * {@code "922337203685477.5807"}. No test covered it, and the value is one a bad scale
+     * factor can reach even though no real floor plan can.</p>
+     *
+     * <p>The assertion is a round-trip rather than an exact string, because what matters is
+     * that the text means the number — whether it is rendered as assembled digits or handed
+     * to {@code String.valueOf} is an implementation choice either side of the bound.</p>
+     */
+    @Test
+    void testFormatForInputNeverEmitsCorruptDigitsNearTheLongLimit() {
+        final double[] values = {
+                9.0e14,      // below the bound: digits assembled
+                9.2233e14,   // just below
+                9.2234e14,   // just above: must fall back
+                9.5e14,      // the value that used to return Long.MAX_VALUE's digits
+                9.99e14};
+
+        for (final double value : values) {
+            final String text = FloorMapMeasurementUnits.formatForInput(value);
+            assertThat(text)
+                    .as("formatForInput(%s) must not leak Long.MAX_VALUE digits", value)
+                    .doesNotContain("9223372036854775");
+            assertThat(Double.parseDouble(text))
+                    .as("formatForInput(%s) must round-trip", value)
+                    .isEqualTo(value);
+        }
+    }
+
+    /**
+     * A characterisation guard, not a proof: {@code formatNumber} was never affected by the
+     * overflow bug, because its decimal count collapses to 0 for large magnitudes and so its
+     * safe bound is around {@code 9.2234e18}. This test passes with or without the guard in
+     * {@code formatToDecimals}.
+     *
+     * <p>It is here because that safety is incidental — it falls out of the
+     * significant-figures arithmetic rather than being intended. Raising
+     * {@code SIGNIFICANT_FIGURES}, or changing how the decimal count is derived, could push
+     * this formatter into the same window without anything else noticing.</p>
+     */
+    @Test
+    void testFormatNumberRoundTripsNearTheLongLimit() {
+        for (final double value : new double[]{9.0e14, 9.5e14, 9.99e14}) {
+            assertThat(Double.parseDouble(FloorMapMeasurementUnits.formatNumber(value)))
+                    .as("formatNumber(%s) must round-trip", value)
+                    .isEqualTo(value);
+        }
+    }
 }

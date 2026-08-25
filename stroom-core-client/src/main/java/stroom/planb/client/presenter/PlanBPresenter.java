@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,11 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import javax.inject.Provider;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master
+// Local change, confirmed deliberate by the author: adds the Data tab (PlanBDataPresenter) and
+// makes it the tab selected when a PlanB document opens, in place of Settings. Both halves are
+// intended - a merge that restores selectTab(SETTINGS) would quietly change where the user
+// lands, which is the kind of regression nobody reports as a bug.
 public class PlanBPresenter extends DocTabPresenter<LinkTabPanelView, PlanBDoc> {
 
     private static final TabData DATA = new TabDataImpl("Data");

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2022 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,11 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master
+// Local audit-trail fix: the default ExportEventAction is populated with the converted criteria,
+// so a download that throws before the file exists still records WHAT was requested. Upstream
+// builds an empty ExportEventAction, which is schema-valid (every Export child is optional) but
+// records only that a download was attempted. If upstream fixes the same gap, prefer theirs.
 public class DataDownloadResourceImpl implements DataDownloadResource {
 
     private final Provider<StroomEventLoggingService> stroomEventLoggingServiceProvider;

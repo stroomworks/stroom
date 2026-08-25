@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import stroom.core.client.event.CloseContentEvent.Handler;
 import stroom.core.client.event.ShowFullScreenEvent;
 import stroom.dispatch.client.RestErrorHandler;
 import stroom.docref.DocRef;
+import stroom.docstore.shared.DocRefUtil;
 import stroom.document.client.event.OpenDocumentEvent.CommonDocLinkTab;
 import stroom.document.client.event.ShowCreateDocumentDialogEvent;
 import stroom.entity.client.presenter.DocPresenter;
@@ -54,6 +55,13 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master
+// Local addition: getInitialisationHandler(), which lets a document type collect required
+// configuration before its editor opens, plus the postSaveCallback save() overload. FloorMap
+// needs both - the handler prompts for the Facts and Events store refs, and the callback
+// flushes pending temporal-store changes and saves assets after the document is persisted.
+// Upstream has neither. Taking upstream's version wholesale means a FloorMapDoc opens with no
+// stores selected, and FloorMapPlugin's save throws (it deliberately fails the legacy save).
 public abstract class DocumentPlugin<D> extends TabPlugin implements HasSave {
 
     private final DocumentTabManager documentTabManager = new DocumentTabManager();
@@ -253,12 +261,14 @@ public abstract class DocumentPlugin<D> extends TabPlugin implements HasSave {
         final RestErrorHandler errorHandler = caught ->
                 AlertEvent.fireError(
                         DocumentPlugin.this,
-                        "Unable to load document " + docRef, caught.getMessage(),
+                        "Unable to load document " + DocRefUtil.createTypedDocRefString(docRef), caught.getMessage(),
                         null);
 
         final Consumer<D> loadConsumer = doc -> {
             if (doc == null) {
-                AlertEvent.fireError(DocumentPlugin.this, "Unable to load document " + docRef, null);
+                AlertEvent.fireError(DocumentPlugin.this,
+                        "Unable to load document " + DocRefUtil.createTypedDocRefString(docRef),
+                        null);
             } else {
                 if (selectedCommonTab != null) {
                     if (myPresenterWidget instanceof DocTabPresenter<?, ?>) {
@@ -342,7 +352,8 @@ public abstract class DocumentPlugin<D> extends TabPlugin implements HasSave {
                             throwable -> {
                                 AlertEvent.fireError(
                                         this,
-                                        "Unable to save document " + finalDocument,
+                                        "Unable to save document "
+                                        + DocRefUtil.createTypedDocRefString(getDocRef(finalDocument)),
                                         throwable.getMessage(), null);
                                 onComplete.run();
                             },

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
+// Local change from "Provisional fix to Authentication Exception". The commit message calls it
+// provisional, so treat it as a stopgap: if upstream has addressed the same authentication
+// exception, take their fix and delete this. Diff against origin/master before resolving.
 class StreamAttributeMapRetentionRuleDecorator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamAttributeMapRetentionRuleDecorator.class);
