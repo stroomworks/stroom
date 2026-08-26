@@ -68,6 +68,7 @@ import stroom.util.shared.IsStroomConfig;
 import stroom.util.shared.PropertyPath;
 import stroom.util.shared.validation.ValidationSeverity;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
@@ -153,6 +154,17 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_UI_URI = "uiUri";
     public static final String PROP_NAME_DOCUMENT_ASSET = "documentAsset";
     public static final String PROP_NAME_DOCUMENT_ASSET_DB = "documentAssetDb";
+    /**
+     * Former names of the two properties above, from before the visualisation-asset subsystem
+     * was generalised into {@code stroom.document.asset}. Accepted on read via {@link JsonAlias}
+     * so an existing config.yml keeps working; the new names are always written. Deprecated -
+     * remove these, the aliases and the config-table path migration together once no deployment
+     * uses the old names.
+     */
+    @Deprecated
+    public static final String PROP_NAME_VISUALISATION_ASSET_DEPRECATED = "visualisationAsset";
+    @Deprecated
+    public static final String PROP_NAME_VISUALISATION_ASSET_DB_DEPRECATED = "visualisationAssetDb";
     public static final String PROP_NAME_VOLUMES = "volumes";
 
     private final boolean haltBootOnConfigValidationFailure;
@@ -327,8 +339,12 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_PATH) final StroomPathConfig pathConfig,
                      @JsonProperty(PROP_NAME_UI) final UiConfig uiConfig,
                      @JsonProperty(PROP_NAME_UI_URI) final UiUriConfig uiUri,
-                     @JsonProperty(PROP_NAME_DOCUMENT_ASSET) final DocumentAssetConfig documentAssetConfig,
-                     @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB) final DocumentAssetDbConfig documentAssetDbConfig,
+                     @JsonProperty(PROP_NAME_DOCUMENT_ASSET)
+                     @JsonAlias(PROP_NAME_VISUALISATION_ASSET_DEPRECATED)
+                     final DocumentAssetConfig documentAssetConfig,
+                     @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB)
+                     @JsonAlias(PROP_NAME_VISUALISATION_ASSET_DB_DEPRECATED)
+                     final DocumentAssetDbConfig documentAssetDbConfig,
                      @JsonProperty(PROP_NAME_VOLUMES) final VolumeConfig volumeConfig) {
         this.haltBootOnConfigValidationFailure = Objects.requireNonNullElse(haltBootOnConfigValidationFailure,
                 DEFAULT_HALT_BOOT_ON_CONFIG_VALIDATION_FAILURE);
