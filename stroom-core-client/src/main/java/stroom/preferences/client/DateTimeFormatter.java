@@ -109,10 +109,7 @@ public class DateTimeFormatter {
         // Mask [literals] so their contents cannot match a token below. The sentinels are
         // private-use characters, not control characters: String.trim() strips anything
         // <= U+0020, so a low sentinel at the end of a pattern was eaten before it could be
-        // unmasked - silently corrupting any pattern that ended in a literal. The sentinels are
-        // private-use characters rather than control characters: String.trim() strips
-        // anything <= U+0020, so a low sentinel at the end of the pattern was eaten before
-        // it could be unmasked.
+        // unmasked - silently corrupting any pattern that ended in a literal.
         final List<String> literals = new ArrayList<>();
         final StringBuilder masked = new StringBuilder();
         int i = 0;

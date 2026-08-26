@@ -24,6 +24,7 @@ import stroom.index.shared.LuceneIndexDoc;
 import stroom.query.api.Column;
 import stroom.query.api.datasource.FindFieldCriteria;
 import stroom.query.api.datasource.IndexField;
+import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.AbstractQueryDataPresenter;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryDataView;
@@ -90,7 +91,7 @@ public class IndexDataPresenter
     protected String getDefaultQuery(final DocRef docRef, final LuceneIndexDoc doc) {
         final StringBuilder sb = new StringBuilder();
         sb.append("from \"");
-        sb.append(docRef.getName());
+        sb.append(QuotedStringUtil.escapeDoubleQuoted(docRef.getName()));
         sb.append("\"");
 
         if (fields != null) {

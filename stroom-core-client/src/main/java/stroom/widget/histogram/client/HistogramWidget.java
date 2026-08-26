@@ -72,11 +72,11 @@ public class HistogramWidget extends Composite {
     /**
      * Used when the CSS custom property cannot be resolved — an unstyled test
      * harness, or a consumer whose page has not loaded {@code stroom-histogram.css}.
-     * Matches the light theme's value, so a missing stylesheet degrades to the
-     * previous appearance rather than to invisible bars.
+     * Kept in step with the light theme's value in {@code stroom-histogram.css}, so a
+     * missing stylesheet degrades to the styled appearance rather than to invisible bars.
      */
-    private static final String DEFAULT_BAR_COLOUR = "rgba(30,136,229,0.7)";
-    private static final String DEFAULT_PEAK_COLOUR = "rgba(30,136,229,1.0)";
+    private static final String DEFAULT_BAR_COLOUR = "rgba(21,101,192,0.8)";
+    private static final String DEFAULT_PEAK_COLOUR = "rgba(21,101,192,1.0)";
     private static final String TICK_COLOUR = "rgba(128,128,128,0.25)";
     private static final int TARGET_TICK_COUNT = 10;
 

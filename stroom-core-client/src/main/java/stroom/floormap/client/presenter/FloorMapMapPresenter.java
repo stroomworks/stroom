@@ -1192,7 +1192,7 @@ public class FloorMapMapPresenter
         // Fallback: derive a histogram query from the configured temporal store.
         final DocRef storeRef = getEntity() != null ? getEntity().getFactsStoreRef() : null;
         if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
-            return "from \"" + storeRef.getName() + "\"\n"
+            return "from \"" + QuotedStringUtil.escapeDoubleQuoted(storeRef.getName()) + "\"\n"
                    + "select \n"
                    + "  Key, \n"
                    + "  EffectiveTime";

@@ -105,7 +105,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void startProcessing() {
-        LOGGER.info("SqlStoreFilter.startProcessing()");
+        LOGGER.trace("SqlStoreFilter.startProcessing()");
         try {
             final long ms = Optional
                     .ofNullable(metaHolder.getMeta().getEffectiveMs())
@@ -118,7 +118,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void setDocumentLocator(final Locator locator) {
-        LOGGER.info("SqlStoreFilter.setDocumentLocator()");
+        LOGGER.trace("SqlStoreFilter.setDocumentLocator()");
         this.locator = locator;
         super.setDocumentLocator(locator);
     }
@@ -128,7 +128,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                              final String localName,
                              final String qName,
                              final Attributes atts) throws SAXException {
-        LOGGER.info("SqlStoreFilter.startElement({}, {}, {}, {})", uri, localName, qName, atts);
+        LOGGER.trace("SqlStoreFilter.startElement({}, {}, {}, {})", uri, localName, qName, atts);
         if (insideValue) {
             if (!haveSeenXmlInValueElement) {
                 haveSeenXmlInValueElement = true;
@@ -183,7 +183,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     public void endElement(final String uri,
                            final String localName,
                            final String qName) throws SAXException {
-        LOGGER.info("SqlStoreFilter.endElement({}, {}, {})", uri, localName, qName);
+        LOGGER.trace("SqlStoreFilter.endElement({}, {}, {})", uri, localName, qName);
         if (insideValue && !localName.equalsIgnoreCase("value")) {
             if (transformerHandler != null) {
                 transformerHandler.endElement(uri, localName, qName);
@@ -231,7 +231,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     public void characters(final char[] ch,
                            final int start,
                            final int length) throws SAXException {
-        LOGGER.info("SqlStoreFilter.characters()");
+        LOGGER.trace("SqlStoreFilter.characters()");
         if (insideValue) {
             if (haveSeenXmlInValueElement) {
                 if (transformerHandler != null) {
@@ -258,7 +258,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void startPrefixMapping(final String prefix, final String uri) throws SAXException {
-        LOGGER.info("SqlStoreFilter.startPrefixMapping()");
+        LOGGER.trace("SqlStoreFilter.startPrefixMapping()");
         if (insideValue && transformerHandler != null) {
             transformerHandler.startPrefixMapping(prefix, uri);
         }
@@ -267,7 +267,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void endPrefixMapping(final String prefix) throws SAXException {
-        LOGGER.info("SqlStoreFilter.endPrefixMapping()");
+        LOGGER.trace("SqlStoreFilter.endPrefixMapping()");
         if (insideValue && transformerHandler != null) {
             transformerHandler.endPrefixMapping(prefix);
         }
@@ -275,7 +275,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void initTransformerHandler() {
-        LOGGER.info("SqlStoreFilter.initTransformerHandler()");
+        LOGGER.trace("SqlStoreFilter.initTransformerHandler()");
         try {
             stringWriter = new StringWriter();
             transformerHandler = XMLUtil.createTransformerHandler(false);
@@ -287,7 +287,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void completeTransformerHandler() {
-        LOGGER.info("SqlStoreFilter.completeTransformerHandler()");
+        LOGGER.trace("SqlStoreFilter.completeTransformerHandler()");
         try {
             if (transformerHandler != null) {
                 transformerHandler.endDocument();
@@ -302,7 +302,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void addReference() {
-        LOGGER.info("SqlStoreFilter.addReference()");
+        LOGGER.trace("SqlStoreFilter.addReference()");
         if (NullSafe.isEmptyString(mapName)) {
             error("Map name is missing for reference entry.");
             return;
@@ -343,7 +343,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void resetReference() {
-        LOGGER.info("SqlStoreFilter.resetReference()");
+        LOGGER.trace("SqlStoreFilter.resetReference()");
         mapName = null;
         key = null;
         timeString = null;
@@ -355,12 +355,12 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void error(final String message) {
-        LOGGER.info("SqlStoreFilter.error({})", message);
+        LOGGER.error("SqlStoreFilter.error({})", message);
         errorReceiverProxy.log(Severity.ERROR, locationFactory.create(locator), getElementId(), message, null);
     }
 
     private void error(final String message, final Throwable e) {
-        LOGGER.info("SqlStoreFilter.error({}, {})", message, e.getMessage(), e);
+        LOGGER.error("SqlStoreFilter.error({}, {})", message, e.getMessage(), e);
         errorReceiverProxy.log(Severity.ERROR, locationFactory.create(locator), getElementId(), message, e);
     }
 }

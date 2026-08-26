@@ -36,7 +36,6 @@ import stroom.svg.client.SvgPresets;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 
-import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Document;
 import com.google.gwt.dom.client.Element;
@@ -382,10 +381,7 @@ public class FloorMapSettingsPresenter
         // skips disabled and tabindex="-1" candidates that must not be focused, and it
         // reports whether it found anything — a silent no-op here would look exactly like
         // a working restore.
-        if (!FloorMapAria.focusFirstFocusable(cell)) {
-            GWT.log("Value Schema: no focusable control in row " + rowIndex
-                    + ", column " + columnIndex + " after redraw");
-        }
+        FloorMapAria.focusFirstFocusable(cell);
     }
 
     /**
