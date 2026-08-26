@@ -78,11 +78,13 @@ public class VisualisationAssetConfig extends AbstractConfig {
      */
     static {
         DEFAULT_MIMETYPES.put("apng", "image/apng");
+        DEFAULT_MIMETYPES.put("avif", "image/avif");
         DEFAULT_MIMETYPES.put("bmp", "image/bmp");
         DEFAULT_MIMETYPES.put("css", "text/css");
-        DEFAULT_MIMETYPES.put("gif", "image/jpeg");
+        DEFAULT_MIMETYPES.put("gif", "image/gif");
         DEFAULT_MIMETYPES.put("html", "text/html");
         DEFAULT_MIMETYPES.put("htm", "text/html");
+        DEFAULT_MIMETYPES.put("ico", "image/vnd.microsoft.icon");
         DEFAULT_MIMETYPES.put("jpg", "image/jpeg");
         DEFAULT_MIMETYPES.put("jpeg", "image/jpeg");
         DEFAULT_MIMETYPES.put("js", "text/javascript");
