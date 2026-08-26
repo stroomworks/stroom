@@ -22,17 +22,17 @@ import stroom.docstore.api.StoreFactory;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
-import stroom.util.shared.EntityServiceException;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
-import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -40,15 +40,27 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests the duplicate-name guard in {@link SqlTemporalStoreDocStoreImpl}.
+ * Tests that {@link SqlTemporalStoreDocStoreImpl} no longer imposes its own name rules.
  *
- * <p>{@code SqlTemporalStore} names must be unique because a store's name is
- * used as the map identifier for temporal-store queries. The store impl
- * enforces this on create, copy and rename by consulting {@link Store#list()};
- * all other operations delegate straight through. These tests mock the backing
- * {@link Store} so no docstore or database is required.</p>
+ * <p>It used to override create, copy and rename to reject any name already used by another
+ * {@code SqlTemporalStoreDoc}, because the name was the storage key. That guard was removed for
+ * two reasons, and these tests pin both:</p>
+ *
+ * <ul>
+ *   <li><strong>It leaked.</strong> The check called {@link Store#list()}, which applies no
+ *       permission filtering, and then named the clash in the error - letting any user with
+ *       create rights probe for stores anywhere in the tree they could not see.
+ *       {@link #testNoOperationEnumeratesEveryDocument()} is the regression test.</li>
+ *   <li><strong>It is unnecessary.</strong> Storage is keyed on the document UUID, so two
+ *       documents may share a name without sharing data and a rename keeps its data.</li>
+ * </ul>
+ *
+ * <p>Name handling now falls through to {@code AbstractDocumentStore}, which uses the explorer's
+ * permission-filtered, folder-scoped candidate names and the same {@code UniqueNameUtil}
+ * convention as every other document type.</p>
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class TestSqlTemporalStoreDocStoreImpl {
 
     @Mock
@@ -57,89 +69,59 @@ class TestSqlTemporalStoreDocStoreImpl {
     private Store<SqlTemporalStoreDoc> mockStore;
     @Mock
     private StoreFactory mockStoreFactory;
-    // Upstream moved document authorisation into AbstractDocumentStore, which now takes a
-    // SecurityContext. These tests exercise the duplicate-name guard only, so the mock is
-    // never stubbed - it just has to be there for the constructor.
     @Mock
     private SecurityContext mockSecurityContext;
 
-    // -----------------------------------------------------------------------
-    // createDocument
-    // -----------------------------------------------------------------------
-
+    /**
+     * The point of the whole change: no operation may enumerate every document in the system.
+     * That listing is what disclosed the existence of stores the caller had no right to see.
+     */
     @Test
-    void testCreateDocument_uniqueName_delegatesToStore() {
-        when(mockStore.list()).thenReturn(List.of(docRef("uuid-a", "existingMap")));
-        final DocRef created = docRef("uuid-new", "newMap");
-        when(mockStore.createDocument("newMap")).thenReturn(created);
+    void testNoOperationEnumeratesEveryDocument() {
+        final SqlTemporalStoreDocStoreImpl store = getStore();
+        when(mockSecurityContext.hasDocumentPermission(any(), any())).thenReturn(true);
 
-        assertThat(getStore().createDocument("newMap")).isEqualTo(created);
-    }
+        store.createDocument("aName");
+        store.copyDocument(docRef("uuid-src", "source"), "aName", false, Set.of());
+        store.renameDocument(docRef("uuid-self", "before"), "aName");
 
-    @Test
-    void testCreateDocument_duplicateName_throwsAndDoesNotCreate() {
-        when(mockStore.list()).thenReturn(List.of(docRef("uuid-a", "dupMap")));
-
-        assertThatThrownBy(() -> getStore().createDocument("dupMap"))
-                .isInstanceOf(EntityServiceException.class)
-                .hasMessageContaining("already exists");
-
-        verify(mockStore, never()).createDocument(any());
-    }
-
-    // -----------------------------------------------------------------------
-    // copyDocument
-    // -----------------------------------------------------------------------
-
-    @Test
-    void testCopyDocument_duplicateName_throws() {
-        when(mockStore.list()).thenReturn(List.of(docRef("uuid-a", "taken")));
-
-        assertThatThrownBy(() -> getStore().copyDocument(
-                docRef("uuid-src", "source"), "taken", false, null))
-                .isInstanceOf(EntityServiceException.class)
-                .hasMessageContaining("already exists");
-    }
-
-    @Test
-    void testCopyDocument_uniqueName_delegatesToStore() {
-        when(mockStore.list()).thenReturn(List.of(docRef("uuid-a", "existingMap")));
-        final DocRef copy = docRef("uuid-copy", "copyMap");
-        when(mockStore.copyDocument("uuid-src", "copyMap")).thenReturn(copy);
-
-        assertThat(getStore().copyDocument(docRef("uuid-src", "source"), "copyMap", false, null))
-                .isEqualTo(copy);
-    }
-
-    // -----------------------------------------------------------------------
-    // renameDocument
-    // -----------------------------------------------------------------------
-
-    @Test
-    void testRenameDocument_toNameUsedByAnother_throws() {
-        when(mockStore.list()).thenReturn(List.of(docRef("uuid-other", "taken")));
-
-        assertThatThrownBy(() -> getStore().renameDocument(
-                docRef("uuid-self", "oldName"), "taken"))
-                .isInstanceOf(EntityServiceException.class)
-                .hasMessageContaining("already exists");
+        verify(mockStore, never()).list();
     }
 
     /**
-     * Renaming a document to a name only it holds must be allowed — the guard
-     * excludes the document being renamed from the clash check.
+     * A name already used by another store is no longer refused - names need not be unique now
+     * that rows are keyed on the document UUID.
      */
     @Test
-    void testRenameDocument_keepingOwnName_isAllowed() {
-        final DocRef self = docRef("uuid-self", "myMap");
-        when(mockStore.list()).thenReturn(List.of(self));
-        when(mockStore.renameDocument(self, "myMap")).thenReturn(self);
-        // AbstractDocumentStore.renameDocument now checks EDIT before delegating, so the
-        // duplicate-name guard under test is only reached by a user who may edit.
-        when(mockSecurityContext.hasDocumentPermission(self, DocumentPermission.EDIT))
-                .thenReturn(true);
+    void testCreateDocumentWithAnAlreadyUsedNameIsAllowed() {
+        final DocRef created = docRef("uuid-new", "dupName");
+        when(mockStore.createDocument("dupName")).thenReturn(created);
 
-        assertThat(getStore().renameDocument(self, "myMap")).isEqualTo(self);
+        assertThat(getStore().createDocument("dupName")).isEqualTo(created);
+    }
+
+    @Test
+    void testRenameToANameUsedByAnotherStoreIsAllowed() {
+        final DocRef self = docRef("uuid-self", "before");
+        when(mockSecurityContext.hasDocumentPermission(any(), any())).thenReturn(true);
+        when(mockStore.renameDocument(self, "nameUsedElsewhere")).thenReturn(self);
+
+        assertThat(getStore().renameDocument(self, "nameUsedElsewhere")).isEqualTo(self);
+    }
+
+    /**
+     * Copy is authorised by VIEW on the source. The removed override called the backing store
+     * directly and so skipped this check altogether; delegating to the base class restores it.
+     */
+    @Test
+    void testCopyDocumentChecksViewPermissionOnTheSource() {
+        final DocRef source = docRef("uuid-src", "source");
+        when(mockSecurityContext.hasDocumentPermission(any(), any())).thenReturn(true);
+        when(mockStore.copyDocument(eq("uuid-src"), any())).thenReturn(docRef("uuid-copy", "copy"));
+
+        getStore().copyDocument(source, "copy", false, Set.of());
+
+        verify(mockSecurityContext).hasDocumentPermission(source, DocumentPermission.VIEW);
     }
 
     // -----------------------------------------------------------------------

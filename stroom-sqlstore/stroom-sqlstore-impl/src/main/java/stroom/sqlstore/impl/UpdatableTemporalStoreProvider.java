@@ -27,26 +27,31 @@ import jakarta.inject.Singleton;
 public class UpdatableTemporalStoreProvider {
 
     private final Provider<UpdatableSqlTemporalStore> sqlTemporalStoreProvider;
-    private final SqlTemporalStoreDocStore sqlStoreDocStore;
 
     @Inject
-    public UpdatableTemporalStoreProvider(final Provider<UpdatableSqlTemporalStore> sqlTemporalStoreProvider,
-                                          final SqlTemporalStoreDocStore sqlStoreDocStore) {
+    public UpdatableTemporalStoreProvider(final Provider<UpdatableSqlTemporalStore> sqlTemporalStoreProvider) {
         this.sqlTemporalStoreProvider = sqlTemporalStoreProvider;
-        this.sqlStoreDocStore = sqlStoreDocStore;
     }
 
+    /**
+     * Returns the store implementation that serves the named map.
+     *
+     * <p>This no longer verifies that a document of that name exists. It used to list every
+     * {@code SqlTemporalStoreDoc} in the system on every call - which was both an unfiltered
+     * listing that ignored the caller's permissions, and, because callers invoke this once per
+     * reference entry, a full document-store scan per row on the ingest path. Resolution now
+     * happens once inside {@link UpdatableSqlTemporalStore}, which matches the name against
+     * only the documents the caller may see and refuses an ambiguous match.</p>
+     *
+     * @param mapName the map name the caller intends to operate on; used only for the
+     *                unknown-store message, never for scoping
+     * @return the store; never {@code null}
+     */
     public UpdatableTemporalStore get(final String mapName) {
-        // Look for a SqlStoreDoc with this name.
-        final boolean exists = sqlStoreDocStore.list().stream()
-                .anyMatch(docRef -> docRef.getName().equals(mapName));
-
-        if (exists) {
-            return sqlTemporalStoreProvider.get();
+        if (mapName == null || mapName.isBlank()) {
+            throw new UnknownStoreException("No store name supplied.");
         }
-
         // TODO: Future: Check for PlanBDoc here too.
-
-        throw new UnknownStoreException("Unknown store: " + mapName);
+        return sqlTemporalStoreProvider.get();
     }
 }

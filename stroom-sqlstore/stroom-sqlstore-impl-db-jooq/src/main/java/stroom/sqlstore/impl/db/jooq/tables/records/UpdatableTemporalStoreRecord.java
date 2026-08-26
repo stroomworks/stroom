@@ -19,59 +19,73 @@ public class UpdatableTemporalStoreRecord extends UpdatableRecordImpl<UpdatableT
     private static final long serialVersionUID = 1L;
 
     /**
+     * Setter for <code>stroom.updatable_temporal_store.doc_uuid</code>.
+     */
+    public void setDocUuid(String value) {
+        set(0, value);
+    }
+
+    /**
+     * Getter for <code>stroom.updatable_temporal_store.doc_uuid</code>.
+     */
+    public String getDocUuid() {
+        return (String) get(0);
+    }
+
+    /**
      * Setter for <code>stroom.updatable_temporal_store.map_name</code>.
      */
     public void setMapName(String value) {
-        set(0, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>stroom.updatable_temporal_store.map_name</code>.
      */
     public String getMapName() {
-        return (String) get(0);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>stroom.updatable_temporal_store.key_</code>.
      */
     public void setKey_(String value) {
-        set(1, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>stroom.updatable_temporal_store.key_</code>.
      */
     public String getKey_() {
-        return (String) get(1);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>stroom.updatable_temporal_store.effective_time</code>.
      */
     public void setEffectiveTime(Long value) {
-        set(2, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>stroom.updatable_temporal_store.effective_time</code>.
      */
     public Long getEffectiveTime() {
-        return (Long) get(2);
+        return (Long) get(3);
     }
 
     /**
      * Setter for <code>stroom.updatable_temporal_store.value_</code>.
      */
     public void setValue_(String value) {
-        set(3, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>stroom.updatable_temporal_store.value_</code>.
      */
     public String getValue_() {
-        return (String) get(3);
+        return (String) get(4);
     }
 
     // -------------------------------------------------------------------------
@@ -97,9 +111,10 @@ public class UpdatableTemporalStoreRecord extends UpdatableRecordImpl<UpdatableT
     /**
      * Create a detached, initialised UpdatableTemporalStoreRecord
      */
-    public UpdatableTemporalStoreRecord(String mapName, String key_, Long effectiveTime, String value_) {
+    public UpdatableTemporalStoreRecord(String docUuid, String mapName, String key_, Long effectiveTime, String value_) {
         super(UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE);
 
+        setDocUuid(docUuid);
         setMapName(mapName);
         setKey_(key_);
         setEffectiveTime(effectiveTime);

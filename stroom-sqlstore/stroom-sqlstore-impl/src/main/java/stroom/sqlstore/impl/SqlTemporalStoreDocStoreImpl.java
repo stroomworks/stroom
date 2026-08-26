@@ -16,17 +16,14 @@
 
 package stroom.sqlstore.impl;
 
-import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.StoreFactory;
 import stroom.security.api.SecurityContext;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
-import stroom.util.shared.EntityServiceException;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
-import java.util.Set;
 
 @Singleton
 public class SqlTemporalStoreDocStoreImpl
@@ -46,55 +43,23 @@ public class SqlTemporalStoreDocStoreImpl
                 SqlTemporalStoreDoc::copy);
     }
 
-    @Override
-    public DocRef createDocument(final String name) {
-        checkNameNotInUse(name);
-        return super.createDocument(name);
-    }
-
-    @Override
-    public DocRef copyDocument(final DocRef docRef,
-                               final String name,
-                               final boolean makeNameUnique,
-                               final Set<String> existingNames) {
-        checkNameNotInUse(name);
-        return getStore().copyDocument(docRef.getUuid(), name);
-    }
-
-    @Override
-    public DocRef renameDocument(final DocRef docRef, final String name) {
-        checkNameNotInUseByOther(name, docRef.getUuid());
-        return super.renameDocument(docRef, name);
-    }
-
-    /**
-     * Ensures no SqlTemporalStoreDoc already uses the given name.
-     * Used by create and copy operations where any existing match is a conflict.
+    /*
+     * createDocument/copyDocument/renameDocument used to be overridden here to reject any name
+     * already used by another SqlTemporalStoreDoc, because the name was the storage key. Both
+     * halves of that were wrong:
+     *
+     *  - It leaked. The check listed every store in the system via getStore().list(), which
+     *    applies no permission filtering, and then named the clash in the error. Any user with
+     *    create rights could probe for the existence of stores anywhere in the tree that they
+     *    had no permission to see.
+     *  - It is no longer needed. Storage is keyed on the document UUID, so two documents may
+     *    share a name without sharing data, and renaming a document keeps its data.
+     *
+     * Name handling is therefore left to AbstractDocumentStore, which takes the explorer's
+     * permission-filtered, folder-scoped candidate names and applies the same
+     * UniqueNameUtil.getCopyName convention as every other document type. Where a name must
+     * still be resolved to a single store - a StroomQL "from" clause, an XSLT lookup -
+     * UpdatableSqlTemporalStore does that against only the documents the caller can see, and
+     * refuses an ambiguous match.
      */
-    private void checkNameNotInUse(final String name) {
-        final boolean inUse = getStore().list().stream()
-                .anyMatch(dr -> dr.getName().equals(name));
-        if (inUse) {
-            throwNameClash(name);
-        }
-    }
-
-    /**
-     * Ensures no other SqlTemporalStoreDoc already uses the given name.
-     * Used by rename operations where the document being renamed is excluded.
-     */
-    private void checkNameNotInUseByOther(final String name, final String selfUuid) {
-        final boolean inUse = getStore().list().stream()
-                .anyMatch(dr -> dr.getName().equals(name)
-                        && !dr.getUuid().equals(selfUuid));
-        if (inUse) {
-            throwNameClash(name);
-        }
-    }
-
-    private void throwNameClash(final String name) {
-        throw new EntityServiceException(
-                "A SqlTemporalStore with name '" + name + "' already exists. "
-                + "Names must be unique because they are used as map identifiers.");
-    }
 }

@@ -66,9 +66,17 @@ class TestUpdatableTemporalStoreDaoImplDB {
     private static final long T2 = Instant.parse(T2_ISO).toEpochMilli();
     private static final long T3 = Instant.parse(T3_ISO).toEpochMilli();
 
-    private static final AtomicInteger MAP_SEQ = new AtomicInteger();
+    private static final AtomicInteger SEQ = new AtomicInteger();
 
     private static UpdatableTemporalStoreDao dao;
+
+    /**
+     * A store document: the UUID everything is scoped by, and the name, which is only a
+     * denormalised label on each row.
+     */
+    private record Store(String uuid, String name) {
+
+    }
 
     @BeforeAll
     static void beforeAll() {
@@ -77,25 +85,85 @@ class TestUpdatableTemporalStoreDaoImplDB {
     }
 
     // -----------------------------------------------------------------------
+    // Scoping is by document UUID, not by name
+    // -----------------------------------------------------------------------
+
+    /**
+     * Two store documents that happen to share a name must not share data.
+     *
+     * <p>Regression test for the original design, which keyed rows on {@code map_name}: two
+     * same-named documents addressed the same rows, so either owner could read or
+     * {@code clear()} the other's data.</p>
+     */
+    @Test
+    void testTwoStoresSharingANameKeepSeparateData() {
+        final String sharedName = "locations_" + SEQ.incrementAndGet();
+        final Store a = new Store(uuid(), sharedName);
+        final Store b = new Store(uuid(), sharedName);
+
+        dao.create(a.uuid(), entry(a.name(), "desk", T1, "{\"owner\":\"A\"}"));
+        dao.create(b.uuid(), entry(b.name(), "desk", T1, "{\"owner\":\"B\"}"));
+
+        assertThat(dao.count(a.uuid())).isEqualTo(1);
+        assertThat(dao.count(b.uuid())).isEqualTo(1);
+        assertThat(dao.fetch(a.uuid(), id(a.name(), "desk")))
+                .map(TemporalEntry::getValue)
+                .hasValue("{\"owner\":\"A\"}");
+        assertThat(dao.fetch(b.uuid(), id(b.name(), "desk")))
+                .map(TemporalEntry::getValue)
+                .hasValue("{\"owner\":\"B\"}");
+
+        // Clearing one must leave the other untouched.
+        dao.clear(a.uuid());
+        assertThat(dao.count(a.uuid())).isZero();
+        assertThat(dao.count(b.uuid())).isEqualTo(1);
+    }
+
+    /**
+     * Renaming the owning document must not orphan its data.
+     *
+     * <p>Regression test for the headline bug: rows were keyed on {@code map_name}, so a rename
+     * left every row addressed by a name nothing resolved to any more and the store read as
+     * empty, with no error and no way back through the UI. Here the same UUID is used with a
+     * new name, which is exactly what a rename looks like to this layer.</p>
+     */
+    @Test
+    void testRenamingTheStoreKeepsItsData() {
+        final Store before = uniqueStore();
+        dao.create(before.uuid(), entry(before.name(), "gate", T1, "{\"v\":1}"));
+
+        final Store after = new Store(before.uuid(), before.name() + "_renamed");
+
+        assertThat(dao.count(after.uuid())).isEqualTo(1);
+        assertThat(dao.fetchAll(after.uuid())).hasSize(1);
+        assertThat(dao.fetch(after.uuid(), id(after.name(), "gate")))
+                .map(TemporalEntry::getValue)
+                .hasValue("{\"v\":1}");
+        // And a temporal query still resolves, even though the criteria name has changed.
+        assertThat(dao.find(after.uuid(), criteriaAt(after.name(), T3_ISO)).getValues())
+                .hasSize(1);
+    }
+
+    // -----------------------------------------------------------------------
     // CRUD + count
     // -----------------------------------------------------------------------
 
     @Test
     void testCreateAndFetch() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate1", T1, "{\"name\":\"A\"}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate1", T1, "{\"name\":\"A\"}"));
 
-        final Optional<TemporalEntry> fetched = dao.fetch(id(map, "gate1"));
+        final Optional<TemporalEntry> fetched = dao.fetch(store.uuid(), id(store.name(), "gate1"));
 
         assertThat(fetched).isPresent();
         assertThat(fetched.get().getValue()).isEqualTo("{\"name\":\"A\"}");
-        assertThat(dao.count(map)).isEqualTo(1);
+        assertThat(dao.count(store.uuid())).isEqualTo(1);
     }
 
     @Test
     void testFetchMissingReturnsEmpty() {
-        final String map = uniqueMap();
-        assertThat(dao.fetch(id(map, "nope"))).isEmpty();
+        final Store store = uniqueStore();
+        assertThat(dao.fetch(store.uuid(), id(store.name(), "nope"))).isEmpty();
     }
 
     /**
@@ -104,12 +172,12 @@ class TestUpdatableTemporalStoreDaoImplDB {
      */
     @Test
     void testUpdateOverwritesValueForSameNaturalKey() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate1", T1, "{\"name\":\"A\"}"));
-        dao.update(entry(map, "gate1", T1, "{\"name\":\"B\"}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate1", T1, "{\"name\":\"A\"}"));
+        dao.update(store.uuid(), entry(store.name(), "gate1", T1, "{\"name\":\"B\"}"));
 
-        assertThat(dao.count(map)).isEqualTo(1);
-        assertThat(dao.fetch(id(map, "gate1")))
+        assertThat(dao.count(store.uuid())).isEqualTo(1);
+        assertThat(dao.fetch(store.uuid(), id(store.name(), "gate1")))
                 .map(TemporalEntry::getValue)
                 .hasValue("{\"name\":\"B\"}");
     }
@@ -120,36 +188,36 @@ class TestUpdatableTemporalStoreDaoImplDB {
      */
     @Test
     void testSameKeyDifferentTimeIsSeparateRow() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate1", T1, "{\"v\":1}"));
-        dao.create(entry(map, "gate1", T2, "{\"v\":2}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate1", T1, "{\"v\":1}"));
+        dao.create(store.uuid(), entry(store.name(), "gate1", T2, "{\"v\":2}"));
 
-        assertThat(dao.count(map)).isEqualTo(2);
+        assertThat(dao.count(store.uuid())).isEqualTo(2);
     }
 
     @Test
     void testDelete() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate1", T1, "{}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate1", T1, "{}"));
 
-        assertThat(dao.delete(id(map, "gate1"))).isTrue();
-        assertThat(dao.fetch(id(map, "gate1"))).isEmpty();
+        assertThat(dao.delete(store.uuid(), id(store.name(), "gate1"))).isTrue();
+        assertThat(dao.fetch(store.uuid(), id(store.name(), "gate1"))).isEmpty();
         // Deleting again reports nothing removed.
-        assertThat(dao.delete(id(map, "gate1"))).isFalse();
+        assertThat(dao.delete(store.uuid(), id(store.name(), "gate1"))).isFalse();
     }
 
     @Test
-    void testClearRemovesOnlyThatMap() {
-        final String mapA = uniqueMap();
-        final String mapB = uniqueMap();
-        dao.create(entry(mapA, "k1", T1, "{}"));
-        dao.create(entry(mapA, "k2", T1, "{}"));
-        dao.create(entry(mapB, "k1", T1, "{}"));
+    void testClearRemovesOnlyThatStore() {
+        final Store a = uniqueStore();
+        final Store b = uniqueStore();
+        dao.create(a.uuid(), entry(a.name(), "k1", T1, "{}"));
+        dao.create(a.uuid(), entry(a.name(), "k2", T1, "{}"));
+        dao.create(b.uuid(), entry(b.name(), "k1", T1, "{}"));
 
-        dao.clear(mapA);
+        dao.clear(a.uuid());
 
-        assertThat(dao.count(mapA)).isZero();
-        assertThat(dao.count(mapB)).isEqualTo(1);
+        assertThat(dao.count(a.uuid())).isZero();
+        assertThat(dao.count(b.uuid())).isEqualTo(1);
     }
 
     // -----------------------------------------------------------------------
@@ -158,37 +226,37 @@ class TestUpdatableTemporalStoreDaoImplDB {
 
     @Test
     void testGetTimeRange() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "k1", T1, "{}"));
-        dao.create(entry(map, "k1", T3, "{}"));
-        dao.create(entry(map, "k2", T2, "{}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "k1", T1, "{}"));
+        dao.create(store.uuid(), entry(store.name(), "k1", T3, "{}"));
+        dao.create(store.uuid(), entry(store.name(), "k2", T2, "{}"));
 
-        final TemporalStoreTimeRange range = dao.getTimeRange(map);
+        final TemporalStoreTimeRange range = dao.getTimeRange(store.uuid());
 
         assertThat(range.getMinEffectiveTimeMs()).isEqualTo(T1);
         assertThat(range.getMaxEffectiveTimeMs()).isEqualTo(T3);
     }
 
     @Test
-    void testGetTimeRangeEmptyMap() {
-        final TemporalStoreTimeRange range = dao.getTimeRange(uniqueMap());
+    void testGetTimeRangeEmptyStore() {
+        final TemporalStoreTimeRange range = dao.getTimeRange(uniqueStore().uuid());
         assertThat(range.getMinEffectiveTimeMs()).isNull();
         assertThat(range.getMaxEffectiveTimeMs()).isNull();
     }
 
     // -----------------------------------------------------------------------
-    // fetchAll — latest version per key
+    // fetchAll - latest version per key
     // -----------------------------------------------------------------------
 
     @Test
     void testFetchAllReturnsLatestVersionPerKeySortedByKey() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate", T1, "{\"v\":1}"));
-        dao.create(entry(map, "gate", T2, "{\"v\":2}"));
-        dao.create(entry(map, "gate", T3, "{\"v\":3}"));
-        dao.create(entry(map, "computer", T1, "{\"v\":9}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate", T1, "{\"v\":1}"));
+        dao.create(store.uuid(), entry(store.name(), "gate", T2, "{\"v\":2}"));
+        dao.create(store.uuid(), entry(store.name(), "gate", T3, "{\"v\":3}"));
+        dao.create(store.uuid(), entry(store.name(), "computer", T1, "{\"v\":9}"));
 
-        final List<TemporalEntry> all = dao.fetchAll(map);
+        final List<TemporalEntry> all = dao.fetchAll(store.uuid());
 
         assertThat(all).hasSize(2);
         // Sorted by key ascending: "computer" before "gate".
@@ -200,7 +268,7 @@ class TestUpdatableTemporalStoreDaoImplDB {
     }
 
     // -----------------------------------------------------------------------
-    // find — temporal "valid at or before" resolution
+    // find - temporal "valid at or before" resolution
     // -----------------------------------------------------------------------
 
     /**
@@ -209,14 +277,15 @@ class TestUpdatableTemporalStoreDaoImplDB {
      */
     @Test
     void testFindResolvesVersionValidAtOrBeforeQueryTime() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate", T1, "{\"v\":1}"));
-        dao.create(entry(map, "gate", T2, "{\"v\":2}"));
-        dao.create(entry(map, "gate", T3, "{\"v\":3}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate", T1, "{\"v\":1}"));
+        dao.create(store.uuid(), entry(store.name(), "gate", T2, "{\"v\":2}"));
+        dao.create(store.uuid(), entry(store.name(), "gate", T3, "{\"v\":3}"));
 
         // Query strictly between T2 and T3 -> resolves to the T2 version.
         final String betweenT2AndT3 = "2021-06-01T00:00:00.000Z";
-        final ResultPage<TemporalEntry> result = dao.find(criteriaAt(map, betweenT2AndT3));
+        final ResultPage<TemporalEntry> result =
+                dao.find(store.uuid(), criteriaAt(store.name(), betweenT2AndT3));
 
         assertThat(result.getValues()).hasSize(1);
         assertThat(result.getValues().get(0).getEffectiveTimeMs()).isEqualTo(T2);
@@ -225,11 +294,12 @@ class TestUpdatableTemporalStoreDaoImplDB {
 
     @Test
     void testFindAtExactEffectiveTimeIsInclusive() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate", T1, "{\"v\":1}"));
-        dao.create(entry(map, "gate", T2, "{\"v\":2}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate", T1, "{\"v\":1}"));
+        dao.create(store.uuid(), entry(store.name(), "gate", T2, "{\"v\":2}"));
 
-        final ResultPage<TemporalEntry> result = dao.find(criteriaAt(map, T2_ISO));
+        final ResultPage<TemporalEntry> result =
+                dao.find(store.uuid(), criteriaAt(store.name(), T2_ISO));
 
         assertThat(result.getValues()).hasSize(1);
         assertThat(result.getValues().get(0).getValue()).isEqualTo("{\"v\":2}");
@@ -237,71 +307,118 @@ class TestUpdatableTemporalStoreDaoImplDB {
 
     @Test
     void testFindBeforeAnyVersionReturnsNothing() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "gate", T2, "{\"v\":2}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate", T2, "{\"v\":2}"));
 
-        final ResultPage<TemporalEntry> result = dao.find(criteriaAt(map, T1_ISO));
+        final ResultPage<TemporalEntry> result =
+                dao.find(store.uuid(), criteriaAt(store.name(), T1_ISO));
 
         assertThat(result.getValues()).isEmpty();
     }
 
     @Test
-    void testFindIsolatesByMapName() {
-        final String mapA = uniqueMap();
-        final String mapB = uniqueMap();
-        dao.create(entry(mapA, "gate", T1, "{\"map\":\"A\"}"));
-        dao.create(entry(mapB, "gate", T1, "{\"map\":\"B\"}"));
+    void testFindIsolatesByStore() {
+        final Store a = uniqueStore();
+        final Store b = uniqueStore();
+        dao.create(a.uuid(), entry(a.name(), "gate", T1, "{\"store\":\"A\"}"));
+        dao.create(b.uuid(), entry(b.name(), "gate", T1, "{\"store\":\"B\"}"));
 
-        final ResultPage<TemporalEntry> result = dao.find(criteriaAt(mapA, T3_ISO));
+        final ResultPage<TemporalEntry> result =
+                dao.find(a.uuid(), criteriaAt(a.name(), T3_ISO));
 
         assertThat(result.getValues()).hasSize(1);
-        assertThat(result.getValues().get(0).getValue()).isEqualTo("{\"map\":\"A\"}");
+        assertThat(result.getValues().get(0).getValue()).isEqualTo("{\"store\":\"A\"}");
+    }
+
+    /**
+     * A stale map name in the criteria must not hide the data. The {@code map_name} column is a
+     * label, so terms on it are stripped before the query runs - honouring them would make a
+     * renamed document look empty.
+     */
+    @Test
+    void testFindIgnoresTheMapNameTerm() {
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate", T1, "{\"v\":1}"));
+
+        final ResultPage<TemporalEntry> result =
+                dao.find(store.uuid(), criteriaAt("a-name-that-was-never-used", T3_ISO));
+
+        assertThat(result.getValues()).hasSize(1);
     }
 
     // -----------------------------------------------------------------------
-    // applyChanges — atomic batch
+    // applyChanges - atomic batch
     // -----------------------------------------------------------------------
 
     @Test
     void testApplyChangesAppliesUpsertsAndDeletes() {
-        final String map = uniqueMap();
-        dao.create(entry(map, "stale", T1, "{}"));
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "stale", T1, "{}"));
 
-        dao.applyChanges(List.of(
-                ChangeOperation.upsert(entry(map, "gate", T1, "{\"v\":1}")),
-                ChangeOperation.upsert(entry(map, "gate", T1, "{\"v\":2}")), // overwrites
-                ChangeOperation.delete(id(map, "stale"))));
+        dao.applyChanges(store.uuid(), List.of(
+                ChangeOperation.upsert(entry(store.name(), "gate", T1, "{\"v\":1}")),
+                ChangeOperation.upsert(entry(store.name(), "gate", T1, "{\"v\":2}")), // overwrites
+                ChangeOperation.delete(id(store.name(), "stale"))));
 
-        assertThat(dao.count(map)).isEqualTo(1);
-        assertThat(dao.fetch(id(map, "gate")))
+        assertThat(dao.count(store.uuid())).isEqualTo(1);
+        assertThat(dao.fetch(store.uuid(), id(store.name(), "gate")))
                 .map(TemporalEntry::getValue)
                 .hasValue("{\"v\":2}");
     }
 
     /**
+     * An operation carrying a different map name cannot reach another store's data - the batch
+     * is scoped by the UUID passed to applyChanges, not by anything in the operations.
+     */
+    @Test
+    void testApplyChangesCannotEscapeItsStoreViaTheMapName() {
+        final Store target = uniqueStore();
+        final Store other = uniqueStore();
+        dao.create(other.uuid(), entry(other.name(), "victim", T1, "{\"owner\":\"other\"}"));
+
+        // Name the other store in the operations; the write must still land on target.
+        dao.applyChanges(target.uuid(), List.of(
+                ChangeOperation.upsert(entry(other.name(), "victim", T1, "{\"owner\":\"attacker\"}")),
+                ChangeOperation.delete(id(other.name(), "victim"))));
+
+        // The other store is untouched.
+        assertThat(dao.count(other.uuid())).isEqualTo(1);
+        assertThat(dao.fetch(other.uuid(), id(other.name(), "victim")))
+                .map(TemporalEntry::getValue)
+                .hasValue("{\"owner\":\"other\"}");
+        // The upsert and the delete both applied within the target store, netting zero rows.
+        assertThat(dao.count(target.uuid())).isZero();
+    }
+
+    /**
      * If any operation in the batch fails, the whole transaction must roll back
-     * — no partial writes are visible.
+     * - no partial writes are visible.
      */
     @Test
     void testApplyChangesRollsBackOnError() {
-        final String map = uniqueMap();
+        final Store store = uniqueStore();
 
-        assertThatThrownBy(() -> dao.applyChanges(List.of(
-                ChangeOperation.upsert(entry(map, "good", T1, "{}")),
+        assertThatThrownBy(() -> dao.applyChanges(store.uuid(), List.of(
+                ChangeOperation.upsert(entry(store.name(), "good", T1, "{}")),
                 // UPSERT with a null entry trips the guard mid-transaction.
                 new ChangeOperation(ChangeOperation.Type.UPSERT, null, null))))
                 .isInstanceOf(IllegalArgumentException.class);
 
         // The earlier valid upsert must have been rolled back.
-        assertThat(dao.count(map)).isZero();
+        assertThat(dao.count(store.uuid())).isZero();
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    private static String uniqueMap() {
-        return "testMap_" + MAP_SEQ.incrementAndGet();
+    private static Store uniqueStore() {
+        final int n = SEQ.incrementAndGet();
+        return new Store(uuid(), "testStore_" + n);
+    }
+
+    private static String uuid() {
+        return java.util.UUID.randomUUID().toString();
     }
 
     private static TemporalEntry entry(final String map,
@@ -317,7 +434,8 @@ class TestUpdatableTemporalStoreDaoImplDB {
 
     /**
      * Builds a find criteria that pins the map name and a temporal lookup time,
-     * mirroring the StroomQL the UI issues at a playback timeline position.
+     * mirroring the StroomQL the UI issues at a playback timeline position. The map term is
+     * stripped by the DAO; scoping comes from the UUID argument.
      */
     private static ExpressionCriteria criteriaAt(final String map, final String isoTime) {
         return new ExpressionCriteria(ExpressionOperator.builder()

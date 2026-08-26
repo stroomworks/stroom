@@ -50,6 +50,11 @@ public class UpdatableTemporalStore extends TableImpl<UpdatableTemporalStoreReco
     }
 
     /**
+     * The column <code>stroom.updatable_temporal_store.doc_uuid</code>.
+     */
+    public final TableField<UpdatableTemporalStoreRecord, String> DOC_UUID = createField(DSL.name("doc_uuid"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+
+    /**
      * The column <code>stroom.updatable_temporal_store.map_name</code>.
      */
     public final TableField<UpdatableTemporalStoreRecord, String> MAP_NAME = createField(DSL.name("map_name"), SQLDataType.VARCHAR(255).nullable(false), this, "");

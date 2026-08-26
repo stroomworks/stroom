@@ -29,41 +29,48 @@ import java.util.function.Consumer;
 
 public interface UpdatableTemporalStoreDao {
 
-    TemporalEntry create(TemporalEntry entry);
+    /*
+     * Every method is scoped by the UUID of the owning store document, never by map name.
+     * Document names are mutable and not unique, so keying on the name meant a rename
+     * orphaned every row and two same-named documents shared one dataset.
+     */
 
-    TemporalEntry update(TemporalEntry entry);
+    TemporalEntry create(String docUuid, TemporalEntry entry);
 
-    Optional<TemporalEntry> fetch(TemporalEntryId id);
+    TemporalEntry update(String docUuid, TemporalEntry entry);
 
-    boolean delete(TemporalEntryId id);
+    Optional<TemporalEntry> fetch(String docUuid, TemporalEntryId id);
 
-    ResultPage<TemporalEntry> find(ExpressionCriteria criteria);
+    boolean delete(String docUuid, TemporalEntryId id);
+
+    ResultPage<TemporalEntry> find(String docUuid, ExpressionCriteria criteria);
 
     /**
-     * Returns the absolute latest version of every key in the specified map,
-     * with no upper-time constraint.
+     * Returns one entry per key for the given store - the row with the greatest
+     * {@code effective_time}, with no upper-time bound, so entries with effective times in
+     * the future are included.
      *
-     * <p>Equivalent to calling {@link #find} with only a {@code Map = mapName}
-     * term (no time term), then deduplicating in-process to one entry per key.
-     * Used to back the "Show all" toggle in the Floor Map Editor Fact List.</p>
+     * <p>Deduplication is done in the database by a {@code MAX(effective_time)}-per-key
+     * subquery joined back for the full row; only one row per key crosses the wire. It is
+     * unpaged and ordered by key ascending. Used to back the "Show all" toggle in the Floor
+     * Map Editor Fact List.</p>
      *
-     * @param mapName name of the map to query; must not be {@code null} or blank
-     * @return deduplicated list — one entry per key — sorted by key ascending;
-     *         never {@code null}, may be empty
+     * @param docUuid UUID of the owning store document; must not be {@code null} or blank
+     * @return one entry per key, sorted by key ascending; never {@code null}, may be empty
      */
-    List<TemporalEntry> fetchAll(String mapName);
+    List<TemporalEntry> fetchAll(String docUuid);
 
     /**
      * Returns the minimum and maximum {@code effective_time} values present in
-     * the store for the given map name.
+     * the store for the given document.
      *
      * <p>Executes a single {@code SELECT MIN(effective_time), MAX(effective_time)}
      * aggregation — no deduplication is performed.</p>
      *
-     * @param mapName name of the map to query; must not be {@code null} or blank
+     * @param docUuid UUID of the owning store document; must not be {@code null} or blank
      * @return the time range; both fields are {@code null} if the store is empty
      */
-    TemporalStoreTimeRange getTimeRange(String mapName);
+    TemporalStoreTimeRange getTimeRange(String docUuid);
 
     /**
      * Applies a list of upsert and delete operations atomically within a
@@ -71,18 +78,19 @@ public interface UpdatableTemporalStoreDao {
      *
      * <p>Operations are applied strictly in list order. If any operation
      * fails the entire transaction is rolled back and no changes are
-     * persisted.</p>
+     * persisted. Every operation is scoped to {@code docUuid}, so an operation cannot
+     * reach another document's data whatever map name its entry carries.</p>
      *
+     * @param docUuid    UUID of the owning store document; must not be {@code null} or blank
      * @param operations ordered list of operations; must not be {@code null}
      * @throws RuntimeException (propagated from JOOQ) if any operation fails;
      *                          the transaction is rolled back automatically
      */
-    void applyChanges(List<ChangeOperation> operations);
+    void applyChanges(String docUuid, List<ChangeOperation> operations);
 
-    void clear(String mapName);
+    void clear(String docUuid);
 
-    long count(String mapName);
+    long count(String docUuid);
 
-    void search(ExpressionCriteria criteria, Consumer<TemporalEntry> consumer);
+    void search(String docUuid, ExpressionCriteria criteria, Consumer<TemporalEntry> consumer);
 }
-

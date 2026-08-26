@@ -50,9 +50,27 @@ class TestUpdatableTemporalStoreDaoImpl {
         dao = new UpdatableTemporalStoreDaoImpl(sqlStoreDbConnProvider, expressionMapperFactory);
     }
 
+    private static final String UUID = "11111111-2222-3333-4444-555555555555";
+
+    @Test
+    void testCreateWithNullDocUuid() {
+        final TemporalEntry entry = new TemporalEntry("map1", "key1", 1000L, "val");
+        assertThatThrownBy(() -> dao.create(null, entry))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
+    }
+
+    @Test
+    void testCreateWithBlankDocUuid() {
+        final TemporalEntry entry = new TemporalEntry("map1", "key1", 1000L, "val");
+        assertThatThrownBy(() -> dao.create("  ", entry))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
+    }
+
     @Test
     void testCreateWithNullEntry() {
-        assertThatThrownBy(() -> dao.create(null))
+        assertThatThrownBy(() -> dao.create(UUID, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Entry cannot be null.");
     }
@@ -60,7 +78,7 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testCreateWithNullMap() {
         final TemporalEntry entry = new TemporalEntry(null, "key1", 1000L, "val");
-        assertThatThrownBy(() -> dao.create(entry))
+        assertThatThrownBy(() -> dao.create(UUID, entry))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Map name must be defined and not empty.");
     }
@@ -68,7 +86,7 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testCreateWithEmptyMap() {
         final TemporalEntry entry = new TemporalEntry("  ", "key1", 1000L, "val");
-        assertThatThrownBy(() -> dao.create(entry))
+        assertThatThrownBy(() -> dao.create(UUID, entry))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Map name must be defined and not empty.");
     }
@@ -76,7 +94,7 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testCreateWithNullKey() {
         final TemporalEntry entry = new TemporalEntry("map1", null, 1000L, "val");
-        assertThatThrownBy(() -> dao.create(entry))
+        assertThatThrownBy(() -> dao.create(UUID, entry))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Key must be defined and not empty.");
     }
@@ -84,7 +102,7 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testCreateWithEmptyKey() {
         final TemporalEntry entry = new TemporalEntry("map1", "", 1000L, "val");
-        assertThatThrownBy(() -> dao.create(entry))
+        assertThatThrownBy(() -> dao.create(UUID, entry))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Key must be defined and not empty.");
     }
@@ -92,30 +110,41 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testCreateWithNullEffectiveTime() {
         final TemporalEntry entry = new TemporalEntry("map1", "key1", null, "val");
-        assertThatThrownBy(() -> dao.create(entry))
+        assertThatThrownBy(() -> dao.create(UUID, entry))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Effective time must be defined.");
     }
 
     @Test
+    void testFetchWithNullDocUuid() {
+        final TemporalEntryId id = new TemporalEntryId("map1", "key1", 1000L);
+        assertThatThrownBy(() -> dao.fetch(null, id))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
+    }
+
+    @Test
     void testFetchWithNullId() {
-        assertThatThrownBy(() -> dao.fetch(null))
+        assertThatThrownBy(() -> dao.fetch(UUID, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Id cannot be null.");
     }
 
+    /**
+     * A null map name on an id is no longer an error. Scoping is by document UUID, so the map
+     * name on an id is not consulted at all - see UpdatableTemporalStoreDaoImpl's class doc.
+     */
     @Test
-    void testFetchWithNullMap() {
+    void testFetchWithNullMapIsAccepted() {
         final TemporalEntryId id = new TemporalEntryId(null, "key1", 1000L);
-        assertThatThrownBy(() -> dao.fetch(id))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Map name must be defined and not empty.");
+        assertThatThrownBy(() -> dao.fetch(UUID, id))
+                .isNotInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void testFetchWithNullKey() {
         final TemporalEntryId id = new TemporalEntryId("map1", null, 1000L);
-        assertThatThrownBy(() -> dao.fetch(id))
+        assertThatThrownBy(() -> dao.fetch(UUID, id))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Key must be defined and not empty.");
     }
@@ -123,30 +152,30 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testFetchWithNullEffectiveTime() {
         final TemporalEntryId id = new TemporalEntryId("map1", "key1", null);
-        assertThatThrownBy(() -> dao.fetch(id))
+        assertThatThrownBy(() -> dao.fetch(UUID, id))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Effective time must be defined.");
     }
 
     @Test
+    void testDeleteWithNullDocUuid() {
+        final TemporalEntryId id = new TemporalEntryId("map1", "key1", 1000L);
+        assertThatThrownBy(() -> dao.delete(null, id))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
+    }
+
+    @Test
     void testDeleteWithNullId() {
-        assertThatThrownBy(() -> dao.delete(null))
+        assertThatThrownBy(() -> dao.delete(UUID, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Id cannot be null.");
     }
 
     @Test
-    void testDeleteWithNullMap() {
-        final TemporalEntryId id = new TemporalEntryId(null, "key1", 1000L);
-        assertThatThrownBy(() -> dao.delete(id))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Map name must be defined and not empty.");
-    }
-
-    @Test
     void testDeleteWithNullKey() {
         final TemporalEntryId id = new TemporalEntryId("map1", null, 1000L);
-        assertThatThrownBy(() -> dao.delete(id))
+        assertThatThrownBy(() -> dao.delete(UUID, id))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Key must be defined and not empty.");
     }
@@ -154,8 +183,29 @@ class TestUpdatableTemporalStoreDaoImpl {
     @Test
     void testDeleteWithNullEffectiveTime() {
         final TemporalEntryId id = new TemporalEntryId("map1", "key1", null);
-        assertThatThrownBy(() -> dao.delete(id))
+        assertThatThrownBy(() -> dao.delete(UUID, id))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Effective time must be defined.");
+    }
+
+    @Test
+    void testClearWithNullDocUuid() {
+        assertThatThrownBy(() -> dao.clear(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
+    }
+
+    @Test
+    void testFetchAllWithNullDocUuid() {
+        assertThatThrownBy(() -> dao.fetchAll(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
+    }
+
+    @Test
+    void testGetTimeRangeWithNullDocUuid() {
+        assertThatThrownBy(() -> dao.getTimeRange(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Store document UUID must be defined and not empty.");
     }
 }
