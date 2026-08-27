@@ -18,23 +18,6 @@ package stroom.pipeline.xslt;
 
 import stroom.pipeline.shared.XsltReferenceReason;
 
-import net.sf.saxon.expr.AtomicSequenceConverter;
-import net.sf.saxon.expr.Atomizer;
-import net.sf.saxon.expr.AxisExpression;
-import net.sf.saxon.expr.CardinalityChecker;
-import net.sf.saxon.expr.ContextItemExpression;
-import net.sf.saxon.expr.Expression;
-import net.sf.saxon.expr.FunctionCall;
-import net.sf.saxon.expr.ItemChecker;
-import net.sf.saxon.expr.Literal;
-import net.sf.saxon.expr.Operand;
-import net.sf.saxon.expr.RootExpression;
-import net.sf.saxon.expr.SingletonAtomizer;
-import net.sf.saxon.expr.StringLiteral;
-import net.sf.saxon.expr.UntypedSequenceConverter;
-import net.sf.saxon.expr.VariableReference;
-import net.sf.saxon.expr.instruct.Choose;
-import net.sf.saxon.lib.NamespaceConstant;
 import net.sf.saxon.s9api.Axis;
 import net.sf.saxon.s9api.SaxonApiException;
 import net.sf.saxon.s9api.XdmNode;
@@ -64,7 +47,9 @@ import java.util.Set;
  */
 class XsltValueResolver {
 
-    static final String XSLT_NS = NamespaceConstant.XSLT;
+    // Fixed by the XSLT specification, so written out rather than taken from Saxon - the namespace is a
+    // W3C constant and depending on a third party for it would be gratuitous coupling.
+    static final String XSLT_NS = "http://www.w3.org/1999/XSL/Transform";
 
     private static final String NAME_ATTRIBUTE = "name";
     private static final String SELECT_ATTRIBUTE = "select";
@@ -103,13 +88,13 @@ class XsltValueResolver {
      *                   references are resolved in. Must not be null.
      * @return what the expression is worth, resolved, unresolved, or partly both.
      */
-    XsltValue resolve(final Expression expression, final XdmNode site) {
+    XsltValue resolve(final XPathExpr expression, final XdmNode site) {
         Objects.requireNonNull(expression, "Null expression supplied");
         Objects.requireNonNull(site, "Null site supplied");
         return resolve(expression, site, new LinkedHashSet<>(), 0);
     }
 
-    private XsltValue resolve(final Expression expression,
+    private XsltValue resolve(final XPathExpr expression,
                               final XdmNode site,
                               final Set<String> variablesInProgress,
                               final int depth) {
@@ -117,68 +102,32 @@ class XsltValueResolver {
             return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
         }
 
-        final Expression unwrapped = unwrap(expression);
-
-        if (unwrapped instanceof final StringLiteral stringLiteral) {
-            return XsltValue.resolved(stringLiteral.getStringValue());
-        }
-        if (unwrapped instanceof final Literal literal) {
-            return resolveLiteral(literal);
-        }
-        if (unwrapped instanceof final Choose choose) {
-            return resolveChoose(choose, site, variablesInProgress, depth);
-        }
-        if (unwrapped instanceof final VariableReference variableReference) {
-            return resolveVariableReference(variableReference, site, variablesInProgress, depth);
-        }
-        if (unwrapped instanceof final FunctionCall functionCall && isConcat(functionCall)) {
-            return resolveConcat(functionCall, site, variablesInProgress, depth);
-        }
-        return XsltValue.unresolved(reasonFor(unwrapped));
-    }
-
-    /**
-     * Saxon wraps expressions in atomizers and type checkers, so {@code concat('a', $v)} holds a
-     * {@code SingletonAtomizer} rather than the variable reference itself. These wrappers say nothing
-     * about the value, so they are stepped through.
-     */
-    private static Expression unwrap(final Expression expression) {
-        Expression current = expression;
-        while (current instanceof Atomizer
-               || current instanceof SingletonAtomizer
-               || current instanceof ItemChecker
-               || current instanceof CardinalityChecker
-               || current instanceof UntypedSequenceConverter
-               || current instanceof AtomicSequenceConverter) {
-            final Expression child = onlyChild(current);
-            if (child == null) {
-                return current;
+        switch (expression.kind()) {
+            case STRING_LITERAL -> {
+                return XsltValue.resolved(expression.stringLiteral());
             }
-            current = child;
-        }
-        return current;
-    }
-
-    private static @Nullable Expression onlyChild(final Expression expression) {
-        Expression child = null;
-        for (final Operand operand : expression.operands()) {
-            if (child != null) {
-                return null;
+            case LITERAL -> {
+                // A number, a boolean, the empty sequence or several items. Only a single item has a
+                // string value that could be a name.
+                return expression.singleLiteralValue()
+                        .map(XsltValue::resolved)
+                        .orElseGet(() -> XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING));
             }
-            child = operand.getChildExpression();
-        }
-        return child;
-    }
-
-    private static XsltValue resolveLiteral(final Literal literal) {
-        try {
-            if (literal.getValue().getLength() != 1) {
-                // The empty sequence, or several items. Neither is a name.
-                return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
+            case ALTERNATIVES -> {
+                return resolveAlternatives(expression, site, variablesInProgress, depth);
             }
-            return XsltValue.resolved(literal.getValue().getStringValue());
-        } catch (final Exception e) {
-            return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
+            case VARIABLE_REFERENCE -> {
+                return resolveVariableReference(expression, site, variablesInProgress, depth);
+            }
+            case FUNCTION_CALL -> {
+                if (expression.isConcat()) {
+                    return resolveConcat(expression, site, variablesInProgress, depth);
+                }
+                return XsltValue.unresolved(reasonFor(expression));
+            }
+            default -> {
+                return XsltValue.unresolved(reasonFor(expression));
+            }
         }
     }
 
@@ -187,23 +136,16 @@ class XsltValueResolver {
      * one branch is a literal and another is not, the literal is still recorded, alongside the reason the
      * other could not be.
      */
-    private XsltValue resolveChoose(final Choose choose,
-                                    final XdmNode site,
-                                    final Set<String> variablesInProgress,
-                                    final int depth) {
+    private XsltValue resolveAlternatives(final XPathExpr expression,
+                                          final XdmNode site,
+                                          final Set<String> variablesInProgress,
+                                          final int depth) {
         final List<XsltValue> branches = new ArrayList<>();
-        // actions() rather than operands(), so the conditions are excluded. A condition such as
-        // @type = 'user' holds a literal that is emphatically not a reference.
-        for (final Operand action : choose.actions()) {
-            branches.add(resolve(action.getChildExpression(), site, variablesInProgress, depth + 1));
+        // The branches only, never the conditions that select between them - see XPathExpr.alternatives().
+        for (final XPathExpr branch : expression.alternatives()) {
+            branches.add(resolve(branch, site, variablesInProgress, depth + 1));
         }
         return XsltValue.merge(branches);
-    }
-
-    private static boolean isConcat(final FunctionCall functionCall) {
-        return functionCall.getFunctionName() != null
-               && NamespaceConstant.FN.equals(functionCall.getFunctionName().getURI())
-               && "concat".equals(functionCall.getFunctionName().getLocalPart());
     }
 
     /**
@@ -216,13 +158,13 @@ class XsltValueResolver {
      * Where an argument can take several values the result is the cross product, which is bounded to keep
      * a nest of conditionals from exploding.
      */
-    private XsltValue resolveConcat(final FunctionCall functionCall,
+    private XsltValue resolveConcat(final XPathExpr expression,
                                     final XdmNode site,
                                     final Set<String> variablesInProgress,
                                     final int depth) {
         final List<XsltValue> arguments = new ArrayList<>();
-        for (int index = 0; index < functionCall.getArity(); index++) {
-            arguments.add(resolve(functionCall.getArg(index), site, variablesInProgress, depth + 1));
+        for (int index = 0; index < expression.arity(); index++) {
+            arguments.add(resolve(expression.argument(index), site, variablesInProgress, depth + 1));
         }
         return concatenate(arguments);
     }
@@ -274,11 +216,11 @@ class XsltValueResolver {
         return XsltValue.resolved(combinations);
     }
 
-    private XsltValue resolveVariableReference(final VariableReference variableReference,
+    private XsltValue resolveVariableReference(final XPathExpr expression,
                                                final XdmNode site,
                                                final Set<String> variablesInProgress,
                                                final int depth) {
-        final String name = localName(variableReference.getDisplayName());
+        final String name = localName(expression.variableName().orElse(""));
         if (variablesInProgress.contains(name)) {
             // A cycle. Report it as an undeterminable binding rather than recursing forever.
             return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
@@ -308,7 +250,7 @@ class XsltValueResolver {
         final String select = binding.attribute(SELECT_ATTRIBUTE);
         if (select != null) {
             try {
-                final Expression expression = compiler.compileExpression(binding, select);
+                final XPathExpr expression = compiler.compileExpression(binding, select);
                 // The binding element becomes the site, so variables it refers to resolve in its scope
                 // rather than in the scope of whatever referred to it.
                 return resolve(expression, binding, variablesInProgress, depth);
@@ -530,24 +472,11 @@ class XsltValueResolver {
      * @return why a non-literal expression is not determinable. An expression that touches the input
      * document is data driven; anything else is simply not foldable.
      */
-    private static XsltReferenceReason reasonFor(final Expression expression) {
-        return referencesInput(expression)
+    private static XsltReferenceReason reasonFor(final XPathExpr expression) {
+        return expression.readsInput()
                 ? XsltReferenceReason.DATA_DRIVEN
                 : XsltReferenceReason.NON_LITERAL_BINDING;
     }
 
-    private static boolean referencesInput(final Expression expression) {
-        if (expression instanceof AxisExpression
-            || expression instanceof ContextItemExpression
-            || expression instanceof RootExpression) {
-            return true;
-        }
-        for (final Operand operand : expression.operands()) {
-            if (referencesInput(operand.getChildExpression())) {
-                return true;
-            }
-        }
-        return false;
-    }
 
 }

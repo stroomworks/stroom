@@ -16,7 +16,6 @@
 
 package stroom.pipeline.xslt;
 
-import net.sf.saxon.expr.Expression;
 import net.sf.saxon.s9api.Axis;
 import net.sf.saxon.s9api.DocumentBuilder;
 import net.sf.saxon.s9api.Processor;
@@ -131,11 +130,12 @@ class XsltExpressionCompiler {
      *
      * @param element    The element the expression was taken from, supplying the in-scope namespaces.
      * @param expression The expression text.
-     * @return the compiled expression tree.
+     * @return the compiled expression, as a view this parser can read.
      * @throws SaxonApiException if the expression is not valid XPath.
      */
-    Expression compileExpression(final XdmNode element, final String expression) throws SaxonApiException {
-        return compilerFor(element).compile(expression).getUnderlyingExpression().getInternalExpression();
+    XPathExpr compileExpression(final XdmNode element, final String expression) throws SaxonApiException {
+        return XPathExpr.of(
+                compilerFor(element).compile(expression).getUnderlyingExpression().getInternalExpression());
     }
 
     /**
@@ -145,11 +145,12 @@ class XsltExpressionCompiler {
      *
      * @param element The element the pattern was taken from, supplying the in-scope namespaces.
      * @param pattern The pattern text.
-     * @return the compiled pattern as an expression tree.
+     * @return the compiled pattern, as a view this parser can read.
      * @throws SaxonApiException if the pattern is not valid.
      */
-    Expression compilePattern(final XdmNode element, final String pattern) throws SaxonApiException {
-        return compilerFor(element).compilePattern(pattern).getUnderlyingExpression().getInternalExpression();
+    XPathExpr compilePattern(final XdmNode element, final String pattern) throws SaxonApiException {
+        return XPathExpr.of(
+                compilerFor(element).compilePattern(pattern).getUnderlyingExpression().getInternalExpression());
     }
 
     private XPathCompiler compilerFor(final XdmNode element) {

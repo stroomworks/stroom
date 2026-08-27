@@ -32,9 +32,6 @@ import stroom.util.time.StroomDuration;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
-import net.sf.saxon.expr.Expression;
-import net.sf.saxon.expr.FunctionCall;
-import net.sf.saxon.expr.Operand;
 import net.sf.saxon.s9api.Axis;
 import net.sf.saxon.s9api.SaxonApiException;
 import net.sf.saxon.s9api.XdmNode;
@@ -409,7 +406,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
         }
 
         private void analyse(final XdmNode element, final String expressionText, final boolean isPattern) {
-            final Expression expression;
+            final XPathExpr expression;
             try {
                 expression = isPattern
                         ? compiler.compilePattern(element, expressionText)
@@ -471,28 +468,28 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
          * Walk the whole expression tree, not just its root, so that a call nested inside another
          * expression is still found.
          */
-        private void findStroomCalls(final Expression expression,
+        private void findStroomCalls(final XPathExpr expression,
                                     final XdmNode site,
                                     final String expressionText) {
-            if (expression instanceof final FunctionCall functionCall
-                && functionCall.getFunctionName() != null
-                && NamespaceConstants.STROOM.equals(functionCall.getFunctionName().getURI())) {
-                visitStroomCall(functionCall, site, expressionText);
+            if (expression.functionNamespace().filter(NamespaceConstants.STROOM::equals).isPresent()) {
+                visitStroomCall(expression, site, expressionText);
             }
-            for (final Operand operand : expression.operands()) {
-                findStroomCalls(operand.getChildExpression(), site, expressionText);
+            // Children, not just the branches of a conditional: a lookup inside a condition is performed
+            // when the condition is evaluated, so it is a real reference.
+            for (final XPathExpr child : expression.children()) {
+                findStroomCalls(child, site, expressionText);
             }
         }
 
-        private void visitStroomCall(final FunctionCall functionCall,
+        private void visitStroomCall(final XPathExpr functionCall,
                                      final XdmNode site,
                                      final String expressionText) {
-            if (functionCall.getArity() < 1) {
+            if (functionCall.arity() < 1) {
                 return;
             }
-            final String localName = functionCall.getFunctionName().getLocalPart();
+            final String localName = functionCall.functionLocalName().orElse("");
             final int lineNumber = lineNumberOf(site);
-            final Expression firstArgument = functionCall.getArg(0);
+            final XPathExpr firstArgument = functionCall.argument(0);
 
             switch (localName) {
                 case DICTIONARY_FUNCTION -> emitDictionary(firstArgument, site, expressionText, lineNumber);
@@ -509,7 +506,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             }
         }
 
-        private void emitDictionary(final Expression argument,
+        private void emitDictionary(final XPathExpr argument,
                                     final XdmNode site,
                                     final String expressionText,
                                     final int lineNumber) {
@@ -526,7 +523,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
          * A lookup contributes only a map name. Which store it reaches, if any, depends on the pipeline's
          * configured references rather than on the XSLT, so the parser does not attempt to resolve it.
          */
-        private void emitMapRead(final Expression argument,
+        private void emitMapRead(final XPathExpr argument,
                                  final XdmNode site,
                                  final String expressionText,
                                  final int lineNumber) {
@@ -544,7 +541,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             addUnresolved(XsltReferenceKind.REF_MAP_READ, value, expressionText, lineNumber);
         }
 
-        private void emitEndpoint(final Expression argument,
+        private void emitEndpoint(final XPathExpr argument,
                                   final XdmNode site,
                                   final String expressionText,
                                   final int lineNumber,
