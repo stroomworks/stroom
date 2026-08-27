@@ -268,10 +268,18 @@ public class DocumentAssetService {
 
     /**
      * Returns the content of a text file for editing in the UI.
-     * Will not return anything if the file isn't a text file.
+     *
+     * <p>Not every unviewable asset returns null: content that is simply too large to edit
+     * <strong>throws</strong> rather than returning null, so a caller that only null-checks will
+     * see an uncaught exception on a large asset.</p>
+     *
      * @param ownerDocId Document that owns the assets. Must not be null.
-     * @param path Location of the document to update the content for.
-     * @return The content, or null if the content cannot be viewed.
+     * @param path Path of the asset to read the content of. Must not be null.
+     * @return The content, or null if the asset is missing or its bytes are not valid UTF-8
+     *         text.
+     * @throws RuntimeException {@code DataTooBigException} from the DAO if the content exceeds
+     *         the maximum editable size. Named rather than linked because it lives in the
+     *         impl-db module, which this one does not depend on.
      */
     String getDraftContent(final String ownerDocId,
                            final String path)

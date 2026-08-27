@@ -327,24 +327,23 @@ public final class TermHandler<T> implements Function<ExpressionTerm, Condition>
             }
             return Optional.empty();
         } catch (final NumberFormatException e) {
-            throw new IllegalArgumentException("Cannot convert value '" + value + "' to a number");
+            throw new IllegalArgumentException("Cannot convert value '" + value + "' to a number", e);
         }
-
     }
 
     private List<T> getValues(final String value) {
         try {
             return converter.apply(NullSafe.singletonList(value));
         } catch (final NumberFormatException e) {
-            throw new IllegalArgumentException("Cannot convert value '" + value + "' to a number");
+            throw new IllegalArgumentException("Cannot convert value '" + value + "' to a number", e);
         }
     }
 
     private List<T> getValues(final List<String> values) {
         try {
             return converter.apply(values);
-        }  catch (final NumberFormatException e) {
-            throw new IllegalArgumentException("Cannot convert values '" + values + "' to a number");
+        } catch (final NumberFormatException e) {
+            throw new IllegalArgumentException("Cannot convert values '" + values + "' to a number", e);
         }
     }
 

@@ -121,8 +121,9 @@ import javax.inject.Provider;
  * <p>All edits are buffered in {@link FloorMapPendingChanges}. They are flushed
  * via {@link #onSave(FloorMapDoc, Consumer)} as part of the standard
  * Stroom document save chain. On success the buffer is cleared and all panels
- * are reloaded. On failure a top-level error is shown and all panels reload
- * from the server.</p>
+ * are reloaded. On failure a top-level error is shown and the staged changes are
+ * <strong>kept</strong> for a retry - the panels are deliberately not reloaded, as that would
+ * discard the user's in-progress edits. Replay is idempotent.</p>
  */
 public class FloorMapEditorPresenter
         extends DocPresenter<FloorMapEditorView, FloorMapDoc>
@@ -1949,7 +1950,10 @@ public class FloorMapEditorPresenter
 
     /**
      * Handles a server-side flush failure.
-     * Shows a top-level error and reloads all panels from the server.
+     *
+     * <p>Shows a top-level error and <strong>keeps the staged changes</strong> so the user can
+     * retry. Nothing is reloaded: the server reported the changes were not applied, so reloading
+     * would overwrite the user's in-progress edits with server state and lose their work.</p>
      *
      * @param result the failed {@link ApplyChangesResult}
      */
@@ -2013,12 +2017,14 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Returns the JSON path for the given {@link Role} using the document's
-     * value schema, falling back to the default schema if the document is
-     * unavailable.
+     * Returns the value path for the given {@link Role} from the session's value schema.
+     *
+     * <p>There is no fallback to a default schema: an unmapped role throws. The path is
+     * format-neutral rather than JSON-specific - the same path drives the XML accessor when the
+     * document's {@code ValueFormat} is XML.</p>
      *
      * @param role the field role to look up
-     * @return the JSON path string for the role; never {@code null}
+     * @return the value path for the role; never {@code null}
      * @throws IllegalStateException if the schema does not contain the requested role
      */
     private String pathForRole(final Role role) {

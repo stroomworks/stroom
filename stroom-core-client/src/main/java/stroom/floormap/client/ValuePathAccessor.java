@@ -52,7 +52,9 @@ public final class ValuePathAccessor {
      * @param raw the raw JSON string; must start with {@code {}
      * @return the parsed object, or {@code null} if {@code raw} is null/empty or does not
      *         parse to an object
-     * @throws com.google.gwt.core.client.JavaScriptException if {@code raw} is malformed
+     * @throws com.google.gwt.json.client.JSONException if {@code raw} is malformed.
+     *         {@code JSONParser.parseStrict} wraps the underlying
+     *         {@code JavaScriptException}, so catching that instead will not catch this.
      */
     public static JSONObject parse(final String raw) {
         if (raw == null || raw.isEmpty()) {

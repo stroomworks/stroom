@@ -421,4 +421,57 @@ class TestFloorMapTransformationMatrix {
 
         assertThat(m.placing(5, 6, where[0], where[1])).isEqualTo(m);
     }
+
+    // -----------------------------------------------------------------------
+    // hasInverse must screen every component, not just the linear four
+    // -----------------------------------------------------------------------
+
+    /**
+     * A non-finite translation used to pass hasInverse(), because only a, b, c and d reach the
+     * determinant. inverse() then "succeeded" and returned a matrix whose invE/invF were NaN or
+     * infinite - which is exactly the plausible-looking wrong answer inverse() documents as being
+     * worse than throwing. The vertex editor writes converted coordinates back to the document,
+     * so a silently non-finite inverse corrupts what gets saved.
+     */
+    @TestFactory
+    Stream<DynamicTest> testHasInverseRejectsAnyNonFiniteComponent() {
+        return Stream.of(
+                        new double[]{Double.NaN, 0, 0, 1, 0, 0},
+                        new double[]{1, Double.NaN, 0, 1, 0, 0},
+                        new double[]{1, 0, Double.NaN, 1, 0, 0},
+                        new double[]{1, 0, 0, Double.NaN, 0, 0},
+                        new double[]{1, 0, 0, 1, Double.NaN, 0},
+                        new double[]{1, 0, 0, 1, 0, Double.NaN},
+                        new double[]{1, 0, 0, 1, Double.POSITIVE_INFINITY, 0},
+                        new double[]{1, 0, 0, 1, 0, Double.NEGATIVE_INFINITY})
+                .map(v -> DynamicTest.dynamicTest(
+                        "a=" + v[0] + " b=" + v[1] + " c=" + v[2]
+                        + " d=" + v[3] + " e=" + v[4] + " f=" + v[5],
+                        () -> {
+                            final FloorMapTransformationMatrix m =
+                                    new FloorMapTransformationMatrix(v[0], v[1], v[2], v[3], v[4], v[5]);
+                            assertThat(m.hasInverse()).isFalse();
+                            assertThatThrownBy(m::inverse)
+                                    .isInstanceOf(IllegalStateException.class);
+                        }));
+    }
+
+    /** The guard must not reject matrices that are perfectly invertible. */
+    @Test
+    void testHasInverseStillAcceptsAFiniteInvertibleMatrix() {
+        final FloorMapTransformationMatrix m =
+                new FloorMapTransformationMatrix(1.5, 0.2, -0.2, 1.5, 40, 60);
+
+        assertThat(m.hasInverse()).isTrue();
+        assertThat(m.inverse()).isNotNull();
+    }
+
+    /** A large but finite translation is invertible; only non-finite values are rejected. */
+    @Test
+    void testHasInverseAcceptsALargeFiniteTranslation() {
+        final FloorMapTransformationMatrix m =
+                new FloorMapTransformationMatrix(1, 0, 0, 1, 1e12, -1e12);
+
+        assertThat(m.hasInverse()).isTrue();
+    }
 }

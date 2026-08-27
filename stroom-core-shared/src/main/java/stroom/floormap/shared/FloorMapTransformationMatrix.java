@@ -301,6 +301,14 @@ public class FloorMapTransformationMatrix {
      * @return {@code true} if {@link #inverse()} will succeed
      */
     public boolean hasInverse() {
+        // Check all six components, not just the four the determinant is built from. The
+        // translation pair only reaches the inverse via invE/invF, so a non-finite e or f used
+        // to sail through this test and produce a non-finite inverse - the plausible-looking
+        // wrong answer that inverse() documents at length as being worse than no answer.
+        if (!isFinite(a) || !isFinite(b) || !isFinite(c) || !isFinite(d)
+            || !isFinite(e) || !isFinite(f)) {
+            return false;
+        }
         final double det = a * d - b * c;
         if (Double.isNaN(det) || Double.isInfinite(det)) {
             return false;
@@ -310,6 +318,10 @@ public class FloorMapTransformationMatrix {
             return false;
         }
         return Math.abs(det) > SINGULARITY_RELATIVE_TOLERANCE * magnitude;
+    }
+
+    private static boolean isFinite(final double value) {
+        return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 
     /**

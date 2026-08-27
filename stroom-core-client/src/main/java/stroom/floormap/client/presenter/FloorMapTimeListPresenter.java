@@ -194,9 +194,10 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
      * Selects the entry that would be active at {@code timeMs} — i.e. the
      * most recent entry whose effective time is at or before {@code timeMs}.
      *
-     * <p>If all entries are later than {@code timeMs} the first (earliest)
-     * entry is selected so the user can still see the list is populated.
-     * No-op when the list is empty.</p>
+     * <p>If all entries are later than {@code timeMs} the selection is <strong>cleared</strong>
+     * and the Edit and Delete buttons are disabled - no entry is active at that time, so the
+     * Properties form has nothing to act on, matching the canvas which also shows nothing for
+     * this object then. No-op when the list is empty.</p>
      *
      * @param timeMs the point in time to match against
      */

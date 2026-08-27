@@ -237,14 +237,19 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
                                 Tables.VISUALISATION_ASSETS.IS_FOLDER,
                                 Tables.VISUALISATION_ASSETS.DATA)
                         .from(Tables.VISUALISATION_ASSETS)
-                        .whereNotExists(
+                        // Filter the owning document in the WHERE clause, so the
+                        // (owner_doc_uuid, path_hash) unique key can be used. This was a HAVING
+                        // with no GROUP BY, which filters after row production and can mean
+                        // scanning every live asset row - longblob data included - for every
+                        // document in the system.
+                        .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId))
+                        .andNotExists(
                                 txnContext.selectOne()
                                         .from(Tables.VISUALISATION_ASSETS_DRAFT)
                                         .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
                                                 .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
                                         )
                         )
-                        .having(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId))
                 ).execute();
     }
 
