@@ -72,6 +72,27 @@ import java.util.concurrent.locks.Lock;
  * </li>
  * </li>
  * </p>
+ * <p>
+ * <b>Residual risk.</b> Anything served from here that a browser treats as a document runs on the
+ * Stroom origin with the viewing user's session - cookie, REST API, localStorage and the parent DOM.
+ * Uploaded HTML and JS are therefore executable <i>by design</i>: a visualisation's {@code index.html}
+ * is the document inside the dashboard's visualisation iframe and has to run its own scripts to
+ * implement the {@code visualisationManager} postMessage contract. {@link #setSecurityHeaders} closes
+ * the accidental case (an SVG reached by top-level navigation) and removes capabilities no asset needs,
+ * but it cannot close the deliberate one, because a same-origin frame can simply call back into its
+ * parent. So a user who can edit a document can upload content that executes with any viewing user's
+ * session. Preconditions are edit permission on the document plus VIEW for the victim, which makes it
+ * an authenticated-insider vector rather than an anonymous one - but shared visualisations and shared
+ * floor maps are exactly the case where one user authors content that others open.
+ * </p>
+ * <p>
+ * Genuinely closing it needs the asset store to stop being same-origin, or the frame to be sandboxed.
+ * Note that sandboxing is not free: the session cookie defaults to {@code SameSite=STRICT}, and a
+ * sandboxed frame has an opaque origin, so requests it initiates are not same-site and arrive here
+ * with no session. An {@code index.html} that pulls in any further asset would break. Serving assets
+ * under a signed capability path prefix, so relative subresource URLs inherit the capability, would
+ * make a sandbox viable.
+ * </p>
  */
 @Singleton
 public class DocumentAssetServlet extends HttpServlet implements IsServlet {
@@ -122,6 +143,60 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
      * Name of the header in response that says whether the cache is valid
      */
     private static final String ETAG_HEADER = "ETag";
+
+    /**
+     * Name of the header used to stop a response being rendered as a document
+     */
+    private static final String CONTENT_DISPOSITION_HEADER = "Content-Disposition";
+
+    /**
+     * Value of the content disposition header. Makes the browser download rather than render.
+     */
+    private static final String CONTENT_DISPOSITION_ATTACHMENT = "attachment";
+
+    /**
+     * Name of the content security policy header
+     */
+    private static final String CONTENT_SECURITY_POLICY_HEADER = "Content-Security-Policy";
+
+    /**
+     * Name of the header that stops the browser guessing a content type other than the one we sent
+     */
+    private static final String CONTENT_TYPE_OPTIONS_HEADER = "X-Content-Type-Options";
+
+    /**
+     * Value of the content type options header
+     */
+    private static final String CONTENT_TYPE_OPTIONS_NOSNIFF = "nosniff";
+
+    /**
+     * The mimetype that assets are served with when they carry scriptable image markup
+     */
+    static final String SVG_MIMETYPE = "image/svg+xml";
+
+    /**
+     * Policy for assets that no browser should ever execute. An SVG served as a document can run
+     * its own {@code <script>} elements against the Stroom origin, so scripting is denied outright
+     * and the response is sandboxed into an opaque origin. Inline styles stay allowed because SVGs
+     * routinely carry a {@code <style>} block. This is only a backstop: the content disposition
+     * header should stop the response becoming a document in the first place.
+     */
+    static final String CONTENT_SECURITY_POLICY_INERT = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+    /**
+     * Policy for every other asset. Visualisations legitimately serve executable HTML from this
+     * store, so scripting cannot be denied here. What is denied is the set of capabilities no asset
+     * needs: plugins, form submission, and - the valuable one - re-pointing the document base, which
+     * would otherwise let an asset resolve its own relative URLs against another origin.
+     */
+    static final String CONTENT_SECURITY_POLICY_ASSET = "default-src 'self'; " +
+                                                        "script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
+                                                        "style-src 'self' 'unsafe-inline'; " +
+                                                        "img-src 'self' data:; " +
+                                                        "object-src 'none'; " +
+                                                        "base-uri 'none'; " +
+                                                        "form-action 'none'; " +
+                                                        "frame-ancestors 'self'";
 
     /**
      * Number of locks to use to control access to the cache
@@ -336,16 +411,23 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
                 // Is the client asking for cache validation?
                 final String etagValid = request.getHeader(ETAG_VALID_HEADER);
 
+                final String mimetype = getMimetype(path, mimetypes, defaultMimetype);
+
                 if (etagValid != null && (etagValid.equals(eTag))) {
                     response.setStatus(HttpServletResponse.SC_NOT_MODIFIED);
                     response.setHeader(CACHE_CONTROL_HEADER, CACHE_CONTROL_VALUE_2S);
                     response.setHeader(ETAG_HEADER, eTag);
+                    // A client updates the headers it has cached from a revalidation response, so these
+                    // have to be sent here too. Omitting them lets an entry cached before this code
+                    // existed carry on being served without them.
+                    setSecurityHeaders(response, mimetype);
                 } else {
                     try (final InputStream dataStream = getInputStreamForAsset(docId, path)) {
-                        response.setContentType(getMimetype(path));
+                        response.setContentType(mimetype);
                         response.setStatus(HttpServletResponse.SC_OK);
                         response.setHeader(CACHE_CONTROL_HEADER, CACHE_CONTROL_VALUE_2S);
                         response.setHeader(ETAG_HEADER, eTag);
+                        setSecurityHeaders(response, mimetype);
                         try (final ServletOutputStream responseStream = response.getOutputStream()) {
                             dataStream.transferTo(responseStream);
                         }
@@ -400,11 +482,15 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
      * Given a path to a file, including the filename, uses the extension to
      * find a suitable mimetype.
      *
-     * @param path The path to the file, including the filename and extension.
-     *             Must not be null.
+     * @param path            The path to the file, including the filename and extension.
+     *                        Must not be null.
+     * @param mimetypes       Map of lower-cased filename extension to mimetype. Must not be null.
+     * @param defaultMimetype Mimetype to return when the extension is absent or unknown.
      * @return The mimetype. Never returns null.
      */
-    private String getMimetype(final String path) {
+    static String getMimetype(final String path,
+                              final Map<String, String> mimetypes,
+                              final String defaultMimetype) {
         String mimetype = defaultMimetype;
         final int dotIndex = path.lastIndexOf('.');
         if (dotIndex != -1) {
@@ -419,6 +505,34 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
         }
 
         return mimetype;
+    }
+
+    /**
+     * Adds the headers that stop an asset being executed as a document on the Stroom origin.
+     * <p>
+     * Anything this servlet serves that a browser treats as a document runs with the viewing user's
+     * Stroom session. The app-wide policy written by {@code ContentSecurityFilter} allows
+     * {@code 'unsafe-inline'} because the UI needs it, and an asset response inherits that, so a
+     * narrower policy is set here. {@code setHeader} replaces rather than appends, and this servlet
+     * runs after the filter, so these values win for asset responses.
+     * </p>
+     *
+     * @param response The response to add the headers to. Must not be null.
+     * @param mimetype The mimetype the asset is being served with. Must not be null.
+     */
+    static void setSecurityHeaders(final HttpServletResponse response, final String mimetype) {
+        response.setHeader(CONTENT_TYPE_OPTIONS_HEADER, CONTENT_TYPE_OPTIONS_NOSNIFF);
+
+        if (SVG_MIMETYPE.equals(mimetype)) {
+            // Force a download rather than a render. Browsers ignore this header for subresource
+            // loads, so an <img> or an SVG <image> referencing the asset is unaffected - those render
+            // in the SVG image context, where scripts never run. It only bites where the asset would
+            // have become a document, which is the case we are closing.
+            response.setHeader(CONTENT_DISPOSITION_HEADER, CONTENT_DISPOSITION_ATTACHMENT);
+            response.setHeader(CONTENT_SECURITY_POLICY_HEADER, CONTENT_SECURITY_POLICY_INERT);
+        } else {
+            response.setHeader(CONTENT_SECURITY_POLICY_HEADER, CONTENT_SECURITY_POLICY_ASSET);
+        }
     }
 
     /**
