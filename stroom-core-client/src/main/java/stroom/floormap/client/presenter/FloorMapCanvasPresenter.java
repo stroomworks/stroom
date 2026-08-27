@@ -388,6 +388,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /** The facts to render (backgrounds + static facts), from the parser. */
     private List<Fact> facts = new ArrayList<>();
 
+    /**
+     * Image-bearing facts by key, for decorating animated entities with their configured icon.
+     *
+     * <p>Derived purely from {@link #facts}, so it is rebuilt in {@link #setFacts} rather than on
+     * every animation frame - which is where it used to be built, scanning every fact 60 times a
+     * second to produce a map that only changes when the facts do. Null means "not yet built".</p>
+     */
+    private Map<String, Fact> imageFactsByKey = new HashMap<>();
+
     /** Types the Layers panel has hidden: not drawn and not hit-tested. */
     private final Set<String> hiddenTypes = new HashSet<>();
     /** Types the Layers panel has dimmed to 30% opacity. */
@@ -2424,13 +2433,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // factsExcludingOverlay, so without this the icon would vanish the moment
         // the entity appears in the events stream. This is a rendering concern
         // (it needs `facts`), so it stays in the presenter rather than the
-        // shared animator. Set unconditionally (null clears).
-        final Map<String, Fact> imageFactsByKey = new HashMap<>();
-        for (final Fact fact : facts) {
-            if (fact.hasImage()) {
-                imageFactsByKey.put(fact.getKey(), fact);
-            }
-        }
+        // shared animator. Set unconditionally (null clears). The lookup map is
+        // maintained by setFacts, not rebuilt here - this runs every frame.
         for (final FloorMapObject obj : combined) {
             obj.setImageFact(imageFactsByKey.get(obj.getId()));
         }
@@ -3357,12 +3361,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // and which are areas (same pan-when-unselected press handling).
         backgroundKeys.clear();
         areaKeys.clear();
+        imageFactsByKey = new HashMap<>();
         for (final Fact fact : this.facts) {
             if (FloorMapJsonKeys.BACKGROUND.equals(fact.getKey())
                     || FloorMapJsonKeys.BACKGROUND.equals(fact.getType())) {
                 backgroundKeys.add(fact.getKey());
             } else if (!fact.hasImage() && fact.hasVertices()) {
                 areaKeys.add(fact.getKey());
+            }
+            if (fact.hasImage()) {
+                imageFactsByKey.put(fact.getKey(), fact);
             }
         }
         recomputeLockedKeys();

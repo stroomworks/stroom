@@ -148,4 +148,91 @@ class TestFloorMapEntityAnimator {
     private static FloorMapObject drawn(final List<FloorMapObject> list) {
         return list.stream().filter(o -> o.getId().equals("a")).findFirst().orElseThrow();
     }
+
+    // -----------------------------------------------------------------------
+    // Trail recording and decimation
+    // -----------------------------------------------------------------------
+
+    /**
+     * Drives one entity along a straight line for {@code frames} frames, returning the trail the
+     * renderer would be handed. Each frame advances the animation a little, so a trail point is
+     * recorded per frame.
+     */
+    private List<double[]> trailAfterFrames(final int frames) {
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(obj("a", 0, 0)));
+        animator.onEventObjects(List.of(obj("a", 10000, 0)));
+        // A long animation so it stays in flight for every frame, recording a point each time.
+        for (int i = 1; i <= frames; i++) {
+            animator.advanceFrame(i, 1);
+        }
+        return drawn(animator.buildDrawList(0)).getTrail();
+    }
+
+    /** A short trail is passed through point-for-point - decimation must not kick in early. */
+    @Test
+    void testShortTrailIsNotDecimated() {
+        final List<double[]> trail = trailAfterFrames(50);
+
+        assertThat(trail).hasSize(50);
+        // Alpha runs 0 (oldest) to 1 (newest).
+        assertThat(trail.get(0)[2]).isCloseTo(0.0, within(TOL));
+        assertThat(trail.get(trail.size() - 1)[2]).isCloseTo(1.0, within(TOL));
+    }
+
+    /**
+     * Past the render cap the trail is decimated, not truncated: the point count is bounded but
+     * the oldest point is still the start of the journey, so the trail keeps its full extent.
+     */
+    @Test
+    void testLongTrailIsDecimatedNotTruncated() {
+        final int frames = 2000;
+        final List<double[]> trail = trailAfterFrames(frames);
+
+        // Bounded well below the number of recorded points...
+        assertThat(trail.size()).isLessThanOrEqualTo(401);
+        assertThat(trail.size()).isGreaterThan(100);
+        // ...but still spans the whole journey rather than just its tail.
+        final double firstX = trail.get(0)[0];
+        final double lastX = trail.get(trail.size() - 1)[0];
+        assertThat(firstX).isLessThan(50.0);
+        assertThat(lastX).isGreaterThan(firstX * 10);
+        // Alpha still runs the full 0 -> 1 range across the decimated points.
+        assertThat(trail.get(0)[2]).isCloseTo(0.0, within(TOL));
+        assertThat(trail.get(trail.size() - 1)[2]).isCloseTo(1.0, within(TOL));
+    }
+
+    /**
+     * The newest recorded point is the entity's current position, so it must always survive
+     * decimation - otherwise the trail visibly lags behind the glyph it belongs to.
+     */
+    @Test
+    void testDecimationAlwaysKeepsTheNewestPoint() {
+        // 999 is deliberately not a multiple of the stride, so the newest point is only present
+        // if it is explicitly appended.
+        final List<double[]> trail = trailAfterFrames(999);
+        final double[] newest = trail.get(trail.size() - 1);
+
+        assertThat(newest[2]).isCloseTo(1.0, within(TOL));
+        assertThat(newest[0]).isEqualTo(animator.positionOf("a")[0]);
+        assertThat(newest[1]).isEqualTo(animator.positionOf("a")[1]);
+    }
+
+    /**
+     * The ring buffer must wrap correctly: past its capacity the oldest points are overwritten
+     * and the trail still reads oldest-first, with x strictly increasing along a straight run.
+     */
+    @Test
+    void testTrailStaysOrderedOldestFirstAfterWrapping() {
+        final List<double[]> trail = trailAfterFrames(300);
+
+        for (int i = 1; i < trail.size(); i++) {
+            assertThat(trail.get(i)[0])
+                    .as("x at %d must exceed x at %d", i, i - 1)
+                    .isGreaterThan(trail.get(i - 1)[0]);
+            assertThat(trail.get(i)[2])
+                    .as("alpha at %d must not decrease", i)
+                    .isGreaterThanOrEqualTo(trail.get(i - 1)[2]);
+        }
+    }
 }

@@ -46,6 +46,17 @@ public final class FloorMapEntityAnimator {
     /** Maximum recorded trail points per entity (bounds memory during long playback). */
     private static final int TRAIL_MAX_PTS = 5000;
 
+    /**
+     * Maximum trail points handed to the renderer per entity per frame.
+     *
+     * <p>The recorded trail is decimated to this many points rather than truncated, so the trail
+     * keeps its full extent in time and only loses resolution along it - a 6px-wide path drawn
+     * through 5000 points is indistinguishable from one drawn through 400, but costs the renderer
+     * twelve times as much. Every frame rebuilds this list for every animating entity, so it is
+     * the dominant per-frame allocation on the canvas.</p>
+     */
+    private static final int TRAIL_RENDER_MAX_PTS = 400;
+
     /** How long (wall-clock ms) a trail takes to fade out after the entity stops. */
     private static final double TRAIL_FADE_DURATION_MS = 2000.0;
 
@@ -65,8 +76,8 @@ public final class FloorMapEntityAnimator {
     /** Last known rendered state (id, type, map position) per entity. */
     private final Map<String, FloorMapObject> lastEntityPositions = new HashMap<>();
 
-    /** Trail points per entity, each {@code [mapX, mapY]}; oldest first, capped. */
-    private final Map<String, List<double[]>> entityTrails = new HashMap<>();
+    /** Trail points per entity; oldest first, capped at {@link #TRAIL_MAX_PTS}. */
+    private final Map<String, TrailBuffer> entityTrails = new HashMap<>();
 
     /** Timestamp each entity's last animation finished, initiating the trail fade. */
     private final Map<String, Double> trailFadeStartTimes = new HashMap<>();
@@ -341,7 +352,7 @@ public final class FloorMapEntityAnimator {
      * → 1 (newest), scaled by a global fade factor once the entity has stopped.
      */
     private void attachTrail(final FloorMapObject obj, final String id, final double nowMs) {
-        final List<double[]> raw = entityTrails.get(id);
+        final TrailBuffer raw = entityTrails.get(id);
         if (raw == null || raw.isEmpty()) {
             return;
         }
@@ -355,27 +366,84 @@ public final class FloorMapEntityAnimator {
             return;
         }
         final int size = raw.size();
-        final List<double[]> trailWithAlpha = new ArrayList<>(size);
-        for (int i = 0; i < size; i++) {
-            final double[] pt = raw.get(i);
-            final double alpha = (size == 1 ? 1.0 : (double) i / (size - 1)) * fadeFactor;
-            trailWithAlpha.add(new double[]{pt[0], pt[1], alpha});
+        // Decimate rather than truncate, so the trail keeps its extent. Alpha stays a function
+        // of the point's position in the *recorded* trail, so the gradient is unchanged by the
+        // stride.
+        final int stride = Math.max(1, (size + TRAIL_RENDER_MAX_PTS - 1) / TRAIL_RENDER_MAX_PTS);
+        final int last = size - 1;
+        final List<double[]> trailWithAlpha = new ArrayList<>(size / stride + 1);
+        for (int i = 0; i < size; i += stride) {
+            final double alpha = (size == 1 ? 1.0 : (double) i / last) * fadeFactor;
+            trailWithAlpha.add(new double[]{raw.pointX(i), raw.pointY(i), alpha});
+        }
+        // The newest point is the entity's current position, so it must always be present or the
+        // trail visibly lags behind the glyph.
+        if (last % stride != 0) {
+            trailWithAlpha.add(new double[]{raw.pointX(last), raw.pointY(last), fadeFactor});
         }
         obj.setTrail(trailWithAlpha);
     }
 
-    /** Appends {@code [x, y]} to the entity's trail, dropping the oldest past the cap. */
+    /** Appends {@code (x, y)} to the entity's trail, overwriting the oldest once at the cap. */
     private void recordTrailPoint(final String id, final double x, final double y) {
         //noinspection unused k
-        final List<double[]> trail = entityTrails.computeIfAbsent(id, k -> new ArrayList<>());
-        trail.add(new double[]{x, y});
-        while (trail.size() > TRAIL_MAX_PTS) {
-            //noinspection SequencedCollectionMethodCanBeUsed GWT does not support removeFirst
-            trail.remove(0);
-        }
+        entityTrails.computeIfAbsent(id, k -> new TrailBuffer(TRAIL_MAX_PTS)).add(x, y);
     }
 
     // -----------------------------------------------------------------------
+
+    /**
+     * A fixed-capacity ring buffer of {@code (x, y)} trail points, oldest first.
+     *
+     * <p>Replaces a {@code List<double[]>} that dropped its oldest point with {@code remove(0)}.
+     * Once an entity's trail reached the cap that shifted every remaining element down by one,
+     * per entity, per frame - so the cost of keeping a long trail grew with its length, exactly
+     * when the frame budget was tightest. Appending here is constant time and allocates nothing:
+     * coordinates live in two flat arrays rather than one small array per point.</p>
+     */
+    private static final class TrailBuffer {
+
+        private final double[] xs;
+        private final double[] ys;
+        /** Index of the oldest point once full; otherwise 0. */
+        private int head;
+        private int size;
+
+        private TrailBuffer(final int capacity) {
+            this.xs = new double[capacity];
+            this.ys = new double[capacity];
+        }
+
+        private void add(final double x, final double y) {
+            final int slot = (head + size) % xs.length;
+            xs[slot] = x;
+            ys[slot] = y;
+            if (size < xs.length) {
+                size++;
+            } else {
+                // Full: the write consumed the oldest slot, so the oldest is now the next one.
+                head = (head + 1) % xs.length;
+            }
+        }
+
+        private boolean isEmpty() {
+            return size == 0;
+        }
+
+        private int size() {
+            return size;
+        }
+
+        /** @param i index from the oldest point (0) to the newest ({@code size() - 1}). */
+        private double pointX(final int i) {
+            return xs[(head + i) % xs.length];
+        }
+
+        /** @param i index from the oldest point (0) to the newest ({@code size() - 1}). */
+        private double pointY(final int i) {
+            return ys[(head + i) % ys.length];
+        }
+    }
 
     /** A single in-flight entity move, interpolated linearly by {@link #progress}. */
     private static final class EntityAnimation {
