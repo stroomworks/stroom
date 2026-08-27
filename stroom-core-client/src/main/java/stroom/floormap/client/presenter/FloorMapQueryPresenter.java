@@ -56,7 +56,8 @@ import javax.inject.Inject;
  * {@link FloorMapObject} lists, and fires {@link FloorMapDataEvent} so the
  * canvas can display the matched entities.  Also provides column-mapping
  * dropdowns that let the user choose which result columns contain the entity
- * ID, location, and type.</p>
+ * ID and location. There is no dropdown for the type column: it is auto-detected by a column
+ * literally named "type" (case-insensitively), with an {@code @}-heuristic person fallback.</p>
  */
 public class FloorMapQueryPresenter
         extends MyPresenterWidget<FloorMapQueryView>

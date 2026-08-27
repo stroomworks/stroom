@@ -105,8 +105,9 @@ public class FloorMapGroup {
      *
      * <p>Falls back to the {@link #getName() name} when the stored id is absent
      * or blank. No document has ever been written without ids — this is purely so
-     * a hand-edited document still opens rather than throwing, and so identity is
-     * never {@code null}.</p>
+     * a hand-edited document still opens rather than throwing. Note the fallback is not a
+     * non-null guarantee: {@code name} is itself nullable, so a group with neither an id nor a
+     * name — the same hand-edited case — still yields {@code null}.</p>
      */
     public String getId() {
         return id != null && !id.isEmpty()

@@ -3406,7 +3406,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
 
     /**
-     * Sets the handler that is notified while an object is being dragged.
+     * Sets the handler that persists a completed move/scale/rotate gesture.
+     *
+     * <p>Called once, when the gesture finishes - not during it. The live preview while dragging
+     * is handled internally via {@code pendingTransform}.</p>
      *
      * @param dragHandler the callback, or {@code null} to remove
      */

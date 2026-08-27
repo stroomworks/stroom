@@ -105,8 +105,12 @@ import java.util.TreeMap;
  * ground and must speak for what it covers. And a merge is refused when it would
  * put a member further than {@link #SPREAD_LIMIT} thresholds from the seed, which
  * is what stops a corridor of desks chaining into one badge whose members are off
- * screen. Every member of a cluster is therefore within {@code 2 × SPREAD_LIMIT}
- * thresholds of every other, at every round.</p>
+ * screen. Note what that leash does and does not guarantee: it bounds an absorbed candidate's
+ * members relative to the absorbing seed's anchor, but nothing bounds the seed's own spread, and a
+ * merged node's spread is recomputed from its moved centroid. In practice this keeps every member
+ * within roughly {@code 2 × SPREAD_LIMIT} thresholds of every other, but that is an approximation,
+ * not an invariant - later rounds can exceed it as centroids drift, so do not rely on it for
+ * hit-testing or badge sizing.</p>
  *
  * <h2>Determinism</h2>
  * <p>This is recomputed on every frame, including every animation frame, so an

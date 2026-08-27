@@ -462,11 +462,12 @@ public class QueryEditPresenter
 
     /**
      * Sets query parameters to be made available during query execution.
-     * <p>In the {@code from} clause (which only accepts string literals),
-     * {@code param('key')} is replaced with the quoted value via text
-     * substitution before the query is sent to the parser. In expression
-     * contexts, the parameters are also passed natively via the standard
-     * Stroom {@link Param} pipeline.</p>
+     * <p><em>Every</em> occurrence of {@code param('key')} in the query text is replaced with the
+     * quoted value by plain text substitution before the query reaches the parser — not just
+     * those in the {@code from} clause, though that clause is the reason it is needed, since it
+     * accepts only string literals. The parameters are additionally passed natively via the
+     * standard Stroom {@link Param} pipeline, which therefore only ever serves parameter
+     * references written in some other form.</p>
      *
      * @param queryVariables parameter key → value map, or {@code null}
      */

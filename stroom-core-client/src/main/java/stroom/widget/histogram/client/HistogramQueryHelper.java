@@ -136,9 +136,9 @@ public class HistogramQueryHelper {
                 query,
                 null,   // params
                 null,   // timeRange — deliberately null, see Javadoc above
+                false,  // incremental
                 false,  // storeHistory
-                false,  // fireEvents
-                "Histogram Query",
-                null);  // queryContext
+                "Histogram Query",  // queryInfo
+                null);  // additionalQueryExpression
     }
 }

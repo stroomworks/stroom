@@ -103,7 +103,8 @@ import javax.inject.Provider;
  *
  * <p>Object properties are <em>not</em> a slot: they open as a modal dialog
  * ({@code FloorMapObjectEditPresenter}), so there is no {@code PROPERTIES}
- * region to lay out. The right-hand dock holds the Layers and Groups panels.</p>
+ * region to lay out. The right-hand dock holds the Layers panel; Groups lives on the Map
+ * tab's dock.</p>
  *
  * <h3>Shared selection model (single source of truth)</h3>
  * <p>The state itself lives in {@link FloorMapEditorModel}, which this presenter
@@ -504,8 +505,9 @@ public class FloorMapEditorPresenter
      *
      * <p>The Editor tab does not normally write state into the
      * {@link FloorMapDoc} itself (temporal store edits are flushed separately
-     * via {@link #onSave}) — except when a pending area-support upgrade exists,
-     * which is merged into the document here. The merge is re-applied to the
+     * via {@link #onSave}) — except for the doc-level edits staged in the session: the
+     * area-support upgrade, the Layers panel's type-styles list, and a Set Scale
+     * calibration, all of which are merged into the document here. The merge is re-applied to the
      * <em>incoming</em> document (rather than writing the stored lists
      * verbatim) so it stays correct regardless of the order the tabs' onWrite
      * methods run in.</p>
@@ -754,7 +756,8 @@ public class FloorMapEditorPresenter
      *   <li>If the store is empty the slider covers [now − 1 day, now + 1 day]
      *       and the initial selected time is now.</li>
      *   <li>Otherwise the slider range is [min, max] and the initial selected
-     *       time is max (the most recent entry).</li>
+     *       time is max (the most recent entry) — except when min equals max, where the range is
+     *       padded to [min − 1 day, max + 1 day], since a zero-length range breaks playback.</li>
      * </ul>
      *
      * @param range the time range returned by the server; never {@code null}
@@ -1987,8 +1990,9 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Loads the Time List for the currently selected fact, then auto-selects
-     * the last entry and scrolls to it.
+     * Loads the Time List for the currently selected fact, then selects the entry active at the
+     * current timeline position — the most recent entry at or before the scrubber time, not
+     * necessarily the newest — and scrolls to it.
      */
     private void loadTimeListForSelectedFact() {
         final String mapName = getMapName();

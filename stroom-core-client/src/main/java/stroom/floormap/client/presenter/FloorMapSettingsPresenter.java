@@ -163,7 +163,7 @@ public class FloorMapSettingsPresenter
         // one-arg call above goes straight to AbstractHasData, so the policy here is
         // GWT's own ENABLED default with GWT's DefaultKeyboardSelectionHandler live.
         // The stray tab stop is the pre-existing behaviour of every Stroom grid, not
-        // something this feature introduced. See §13.3 of docs/floormap-accessibility.md.
+        // something this feature introduced.
         schemaDataProvider = new ListDataProvider<>();
         schemaDataProvider.addDataDisplay(schemaGrid);
         initSchemaColumns();

@@ -121,7 +121,7 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
 
     /**
      * @param editorMode {@code true} on the Editor tab (enables authoring
-     *                   controls in later increments); {@code false} on the Map tab
+     *                   controls - reorder, lock, appearance, discovery); {@code false} on the Map tab
      */
     public void setEditorMode(final boolean editorMode) {
         this.editorMode = editorMode;

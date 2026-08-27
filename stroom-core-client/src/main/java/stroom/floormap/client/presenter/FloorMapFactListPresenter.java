@@ -52,14 +52,9 @@ import java.util.function.Consumer;
  * Presenter for the Fact List panel — a grid that lists all objects (facts)
  * known to the current floor map, allowing the user to select one for editing.
  *
- * <p>This presenter is used in two contexts:</p>
- * <ul>
- *   <li><strong>Editor tab</strong> ({@link FloorMapEditorPresenter}) — selection in the grid
- *       drives the Time List and Properties panels so the user can edit temporal
- *       entries for the selected object.</li>
- *   <li><strong>Map tab</strong> ({@link FloorMapMapPresenter}) — selection in the grid
- *       highlights the corresponding object on the SVG canvas.</li>
- * </ul>
+ * <p>Used by the <strong>Editor tab</strong> ({@link FloorMapEditorPresenter}) only: selection in
+ * the grid drives the Time List and Properties panels so the user can edit temporal entries for
+ * the selected object. The Map tab's dock hosts Tracking, Layers and Groups instead.</p>
  *
  * <p>The grid displays three columns: <em>Key</em>, <em>Type</em>, and <em>Name</em>,
  * populated from {@link FactObject} instances that are derived from
@@ -278,9 +273,8 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
      * Selects the grid row whose key matches the given value.
      *
      * <p>If {@code key} is {@code null} or no matching row is found, the
-     * current selection is cleared. This is the primary mechanism used by the
-     * Editor and Map tabs to restore a previous selection after the grid data
-     * has been refreshed.</p>
+     * current selection is cleared. This is the primary mechanism the Editor tab uses to restore
+     * a previous selection after the grid data has been refreshed.</p>
      *
      * @param key the temporal-store key to look for; may be {@code null}
      */

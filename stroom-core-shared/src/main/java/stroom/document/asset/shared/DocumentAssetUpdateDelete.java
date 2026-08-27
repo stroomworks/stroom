@@ -27,7 +27,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Objects;
 
 /**
- * Wraps the byte[] of content for DocumentAssetResource.updateDelete().
+ * Wraps the path and folder flag for DocumentAssetResource.updateDelete(). Carries no content.
  */
 @Description(
         "Parameter for DocumentAssetResource.updateDelete()"

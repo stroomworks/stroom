@@ -49,24 +49,19 @@ import javax.inject.Inject;
  * Presenter for the properties form used to edit individual floor-map object
  * entries (temporal versions of a fact).
  *
- * <p>This presenter is used in two contexts:</p>
- * <ul>
- *   <li><strong>Editor tab</strong> ({@link FloorMapEditorPresenter}) — displayed as a
- *       modal OK/Cancel dialog via {@link #show(String, TemporalEntry, Consumer)}.
- *       Selecting a row in the Time List calls {@link #loadEntry(TemporalEntry)}
- *       to populate the inline form.</li>
- *   <li><strong>Map tab</strong> ({@link FloorMapMapPresenter}) — embedded as an inline
- *       panel. </li>
- * </ul>
+ * <p>Used by the <strong>Editor tab</strong> ({@link FloorMapEditorPresenter}) only, always as a
+ * modal OK/Cancel dialog via {@link #show(String, TemporalEntry, Consumer)}. The Map tab held an
+ * inline copy of this form once; it no longer does.</p>
  *
  * <h3>Managed form fields</h3>
  * <ul>
  *   <li>Type, Name — free-text identification of the object.</li>
  *   <li>Image — selected from the document-asset dropdown.</li>
- *   <li>X / Y coordinates — position on the map canvas.</li>
+ *   <li>X / Y coordinates — the fact's stored pre-transform offset, round-tripped unchanged.
+ *       The form does not show or edit them; placement is edited via the matrix below.</li>
  *   <li>Effective time — the timestamp of this temporal version.</li>
- *   <li>World-to-Map matrix — 6-element affine transform.</li>
- *   <li>Map-to-Screen matrix — 6-element affine transform (background objects only).</li>
+ *   <li>World-to-Map matrix — 6-element affine transform. Every fact, background included, is
+ *       placed by this one; there is no separate Map-to-Screen field.</li>
  * </ul>
  *
  * <h3>Preconditions</h3>
@@ -429,9 +424,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     }
 
     /**
-     * Stores the object ID. Called by both the Editor tab and the Map tab.
+     * Stores the object ID. Called by the Editor tab.
      * Does not trigger a server fetch — form population is driven by
-     * {@link #loadEntry(TemporalEntry)} on the Editor tab.
+     * {@link #loadEntry(TemporalEntry)}.
      *
      * @param objectId the fact key for the object being edited
      */
@@ -442,9 +437,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     /**
      * Loads a temporal entry into the form.
      *
-     * <p>Called by {@link stroom.floormap.client.presenter.FloorMapEditorPresenter}
-     * whenever the Time List selection changes. Populates all form fields and
-     * enables or disables the form based on whether {@code entry} is non-null.</p>
+     * <p>Called internally when the dialog opens, and by
+     * {@link stroom.floormap.client.presenter.FloorMapEditorPresenter} with {@code null} to clear
+     * the form after a delete. It is not driven by the Time List selection. Populates all form
+     * fields and enables or disables the form based on whether {@code entry} is non-null.</p>
      *
      * @param entry the entry to display, or {@code null} to clear and disable the form
      */

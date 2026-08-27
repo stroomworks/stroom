@@ -293,7 +293,8 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
      * @param assetPath The path of the asset within the owning document
      * @return InputStream (buffered) that reads the file. Must be closed by the caller.
      * @throws IOException         If something goes wrong.
-     * @throws PermissionException If something goes wrong.
+     * @throws java.io.IOException if the cached file cannot be opened. This method performs no
+     *         permission check of its own; doGet authorises the request before calling it.
      */
     private InputStream getInputStreamForAsset(final String docId,
                                                final String assetPath)
@@ -378,7 +379,7 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
      * Takes the pathInfo and splits it into the docId and the path information.
      *
      * @param pathInfo Request.getPathInfo(). Can be null.
-     * @return List of docId, path. Two elements always present. Neither will be null.
+     * @return a DocIdAndPath record; neither component will be null.
      */
     private DocIdAndPath splitIntoDocIdAndPath(String pathInfo) {
         String docId = "";

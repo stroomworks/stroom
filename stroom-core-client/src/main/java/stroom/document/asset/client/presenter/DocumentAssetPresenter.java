@@ -352,7 +352,7 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     }
 
     /**
-     * Called by DocumentAssetPresenter when the document is loaded.
+     * Called by DocPresenter, the superclass, when the document is loaded.
      *
      * @param docRef   Document reference
      * @param document Document
@@ -373,8 +373,8 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     }
 
     /**
-     * Implementation of onWrite() from DocumentEditPresenter. Doesn't do anything
-     * as this is replaced by VisualisationPlugin directly calling onSave().
+     * Implementation of onWrite() from DocPresenter. Doesn't do anything, as saving is driven by
+     * the owning presenter's post-save callback calling onSave() instead.
      */
     @Override
     protected D onWrite(final D document) {
@@ -382,7 +382,8 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     }
 
     /**
-     * Called by VisualisationPlugin to save the assets.
+     * Called by the owning presenter (e.g. VisualisationPresenter, FloorMapPresenter) via the
+     * DocumentPlugin post-save callback, to save the assets.
      * Requests the server to copy data from the draft area to the live area of the database.
      *
      * @param document Document that was returned by the save
@@ -403,7 +404,7 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     }
 
     /**
-     * Called by VisualisationPlugin to do SaveAs.
+     * Called by the owning presenter via the DocumentPlugin post-save callback, to do SaveAs.
      * SaveAs does the following:
      * <ol>
      *     <li>Copies the live assets to the new document</li>
@@ -677,7 +678,8 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     }
 
     /**
-     * Called after doSelectItemAfterUpdateContent() to handle failures.
+     * Handles a failure to fetch draft content, from doSelectionChangeAfterUpdateContentSuccess()
+     * or the fetchDraftContent() error path.
      */
     private void doSelectItemFetchDraftContentFailed() {
         disableEditor();

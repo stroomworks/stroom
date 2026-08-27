@@ -39,8 +39,7 @@ import java.util.Map;
  * then arrowing to the right row — indirect at best, and unavailable entirely in the grids
  * where {@code MyDataGrid}'s two-arg {@code setSelectionModel} has replaced the keyboard
  * handler with an empty lambda. Dropping the {@code tabindex} puts the control in the tab
- * order directly, which is what a user tabbing through a form expects to find. See §9.5 of
- * {@code docs/floormap-accessibility.md}.
+ * order directly, which is what a user tabbing through a form expects to find.
  *
  * <p>This subclass renders the same markup with the {@code tabindex} dropped, so the select
  * takes its natural place in the tab order, and adds an {@code aria-label} identifying the

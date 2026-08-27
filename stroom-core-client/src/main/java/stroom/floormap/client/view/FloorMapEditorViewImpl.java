@@ -67,8 +67,8 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     private static final int BOTTOM_STRIP_INITIAL_HEIGHT = 250;
 
     /**
-     * Proportional height of the bottom strip — 1/3 of total, leaving 2/3
-     * for the canvas + timeline area above.
+     * Proportional height of the bottom strip — 1/3 of total, leaving 2/3 for the canvas and
+     * right-hand dock above. The timeline is inside this strip, not above it.
      */
     private static final double BOTTOM_STRIP_SPLIT = 1.0 / 3.0;
 
@@ -79,16 +79,17 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     /**
      * Fixed height of the timeline strip in pixels. The timeline is a compact
      * bar (date pickers, scrubber, play button, speed selector) and does not
-     * need to be user-resizable — it is anchored to the south with no split
-     * ratio, so it keeps this fixed height when the window is resized.
+     * need to be user-resizable — it is docked to the north of the bottom strip, above the Fact
+     * and Time lists, with no split ratio, so it keeps this fixed height when the window is
+     * resized.
      */
     private static final int TIMELINE_HEIGHT = 110;
 
     // -----------------------------------------------------------------------
-    // Bottom-inner (horizontal) split — two equal columns (Fact List | Time List)
+    // Bottom-inner (horizontal) split — Fact List beside Time List
     // -----------------------------------------------------------------------
 
-    /** Initial width of each anchored (West) column in pixels. */
+    /** Initial width of the West-anchored Fact List column; the Time List fills the rest. */
     private static final int BOTTOM_COLUMN_INITIAL_WIDTH = 300;
 
     // -----------------------------------------------------------------------
@@ -166,12 +167,15 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     }
 
     /**
-     * Routes GWTP slot content into the correct panel:
+     * Routes GWTP slot content into the correct panel — all five slots:
      * <ul>
-     *   <li>{@link FloorMapEditorPresenter#MAIN}       → canvas panel (top of top area)</li>
-     *   <li>{@link FloorMapEditorPresenter#TIMELINE}   → timeline strip (bottom of top area, fixed height)</li>
+     *   <li>{@link FloorMapEditorPresenter#MAIN}       → canvas panel (centre of the top area)</li>
+     *   <li>{@link FloorMapEditorPresenter#DOCK}       → right-hand dock, beside the canvas</li>
+     *   <li>{@link FloorMapEditorPresenter#TIMELINE}   → timeline strip (north of the bottom
+     *       strip, fixed height)</li>
      *   <li>{@link FloorMapEditorPresenter#FACT_LIST}  → bottom-left column</li>
-     *   <li>{@link FloorMapEditorPresenter#TIME_LIST}  → bottom-right column (fills remaining space)</li>
+     *   <li>{@link FloorMapEditorPresenter#TIME_LIST}  → bottom-right column (fills remaining
+     *       space)</li>
      * </ul>
      * Properties are shown as a modal dialog and have no slot.
      */

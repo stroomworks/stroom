@@ -43,7 +43,7 @@ import java.util.function.Consumer;
  *
  * <h3>Shared selection model (single source of truth)</h3>
  * <ul>
- *   <li>{@link #selectedFactKeys} — the selected fact keys (single-select today)</li>
+ *   <li>{@link #selectedFactKeys} — the selected fact keys, in selection order</li>
  *   <li>{@link #selectedTime} — current timeline position in ms</li>
  *   <li>{@link #showAllFacts} — whether "show all" mode is active</li>
  *   <li>{@link #pendingChanges} — staged edits awaiting flush</li>

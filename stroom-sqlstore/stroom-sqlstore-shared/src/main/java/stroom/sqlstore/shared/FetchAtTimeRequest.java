@@ -84,7 +84,9 @@ public class FetchAtTimeRequest {
     /**
      * Returns the name of the temporal-store map to query.
      *
-     * @return the map name; never {@code null} (validated on construction)
+     * @return the map name, or {@code null} if the request did not supply one. The constructor
+     *         does not validate it; a blank or absent name is rejected server-side by
+     *         {@code UpdatableSqlTemporalStore.fetchAtTime}.
      */
     public String getMapName() {
         return mapName;

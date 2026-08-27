@@ -40,7 +40,7 @@ public class DocumentAssetTreeItem extends TreeItem {
     /** Additional style to use when this is a folder */
     private static final SvgImage FOLDER_ICON = SvgImage.FOLDER;
 
-    /** Map of extension to CSS class name */
+    /** Map of filename extension to the SvgImage icon drawn for it. */
     private static final Map<String, SvgImage> ICONS = new HashMap<>();
 
     /** The unique ID for this node */

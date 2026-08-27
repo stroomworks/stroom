@@ -34,7 +34,8 @@ import java.util.Map;
 
 /**
  * Packages all the stuff about document assets in one object
- * for uploading to the server.
+ * for returning to the client. Built server-side only; it travels server to client, never the
+ * other way.
  */
 @Description(
         "Packages all the assets in one place"

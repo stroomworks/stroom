@@ -95,8 +95,10 @@ public final class XmlValueAccessor implements ValueAccessor {
      * {@inheritDoc}
      *
      * <p>XML element text and attribute values carry no type, so anything present
-     * is a string: a field holding {@code 5} reads back as {@code "5"}, and CDATA
-     * reads exactly as the text it wraps.</p>
+     * is a string: a field holding {@code 5} reads back as {@code "5"}, and CDATA reads as the
+     * text it wraps. Element text is trimmed, and a whitespace-only element reads as
+     * {@code null} rather than as an empty string — so the round trip is not byte-exact for
+     * values with leading or trailing whitespace.</p>
      *
      * <p>This is the counterpart to {@code JsonValueAccessor.getString}, which
      * returns {@code null} for a present-but-non-string value because JSON

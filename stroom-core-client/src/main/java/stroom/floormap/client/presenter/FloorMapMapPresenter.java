@@ -246,11 +246,13 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Resolves the JSON path for a given {@link FloorMapFieldMapping.Role} by looking
+     * Resolves the value path for a given {@link FloorMapFieldMapping.Role} by looking
      * it up in the current {@link #valueSchema()}.
      *
      * @param role the schema role to look up
-     * @return the JSON path string, or {@code null} if the role is not present in the schema
+     * @return the value path, or {@code null} if the role is not present in the schema. Format
+     *         neutral: the same path drives the XML accessor when the document's ValueFormat is
+     *         XML.
      */
     private String pathForRole(final Role role) {
         return FloorMapEntryParser.findPath(valueSchema(), role);
@@ -568,10 +570,11 @@ public class FloorMapMapPresenter
     /**
      * {@inheritDoc}
      *
-     * <p>Initialises and resets both the facts and histogram {@link QueryModel} instances,
-     * configures the object edit presenter with the document's store reference, then starts
-     * the timeline and triggers an initial time-change to load facts. The timeline range is
-     * only initialised on the first read; save-triggered re-reads preserve it.</p>
+     * <p>Initialises and resets all four query mechanisms — the facts and events
+     * {@link QueryModel}s and both histogram query helpers — then starts the timeline and
+     * triggers an initial time-change to load facts. The timeline range is only initialised on
+     * the first read; save-triggered re-reads preserve it. This tab no longer holds an
+     * object-edit presenter; that form belongs to the Editor tab.</p>
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
@@ -735,7 +738,8 @@ public class FloorMapMapPresenter
      * @param model         the query model to run the search on
      * @param query         the StroomQL query text; may be {@code null} or blank
      * @param componentName the table component name for the search
-     * @param taskName      the task name shown in the task monitor
+     * @param taskName      recorded as the search's query info, which is consumed by the search
+     *                      audit event log - not shown in the task monitor
      */
     private void runQueryAtSelectedTime(final QueryModel model,
                                         final String query,
@@ -865,9 +869,10 @@ public class FloorMapMapPresenter
      * objects. Maps column names to schema roles to extract key, type, coordinates,
      * image, and transformation matrices.
      *
-     * <p>Background entries set the canvas background image and map-to-screen matrix.
-     * Other entries are transformed from world coordinates to map coordinates using
-     * their world-to-map matrix and plotted as {@link FloorMapObject} instances.</p>
+     * <p>Rows become {@link stroom.floormap.shared.Fact}s carrying world coordinates plus their
+     * placement matrix; the canvas applies the transform at render time rather than this method
+     * pre-transforming them. A background is simply an image fact, not a special case, and
+     * {@link FloorMapObject} is the event-entity type - this method does not produce them.</p>
      *
      * @param tableResult the query result table to parse
      */

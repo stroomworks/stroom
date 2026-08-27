@@ -130,6 +130,10 @@ public final class FloorMapAria {
      * The first natively-focusable descendant of {@code container} that is a legitimate
      * target — neither {@code disabled} nor removed from the tab order — or {@code null}.
      *
+     * <p>"First" means first in {@code FOCUSABLE_TAGS} order, not document order: every
+     * {@code input} is considered before any {@code select}, and so on. So in
+     * {@code <button/><input/>} the input wins, not the button that precedes it.</p>
+     *
      * <p>Shared by {@link #labelInnerControl(UIObject, String)} and
      * {@link #focusFirstFocusable(Element)} so the two cannot disagree about which element
      * counts as "the control inside this widget".</p>
@@ -262,7 +266,8 @@ public final class FloorMapAria {
 
     /**
      * Focuses the first natively-focusable descendant of {@code container}, and
-     * reports whether it found one.
+     * reports whether it found one. "First" is by tag priority rather than document order — see
+     * {@link #firstFocusable(Element)}.
      *
      * <p>Calling {@code focus()} on a plain {@code div} is a silent no-op — the
      * element is not focusable, so the browser simply leaves focus where it was.

@@ -27,7 +27,8 @@ import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 /**
- * View for the dialog that uploads files into the Visualisation web asset manager.
+ * View for the dialog that adds a new, empty file or folder to the document asset manager.
+ * Performs no upload - that is DocumentAssetUploadFileDialogViewImpl.
  */
 public class DocumentAssetAddItemDialogViewImpl extends ViewImpl implements
         DocumentAssetAddItemDialogView {

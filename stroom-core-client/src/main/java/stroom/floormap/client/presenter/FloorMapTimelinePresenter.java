@@ -526,7 +526,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     }
 
     /**
-     * Formats a playback speed value as a badge string, e.g. {@code "×1"} or {@code "×0.5"}.
+     * Formats a playback speed value as a badge string, e.g. {@code "x1"}, {@code "x0.5"} or
+     * {@code "x1,000"} - an ASCII {@code x} prefix, not a multiplication sign.
      * Large values are comma-formatted (e.g. {@code "×1,000"}).
      */
     private static String formatSpeed(final double speed) {
@@ -767,7 +768,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         void addRightControl(Widget widget);
 
         /**
-         * Updates the speed badge label shown beside the settings button (e.g. "1×").
+         * Updates the speed badge label shown beside the settings button (e.g. "x1").
          */
         void setSpeedBadge(String text);
 

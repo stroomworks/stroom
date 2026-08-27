@@ -61,7 +61,6 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
         // <label for> resolves to a non-labelable element, naming nothing. Both boxes
         // announced as unnamed. Name the inner input directly instead; the label text
         // is duplicated here deliberately, since the FormGroup's copy cannot reach it.
-        // See §10.1 of docs/floormap-accessibility.md.
         FloorMapAria.labelInnerControl(entityIdColumn, "Entity ID Column");
         FloorMapAria.labelInnerControl(locationIdColumn, "Location ID Column");
     }

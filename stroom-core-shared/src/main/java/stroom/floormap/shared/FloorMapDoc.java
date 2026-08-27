@@ -79,8 +79,8 @@ import java.util.Objects;
  *
  * <h3>Value Schema</h3>
  * <p>Each temporal entry's {@code Value} column is a serialised string whose
- * format is determined by {@link #valueFormat} (currently only
- * {@link ValueFormat#JSON} is implemented). The {@link #valueSchema} list
+ * format is determined by {@link #valueFormat}; both {@link ValueFormat#JSON} and
+ * {@link ValueFormat#XML} are supported. The {@link #valueSchema} list
  * tells the UI how to read individual fields from that value string: each
  * {@link FloorMapFieldMapping} maps a
  * {@link FloorMapFieldMapping.Role Role} (e.g. {@code TYPE}, {@code POSITION})
@@ -126,7 +126,7 @@ public class FloorMapDoc extends AbstractDoc {
 
     /**
      * Free-text description of this floor map document.
-     * Displayed on the Description tab.
+     * Markdown, shown and edited on the Documentation tab.
      * May be {@code null} if not set.
      */
     @JsonProperty

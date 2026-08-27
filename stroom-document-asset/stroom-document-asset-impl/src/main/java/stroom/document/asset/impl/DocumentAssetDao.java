@@ -133,7 +133,7 @@ public interface DocumentAssetDao {
     /**
      * Returns the draft content of a text file as a String for editing
      * in the UI.
-     * @param userUuid The user ID that is doing the update
+     * @param userUuid The user whose draft assets are consulted; nothing is updated
      * @param ownerDocId The document that owns the assets
      * @param path The path to the file, including the file name and extension.
      * @return The text content, or null if the file isn't text.

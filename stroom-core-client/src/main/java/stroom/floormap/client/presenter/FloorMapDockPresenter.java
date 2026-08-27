@@ -40,7 +40,7 @@ import java.util.Map;
  *
  * <p>Panels are registered with {@link #addTab(String, PresenterWidget)}; the
  * first tab added becomes the active tab. This single call is the integration
- * point for future panels (e.g. Layers) — nothing else in the dock needs to
+ * point for further panels — nothing else in the dock needs to
  * change to host a new tab.</p>
  *
  * <p>Dock chrome state (which tab is active) is held transiently here; the host

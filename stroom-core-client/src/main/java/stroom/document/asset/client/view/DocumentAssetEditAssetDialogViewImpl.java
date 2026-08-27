@@ -27,7 +27,7 @@ import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 /**
- * View for the dialog that uploads files into the Visualisation web asset manager.
+ * View for the dialog that renames an existing asset in the document asset manager.
  */
 public class DocumentAssetEditAssetDialogViewImpl extends ViewImpl implements
         DocumentAssetEditAssetDialogView {
@@ -69,7 +69,7 @@ public class DocumentAssetEditAssetDialogViewImpl extends ViewImpl implements
     }
 
     /**
-     * Returns the tree item we're editing.
+     * Returns the name currently entered in the dialog, which may have been edited.
      */
     @Override
     public String getText() {

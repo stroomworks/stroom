@@ -112,8 +112,9 @@ public class FloorMapEntityList {
      * repeated ids are deduplicated (first-seen type wins).
      *
      * @param objects the objects from the latest refresh; may be {@code null}
-     * @return {@code true} only if the roster membership changed, so callers
-     *         can skip re-pushing unchanged data to the grid
+     * @return {@code true} if the roster membership changed <em>or</em> an entity already in the
+     *         roster was promoted from fact-only to from-events, so callers can skip re-pushing
+     *         unchanged data to the grid
      */
     public boolean update(final List<FloorMapObject> objects) {
         if (objects == null) {

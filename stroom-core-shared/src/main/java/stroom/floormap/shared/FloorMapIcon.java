@@ -182,7 +182,7 @@ public enum FloorMapIcon {
     /**
      * The icon's name for people — shown under it in the picker and as the
      * layer's appearance in a tooltip. Not derived from {@link #name()}: "Wi-Fi"
-     * and "First aid" are not what a de-underscored enum constant gives.
+     * and "Badge reader" are not what a de-underscored enum constant gives.
      */
     public String getLabel() {
         return label;

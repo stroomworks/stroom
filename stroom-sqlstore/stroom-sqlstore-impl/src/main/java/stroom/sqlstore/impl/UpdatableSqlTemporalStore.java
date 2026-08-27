@@ -217,9 +217,9 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
      * <p>Delegates temporal deduplication to the existing
      * {@link UpdatableTemporalStoreDao#find} implementation: by supplying an
      * {@code EffectiveTime <= timeTo} term the DAO activates its "QueryTime Path"
-     * which uses a correlated subquery to select only the most-recent version of
-     * each key at or before {@code timeTo}, without fetching all historical
-     * versions.</p>
+     * which joins against a grouped {@code MAX(effective_time)} derived table to select only
+     * the most-recent version of each key at or before {@code timeTo}, without fetching all
+     * historical versions. (The subquery is grouped and uncorrelated, not correlated.)</p>
      *
      * <p>Requires {@code VIEW} permission on the map.</p>
      *
@@ -272,9 +272,9 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
      * in the future are not silently missed. The client does not need to
      * supply a time value.</p>
      *
-     * <p>Delegates deduplication to
-     * {@link UpdatableTemporalStoreDao#fetchAll(String)}, which fetches all
-     * historical versions and keeps only the latest per key in-process.</p>
+     * <p>Delegates deduplication to {@link UpdatableTemporalStoreDao#fetchAll(String)}, which
+     * does it in the database via a {@code MAX(effective_time)}-per-key subquery joined back for
+     * the full row - only one row per key crosses the wire, not the whole history.</p>
      *
      * <p>Requires {@code VIEW} permission on the map.</p>
      *

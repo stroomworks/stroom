@@ -136,7 +136,7 @@ public class DocumentAssetPresenterUtils {
     }
 
     /**
-     * Sets the state of the tree from the variable treeItemIdToOpenState.
+     * Sets the state of the tree from the given set of open item paths (keyed by path, not id).
      */
     static void restoreOpenClosedState(final Tree tree, final Set<String> treeItemPathToOpenState) {
         for (int i = 0; i < tree.getItemCount(); ++i) {

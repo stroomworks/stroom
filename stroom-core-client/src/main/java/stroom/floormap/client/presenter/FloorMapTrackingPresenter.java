@@ -386,8 +386,9 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     /**
      * Renders one Area cell, with a {@code title} tooltip carrying the detail
      * that will not fit on the cell's single line: the containing areas
-     * one-per-line for a nested entity, the occupant list for an area, or where
-     * an entity without a current position was last seen.
+     * one-per-line for a nested entity, a fixed note for an area (areas are not located inside
+     * other areas - occupancy lives on the canvas badge, not here), or where an entity without a
+     * current position was last seen.
      */
     private SafeHtml areaCell(final EntityEntry entry) {
         final String id = entry.getId();

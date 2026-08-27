@@ -135,7 +135,7 @@ public class FloorMapGroupsPresenter extends MyPresenterWidget<FloorMapGroupsVie
     /** Run whenever the set of highlighted groups changes. */
     private Runnable highlightChangeHandler;
 
-    /** Source of generated group ids; a field so tests could seed it. */
+    /** Source of generated group ids. */
     private final Random random = new Random();
 
     @Inject

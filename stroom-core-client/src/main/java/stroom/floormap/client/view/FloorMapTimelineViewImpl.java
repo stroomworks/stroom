@@ -55,7 +55,6 @@ import java.util.function.Consumer;
  *   <li>Scrub tooltip — datetime pill above the handle while dragging.</li>
  *   <li>Histogram click-to-seek — clicking the histogram jumps the timeline head.</li>
  *   <li>Histogram hover tooltip — shows event count for the hovered bin.</li>
- *   <li>Tick marks — subtle vertical lines at regular intervals along the scrubber bar.</li>
  *   <li>ARIA slider attributes for accessibility.</li>
  * </ul>
  */

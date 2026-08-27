@@ -430,8 +430,6 @@ public class FloorMapCanvasViewImpl
         // and scale bar. Moving it would silence all three. So role="img" stays
         // scoped to the SVG, and the focusable element is named as a group instead,
         // which takes a name while leaving its descendants exposed.
-        //
-        // See §9.2 and §14.1 of docs/floormap-accessibility.md.
         focusPanel.getElement().setAttribute("role", "group");
 
         // Tracked so setMapSummary can avoid renaming the element while it holds focus —

@@ -136,7 +136,7 @@ public class DocumentAssetAddItemDialogPresenter
         void setPath(String path);
 
         /**
-         * Gets the file upload widget.
+         * Gets the name entered for the new file or folder.
          */
         String getName();
 
