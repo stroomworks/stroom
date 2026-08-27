@@ -43,6 +43,8 @@ import stroom.planb.shared.TemporalPrecision;
 import stroom.planb.shared.TemporalStateKeySchema;
 import stroom.planb.shared.TemporalStateSettings;
 import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionOperator.Op;
+import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Type;
@@ -578,6 +580,213 @@ class TestTemporalStateDb {
                            final Function<Integer, Val> valueFunction) {
         try (final TemporalStateDb db = TemporalStateDb.create(dbDir, BYTE_BUFFERS, getDoc(settings), false)) {
             insertData(db, insertRows, keyFunction, valueFunction);
+        }
+    }
+
+    // --------------------------------------------------------------------
+    // Point-in-time ("as at") search.
+    //
+    // A UI asking for a single instant sends TimeRange(t, t), which
+    // ResultStoreManager.addTimeRangeExpression expands to
+    // "EffectiveTime >= t AND EffectiveTime < t". Applied literally that is an
+    // empty interval and every such query returns nothing, which is what used
+    // to happen here while the SQL Temporal Store — whose DAO detects the same
+    // conditions and substitutes its own at-or-before rule — appeared to work.
+    // --------------------------------------------------------------------
+
+    private static final KeyPrefix KEY_A = KeyPrefix.create("KEY_A");
+    private static final KeyPrefix KEY_B = KeyPrefix.create("KEY_B");
+    private static final Instant T0 = Instant.parse("2020-01-01T00:00:00.000Z");
+
+    /**
+     * Two keys, three entries each, one hour apart.
+     */
+    private void insertAsAtFixture(final TemporalStateDb db) {
+        db.write(writer -> {
+            for (final KeyPrefix key : List.of(KEY_A, KEY_B)) {
+                for (int hour = 0; hour < 3; hour++) {
+                    db.insert(writer, new TemporalState(
+                            TemporalKey.builder()
+                                    .prefix(key)
+                                    .time(T0.plusSeconds(hour * 3600L))
+                                    .build(),
+                            ValString.create(key + "@" + hour)));
+                }
+            }
+        });
+    }
+
+    private static FieldIndex asAtFieldIndex() {
+        final FieldIndex fieldIndex = new FieldIndex();
+        fieldIndex.create(TemporalStateFields.KEY);
+        fieldIndex.create(TemporalStateFields.EFFECTIVE_TIME);
+        fieldIndex.create(TemporalStateFields.VALUE);
+        return fieldIndex;
+    }
+
+    /**
+     * The expression the framework actually builds for a zero-width TimeRange.
+     */
+    private static ExpressionOperator zeroWidthRange(final Instant instant) {
+        final String millis = String.valueOf(instant.toEpochMilli());
+        return ExpressionOperator.builder().op(Op.AND)
+                .addDateTerm(TemporalStateFields.EFFECTIVE_TIME_FIELD,
+                        Condition.GREATER_THAN_OR_EQUAL_TO, millis)
+                .addDateTerm(TemporalStateFields.EFFECTIVE_TIME_FIELD,
+                        Condition.LESS_THAN, millis)
+                .build();
+    }
+
+    private List<Val[]> search(final TemporalStateDb db,
+                               final ExpressionOperator expression,
+                               final FieldIndex fieldIndex) {
+        final List<Val[]> results = new ArrayList<>();
+        db.search(
+                new ExpressionCriteria(expression),
+                fieldIndex,
+                null,
+                new ExpressionPredicateFactory(),
+                results::add);
+        return results;
+    }
+
+    @Test
+    void testSearchAsAtReturnsLatestEntryPerKey(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            insertAsAtFixture(db);
+
+            // As at 02:30 — between the second and third entries.
+            final List<Val[]> results = search(
+                    db,
+                    zeroWidthRange(T0.plusSeconds(2 * 3600L + 1800L)),
+                    asAtFieldIndex());
+
+            // One row per key, each the newest entry at or before that instant,
+            // not the six rows the store holds and not the zero rows a literal
+            // reading of the expression would give.
+            assertThat(results).hasSize(2);
+            assertThat(results.get(0)[0].toString()).isEqualTo("KEY_A");
+            assertThat(results.get(0)[2].toString()).isEqualTo("KEY_A@2");
+            assertThat(results.get(1)[0].toString()).isEqualTo("KEY_B");
+            assertThat(results.get(1)[2].toString()).isEqualTo("KEY_B@2");
+        }
+    }
+
+    @Test
+    void testSearchAsAtPicksTheEntryInForceNotTheNewest(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            insertAsAtFixture(db);
+
+            // As at 00:30 — only the first entry of each key is in force.
+            final List<Val[]> results = search(
+                    db,
+                    zeroWidthRange(T0.plusSeconds(1800L)),
+                    asAtFieldIndex());
+
+            assertThat(results).hasSize(2);
+            assertThat(results.get(0)[2].toString()).isEqualTo("KEY_A@0");
+            assertThat(results.get(1)[2].toString()).isEqualTo("KEY_B@0");
+        }
+    }
+
+    @Test
+    void testSearchAsAtIncludesAnEntryExactlyOnTheBoundary(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            insertAsAtFixture(db);
+
+            // The boundary is inclusive, matching the SQL store's
+            // "max(effective_time) <= t" even though the term said "< t".
+            final List<Val[]> results = search(
+                    db,
+                    zeroWidthRange(T0.plusSeconds(3600L)),
+                    asAtFieldIndex());
+
+            assertThat(results).hasSize(2);
+            assertThat(results.get(0)[2].toString()).isEqualTo("KEY_A@1");
+        }
+    }
+
+    @Test
+    void testSearchAsAtOmitsKeysWithNoEntryYet(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            db.write(writer -> {
+                db.insert(writer, new TemporalState(
+                        TemporalKey.builder().prefix(KEY_A).time(T0).build(),
+                        ValString.create("KEY_A@0")));
+                // KEY_B only comes into existence an hour later.
+                db.insert(writer, new TemporalState(
+                        TemporalKey.builder().prefix(KEY_B).time(T0.plusSeconds(3600L)).build(),
+                        ValString.create("KEY_B@1")));
+            });
+
+            final List<Val[]> results = search(
+                    db,
+                    zeroWidthRange(T0.plusSeconds(1800L)),
+                    asAtFieldIndex());
+
+            // KEY_B had no state at that instant, so it is absent rather than
+            // being reported at its later position.
+            assertThat(results).hasSize(1);
+            assertThat(results.getFirst()[0].toString()).isEqualTo("KEY_A");
+        }
+    }
+
+    @Test
+    void testSearchAsAtStillHonoursNonTimeTerms(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            insertAsAtFixture(db);
+
+            final Instant asAt = T0.plusSeconds(2 * 3600L + 1800L);
+            final String millis = String.valueOf(asAt.toEpochMilli());
+            final ExpressionOperator expression = ExpressionOperator.builder().op(Op.AND)
+                    .addDateTerm(TemporalStateFields.EFFECTIVE_TIME_FIELD,
+                            Condition.GREATER_THAN_OR_EQUAL_TO, millis)
+                    .addDateTerm(TemporalStateFields.EFFECTIVE_TIME_FIELD,
+                            Condition.LESS_THAN, millis)
+                    .addTextTerm(TemporalStateFields.KEY_FIELD, Condition.EQUALS, "KEY_B")
+                    .build();
+
+            final List<Val[]> results = search(db, expression, asAtFieldIndex());
+
+            // Stripping the time terms must not strip the rest of the filter.
+            assertThat(results).hasSize(1);
+            assertThat(results.getFirst()[0].toString()).isEqualTo("KEY_B");
+            assertThat(results.getFirst()[2].toString()).isEqualTo("KEY_B@2");
+        }
+    }
+
+    @Test
+    void testSearchWithoutATimeTermStillReturnsAllHistory(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            insertAsAtFixture(db);
+
+            final List<Val[]> results = search(
+                    db,
+                    ExpressionOperator.builder().build(),
+                    asAtFieldIndex());
+
+            // The standard path is untouched: no point-in-time term, all rows.
+            assertThat(results).hasSize(6);
+        }
+    }
+
+    @Test
+    void testSearchWithOnlyALowerBoundIsNotAPointInTimeQuery(@TempDir final Path tempDir) {
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            insertAsAtFixture(db);
+
+            final List<Val[]> results = search(
+                    db,
+                    ExpressionOperator.builder().op(Op.AND)
+                            .addDateTerm(TemporalStateFields.EFFECTIVE_TIME_FIELD,
+                                    Condition.GREATER_THAN_OR_EQUAL_TO,
+                                    String.valueOf(T0.plusSeconds(3600L).toEpochMilli()))
+                            .build(),
+                    asAtFieldIndex());
+
+            // ">=" alone says "history from here on", so it must keep filtering
+            // normally rather than collapsing to one row per key.
+            assertThat(results).hasSize(4);
         }
     }
 
