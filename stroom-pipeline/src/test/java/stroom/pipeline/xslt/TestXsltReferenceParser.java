@@ -1934,6 +1934,37 @@ class TestXsltReferenceParser {
         }
 
         @Test
+        @DisplayName("a deeply nested expression is a finding, not a StackOverflowError")
+        void deeplyNestedExpression() {
+            // Saxon compiles XPath by recursive descent, and nothing the parser can configure bounds that
+            // recursion - the timeout is checked between attributes, and maxDepth bounds only
+            // variable-to-variable chains. So the stack is what runs out first, and StackOverflowError is
+            // an Error rather than an Exception. 2000 levels is a few KB of attribute text: trivially
+            // reachable by anyone who can edit an XSLT, and the parser runs on save.
+            final int depth = 2000;
+            final String expression = "(1+".repeat(depth) + "1" + ")".repeat(depth);
+            final String body = """
+                    <xsl:stylesheet version="2.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:template match="/">
+                        <xsl:value-of select="EXPRESSION"/>
+                      </xsl:template>
+                    </xsl:stylesheet>""".replace("EXPRESSION", expression);
+
+            // The contract is that parse never throws, whatever it is handed.
+            assertThatCode(() -> parse(body)).doesNotThrowAnyException();
+
+            // And the expression is accounted for rather than silently dropped, so the References tab can
+            // say the stylesheet holds something it could not read.
+            final XsltReferences result = parse(body);
+            assertThat(result.references())
+                    .as("an expression too deep to compile is recorded as unanalysed")
+                    .anySatisfy(reference ->
+                            assertThat(reference.kind()).isEqualTo(XsltReferenceKind.UNANALYSED));
+        }
+
+        @Test
         @DisplayName("a null body is an empty result, not a failure")
         void nullBody() {
             final XsltReferences result = newParser().parse(null);

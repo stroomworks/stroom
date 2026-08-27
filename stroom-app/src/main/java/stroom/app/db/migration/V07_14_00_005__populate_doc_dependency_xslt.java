@@ -167,9 +167,17 @@ public class V07_14_00_005__populate_doc_dependency_xslt extends AbstractCrossMo
                             insertStmt.addBatch();
                             edgeCount++;
                         }
-                    } catch (final Exception e) {
+                    } catch (final Exception | StackOverflowError e) {
                         // Containment per document: one unreadable XSLT must not deny every other XSLT its
                         // dependencies, and must not leave the migration needing manual repair.
+                        //
+                        // StackOverflowError is named explicitly because this catch is what decides
+                        // whether a single pathological stylesheet can block an upgrade. The parser now
+                        // handles over-deep expressions itself, so nothing should reach here - but a
+                        // failure that only stops one document's dependencies is worth containing at the
+                        // cost of a broader catch, and a failure that stops the whole Flyway run is not.
+                        // Other Errors are deliberately left to propagate: OutOfMemoryError and its like
+                        // say the run cannot be trusted to continue.
                         errorCount++;
                         LOGGER.error(() -> "Error extracting dependencies from XSLT ("
                                            + uuid + "): " + e.getMessage(), e);

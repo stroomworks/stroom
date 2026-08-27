@@ -233,6 +233,16 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             // rather than a failed save.
             LOGGER.error(() -> "Unexpected error parsing XSLT body: " + e.getMessage(), e);
             return XsltReferences.parseFailure("Unexpected error: " + e.getMessage());
+        } catch (final StackOverflowError e) {
+            // A backstop, not the main defence: an over-deep expression is caught per expression in
+            // analyse(), so reaching here means one of this class's own recursive walks ran out of
+            // stack instead - findStroomCalls over an expression tree, or the value resolver over a
+            // nested one. Those are bounded by the shape of what Saxon produced rather than by any
+            // limit here, so the possibility cannot be argued away and an Error must not escape a
+            // method documented never to throw. Whatever was found before the overflow is still
+            // returned by the walk, so this degrades rather than discards.
+            LOGGER.error(() -> "XSLT body too deeply nested to parse");
+            return XsltReferences.parseFailure("Too deeply nested to parse");
         }
         return walk.result();
     }
@@ -414,8 +424,47 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                         XsltReferenceReason.UNPARSEABLE,
                         lineNumberOf(element)));
                 return;
+            } catch (final StackOverflowError e) {
+                // Saxon compiles by recursive descent and offers no depth limit, so a sufficiently
+                // nested expression exhausts the stack rather than failing to compile. Neither bound
+                // this parser has catches it: the timeout is checked between attributes, not inside a
+                // single compile, and maxDepth bounds only variable-to-variable chains.
+                //
+                // Caught here, per expression, so that one pathological attribute is reported as
+                // unanalysable exactly like one that will not compile. Caught at all because the
+                // alternative is an Error escaping a method whose contract is that it never throws -
+                // and that Error would reach a save, a References tab request, and worst of all the
+                // backfill migration, where one such stylesheet would block an upgrade. Recovery is
+                // sound: unwinding to here discards the whole recursion, so the stack is intact.
+                LOGGER.warn(() -> "Expression too deeply nested to compile, at "
+                                  + describe(element) + ": " + summarise(expressionText));
+                references.add(XsltReference.unresolved(
+                        XsltReferenceKind.UNANALYSED,
+                        expressionText,
+                        XsltReferenceReason.UNPARSEABLE,
+                        lineNumberOf(element)));
+                return;
             }
             findStroomCalls(expression, element, expressionText);
+        }
+
+        /**
+         * @return the element's name and line, for a log message about an expression that cannot be
+         * quoted in full.
+         */
+        private String describe(final XdmNode element) {
+            return element.getNodeName().getLocalName() + " on line " + lineNumberOf(element);
+        }
+
+        /**
+         * @return the expression truncated, since an expression that overflowed the stack is by nature
+         * long enough to be worth keeping out of a log line in full.
+         */
+        private static String summarise(final String expressionText) {
+            final int limit = 120;
+            return expressionText.length() <= limit
+                    ? expressionText
+                    : expressionText.substring(0, limit) + "... (" + expressionText.length() + " chars)";
         }
 
         /**
