@@ -39,11 +39,11 @@ import java.util.Objects;
 /**
  * Immutable document describing a floor map visualisation.
  *
- * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> and an
- * <em>events store</em> (each a
- * {@code SqlTemporalStoreDoc}), along with the queries, display
- * preferences, and value-schema metadata the floor map UI needs to parse
- * and render temporal entries on a 2-D canvas.</p>
+ * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> (a
+ * {@code SqlTemporalStoreDoc}) and an <em>events store</em> (a
+ * {@code PlanBDoc} with {@code stateType == TEMPORAL_STATE}), along with the
+ * queries, display preferences, and value-schema metadata the floor map UI
+ * needs to parse and render temporal entries on a 2-D canvas.</p>
  *
  * <h3>UI Tabs</h3>
  * <p>When a user opens a Floor Map document in the Stroom UI, the
@@ -72,9 +72,9 @@ import java.util.Objects;
  * <ul>
  *   <li><strong>Facts store</strong> ({@link #factsStoreRef}) — a SQL Temporal Store
  *       containing the spatial data (objects, positions, background image, matrices).</li>
- *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a SQL Temporal Store
- *       containing status / event records keyed by entity ID.
- *       Queried via {@link #eventsQuery}.</li>
+ *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a Plan B
+ *       temporal state store containing status / event records keyed by
+ *       entity ID. Queried via {@link #eventsQuery}.</li>
  * </ul>
  *
  * <h3>Value Schema</h3>
@@ -179,12 +179,19 @@ public class FloorMapDoc extends AbstractDoc {
     private final DocRef factsStoreRef;
 
     /**
-     * Reference to the temporal store document used as the events store. The
-     * events store contains status / event records keyed by entity ID.
+     * Reference to the {@code PlanBDoc} used as the events store. The events
+     * store contains status / event records keyed by entity ID, and must have
+     * {@code stateType == TEMPORAL_STATE}.
      *
      * <p>Only the referenced document's <em>name</em> is used at query time —
      * it is substituted into the {@code param('EventStore')} placeholder of
-     * {@link #eventsQuery} — so any queryable temporal store will serve.</p>
+     * {@link #eventsQuery}. Note that for Plan B the map name in an ingest
+     * XSLT must <em>equal the store's own name</em>, so renaming this document
+     * breaks both ingest lookups and the events query.</p>
+     *
+     * <p>Unlike {@link #factsStoreRef} this store is never written through
+     * {@code SqlTemporalStoreResource}: events arrive by pipeline ingest only,
+     * and nothing in the floor map UI edits them.</p>
      *
      * May be {@code null} if not yet configured.
      */
@@ -453,8 +460,8 @@ public class FloorMapDoc extends AbstractDoc {
     /**
      * Returns the reference to the events store.
      *
-     * <p>The events store contains status / event records keyed by
-     * entity ID.</p>
+     * <p>The events store is a Plan B temporal state store containing
+     * status / event records keyed by entity ID.</p>
      *
      * @return the events store {@link DocRef}, or {@code null} if not
      *         yet configured
@@ -848,8 +855,8 @@ public class FloorMapDoc extends AbstractDoc {
         /**
          * Sets the events store reference.
          *
-         * @param eventsStoreRef the {@link DocRef} to the events store, or
-         *                       {@code null} to clear
+         * @param eventsStoreRef the {@link DocRef} to the Plan B temporal
+         *                       state store, or {@code null} to clear
          * @return this builder
          */
         public Builder eventsStoreRef(final DocRef eventsStoreRef) {
