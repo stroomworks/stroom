@@ -28,10 +28,10 @@ import static org.mockito.Mockito.mock;
 /**
  * Guice wiring for the real-database {@link UpdatableTemporalStoreDaoImpl} tests.
  *
- * <p>Installs the production {@link SqlStoreDbModule} (which binds the DAO and,
- * via its {@code @Provides} method, runs Flyway against the datasource) on top
- * of {@link DbTestModule}, which swaps in a uniquely-named test database so
- * parallel Gradle forks never collide.</p>
+ * <p>Installs both production halves — {@link SqlStoreDbModule} for the datasource and its Flyway
+ * migration, and {@link SqlStoreDaoModule} for the DAO binding — on top of {@link DbTestModule},
+ * which swaps in a uniquely-named test database so parallel Gradle forks never collide. The app
+ * installs the two in different injectors (see {@link SqlStoreDbModule}); here they go together.</p>
  *
  * <p>The DAO builds an {@code ExpressionMapper} whose {@code TermHandlerFactory}
  * requires {@link WordListProvider}, {@link CollectionService} and
@@ -48,9 +48,10 @@ public class TestModule extends AbstractModule {
     protected void configure() {
         super.configure();
 
-        // Production module: binds UpdatableTemporalStoreDao -> ...Impl and
-        // provides the (Flyway-migrated) SqlStoreDbConnProvider.
+        // Production modules: the Flyway-migrated SqlStoreDbConnProvider, and the
+        // UpdatableTemporalStoreDao -> ...Impl binding.
         install(new SqlStoreDbModule());
+        install(new SqlStoreDaoModule());
 
         // Test datasource: unique per-fork/thread DB, cleared after the run.
         install(new DbTestModule());

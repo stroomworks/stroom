@@ -54,6 +54,7 @@ public class DbConnectionsModule extends AbstractModule {
         install(new stroom.security.impl.db.SecurityDbModule());
         install(new stroom.storedquery.impl.db.StoredQueryDbModule());
         install(new stroom.statistics.impl.sql.SQLStatisticsDbModule());
+        install(new stroom.sqlstore.impl.db.SqlStoreDbModule());
         install(new stroom.document.asset.impl.db.DocumentAssetDbModule());
 
         // Special DB module for running cross-module java migrations

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,40 +16,64 @@
 
 package stroom.sqlstore.impl.db;
 
-import stroom.db.util.DataSourceFactory;
-import stroom.db.util.FlywayUtil;
+import stroom.db.util.AbstractFlyWayDbModule;
 import stroom.sqlstore.impl.SqlStoreConfig.SqlStoreDbConfig;
-import stroom.sqlstore.impl.UpdatableTemporalStoreDao;
-import stroom.util.logging.LambdaLogger;
-import stroom.util.logging.LambdaLoggerFactory;
-
-import com.google.inject.AbstractModule;
-import com.google.inject.Provides;
-import jakarta.inject.Singleton;
 
 import java.util.List;
 import javax.sql.DataSource;
 
-public class SqlStoreDbModule extends AbstractModule {
+/**
+ * Datasource and Flyway migration for the SQL temporal store.
+ *
+ * <p>Install this in {@code DbConnectionsModule}, alongside every other {@code *DbModule}, and
+ * {@link SqlStoreDaoModule} in {@code CoreModule}. The split matters: {@code DbConnectionsModule}
+ * is installed by {@code BootStrapModule}, which is the injector that runs during the
+ * bootstrap/migration phase, so a module listed there gets its connection provider created — and
+ * therefore its migration run — while {@code DbMigrationState.haveBootstrapMigrationsBeenDone()}
+ * is still false.</p>
+ *
+ * <p>This class previously also bound the DAO, which forced it into {@code CoreModule} instead,
+ * because the DAO needs {@code ExpressionMapperFactory} and hence services the bootstrap injector
+ * does not have. The consequence was that the migration never ran: by the time anything asked for
+ * {@link SqlStoreDbConnProvider} the bootstrap flag was set, so {@code FlywayUtil.migrate}
+ * short-circuited and returned without consulting Flyway at all. The table therefore only ever
+ * existed by accident of timing, and once dropped no restart would recreate it. Keep the DAO
+ * binding out of this module.</p>
+ */
+public class SqlStoreDbModule
+        extends AbstractFlyWayDbModule<SqlStoreDbConfig, SqlStoreDbConnProvider> {
 
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SqlStoreDbModule.class);
+    /** Name of this module */
     private static final String MODULE = "stroom-sqlstore";
+
+    /** Where the Flyway SQL scripts are */
     private static final String FLYWAY_LOCATIONS = "stroom/sqlstore/impl/db/migration";
+
+    /** Table with the Flyway history */
     private static final String FLYWAY_TABLE = "sqlstore_schema_history";
 
     @Override
-    protected void configure() {
-        bind(UpdatableTemporalStoreDao.class).to(UpdatableTemporalStoreDaoImpl.class);
+    protected String getFlyWayTableName() {
+        return FLYWAY_TABLE;
     }
 
-    @Provides
-    @Singleton
-    @SuppressWarnings("unused")
-    public SqlStoreDbConnProvider getConnectionProvider(final SqlStoreDbConfig config,
-                                                        final DataSourceFactory dataSourceFactory) {
-        LOGGER.debug(() -> "Creating SqlStoreDbConnProvider");
-        final DataSource dataSource = dataSourceFactory.create(config, "sqlstore", false);
-        FlywayUtil.migrate(dataSource, List.of(FLYWAY_LOCATIONS), FLYWAY_TABLE, MODULE);
+    @Override
+    protected String getModuleName() {
+        return MODULE;
+    }
+
+    @Override
+    protected List<String> getFlyWayLocations() {
+        return List.of(FLYWAY_LOCATIONS);
+    }
+
+    @Override
+    protected Class<SqlStoreDbConnProvider> getConnectionProviderType() {
+        return SqlStoreDbConnProvider.class;
+    }
+
+    @Override
+    protected SqlStoreDbConnProvider createConnectionProvider(final DataSource dataSource) {
         return new SqlStoreDbConnProvider(dataSource);
     }
 }
