@@ -661,16 +661,29 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     // TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master.
     //  #5582 (audit trail) made every doc write record the acting user via
     //  SecurityContext.getUserRef(). Running as a service user there is no stroom user to
-    //  return (neither InternalIdpProcessingUserIdentity nor ServiceUserIdentity has one),
-    //  so getUserRef() throws AuthenticationException and any doc create/update/delete/
-    //  import run inside SecurityContext.asProcessingUser*(...) fails. That breaks e.g.
-    //  auto-creation of the singleton Data Retention doc, which in turn 500s
-    //  POST /api/meta/v1/find whenever the stream list is non-empty.
+    //  return (neither InternalIdpProcessingUserIdentity nor ServiceUserIdentity implements
+    //  HasUserRef), so getUserRef() throws AuthenticationException and any doc create/update/
+    //  delete/import run inside SecurityContext.asProcessingUser*(...) fails.
     //  doc_audit.user_uuid/user_name are nullable and DBPersistence already null-guards
     //  them, so we record a null user rather than failing the write.
-    //  When a proper upstream fix arrives (e.g. giving the service user a UserRef),
-    //  discard this method and restore securityContext.getUserRef() at the four
-    //  audit-write call sites that reference it.
+    //
+    //  REMOVAL CONDITION - test this, do not infer it. Remove when getUserRef() no longer
+    //  throws for the processing user, i.e. when one of the service identities implements
+    //  HasUserRef. Verify by rewiring the call sites below back to
+    //  securityContext.getUserRef() and running TestStoreImplAuditUser, whose
+    //  create_asProcessingUser / delete_asProcessingUser cases exist to pin exactly this.
+    //
+    //  Do NOT infer the condition is met from a caller disappearing. The original motivating
+    //  example was auto-creation of the singleton Data Retention doc, which 500d
+    //  POST /api/meta/v1/find; upstream has since fixed that one specifically, by having
+    //  StreamAttributeMapRetentionRuleDecoratorFactory fetch the rules with
+    //  DataRetentionRulesProvider::get instead of getOrCreate, so nothing is written on read.
+    //  That removed a trigger, not the cause, and other processing-user doc writes remain -
+    //  e.g. TableBuilderAnalyticExecutor.processUntilAllComplete wraps its whole run in
+    //  asProcessingUser, and on a rule failure disableProcess() writes the analytic rule doc
+    //  to stop it failing repeatedly. Without this workaround that recovery write throws, so a
+    //  handled rule failure becomes an unhandled one and the rule stays enabled.
+    //  (Checked again after the merge from master on 2026-08-26: condition still not met.)
     // --------------------------------------------------------------------------------
 
     /**
