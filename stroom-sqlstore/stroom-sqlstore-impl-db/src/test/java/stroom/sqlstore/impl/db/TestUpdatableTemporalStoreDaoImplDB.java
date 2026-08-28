@@ -347,6 +347,37 @@ class TestUpdatableTemporalStoreDaoImplDB {
     }
 
     // -----------------------------------------------------------------------
+    // search - value column pruning
+    // -----------------------------------------------------------------------
+
+    /**
+     * {@code includeValue = false} must skip the value column, not merely blank it afterwards.
+     *
+     * <p>The value is a {@code longtext}. A caller that only wants keys and times - the timeline
+     * histogram - would otherwise have every row's payload read out of the database and thrown
+     * away.</p>
+     */
+    @Test
+    void testSearchCanOmitTheValueColumn() {
+        final Store store = uniqueStore();
+        dao.create(store.uuid(), entry(store.name(), "gate", T1, "{\"v\":1}"));
+
+        final List<TemporalEntry> withValue = new java.util.ArrayList<>();
+        dao.search(store.uuid(), criteriaAt(store.name(), T3_ISO), true, withValue::add);
+        final List<TemporalEntry> withoutValue = new java.util.ArrayList<>();
+        dao.search(store.uuid(), criteriaAt(store.name(), T3_ISO), false, withoutValue::add);
+
+        assertThat(withValue).hasSize(1);
+        assertThat(withValue.get(0).getValue()).isEqualTo("{\"v\":1}");
+
+        // Same rows, same keys and times - only the payload is absent.
+        assertThat(withoutValue).hasSize(1);
+        assertThat(withoutValue.get(0).getKey()).isEqualTo("gate");
+        assertThat(withoutValue.get(0).getEffectiveTimeMs()).isEqualTo(T1);
+        assertThat(withoutValue.get(0).getValue()).isNull();
+    }
+
+    // -----------------------------------------------------------------------
     // applyChanges - atomic batch
     // -----------------------------------------------------------------------
 
@@ -388,6 +419,59 @@ class TestUpdatableTemporalStoreDaoImplDB {
                 .hasValue("{\"owner\":\"other\"}");
         // The upsert and the delete both applied within the target store, netting zero rows.
         assertThat(dao.count(target.uuid())).isZero();
+    }
+
+    /**
+     * Interleaved upserts and deletes must still apply in list order.
+     *
+     * <p>Consecutive operations of the same type are sent to the database as one JDBC batch, so
+     * order is only preserved if a run is flushed the moment the type changes. Batching the whole
+     * list by type instead would reorder these three into upsert, upsert, delete and leave the row
+     * gone rather than present.</p>
+     */
+    @Test
+    void testInterleavedUpsertsAndDeletesApplyInOrder() {
+        final Store store = uniqueStore();
+
+        dao.applyChanges(store.uuid(), List.of(
+                ChangeOperation.upsert(entry(store.name(), "gate", T1, "{\"v\":1}")),
+                ChangeOperation.delete(id(store.name(), "gate")),
+                ChangeOperation.upsert(entry(store.name(), "gate", T1, "{\"v\":2}"))));
+
+        // The final upsert wins: the row exists, with the last value written.
+        assertThat(dao.count(store.uuid())).isEqualTo(1);
+        assertThat(dao.fetch(store.uuid(), id(store.name(), "gate")))
+                .map(TemporalEntry::getValue)
+                .hasValue("{\"v\":2}");
+    }
+
+    /** And the reverse order leaves the row deleted. */
+    @Test
+    void testInterleavedEndingInDeleteLeavesNothing() {
+        final Store store = uniqueStore();
+
+        dao.applyChanges(store.uuid(), List.of(
+                ChangeOperation.upsert(entry(store.name(), "gate", T1, "{\"v\":1}")),
+                ChangeOperation.delete(id(store.name(), "gate"))));
+
+        assertThat(dao.count(store.uuid())).isZero();
+    }
+
+    /** A large batch round-trips intact - the bind count per row has to match the template. */
+    @Test
+    void testLargeBatchWritesEveryRow() {
+        final Store store = uniqueStore();
+        final List<ChangeOperation> ops = new java.util.ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            ops.add(ChangeOperation.upsert(entry(store.name(), "k" + i, T1, "{\"i\":" + i + "}")));
+        }
+
+        dao.applyChanges(store.uuid(), ops);
+
+        assertThat(dao.count(store.uuid())).isEqualTo(500);
+        assertThat(dao.fetch(store.uuid(), id(store.name(), "k499")))
+                .map(TemporalEntry::getValue)
+                .hasValue("{\"i\":499}");
     }
 
     /**

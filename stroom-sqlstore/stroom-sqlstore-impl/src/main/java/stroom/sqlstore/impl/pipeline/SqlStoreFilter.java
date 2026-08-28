@@ -25,6 +25,9 @@ import stroom.pipeline.shared.data.PipelineElementType.Category;
 import stroom.pipeline.state.MetaHolder;
 import stroom.sqlstore.api.UpdatableTemporalStore;
 import stroom.sqlstore.impl.UpdatableTemporalStoreProvider;
+import stroom.sqlstore.shared.ApplyChangesRequest;
+import stroom.sqlstore.shared.ApplyChangesResult;
+import stroom.sqlstore.shared.ChangeOperation;
 import stroom.sqlstore.shared.UnknownStoreException;
 import stroom.svg.shared.SvgImage;
 import stroom.util.date.DateUtil;
@@ -42,6 +45,8 @@ import org.xml.sax.SAXException;
 
 import java.io.StringWriter;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
@@ -81,6 +86,22 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     private final StringBuilder fromBuffer = new StringBuilder();
     private final StringBuilder toBuffer = new StringBuilder();
     private final StringBuilder characterBuffer = new StringBuilder();
+
+    /**
+     * How many entries are buffered before being written as one batch.
+     *
+     * <p>Each write used to go through {@code UpdatableTemporalStore.create} on its own, which
+     * resolves and authorises the store, writes an audit event and takes a connection - per
+     * reference entry. A stream with a hundred thousand entries paid all of that a hundred
+     * thousand times. Batching pays it once per batch instead.</p>
+     */
+    private static final int WRITE_BATCH_SIZE = 1_000;
+
+    /** Entries buffered for the next batch write, in the order they were read. */
+    private final List<ChangeOperation> pendingOps = new ArrayList<>();
+
+    /** Map the buffered entries belong to; a change of map forces a flush first. */
+    private String pendingMapName;
 
     private String mapName;
     private String key;
@@ -301,6 +322,56 @@ public class SqlStoreFilter extends AbstractXMLFilter {
         }
     }
 
+    /**
+     * Writes any buffered entries as a single batch.
+     *
+     * <p>One {@code applyChanges} call resolves and authorises the store once, wraps the whole
+     * batch in one transaction, and writes one audit event, rather than repeating all three per
+     * entry. Operations are applied in the order they were read, so a later entry for the same key
+     * and effective time still wins.</p>
+     *
+     * <p>A failed batch is reported once, naming how many entries it covered. That is coarser than
+     * the previous per-entry reporting, but the alternative - keeping the per-entry path purely for
+     * error granularity - is what made ingest slow in the first place.</p>
+     */
+    private void flushPendingWrites() {
+        if (pendingOps.isEmpty()) {
+            return;
+        }
+        final int count = pendingOps.size();
+        final String flushedMapName = pendingMapName;
+        try {
+            final UpdatableTemporalStore store = storeProvider.get(flushedMapName);
+            final ApplyChangesResult result = store.applyChanges(new ApplyChangesRequest(
+                    new ArrayList<>(pendingOps)));
+            if (result != null && !result.isSuccess()) {
+                error("Error writing " + count + " reference entries to SQL store map '"
+                      + flushedMapName + "': " + result.getErrorMessage());
+            }
+        } catch (final UnknownStoreException e) {
+            error("Unknown SQL store map '" + flushedMapName + "'. "
+                    + "Please ensure a SqlTemporalStoreDoc has been created and configured with this "
+                    + "map name under the explorer tree.");
+        } catch (final RuntimeException e) {
+            error("Error writing " + count + " reference entries to SQL store map '"
+                  + flushedMapName + "': " + e.getMessage(), e);
+        } finally {
+            pendingOps.clear();
+            pendingMapName = null;
+        }
+    }
+
+    @Override
+    public void endProcessing() {
+        LOGGER.trace("SqlStoreFilter.endProcessing()");
+        try {
+            // Must run on the error path too, or the last partial batch is silently dropped.
+            flushPendingWrites();
+        } finally {
+            super.endProcessing();
+        }
+    }
+
     private void addReference() {
         LOGGER.trace("SqlStoreFilter.addReference()");
         if (NullSafe.isEmptyString(mapName)) {
@@ -318,7 +389,8 @@ public class SqlStoreFilter extends AbstractXMLFilter {
         }
 
         try {
-            final UpdatableTemporalStore store = storeProvider.get(mapName);
+            // Resolves nothing but the map name's validity; the write itself is batched.
+            storeProvider.get(mapName);
 
             Instant entryTime = streamEffectiveTime;
             if (!NullSafe.isEmptyString(timeString)) {
@@ -331,7 +403,16 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                 }
             }
 
-            store.create(new TemporalEntry(mapName, key, entryTime.toEpochMilli(), currentValue));
+            // Buffered rather than written here; see flushPendingWrites.
+            if (pendingMapName != null && !pendingMapName.equals(mapName)) {
+                flushPendingWrites();
+            }
+            pendingMapName = mapName;
+            pendingOps.add(ChangeOperation.upsert(
+                    new TemporalEntry(mapName, key, entryTime.toEpochMilli(), currentValue)));
+            if (pendingOps.size() >= WRITE_BATCH_SIZE) {
+                flushPendingWrites();
+            }
 
         } catch (final UnknownStoreException e) {
             error("Unknown SQL store map '" + mapName + "'. "

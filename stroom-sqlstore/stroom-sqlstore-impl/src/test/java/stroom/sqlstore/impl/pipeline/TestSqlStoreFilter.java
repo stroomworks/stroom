@@ -24,6 +24,8 @@ import stroom.pipeline.state.MetaHolder;
 import stroom.pipeline.util.ProcessorUtil;
 import stroom.sqlstore.api.UpdatableTemporalStore;
 import stroom.sqlstore.impl.UpdatableTemporalStoreProvider;
+import stroom.sqlstore.shared.ApplyChangesRequest;
+import stroom.sqlstore.shared.ChangeOperation;
 import stroom.sqlstore.shared.UnknownStoreException;
 import stroom.util.shared.Severity;
 import stroom.util.shared.TemporalEntry;
@@ -108,10 +110,7 @@ class TestSqlStoreFilter {
 
         assertThat(loggedSeverities).isEmpty();
 
-        final ArgumentCaptor<TemporalEntry> entryCaptor = ArgumentCaptor.forClass(TemporalEntry.class);
-        Mockito.verify(updatableTemporalStore, Mockito.times(1)).create(entryCaptor.capture());
-
-        final TemporalEntry captured = entryCaptor.getValue();
+        final TemporalEntry captured = singleUpsertedEntry();
         assertThat(captured.getMap()).isEqualTo("test-map");
         assertThat(captured.getKey()).isEqualTo("k1");
         assertThat(captured.getValue()).isEqualTo("simple-string-val");
@@ -137,10 +136,7 @@ class TestSqlStoreFilter {
 
         assertThat(loggedSeverities).isEmpty();
 
-        final ArgumentCaptor<TemporalEntry> entryCaptor = ArgumentCaptor.forClass(TemporalEntry.class);
-        Mockito.verify(updatableTemporalStore, Mockito.times(1)).create(entryCaptor.capture());
-
-        final TemporalEntry captured = entryCaptor.getValue();
+        final TemporalEntry captured = singleUpsertedEntry();
         assertThat(captured.getMap()).isEqualTo("test-map");
         assertThat(captured.getKey()).isEqualTo("k1");
         assertThat(captured.getValue()).contains("<Location><Country>UK</Country></Location>");
@@ -165,10 +161,7 @@ class TestSqlStoreFilter {
 
         assertThat(loggedSeverities).isEmpty();
 
-        final ArgumentCaptor<TemporalEntry> entryCaptor = ArgumentCaptor.forClass(TemporalEntry.class);
-        Mockito.verify(updatableTemporalStore, Mockito.times(1)).create(entryCaptor.capture());
-
-        final TemporalEntry captured = entryCaptor.getValue();
+        final TemporalEntry captured = singleUpsertedEntry();
         assertThat(captured.getEffectiveTimeMs())
                 .isEqualTo(Instant.parse("2026-06-03T12:00:00Z").toEpochMilli());
     }
@@ -233,10 +226,7 @@ class TestSqlStoreFilter {
 
         assertThat(loggedSeverities).isEmpty();
 
-        final ArgumentCaptor<TemporalEntry> entryCaptor = ArgumentCaptor.forClass(TemporalEntry.class);
-        Mockito.verify(updatableTemporalStore, Mockito.times(1)).create(entryCaptor.capture());
-
-        final TemporalEntry captured = entryCaptor.getValue();
+        final TemporalEntry captured = singleUpsertedEntry();
         assertThat(captured.getMap()).isEqualTo("test-map");
         assertThat(captured.getKey()).isEqualTo("k1");
         assertThat(captured.getEffectiveTimeMs())
@@ -265,5 +255,59 @@ class TestSqlStoreFilter {
         assertThat(loggedMessages.getFirst()).contains("SQL Store Filter can only process '<temporal-state>' "
                 + "elements from the plan-b schema. Element '<range-state>' is not supported.");
         Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
+    }
+
+    /**
+     * Many entries must reach the store as one batched write, not one call each.
+     *
+     * <p>Regression test for the ingest cost: every entry used to go through
+     * {@code UpdatableTemporalStore.create} on its own, each resolving and authorising the store,
+     * writing an audit event and taking a connection. A stream with a hundred thousand entries paid
+     * all of that a hundred thousand times.</p>
+     */
+    @Test
+    void testEntriesAreWrittenAsOneBatch() {
+        Mockito.when(storeProvider.get("test-map")).thenReturn(updatableTemporalStore);
+
+        final StringBuilder xml = new StringBuilder("<referenceData>");
+        final int entries = 250;
+        for (int i = 0; i < entries; i++) {
+            xml.append("<reference><map>test-map</map><key>k").append(i)
+               .append("</key><value>v").append(i).append("</value></reference>");
+        }
+        xml.append("</referenceData>");
+
+        processXml(xml.toString());
+
+        assertThat(loggedSeverities).isEmpty();
+
+        final ArgumentCaptor<ApplyChangesRequest> captor =
+                ArgumentCaptor.forClass(ApplyChangesRequest.class);
+        // One call, not one per entry.
+        Mockito.verify(updatableTemporalStore, Mockito.times(1)).applyChanges(captor.capture());
+        Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
+
+        final List<ChangeOperation> ops = captor.getValue().getOperations();
+        assertThat(ops).hasSize(entries);
+        // Order is preserved, so a later entry for the same key still wins.
+        assertThat(ops.get(0).getEntry().getKey()).isEqualTo("k0");
+        assertThat(ops.get(entries - 1).getEntry().getKey()).isEqualTo("k" + (entries - 1));
+    }
+
+    /**
+     * The one entry the filter wrote, read back out of its batched applyChanges call.
+     *
+     * <p>Writes are buffered and flushed as a single {@code applyChanges} at endProcessing rather
+     * than a {@code create} per entry, so a test that wants the entry has to unwrap the batch.</p>
+     */
+    private TemporalEntry singleUpsertedEntry() {
+        final ArgumentCaptor<ApplyChangesRequest> captor =
+                ArgumentCaptor.forClass(ApplyChangesRequest.class);
+        Mockito.verify(updatableTemporalStore, Mockito.times(1)).applyChanges(captor.capture());
+
+        final List<ChangeOperation> ops = captor.getValue().getOperations();
+        assertThat(ops).hasSize(1);
+        assertThat(ops.get(0).getType()).isEqualTo(ChangeOperation.Type.UPSERT);
+        return ops.get(0).getEntry();
     }
 }

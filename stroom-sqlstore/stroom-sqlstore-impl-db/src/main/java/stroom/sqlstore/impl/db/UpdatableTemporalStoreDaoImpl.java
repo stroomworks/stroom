@@ -34,6 +34,7 @@ import stroom.util.shared.TemporalEntryId;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.jooq.BatchBindStep;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -43,6 +44,7 @@ import org.jooq.SelectHavingStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -341,6 +343,14 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         JooqUtil.context(sqlStoreDbConnProvider, outerContext ->
                 outerContext.transaction(config -> {
                     final DSLContext trx = DSL.using(config);
+                    // Consecutive operations of the same type go to the database as one JDBC batch.
+                    // Order still holds: runs execute in sequence and a batch preserves the order
+                    // it was bound in, so a later operation on the same key still wins. Only a run
+                    // is accumulated at a time rather than the whole list, so a batch spanning both
+                    // types is never reordered into one.
+                    final List<TemporalEntry> upserts = new ArrayList<>();
+                    final List<TemporalEntryId> deletes = new ArrayList<>();
+
                     for (final ChangeOperation op : operations) {
                         if (op == null || op.getType() == null) {
                             throw new IllegalArgumentException(
@@ -353,24 +363,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                                     throw new IllegalArgumentException(
                                             "UPSERT operation must have a non-null entry.");
                                 }
-                                // Mirror create(): insert or update on duplicate natural key.
-                                trx.insertInto(UPDATABLE_TEMPORAL_STORE)
-                                        .set(UPDATABLE_TEMPORAL_STORE.DOC_UUID,
-                                                docUuid)
-                                        .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME,
-                                                entry.getMap())
-                                        .set(UPDATABLE_TEMPORAL_STORE.KEY_,
-                                                entry.getKey())
-                                        .set(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME,
-                                                entry.getEffectiveTimeMs())
-                                        .set(UPDATABLE_TEMPORAL_STORE.VALUE_,
-                                                entry.getValue())
-                                        .onDuplicateKeyUpdate()
-                                        .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME,
-                                                entry.getMap())
-                                        .set(UPDATABLE_TEMPORAL_STORE.VALUE_,
-                                                entry.getValue())
-                                        .execute();
+                                flushDeletes(trx, docUuid, deletes);
+                                upserts.add(entry);
                             }
                             case DELETE -> {
                                 final TemporalEntryId id = op.getId();
@@ -378,18 +372,70 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                                     throw new IllegalArgumentException(
                                             "DELETE operation must have a non-null id.");
                                 }
-                                trx.deleteFrom(UPDATABLE_TEMPORAL_STORE)
-                                        .where(UPDATABLE_TEMPORAL_STORE.DOC_UUID
-                                                .eq(docUuid))
-                                        .and(UPDATABLE_TEMPORAL_STORE.KEY_
-                                                .eq(id.getKey()))
-                                        .and(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME
-                                                .eq(id.getEffectiveTimeMs()))
-                                        .execute();
+                                flushUpserts(trx, docUuid, upserts);
+                                deletes.add(id);
                             }
                         }
                     }
+                    flushUpserts(trx, docUuid, upserts);
+                    flushDeletes(trx, docUuid, deletes);
                 }));
+    }
+
+    /**
+     * Writes the accumulated upserts as one batch and clears the list.
+     *
+     * <p>Same {@code INSERT ... ON DUPLICATE KEY UPDATE} as {@link #create(String, TemporalEntry)},
+     * bound once per row against a single prepared statement rather than executed per row.</p>
+     */
+    private void flushUpserts(final DSLContext trx,
+                              final String docUuid,
+                              final List<TemporalEntry> upserts) {
+        if (upserts.isEmpty()) {
+            return;
+        }
+        BatchBindStep batch = trx.batch(
+                trx.insertInto(UPDATABLE_TEMPORAL_STORE)
+                        .set(UPDATABLE_TEMPORAL_STORE.DOC_UUID, (String) null)
+                        .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME, (String) null)
+                        .set(UPDATABLE_TEMPORAL_STORE.KEY_, (String) null)
+                        .set(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME, (Long) null)
+                        .set(UPDATABLE_TEMPORAL_STORE.VALUE_, (String) null)
+                        .onDuplicateKeyUpdate()
+                        .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME, (String) null)
+                        .set(UPDATABLE_TEMPORAL_STORE.VALUE_, (String) null));
+        for (final TemporalEntry entry : upserts) {
+            batch = batch.bind(
+                    docUuid,
+                    entry.getMap(),
+                    entry.getKey(),
+                    entry.getEffectiveTimeMs(),
+                    entry.getValue(),
+                    // The ON DUPLICATE KEY UPDATE clause binds the same two values again.
+                    entry.getMap(),
+                    entry.getValue());
+        }
+        batch.execute();
+        upserts.clear();
+    }
+
+    /** Writes the accumulated deletes as one batch and clears the list. */
+    private void flushDeletes(final DSLContext trx,
+                              final String docUuid,
+                              final List<TemporalEntryId> deletes) {
+        if (deletes.isEmpty()) {
+            return;
+        }
+        BatchBindStep batch = trx.batch(
+                trx.deleteFrom(UPDATABLE_TEMPORAL_STORE)
+                        .where(UPDATABLE_TEMPORAL_STORE.DOC_UUID.eq((String) null))
+                        .and(UPDATABLE_TEMPORAL_STORE.KEY_.eq((String) null))
+                        .and(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME.eq((Long) null)));
+        for (final TemporalEntryId id : deletes) {
+            batch = batch.bind(docUuid, id.getKey(), id.getEffectiveTimeMs());
+        }
+        batch.execute();
+        deletes.clear();
     }
 
     /**
@@ -425,6 +471,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
     @Override
     public void search(final String docUuid,
                        final ExpressionCriteria criteria,
+                       final boolean includeValue,
                        final Consumer<TemporalEntry> consumer) {
         validateDocUuid(docUuid);
         final Long queryTime = getQueryTime(criteria);
@@ -452,7 +499,10 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
             //noinspection CodeBlock2Expr
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
-                    .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
+                    .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME,
+                            includeValue
+                                    ? t1.VALUE_
+                                    : DSL.inline((String) null).as(t1.VALUE_))
                     .from(t1)
                     .innerJoin(subTable)
                     .on(t1.DOC_UUID.eq(subUuid))
@@ -471,16 +521,22 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
             //noinspection CodeBlock2Expr
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
-                    .selectFrom(UPDATABLE_TEMPORAL_STORE)
+                    .select(UPDATABLE_TEMPORAL_STORE.MAP_NAME,
+                            UPDATABLE_TEMPORAL_STORE.KEY_,
+                            UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME,
+                            includeValue
+                                    ? UPDATABLE_TEMPORAL_STORE.VALUE_
+                                    : DSL.inline((String) null).as(UPDATABLE_TEMPORAL_STORE.VALUE_))
+                    .from(UPDATABLE_TEMPORAL_STORE)
                     .where(UPDATABLE_TEMPORAL_STORE.DOC_UUID.eq(docUuid))
                     .and(condition)
                     .fetch()
                     .forEach(record -> {
                         consumer.accept(new TemporalEntry(
-                                record.getMapName(),
-                                record.getKey_(),
-                                record.getEffectiveTime(),
-                                record.getValue_()));
+                                record.get(UPDATABLE_TEMPORAL_STORE.MAP_NAME),
+                                record.get(UPDATABLE_TEMPORAL_STORE.KEY_),
+                                record.get(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME),
+                                record.get(UPDATABLE_TEMPORAL_STORE.VALUE_)));
                     }));
         }
     }
