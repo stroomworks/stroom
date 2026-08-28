@@ -16,6 +16,7 @@
 
 package stroom.sqlstore.impl.pipeline;
 
+import stroom.docref.DocRef;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.pipeline.refdata.LookupIdentifier;
 import stroom.pipeline.refdata.ReferenceDataResult;
@@ -32,10 +33,31 @@ import stroom.util.shared.TemporalEntry;
 
 import jakarta.inject.Inject;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @PipelineScoped
 public class SqlStoreLookupImpl implements SqlStoreLookup {
 
     private final UpdatableTemporalStoreProvider storeProvider;
+
+    /**
+     * Store documents resolved by name, for the life of this pipeline instance.
+     *
+     * <p>Resolving a name lists the document store - a database query with no cache behind it -
+     * and permission-checks every row. This runs once per XSLT {@code lookup()}, so on a stream
+     * that looks up per event it ran once per event. The name to document mapping only changes if
+     * a store is created, renamed or deleted, so it is resolved once here and reused.</p>
+     *
+     * <p>Safe to hold for the run because it caches <em>identity</em>, not authorisation or data:
+     * {@code find(DocRef, ...)} still permission-checks every call, and no entry values are cached
+     * - those depend on the lookup's effective time and would need a temporal cache key to be
+     * correct.</p>
+     *
+     * <p>The class is {@link PipelineScoped}, so this dies with the pipeline instance and cannot
+     * go stale across runs.</p>
+     */
+    private final Map<String, DocRef> resolvedStores = new HashMap<>();
 
     @Inject
     public SqlStoreLookupImpl(final UpdatableTemporalStoreProvider storeProvider) {
@@ -50,6 +72,9 @@ public class SqlStoreLookupImpl implements SqlStoreLookup {
 
         try {
             final UpdatableTemporalStore store = storeProvider.get(mapName);
+            //noinspection unused k
+            final DocRef storeDocRef = resolvedStores.computeIfAbsent(
+                    mapName, k -> store.resolveStoreByName(mapName));
 
             // Build query criteria
             final ExpressionOperator expression = ExpressionOperator.builder()
@@ -60,7 +85,7 @@ public class SqlStoreLookupImpl implements SqlStoreLookup {
                     .build();
 
             final ExpressionCriteria criteria = new ExpressionCriteria(expression);
-            final ResultPage<TemporalEntry> resultPage = store.find(criteria);
+            final ResultPage<TemporalEntry> resultPage = store.find(storeDocRef, criteria);
 
             if (resultPage != null && !resultPage.getValues().isEmpty()) {
                 final TemporalEntry entry = resultPage.getValues().getFirst();

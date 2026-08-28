@@ -16,6 +16,7 @@
 
 package stroom.sqlstore.impl.pipeline;
 
+import stroom.docref.DocRef;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.pipeline.refdata.LookupIdentifier;
 import stroom.pipeline.refdata.ReferenceDataResult;
@@ -25,6 +26,7 @@ import stroom.pipeline.refdata.store.RefDataValueProxy;
 import stroom.pipeline.refdata.store.StringValue;
 import stroom.sqlstore.api.UpdatableTemporalStore;
 import stroom.sqlstore.impl.UpdatableTemporalStoreProvider;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
 
@@ -35,6 +37,7 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -66,7 +69,12 @@ class TestSqlStoreLookup {
         final TemporalEntry entry = new TemporalEntry("my-map", "k1", 1000L, "my-plain-val");
         final ResultPage<TemporalEntry> resultPage = ResultPage.createPageLimitedList(List.of(entry), null);
 
-        Mockito.when(updatableTemporalStore.find(Mockito.any(ExpressionCriteria.class))).thenReturn(resultPage);
+        // The lookup resolves the store once then queries by DocRef, so both are stubbed.
+        Mockito.when(updatableTemporalStore.resolveStoreByName("my-map"))
+                .thenReturn(new DocRef(SqlTemporalStoreDoc.TYPE, "store-uuid", "my-map"));
+        Mockito.when(updatableTemporalStore.find(
+                        Mockito.any(DocRef.class), Mockito.any(ExpressionCriteria.class)))
+                .thenReturn(resultPage);
 
         final SqlStoreLookupImpl sqlStoreLookup = new SqlStoreLookupImpl(storeProvider);
         sqlStoreLookup.lookup(lookupIdentifier, referenceDataResult);
@@ -97,7 +105,12 @@ class TestSqlStoreLookup {
                 "my-map", "k1", 1000L, "<Location><Country>UK</Country></Location>");
         final ResultPage<TemporalEntry> resultPage = ResultPage.createPageLimitedList(List.of(entry), null);
 
-        Mockito.when(updatableTemporalStore.find(Mockito.any(ExpressionCriteria.class))).thenReturn(resultPage);
+        // The lookup resolves the store once then queries by DocRef, so both are stubbed.
+        Mockito.when(updatableTemporalStore.resolveStoreByName("my-map"))
+                .thenReturn(new DocRef(SqlTemporalStoreDoc.TYPE, "store-uuid", "my-map"));
+        Mockito.when(updatableTemporalStore.find(
+                        Mockito.any(DocRef.class), Mockito.any(ExpressionCriteria.class)))
+                .thenReturn(resultPage);
 
         final SqlStoreLookupImpl sqlStoreLookup = new SqlStoreLookupImpl(storeProvider);
         sqlStoreLookup.lookup(lookupIdentifier, referenceDataResult);
@@ -111,5 +124,37 @@ class TestSqlStoreLookup {
         final Optional<RefDataValue> optVal = capturedProxy.supplyValue();
         assertThat(optVal).isPresent();
         assertThat(optVal.get()).isInstanceOf(FastInfosetValue.class);
+    }
+
+    /**
+     * The store name is resolved once per pipeline instance, not once per lookup.
+     *
+     * <p>Resolving lists the document store - a database query with no cache behind it - and
+     * permission-checks every row. An XSLT {@code lookup()} runs once per event, so without this
+     * a million-event stream issued a million of those listings.</p>
+     */
+    @Test
+    void testStoreNameIsResolvedOncePerPipelineInstance() {
+        Mockito.when(lookupIdentifier.getPrimaryMapName()).thenReturn("my-map");
+        Mockito.when(lookupIdentifier.getKey()).thenReturn("k1");
+        Mockito.when(lookupIdentifier.getEventTime()).thenReturn(1000L);
+        Mockito.when(storeProvider.get("my-map")).thenReturn(updatableTemporalStore);
+        Mockito.when(updatableTemporalStore.resolveStoreByName("my-map"))
+                .thenReturn(new DocRef(SqlTemporalStoreDoc.TYPE, "store-uuid", "my-map"));
+        Mockito.when(updatableTemporalStore.find(
+                        Mockito.any(DocRef.class), Mockito.any(ExpressionCriteria.class)))
+                .thenReturn(ResultPage.createUnboundedList(new ArrayList<>()));
+
+        final SqlStoreLookupImpl lookup = new SqlStoreLookupImpl(storeProvider);
+        for (int i = 0; i < 25; i++) {
+            lookup.lookup(lookupIdentifier, referenceDataResult);
+        }
+
+        // Resolved once...
+        Mockito.verify(updatableTemporalStore, Mockito.times(1)).resolveStoreByName("my-map");
+        // ...but every lookup still runs its own query, and permission is still checked per call
+        // inside find - a cached DocRef is a cached identity, not cached authorisation.
+        Mockito.verify(updatableTemporalStore, Mockito.times(25))
+                .find(Mockito.any(DocRef.class), Mockito.any(ExpressionCriteria.class));
     }
 }

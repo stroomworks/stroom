@@ -155,6 +155,19 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
     }
 
     @Override
+    public DocRef resolveStoreByName(final String mapName) {
+        return resolveStore(mapName, DocumentPermission.VIEW);
+    }
+
+    @Override
+    public ResultPage<TemporalEntry> find(final DocRef storeDocRef, final ExpressionCriteria criteria) {
+        // The DocRef may have been resolved on an earlier call and cached by the caller, so
+        // re-check permission rather than assuming the earlier grant still holds.
+        checkPermission(storeDocRef, DocumentPermission.VIEW);
+        return dao.find(storeDocRef.getUuid(), criteria);
+    }
+
+    @Override
     public ResultPage<TemporalEntry> find(final ExpressionCriteria criteria) {
         // Resolving the Map term up front both scopes the query to one store and authorises it,
         // which is why the per-row permission filter this method used to apply is gone: every

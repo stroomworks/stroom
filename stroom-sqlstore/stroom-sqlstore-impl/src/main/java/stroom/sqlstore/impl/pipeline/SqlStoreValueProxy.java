@@ -27,12 +27,11 @@ import stroom.pipeline.refdata.store.StringValue;
 import stroom.pipeline.refdata.store.offheapstore.RefDataValueProxyConsumer;
 import stroom.pipeline.refdata.store.offheapstore.TypedByteBuffer;
 import stroom.util.shared.NullSafe;
-import stroom.util.xml.XMLUtil;
+import stroom.util.xml.XMLReaderPool;
 
 import com.sun.xml.fastinfoset.sax.SAXDocumentSerializer;
 import net.sf.saxon.trans.XPathException;
 import org.xml.sax.InputSource;
-import org.xml.sax.XMLReader;
 
 import java.io.ByteArrayOutputStream;
 import java.io.StringReader;
@@ -42,7 +41,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
-import javax.xml.parsers.SAXParser;
 
 public class SqlStoreValueProxy implements RefDataValueProxy {
 
@@ -101,10 +99,14 @@ public class SqlStoreValueProxy implements RefDataValueProxy {
                 serializer.setOutputStream(bos);
                 serializer.startDocument();
 
-                final SAXParser parser = XMLUtil.PARSER_FACTORY.newSAXParser();
-                final XMLReader xmlReader = parser.getXMLReader();
-                xmlReader.setContentHandler(serializer);
-                xmlReader.parse(new InputSource(new StringReader(trimmed)));
+                // Borrowed rather than constructed. A value is resolved per lookup, so this runs
+                // once per event on a reference-data path, and building a parser each time is the
+                // sort of cost a pool exists for.
+                XMLReaderPool.getDefault().use(xmlReader -> {
+                    xmlReader.setContentHandler(serializer);
+                    xmlReader.parse(new InputSource(new StringReader(trimmed)));
+                    return null;
+                });
 
                 serializer.endDocument();
                 return new FastInfosetValue(ByteBuffer.wrap(bos.toByteArray()));

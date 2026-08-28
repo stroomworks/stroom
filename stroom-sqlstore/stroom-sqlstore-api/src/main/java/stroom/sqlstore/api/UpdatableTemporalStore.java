@@ -147,6 +147,36 @@ public interface UpdatableTemporalStore extends HasCrud<TemporalEntry, TemporalE
     ResultPage<TemporalEntry> find(ExpressionCriteria criteria);
 
     /**
+     * Resolves a store name to the document that bears it, considering only documents the caller
+     * may already see.
+     *
+     * <p>For callers that look up the same store repeatedly - an XSLT {@code lookup()} runs once
+     * per event - so the name can be resolved once and the resulting {@link DocRef} passed to
+     * {@link #find(DocRef, ExpressionCriteria)} thereafter. Resolution is not free: it lists the
+     * document store, which is a database query with no cache behind it.</p>
+     *
+     * @param mapName the store name; must not be {@code null} or blank
+     * @return the single matching store document; never {@code null}
+     * @throws stroom.util.shared.PermissionException if no store of that name is available to the
+     *                                                caller
+     * @throws IllegalStateException                  if more than one visible store bears the name
+     */
+    DocRef resolveStoreByName(String mapName);
+
+    /**
+     * As {@link #find(ExpressionCriteria)} but scoped by an already-resolved store document,
+     * skipping the name resolution and its document-store listing.
+     *
+     * <p>Permission is still checked on every call - a cached {@link DocRef} is a cached identity,
+     * not cached authorisation.</p>
+     *
+     * @param storeDocRef the store to query; must not be {@code null}
+     * @param criteria    filter expression and optional pagination settings
+     * @return page of matching entries; never {@code null}
+     */
+    ResultPage<TemporalEntry> find(DocRef storeDocRef, ExpressionCriteria criteria);
+
+    /**
      * Returns the latest-at-time version of every key in the map specified by
      * {@link FetchAtTimeRequest#getMapName()}.
      *
