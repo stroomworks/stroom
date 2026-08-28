@@ -99,4 +99,15 @@ public class FindPathwayCriteria extends BaseCriteria {
     public int hashCode() {
         return Objects.hash(super.hashCode(), dataSourceRef, filter, queryable);
     }
+
+    @Override
+    public String toString() {
+        return "FindPathwayCriteria{" +
+               "pageRequest=" + getPageRequest() +
+               ", sortList=" + getSortList() +
+               ", dataSourceRef=" + dataSourceRef +
+               ", filter=" + filter +
+               ", queryable=" + queryable +
+               '}';
+    }
 }

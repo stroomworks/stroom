@@ -20,6 +20,7 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.util.shared.AbstractBuilder;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -117,6 +118,7 @@ public class PathwayLocks {
     /**
      * @return {@code true} if every property is {@link LockState#INHERIT}, i.e. nothing is set.
      */
+    @JsonIgnore
     public boolean isAllInherit() {
         return value == LockState.INHERIT
                && optional == LockState.INHERIT
