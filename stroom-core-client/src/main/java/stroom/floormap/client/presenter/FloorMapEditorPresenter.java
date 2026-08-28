@@ -940,6 +940,23 @@ public class FloorMapEditorPresenter
                 .exec();
     }
 
+    /** As {@link #mapKeyCriteria} but matching any of {@code keys}. */
+    private ExpressionCriteria mapKeysCriteria(final String mapName, final List<String> keys) {
+        final ExpressionOperator.Builder anyKey = ExpressionOperator.builder()
+                .op(ExpressionOperator.Op.OR);
+        for (final String key : keys) {
+            anyKey.addTerm(ExpressionTerm.builder()
+                    .field("Key").condition(Condition.EQUALS).value(key)
+                    .build());
+        }
+        return new ExpressionCriteria(ExpressionOperator.builder()
+                .addTerm(ExpressionTerm.builder()
+                        .field("Map").condition(Condition.EQUALS).value(mapName)
+                        .build())
+                .addOperator(anyKey.build())
+                .build());
+    }
+
     /**
      * Criteria selecting <em>every</em> shard (all effective times) of a single
      * fact key within a map. Shared by the Time List fetch and the "delete all
@@ -1305,6 +1322,51 @@ public class FloorMapEditorPresenter
                         });
                     }
                 });
+    }
+
+    /**
+     * Stages deletion of every shard of every key in one request.
+     *
+     * <p>The criteria match the map and any of the keys, so a single fetch returns all their
+     * history; the entries are then grouped by key because the model stages a key at a time. Keys
+     * with no entries are still staged, so a fact with nothing stored is not silently skipped.</p>
+     *
+     * <p>Uses an OR of equality terms rather than a single {@code IN}: the {@code IN} handler
+     * splits its value on commas and trims the parts, so any key containing a comma or leading
+     * space would be silently mangled into keys that match the wrong rows - or none. This deletes
+     * data, so it is not the place to assume keys are well behaved.</p>
+     */
+    private void deleteAllShardsForKeys(final String mapName, final List<String> keys) {
+        if (keys.isEmpty()) {
+            return;
+        }
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(mapKeysCriteria(mapName, keys)))
+                .onSuccess(result -> {
+                    final List<TemporalEntry> all = result != null
+                            ? result.getValues()
+                            : new ArrayList<>();
+                    boolean anyStaged = false;
+                    for (final String key : keys) {
+                        final List<TemporalEntry> forKey = new ArrayList<>();
+                        for (final TemporalEntry entry : all) {
+                            if (Objects.equals(key, entry.getKey())) {
+                                forKey.add(entry);
+                            }
+                        }
+                        anyStaged |= model.stageFactDeletionForAllShards(key, forKey);
+                    }
+                    if (anyStaged) {
+                        setDirty(true);
+                    }
+                    applySelection(new ArrayList<>());
+                    loadAtTime(model.getSelectedTime());
+                })
+                .onFailure(error -> AlertEvent.fireError(this,
+                        "Could not load all versions to delete the "
+                        + keys.size() + " selected objects: " + error.getMessage(), null))
+                .taskMonitorFactory(this)
+                .exec();
     }
 
     /**
@@ -1799,9 +1861,24 @@ public class FloorMapEditorPresenter
      * @param originalKey the key of the object to duplicate
      */
     private void onDuplicateObject(final String originalKey) {
+        if (stageDuplicate(originalKey) != null) {
+            loadAtTime(model.getSelectedTime());
+        }
+    }
+
+    /**
+     * Stages one duplicate without reloading, returning the new key, or {@code null} if the
+     * original could not be duplicated.
+     *
+     * <p>Separate from {@link #onDuplicateObject} so a group duplicate can stage every copy and
+     * reload once at the end. Reloading per object re-queried the facts store once per selected
+     * item, so duplicating a selection of two hundred issued two hundred searches to produce one
+     * visible result.</p>
+     */
+    private String stageDuplicate(final String originalKey) {
         final String mapName = getMapName();
         if (mapName == null) {
-            return;
+            return null;
         }
 
         // Duplicate the shard the canvas is showing (active at the scrubber),
@@ -1809,7 +1886,7 @@ public class FloorMapEditorPresenter
         // under a pending time-version.
         final TemporalEntry sourceEntry = model.activeMergedEntryForKey(originalKey);
         if (sourceEntry == null) {
-            return;
+            return null;
         }
 
         try {
@@ -1827,12 +1904,13 @@ public class FloorMapEditorPresenter
             model.stageCreation(newEntry);
             setDirty(true);
             model.setSelectedFactKey(newKey);
-            loadAtTime(model.getSelectedTime());
+            return newKey;
         } catch (final Exception ex) {
             AlertEvent.fireError(
                     this,
                     "Cannot duplicate object: " + ex.getMessage(),
                     null);
+            return null;
         }
     }
 
@@ -1840,11 +1918,23 @@ public class FloorMapEditorPresenter
      * Duplicates every fact in {@code keys} (group duplicate). Each copy is
      * offset by the same grid nudge, so the group keeps its formation.
      *
+     * <p>Every copy is staged first and the facts are reloaded once at the end, rather than once
+     * per object. The new copies are then left selected, so the group can be dragged straight
+     * away.</p>
+     *
      * @param keys the fact keys to duplicate
      */
     private void onDuplicateObjects(final java.util.Collection<String> keys) {
+        final List<String> newKeys = new ArrayList<>();
         for (final String key : keys) {
-            onDuplicateObject(key);
+            final String newKey = stageDuplicate(key);
+            if (newKey != null) {
+                newKeys.add(newKey);
+            }
+        }
+        if (!newKeys.isEmpty()) {
+            applySelection(newKeys);
+            loadAtTime(model.getSelectedTime());
         }
     }
 
@@ -1867,18 +1957,10 @@ public class FloorMapEditorPresenter
                         if (mapName == null) {
                             return;
                         }
-                        // Delete every shard of every selected key (each needs its
-                        // own full-history fetch), then refresh once all are staged.
-                        final List<String> keyList = new ArrayList<>(keys);
-                        final int[] remaining = {keyList.size()};
-                        for (final String key : keyList) {
-                            deleteAllShardsForKey(mapName, key, () -> {
-                                if (--remaining[0] == 0) {
-                                    applySelection(new ArrayList<>());
-                                    loadAtTime(model.getSelectedTime());
-                                }
-                            });
-                        }
+                        // One fetch covering every selected key, rather than one per key
+                        // fired concurrently - deleting 200 desks used to mean 200 parallel
+                        // requests.
+                        deleteAllShardsForKeys(mapName, new ArrayList<>(keys));
                     }
                 });
     }

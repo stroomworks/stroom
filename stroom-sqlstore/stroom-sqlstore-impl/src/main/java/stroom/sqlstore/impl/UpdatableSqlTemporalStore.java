@@ -556,7 +556,13 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         //noinspection unused taskContext
         final Runnable runnable = taskContextFactory.context(searchName, taskContext -> {
             try {
-                dao.search(docRef.getUuid(), criteria, entry -> {
+                // The value column is a longtext; only read it if a coprocessor actually wants it.
+                // The timeline histogram asks for times alone, so this keeps every row's payload
+                // out of the result set for it.
+                final boolean includeValue = fieldIndexWants(
+                        coprocessors, UpdatableTemporalStore.VALUE_FIELD.getFldName());
+
+                dao.search(docRef.getUuid(), criteria, includeValue, entry -> {
                     final Map<String, Object> attributeMap = new HashMap<>();
                     attributeMap.put(UpdatableTemporalStore.MAP_FIELD.getFldName(), entry.getMap());
                     attributeMap.put(UpdatableTemporalStore.KEY_FIELD.getFldName(), entry.getKey());
@@ -599,6 +605,16 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
     public long count(final DocRef docRef) {
         checkPermission(docRef, DocumentPermission.VIEW);
         return dao.count(docRef.getUuid());
+    }
+
+    /** Whether the search's coprocessors reference the named field at all. */
+    private static boolean fieldIndexWants(final CoprocessorsImpl coprocessors, final String fieldName) {
+        for (final String field : coprocessors.getFieldIndex().getFields()) {
+            if (fieldName.equals(field)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateKey(final String key) {

@@ -92,5 +92,20 @@ public interface UpdatableTemporalStoreDao {
 
     long count(String docUuid);
 
-    void search(String docUuid, ExpressionCriteria criteria, Consumer<TemporalEntry> consumer);
+    /**
+     * Streams matching entries to the consumer.
+     *
+     * @param docUuid      UUID of the owning store document
+     * @param criteria     filters and optional query time
+     * @param includeValue whether the {@code value} column is wanted. It is a {@code longtext}, so
+     *                     a caller that only needs keys and times - the timeline histogram, for one
+     *                     - should pass {@code false} rather than have every row's payload read
+     *                     from the database and thrown away. Entries then carry a {@code null}
+     *                     value.
+     * @param consumer     receives each entry
+     */
+    void search(String docUuid,
+                ExpressionCriteria criteria,
+                boolean includeValue,
+                Consumer<TemporalEntry> consumer);
 }
