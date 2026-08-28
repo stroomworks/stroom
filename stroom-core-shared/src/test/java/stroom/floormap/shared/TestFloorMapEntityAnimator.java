@@ -286,4 +286,81 @@ class TestFloorMapEntityAnimator {
         final List<double[]> trail = drawn(drawList).getTrail();
         return trail.get(trail.size() - 1)[2];
     }
+
+    // -----------------------------------------------------------------------
+    // Trail ageing
+    // -----------------------------------------------------------------------
+
+    /**
+     * Trail sections older than the window are dropped, however long the entity keeps moving.
+     *
+     * <p>Regression test: the only things that discarded trail data were a teleport and a fade
+     * that ran to completion, and the fade is cancelled the moment the entity moves again - so an
+     * entity that moved intermittently never lost any. The point cap did not help, bounding
+     * recorded frames rather than elapsed time, so sections minutes old were still drawn.</p>
+     */
+    @Test
+    void testTrailSectionsOlderThanTheWindowAreDropped() {
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(obj("a", 0, 0)));
+        animator.onEventObjects(List.of(obj("a", 100000, 0)));
+
+        // 40s of wall-clock, one point per frame. deltaMs is kept small so the move is still in
+        // flight at the end - timestamp and delta are independent inputs, and this test is about
+        // ageing rather than animation duration.
+        for (int frame = 1; frame <= 400; frame++) {
+            animator.advanceFrame(frame * 100.0, 1.0);
+        }
+        final double nowMs = 400 * 100.0;
+
+        final List<double[]> trail = drawn(animator.buildDrawList(nowMs)).getTrail();
+
+        // 40s of movement, 20s window -> only the recent half survives.
+        assertThat(trail.size())
+                .as("should hold roughly the last 20s of points, not all 40s")
+                .isBetween(180, 220);
+    }
+
+    /** A trail that fits inside the window is untouched by ageing. */
+    @Test
+    void testTrailWithinTheWindowIsNotTrimmed() {
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(obj("a", 0, 0)));
+        animator.onEventObjects(List.of(obj("a", 100000, 0)));
+
+        // 5s of wall-clock, well inside the 20s window, move still in flight.
+        for (int frame = 1; frame <= 50; frame++) {
+            animator.advanceFrame(frame * 100.0, 1.0);
+        }
+
+        final List<double[]> trail = drawn(animator.buildDrawList(50 * 100.0)).getTrail();
+
+        assertThat(trail).hasSize(50);
+    }
+
+    /**
+     * Ageing must keep the trail contiguous and ordered - it drops from the old end only, never
+     * leaving a gap in the middle.
+     */
+    @Test
+    void testAgeingKeepsTheTrailContiguousAndOrdered() {
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(obj("a", 0, 0)));
+        animator.onEventObjects(List.of(obj("a", 100000, 0)));
+
+        for (int frame = 1; frame <= 400; frame++) {
+            animator.advanceFrame(frame * 100.0, 1.0);
+        }
+
+        final List<double[]> trail = drawn(animator.buildDrawList(400 * 100.0)).getTrail();
+
+        for (int i = 1; i < trail.size(); i++) {
+            assertThat(trail.get(i)[0])
+                    .as("x must increase along the trail at index %d", i)
+                    .isGreaterThan(trail.get(i - 1)[0]);
+        }
+        // Alpha still spans the full range across whatever survived.
+        assertThat(trail.get(0)[2]).isCloseTo(0.0, within(TOL));
+        assertThat(trail.get(trail.size() - 1)[2]).isCloseTo(1.0, within(TOL));
+    }
 }

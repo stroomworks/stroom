@@ -50,6 +50,18 @@ public final class FloorMapEntityAnimator {
     /** How long (wall-clock ms) a trail takes to fade out after the entity stops. */
     private static final double TRAIL_FADE_DURATION_MS = 2000.0;
 
+    /**
+     * How much recent movement a trail shows, in scheduler milliseconds.
+     *
+     * <p>Trails are trimmed by age as well as by {@link #TRAIL_MAX_PTS}. Without this the only
+     * things that ever discarded trail data were a teleport and a fade that ran to completion -
+     * and the fade is cancelled the moment the entity moves again, so an entity that moves
+     * intermittently never lost any. The point cap alone is not a substitute: it bounds recorded
+     * frames, not elapsed time, so roughly a hundred movements were retained and sections minutes
+     * old were still drawn.</p>
+     */
+    private static final double TRAIL_MAX_AGE_MS = 20_000.0;
+
     /** {@code true} while the timeline is actively playing. */
     private boolean isPlaying = false;
 
@@ -174,7 +186,7 @@ public final class FloorMapEntityAnimator {
         for (final Map.Entry<String, EntityAnimation> entry : activeAnimations.entrySet()) {
             final EntityAnimation anim = entry.getValue();
             anim.progress = Math.min(1.0, anim.progress + deltaMs / ANIMATION_DURATION_MS);
-            recordTrailPoint(anim.id, anim.currentX(), anim.currentY());
+            recordTrailPoint(anim.id, anim.currentX(), anim.currentY(), timestampMs);
             if (anim.progress >= 1.0) {
                 lastEntityPositions.put(anim.id, new FloorMapObject(
                         anim.id, anim.type, anim.toX, anim.toY));
@@ -398,10 +410,18 @@ public final class FloorMapEntityAnimator {
         obj.setTrail(trailWithAlpha);
     }
 
-    /** Appends {@code (x, y)} to the entity's trail, overwriting the oldest once at the cap. */
-    private void recordTrailPoint(final String id, final double x, final double y) {
+    /**
+     * Appends {@code (x, y)} to the entity's trail, overwriting the oldest once at the cap and
+     * dropping anything older than {@link #TRAIL_MAX_AGE_MS}.
+     */
+    private void recordTrailPoint(final String id,
+                                  final double x,
+                                  final double y,
+                                  final double timestampMs) {
         //noinspection unused k
-        entityTrails.computeIfAbsent(id, k -> new TrailBuffer(TRAIL_MAX_PTS)).add(x, y);
+        final TrailBuffer trail = entityTrails.computeIfAbsent(id, k -> new TrailBuffer(TRAIL_MAX_PTS));
+        trail.add(x, y, timestampMs);
+        trail.dropOlderThan(timestampMs - TRAIL_MAX_AGE_MS);
     }
 
     // -----------------------------------------------------------------------
@@ -419,6 +439,8 @@ public final class FloorMapEntityAnimator {
 
         private final double[] xs;
         private final double[] ys;
+        /** Scheduler timestamp each point was recorded at, for age trimming. */
+        private final double[] ts;
         /** Index of the oldest point once full; otherwise 0. */
         private int head;
         private int size;
@@ -426,17 +448,30 @@ public final class FloorMapEntityAnimator {
         private TrailBuffer(final int capacity) {
             this.xs = new double[capacity];
             this.ys = new double[capacity];
+            this.ts = new double[capacity];
         }
 
-        private void add(final double x, final double y) {
+        private void add(final double x, final double y, final double timestampMs) {
             final int slot = (head + size) % xs.length;
             xs[slot] = x;
             ys[slot] = y;
+            ts[slot] = timestampMs;
             if (size < xs.length) {
                 size++;
             } else {
                 // Full: the write consumed the oldest slot, so the oldest is now the next one.
                 head = (head + 1) % xs.length;
+            }
+        }
+
+        /**
+         * Drops points recorded before {@code cutoffMs}. Points are appended in time order, so
+         * this only ever walks the head forward and stops at the first point still in range.
+         */
+        private void dropOlderThan(final double cutoffMs) {
+            while (size > 0 && ts[head] < cutoffMs) {
+                head = (head + 1) % ts.length;
+                size--;
             }
         }
 
