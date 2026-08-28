@@ -187,6 +187,16 @@ public class FloorMapCanvasViewImpl
     private static final double CAPTION_HEIGHT_PX = 14;
 
     /**
+     * How many constant-opacity bands a movement trail is drawn as.
+     *
+     * <p>SVG cannot vary stroke opacity along one path, so the animator's per-point alpha ramp is
+     * approximated by splitting the trail into this many sub-paths, each drawn at the opacity of
+     * its newest point. Fixed rather than proportional, so a long trail costs no more elements
+     * than a short one; consecutive bands share an endpoint so there is no seam between them.</p>
+     */
+    private static final int TRAIL_BANDS = 12;
+
+    /**
      * Caption priorities — <strong>lower is placed first</strong> and so survives
      * crowding. Clusters sit between the tracked entity and lone entities, and a
      * bigger cluster outranks a smaller one because its caption speaks for more
@@ -1892,37 +1902,53 @@ public class FloorMapCanvasViewImpl
      * but if it is the <em>tracked</em> one its trail is still worth drawing. Ten
      * trails converging on a spot is the mess clustering removes; the one belonging
      * to the entity the user is following is the reason they are watching.</p>
+     *
+     * <p>Drawn as {@link #TRAIL_BANDS} sub-paths rather than one, because SVG has no way to vary
+     * stroke opacity along a single path. Previously the whole trail took one opacity - the
+     * maximum over its points - which discarded the animator's alpha ramp entirely and drew the
+     * trail as a uniform block that faded all at once, rather than tapering off behind the
+     * entity.</p>
      */
     private void appendEventTrail(final HtmlBuilder parent,
                                   final FloorMapObject obj,
                                   final List<TypeStyle> typeStyles) {
-        if (obj.getTrail() != null && obj.getTrail().size() >= 2) {
-            final List<double[]> trail = obj.getTrail();
+        final List<double[]> trail = obj.getTrail();
+        if (trail == null || trail.size() < 2) {
+            return;
+        }
+        final String stroke = TypeStyle.colourForType(obj.getType(), typeStyles);
+        final int lastIndex = trail.size() - 1;
+        // One segment per band at least; a short trail simply gets fewer bands.
+        final int bands = Math.min(TRAIL_BANDS, lastIndex);
+
+        for (int band = 0; band < bands; band++) {
+            final int from = band * lastIndex / bands;
+            final int to = (band + 1) * lastIndex / bands;
+            // The band takes the opacity of its newest point, so the ramp runs oldest to newest.
+            // Alpha already carries the animator's fade factor, so a fading trail dims as a whole
+            // while keeping its taper.
+            final double opacity = trail.get(to)[2];
+            if (opacity <= 0.0) {
+                continue;
+            }
             final StringBuilder pathD = new StringBuilder();
-            double maxAlpha = 0.0;
-            for (int i = 0; i < trail.size(); i++) {
+            for (int i = from; i <= to; i++) {
                 final double[] pt = trail.get(i);
-                if (pt[2] > maxAlpha) {
-                    maxAlpha = pt[2];
-                }
-                if (i == 0) {
-                    pathD.append("M").append(pt[0]).append(",").append(pt[1]);
-                } else {
-                    pathD.append("L").append(pt[0]).append(",").append(pt[1]);
-                }
+                pathD.append(i == from
+                                ? "M"
+                                : "L")
+                        .append(pt[0]).append(",").append(pt[1]);
             }
-            if (maxAlpha > 0.0) {
-                parent.elem(SafeHtmlUtil.from("path"),
-                    new Attribute("d", pathD.toString()),
-                    new Attribute("fill", "none"),
-                    new Attribute("stroke", TypeStyle.colourForType(obj.getType(), typeStyles)),
-                    new Attribute("stroke-width", "6"),
-                    new Attribute("stroke-linecap", "round"),
-                    new Attribute("stroke-linejoin", "round"),
-                    new Attribute("vector-effect", "non-scaling-stroke"),
-                    new Attribute("opacity", String.valueOf(maxAlpha)),
-                    new Attribute("pointer-events", "none"));
-            }
+            parent.elem(SafeHtmlUtil.from("path"),
+                new Attribute("d", pathD.toString()),
+                new Attribute("fill", "none"),
+                new Attribute("stroke", stroke),
+                new Attribute("stroke-width", "6"),
+                new Attribute("stroke-linecap", "round"),
+                new Attribute("stroke-linejoin", "round"),
+                new Attribute("vector-effect", "non-scaling-stroke"),
+                new Attribute("opacity", String.valueOf(opacity)),
+                new Attribute("pointer-events", "none"));
         }
     }
 
