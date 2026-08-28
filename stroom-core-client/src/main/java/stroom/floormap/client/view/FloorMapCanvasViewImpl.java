@@ -192,7 +192,13 @@ public class FloorMapCanvasViewImpl
      * <p>SVG cannot vary stroke opacity along one path, so the animator's per-point alpha ramp is
      * approximated by splitting the trail into this many sub-paths, each drawn at the opacity of
      * its newest point. Fixed rather than proportional, so a long trail costs no more elements
-     * than a short one; consecutive bands share an endpoint so there is no seam between them.</p>
+     * than a short one; consecutive bands share an endpoint so there is no gap between them.</p>
+     *
+     * <p>Bands are drawn with butt caps rather than round ones. A round cap extends half the
+     * stroke width past the endpoint, so where two bands met their caps overlapped and the two
+     * semi-transparent strokes composited into a bright blob - one at every band boundary. Butt
+     * caps stop exactly at the shared vertex, so the bands abut without painting the same pixels
+     * twice. Corners <em>within</em> a band still round off via {@code stroke-linejoin}.</p>
      */
     private static final int TRAIL_BANDS = 12;
 
@@ -1944,7 +1950,9 @@ public class FloorMapCanvasViewImpl
                 new Attribute("fill", "none"),
                 new Attribute("stroke", stroke),
                 new Attribute("stroke-width", "6"),
-                new Attribute("stroke-linecap", "round"),
+                // Butt, not round - see TRAIL_BANDS. Round caps overlap at every band boundary
+                // and composite into a bright spot.
+                new Attribute("stroke-linecap", "butt"),
                 new Attribute("stroke-linejoin", "round"),
                 new Attribute("vector-effect", "non-scaling-stroke"),
                 new Attribute("opacity", String.valueOf(opacity)),
