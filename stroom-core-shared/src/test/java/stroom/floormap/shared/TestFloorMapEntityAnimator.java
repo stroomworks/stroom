@@ -169,9 +169,9 @@ class TestFloorMapEntityAnimator {
         return drawn(animator.buildDrawList(0)).getTrail();
     }
 
-    /** A short trail is passed through point-for-point - decimation must not kick in early. */
+    /** A short trail is passed through point-for-point. */
     @Test
-    void testShortTrailIsNotDecimated() {
+    void testShortTrailIsPassedThroughWhole() {
         final List<double[]> trail = trailAfterFrames(50);
 
         assertThat(trail).hasSize(50);
@@ -181,41 +181,55 @@ class TestFloorMapEntityAnimator {
     }
 
     /**
-     * Past the render cap the trail is decimated, not truncated: the point count is bounded but
-     * the oldest point is still the start of the journey, so the trail keeps its full extent.
+     * Every recorded point reaches the renderer, however long the trail.
+     *
+     * <p>Regression test for a decimation pass that sampled every Nth point once a trail passed a
+     * fixed budget. Uniform striding drops whichever points fall between samples, and turning
+     * points are exactly the ones carrying the shape - so the drawn polyline cut across corners
+     * rather than following the route the entity took. Sampling by position cannot preserve shape;
+     * only a shape-aware reduction could.</p>
      */
     @Test
-    void testLongTrailIsDecimatedNotTruncated() {
-        final int frames = 2000;
-        final List<double[]> trail = trailAfterFrames(frames);
+    void testLongTrailKeepsEveryPoint() {
+        // A point is recorded per frame while the animation is in flight, so stop short of
+        // ANIMATION_DURATION_MS: the move is still running, no fade has started, and the trail is
+        // still well past the 400-point budget the removed decimation used - which is the point.
+        final List<double[]> trail = trailAfterFrames(700);
 
-        // Bounded well below the number of recorded points...
-        assertThat(trail.size()).isLessThanOrEqualTo(401);
-        assertThat(trail.size()).isGreaterThan(100);
-        // ...but still spans the whole journey rather than just its tail.
-        final double firstX = trail.get(0)[0];
-        final double lastX = trail.get(trail.size() - 1)[0];
-        assertThat(firstX).isLessThan(50.0);
-        assertThat(lastX).isGreaterThan(firstX * 10);
-        // Alpha still runs the full 0 -> 1 range across the decimated points.
+        assertThat(trail.size())
+                .as("must exceed the old decimation budget, or the test proves nothing")
+                .isGreaterThan(400);
+        // Consecutive along a straight run: nothing sampled out.
+        for (int i = 1; i < trail.size(); i++) {
+            assertThat(trail.get(i)[0]).isGreaterThan(trail.get(i - 1)[0]);
+        }
         assertThat(trail.get(0)[2]).isCloseTo(0.0, within(TOL));
         assertThat(trail.get(trail.size() - 1)[2]).isCloseTo(1.0, within(TOL));
     }
 
     /**
-     * The newest recorded point is the entity's current position, so it must always survive
-     * decimation - otherwise the trail visibly lags behind the glyph it belongs to.
+     * A direction change must survive into the rendered trail. Drives the entity right, then up,
+     * and asserts the turning point itself is present rather than being cut across.
      */
     @Test
-    void testDecimationAlwaysKeepsTheNewestPoint() {
-        // 999 is deliberately not a multiple of the stride, so the newest point is only present
-        // if it is explicitly appended.
-        final List<double[]> trail = trailAfterFrames(999);
-        final double[] newest = trail.get(trail.size() - 1);
+    void testTurningPointSurvivesIntoTheRenderedTrail() {
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(obj("a", 0, 0)));
+        animator.onEventObjects(List.of(obj("a", 500, 0)));      // leg 1: rightwards
+        for (int i = 1; i <= 600; i++) {
+            animator.advanceFrame(i, 1);
+        }
+        final double[] corner = animator.positionOf("a");
+        animator.onEventObjects(List.of(obj("a", corner[0], 500)));  // leg 2: upwards
+        for (int i = 601; i <= 1200; i++) {
+            animator.advanceFrame(i, 1);
+        }
 
-        assertThat(newest[2]).isCloseTo(1.0, within(TOL));
-        assertThat(newest[0]).isEqualTo(animator.positionOf("a")[0]);
-        assertThat(newest[1]).isEqualTo(animator.positionOf("a")[1]);
+        final List<double[]> trail = drawn(animator.buildDrawList(0)).getTrail();
+
+        assertThat(trail)
+                .as("the turning point must be in the trail, not cut across")
+                .anyMatch(p -> Math.abs(p[0] - corner[0]) < 1e-6 && Math.abs(p[1] - corner[1]) < 1e-6);
     }
 
     /**
@@ -234,5 +248,42 @@ class TestFloorMapEntityAnimator {
                     .as("alpha at %d must not decrease", i)
                     .isGreaterThanOrEqualTo(trail.get(i - 1)[2]);
         }
+    }
+
+    /**
+     * A redraw that has no scheduler timestamp of its own must still see the fade.
+     *
+     * <p>Regression test: {@code buildDrawList} is called both from the animation loop, which has
+     * a timestamp, and from an ordinary redraw - pan, zoom, query refresh - which passes zero. The
+     * fade begins when an animation <em>finishes</em>, so a trail is routinely mid-fade with
+     * nothing animating. Treating zero as "no fade" drew that trail at full opacity for the frame,
+     * and the next loop tick restored the faded value, which reads as the trail flickering
+     * bright.</p>
+     */
+    @Test
+    void testFadeIsAppliedWhenTheCallerHasNoTimestamp() {
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(obj("a", 0, 0)));
+        animator.onEventObjects(List.of(obj("a", 10, 0)));
+        // Finish the move, which starts the fade at t=DURATION_MS.
+        animator.advanceFrame(DURATION_MS, DURATION_MS);
+        // Advance to half way through the 2000ms fade without completing it.
+        animator.advanceFrame(DURATION_MS + 1000, 1000);
+
+        final double alphaFromLoop = newestAlpha(animator.buildDrawList(DURATION_MS + 1000));
+        final double alphaFromRedraw = newestAlpha(animator.buildDrawList(0));
+
+        assertThat(alphaFromLoop)
+                .as("half way through the fade")
+                .isCloseTo(0.5, within(0.01));
+        assertThat(alphaFromRedraw)
+                .as("a timestamp-less redraw must age the fade the same way, not reset it to 1.0")
+                .isCloseTo(alphaFromLoop, within(TOL));
+    }
+
+    /** Alpha of the newest trail point of the single drawn entity. */
+    private static double newestAlpha(final List<FloorMapObject> drawList) {
+        final List<double[]> trail = drawn(drawList).getTrail();
+        return trail.get(trail.size() - 1)[2];
     }
 }

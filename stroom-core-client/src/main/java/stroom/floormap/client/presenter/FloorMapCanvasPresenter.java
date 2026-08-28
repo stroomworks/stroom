@@ -1632,7 +1632,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     private void redraw() {
         final List<FloorMapObject> overlay =
-                buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
+                buildAnimatedDrawList(/* no scheduler timestamp here; the animator ages the fade */ 0.0);
         final List<Fact> drawFacts =
                 FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles);
         final List<FloorMapObject> drawEvents = visibleEvents(overlay);

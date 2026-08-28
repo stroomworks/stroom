@@ -46,16 +46,6 @@ public final class FloorMapEntityAnimator {
     /** Maximum recorded trail points per entity (bounds memory during long playback). */
     private static final int TRAIL_MAX_PTS = 5000;
 
-    /**
-     * Maximum trail points handed to the renderer per entity per frame.
-     *
-     * <p>The recorded trail is decimated to this many points rather than truncated, so the trail
-     * keeps its full extent in time and only loses resolution along it - a 6px-wide path drawn
-     * through 5000 points is indistinguishable from one drawn through 400, but costs the renderer
-     * twelve times as much. Every frame rebuilds this list for every animating entity, so it is
-     * the dominant per-frame allocation on the canvas.</p>
-     */
-    private static final int TRAIL_RENDER_MAX_PTS = 400;
 
     /** How long (wall-clock ms) a trail takes to fade out after the entity stops. */
     private static final double TRAIL_FADE_DURATION_MS = 2000.0;
@@ -82,6 +72,23 @@ public final class FloorMapEntityAnimator {
     /** Timestamp each entity's last animation finished, initiating the trail fade. */
     private final Map<String, Double> trailFadeStartTimes = new HashMap<>();
 
+    /**
+     * The most recent timestamp {@link #advanceFrame} was given, so a draw that has no timestamp
+     * of its own can still age a fade correctly.
+     *
+     * <p>{@link #buildDrawList(double)} is called both from the animation loop, which has a
+     * scheduler timestamp, and from an ordinary redraw - a pan, a zoom, a query refresh - which
+     * does not and passes zero. A trail can be part-way through its fade while nothing is
+     * animating, because the fade starts exactly when an animation <em>finishes</em>. Treating
+     * zero as "no fade" therefore drew a fading trail at full opacity for that frame, and the
+     * next loop tick put it back, which reads as the trail flickering bright.</p>
+     *
+     * <p>Timestamps come from the animation scheduler, so they cannot be substituted with a
+     * wall-clock reading here - the epochs differ. Remembering the last one keeps every fade
+     * calculation in the scheduler's own time base, at worst one frame stale.</p>
+     */
+    private double lastFrameTimestampMs;
+
     /** The current non-animated event overlay (set by {@link #onEventObjects}). */
     private List<FloorMapObject> eventObjects = new ArrayList<>();
 
@@ -100,6 +107,7 @@ public final class FloorMapEntityAnimator {
         activeAnimations.clear();
         entityTrails.clear();
         trailFadeStartTimes.clear();
+        lastFrameTimestampMs = 0;
         pendingTeleport = true;
     }
 
@@ -161,6 +169,7 @@ public final class FloorMapEntityAnimator {
      *         should keep the loop running)
      */
     public boolean advanceFrame(final double timestampMs, final double deltaMs) {
+        lastFrameTimestampMs = timestampMs;
         final List<String> finished = new ArrayList<>();
         for (final Map.Entry<String, EntityAnimation> entry : activeAnimations.entrySet()) {
             final EntityAnimation anim = entry.getValue();
@@ -200,8 +209,10 @@ public final class FloorMapEntityAnimator {
      * its last position, with trail data attached. Does <em>not</em> decorate
      * with image twins — that is a rendering concern the caller handles.
      *
-     * @param nowMs current scheduler timestamp (ms) for trail alpha; {@code 0}
-     *              when the loop is not running (no fade applied)
+     * @param nowMs current scheduler timestamp (ms) for trail alpha, or {@code 0} if the caller
+     *              has none - an ordinary redraw rather than an animation frame. Zero does not
+     *              mean "no fade": the last frame's timestamp is used instead, because a trail can
+     *              be mid-fade while nothing is animating.
      * @return the overlay entities to draw
      */
     public List<FloorMapObject> buildDrawList(final double nowMs) {
@@ -358,28 +369,31 @@ public final class FloorMapEntityAnimator {
         }
         double fadeFactor = 1.0;
         final Double fadeStart = trailFadeStartTimes.get(id);
-        if (fadeStart != null && nowMs > 0) {
-            final double elapsed = nowMs - fadeStart;
+        // A redraw outside the animation loop passes 0; fall back to the last frame's timestamp so
+        // the fade is aged consistently whoever is drawing. See lastFrameTimestampMs.
+        final double effectiveNowMs = nowMs > 0
+                ? nowMs
+                : lastFrameTimestampMs;
+        if (fadeStart != null && effectiveNowMs > 0) {
+            final double elapsed = effectiveNowMs - fadeStart;
             fadeFactor = Math.max(0.0, 1.0 - elapsed / TRAIL_FADE_DURATION_MS);
         }
         if (fadeFactor <= 0.0) {
             return;
         }
+        // Every recorded point is rendered. An earlier version decimated to a fixed budget on the
+        // grounds that a 6px path through 400 points looks like one through 5000 - true of a
+        // straight run, false of a winding one. Uniform striding skips whichever points happen to
+        // fall between samples, and turning points are exactly the ones that carry the shape: on a
+        // 12-leg path decimated 13:1, ten of the twelve corners were dropped and the trail cut
+        // across them instead of following the route the entity took. Any future decimation has to
+        // be shape-preserving (Ramer-Douglas-Peucker or similar), not positional.
         final int size = raw.size();
-        // Decimate rather than truncate, so the trail keeps its extent. Alpha stays a function
-        // of the point's position in the *recorded* trail, so the gradient is unchanged by the
-        // stride.
-        final int stride = Math.max(1, (size + TRAIL_RENDER_MAX_PTS - 1) / TRAIL_RENDER_MAX_PTS);
         final int last = size - 1;
-        final List<double[]> trailWithAlpha = new ArrayList<>(size / stride + 1);
-        for (int i = 0; i < size; i += stride) {
+        final List<double[]> trailWithAlpha = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
             final double alpha = (size == 1 ? 1.0 : (double) i / last) * fadeFactor;
             trailWithAlpha.add(new double[]{raw.pointX(i), raw.pointY(i), alpha});
-        }
-        // The newest point is the entity's current position, so it must always be present or the
-        // trail visibly lags behind the glyph.
-        if (last % stride != 0) {
-            trailWithAlpha.add(new double[]{raw.pointX(last), raw.pointY(last), fadeFactor});
         }
         obj.setTrail(trailWithAlpha);
     }
