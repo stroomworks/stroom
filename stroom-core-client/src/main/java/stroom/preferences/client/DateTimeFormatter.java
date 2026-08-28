@@ -248,16 +248,10 @@ public class DateTimeFormatter {
 
                 final UserTimeZone timeZone = userPreferences.getTimeZone();
                 if (timeZone != null) {
-                    if (timeZone.getUse() != null) {
-                        use = timeZone.getUse();
-                    }
+                    use = timeZone.getUse();
 
-                    if (timeZone.getOffsetHours() != null) {
-                        offsetMinutes += timeZone.getOffsetHours() * 60;
-                    }
-                    if (timeZone.getOffsetMinutes() != null) {
-                        offsetMinutes += timeZone.getOffsetMinutes();
-                    }
+                    offsetMinutes += timeZone.getOffsetHours() * 60;
+                    offsetMinutes += timeZone.getOffsetMinutes();
 
                     zoneId = timeZone.getId();
                 }

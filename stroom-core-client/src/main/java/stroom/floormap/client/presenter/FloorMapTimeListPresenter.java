@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.shared.FloorMapEditorModel;
@@ -106,6 +107,12 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     @Override
     protected void onBind() {
         super.onBind();
+
+        // The Effective Time column is rendered from the user's date/time
+        // preference, so a change to it has to redraw the rows already shown.
+        //noinspection unused e
+        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(),
+                e -> dataGrid.redraw()));
 
         //noinspection unused
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {

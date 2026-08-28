@@ -392,6 +392,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                     e::reset);
                             return;
                         }
+                        // Kept primitive: TemporalEntry.getEffectiveTimeMs() is a Long, so
+                        // comparing it against a Long below would ask whether the two are
+                        // the same object rather than the same instant.
                         final long time = getView().getEffectiveTime();
                         if (askMoveOrClone && entry != null && entry.getEffectiveTimeMs() != time) {
                             // Effective time changed — ask whether to move or clone.
@@ -758,6 +761,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
          * stored value the picker cannot represent survives unrelated edits.
          */
         boolean isFillDirty();
+
 
         /** Returns the area fill opacity, or {@code null} when unset (default). */
         Double getOpacity();

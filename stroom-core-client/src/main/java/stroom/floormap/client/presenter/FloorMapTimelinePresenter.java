@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
 import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
@@ -186,8 +187,15 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         // does — they hold the colour they were painted with until something
         // repaints them. Same pattern the dashboard's visualisations use.
         //noinspection unused e
-        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(),
-                e -> getView().redrawHistogram()));
+        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(), e -> {
+            getView().redrawHistogram();
+            // Every time on the strip is rendered from the user's date/time
+            // preference, so a change to it has to be re-applied to the ones
+            // already on screen — the axis labels and the scrubber pill — rather
+            // than waiting for the next thing that happens to move the time.
+            updateDateLabels();
+            updateProgress();
+        }));
 
         // Forward date changes from the settings popup back to the timeline.
         //noinspection unused e
@@ -201,6 +209,18 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         }));
 
         getView().setPlayPauseHandler(() -> {
+            // applyRange and setTimeRange both refuse an unusable range, so one can
+            // normally never be in force here. The exception is a timeline that has
+            // never been given a usable one — both boundaries still 0 — where play
+            // would appear to do nothing at all. Say so rather than looking broken.
+            if (!playing && !FloorMapPlaybackRange.isUsable(startTime, endTime)) {
+                AlertEvent.fireWarn(this,
+                        "The timeline has no range to play. Set a start and end time "
+                        + "in the timeline settings, or use Show All to fit the range "
+                        + "to the data.",
+                        null);
+                return;
+            }
             playing = !playing;
             if (playing) {
                 getView().setPlayPausePreset(PAUSE_PRESET);
@@ -516,6 +536,13 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
      * canvas's accessible summary and its spoken time announcements have to read
      * the same as the labels under the bar, or a screen-reader user and a sighted
      * user comparing notes are looking at two different clocks.</p>
+     *
+     * <p>Rendered through the user's own date/time preference, like every other
+     * time in Stroom — in the shortened form that drops the seconds and the
+     * zone, since the axis and the scrubber pill have no room for them. Field
+     * order, separators and the 12/24-hour choice are the user's throughout, so
+     * this is the same format as the rest of the application in a narrower
+     * space, not a second format of its own.</p>
      */
     public String formatTime(final long millis) {
         if (millis <= 0) {

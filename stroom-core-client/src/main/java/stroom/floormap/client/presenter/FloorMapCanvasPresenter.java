@@ -1101,7 +1101,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             } else if (finished == Gesture.MOVING_VERTEX) {
                 // Persist the edited/inserted vertex (skip a pure click that
                 // didn't move an existing vertex, and locked layers).
+                //
+                // The selection check matters: it is what an abandoned edit is
+                // recognised by everywhere else on this path, and without it a
+                // vertex drag that was cancelled — or whose area was deselected
+                // while the button was held — still wrote its new geometry here.
                 if ((moved || vertexInserted) && editingAreaKey != null
+                        && selectedObjectIds.contains(editingAreaKey)
                         && workingVertices != null && workingVertices.length >= AREA_MIN_VERTICES
                         && geometryHandler != null
                         && !lockedKeys.contains(editingAreaKey)) {
@@ -1305,16 +1311,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // A second Escape then clears the selection, as before.
             if (editMode
                     && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
-                    && (gesture == Gesture.MOVING
-                        || gesture == Gesture.SCALING
-                        || gesture == Gesture.ROTATING
-                        || gesture == Gesture.MOVING_VERTEX)) {
+                    && isAbortableGesture(gesture)) {
                 abortGesture();
                 // The abandoned preview - a displaced object, or a dragged vertex - is
                 // still painted until something repaints.
                 redraw();
                 return;
             }
+
             if (editMode
                     && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
                     && !selectedObjectIds.isEmpty()) {
@@ -2089,6 +2093,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * meaningfully scaled or rotated — an image fact or an area (which has real
      * geometry). Bare point glyphs are drawn at a fixed screen size, so
      * transforming them has no visible effect; their handles are greyed and inert.
+     *
+     * <p>Facts on a <strong>locked</strong> layer never count. The mouseup that
+     * ends a scale/rotate filters them out before persisting, so a locked-only
+     * selection would otherwise draw live handles that follow the pointer through
+     * the whole gesture and then snap back on release — which reads as a glitch
+     * rather than as "locked". Excluding them here means no handles are offered
+     * and {@link #beginHandleGesture} is never entered, so the vertex handles of a
+     * locked area go with them.</p>
      */
     private boolean selectionTransformable() {
         for (final Fact fact : facts) {
@@ -2301,6 +2313,24 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         workingVertices = null;
         editingVertexIndex = -1;
         vertexInserted = false;
+    }
+
+    /**
+     * The gestures Escape can abandon: the editing gestures, whose only other
+     * ending is the mouseup that commits them.
+     *
+     * <p>Panning is not one of them — it changes nothing that needs undoing, and
+     * Escape during a pan is wanted for its other job of clearing the selection.
+     * The two modal gestures (drawing an area, measuring a scale) have their own
+     * Escape handling earlier in the key handler, since leaving them also means
+     * leaving the mode.</p>
+     */
+    private static boolean isAbortableGesture(final Gesture gesture) {
+        return gesture == Gesture.MOVING
+               || gesture == Gesture.SCALING
+               || gesture == Gesture.ROTATING
+               || gesture == Gesture.MOVING_VERTEX
+               || gesture == Gesture.MARQUEE;
     }
 
     /**

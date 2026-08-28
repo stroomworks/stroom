@@ -37,6 +37,7 @@ public class TestDateTimeFormatter {
                 .convertJavaDateTimePattern("E, dd MMM yyyy HH:mm:ss Z"))
                 .isEqualTo("ddd, DD MMM YYYY HH:mm:ss Z");
     }
+
     // ------------------------------------------------------------------------
     // toCompactPattern
     //
