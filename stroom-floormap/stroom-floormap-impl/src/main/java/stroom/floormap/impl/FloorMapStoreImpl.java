@@ -21,12 +21,22 @@ import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
+import stroom.document.asset.impl.DocumentAssetService;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.importexport.api.ImportExportAsset;
+import stroom.importexport.api.ImportExportDocument;
+import stroom.importexport.shared.ImportSettings;
+import stroom.importexport.shared.ImportState;
 import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
+import stroom.util.shared.Message;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
+import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -36,6 +46,14 @@ import java.util.Set;
  * This class adds floor-map specific behaviour: it materialises newly created documents as a
  * processing user, copies the document when duplicating, and remaps the facts/events store
  * references it depends on.
+ *
+ * <p>Documents of this type can own uploaded assets (images used as fact graphics and map
+ * backgrounds), held by the {@code stroom.document.asset} subsystem in its own table keyed on the
+ * owning document's UUID rather than inside the serialised document. Nothing in
+ * {@link AbstractDocumentStore} knows about them, so every lifecycle operation that should carry
+ * them has to say so explicitly — export, import, copy and delete are all overridden below for
+ * that reason alone. This mirrors {@code VisualisationStoreImpl}, the other owner of assets;
+ * the two should be changed together.</p>
  *
  * <p>The duplicate is a genuine copy rather than an aliasing one: {@code FloorMapDoc.copy()} copies
  * the document's {@code valueSchema}, {@code typeStyles} and {@code groups} collections, and their
@@ -48,11 +66,13 @@ import java.util.Set;
 class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements FloorMapStore {
 
     private final SecurityContext securityContext;
+    private final DocumentAssetService documentAssetService;
 
     @Inject
     FloorMapStoreImpl(final StoreFactory storeFactory,
                       final FloorMapSerialiser serialiser,
-                      final SecurityContext securityContext) {
+                      final SecurityContext securityContext,
+                      final DocumentAssetService documentAssetService) {
         super(storeFactory,
                 securityContext,
                 serialiser,
@@ -60,6 +80,7 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
                 FloorMapDoc::builder,
                 FloorMapDoc::copy);
         this.securityContext = securityContext;
+        this.documentAssetService = documentAssetService;
     }
 
     @Override
@@ -80,9 +101,15 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
                                final String name,
                                final boolean makeNameUnique,
                                final Set<String> existingNames) {
+        // Copy reads the source document, so it needs VIEW on it. This override reaches
+        // getStore() directly, which is the unchecked handle, so the check the base class applies
+        // has to be applied here. ExplorerServiceImpl guards its own copy path with OWNER, so this
+        // is defence in depth rather than the only barrier - but the store is reachable by other
+        // callers, and the base class does not stop checking just because someone else also does.
+        checkDocumentPermission(docRef, DocumentPermission.VIEW);
         final String newName = UniqueNameUtil.getCopyName(name, makeNameUnique, existingNames);
         final FloorMapDoc document = getStore().readDocument(docRef);
-        return getStore().createDocument(newName,
+        final DocRef copyDocRef = getStore().createDocument(newName,
                 (uuid, docName, version, createTime, updateTime, createUser, updateUser) ->
                         document.copy()
                                 .uuid(uuid)
@@ -93,6 +120,77 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
                                 .createUser(createUser)
                                 .updateUser(updateUser)
                                 .build());
+        // The document's assets live outside the document, so copy() does not bring them and a
+        // duplicated floor map would render with every graphic and background missing.
+        try {
+            documentAssetService.copyAssetsToDoc(docRef, copyDocRef);
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+        return copyDocRef;
+    }
+
+    /**
+     * Deletes the document and the assets it owns.
+     *
+     * <p>Without this the rows in the asset table outlive the document that owned them: nothing
+     * else is keyed to find them, so the blobs are unreachable and permanent.</p>
+     */
+    @Override
+    public void deleteDocument(final DocRef docRef) {
+        super.deleteDocument(docRef);
+        try {
+            documentAssetService.deleteAssetsForDoc(docRef);
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Imports the document, then restores the assets that travelled with it.
+     *
+     * <p>The assets arrive as <em>path</em> assets — sub-paths beside the document's own entries —
+     * rather than extension assets, because their names are user-chosen file names and there is no
+     * fixed set of them.</p>
+     */
+    @Override
+    public DocRef importDocument(final DocRef docRef,
+                                 final ImportExportDocument importExportDocument,
+                                 final ImportState importState,
+                                 final ImportSettings importSettings) {
+        final DocRef storeDocRef = getStore()
+                .importDocument(docRef, importExportDocument, importState, importSettings);
+        try {
+            documentAssetService.setAssetsFromImport(docRef, importExportDocument.getPathAssets());
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+        return storeDocRef;
+    }
+
+    /**
+     * Exports the document together with the assets it owns.
+     *
+     * <p>Assets are not part of the serialised document, so a content pack built without this
+     * carries a floor map whose graphics and backgrounds are all absent on import — and it fails
+     * on the importing system, silently, rather than at export time where it could be noticed.</p>
+     */
+    @Override
+    public ImportExportDocument exportDocument(final DocRef docRef,
+                                               final boolean omitAuditFields,
+                                               final List<Message> messageList) {
+        final ImportExportDocument importExportDocument = getStore()
+                .exportDocument(docRef, omitAuditFields, messageList);
+        try {
+            final Collection<ImportExportAsset> assets =
+                    documentAssetService.getAssetsForExport(docRef);
+            for (final ImportExportAsset asset : assets) {
+                importExportDocument.addPathAsset(asset);
+            }
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+        return importExportDocument;
     }
 
     @Override
