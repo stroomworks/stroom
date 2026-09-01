@@ -55,6 +55,15 @@ class TestSqlStoreFilter {
     @Mock
     private UpdatableTemporalStore updatableTemporalStore;
 
+    /**
+     * Mirrors {@code SqlStoreFilter.WRITE_BATCH_SIZE}, which is private.
+     *
+     * <p>If that constant changes and this one does not, the batch-boundary tests below stop
+     * testing the boundary — they keep passing while silently exercising the under-threshold
+     * path instead. {@link #testWriteBatchSizeStillMatchesTheFilter} guards against that.</p>
+     */
+    private static final int WRITE_BATCH_SIZE = 1_000;
+
     private List<Severity> loggedSeverities;
     private List<String> loggedMessages;
     private ErrorReceiverProxy errorReceiverProxy;
@@ -292,6 +301,180 @@ class TestSqlStoreFilter {
         // Order is preserved, so a later entry for the same key still wins.
         assertThat(ops.get(0).getEntry().getKey()).isEqualTo("k0");
         assertThat(ops.get(entries - 1).getEntry().getKey()).isEqualTo("k" + (entries - 1));
+    }
+
+    /**
+     * The mirrored {@link #WRITE_BATCH_SIZE} must still equal the filter's own constant.
+     *
+     * <p>Without this, retuning the batch size in {@code SqlStoreFilter} would leave the boundary
+     * tests green while they quietly stopped crossing a boundary at all. Reflection is the price
+     * of keeping the production constant private.</p>
+     */
+    @Test
+    void testWriteBatchSizeStillMatchesTheFilter() throws Exception {
+        final java.lang.reflect.Field field =
+                SqlStoreFilter.class.getDeclaredField("WRITE_BATCH_SIZE");
+        field.setAccessible(true);
+        assertThat(field.getInt(null))
+                .as("TestSqlStoreFilter.WRITE_BATCH_SIZE mirrors SqlStoreFilter.WRITE_BATCH_SIZE; "
+                    + "update the test constant to match")
+                .isEqualTo(WRITE_BATCH_SIZE);
+    }
+
+    /**
+     * Crossing the flush threshold must not lose, duplicate or reorder anything.
+     *
+     * <p>{@code testEntriesAreWrittenAsOneBatch} deliberately stays under the threshold, so it
+     * proves only that entries are not written one at a time. This is the other half: once a
+     * stream is long enough to flush mid-parse, the entries are split across several
+     * {@code applyChanges} calls, and correctness now depends on the union of those calls rather
+     * than on any single one.</p>
+     *
+     * <p>2,500 entries is two full batches and a partial one, so it exercises the mid-parse flush
+     * at {@code pendingOps.size() >= WRITE_BATCH_SIZE} twice and the endProcessing flush once.</p>
+     */
+    @Test
+    void testEntriesSpanningSeveralBatchesAreAllWrittenInOrder() {
+        Mockito.when(storeProvider.get("test-map")).thenReturn(updatableTemporalStore);
+
+        final int entries = (WRITE_BATCH_SIZE * 2) + 500;
+        processXml(referenceDataXml("test-map", entries));
+
+        assertThat(loggedSeverities).isEmpty();
+
+        final ArgumentCaptor<ApplyChangesRequest> captor =
+                ArgumentCaptor.forClass(ApplyChangesRequest.class);
+        Mockito.verify(updatableTemporalStore, Mockito.times(3)).applyChanges(captor.capture());
+        Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
+
+        // Full batches flush at exactly the threshold; the remainder goes out at endProcessing.
+        assertThat(captor.getAllValues())
+                .extracting(request -> request.getOperations().size())
+                .containsExactly(WRITE_BATCH_SIZE, WRITE_BATCH_SIZE, 500);
+
+        // Every entry, exactly once, still in document order across the batch boundaries.
+        final List<String> keys = captor.getAllValues().stream()
+                .flatMap(request -> request.getOperations().stream())
+                .map(op -> op.getEntry().getKey())
+                .toList();
+        assertThat(keys).hasSize(entries);
+        assertThat(keys).isEqualTo(expectedKeys(entries));
+    }
+
+    /**
+     * A stream that lands exactly on the threshold must not emit a trailing empty batch.
+     *
+     * <p>The flush is triggered by {@code >=}, so entry number {@code WRITE_BATCH_SIZE} empties
+     * the buffer before the parse ends. {@code endProcessing} then flushes again, and only the
+     * {@code pendingOps.isEmpty()} guard in {@code flushPendingWrites} stops that second flush
+     * running.</p>
+     *
+     * <p>Without the guard the failure is louder than a wasted transaction: the {@code finally}
+     * block clears {@code pendingMapName} as well as {@code pendingOps}, so the second flush
+     * resolves {@code storeProvider.get(null)} and reports an error against map {@code 'null'}.
+     * Every stream whose entry count happened to be a multiple of the batch size would fail
+     * visibly. Verified by removing the guard and watching this test fail on the logged
+     * severity.</p>
+     */
+    @Test
+    void testStreamEndingExactlyOnTheThresholdWritesOneBatch() {
+        Mockito.when(storeProvider.get("test-map")).thenReturn(updatableTemporalStore);
+
+        processXml(referenceDataXml("test-map", WRITE_BATCH_SIZE));
+
+        assertThat(loggedSeverities).isEmpty();
+
+        final ArgumentCaptor<ApplyChangesRequest> captor =
+                ArgumentCaptor.forClass(ApplyChangesRequest.class);
+        Mockito.verify(updatableTemporalStore, Mockito.times(1)).applyChanges(captor.capture());
+        assertThat(captor.getValue().getOperations()).hasSize(WRITE_BATCH_SIZE);
+    }
+
+    /**
+     * The same holds at any multiple of the threshold, not just the first one.
+     *
+     * <p>{@code testStreamEndingExactlyOnTheThresholdWritesOneBatch} covers one batch exactly;
+     * this covers two, because the claim being made is about every stream whose entry count is a
+     * multiple of the batch size, and one example does not establish that.</p>
+     */
+    @Test
+    void testStreamEndingOnASecondWholeBatchWritesNoEmptyBatch() {
+        Mockito.when(storeProvider.get("test-map")).thenReturn(updatableTemporalStore);
+
+        final int entries = WRITE_BATCH_SIZE * 2;
+        processXml(referenceDataXml("test-map", entries));
+
+        assertThat(loggedSeverities).isEmpty();
+
+        final ArgumentCaptor<ApplyChangesRequest> captor =
+                ArgumentCaptor.forClass(ApplyChangesRequest.class);
+        Mockito.verify(updatableTemporalStore, Mockito.times(2)).applyChanges(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(request -> request.getOperations().size())
+                .containsExactly(WRITE_BATCH_SIZE, WRITE_BATCH_SIZE);
+    }
+
+    /**
+     * A change of map name flushes early, so batches follow the map, not just the count.
+     *
+     * <p>Each {@code applyChanges} goes to one store, so the buffer has to be flushed when the
+     * map name changes even though it is nowhere near full. Interleaved maps therefore produce a
+     * batch per run of entries, and an alternating stream defeats the batching entirely — which
+     * is the behaviour, and worth pinning so it is noticed if someone tries to make the buffer
+     * span maps.</p>
+     */
+    @Test
+    void testChangingMapNameFlushesTheBufferEarly() {
+        Mockito.when(storeProvider.get("map-a")).thenReturn(updatableTemporalStore);
+        Mockito.when(storeProvider.get("map-b")).thenReturn(updatableTemporalStore);
+
+        final StringBuilder xml = new StringBuilder("<referenceData>");
+        for (int i = 0; i < 3; i++) {
+            xml.append(reference("map-a", "a" + i, "v" + i));
+            xml.append(reference("map-b", "b" + i, "v" + i));
+        }
+        xml.append("</referenceData>");
+
+        processXml(xml.toString());
+
+        assertThat(loggedSeverities).isEmpty();
+
+        final ArgumentCaptor<ApplyChangesRequest> captor =
+                ArgumentCaptor.forClass(ApplyChangesRequest.class);
+        // Six runs of one entry each, not one batch of six.
+        Mockito.verify(updatableTemporalStore, Mockito.times(6)).applyChanges(captor.capture());
+        assertThat(captor.getAllValues())
+                .flatExtracting(request -> request.getOperations())
+                .extracting(op -> op.getEntry().getMap())
+                .containsExactly("map-a", "map-b", "map-a", "map-b", "map-a", "map-b");
+    }
+
+    /**
+     * Builds a reference-data document of {@code count} entries in one map, keyed {@code k0..kN}.
+     *
+     * @param mapName the map every entry targets; never null
+     * @param count   how many entries to generate
+     * @return the XML document; never null
+     */
+    private static String referenceDataXml(final String mapName, final int count) {
+        final StringBuilder xml = new StringBuilder("<referenceData>");
+        for (int i = 0; i < count; i++) {
+            xml.append(reference(mapName, "k" + i, "v" + i));
+        }
+        return xml.append("</referenceData>").toString();
+    }
+
+    /** A single reference element. */
+    private static String reference(final String mapName, final String key, final String value) {
+        return "<reference><map>" + mapName + "</map><key>" + key
+               + "</key><value>" + value + "</value></reference>";
+    }
+
+    /** The keys {@code referenceDataXml} generates, in order, for comparison against what arrived. */
+    private static List<String> expectedKeys(final int count) {
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(i -> "k" + i)
+                .toList();
     }
 
     /**
