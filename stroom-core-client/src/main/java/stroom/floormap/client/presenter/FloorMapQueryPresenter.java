@@ -44,6 +44,7 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
@@ -207,6 +208,117 @@ public class FloorMapQueryPresenter
     }
 
     /**
+     * Reduces a time window to the most recent row per entity.
+     *
+     * <p>The Map tab queries a trailing window rather than an instant, because an instant is
+     * unsatisfiable against a store that applies the time range literally — see
+     * {@code FloorMapMapPresenter.runQueryAtSelectedTime}. A window can return several events for
+     * one entity, and the canvas wants exactly one position each, so the extras are dropped here.
+     * A store that already deduplicates server-side returns one row per key anyway, and this then
+     * costs a pass over the rows and changes nothing.</p>
+     *
+     * <p><strong>How "most recent" is decided, and where that is imperfect.</strong> The time
+     * column arrives already rendered as text, formatted to the viewing user's date-time
+     * preference, so there is no timestamp to compare — only its presentation. Two forms are
+     * handled properly: epoch milliseconds, compared numerically, and the ISO-8601 form Stroom
+     * emits when no pattern preference is set, which sorts correctly as text. A user pattern that
+     * is <em>not</em> lexicographically ordered — {@code dd/MM/yyyy} being the obvious one — makes
+     * the text comparison pick the wrong row of the window. The error is bounded by the window
+     * (an entity can appear at a position up to that stale, not at a wrong one) and is strictly
+     * better than the zero rows this replaced, but the real fix is for the query to carry a raw
+     * numeric time alongside the formatted one.</p>
+     *
+     * <p>With no usable time column the last row for each entity wins, which is at least
+     * deterministic for a given result.</p>
+     *
+     * @param columns      the result columns; may be {@code null}
+     * @param rows         the rows to reduce; may be {@code null}
+     * @param entityColumn the column naming the entity; {@code null} leaves rows untouched
+     * @param timeColumn   the column holding the effective time; absent or unmatched falls back to
+     *                     last-row-wins
+     * @return one row per entity, in first-appearance order; never {@code null}
+     */
+    static List<Row> latestPerEntity(final List<Column> columns,
+                                     final List<Row> rows,
+                                     final String entityColumn,
+                                     final String timeColumn) {
+        if (rows == null || columns == null || entityColumn == null) {
+            return rows == null ? new ArrayList<>() : new ArrayList<>(rows);
+        }
+
+        int entityColIndex = -1;
+        int timeColIndex = -1;
+        for (int i = 0; i < columns.size(); i++) {
+            final String name = columns.get(i).getName();
+            if (entityColumn.equals(name)) {
+                entityColIndex = i;
+            } else if (timeColumn != null && timeColumn.equals(name)) {
+                timeColIndex = i;
+            }
+        }
+        if (entityColIndex == -1) {
+            // Nothing to group by; parseRows will reject these rows anyway.
+            return new ArrayList<>(rows);
+        }
+
+        // LinkedHashMap so the surviving rows keep the order the entities first appeared, which
+        // keeps the canvas's draw order stable between frames rather than reshuffling per poll.
+        final Map<String, Row> latest = new LinkedHashMap<>();
+        for (final Row row : rows) {
+            final String entityId = valueAt(row, entityColIndex);
+            if (entityId == null) {
+                continue;
+            }
+            final Row incumbent = latest.get(entityId);
+            if (incumbent == null || isAfter(row, incumbent, timeColIndex)) {
+                latest.put(entityId, row);
+            }
+        }
+        return new ArrayList<>(latest.values());
+    }
+
+    /**
+     * Whether {@code candidate} is the later of the two rows at {@code timeColIndex}.
+     *
+     * <p>With no time column every row is treated as later than the one before it, which makes
+     * the last row for an entity win.</p>
+     */
+    private static boolean isAfter(final Row candidate, final Row incumbent, final int timeColIndex) {
+        if (timeColIndex == -1) {
+            return true;
+        }
+        final String candidateTime = valueAt(candidate, timeColIndex);
+        final String incumbentTime = valueAt(incumbent, timeColIndex);
+        if (candidateTime == null) {
+            return false;
+        }
+        if (incumbentTime == null) {
+            return true;
+        }
+        final Long candidateMs = asEpochMs(candidateTime);
+        final Long incumbentMs = asEpochMs(incumbentTime);
+        if (candidateMs != null && incumbentMs != null) {
+            return candidateMs >= incumbentMs;
+        }
+        return candidateTime.compareTo(incumbentTime) >= 0;
+    }
+
+    /** The value at {@code index}, or {@code null} if the row is short or holds nothing there. */
+    private static String valueAt(final Row row, final int index) {
+        final List<String> values = row == null ? null : row.getValues();
+        return values == null || values.size() <= index ? null : values.get(index);
+    }
+
+    /** Parses epoch milliseconds, or {@code null} when the text is not a bare number. */
+    private static Long asEpochMs(final String value) {
+        try {
+            return Long.valueOf(value.trim());
+        } catch (final NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
      * Parses all rows of the supplied {@link TableResult} into
      * {@link FloorMapObject} instances using the given entity and location
      * column mappings.
@@ -231,13 +343,35 @@ public class FloorMapQueryPresenter
     static List<FloorMapObject> parseRows(final TableResult tableResult,
                                           final String entityColumn,
                                           final String locationColumn) {
+        if (tableResult == null) {
+            return new ArrayList<>();
+        }
+        return parseRows(tableResult.getColumns(), tableResult.getRows(), entityColumn, locationColumn);
+    }
+
+    /**
+     * As {@link #parseRows(TableResult, String, String)}, over a caller-supplied row list.
+     *
+     * <p>Split out so a caller can filter the rows first — {@link #latestPerEntity} reduces a
+     * time window to one row per entity — without rebuilding a {@link TableResult} whose
+     * {@code totalResults} would then disagree with its contents.</p>
+     *
+     * @param columns        the result columns; may be {@code null}
+     * @param rows           the rows to parse; may be {@code null}
+     * @param entityColumn   the column name holding the entity id
+     * @param locationColumn the column name holding the location
+     * @return a list of map objects; never {@code null}
+     */
+    static List<FloorMapObject> parseRows(final List<Column> columns,
+                                          final List<Row> rows,
+                                          final String entityColumn,
+                                          final String locationColumn) {
         final List<FloorMapObject> list = new ArrayList<>();
 
-        if (tableResult == null || tableResult.getRows() == null || tableResult.getColumns() == null) {
+        if (rows == null || columns == null) {
             return list;
         }
 
-        final List<Column> columns = tableResult.getColumns();
         int entityColIndex = -1;
         int locationColIndex = -1;
         int typeColIndex = -1;
@@ -259,7 +393,7 @@ public class FloorMapQueryPresenter
             return list; // Columns are not mapped yet.
         }
 
-        for (final Row row : tableResult.getRows()) {
+        for (final Row row : rows) {
             final List<String> values = row.getValues();
             if (values.size() > entityColIndex && values.size() > locationColIndex) {
                 final String entityId = values.get(entityColIndex);

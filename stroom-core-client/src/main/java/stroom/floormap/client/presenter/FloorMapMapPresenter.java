@@ -32,6 +32,7 @@ import stroom.floormap.shared.FloorMapDocSession;
 import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
+import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapFactTableParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
@@ -111,6 +112,19 @@ public class FloorMapMapPresenter
     public static final Object DOCK = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
+
+    /**
+     * How far back from the selected time the events query reaches.
+     *
+     * <p>Matches {@code FloorMapEntityAnimator.TRAIL_MAX_AGE_MS} by intent — there is no point
+     * fetching events older than the trail will still be drawing — but deliberately is not the
+     * same constant: one bounds a database query and the other bounds a fade, and tying them
+     * together would mean a rendering tweak silently changed what gets read.</p>
+     *
+     * <p>Only stores without snapshot semantics actually see this window; see
+     * {@link #runQueryAtSelectedTime}.</p>
+     */
+    private static final long EVENTS_WINDOW_MS = 20_000L;
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
@@ -724,32 +738,56 @@ public class FloorMapMapPresenter
         // itself while playing.
         floorMapCanvasPresenter.setCurrentTimeText(
                 floorMapTimelinePresenter.formatTime(time));
+        // Facts are a snapshot at T; events are everything in the trailing window ending at T.
         runQueryAtSelectedTime(queryModel, getFactsQueryToUse(),
-                "factsTable", "Facts Query Playback");
+                "factsTable", "Facts Query Playback", 0L);
         runQueryAtSelectedTime(eventsQueryModel, getEventsQueryToUse(),
-                "eventsTable", "Events Query Playback");
+                "eventsTable", "Events Query Playback", EVENTS_WINDOW_MS);
     }
 
     /**
-     * Starts a search for the given query text at {@link #selectedTime}, as an
-     * instant (start == end) custom time range. A {@code null}/blank query is a
-     * no-op.
+     * Starts a search for the given query text over a custom time range ending at
+     * {@link #selectedTime}. A {@code null}/blank query is a no-op.
+     *
+     * <p><strong>Why the window matters.</strong> {@code ResultStoreManager.addTimeRangeExpression}
+     * turns a range into {@code time >= from AND time < to}. A zero-width range — which is what
+     * this method used to build for both queries — is therefore {@code >= T AND < T}: unsatisfiable
+     * for every row, for any {@code T}. It only ever worked because {@code SqlTemporalStore}
+     * reinterprets it rather than applying it: its DAO lifts the upper bound out as a snapshot time,
+     * strips every time term from the SQL, and returns {@code max(effective_time) <= T} per key.
+     * Plan B has no such reinterpretation — {@code PlanBSearchHelper} evaluates the expression
+     * row by row — so it faithfully returned nothing at all.</p>
+     *
+     * <p>A trailing window fixes it for both, which is why it is applied here rather than at one
+     * store: {@code SqlTemporalStore} strips the lower bound and still yields a snapshot at
+     * {@code to}, while Plan B returns every event in the window and
+     * {@link FloorMapQueryPresenter#latestPerEntity} reduces that to one row per entity. The facts
+     * query keeps {@code windowMs == 0} because a snapshot is exactly what it wants: a fact set
+     * months old must still be visible, which a bounded window would hide.</p>
+     *
+     * <p>The upper bound is {@code selectedTime + 1} because the generated term is
+     * {@code LESS_THAN}, so a bare {@code selectedTime} would exclude events at exactly {@code T}.</p>
      *
      * @param model         the query model to run the search on
      * @param query         the StroomQL query text; may be {@code null} or blank
      * @param componentName the table component name for the search
      * @param taskName      recorded as the search's query info, which is consumed by the search
      *                      audit event log - not shown in the task monitor
+     * @param windowMs      how far back from {@link #selectedTime} to include; {@code 0} asks for
+     *                      an instant, which only a store with snapshot semantics can serve
      */
     private void runQueryAtSelectedTime(final QueryModel model,
                                         final String query,
                                         final String componentName,
-                                        final String taskName) {
+                                        final String taskName,
+                                        final long windowMs) {
         if (query == null || query.trim().isEmpty()) {
             return;
         }
-        final TimeRange timeRange =
-                new TimeRange("CUSTOM", String.valueOf(selectedTime), String.valueOf(selectedTime));
+        final TimeRange timeRange = new TimeRange(
+                "CUSTOM",
+                String.valueOf(selectedTime - windowMs),
+                String.valueOf(selectedTime + 1));
         model.startNewSearch(
                 QueryModel.TABLE_COMPONENT_ID,
                 componentName,
@@ -805,11 +843,19 @@ public class FloorMapMapPresenter
     private void publishEventEntities(final TableResult tableResult) {
         // A result already in flight when the tab was closed must not reach the
         // bus: it carries this document's UUID, so a reopened copy would take it.
-        if (closed || getEntity() == null) {
+        // The columns are read directly below, so a null result has to stop here.
+        if (closed || getEntity() == null || tableResult == null) {
             return;
         }
+        // The query covers a window, not an instant, so an entity can appear several times;
+        // the canvas wants one position each.
         final List<FloorMapObject> entities = FloorMapQueryPresenter.parseRows(
-                tableResult,
+                tableResult.getColumns(),
+                FloorMapQueryPresenter.latestPerEntity(
+                        tableResult.getColumns(),
+                        tableResult.getRows(),
+                        getEntity().getEntityIdColumn(),
+                        FloorMapEventsQuery.EFFECTIVE_TIME_COLUMN),
                 getEntity().getEntityIdColumn(),
                 getEntity().getLocationIdColumn());
         reportUnparsedEvents(tableResult, entities);
