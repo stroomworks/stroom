@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.DocInitialisationHandler;
@@ -24,9 +25,13 @@ import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.explorer.shared.ExplorerResource;
 import stroom.explorer.shared.ExplorerServiceDeleteRequest;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapResource;
 import stroom.floormap.shared.ValueFormat;
+import stroom.planb.shared.PlanBDoc;
+import stroom.planb.shared.PlanBDocResource;
+import stroom.planb.shared.StateType;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.task.client.TaskMonitorFactory;
@@ -54,14 +59,21 @@ import java.util.function.Consumer;
  * Initialisation handler for new {@link FloorMapDoc} documents.
  *
  * <p>Displays a modal dialog requiring the user to select both a
- * <strong>Facts Store</strong> and an <strong>Events Store</strong>, each a
- * {@link SqlTemporalStoreDoc}. The OK button remains disabled until both are
- * selected.</p>
+ * <strong>Facts Store</strong> — a {@link SqlTemporalStoreDoc}, because the Editor
+ * tab writes spatial data back to it — and an <strong>Events Store</strong> — a
+ * {@link PlanBDoc}, which is only ever read. The OK button remains disabled until
+ * both are selected.</p>
  *
  * <p>The floor map references each store by <em>name</em> only — the name is
  * substituted into the {@code param('FactStore')} / {@code param('EventStore')}
  * placeholders of the stored queries — so neither store is coupled to a
  * particular store implementation beyond what this picker allows.</p>
+ *
+ * <p>The default events query this dialog writes selects {@code EffectiveTime},
+ * {@code Key} and {@code Value}, which of the Plan B state types only
+ * {@link StateType#TEMPORAL_STATE} exposes. The picker can filter by document type
+ * but not by state type, so that is checked explicitly on OK rather than left to
+ * fail later as an opaque unknown-field error at query time.</p>
  *
  * <p>On OK: the new document is patched with the selected store
  * references and saved. On Cancel: the document is deleted from
@@ -75,6 +87,9 @@ public class FloorMapInitPresenter
 
     private static final FloorMapResource FLOOR_MAP_RESOURCE =
             GWT.create(FloorMapResource.class);
+    private static final PlanBDocResource PLAN_B_DOC_RESOURCE =
+            GWT.create(PlanBDocResource.class);
+
     private static final ExplorerResource EXPLORER_RESOURCE =
             GWT.create(ExplorerResource.class);
 
@@ -111,15 +126,17 @@ public class FloorMapInitPresenter
         super(eventBus, view);
         this.restFactory = restFactory;
 
-        // Facts Store = SqlTemporalStore
+        // Facts Store = SqlTemporalStore (the Editor tab writes to it)
         factsStorePresenter = docSelectionBoxPresenterProvider.get();
+        factsStorePresenter.setCaption("Choose Facts Store");
         factsStorePresenter.setIncludedTypes(SqlTemporalStoreDoc.TYPE);
         factsStorePresenter.setRequiredPermissions(DocumentPermission.USE);
         view.setFactsStoreView(factsStorePresenter.getView());
 
-        // Events Store = SqlTemporalStore
+        // Events Store = PlanB (read-only; state type checked on OK)
         eventsStorePresenter = docSelectionBoxPresenterProvider.get();
-        eventsStorePresenter.setIncludedTypes(SqlTemporalStoreDoc.TYPE);
+        eventsStorePresenter.setCaption("Choose Events Store");
+        eventsStorePresenter.setIncludedTypes(PlanBDoc.TYPE);
         eventsStorePresenter.setRequiredPermissions(DocumentPermission.USE);
         view.setEventsStoreView(eventsStorePresenter.getView());
     }
@@ -219,12 +236,17 @@ public class FloorMapInitPresenter
     }
 
     /**
-     * Loads the new FloorMapDoc, patches it with the selected store
-     * references, saves it, and signals completion.
+     * Checks the selected events store is usable, then hands off to
+     * {@link #saveInitialisation}.
      *
-     * <p>Postcondition: on success, the document has been updated
-     * with both store references and {@code completionCallback}
-     * receives {@code true}.</p>
+     * <p>The check is a fetch of the Plan B document to read its
+     * {@link StateType}: only {@link StateType#TEMPORAL_STATE} carries the effective
+     * time the default events query selects. A wrong choice warns and leaves the
+     * dialog open (via {@link HidePopupRequestEvent#reset()}) so it can be corrected,
+     * rather than saving a document whose events query cannot run.</p>
+     *
+     * <p>Postcondition: either the dialog has been reset for another attempt, or
+     * {@link #saveInitialisation} has taken over.</p>
      *
      * @param e   the hide-popup event to control dialog dismissal;
      *            never null
@@ -235,6 +257,65 @@ public class FloorMapInitPresenter
         final DocRef factsDocRef = factsStorePresenter.getSelectedEntityReference();
         final DocRef eventsDocRef = eventsStorePresenter.getSelectedEntityReference();
 
+        // The events store's state type decides whether the default query below can
+        // work at all, so settle that before writing anything.
+        //noinspection unused error
+        restFactory
+                .create(PLAN_B_DOC_RESOURCE)
+                .method(res -> res.fetch(eventsDocRef.getUuid()))
+                .onSuccess(planBDoc -> {
+                    if (StateType.TEMPORAL_STATE != planBDoc.getStateType()) {
+                        AlertEvent.fireWarn(FloorMapInitPresenter.this,
+                                "The events store '" + eventsDocRef.getName() + "' is a "
+                                + describe(planBDoc.getStateType()) + " store. A floor map's "
+                                + "events store must be a Temporal State store, as that is the "
+                                + "only kind that records an effective time per entry.",
+                                e::reset);
+                    } else {
+                        saveInitialisation(e, tmf, factsDocRef, eventsDocRef);
+                    }
+                })
+                .onFailure(error -> e.reset())
+                .taskMonitorFactory(tmf)
+                .exec();
+    }
+
+    /**
+     * Renders a {@link StateType} for an error message, tolerating a {@code null}.
+     *
+     * <p>A Plan B document with no state type set is possible — the field is nullable —
+     * and is just as unusable as one of the wrong type, so it needs wording too rather
+     * than an NPE or a bare "null".</p>
+     *
+     * @param stateType the state type; may be {@code null}
+     * @return a human-readable description; never null
+     */
+    private static String describe(final StateType stateType) {
+        return stateType == null
+                ? "store with no state type set"
+                : stateType.getDisplayValue();
+    }
+
+    /**
+     * Patches the new document with the chosen store references and the default
+     * queries, then saves it.
+     *
+     * <p>Only called once the events store has been confirmed to be a
+     * {@link StateType#TEMPORAL_STATE} Plan B store, because the events query written
+     * here selects {@code EffectiveTime}.</p>
+     *
+     * <p>Postcondition: on success, the document has been updated and
+     * {@code completionCallback} receives {@code true}.</p>
+     *
+     * @param e             the hide-popup event to control dialog dismissal; never null
+     * @param tmf           task monitor factory for REST calls; never null
+     * @param factsDocRef   the chosen facts store; never null
+     * @param eventsDocRef  the chosen events store; never null
+     */
+    private void saveInitialisation(final HidePopupRequestEvent e,
+                                    final TaskMonitorFactory tmf,
+                                    final DocRef factsDocRef,
+                                    final DocRef eventsDocRef) {
         // Fetch the doc, patch it, and save
         //noinspection unused error
         restFactory
@@ -244,14 +325,11 @@ public class FloorMapInitPresenter
                     final FloorMapDoc updated = doc.copy()
                             .factsStoreRef(factsDocRef)
                             .eventsStoreRef(eventsDocRef)
-                            .eventsQuery("""
-                                    from param('EventStore')
-                                    select EffectiveTime as "Effective Time",
-                                      Key as "Entity ID",
-                                      jq(Value, '.location') as "Location ID",
-                                      jq(Value, '.type') as "Event Type",
-                                      jq(Value, '.status') as "Status",
-                                      jq(Value, '.message') as "Message\"""")
+                            .eventsQuery(FloorMapEventsQuery.defaultQuery())
+                            // The query above aliases these two columns; without them the
+                            // parse matches nothing and no entity ever reaches the canvas.
+                            .entityIdColumn(FloorMapEventsQuery.ENTITY_ID_COLUMN)
+                            .locationIdColumn(FloorMapEventsQuery.LOCATION_ID_COLUMN)
                             .valueFormat(ValueFormat.JSON)
                             .valueSchema(FloorMapFieldMapping.initialValueSchema())
                             .build();
@@ -328,7 +406,7 @@ public class FloorMapInitPresenter
          * Sets the view for the Events Store selector.
          *
          * @param view the DocSelectionBox view for selecting a
-         *             {@link SqlTemporalStoreDoc}; never null
+         *             {@link PlanBDoc}; never null
          */
         void setEventsStoreView(View view);
     }

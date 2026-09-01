@@ -39,11 +39,11 @@ import java.util.Objects;
 /**
  * Immutable document describing a floor map visualisation.
  *
- * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> and an
- * <em>events store</em> (each a
- * {@code SqlTemporalStoreDoc}), along with the queries, display
- * preferences, and value-schema metadata the floor map UI needs to parse
- * and render temporal entries on a 2-D canvas.</p>
+ * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> (a
+ * {@code SqlTemporalStoreDoc}, which the Editor tab writes to) and an
+ * <em>events store</em> (a {@code PlanBDoc}, which is read-only here), along
+ * with the queries, display preferences, and value-schema metadata the floor
+ * map UI needs to parse and render temporal entries on a 2-D canvas.</p>
  *
  * <h3>UI Tabs</h3>
  * <p>When a user opens a Floor Map document in the Stroom UI, the
@@ -72,9 +72,9 @@ import java.util.Objects;
  * <ul>
  *   <li><strong>Facts store</strong> ({@link #factsStoreRef}) — a SQL Temporal Store
  *       containing the spatial data (objects, positions, background image, matrices).</li>
- *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a SQL Temporal Store
- *       containing status / event records keyed by entity ID.
- *       Queried via {@link #eventsQuery}.</li>
+ *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a Plan B store of
+ *       state type {@code TEMPORAL_STATE}, containing status / event records keyed by
+ *       entity ID. Queried via {@link #eventsQuery}; never written to by the floor map.</li>
  * </ul>
  *
  * <h3>Value Schema</h3>
@@ -179,12 +179,16 @@ public class FloorMapDoc extends AbstractDoc {
     private final DocRef factsStoreRef;
 
     /**
-     * Reference to the temporal store document used as the events store. The
-     * events store contains status / event records keyed by entity ID.
+     * Reference to the Plan B document used as the events store. The events store
+     * contains status / event records keyed by entity ID, and is only ever read.
      *
-     * <p>Only the referenced document's <em>name</em> is used at query time —
-     * it is substituted into the {@code param('EventStore')} placeholder of
-     * {@link #eventsQuery} — so any queryable temporal store will serve.</p>
+     * <p>Only the referenced document's <em>name</em> is used at query time — it is
+     * substituted into the {@code param('EventStore')} placeholder of
+     * {@link #eventsQuery} — so nothing here is coupled to a particular store
+     * implementation. In practice the store must expose {@code Key},
+     * {@code EffectiveTime} and {@code Value}, which for Plan B means a state type of
+     * {@code TEMPORAL_STATE}; the pickers restrict the choice to Plan B documents but
+     * cannot filter on state type, so a mismatch surfaces as a query-time error.</p>
      *
      * May be {@code null} if not yet configured.
      */
@@ -327,7 +331,7 @@ public class FloorMapDoc extends AbstractDoc {
      * @param entityIdColumn              events-query entity column name; may be {@code null}
      * @param locationIdColumn            events-query location column name; may be {@code null}
      * @param factsStoreRef               facts store {@link DocRef}; may be {@code null}
-     * @param eventsStoreRef              events store {@link DocRef}; may be {@code null}
+     * @param eventsStoreRef              Plan B events store {@link DocRef}; may be {@code null}
      * @param eventsQuery                 StroomQL for the events store; may be {@code null}
      * @param eventsQueryTimeRange        time range for the events query; may be {@code null}
      * @param eventsQueryTablePreferences table prefs for events query results; may be {@code null}
@@ -451,10 +455,10 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
-     * Returns the reference to the events store.
+     * Returns the reference to the events store (a Plan B store).
      *
      * <p>The events store contains status / event records keyed by
-     * entity ID.</p>
+     * entity ID, and is only ever read.</p>
      *
      * @return the events store {@link DocRef}, or {@code null} if not
      *         yet configured
@@ -848,7 +852,7 @@ public class FloorMapDoc extends AbstractDoc {
         /**
          * Sets the events store reference.
          *
-         * @param eventsStoreRef the {@link DocRef} to the events store, or
+         * @param eventsStoreRef the {@link DocRef} to the Plan B events store, or
          *                       {@code null} to clear
          * @return this builder
          */
