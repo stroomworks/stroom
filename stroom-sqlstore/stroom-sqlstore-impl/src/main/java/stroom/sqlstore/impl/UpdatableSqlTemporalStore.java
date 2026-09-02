@@ -115,7 +115,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     @Override
     public TemporalEntry create(final TemporalEntry entry) {
-        final String docUuid = resolveUuid(entry.getMap(), DocumentPermission.EDIT);
+        final String docUuid = resolveStore(entry.getMap(), DocumentPermission.EDIT).getUuid();
         return eventLoggingServiceProvider.get().loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "create"))
                 .withDescription("Create temporal entry")
@@ -137,12 +137,12 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     @Override
     public Optional<TemporalEntry> fetch(final TemporalEntryId id) {
-        return dao.fetch(resolveUuid(id.getMap(), DocumentPermission.VIEW), id);
+        return dao.fetch(resolveStore(id.getMap(), DocumentPermission.VIEW).getUuid(), id);
     }
 
     @Override
     public boolean delete(final TemporalEntryId id) {
-        final String docUuid = resolveUuid(id.getMap(), DocumentPermission.DELETE);
+        final String docUuid = resolveStore(id.getMap(), DocumentPermission.DELETE).getUuid();
         return eventLoggingServiceProvider.get().loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "delete"))
                 .withDescription("Delete temporal entry")
@@ -172,7 +172,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         // Resolving the Map term up front both scopes the query to one store and authorises it,
         // which is why the per-row permission filter this method used to apply is gone: every
         // row returned belongs to the single store the caller was granted VIEW on.
-        final String docUuid = resolveUuid(mapNameFromCriteria(criteria), DocumentPermission.VIEW);
+        final String docUuid = resolveStore(mapNameFromCriteria(criteria), DocumentPermission.VIEW).getUuid();
         return dao.find(docUuid, criteria);
     }
 
@@ -244,7 +244,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         if (request == null || request.getMapName() == null || request.getMapName().isBlank()) {
             throw new IllegalArgumentException("mapName must be specified in the request.");
         }
-        final String docUuid = resolveUuid(request.getMapName(), DocumentPermission.VIEW);
+        final String docUuid = resolveStore(request.getMapName(), DocumentPermission.VIEW).getUuid();
 
         // Build criteria that trigger the DAO's temporal-deduplication subquery path.
         // The Map = mapName term scopes the query to the correct store.
@@ -299,7 +299,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         if (mapName == null || mapName.isBlank()) {
             throw new IllegalArgumentException("mapName must be specified.");
         }
-        return dao.fetchAll(resolveUuid(mapName, DocumentPermission.VIEW));
+        return dao.fetchAll(resolveStore(mapName, DocumentPermission.VIEW).getUuid());
     }
 
     /**
@@ -316,7 +316,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         if (mapName == null || mapName.isBlank()) {
             throw new IllegalArgumentException("mapName must be specified.");
         }
-        return dao.getTimeRange(resolveUuid(mapName, DocumentPermission.VIEW));
+        return dao.getTimeRange(resolveStore(mapName, DocumentPermission.VIEW).getUuid());
     }
 
     /**
@@ -372,7 +372,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
                     "Could not determine map name: the operations list is empty or contains only nulls.");
         }
         try {
-            final String docUuid = resolveUuid(mapName, DocumentPermission.EDIT);
+            final String docUuid = resolveStore(mapName, DocumentPermission.EDIT).getUuid();
             dao.applyChanges(docUuid, request.getOperations());
             return new ApplyChangesResult(true, null);
         } catch (final Exception e) {
@@ -390,36 +390,27 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     /**
      * Resolves a store name to the document that bears it, considering <strong>only documents
-     * the caller may already see</strong>, and returns its UUID for use as the storage scope.
+     * the caller may already see</strong>.
      *
      * <p>Filtering by permission before matching is what stops this method disclosing the
-     * existence of documents the caller has no right to know about. The previous
-     * implementation listed every store in the system, matched by name, and then reported a
-     * permission failure naming the store - which confirmed to any user with create rights
-     * that a store of that name existed somewhere in the tree. The "not available" message
-     * below deliberately does not distinguish "no such store" from "exists but you cannot see
-     * it".</p>
+     * existence of documents the caller has no right to know about. </p>
      *
      * <p>Names are matched case-insensitively, consistent with the pipeline-reference gate in
      * {@code ReferenceData}, which compares with {@code equalsIgnoreCase}.</p>
      *
      * <p>Document names are neither unique nor immutable, so a name may match more than one
      * store. That is rejected rather than resolved arbitrarily: silently picking the first
-     * match is what previously let one document's operations land on another's data. Storage
+     * match could let one document's operations land on another's data. Storage
      * is keyed by UUID, so an ambiguous <em>name</em> never means mixed data - only that this
      * particular request cannot be attributed to one store.</p>
      *
      * @param mapName    the store name to resolve; must not be {@code null} or blank
      * @param permission the permission the caller must hold on the store
-     * @return the UUID of the single matching store document; never {@code null}
+     * @return the DocRef of the single matching store document; never {@code null}
      * @throws PermissionException   if no store of that name is visible to the caller with
      *                               the required permission
      * @throws IllegalStateException if more than one visible store bears the name
      */
-    private String resolveUuid(final String mapName, final DocumentPermission permission) {
-        return resolveStore(mapName, permission).getUuid();
-    }
-
     private DocRef resolveStore(final String mapName, final DocumentPermission permission) {
         if (mapName == null || mapName.isBlank()) {
             throw new IllegalArgumentException("Store name must be specified.");
