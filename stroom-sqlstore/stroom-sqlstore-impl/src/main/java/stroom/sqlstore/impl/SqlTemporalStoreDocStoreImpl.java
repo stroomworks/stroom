@@ -44,18 +44,7 @@ public class SqlTemporalStoreDocStoreImpl
     }
 
     /*
-     * createDocument/copyDocument/renameDocument used to be overridden here to reject any name
-     * already used by another SqlTemporalStoreDoc, because the name was the storage key. Both
-     * halves of that were wrong:
-     *
-     *  - It leaked. The check listed every store in the system via getStore().list(), which
-     *    applies no permission filtering, and then named the clash in the error. Any user with
-     *    create rights could probe for the existence of stores anywhere in the tree that they
-     *    had no permission to see.
-     *  - It is no longer needed. Storage is keyed on the document UUID, so two documents may
-     *    share a name without sharing data, and renaming a document keeps its data.
-     *
-     * Name handling is therefore left to AbstractDocumentStore, which takes the explorer's
+     * Name handling is left to AbstractDocumentStore, which takes the explorer's
      * permission-filtered, folder-scoped candidate names and applies the same
      * UniqueNameUtil.getCopyName convention as every other document type. Where a name must
      * still be resolved to a single store - a StroomQL "from" clause, an XSLT lookup -
