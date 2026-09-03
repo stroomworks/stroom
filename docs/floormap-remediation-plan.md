@@ -63,13 +63,16 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 
 ## Open
 
+**Local fix landed, destination still upstream:**
+
+- **F13 · Plan B has no server-side latest-per-key** — HIGH, and a behavioural regression introduced with the Plan B move: an entity that stops emitting disappears after 20 seconds, where the SQL Temporal Store returned its last known position however old. Exactly **one** Map feature is affected — positions; the histogram works natively on Plan B and everything else is downstream. The 20s window is a workaround for the missing reduction and **nothing consumes it**. Two tracks (**F13**): the destination is a server-side reduction in `TemporalStateDb.search`, mirroring what `UpdatableTemporalStoreDaoImpl.search` already does — but its trigger and date-parser questions are **upstream Plan B policy**, so the local plan of record is client-side carry-forward (Option C). Option B is broken by construction. Reviewed twice; both earlier framings of the fix were wrong and are recorded as such. **Option C is implemented as of 2026-09-03** (`0bab388b8c`) — see *As built*, which records five places the implementation diverged from the plan, including one the plan and four reviews all got wrong (a loop wrap froze the map). **Manual testing outstanding — the 13-item list is in the implementation plan and none of it has been run.** The upstream ask stands: nothing local depends on it any more, but until it lands the horizon and the two `condense`-related instructions in `floormap-planb-events-store.md` stay.
+
 **Blocked on a decision:**
 
-- **F13 · Plan B has no server-side latest-per-key** — HIGH, and a behavioural regression introduced with the Plan B move: an entity that stops emitting disappears after 20 seconds, where the SQL Temporal Store returned its last known position however old. Exactly **one** Map feature is affected — positions; the histogram works natively on Plan B and everything else is downstream. The 20s window is a workaround for the missing reduction and **nothing consumes it**. Two tracks (**F13**): the destination is a server-side reduction in `TemporalStateDb.search`, mirroring what `UpdatableTemporalStoreDaoImpl.search` already does — but its trigger and date-parser questions are **upstream Plan B policy**, so the local plan of record is client-side carry-forward (Option C). Option B is broken by construction. Reviewed twice; both earlier framings of the fix were wrong and are recorded as such. **Option C is implemented as of 2026-09-03** — see *As built*, which records five places the implementation diverged from the plan, including one the plan and four reviews all got wrong (a loop wrap froze the map). Manual testing outstanding.
 - **D6** — was the `ONE_DAY_MS` bound intended? Blocks **F9**.
 - **D7** — why was `try (this)` replaced? Needs the author. Blocks **F10**.
 - **F11 · asset servlet** — uploads served same-origin as `html`/`js`/`svg`, vis iframe has no `sandbox`. Sandboxing may break visualisations needing same-origin access.
-- **F11 · playback search churn** — ~6–7 destroy/create/poll cycles per second per Map tab. Needs a correct staleness rule or the map shows stale data.
+- **F11 · playback search churn** — ~6–7 destroy/create/poll cycles per second per Map tab. Needs a correct staleness rule or the map shows stale data. **Not fixed by F13's delta read**, and worth being clear about that: the search *count* is unchanged, because a tick still starts a facts search and an events search. What dropped is the rows each one carries, plus the ticks where the events read is skipped entirely. The churn itself is still there.
 - **Entity type from `Event Type`** — `parseRows` matches a column named `type` case-insensitively; the default query aliases it `Event Type`, so it never matches and entity type always comes from the `entityId.contains("@")` fallback. Fixing it changes rendering for existing maps.
 - **Init dialog hardcodes `ValueFormat.JSON` + `initialValueSchema()`** — a deployment whose facts are XML or use other paths gets a new floor map that cannot parse them. Was wrongly suspected as the cause of the missing-layers symptom (see Appendix F.1); the design gap is real regardless.
 
@@ -79,7 +82,7 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 - **F11 · no upload size cap** — `MAX_EDITABLE_CONTENT_LENGTH` (512 KiB) gates editing, not upload; nothing bounds what streams into the blob.
 - **F11 · `DocumentPluginEventManager` banner** — says opening a document routes through the initialisation handler; the only call site is `fireShowCreateDocumentDialogEvent`, i.e. creation. Verified still wrong. Worth fixing precisely because wiring that call into the open path would make Cancel delete an existing document.
 - **Settings-tab state-type check** — the init dialog validates that a Plan B events store is `TEMPORAL_STATE`; the Settings tab does not. Needs an async fetch where `onWrite` is synchronous, so it wants a validation hook rather than an inline check.
-- **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row of the window. Bounded and better than the zero rows it replaced, but the honest fix is a query-contract change. See Appendix F.1.
+- **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
 - **Map tab's Layers panel never shows discovered types** — it is a separate `FloorMapLayersPresenter` instance from the Editor's and only ever receives `setLayers(document.getTypeStyles())`, never `setSeenTypes`. So provisional types appear in the Editor only. May be deliberate; undocumented either way, and it makes an empty panel on the Map tab indistinguishable from missing data.
 - **F14 · four silent failure paths in the events pipeline** — of the four stages that can produce nothing, three say nothing when they do, and the two most likely first-run failures are among them. Every diagnostic goes to the browser console, where a non-developer will not see it. Written up as **F14**.
 
@@ -101,9 +104,9 @@ These cannot be settled from the code. Each blocks or reshapes the fix that foll
 | ~~D8~~ | ~~Is the canvas render rewrite in scope pre-release?~~ | F6 | **Decided: cheap half now, architecture deferred to its own task** |
 | ~~D9~~ | ~~Keep the asset module move, or revert it?~~ | F2 | **Decided 2026-08-26: keep it.** Merge cost accepted; F2 solved by alias + migration |
 
-Five of the nine are now settled. **Three remain:** D9 (architecture — decide first, since Option R
-deletes F2 and moots D5 with it), D6 (a product call on `ONE_DAY_MS`), and D7 (a question for whoever
-replaced `try (this)`). D5 is a five-minute lookup that only matters if D9 keeps the module move.
+Seven of the nine are now settled. **Two remain:** D6 (a product call on `ONE_DAY_MS`) and D7 (a
+question for whoever replaced `try (this)`). Neither blocks anything already in progress; each blocks
+exactly one finding, F9 and F10 respectively.
 
 ### ~~D1 — Is there production data in the temporal store yet?~~ — ANSWERED
 
