@@ -138,6 +138,9 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     /** Optional callback fired whenever the current time jumps non-continuously (scrub, step, loop). */
     private Runnable clearAnimationStateHandler;
 
+    /** Optional callback fired at the <em>discrete</em> jumps only. See {@link #setDiscontinuityHandler}. */
+    private Runnable discontinuityHandler;
+
     /** Optional callback fired when the user changes the visible time range via the settings popup. */
     private Runnable timeRangeChangeHandler;
 
@@ -170,6 +173,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             if (clearAnimationStateHandler != null) {
                 clearAnimationStateHandler.run();
             }
+            fireDiscontinuity();
             final long duration = endTime - startTime;
             final long newTime = startTime + (long) (duration * (percentage / 100.0));
             clearOutOfRange();
@@ -448,6 +452,36 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     }
 
     /**
+     * Sets a callback for the <b>discrete</b> time jumps: a committed scrub, a step (button or
+     * keyboard), and stopping at the end of the range.
+     *
+     * <p>Distinct from {@link #setClearAnimationStateHandler} on purpose, and the difference is the
+     * loop wrap. That fires <b>per frame</b> while looping — which is fine for discarding animation
+     * state, and ruinous for anything that starts a query, as the throttle comment on the wrap
+     * explains. So a consumer that must re-read on a jump needs a signal the wrap does not raise.
+     * A backward wrap is self-evident from the time going down; a <em>forward</em> scrub or step is
+     * not, which is what this callback exists to report.</p>
+     *
+     * <p>Fired <b>before</b> the {@code TimeChangeEvent} at each site, so a handler that arms state
+     * has done so by the time the read for the new position is decided.</p>
+     *
+     * <p>Not fired by Show All, {@code applyRange} or {@code setTimeRange}: they change the visible
+     * <em>range</em>, never {@code currentTime}, and raise no {@code TimeChangeEvent} — so there is
+     * no read to classify.</p>
+     *
+     * @param handler the callback, or {@code null} to remove it
+     */
+    public void setDiscontinuityHandler(final Runnable handler) {
+        this.discontinuityHandler = handler;
+    }
+
+    private void fireDiscontinuity() {
+        if (discontinuityHandler != null) {
+            discontinuityHandler.run();
+        }
+    }
+
+    /**
      * Registers a callback to be invoked when the user changes the visible time range
      * via the settings popup. Used by {@code FloorMapMapPresenter} to re-run the histogram
      * query over the new range.
@@ -525,6 +559,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         final long duration = endTime - startTime;
         final long stepMs = duration / histogramBinCount * bins;
         final long newTime = Math.max(startTime, Math.min(endTime, currentTime + stepMs));
+        // Covers the step buttons and the keyboard nudge alike, since both funnel through here.
+        fireDiscontinuity();
         setCurrentTime(newTime);
         TimeChangeEvent.fire(this, newTime);
     }
@@ -631,12 +667,16 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                             }
                             getView().setPlayPausePreset(PLAY_PRESET);
                             setCurrentTime(newTime);
-                            TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
                             lastFrameTime = 0;
                             queryThrottle.reset();
+                            // Clear and signal BEFORE firing, matching the scrub commit and the
+                            // loop wrap. Firing first would let the resulting read be classified
+                            // as a continuation of playback rather than the jump it is.
                             if (clearAnimationStateHandler != null) {
                                 clearAnimationStateHandler.run();
                             }
+                            fireDiscontinuity();
+                            TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
                             return;
                         }
                     }
