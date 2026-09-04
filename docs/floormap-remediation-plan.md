@@ -72,7 +72,7 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 - **D6** — was the `ONE_DAY_MS` bound intended? Blocks **F9**.
 - **D7** — why was `try (this)` replaced? Needs the author. Blocks **F10**.
 - **F11 · asset servlet** — uploads served same-origin as `html`/`js`/`svg`, vis iframe has no `sandbox`. Sandboxing may break visualisations needing same-origin access.
-- **F11 · playback search churn** — ~6–7 destroy/create/poll cycles per second per Map tab. Needs a correct staleness rule or the map shows stale data. **Not fixed by F13's delta read**, and worth being clear about that: the search *count* is unchanged, because a tick still starts a facts search and an events search. What dropped is the rows each one carries, plus the ticks where the events read is skipped entirely. The churn itself is still there.
+- **F11 · playback search churn** — ~6–7 destroy/create/poll cycles per second per Map tab. Needs a correct staleness rule or the map shows stale data. **Not fixed by F13's delta read**, and worth being clear about that: the search *count* is unchanged, because a tick still starts a facts search and an events search. What dropped is the rows each one carries, plus the ticks where the events read is skipped entirely. The churn itself is still there. **F15 removes the facts half of it** — see there.
 - **Entity type from `Event Type`** — `parseRows` matches a column named `type` case-insensitively; the default query aliases it `Event Type`, so it never matches and entity type always comes from the `entityId.contains("@")` fallback. Fixing it changes rendering for existing maps.
 - **Init dialog hardcodes `ValueFormat.JSON` + `initialValueSchema()`** — a deployment whose facts are XML or use other paths gets a new floor map that cannot parse them. Was wrongly suspected as the cause of the missing-layers symptom (see Appendix F.1); the design gap is real regardless.
 
@@ -85,6 +85,7 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
 - **Map tab's Layers panel never shows discovered types** — it is a separate `FloorMapLayersPresenter` instance from the Editor's and only ever receives `setLayers(document.getTypeStyles())`, never `setSeenTypes`. So provisional types appear in the Editor only. May be deliberate; undocumented either way, and it makes an empty panel on the Map tab indistinguishable from missing data.
 - **F14 · four silent failure paths in the events pipeline** — of the four stages that can produce nothing, three say nothing when they do, and the two most likely first-run failures are among them. Every diagnostic goes to the browser console, where a non-developer will not see it. Written up as **F14**.
+- **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. Only open question is the re-fetch cadence; recommend 30 s. Written up as **F15**.
 
 ---
 
@@ -1561,6 +1562,125 @@ nothing says why" — into a named stage.
 
 ---
 
+## F15 — The facts query polls three times a second for data that changes weekly — MEDIUM — **NEW 2026-09-04**
+
+**Files:** `FloorMapMapPresenter.onTimeChange` / `.runQueryAtSelectedTime` / `.parseFacts`,
+`FloorMapTimelinePresenter.PLAYBACK_QUERY_INTERVAL_MS`,
+`UpdatableTemporalStoreDaoImpl.getQueryTime` / `.getFilteredExpression`
+
+Every throttled playback tick runs the facts query at `[T, T]` — the whole fact set, no `where`
+clause, capped at 1 000 rows. The throttle is 300 ms
+(`FloorMapTimelinePresenter.PLAYBACK_QUERY_INTERVAL_MS`), so that is roughly **three full fact reads a
+second per open Map tab**, plus one on every scrub, step, tab return, open and save.
+
+**The user's operational answer, 2026-09-04: facts change about once a week, a couple at a time. The
+rest never move. But new facts written to the database must still be picked up.**
+
+That reframes the poll. It is not serving playback — the answer is almost always byte-identical to the
+one before it. It is serving **external write detection**, at three times a second, for data that
+changes at 1.7 µHz.
+
+### What it costs
+
+The SQL is cheap: indexed `doc_uuid`, a `MAX(effective_time)` group-by, a few hundred rows. Two other
+things are not.
+
+- **Result-store churn.** Every `startNewSearch` destroys and recreates a server-side LMDB-backed
+  result store, polls it, and tears it down. This is half of the ~6–7 cycles per second per Map tab
+  recorded under **F11 · playback search churn**; F13's delta read did not touch it.
+- **Client work per tick.** `parseFacts` re-parses every row, re-pushes type styles and facts to the
+  canvas, rebuilds the tracking roster, re-places every event entity and recomputes area containment —
+  three times a second, almost always reaching the identical answer. `reanchorEventEntities` is
+  already guarded on its *result* and documents why; the parse and the containment recompute are not.
+
+### Why the obvious fix does not work
+
+The intuitive version — fetch the next 60 s of facts, plus margin, once a minute — cannot work against
+this store, and it fails the same way F13 does.
+
+`getQueryTime` takes the first `EQUALS`/`<`/`<=` time term as a **snapshot boundary**;
+`getFilteredExpression` then strips *every* time term. So `[T, T+70s]` becomes
+`MAX(effective_time) per key WHERE effective_time <= T+70s` — one row per key as of **T+70 s**, the
+future state, not the versions in between. The map would draw the floor plan as it will be up to
+seventy seconds ahead of the playhead: an object that moves at T+30 s would appear already moved at T.
+Two hundred fewer queries, wrong picture.
+
+**And there is no facts delta at all.** A "what changed since X" query is inexpressible here: a time
+term is either lifted as a snapshot boundary or stripped, so `> X` simply vanishes. Detection has to
+be a periodic full re-read. That is the same class of gap as F13, pointing the other way.
+
+### What does work
+
+Pass `timeRange = null`. That is the trick `HistogramQueryHelper.run` already uses and documents: with
+no `TimeRange` the DAO takes its standard path (`getQueryTime` returns null) and returns **every**
+historical entry. Hold that client-side and the snapshot at any T is a local computation.
+
+Volume is not a concern at the stated change rate. The search provider builds
+`new ExpressionCriteria(...)` with no `PageRequest`, so `JooqUtil.getLimit(null, true)` returns
+`Integer.MAX_VALUE` — there is **no server-side row limit**; the binding cap is the client's
+`OffsetRange(0, 1000)`, with `DataStoreSettings.maxResults` at 1 000 000 far above it. Full history is
+*keys + about two rows a week*, so raising the facts cap to 20 000 (matching the events cap) puts
+truncation decades out, and a truncation warning covers the case where the assumption is wrong.
+
+### Options
+
+| | Approach | Effect |
+|---|---|---|
+| **1** | Leave it | ~3 fact reads/s/tab for data that changes weekly; half of F11's churn stays |
+| **2** | Skip the downstream work when the parsed facts are unchanged | Removes the client-side cost only. ~10 lines, no query-semantics risk, no behaviour change. Separable and safe on its own |
+| **3** | Fetch a forward window (`[T, T+70s]`) every 60 s | **Broken** — returns the future snapshot, not the intervening versions. Recorded so it is not re-proposed |
+| **4** | Fetch full history once (`timeRange = null`), compute the snapshot locally, re-fetch on a cadence for external writes | The fix. Playback, scrub and step become zero-query for facts |
+
+### Recommendation
+
+**Option 4, with Option 2 folded in** — the unchanged-result guard is what makes the periodic re-fetch
+almost free, so they belong together. Option 2 alone is a reasonable first step if 4 is not wanted yet.
+
+Shape:
+
+1. Fetch full fact history with `timeRange = null`; hold it.
+2. Compute the snapshot at T client-side each tick.
+3. Re-fetch on a cadence for external writes, plus immediately on open, save and tab return — which
+   `refresh()` already does.
+4. Skip downstream work when the result is unchanged, which will be essentially always.
+5. Facts row cap 1 000 → 20 000, with a truncation warning.
+
+**Correctness improves as well as cost.** Today a fact change is picked up whenever a tick's snapshot
+happens to cross it — accurate to one tick of *wall clock*, which at 10× playback speed is about three
+seconds of timeline. Holding the history makes it exact at every frame.
+
+### The one call to make — cadence
+
+New facts currently appear within 300 ms; afterwards they appear within one interval. At a weekly
+change rate even 300 s would be five orders of magnitude faster than the data, so the only case that
+constrains this is a person adding a fact and watching for it to land.
+
+**Recommend 30 s:** still a ~360× reduction, worst case half a minute, and with the unchanged-result
+guard each re-fetch costs almost nothing downstream. 60 s would reuse
+`FloorMapEventState.BASELINE_INTERVAL_MS` and save a constant; the difference is felt only by someone
+watching for their own write.
+
+**Assumption to confirm before building:** hundreds to low thousands of distinct fact keys. At tens of
+thousands the arithmetic changes and the history should be measured first.
+
+### Risk of making this change — **LOW** (option 2) / **MEDIUM** (option 4)
+
+Option 2 cannot change behaviour — it skips work that produces an identical result. Option 4 changes
+where the snapshot is computed, so the cases to hold are playback across a fact change, a scrub
+backwards across one, and an externally written fact appearing within the cadence.
+
+### Verification
+
+- Playing across the instant a fact changes shows it change at that instant, at 1× and at 10× speed.
+- Scrubbing backwards across a fact change shows the earlier version.
+- A fact written directly to the database appears within the cadence, with no tab switch.
+- A fact written while the Map tab is hidden and paused appears on return, immediately.
+- The facts query runs once per cadence during playback, not once per tick — assert on query count.
+- With no facts changing, the canvas, roster and area membership are not re-pushed per tick.
+- A store whose history exceeds the cap warns once and still draws the facts it has.
+
+---
+
 # Part C — Javadoc corrections
 
 65 docs were confirmed wrong against their implementations. Almost all are harmless drift, and the
@@ -1649,6 +1769,11 @@ by this branch's own tip commit (`7ad6b4d9e4`). Either restore the document or r
 
 # Part D — Suggested sequencing
 
+> **Written 2026-08-21 and only partly reconciled since.** It predates F9, F13, F14 and F15, and
+> several of its PRs have landed — see *Status at a glance*, which is the authoritative record. The
+> ordering rationale below still holds; the PR list does not enumerate the later findings except
+> where noted.
+
 Revised after D1. F1 was the one severe-and-expensive item; it is now severe-and-cheap, so it moves
 from "scheduled separately" to second in the queue, and the stopgap PR disappears.
 
@@ -1677,8 +1802,14 @@ after PR 2 so the memoised key is the UUID rather than the name.
 
 **PR 7 — javadoc sweep.** C2–C7. Large but mechanical; keep it out of the behavioural PRs.
 
-**Later, scheduled separately.** F6 architecture tier (per D8), F8 lazy fetching, F11 playback
-re-query and asset sandboxing.
+**PR 8 — playback query load.** F15 (facts: full history once, snapshot computed client-side) with
+F11's playback re-query item. They are the same problem seen from two ends — F13 addressed the events
+half of the churn, F15 addresses the facts half, and what is left after both is the staleness rule.
+Sequence F15's cheap tier (skip the downstream work when the parsed facts are unchanged) first: it is
+separable, carries no query-semantics risk, and makes the periodic re-fetch nearly free.
+
+**Later, scheduled separately.** F6 architecture tier (per D8), F8 lazy fetching, and asset
+sandboxing.
 
 Rationale: everything severe is now also cheap, so it all lands early. The only genuinely expensive
 item left is the canvas render architecture (F6 tier two), which is a performance ceiling rather than
