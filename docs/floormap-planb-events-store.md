@@ -50,7 +50,7 @@ map are **Condense** and **Retention**.
 
 | Setting | Default | Use | Why |
 |---|---|---|---|
-| **Condense** | *off* | **leave off** | See the warning below. Turning this on makes stationary entities vanish. |
+| **Condense** | *off* | **safe to enable** | It was not before — see below. Enabling it is now the recommended way to keep a busy store's baseline affordable. |
 | **Retention** | *off* (1 year if enabled) | off, or longer than you need to scrub back | Retention deletes old entries. The timeline can only scrub back as far as the data still exists. |
 | **Temporal precision** | `Millisecond` | `Millisecond`, or `Second` | Part of the key. Coarser than your event rate merges distinct events into one key. Only coarsen if events are genuinely no denser than that. |
 | **Overwrite** | `true` | `true` | Two events for the same entity at the same instant: the later write wins. With `false` the first is kept. Either is defensible; `true` matches re-ingesting corrected data. |
@@ -60,35 +60,48 @@ map are **Condense** and **Retention**.
 | **Snapshot settings** | all off | leave off | With `useSnapshotsForQuery` on, queries read a snapshot that may lag behind ingest, so the map shows stale positions. |
 | **Synchronise merge** | *(unset)* | leave alone | Ingest-side concern, unrelated to the Floor Map. |
 
-### Do not enable Condense
+### Condense is now safe — it was not before
 
 Condense removes **consecutive entries with identical values** for the same key, older than its
 threshold, keeping the earliest of each run.
 
-For state lookups that is lossless — the value at any time `T` is still correct, because you read
-the latest entry at or before `T`. **The Floor Map does not read it that way.** The Map tab
-queries a trailing 20-second window and takes the latest entry per entity within it. So:
+For state lookups that is lossless: the value at any time `T` is still correct, because you read the
+latest entry at or before `T`. **The Map tab used not to read it that way.** It queried a trailing
+20-second window and took the latest entry per entity within it, so an entity parked in one place
+and re-emitting the same location had all those repeats condensed away, the survivor fell outside
+the window, and the entity **disappeared from the map** while the store still said exactly where it
+was.
 
-- an entity parked in one place, re-emitting the same location every few seconds, has all those
-  repeats condensed away;
-- the single surviving entry is older than the window;
-- the entity **disappears from the map**, even though the store still says exactly where it is.
+**That window is gone.** The Map tab now keeps each entity's last known position client-side: every
+playback tick reads only what changed since the last one and updates what it holds, and a periodic
+re-read of the last six hours corrects it. An entity that stops emitting keeps its position instead
+of vanishing, so condensing its repeats away costs nothing.
 
-Condense is off by default. Keep it that way for a store a Floor Map reads.
+Better than merely safe: on a busy store **condense is what makes the periodic re-read
+affordable**. That read is capped at 20 000 rows, which over six hours is 0.93 events/second
+sustained — a hundred entities emitting once a minute already exceeds it, and the map then warns
+that it cannot see the full six hours. Collapsing repeated identical positions removes exactly the
+rows inflating that rate, leaving actual movements.
 
-### The 20-second window, and what it means for your data
+### How far back the map can see
 
-The Map tab does not ask "where is everything now" — it asks "what happened in the last 20
-seconds". An entity with no events in that window **is not drawn**.
+The re-read reaches **six hours** back from the selected time (`FloorMapEventState.HORIZON_MS`).
+So the failure mode, stated plainly: **an entity with no events in the last six hours is not
+shown.**
 
-This is a real behavioural difference from the SQL Temporal Store the events store used to be,
-where a snapshot query returned an entity's last known position however old. Plan B applies a
-query's time range literally, so the window is the window.
+That bound is deliberate rather than incidental. Without it, Plan B returns every event of the
+alphabetically-first entities and truncates in key order, because it scans the whole store applying
+a row predicate — so "some entities, chosen by key order" would be the alternative, which is not
+something an operator can act on. It also keeps an invariant the code documents: the positioned
+count is not a head-count of who is on site, and state that never shrank would quietly turn it into
+one.
 
-Practically: **emit an event per entity at least every 20 seconds** for anything that should stay
-visible while stationary, and do not condense those repeats away. If your data cannot do that,
-the window is a constant (`FloorMapMapPresenter.EVENTS_WINDOW_MS`) and matches the trail fade
-duration on purpose.
+**What this means for your data:** nothing, for anything emitting at all regularly. There is no
+longer a 20-second obligation. Emit at whatever rate suits the source.
+
+The horizon disappears when Plan B gains a server-side latest-per-key read — see
+`planb-snapshot-read-proposal.md`. Until then it is the cost of Plan B applying a query's time
+range literally where the SQL Temporal Store reinterprets it as a snapshot.
 
 ---
 
@@ -172,7 +185,9 @@ In order, because each step depends on the one before:
 |---|---|
 | `returned N rows but no entities` | The entity/location column names do not match the query's columns. |
 | `none of the N event entities could be placed … facts query returned keys like 'X'` | `location` values name fact keys that do not exist. |
-| *nothing at all* | No rows in the window. Check ingest, the timeline position, and Condense. |
+| `the events baseline query failed` | The store is unreachable or has never been written to. Reported once per document, not once a minute. |
+| `the events baseline hit its 20000-row limit` | More than six hours' worth of events at this rate. Enable Condense. Reported once per document. |
+| *nothing at all* | No rows at all. Check ingest and the timeline position. |
 
 Note the last row: an empty result and empty facts both produce **silence** rather than a message.
 That is a known reporting gap, not a sign that everything is fine.
@@ -183,10 +198,10 @@ That is a known reporting gap, not a sign that everything is fine.
 
 - [ ] Name matches `^[a-z_0-9]+$`
 - [ ] State Type is **Temporal State**
-- [ ] Condense **off**
+- [ ] Condense — **off or on, both fine**; on is better for a busy store
 - [ ] Retention off, or longer than your timeline needs
 - [ ] Snapshot settings off
 - [ ] Value type `Variable`
 - [ ] Ingest uses `<temporal-state>` with an explicit `<time>`
 - [ ] `Value` is JSON carrying at least `location`
-- [ ] Entities that should stay visible while stationary emit at least every 20s
+- [ ] Entities that should stay visible emit at least once every six hours
