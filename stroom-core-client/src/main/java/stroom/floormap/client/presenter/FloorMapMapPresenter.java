@@ -43,6 +43,7 @@ import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapGroupSnapshot;
 import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapStageReporter;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.Column;
 import stroom.query.api.DestroyReason;
@@ -60,6 +61,7 @@ import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
+import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.histogram.client.HistogramDataModel;
@@ -187,6 +189,19 @@ public class FloorMapMapPresenter
 
     /** Whether a baseline failure has already been reported for this document. */
     private boolean baselineErrorReported;
+
+    /**
+     * Names whichever stage of the events pipeline came up empty, once it has stayed empty.
+     *
+     * <p>Four stages can each produce nothing and all four look the same on screen. Three of them
+     * used to say nothing at all, including the two most likely first-run failures, so an empty map
+     * gave no clue whether the query, the column mapping, the facts or the location values were at
+     * fault. See {@link FloorMapStageReporter} for why it waits rather than reporting on sight.</p>
+     */
+    private final FloorMapStageReporter stageReporter = new FloorMapStageReporter();
+
+    /** Rows the last applied events read returned, for {@link #stageReporter}. */
+    private int lastEventRowCount;
 
     /**
      * The upper bound the in-flight delta was issued for.
@@ -843,6 +858,10 @@ public class FloorMapMapPresenter
      * @param t the timeline position being read at
      */
     private void readEvents(final long t) {
+        // A new instant is new evidence. Without this, scrubbing through a sparse stretch would
+        // count one empty observation per position visited and eventually report a configuration
+        // problem where there is simply no data at those times.
+        stageReporter.reset();
         final String query = getEventsQueryToUse();
         if (query == null || query.trim().isEmpty()) {
             return;
@@ -986,6 +1005,7 @@ public class FloorMapMapPresenter
             return;
         }
         final List<FloorMapObject> entities = parseEventRows(tableResult);
+        lastEventRowCount = NullSafe.size(tableResult.getRows());
         reportUnparsedEvents(tableResult, entities);
         eventState.applyDelta(entities, pendingDeltaTo);
         if (isTruncated(tableResult)) {
@@ -1038,6 +1058,7 @@ public class FloorMapMapPresenter
         final List<FloorMapObject> entities = tableResult == null
                 ? Collections.emptyList()
                 : parseEventRows(tableResult);
+        lastEventRowCount = tableResult == null ? 0 : NullSafe.size(tableResult.getRows());
         reportUnparsedEvents(tableResult, entities);
 
         if (outcome.truncated()) {
@@ -1082,7 +1103,9 @@ public class FloorMapMapPresenter
     private void publishKnownEntities() {
         final List<FloorMapObject> entities = eventState.known();
         lastRawEventObjects = entities;
-        pushEventEntities(placeEventEntities());
+        final List<FloorMapObject> placed = placeEventEntities();
+        reportEmptyStage(entities.size(), placed.size());
+        pushEventEntities(placed);
         // Entities have moved, so which areas they are in may have changed.
         updateAreaMembership();
         // The outbound notification the Editor tab's layer discovery accumulates from. This tab's
@@ -1161,6 +1184,43 @@ public class FloorMapMapPresenter
         return tableResult.getTotalResults() != null
                && tableResult.getRows() != null
                && tableResult.getTotalResults() > tableResult.getRows().size();
+    }
+
+    /**
+     * Reports whichever stage of the pipeline came up empty, once it has stayed empty.
+     *
+     * <p>This is the only place that can see all four stages at once, which is why the
+     * classification lives here rather than beside any one of them.</p>
+     */
+    private void reportEmptyStage(final int entities, final int placed) {
+        final FloorMapStageReporter.Stage stage = stageReporter.observe(
+                lastEventRowCount, entities, NullSafe.size(lastFacts), placed);
+        if (stage == null) {
+            return;
+        }
+        switch (stage) {
+            case NO_EVENT_ROWS -> Console.error("Floor map: the events query returned no rows at"
+                                                + " this time. Check the events store holds data,"
+                                                + " and that the timeline is somewhere that data"
+                                                + " covers — the map reads back at most "
+                                                + (FloorMapEventState.HORIZON_MS / 3_600_000)
+                                                + " hours from the selected time.");
+            // The detailed column-mismatch message is emitted by reportUnparsedEvents, which has
+            // the result's columns to name. Saying it twice would be worse than saying it once.
+            case NO_ENTITIES_PARSED -> {
+            }
+            case NO_FACTS -> Console.error("Floor map: entities were found but there are no facts"
+                                           + " to place them on, so nothing is drawn. Check the"
+                                           + " facts store holds data and that the value schema"
+                                           + " matches it. Entities carrying literal"
+                                           + " 'map, x, y' coordinates do not need facts;"
+                                           + " these ones name a fact key.");
+            case NO_PLACEMENTS -> {
+                // placeEventEntities() already names the mismatching keys on both sides.
+            }
+            default -> {
+            }
+        }
     }
 
     /**

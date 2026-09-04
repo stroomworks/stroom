@@ -1,0 +1,147 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.floormap.shared;
+
+/**
+ * Says which stage of the events pipeline came up empty, and whether it has been empty long enough
+ * to be worth reporting.
+ *
+ * <h3>Why this exists</h3>
+ * <p>Four stages can each produce nothing — the query returns no rows, the rows parse to no
+ * entities, the entities resolve to no positions, or there are no facts to resolve against — and
+ * every one of them looks identical on screen: an empty map. Three of the four used to say nothing
+ * at all, and the two most likely first-run failures were among them. The cost was measured in
+ * hours: "nothing is drawn and nothing says why" is the most expensive class of problem this
+ * feature has.</p>
+ *
+ * <h3>Why it filters on persistence rather than on emptiness</h3>
+ * <p>Reporting the moment a stage is empty is wrong, and the guards this replaces were added
+ * because of it. Facts and events arrive from independent queries, so on startup — and after every
+ * scrub — there is normally a tick or two where events have landed and facts have not. That is
+ * transient and self-correcting, and logging it would produce noise on every single startup, which
+ * trains people to ignore the one message that matters.</p>
+ *
+ * <p>So a stage must be empty for {@link #PERSISTENCE_TICKS} consecutive observations before it is
+ * reported, and each episode is reported once rather than repeatedly. A stage that changes, or a
+ * {@link #reset()} from a time change, starts the count again.</p>
+ *
+ * <p>GWT-free with the counting explicit, so the filtering can be tested without a canvas — the
+ * same shape as {@link FloorMapEventState} and {@link FloorMapQueryThrottle}.</p>
+ */
+public final class FloorMapStageReporter {
+
+    /**
+     * How many consecutive observations a stage must stay empty before it is reported.
+     *
+     * <p>Three, against a ~300 ms playback tick, is about a second — long enough that the normal
+     * facts-after-events startup sequence passes unremarked, and short enough that a genuinely
+     * broken configuration is named while the user is still looking at it.</p>
+     */
+    public static final int PERSISTENCE_TICKS = 3;
+
+    /** Which stage produced nothing. */
+    public enum Stage {
+        /** Something reached the canvas. */
+        NONE,
+        /** The events query completed and returned no rows at all. */
+        NO_EVENT_ROWS,
+        /** Rows came back, but none parsed into an entity — the column names do not match. */
+        NO_ENTITIES_PARSED,
+        /** Entities exist and none could be placed, and there are no facts to place them against. */
+        NO_FACTS,
+        /** Entities and facts both exist, but no entity's location matches a fact key. */
+        NO_PLACEMENTS
+    }
+
+    private Stage current = Stage.NONE;
+    private int consecutive;
+    private boolean reportedCurrent;
+
+    /**
+     * Classifies one observation of the pipeline.
+     *
+     * <p>The cascade follows the data: no rows means the later stages were never reached, so there
+     * is no point naming them. The one non-obvious case is {@link Stage#NO_FACTS}, which is only
+     * reached when placement produced nothing <em>and</em> there are no facts — because an entity
+     * carrying literal coordinates needs no facts at all, so empty facts with something drawn is
+     * perfectly normal and must not be reported.</p>
+     *
+     * @param eventRows rows the events query returned
+     * @param entities  entities parsed from those rows
+     * @param facts     facts currently held
+     * @param placed    entities that resolved to a position
+     * @return the stage that came up empty, or {@link Stage#NONE}
+     */
+    public static Stage classify(final int eventRows,
+                                 final int entities,
+                                 final int facts,
+                                 final int placed) {
+        if (placed > 0) {
+            return Stage.NONE;
+        }
+        if (eventRows <= 0) {
+            return Stage.NO_EVENT_ROWS;
+        }
+        if (entities <= 0) {
+            return Stage.NO_ENTITIES_PARSED;
+        }
+        if (facts <= 0) {
+            return Stage.NO_FACTS;
+        }
+        return Stage.NO_PLACEMENTS;
+    }
+
+    /**
+     * Records one observation and returns the stage to report, if any.
+     *
+     * @return the stage, the first time it has been empty for {@link #PERSISTENCE_TICKS}
+     *         consecutive observations; otherwise {@code null}
+     */
+    public Stage observe(final int eventRows,
+                         final int entities,
+                         final int facts,
+                         final int placed) {
+        final Stage stage = classify(eventRows, entities, facts, placed);
+
+        if (stage != current) {
+            current = stage;
+            consecutive = 1;
+            reportedCurrent = false;
+        } else {
+            consecutive++;
+        }
+
+        if (Stage.NONE == stage || reportedCurrent || consecutive < PERSISTENCE_TICKS) {
+            return null;
+        }
+        reportedCurrent = true;
+        return stage;
+    }
+
+    /**
+     * Forgets the current run.
+     *
+     * <p>Called when the timeline moves. Without it a scrub through a sparse stretch would
+     * accumulate observations of the same empty stage from unrelated instants and report a
+     * configuration problem where there is merely no data at those times.</p>
+     */
+    public void reset() {
+        current = Stage.NONE;
+        consecutive = 0;
+        reportedCurrent = false;
+    }
+}

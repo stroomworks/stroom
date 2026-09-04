@@ -86,7 +86,7 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 - **F11 · `DocumentPluginEventManager` banner** — says opening a document routes through the initialisation handler; the only call site is `fireShowCreateDocumentDialogEvent`, i.e. creation. Verified still wrong. Worth fixing precisely because wiring that call into the open path would make Cancel delete an existing document.
 - **Settings-tab state-type check** — the init dialog validates that a Plan B events store is `TEMPORAL_STATE`; the Settings tab does not. Needs an async fetch where `onWrite` is synchronous, so it wants a validation hook rather than an inline check.
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
-- **F14 · four silent failure paths in the events pipeline** — of the four stages that can produce nothing, three say nothing when they do, and the two most likely first-run failures are among them. Every diagnostic goes to the browser console, where a non-developer will not see it. Written up as **F14**.
+- **F14 · four silent failure paths in the events pipeline** — **options 2+3 done 2026-09-04.** `FloorMapStageReporter` names whichever stage came up empty, filtered on persistence so the normal facts-after-events startup sequence stays quiet while a permanent fault speaks once. Option 4 — surfacing it on the canvas rather than only in the console — is still open, and is what a non-developer needs. See **F14**.
 - **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
 - **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. Only open question is the re-fetch cadence; recommend 30 s. Written up as **F15**.
 
@@ -1492,7 +1492,7 @@ Manual testing is still outstanding — the list is in the implementation plan.
 
 ---
 
-## F14 — Four silent failure paths in the events pipeline — MEDIUM — **NEW 2026-09-01**
+## F14 — Four silent failure paths in the events pipeline — MEDIUM — **Options 2+3 DONE 2026-09-04**
 
 **Files:** `FloorMapMapPresenter.reportUnparsedEvents`, `.placeEventEntities`, `.updateCanvas`
 (Editor), `FloorMapCanvasViewImpl`
@@ -1557,11 +1557,44 @@ Options 2 + 3 together, then 4. The pair is a contained change to one presenter 
 effect, and it converts the most expensive class of problem in this feature — "nothing is drawn and
 nothing says why" — into a named stage.
 
-### Verification
+### As built — options 2 and 3, 2026-09-04
 
-- A test per stage asserting the classifier names that stage and no other.
-- A test that the transient facts-after-events sequence reports nothing.
-- A test that a persistently empty stage does report, after the threshold.
+`FloorMapStageReporter` in `stroom-core-shared`: GWT-free, so the filtering is testable without a
+canvas. `classify` cascades through the four stages and returns the first that came up empty;
+`observe` adds the persistence filter and returns a stage only once it has been empty for
+`PERSISTENCE_TICKS` (3, about a second at the 300 ms tick) — and then **once per episode**, not once
+per tick. `reset()` is called from `readEvents` on every new instant.
+
+One case in the cascade is not obvious and is the reason it is a cascade rather than four
+independent checks: **`NO_FACTS` is only reached when placement produced nothing *and* facts are
+empty.** An entity carrying literal `map, x, y` coordinates needs no facts at all, so a map made
+entirely of those legitimately has none — and reporting it would be crying wolf at the one
+configuration that is working perfectly.
+
+The presenter classifies in `publishKnownEntities`, which is the only place that can see all four
+stages at once. Two of the four cases deliberately emit nothing of their own, because the existing
+messages are better: `reportUnparsedEvents` can name the result's actual columns alongside both
+settings, and `placeEventEntities` can name the mismatching keys on both sides. The reporter adds
+messages for the two that were silent — no rows at all, and no facts — and the persistence filter is
+what makes reporting them safe, since both are also transient states during normal startup.
+
+**Still to do: option 4**, surfacing this on the canvas rather than only in the console. The
+recommendation sequences it after 2+3 for good reason — it needs wording that does not alarm during
+startup, which is exactly what the persistence filter now provides.
+
+### Verification — done
+
+- A test per stage asserting the classifier names that stage and no other. ✅
+- A test that the transient facts-after-events sequence reports nothing. ✅
+- A test that a persistently empty stage does report, after the threshold. ✅
+- Plus: reported once per episode not once per tick; a different stage reported separately;
+  recovering and failing again reported again; `reset()` stopping a scrub from accumulating
+  evidence across unrelated instants; and empty facts **not** reported when entities are still
+  drawn.
+
+Twelve tests, all four mutations of the load-bearing logic killed — removing the success
+short-circuit, the once-per-episode guard, the persistence threshold, and `reset()`'s body each fail
+the suite.
 
 ### Help text — Entity ID Column and Location ID Column · **requested 2026-09-04**
 
