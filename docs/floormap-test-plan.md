@@ -457,7 +457,7 @@ once, plus an edge none of them names.
 | C3 | `map` changes partway through the stream | rows land under the right map names | **pass** — 1 000 under `fmba`, 2 under `fmbb` |
 | — | The map-change flush firing with an **empty** buffer | no error | **pass** — reached because the 1 000th entry flushes, so map B's first entry finds nothing pending |
 | — | The remainder flush at `endProcessing` | the trailing 2 land | **pass** |
-| C4 | An XSLT `lookup()` against a SQL Temporal Store | resolves, no `Error` stream | outstanding — needs a lookup pipeline, which is separate setup |
+| C4 | An XSLT `lookup()` against a SQL Temporal Store | resolves, no `Error` stream | **pass** — see below |
 | C5 | The store's Data tab | still lists entries | effectively covered — the same rows have been read back by query throughout |
 
 ### How it was done, and why not with 1 000 CSV rows
@@ -487,6 +487,35 @@ the events-store guide did not say so, and now does.
 
 Note the keys alone make entries distinct — the upsert key includes the key — so one shared
 timestamp serves all 1 000.
+
+### C4 — the lookup path, and how to wire one
+
+Passes. Five cases, all exact, `Error Count: 0`:
+
+| Key | Lookup time | Result |
+|---|---|---|
+| `a1` | 2026-09-02 | `{"type":"desk","n":1}` |
+| `a500` | 2026-09-02 | `{"type":"desk","n":500}` |
+| `a1000` | 2026-09-02 | `{"type":"desk","n":1000}` |
+| `zzz-does-not-exist` | 2026-09-02 | empty — a miss, not an error |
+| `a1` | **2026-08-01** | **empty** — before the entry's effective time |
+
+The last row is the one worth having: the lookup is genuinely temporal. `SqlStoreLookupImpl` queries
+with `EQUALS` on the event time, which `getQueryTime` lifts as a **snapshot boundary**, so the answer
+is the latest entry at or before that instant. Same key, earlier question, correctly nothing.
+
+**Wiring is not obvious and is the reason this test looked like "separate setup".** The XSLTFilter
+needs a `pipelineReference` whose **`pipeline` is the SqlTemporalStore document's own DocRef** — not
+a reference loader. `ReferenceData.doGetValue` dispatches on the reference's *type*: a
+`SqlTemporalStore` ref routes to `SqlStoreLookupImpl`, a `PlanB` ref to the Plan B lookup, anything
+else to a loader pipeline. The map name in `stroom:lookup()` must also equal the document's name,
+because that dispatch compares them.
+
+Documents: XSLT and pipeline `FLOOR_MAP_LOOKUP_TEST`, feed `FLOOR_MAP_LOOKUP`, reading from `fmba`.
+
+**Both misses are reported as `WARN`**, naming the store, map, key and lookup time — noticeably
+better diagnostics than the floor map gives for its own empty results, which is F14's point in one
+line.
 
 ---
 
