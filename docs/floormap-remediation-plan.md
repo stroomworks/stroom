@@ -906,33 +906,45 @@ Extend `TestFloorMapTransformationMatrix` with `e = NaN` / `f = Infinity` cases 
 
 ---
 
-## F8 — Unbounded result sets materialised in memory — MEDIUM — **PARTLY DONE** (`9400f3359c` drops the longtext read; `.fetch()` remains)
+## F8 — Unbounded result sets materialised in memory — MEDIUM — **WRITTEN UP, not fixed** (`docs/task-sqlstore-unbounded-fetch.md`)
 
-**File:** `UpdatableTemporalStoreDaoImpl.java:451–482` (`search`), `262–275` (`fetchAll`)
+**File:** `UpdatableTemporalStoreDaoImpl.java:472` (`search`), `243` (`fetchAll`)
 
 Both end in `.fetch()` with no `LIMIT`, so the streaming `Consumer` signature is an illusion — the
-whole result is materialised before the consumer sees a row. The timeline histogram deliberately
-passes a null time range to bypass deduplication, so every version of every key, `longtext` values
-included, loads into heap on document open and on every visible-range change — in order to extract
-timestamps. `find()` paginates correctly; these two do not.
+whole result is materialised before the consumer sees a row. `find()` paginates correctly (it
+applies `.limit()`/`.offset()` on both branches); these two do not.
 
-### The fix
+### Correction to this entry
 
-Use `fetchLazy()`/`fetchStream()` with a fetch size so rows stream. For the histogram specifically,
-add a purpose-built query that selects only `effective_time` (or aggregates to buckets in SQL) instead
-of shipping full rows.
+This was recorded as "**PARTLY DONE** — `9400f3359c` drops the `longtext` read", and that was
+repeated as "the remaining exposure is row count, not payload". **Wrong for the default
+configuration.** `9400f3359c` reads the value only when a coprocessor wants it, and the histogram
+runs the user's own events query text — whose default calls `jq(Value, …)` four times, putting
+`Value` in the field index. So the `longtext` is read after all, and a query that avoids it cannot
+drive a floor map, because the location lives inside the value.
 
-### Risk of making this change — **LOW–MEDIUM**
+Scoping also showed the two findings do not belong together. `search` with a null time range is
+unbounded in history; `fetchAll` deduplicates via `MAX(effective_time) GROUP BY key` and so returns
+one row per key, which is far milder than this entry implied — and its `List` return type runs all
+the way out through REST, so `fetchLazy()` is inapplicable to it.
 
-Lazy fetching holds a cursor and therefore a connection for the duration of consumption; if the
-consumer is slow or can block, that is a connection-pool hazard where the eager fetch was merely a
-memory hazard. Ensure the cursor is closed on the exception path. The histogram-specific query is
-lower risk and higher value — consider doing only that.
+### Status
 
-### Verification
+Not fixed. Written up in full at `docs/task-sqlstore-unbounded-fetch.md` for raising as an issue,
+because the two viable fixes both need a decision rather than just work:
 
-`TestUpdatableTemporalStoreDaoImplDB` with a row count above any fetch size; assert the consumer sees
-every row and the connection is released.
+- the client-side fix changes what the timeline density bars mean (all events in the store, versus
+  the user's filtered events query);
+- the server-side fix wants a purpose-built bucket-count endpoint, which is the right answer and
+  larger than this review's remit.
+
+`fetchLazy()` on `search` is explicitly **not** recommended first: the consumer feeds the LMDB write
+queue, which applies backpressure, so a held cursor pins a pooled DB connection where the eager
+fetch merely inflated heap.
+
+Two StroomQL defects block the tidier fixes and are worth raising separately: a single-column
+`select` throws `ArrayIndexOutOfBoundsException`, and `group by` over a large result set throws
+`Index 0 out of bounds`.
 
 ---
 
