@@ -80,6 +80,7 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 
 **Ready to do, no decision needed:**
 
+- **Entity ID Column and Location ID Column need help text** — requested 2026-09-04. The two settings on the **Events Query tab** are the least self-explanatory controls in the feature and the most damaging to get wrong: each must name a **column the events query actually selects**, and if either does not match, `parseRows` matches nothing, no entity reaches the canvas, and the map looks as though playback is switched off while the query still returns rows. Nothing on screen says any of that. See *Help text* below.
 - **F8 remainder** — `fetchLazy()` and a histogram-only query.
 - **F11 · no upload size cap** — `MAX_EDITABLE_CONTENT_LENGTH` (512 KiB) gates editing, not upload; nothing bounds what streams into the blob.
 - **F11 · `DocumentPluginEventManager` banner** — says opening a document routes through the initialisation handler; the only call site is `fireShowCreateDocumentDialogEvent`, i.e. creation. Verified still wrong. Worth fixing precisely because wiring that call into the open path would make Cancel delete an existing document.
@@ -1561,6 +1562,43 @@ nothing says why" — into a named stage.
 - A test per stage asserting the classifier names that stage and no other.
 - A test that the transient facts-after-events sequence reports nothing.
 - A test that a persistently empty stage does report, after the threshold.
+
+### Help text — Entity ID Column and Location ID Column · **requested 2026-09-04**
+
+Same family as the finding above: the user cannot tell what is wrong. Here they cannot tell what the
+control is *for*.
+
+These two live on the **Events Query tab**, and each must name a column the events query selects — by
+the alias in the query text, not by the underlying field. The generated default query aliases them
+`Entity ID` and `Location ID`, and `FloorMapEventsQuery` interpolates the same constants into both
+the query and the settings so they agree by construction. A hand-edited query breaks that agreement
+silently.
+
+**What goes wrong when they are wrong:** `FloorMapQueryPresenter.parseRows` finds no matching column,
+returns no entities, and the canvas draws nothing. The query itself still returns rows, so the Events
+Query tab looks healthy while the Map tab looks as though playback is off. The only signal is a
+console line — `returned N rows but no entities` — which a non-developer will not see.
+
+**Suggested text for Entity ID Column:**
+
+> The name of the column in the events query that identifies each entity — a person, vehicle or
+> asset. Must match a column the query selects, by its alias. The default query aliases this column
+> `Entity ID`. If it does not match, the map draws no entities even though the query returns rows.
+
+**And for Location ID Column:**
+
+> The name of the column in the events query holding each entity's location. Its values are either
+> coordinates (`<map>, <x>, <y>`) or the key of a fact to place the entity on — a desk or a gate — in
+> which case moving that fact moves the entity with it. Must match a column the query selects, by
+> its alias; the default query aliases this column `Location ID`.
+
+Worth pairing with a validation hint rather than only prose: the tab already knows the query's column
+names, so a value that matches none of them could be flagged in place instead of failing silently on
+the Map tab.
+
+**Also worth recording while here:** a floor map created *before* `db0cd682ee` has both settings
+`null`, because only the init dialog was fixed to populate them and nothing migrates an existing
+document. Such a map renders no entities until someone sets them by hand, with no indication why.
 
 ---
 
