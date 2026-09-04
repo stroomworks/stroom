@@ -1088,6 +1088,15 @@
     color: var(--text-color--low-emphasis);
 }
 
+/* Shown when the panel has no rows at all. Low emphasis on purpose: an empty layer set is an
+   ordinary state, not a fault, and this only exists so that a blank panel does not read as one. */
+.floormap-layer-empty {
+    padding: 8px;
+    color: var(--text-color--low-emphasis);
+    font-style: italic;
+    white-space: normal;
+}
+
 /* .floormap-layer-add is sized with the other layer-row icon buttons above; a
    second rule here would win on source order and silently undo the 24px target
    size. */

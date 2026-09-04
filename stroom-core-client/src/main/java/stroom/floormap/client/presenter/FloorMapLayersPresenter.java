@@ -286,6 +286,29 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
                 list.add(buildDiscoverFooter());
             }
         }
+
+        // An empty panel is otherwise indistinguishable from a broken one. This says which it is,
+        // and the wording differs by tab because so does the remedy: the Editor can add layers,
+        // and the read-only Map tab cannot.
+        if (list.getWidgetCount() == 0) {
+            list.add(buildEmptyPlaceholder());
+        }
+    }
+
+    /**
+     * A line explaining an empty panel.
+     *
+     * <p>A floor map with no type styles saved is a perfectly ordinary state — entities and facts
+     * render with defaults — but a blank panel reads as a failure, and this feature has enough
+     * silent-empty states already. On the Editor tab the message names the action that fills it; on
+     * the Map tab it says where that action lives, since layers cannot be added from here.</p>
+     */
+    private Widget buildEmptyPlaceholder() {
+        final Label label = new Label(editorMode
+                ? "No layers yet. Types found in the data appear here, or use Discover types."
+                : "No layers configured. They are added on the Editor tab.");
+        label.addStyleName("floormap-layer-empty");
+        return label;
     }
 
     private Widget buildDiscoverFooter() {
