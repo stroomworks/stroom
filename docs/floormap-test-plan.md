@@ -222,9 +222,9 @@ Outside Group A, two groups matter regardless of how Group A goes.
 
 **Group F** is the newest change (F15 — facts no longer query per tick) and the least exercised.
 **F3 is its headline**: scrubbing backwards past `desk-106`'s move is now computed in the browser
-rather than fetched, so a mistake there shows up in exactly one place and nowhere else. **F8** also
-covers a deliberate behaviour change worth agreeing to — switching to another Stroom document now
-pauses playback.
+rather than fetched, so a mistake there shows up in exactly one place and nowhere else. **F8**
+confirms the one deliberate behaviour change — switching to another Stroom document now pauses
+playback, which is intended.
 
 **Group B** is independent of both query changes, has never been exercised by hand, and fails
 silently — a content pack missing its assets looks fine until someone imports it somewhere else.
@@ -573,15 +573,17 @@ fact in the fixture whose position depends on where the timeline is.
 | **F7** | Move a desk on the **Editor** tab, save, switch to the **Map** tab | The move is there. This path already worked; it is retested because the facts read behind it changed | |
 | **F8** | Play, then switch to a **different Stroom document**, wait 30 seconds, come back | The timeline is **paused where you left it** — see the behaviour change below | |
 
-### One deliberate behaviour change, in F8
+### One deliberate behaviour change, in F8 — confirmed intended
 
 Switching to another Stroom document **now pauses playback**. It did not before: `afterSelectTab`
 fires only on this document's *inner* tabs, so the requestAnimationFrame loop kept running and kept
 driving result stores on a document nobody was looking at.
 
-So F8 looks different from how it used to. You now return to the position you left, rather than to
-wherever the clock ran on to while you were away. That is the intended outcome — but it is a change
-in what the feature does, not only in what it costs, so it is worth deciding you want it.
+So F8 looks different from how it used to: you return to the position you left, rather than to
+wherever the clock ran on to while you were away. **Confirmed as the wanted behaviour, 2026-09-04**,
+so F8 is a straight test rather than a decision — and it is repeated under *Do not file these as
+bugs*, since "the timeline stopped while I was away" is exactly what someone would otherwise
+report.
 
 ### What would tell you it is wrong
 
@@ -609,6 +611,10 @@ in what the feature does, not only in what it costs, so it is worth deciding you
   horizon-drop behaviour is Plan B only.
 - **No background image.** `ground-floor.png` was never uploaded.
 - The timeline opening at **NOW ± 24 hours** rather than fitted to the data. Click "Show All".
+- **Playback stopping while you were on another Stroom document.** Intended as of 2026-09-04: you
+  come back to the position you left rather than to wherever the clock ran on to. Before this the
+  loop kept running and kept driving result stores on a document nobody was looking at. Inner-tab
+  switches have always paused; this only makes the outer tab behave the same way.
 
 ---
 

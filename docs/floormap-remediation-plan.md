@@ -1823,11 +1823,13 @@ cadence and on becoming visible; `FloorMapPresenter` gained the outer-tab handle
 
 **Two behaviour changes worth naming, one of them user-visible:**
 
-1. **Switching to another Stroom document now pauses playback.** Not merely cheaper — *different*.
-   The user returns to the position they left rather than to wherever the clock ran on to. This
-   falls out of the `onContentTabVisible(false)` half of the new hook, and it is the larger share of
-   the load saved, but it is a change in what the feature does and wants agreeing to rather than
-   just testing. Manual test **F8**.
+1. **Switching to another Stroom document now pauses playback** — **confirmed wanted, 2026-09-04.**
+   Not merely cheaper, *different*: the user returns to the position they left rather than to
+   wherever the clock ran on to. It falls out of the `onContentTabVisible(false)` half of the new
+   hook and is the larger share of the load saved. Raised as a decision because it changes what the
+   feature does; agreed, so it is now intended behaviour rather than an open question, and it is
+   listed under *Do not file these as bugs* in the test plan. Manual test **F8** still confirms it
+   happens.
 2. Facts used to reach the canvas from `setData`, i.e. on every poll of a still-running search. They
    now arrive once, on completion. For a facts query that is imperceptible, and it is the right
    trade — it is what stops a partial result blanking the floor plan.
