@@ -1727,7 +1727,7 @@ truncation decades out, and a truncation warning covers the case where the assum
 | | Approach | Effect |
 |---|---|---|
 | **1** | Leave it | ~3 fact reads/s/tab for data that changes weekly; half of F11's churn stays |
-| **2** | Skip the downstream work when the parsed facts are unchanged | Removes the client-side cost only. ~10 lines, no query-semantics risk, no behaviour change. Separable and safe on its own |
+| **2** | Skip the downstream work when the facts are unchanged | Removes the client-side cost only. ~10 lines, no query-semantics risk, no behaviour change. Separable and safe on its own |
 | **3** | Fetch a forward window (`[T, T+70s]`) every 60 s | **Broken** — returns the future snapshot, not the intervening versions. Recorded so it is not re-proposed |
 | **4** | Fetch full history once (`timeRange = null`), compute the snapshot locally, re-fetch on a cadence for external writes | The fix. Playback, scrub and step become zero-query for facts |
 
@@ -1743,6 +1743,12 @@ Shape:
 3. Re-fetch on a cadence for external writes, plus immediately on open, save and tab return — which
    `refresh()` already does.
 4. Skip downstream work when the result is unchanged, which will be essentially always.
+   **Guard on the raw `TableResult` rows, not on the parsed facts.** `Row` implements
+   `equals`/`hashCode`; `Fact` does **not**, so guarding on parsed facts means adding an `equals` to
+   `Fact` *and* still paying `FloorMapFactTableParser.parse` on every tick. Comparing the rows first
+   skips the parse as well, and needs nothing new. Note the two guards already in `parseFacts` —
+   `entityList.updateFacts` returns a changed flag, and `reanchorEventEntities` compares positions —
+   so what is unguarded is the parse, `setTypeStyles`, `setFacts` and `updateAreaMembership`.
 5. Facts row cap 1 000 → 20 000, with a truncation warning.
 
 **Correctness improves as well as cost.** Today a fact change is picked up whenever a tick's snapshot
