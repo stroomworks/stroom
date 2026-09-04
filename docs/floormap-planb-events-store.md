@@ -135,10 +135,13 @@ Add a **Plan B Filter** to the pipeline that processes your event feed. It takes
 
 - **`<map>`** is the Plan B document's **name**, resolved at ingest.
 - **`<key>`** becomes the `Key` column — the entity identity the Floor Map groups by.
-- **`<time>`** becomes `EffectiveTime`. If omitted, the **stream's effective time** is used
-  instead; if there is neither, ingest errors with `Temporal state 'time' is null`. For movement
-  data you almost always want an explicit per-event `<time>`, or every event in a stream lands at
-  the same instant.
+- **`<time>`** becomes `EffectiveTime`, and **must be ISO 8601** — `PlanBFilter` parses it with
+  `DateUtil.parseNormalDateTimeStringToInstant`, which rejects epoch millis however plausible they
+  look. `2026-09-01T10:00:05.000Z` is fine; `1788500000001` fails with `Unable to parse string
+  "…" as datetime`, once per entry. (`SqlStoreFilter` behaves identically, so the constraint is the
+  same on both stores.) If omitted, the **stream's effective time** is used instead; if there is
+  neither, ingest errors with `Temporal state 'time' is null`. For movement data you almost always
+  want an explicit per-event `<time>`, or every event in a stream lands at the same instant.
 - **`<value>`** becomes `Value`.
 
 **Prefer `<temporal-state>` over the generic `<reference>` element.** Both reach the same code,

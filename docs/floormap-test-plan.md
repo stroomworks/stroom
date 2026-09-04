@@ -447,13 +447,46 @@ that already has assets is a distinct path from the empty case.
 Writes now batch at 1 000 and the lookup store resolves once per pipeline run. Row counts at the
 batch boundary are unit-tested; the pipeline is not.
 
-| # | Do | Expect |
-|---|---|---|
-| C1 | Ingest a reference stream through `SqlStoreFilter` | row count matches the input exactly |
-| C2 | Ingest exactly **1 000** rows, then **1 001** | both exact — this is the boundary |
-| C3 | A stream whose `map` column changes partway | rows land under the right map names |
-| C4 | An XSLT `lookup()` against a SQL Temporal Store | resolves, and produces no `Error` stream |
-| C5 | The store's Data tab | still lists entries |
+**C1, C2 and C3 pass, run through the MCP server on 2026-09-04.** One stream tested all three at
+once, plus an edge none of them names.
+
+| # | Do | Expect | Result |
+|---|---|---|---|
+| C1 | Ingest through `SqlStoreFilter`; count rows | matches the input exactly | **pass** — 1 000 and 2, exactly as emitted |
+| C2 | Exactly **1 000** entries, then a remainder | both exact — this is the batch boundary | **pass** — `fmba` holds exactly 1 000; no off-by-one, no loss, no duplication |
+| C3 | `map` changes partway through the stream | rows land under the right map names | **pass** — 1 000 under `fmba`, 2 under `fmbb` |
+| — | The map-change flush firing with an **empty** buffer | no error | **pass** — reached because the 1 000th entry flushes, so map B's first entry finds nothing pending |
+| — | The remainder flush at `endProcessing` | the trailing 2 land | **pass** |
+| C4 | An XSLT `lookup()` against a SQL Temporal Store | resolves, no `Error` stream | outstanding — needs a lookup pipeline, which is separate setup |
+| C5 | The store's Data tab | still lists entries | effectively covered — the same rows have been read back by query throughout |
+
+### How it was done, and why not with 1 000 CSV rows
+
+`WRITE_BATCH_SIZE` counts **entries reaching the filter**, not input rows. So
+`floormap-batch-test.xslt` fans one input row out into `count` `<temporal-state>` elements, and a
+**two-line** CSV produces the 1 000-entry batch:
+
+```
+map,prefix,time,count
+fmba,a,2026-09-01T00:00:00.000Z,1000
+fmbb,b,2026-09-01T00:00:00.000Z,2
+```
+
+That also isolates the filter's buffering from CSV parsing, which is the thing under test. Wiring:
+feed `FLOOR_MAP_BATCH` → pipeline `FLOOR_MAP_BATCH_TEST` (`CombinedParser` →
+`XSLTFilter` → `SqlStoreFilter`) → stores `fmba` and `fmbb`. Kept separate from the fixture
+pipeline so it cannot disturb `floor_map_facts`.
+
+### One thing this turned up
+
+**`<time>` must be ISO 8601.** The first attempt used epoch millis and every entry failed with
+`Unable to parse string "1788500000001" as datetime`. Both `SqlStoreFilter` and `PlanBFilter` parse
+it with `DateUtil.parseNormalDateTimeStringToInstant`, which does not accept epoch millis — whatever
+`DateUtil.parseUnknownString` allows elsewhere. Loud rather than silent (one error per entry), but
+the events-store guide did not say so, and now does.
+
+Note the keys alone make entries distinct — the upsert key includes the key — so one shared
+timestamp serves all 1 000.
 
 ---
 
