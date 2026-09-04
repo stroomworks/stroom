@@ -24,9 +24,11 @@ import stroom.importexport.api.ImportExportAsset;
 import stroom.resource.api.ResourceStore;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
+import stroom.util.io.ByteSize;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.EntityServiceException;
+import stroom.util.shared.ModelStringUtil;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResourceKey;
 
@@ -37,6 +39,7 @@ import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collection;
@@ -62,16 +65,24 @@ public class DocumentAssetService {
 
     private final Provider<ExplorerNodeService> explorerNodeServiceProvider;
 
+    /**
+     * Read per upload rather than cached, so raising the limit takes effect without a restart —
+     * which matters because the symptom of it being too low is a rejected upload.
+     */
+    private final Provider<DocumentAssetConfig> configProvider;
+
     @SuppressWarnings("unused")
     @Inject
     public DocumentAssetService(final DocumentAssetDao dao,
                                 final ResourceStore resourceStore,
                                 final SecurityContext securityContext,
-                                final Provider<ExplorerNodeService> explorerNodeServiceProvider) {
+                                final Provider<ExplorerNodeService> explorerNodeServiceProvider,
+                                final Provider<DocumentAssetConfig> configProvider) {
         this.dao = dao;
         this.resourceStore = resourceStore;
         this.securityContext = securityContext;
         this.explorerNodeServiceProvider = explorerNodeServiceProvider;
+        this.configProvider = configProvider;
     }
 
     private DocRef getDocRef(final String ownerId) {
@@ -167,6 +178,27 @@ public class DocumentAssetService {
             if (!uploadPath.toFile().exists()) {
                 throw new IOException("The uploaded file does not exist");
             }
+
+            // Check the size before anything reaches the database. Nothing bounded this, so the
+            // only limits were the client's patience and the column's; a file too large to be
+            // useful still became a row that every export then had to carry.
+            //
+            // The upload is already a temp file by this point, so this is one stat call rather
+            // than a counting stream. It does mean the bytes have been accepted and written to
+            // disk before being refused - bounding that would have to happen in the HTTP layer,
+            // which is a different concern - but the durable cost is the blob, and this stops it.
+            final ByteSize maxUploadSize = configProvider.get().getMaxUploadSize();
+            final long uploadSize = Files.size(uploadPath);
+            if (maxUploadSize != null && uploadSize > maxUploadSize.getBytes()) {
+                resourceStore.deleteTempFile(resourceKey);
+                throw new IOException("The uploaded file is "
+                                      + ModelStringUtil.formatIECByteSizeString(uploadSize)
+                                      + ", which is larger than the maximum of "
+                                      + maxUploadSize
+                                      + " (documentAsset.maxUploadSize). Upload a smaller file, or "
+                                      + "raise that limit.");
+            }
+
             // Stream the data into the database from the temp file
             try (final InputStream uploadStream = new BufferedInputStream(new FileInputStream(uploadPath.toFile()))) {
                 dao.updateNewUploadedFile(

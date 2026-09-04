@@ -18,6 +18,7 @@ package stroom.document.asset.impl;
 
 import stroom.util.config.annotations.RequiresRestart;
 import stroom.util.config.annotations.RequiresRestart.RestartScope;
+import stroom.util.io.ByteSize;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.AbstractConfig;
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Configuration for Document Asset Management, notably mimetype mapping.
@@ -44,6 +46,17 @@ public class DocumentAssetConfig extends AbstractConfig {
 
     /** Default mimetype map */
     private static final Map<String, String> DEFAULT_MIMETYPES = new HashMap<>();
+
+    /**
+     * Largest asset upload accepted.
+     *
+     * <p>50 MiB, chosen against what assets are for — background images, icons, a visualisation's
+     * own scripts — rather than against what the column could hold. Nothing bounded this before, so
+     * the only limit was the client's patience and the database's; the 512 KiB constant nearby
+     * gates <em>editing</em> an asset, not uploading one, so a large file uploaded fine and then
+     * could not be opened.</p>
+     */
+    private static final ByteSize DEFAULT_MAX_UPLOAD_SIZE = ByteSize.ofMebibytes(50);
 
     /** Mimetype if nothing else matches */
     private static final String DEFAULT_MIMETYPE = "application/octet-stream";
@@ -65,6 +78,9 @@ public class DocumentAssetConfig extends AbstractConfig {
 
     /** Mimetype to use if nothing in the map matches */
     private final String defaultMimetype;
+
+    /** Largest upload accepted; see {@link #DEFAULT_MAX_UPLOAD_SIZE}. */
+    private final ByteSize maxUploadSize;
 
     /** Map of filename extension to ACE editor mode */
     private final Map<String, String> aceEditorModes = new HashMap<>();
@@ -115,6 +131,7 @@ public class DocumentAssetConfig extends AbstractConfig {
         this.clearAssetCacheOnStartup = DEFAULT_CLEAR_ASSET_CACHE_ON_STARTUP;
         this.aceEditorModes.putAll(DEFAULT_EDITOR_MODES);
         this.defaultAceEditorMode = DEFAULT_ACE_EDITOR_MODE;
+        this.maxUploadSize = DEFAULT_MAX_UPLOAD_SIZE;
     }
 
     @SuppressWarnings("unused")
@@ -124,7 +141,10 @@ public class DocumentAssetConfig extends AbstractConfig {
                                @JsonProperty("assetCacheDir") final String assetCacheDir,
                                @JsonProperty("clearAssetCacheOnStartup") final Boolean clearAssetCacheOnStartup,
                                @JsonProperty("aceEditorModes") final Map<String, String> aceEditorModes,
-                               @JsonProperty("defaultAceEditorMode") final String defaultAceEditorMode) {
+                               @JsonProperty("defaultAceEditorMode") final String defaultAceEditorMode,
+                               @JsonProperty("maxUploadSize") final ByteSize maxUploadSize) {
+
+        this.maxUploadSize = Objects.requireNonNullElse(maxUploadSize, DEFAULT_MAX_UPLOAD_SIZE);
 
         if (mimetypes == null || mimetypes.isEmpty()) {
             LOGGER.info("No mimetypes supplied in the configuration file; using default values");
@@ -174,6 +194,14 @@ public class DocumentAssetConfig extends AbstractConfig {
     }
 
     @RequiresRestart(RestartScope.SYSTEM)
+    @JsonPropertyDescription("The largest asset upload accepted, e.g. \"50MiB\". Enforced before the "
+                             + "data is streamed into the database. Note this is separate from the "
+                             + "512KiB limit on editing an asset's content in the UI.")
+    @JsonProperty("maxUploadSize")
+    public ByteSize getMaxUploadSize() {
+        return maxUploadSize;
+    }
+
     @JsonPropertyDescription("The mimetypes map from extension to mimetype for the asset manager")
     @JsonProperty("mimetypes")
     public Map<String, String> getMimetypes() {

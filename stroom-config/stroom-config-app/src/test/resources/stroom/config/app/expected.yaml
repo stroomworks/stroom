@@ -462,6 +462,7 @@ appConfig:
     clearAssetCacheOnStartup: false
     default: "application/octet-stream"
     defaultAceEditorMode: "TEXT"
+    maxUploadSize: "50M"
     mimetypes:
       apng: "image/apng"
       avif: "image/avif"
