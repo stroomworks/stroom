@@ -167,14 +167,29 @@ If that is what you see, the feature is working and everything below is detail.
 | A9 · nothing polls while hidden | **pass** |
 | A14 · a standing timeline is quiet | **pass** — console silent while parked |
 | A11 · truncating baseline | **pass** — warned once |
+| A10 · SQL Temporal Store unchanged | **pass** — see the note below |
 | A12 · unreadable store | **premise was wrong** — see A12; a never-written store returns clean empty, so silence is correct |
 | A4 · condense | **not runnable** — see A4 |
-| A2, A10, A13 | outstanding |
+| A2, A13 | outstanding, both low value |
 
-So the delta/baseline machinery, the horizon, the discontinuity hook in both directions, the
-stop-at-end reorder, the hidden-tab behaviour and the standstill cadence are all confirmed against
-real data. **Every path that runs in normal use has now been exercised.** What is left is the three
-failure-mode tests (A11, A12, A13) and two narrower ones.
+**Group A is effectively complete.** Ten pass, two turned out not to be tests, and the two
+remaining are the low-value tail. Confirmed against real data: the delta/baseline machinery, the
+horizon in both directions, the discontinuity hook both ways, the stop-at-end reorder, the
+hidden-tab behaviour, the standstill cadence, the truncation failure mode, and no behavioural change
+on a SQL Temporal Store.
+
+**A10 was run against `Enterprise Floor Mapping Demo / Floor Map`, not a purpose-built fixture** —
+and that was the better choice. It is a genuine pre-existing map on a genuine SQL Temporal Store
+(`map_mysql_store`, 5 090 rows spanning 2006 → 2026-08-07), so it exercises the real configuration
+rather than a reconstruction of it. Note two things about running it:
+
+- With the timeline at "now" the entities appear but **do not move**, and that is correct. The store's
+  data ends 2026-08-07, and a SQL Temporal Store reinterprets the range as a snapshot at `T`, so you
+  get each entity's last known position, static. Movement needs the timeline moved to **2026-08-07**
+  (177 events that day, densest in the afternoon).
+- That the entities appear at all, a month stale, *is* the A10 assertion: the horizon is not enforced
+  on a SQL store. On Plan B they would have been pruned — which is exactly the contrast **A3**
+  demonstrates from the other side.
 
 A14 is worth calling out: it pins the one defect that manual testing was always most likely to
 catch. `nextRead` classified a repeated tick at the same instant as a timeline jump, which put it on
