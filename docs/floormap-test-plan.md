@@ -159,6 +159,22 @@ If that is what you see, the feature is working and everything below is detail.
 Use **`Test Floor Map`** unless a test says otherwise. **Keep the browser console open** — several
 tests are about what it says.
 
+## If "What working looks like" passes, this is the short list
+
+That reference state already proves **A1** — the headline behaviour. What it does *not* touch is
+everything below, in descending order of value:
+
+| Priority | Tests | Why they are not covered by the reference state |
+|---|---|---|
+| **Do these** | **A3, A5, A6, A8, A14** | A3 is the *opposite* direction — without pruning the occupancy counts are a lie. A5/A6 exercise the discontinuity hook, a separate path from playback. A8 is where implementation found a defect four reviews missed. A14 pins a bug fixed today |
+| **Then** | **A12, A11** | Both are failure-mode tests, and both need a document creating first. A12 is the cheaper and more likely of the two |
+| **If time** | A2, A7, A9, A13, A10 | Each narrows one behaviour, none is load-bearing on its own. A10 is a regression check on a store the defect cannot affect |
+| **Skip** | **A4** | Not runnable against this fixture — see below |
+
+Outside Group A, **Group B is the one to do regardless of how Group A goes.** It is independent of
+the events change, has never been exercised by hand, and fails silently — a content pack missing its
+assets looks fine until someone imports it somewhere else.
+
 ### A1 · An idle entity stays on the map · *the headline test*
 
 Set the timeline to **08:24:20** and leave it paused.
@@ -193,21 +209,30 @@ The baseline reaches back **6 hours** from wherever the timeline is. `carol`'s o
 draw list re-emits from the animator's last positions and only prunes on the teleport path. That is
 pre-existing and not a regression.
 
-### A4 · `condense` is now safe
+### A4 · `condense` · **not runnable against this fixture — skip it**
 
-`dave` re-emits an identical value every 5 minutes. Those repeats are exactly what `condense`
-collapses, and collapsing them used to make him vanish.
+This test cannot be run as written, and the reason is worth knowing because it also corrects the
+advice this feature used to give.
 
-1. Confirm `dave` is drawn at `desk-105` at 08:24:20.
-2. Open `floor_map_events` → **enable Condense**, and **set its duration to 5 minutes**.
-3. Wait for a merge (about a minute), reopen the map, return to 08:24:20.
+Condense only collapses runs **older than its threshold**, and the Plan B settings' unit dropdown
+starts at **days** — 1 day is the shortest you can set. The baseline horizon is **6 hours**. So
+nothing the map reads at a live timeline position is ever condensed, whatever you set: the window is
+always four times narrower than the shortest threshold.
 
-- **Expect:** `dave` is still at `desk-105`.
-- **Fail:** he is gone.
+Consequences:
 
-**The duration matters.** Condense only removes runs *older than* its threshold, and the default is
-**1 day** while this data is hours old — so leaving the default collapses nothing and the test
-passes without testing anything.
+- **The old hazard cannot occur near the live end.** A stationary entity's repeats are only
+  collapsed once they are a day old, by which time they are long outside any horizon that would
+  have shown them.
+- **Condense does not make the baseline cheaper either**, which is what the events-store guide and
+  the truncation warning both used to claim. Corrected in both. The knobs that apply to a
+  truncating baseline are the **horizon** and the **row cap**.
+- Where condense still matters is playback further back than its threshold — and that is also the
+  only place it can still drop a stationary entity.
+
+**To test it properly** you would need events spanning more than a day and a timeline scrubbed back
+beyond the condense threshold, which is a different fixture from this one. Low value: the behaviour
+is bounded, understood, and off by default.
 
 ### A5 · Scrub backwards · *uses the desk that moves*
 
@@ -294,7 +319,7 @@ Throttle the network in DevTools, or use the bulk map, and watch a baseline take
 - **Expect:** lateness or failure is reported.
 - **Fail:** it looks indistinguishable from an empty store.
 
-### A14 · A standing timeline is quiet · *new, added 2026-09-04*
+### A14 · A standing timeline is quiet
 
 Park the timeline anywhere and leave the Map tab open and paused for three minutes.
 

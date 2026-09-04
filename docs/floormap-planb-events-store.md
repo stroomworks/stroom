@@ -50,7 +50,7 @@ map are **Condense** and **Retention**.
 
 | Setting | Default | Use | Why |
 |---|---|---|---|
-| **Condense** | *off* | **safe to enable** | It was not before — see below. Enabling it is now the recommended way to keep a busy store's baseline affordable. |
+| **Condense** | *off* | **safe to enable, but it will not reduce what the map reads** | It was unsafe before — see below. It is now harmless, and also close to irrelevant to the Floor Map: its shortest available threshold is longer than the horizon. |
 | **Retention** | *off* (1 year if enabled) | off, or longer than you need to scrub back | Retention deletes old entries. The timeline can only scrub back as far as the data still exists. |
 | **Temporal precision** | `Millisecond` | `Millisecond`, or `Second` | Part of the key. Coarser than your event rate merges distinct events into one key. Only coarsen if events are genuinely no denser than that. |
 | **Overwrite** | `true` | `true` | Two events for the same entity at the same instant: the later write wins. With `false` the first is kept. Either is defensible; `true` matches re-ingesting corrected data. |
@@ -77,11 +77,23 @@ playback tick reads only what changed since the last one and updates what it hol
 re-read of the last six hours corrects it. An entity that stops emitting keeps its position instead
 of vanishing, so condensing its repeats away costs nothing.
 
-Better than merely safe: on a busy store **condense is what makes the periodic re-read
-affordable**. That read is capped at 20 000 rows, which over six hours is 0.93 events/second
-sustained — a hundred entities emitting once a minute already exceeds it, and the map then warns
-that it cannot see the full six hours. Collapsing repeated identical positions removes exactly the
-rows inflating that rate, leaving actual movements.
+**But it will not make the periodic re-read cheaper**, and an earlier version of this guide
+wrongly said it would. Condense only collapses runs **older than its threshold**
+(`TemporalStateDb.condense` skips anything at or after it), and the shortest threshold the Plan B
+settings offer is **1 day** — the unit dropdown starts at days. The horizon is six hours. So
+everything the map reads at a live timeline position is newer than any threshold you can set, and
+none of it is ever condensed.
+
+Where condense does apply is playback further back than its threshold. That is also the only place
+it can still hurt: a stationary entity's run is collapsed to its earliest entry, and if that entry
+falls outside the six hours before the scrubbed-to position, the entity is not drawn there. So
+condense trades a storage saving for a gap in deep historical playback, and buys the Floor Map
+nothing at the live end.
+
+The read is capped at 20 000 rows, which over six hours is 0.93 events/second sustained — a hundred
+entities emitting once a minute already exceeds it, and the map warns when it does. The remedies
+that actually apply are a **shorter horizon**, a **higher row cap**, or the upstream latest-per-key
+read; not condense.
 
 ### How far back the map can see
 
@@ -186,7 +198,7 @@ In order, because each step depends on the one before:
 | `returned N rows but no entities` | The entity/location column names do not match the query's columns. |
 | `none of the N event entities could be placed … facts query returned keys like 'X'` | `location` values name fact keys that do not exist. |
 | `the events baseline query failed` | The store is unreachable or has never been written to. Reported once per document, not once a minute. |
-| `the events baseline hit its 20000-row limit` | More than six hours' worth of events at this rate. Enable Condense. Reported once per document. |
+| `the events baseline hit its 20000-row limit` | The store produces more events than one baseline can carry. A shorter horizon or a higher cap; **not** Condense, which cannot reach this data. Reported once per document. |
 | *nothing at all* | No rows at all. Check ingest and the timeline position. |
 
 Note the last row: an empty result and empty facts both produce **silence** rather than a message.
@@ -198,7 +210,7 @@ That is a known reporting gap, not a sign that everything is fine.
 
 - [ ] Name matches `^[a-z_0-9]+$`
 - [ ] State Type is **Temporal State**
-- [ ] Condense — **off or on, both fine**; on is better for a busy store
+- [ ] Condense — **off or on, both fine**; it makes no difference to what the map reads
 - [ ] Retention off, or longer than your timeline needs
 - [ ] Snapshot settings off
 - [ ] Value type `Variable`

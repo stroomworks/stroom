@@ -1042,11 +1042,18 @@ public class FloorMapMapPresenter
 
         if (outcome.truncated()) {
             if (eventState.applyTruncatedBaseline(entities, outcome.to())) {
+                // Deliberately does NOT recommend condense. Condense only collapses runs older
+                // than its threshold, and the shortest that document's UI offers is one day -
+                // four times the horizon - so nothing the baseline reads at a live timeline
+                // position is ever condensed. It helps only for playback further back than the
+                // threshold, which is also where it can drop a stationary entity. The knobs that
+                // do apply here are the horizon and the row cap.
                 Console.error("Floor map: the events baseline hit its "
-                              + FloorMapBaselineQueryHelper.MAX_ROWS + "-row limit, so entities"
+                              + FloorMapBaselineQueryHelper.MAX_ROWS + "-row limit over the last "
+                              + (FloorMapEventState.HORIZON_MS / 3_600_000) + " hours, so entities"
                               + " idle for a long time may be missing and will not be pruned."
-                              + " Enabling `condense` on the Plan B store collapses repeated"
-                              + " identical positions, which is what makes this affordable."
+                              + " The store is producing more events than one baseline can carry;"
+                              + " a shorter horizon or a higher row cap is the fix."
                               + " Reported once per document.");
             }
         } else {
