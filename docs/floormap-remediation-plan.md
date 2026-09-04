@@ -56,10 +56,12 @@ Last reconciled against `git log origin/master..HEAD` on **2026-09-01** (24 comm
 |---|---|---|
 | F5 | Store resolved once per pipeline run (`8cc85ee889`) | Value cache — **deferred**, raised as `task-sqlstore-lookup-value-cache.md` |
 | F6 | Per-frame rebuild and trail growth (`7ab7b0bdbd` + trail commits) | Architecture tier, deferred by D8; see `task-floormap-incremental-canvas-render.md` |
+| F8 | `includeValue` guard (`9400f3359c`) — **correct but insufficient**, see F8 | `search` still ends in `.fetch()` with no time predicate. Written up as `task-sqlstore-unbounded-fetch.md`; both viable fixes need a decision |
+| F11 | **9 of 11 items** — verified in code 2026-09-04 | **2 items**: playback search churn (needs a decision), asset servlet (out of scope, raised elsewhere) |
 
-Both deferred tiers are written up as standalone, self-contained issues in `docs/`; neither is blocked on a decision, only on capacity.
-| F8 | Histogram no longer reads `longtext` (`9400f3359c`) | `search`/`fetchAll` still end in `.fetch()`; `fetchLazy` + a histogram-only query |
-| F11 | 6 of 11 items (`438106dc1f`, `9400f3359c`, `a6432bd258`) | 4 items — see below |
+All three deferred tiers are written up as standalone, self-contained issues in `docs/`. F5 and F6 are blocked only on capacity; F8 needs a decision first.
+
+**F11 recount, 2026-09-04.** The header said "6 of 11" and the *Left* cell said "4 items", which did not add up and was stale either way. Each row of the F11 table was checked against the code: `GWT.log` gone; both `from`-clause interpolations wrapped in `QuotedStringUtil.escapeDoubleQuoted`; `TermHandler` chains the cause at all three sites; the histogram fallback constants are `rgba(21,101,192,…)`, matching blue-800 in the stylesheet; `populateDraft` uses `.where(...)`; `applyChanges` batches consecutive same-type runs; group duplicate and group delete each reload once and `deleteAllShardsForKeys` takes the whole key list; the duplicated sentinel paragraph is gone. Plus the upload cap and the `DocumentPluginEventManager` banner, done today.
 
 ## Open
 
