@@ -422,13 +422,23 @@ from every content pack. A broken pack fails quietly, which is why this is worth
 
 You need a map with assets: upload an image on the Assets tab and reference it from a fact's `img`.
 
-| # | Do | Expect |
-|---|---|---|
-| B1 | Export a map with assets; inspect the pack | asset files present |
-| B2 | Import that pack into a clean instance | assets restored **and rendering** on the canvas |
-| B3 | Copy the map | the copy has its own assets; editing one does not affect the other |
-| B4 | Delete the map | assets removed, not orphaned |
-| B5 | Export/import a map with **no** assets | works, no errors |
+| # | Do | Expect | Result |
+|---|---|---|---|
+| B1 | Export a map with assets; inspect the pack | asset files present | **pass** 2026-09-04 |
+| B2 | Import that pack back | assets restored **and rendering** on the canvas | **pass** 2026-09-04 |
+| B3 | Copy the map | the copy has its own assets; editing one does not affect the other | outstanding |
+| B4 | Delete the map | assets removed, not orphaned | partly — a map was deleted and re-imported cleanly, but that does not prove the rows were removed rather than orphaned |
+| B5 | Export/import a map with **no** assets | works, no errors | outstanding |
+
+**No clean instance is needed for B2.** Importing into the same instance is an *update*, not a
+clash: `StoreImpl.importDocument` looks for an existing document by UUID and, finding one, keeps its
+name and updates in place. So the round trip is **delete the map, then import the pack** — which
+also exercises B4. Do not edit UUIDs to force a second copy; that tests a configuration that never
+occurs, since the pack's asset paths stay keyed to the original UUID.
+
+**B3 is the one most likely to find something.** `copyLiveAssets` is documented as *"Does not delete
+assets in the destination. Will throw an error if assets already exist"* — so a copy onto a target
+that already has assets is a distinct path from the empty case.
 
 ---
 

@@ -161,7 +161,14 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
         final DocRef storeDocRef = getStore()
                 .importDocument(docRef, importExportDocument, importState, importSettings);
         try {
-            documentAssetService.setAssetsFromImport(docRef, importExportDocument.getPathAssets());
+            // The ref the store returned, not the one passed in. Equivalent today - StoreImpl only
+            // rewrites the name, never the UUID, and setAssetsFromImport keys on the UUID - so this
+            // is defensive rather than a fix. Worth doing because the failure it would cause is
+            // silent and destructive: setAssetsFromImport DELETES everything under the owner UUID
+            // before inserting, so a mismatched ref would both lose the imported assets and wipe
+            // whatever was already there.
+            documentAssetService.setAssetsFromImport(
+                    storeDocRef, importExportDocument.getPathAssets());
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }
