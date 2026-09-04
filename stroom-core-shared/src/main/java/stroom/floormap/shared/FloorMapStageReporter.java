@@ -53,18 +53,56 @@ public final class FloorMapStageReporter {
      */
     public static final int PERSISTENCE_TICKS = 3;
 
-    /** Which stage produced nothing. */
+    /**
+     * Which stage produced nothing, and what to say about it on the map.
+     *
+     * <p>Each stage carries its own short status text and whether it is a <b>fault</b>. The
+     * distinction is the whole design of the on-canvas line: {@link #NO_EVENT_ROWS} is most often
+     * not a fault at all — the timeline is simply somewhere the data does not cover — so it reads
+     * as a statement of fact and is styled quietly. The other three are almost always
+     * misconfiguration and are styled to draw the eye. A single uniform warning style would make
+     * the common, harmless case look like breakage, which is worse than the silence it replaces.</p>
+     *
+     * <p>The text is deliberately much shorter than the console messages, which stay as they are:
+     * a status line has to be readable at a glance and cannot carry a paragraph of remedy.</p>
+     */
     public enum Stage {
         /** Something reached the canvas. */
-        NONE,
+        NONE(null, false),
         /** The events query completed and returned no rows at all. */
-        NO_EVENT_ROWS,
+        NO_EVENT_ROWS("No events at this time", false),
         /** Rows came back, but none parsed into an entity — the column names do not match. */
-        NO_ENTITIES_PARSED,
+        NO_ENTITIES_PARSED("Events found, but no entity matched the Entity ID column", true),
         /** Entities exist and none could be placed, and there are no facts to place them against. */
-        NO_FACTS,
+        NO_FACTS("No floor plan at this time, so entities have nowhere to be placed", true),
         /** Entities and facts both exist, but no entity's location matches a fact key. */
-        NO_PLACEMENTS
+        NO_PLACEMENTS("Entities reference locations that are not on this floor plan", true);
+
+        private final String statusText;
+        private final boolean fault;
+
+        Stage(final String statusText, final boolean fault) {
+            this.statusText = statusText;
+            this.fault = fault;
+        }
+
+        /**
+         * Short text for the on-canvas status line, or {@code null} for {@link #NONE}.
+         *
+         * @return the text, or {@code null} if there is nothing to say
+         */
+        public String getStatusText() {
+            return statusText;
+        }
+
+        /**
+         * Whether this stage indicates something is wrong, as opposed to merely empty.
+         *
+         * @return {@code true} for a stage that almost always means misconfiguration
+         */
+        public boolean isFault() {
+            return fault;
+        }
     }
 
     private Stage current = Stage.NONE;
@@ -135,9 +173,16 @@ public final class FloorMapStageReporter {
     /**
      * Forgets the current run.
      *
-     * <p>Called when the timeline moves. Without it a scrub through a sparse stretch would
-     * accumulate observations of the same empty stage from unrelated instants and report a
-     * configuration problem where there is merely no data at those times.</p>
+     * <p>Called on a <b>discontinuity</b> — a scrub, a step, a stop-at-end, or a document read —
+     * not on every playback tick. Without it a scrub through a sparse stretch would accumulate
+     * observations of the same empty stage from unrelated instants and report a configuration
+     * problem where there is merely no data at those times.</p>
+     *
+     * <p><b>Calling it per tick defeats the filter entirely,</b> which is what it originally did.
+     * Exactly one {@link #observe} happens per events read, so a reset on every tick pinned
+     * {@link #consecutive} at 1 and {@link #PERSISTENCE_TICKS} was never reached — nothing was ever
+     * reported. Successive playback ticks are not unrelated evidence: three in a row with no rows
+     * is a real second of emptiness, and saying so is the point.</p>
      */
     public void reset() {
         current = Stage.NONE;

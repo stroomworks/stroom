@@ -173,4 +173,43 @@ class TestFloorMapStageReporter {
                 .as("each observation was for a different instant, so none of them accumulate")
                 .isNull();
     }
+
+    // ---- the wording carried on each stage ----
+
+    @Test
+    void everyEmptyStageHasStatusTextAndNoneHasNone() {
+        assertThat(Stage.NONE.getStatusText()).isNull();
+        for (final Stage stage : Stage.values()) {
+            if (Stage.NONE != stage) {
+                assertThat(stage.getStatusText())
+                        .as("status text for " + stage)
+                        .isNotNull()
+                        .isNotBlank();
+            }
+        }
+    }
+
+    @Test
+    void onlyNoEventRowsIsNotAFault() {
+        // The distinction the on-canvas styling turns on: the timeline being outside the data is
+        // not a fault, and styling it like one would make the common case read as breakage.
+        assertThat(Stage.NONE.isFault()).isFalse();
+        assertThat(Stage.NO_EVENT_ROWS.isFault()).isFalse();
+        assertThat(Stage.NO_ENTITIES_PARSED.isFault()).isTrue();
+        assertThat(Stage.NO_FACTS.isFault()).isTrue();
+        assertThat(Stage.NO_PLACEMENTS.isFault()).isTrue();
+    }
+
+    @Test
+    void statusTextIsShortEnoughForAStatusLine() {
+        // A line that wraps over a floor plan is worse than no line. The console messages carry
+        // the remedy; these carry the diagnosis.
+        for (final Stage stage : Stage.values()) {
+            if (Stage.NONE != stage) {
+                assertThat(stage.getStatusText().length())
+                        .as("length of " + stage + " status text")
+                        .isLessThanOrEqualTo(70);
+            }
+        }
+    }
 }

@@ -229,6 +229,10 @@ playback, which is intended.
 **Group B** is independent of both query changes, has never been exercised by hand, and fails
 silently — a content pack missing its assets looks fine until someone imports it somewhere else.
 
+**Group G** is quick and entirely visual, so nothing else can check it. **G1** and **G4** are the
+two that matter: both are cases where the map is *correctly* empty, and styling either as a fault
+would teach people to ignore the line.
+
 ### A1 · An idle entity stays on the map · *the headline test*
 
 Set the timeline to **08:24:20** and leave it paused.
@@ -597,6 +601,38 @@ report.
     the map is pointed at the wrong store.
   - *"the facts query is not returning the \"Effective Time Ms\" column"* — the generated query
     lost the `toLong(EffectiveTime)` column, and the plan is showing latest-regardless-of-time.
+
+---
+
+# Group G — the map says why it is empty (F14 option 4)
+
+Four things can leave the map blank, and they used to look identical. There is now a line across the
+top of the canvas naming which one it is. **Only on the Map tab** — the Editor has its own canvas
+and different expectations about emptiness.
+
+Two visual registers, and telling them apart is most of what these tests check:
+
+- **quiet** (faint text, no border) — nothing is wrong, there is simply nothing here
+- **fault** (accent colour, border, shadow) — something is misconfigured
+
+| # | Do | Expect | Result |
+|---|---|---|---|
+| **G1** | Scrub to a time well outside the data — a year ahead, say — and **leave it paused** | **"No events at this time"**, in the *quiet* register. Paused is the important part: it is when someone is actually puzzling over an empty map, and it is the case the first attempt at this got wrong | |
+| **G2** | Scrub back into the data | The line **disappears** as soon as entities are drawn | |
+| **G3** | On the Events Query tab set **Entity ID Column** to a name the query does not select — `Nonsense` — and return to the Map | **"Events found, but no entity matched the Entity ID column"**, in the *fault* register: coloured, bordered. Put the column back afterwards | |
+| **G4** | Open `Test Floor Map (empty)`, whose stores hold nothing | The quiet "no events" line, **not** a fault. An empty store is not a misconfiguration | |
+| **G5** | Open any working map normally and watch the first second | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not — a "no floor plan" line flashing on every open would be worse than the silence it replaces | |
+| **G6** | Play through a stretch where entities are present throughout | No line, and no flicker. Most delta ticks legitimately return no rows — an entity that has not moved emits nothing — so a naive check would blink once per tick | |
+| **G7** | With a screen reader, focus the canvas while G1 is showing | The map's accessible name includes the explanation, and it is announced **once**, not repeatedly | |
+| **G8** | Narrow the pane hard (drag the dock wide) while a line is showing | The line stays readable and does not overlap the scale bar in the bottom-left | |
+
+### What would tell you it is wrong
+
+- A **fault**-styled line for G1 or G4 — the two cases that are not faults. That is the failure that
+  matters most, because it trains people to ignore the line.
+- A line on the **Editor** tab.
+- A line that appears during G5, or blinks during G6.
+- A line that stays up after the map has drawn something (G2).
 
 ---
 

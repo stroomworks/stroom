@@ -3102,6 +3102,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private String currentTimeText;
 
     /**
+     * The standing "why is this empty" text, or {@code null}.
+     *
+     * <p>Held rather than only pushed to the view because it also belongs in the accessible
+     * summary. A screen-reader user gets the map's state from the summary, not from looking at the
+     * corner of the canvas, so the explanation has to reach both or it reaches only sighted
+     * users.</p>
+     */
+    private String emptyStatusText;
+
+    /**
      * Whether the timeline is playing. Held here so time announcements can be
      * suppressed during playback — see {@link #setCurrentTimeText(String)}.
      */
@@ -3123,6 +3133,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (currentTimeText != null && !currentTimeText.isEmpty()) {
             sb.append(" at ").append(currentTimeText);
+        }
+
+        // Before the counts, not after: for a map that is empty for a nameable reason, the reason
+        // is the headline and "no moving entities" is the detail.
+        if (emptyStatusText != null) {
+            sb.append(". ").append(emptyStatusText);
         }
 
         // Entity counts by type, alphabetical so the sentence does not reshuffle
@@ -3206,6 +3222,30 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /** The current zoom as a rounded percentage, e.g. {@code "150%"}. */
     private String zoomPercentText() {
         return Math.round(scale * 100) + "%";
+    }
+
+    /**
+     * Sets or clears the line explaining why the map is empty, and folds it into the accessible
+     * summary.
+     *
+     * <p>Announced only when the text <em>changes</em>, which {@link FloorMapCanvasView#announce}
+     * enforces anyway by dropping repeats — a line that re-announced on every tick while the map
+     * stayed legitimately empty would be worse than not saying it at all.</p>
+     *
+     * @param text  what to say, or {@code null} to clear it
+     * @param fault whether this is a fault rather than merely an absence
+     */
+    public void setEmptyStatus(final String text, final boolean fault) {
+        final String normalised = text == null || text.isEmpty() ? null : text;
+        final boolean changed = normalised == null
+                ? emptyStatusText != null
+                : !normalised.equals(emptyStatusText);
+        emptyStatusText = normalised;
+        getView().setEmptyStatus(normalised, fault);
+        refreshAccessibleSummary();
+        if (changed && normalised != null) {
+            getView().announce(normalised);
+        }
     }
 
     /**
@@ -3899,6 +3939,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param message the message to announce
          */
         void announce(String message);
+
+        /**
+         * Shows or clears the on-canvas line saying why the map is empty.
+         *
+         * @param text  what to say, or {@code null} to clear it
+         * @param fault whether this is a fault rather than merely an absence
+         */
+        void setEmptyStatus(String text, boolean fault);
     }
 
 }

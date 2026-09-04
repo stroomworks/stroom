@@ -5,6 +5,21 @@
 2026-09-04 (`7e797509a2`); this is the remaining piece.
 **Size:** small, but with real taste risk — see *Wording*.
 
+> **BUILT 2026-09-04.** Kept for the record; nothing here is outstanding. Two things went
+> differently from this spec, both recorded in F14's *As built*:
+>
+> 1. **The API gap named below was resolved the other way.** This asked for a `currentStage()`
+>    accessor so the line could read the persistence-filtered state. The line does not use that
+>    filter at all: a filter exists because a repeated *log line* is noise, whereas rewriting a
+>    status line is invisible — and waiting three observations means saying nothing on a **paused**
+>    timeline, where only one events read ever lands, which is exactly when someone is puzzling over
+>    an empty map. The real transient is checked directly instead, via `factHistory.isLoaded()`.
+> 2. **Bottom-centre became top-centre**, because bottom-centre runs into the scale bar on a narrow
+>    pane and the pane is routinely narrow with the dock open.
+>
+> Building it also turned up a defect in the options this was sequenced after: the persistence
+> filter had never let anything through, because `reset()` ran once per tick.
+
 ---
 
 ## The problem

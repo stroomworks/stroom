@@ -733,6 +733,55 @@
    own, so this is the canvas's only standing statement of scale.
    ----------------------------------------------------------------------- */
 
+/*
+ * Line naming why the map is empty, top-centre.
+ *
+ * Two registers, and the split is the point of the whole thing. The default is quiet, because the
+ * most common cause - the timeline sitting outside the data - is not a fault, and a map that is
+ * correctly empty must not look broken. --fault is for the three causes that really are
+ * misconfiguration. One uniform warning style would teach people to ignore the line that matters.
+ *
+ * Top-centre is shared with the area-draw / set-scale hint, and they cannot collide: both of those
+ * modes exist only on the Editor tab, which has its own canvas instance, and this line is only ever
+ * set by the Map tab. The lower z-index settles it in that order anyway if that ever changes -
+ * a modal mode's instructions matter more than an explanation of emptiness.
+ *
+ * Not bottom-centre, which would run into the scale bar on a narrow pane; the pane is resizable and
+ * routinely narrow with the dock open.
+ *
+ * pointer-events: none so it can never intercept a click meant for the map; the text is still
+ * selectable by dragging from outside it, and reachable by a screen reader either way.
+ */
+.stroom-floormap-empty-status {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - 20px);
+    box-sizing: border-box;
+    text-align: center;
+    font-size: 12px;
+    color: var(--vis-text__color--faint);
+    background-color: var(--page__background-color);
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    pointer-events: none;
+    z-index: 16;
+    display: none;
+}
+
+.stroom-floormap-empty-status--visible {
+    display: block;
+}
+
+.stroom-floormap-empty-status--fault {
+    color: var(--floormap-accent__color);
+    border-color: var(--floormap-accent__color);
+    font-weight: 500;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
 .stroom-floormap-scale-bar {
     position: absolute;
     bottom: 10px;

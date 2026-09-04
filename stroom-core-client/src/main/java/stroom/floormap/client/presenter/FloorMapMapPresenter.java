@@ -654,6 +654,21 @@ public class FloorMapMapPresenter
         floorMapTimelinePresenter.setDiscontinuityHandler(() -> {
             eventState.requestBaseline();
             pendingDiscontinuity = true;
+            // A jump is new evidence, and the emptiness of the instant we left says nothing about
+            // the one we arrived at. Without this, scrubbing through a sparse stretch would
+            // accumulate empty observations from unrelated instants and name a configuration
+            // problem where there is simply no data at those times.
+            //
+            // Deliberately here and not in readEvents(), where it used to be. Exactly one
+            // observation happens per events read, so resetting every tick pinned the counter at
+            // one and PERSISTENCE_TICKS was never reached - nothing was ever reported. Successive
+            // playback ticks are not unrelated: three in a row with no rows is a real second of
+            // emptiness, which is precisely what is worth saying.
+            stageReporter.reset();
+            // The line itself is deliberately left standing until the read that follows replaces
+            // it. Clearing here would make it blink off and back on for every scrub within one
+            // empty stretch, and a flashing explanation is worse than one that is a round trip
+            // stale - especially as the handler above has just asked for that read.
         });
 
         // Name the Tracking grid as the map's text alternative. The canvas is
@@ -723,6 +738,8 @@ public class FloorMapMapPresenter
         lastFactSnapshotRows = null;
         factsHistoryErrorReported = false;
         factsHistoryTruncationReported = false;
+        stageReporter.reset();
+        floorMapCanvasPresenter.setEmptyStatus(null, false);
         baselineErrorReported = false;
         orderNoteReported = false;
         orderCheckedQuery = null;
@@ -874,10 +891,6 @@ public class FloorMapMapPresenter
      * @param t the timeline position being read at
      */
     private void readEvents(final long t) {
-        // A new instant is new evidence. Without this, scrubbing through a sparse stretch would
-        // count one empty observation per position visited and eventually report a configuration
-        // problem where there is simply no data at those times.
-        stageReporter.reset();
         final String query = getEventsQueryToUse();
         if (query == null || query.trim().isEmpty()) {
             return;
@@ -1211,6 +1224,9 @@ public class FloorMapMapPresenter
     private void reportEmptyStage(final int entities, final int placed) {
         final FloorMapStageReporter.Stage stage = stageReporter.observe(
                 lastEventRowCount, entities, NullSafe.size(lastFacts), placed);
+
+        refreshEmptyStatus(entities, placed);
+
         if (stage == null) {
             return;
         }
@@ -1465,6 +1481,42 @@ public class FloorMapMapPresenter
         if (!FloorMapLocationResolver.samePositions(placed, lastEventObjects)) {
             pushEventEntities(placed);
         }
+        // Facts have changed, so the classification may have too: an entity that had nowhere to be
+        // placed may now have somewhere, and this is also the first point at which "there are no
+        // facts" can be told apart from "the facts have not arrived yet".
+        refreshEmptyStatus(NullSafe.size(lastRawEventObjects), placed.size());
+    }
+
+    /**
+     * Puts the current pipeline state on the canvas as a line of text, or takes it down.
+     *
+     * <p><b>Deliberately not gated on the console's persistence filter.</b> That filter exists
+     * because a repeated log line is noise, and a stage must therefore have been empty for
+     * {@link FloorMapStageReporter#PERSISTENCE_TICKS} before it is written. A status line has the
+     * opposite property: rewriting the same text is invisible, and waiting three observations means
+     * saying nothing at all on a <em>paused</em> timeline, where exactly one events read ever lands
+     * — which is precisely when someone is staring at an empty map wondering why.</p>
+     *
+     * <p>What the tick count was really standing in for is checked directly instead. Facts and
+     * events come from independent reads, so "there are no facts" and "the facts have not arrived
+     * yet" are indistinguishable until one lands, and naming the first when it is the second would
+     * alarm on every single open. {@code factHistory.isLoaded()} answers that exactly — which it
+     * could not before F15, when facts were re-queried per tick and there was no held state to
+     * ask.</p>
+     *
+     * <p>It does not flicker during playback either, and the reason is worth stating because it is
+     * not obvious: with the F13 delta read, most ticks legitimately return no rows — an entity that
+     * has not moved emits nothing — but {@link FloorMapStageReporter#classify} tests
+     * {@code placed > 0} first, so a map with entities on it never reaches the empty branches.</p>
+     */
+    private void refreshEmptyStatus(final int entities, final int placed) {
+        if (!factHistory.isLoaded()) {
+            floorMapCanvasPresenter.setEmptyStatus(null, false);
+            return;
+        }
+        final FloorMapStageReporter.Stage stage = FloorMapStageReporter.classify(
+                lastEventRowCount, entities, NullSafe.size(lastFacts), placed);
+        floorMapCanvasPresenter.setEmptyStatus(stage.getStatusText(), stage.isFault());
     }
 
     /**

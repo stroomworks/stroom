@@ -369,6 +369,21 @@ public class FloorMapCanvasViewImpl
     SimplePanel scaleBarLine;
 
     /**
+     * Line naming why the map is empty, when it is empty for a reason worth naming.
+     *
+     * <p>See {@link #setEmptyStatus(String, boolean)} for why it is styled in two registers
+     * rather than one.</p>
+     */
+    @UiField
+    Label emptyStatus;
+
+    private static final String EMPTY_STATUS_VISIBLE =
+            "stroom-floormap-empty-status--visible";
+
+    private static final String EMPTY_STATUS_FAULT =
+            "stroom-floormap-empty-status--fault";
+
+    /**
      * Visually-hidden live region carrying the map's spoken commentary. See
      * {@link #announce(String)}.
      */
@@ -508,6 +523,38 @@ public class FloorMapCanvasViewImpl
         // If the route to the grid should be spoken on focus, it wants a short fixed
         // sentence of its own, not this id.
         svgContainer.getElement().setAttribute("aria-describedby", elementId);
+    }
+
+    /**
+     * Shows or clears the line explaining why the map is empty.
+     *
+     * <p>Two registers, and the distinction matters more than the wording does. A map with no
+     * events at the selected time is <b>usually correct</b> — the timeline is simply outside the
+     * data — so that case reads as a quiet statement of fact. The three configuration faults are
+     * styled to draw the eye. Given one uniform "warning" look, the common harmless case would
+     * read as breakage, and people would learn to ignore the line that matters.</p>
+     *
+     * <p>Never a modal, toast or anything that takes focus: an empty map is a frequent and often
+     * correct state, and interrupting for it would be worse than the silence this replaces.</p>
+     *
+     * @param text  what to say, or {@code null}/blank to clear the line
+     * @param fault whether this is a fault rather than merely an absence
+     */
+    @Override
+    public void setEmptyStatus(final String text, final boolean fault) {
+        if (text == null || text.isEmpty()) {
+            emptyStatus.setText("");
+            emptyStatus.removeStyleName(EMPTY_STATUS_VISIBLE);
+            emptyStatus.removeStyleName(EMPTY_STATUS_FAULT);
+            return;
+        }
+        emptyStatus.setText(text);
+        emptyStatus.addStyleName(EMPTY_STATUS_VISIBLE);
+        if (fault) {
+            emptyStatus.addStyleName(EMPTY_STATUS_FAULT);
+        } else {
+            emptyStatus.removeStyleName(EMPTY_STATUS_FAULT);
+        }
     }
 
     /** {@inheritDoc} */

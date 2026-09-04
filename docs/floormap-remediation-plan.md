@@ -87,7 +87,7 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 - ~~**F11 · `DocumentPluginEventManager` banner**~~ — **DONE 2026-09-04** (`50847657f4`). Said *opening*; it is creating. Corrected, and `DocInitialisationHandler` now states the constraint where an implementer will see it — acting on the old wording would have been destructive, since the handler's cancel path deletes the document.
 - ~~**Settings-tab state-type check**~~ — **DONE 2026-09-04** (`f31fd583d4`). No validation hook was needed after all: the events-store selection handler already existed and is the better place, because telling someone at the moment they choose beats telling them when they try to leave. A rejected choice reverts to the last valid one rather than clearing, and a failed fetch leaves the selection alone, since it says nothing about the store's type.
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
-- **F14 · four silent failure paths in the events pipeline** — **options 2+3 done 2026-09-04.** `FloorMapStageReporter` names whichever stage came up empty, filtered on persistence so the normal facts-after-events startup sequence stays quiet while a permanent fault speaks once. Option 4 — surfacing it on the canvas rather than only in the console — is still open, and is what a non-developer needs. See **F14**.
+- ~~**F14 · four silent failure paths in the events pipeline**~~ — **DONE 2026-09-04, all four options.** `FloorMapStageReporter` names whichever stage came up empty; option 4 puts it on the canvas, in two registers so a map that is correctly empty does not look broken. **Building option 4 found that options 2+3 had never reported anything**: `reset()` ran once per tick and exactly one observation happens per read, so the persistence counter was pinned at 1 and its threshold of 3 was unreachable. The silence looked like the pass that test A14 recorded. See **F14** for the fix and for why the status line deliberately does not use that filter.
 - **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
 - **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. **Cadence decided 2026-09-04: 60 s plus a re-fetch whenever the Map becomes visible** — better than the 30 s recommended, because it makes the one case that constrains the interval (someone watching for their own write) immediate rather than twice as fast, and reuses an existing constant. Two of the three visibility paths are already wired; the third wants a `ContentTabSelectionChangeEvent` handler on `FloorMapPresenter`, following `QueryDocPresenter` and `DashboardSuperPresenter` — which also lets a Map on a background document stop playing, removing ~6–7 result-store cycles/second nobody is watching. **No open questions; ready to build.** Written up as **F15**.
 
@@ -1518,7 +1518,7 @@ Manual testing is still outstanding — the list is in the implementation plan.
 
 ---
 
-## F14 — Four silent failure paths in the events pipeline — MEDIUM — **Options 2+3 DONE 2026-09-04**
+## F14 — Four silent failure paths in the events pipeline — MEDIUM — **DONE 2026-09-04** (options 2, 3 and 4)
 
 **Files:** `FloorMapMapPresenter.reportUnparsedEvents`, `.placeEventEntities`, `.updateCanvas`
 (Editor), `FloorMapCanvasViewImpl`
@@ -1604,9 +1604,63 @@ settings, and `placeEventEntities` can name the mismatching keys on both sides. 
 messages for the two that were silent — no rows at all, and no facts — and the persistence filter is
 what makes reporting them safe, since both are also transient states during normal startup.
 
-**Still to do: option 4**, surfacing this on the canvas rather than only in the console. The
-recommendation sequences it after 2+3 for good reason — it needs wording that does not alarm during
-startup, which is exactly what the persistence filter now provides.
+### As built — option 4, 2026-09-04
+
+A `Label` overlaid top-centre on the Map tab's canvas, shown while a stage is empty for a reason
+worth naming and taken down as soon as something is drawn. The wording and the fault/absence
+distinction live on `FloorMapStageReporter.Stage` itself, so they are one declaration and testable.
+
+**Two registers, and that is the design rather than decoration.** `NO_EVENT_ROWS` is usually *not*
+a fault — the timeline is simply outside the data — so it reads as a quiet statement of fact. The
+other three are almost always misconfiguration and are styled to draw the eye. A single uniform
+warning style would make the common, harmless case look like breakage, and teach people to ignore
+the line that matters. It is a DOM element rather than text painted into the SVG, so it can be
+selected, copied and read by a screen reader; it also goes into the accessible summary and is
+announced once per change.
+
+Top-centre is shared with the area-draw / set-scale hint and they cannot collide: both of those
+modes exist only on the Editor tab, which has its own canvas instance, and this line is only ever
+set by the Map tab. Bottom-centre was tried first and rejected — it runs into the scale bar on a
+narrow pane, and the pane is routinely narrow with the dock open.
+
+### Building option 4 found a defect in options 2 and 3
+
+**The persistence filter never let anything through.** `stageReporter.reset()` was called at the top
+of `readEvents`, i.e. **once per tick**, and exactly one `observe()` happens per events read — so
+`consecutive` was pinned at 1 and `PERSISTENCE_TICKS` (3) was never reached. Neither of the two
+messages the reporter itself emits — `NO_EVENT_ROWS` and `NO_FACTS`, precisely the two stages that
+were silent before F14 — could ever fire.
+
+Confirmed by construction, not inference: `reset` is per `onTimeChange`, `observe` is per landed
+read, and a read cannot land twice between two ticks. It also explains the silence during the
+2026-09-04 test session, which test **A14** recorded as a pass — quiet was the expected result there,
+so the defect looked exactly like success. The other two stages were unaffected, because
+`reportUnparsedEvents` and `placeEventEntities` emit their own messages without consulting the
+reporter.
+
+**Fixed by moving `reset()` to the discontinuity handler**, which is where the original reasoning
+actually pointed: a *jump* makes the previous instant's emptiness irrelevant, but successive playback
+ticks are not unrelated evidence — three in a row with no rows is a real second of emptiness, and
+saying so is the point. The constant's javadoc claimed "about a second at the 300 ms tick"; now that
+is true.
+
+**And the status line does not use the persistence filter at all** — which is the second finding.
+The filter exists because a repeated *log line* is noise; a status line has the opposite property,
+since rewriting the same text is invisible. Worse, waiting three observations means saying nothing on
+a **paused** timeline, where exactly one events read ever lands — and paused is precisely when
+someone is staring at an empty map wondering why.
+
+What the tick count was standing in for is checked directly instead: facts and events come from
+independent reads, so "there are no facts" and "the facts have not arrived yet" are
+indistinguishable until one lands. `factHistory.isLoaded()` answers that exactly — **which was not
+possible before F15**, when facts were re-queried every tick and there was no held state to ask. So
+the two changes fit together: F15 made F14 option 4 gateable on the real condition rather than on a
+proxy for it.
+
+It does not flicker during playback either, for a reason worth stating because it is not obvious:
+with F13's delta read most ticks legitimately return no rows — an entity that has not moved emits
+nothing — but `classify` tests `placed > 0` first, so a map with entities on it never reaches the
+empty branches.
 
 ### Verification — done
 
