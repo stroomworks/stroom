@@ -165,12 +165,20 @@ If that is what you see, the feature is working and everything below is detail.
 | A7 · stop at end | **pass** |
 | A8 · loop at high speed | **pass** |
 | A9 · nothing polls while hidden | **pass** |
+| A14 · a standing timeline is quiet | **pass** — console silent while parked |
 | A4 · condense | **not runnable** — see A4 |
-| A2, A10, A11, A12, A13, A14 | outstanding |
+| A2, A10, A11, A12, A13 | outstanding |
 
 So the delta/baseline machinery, the horizon, the discontinuity hook in both directions, the
-stop-at-end reorder and the hidden-tab behaviour are all confirmed against real data. What is left
-is the three failure-mode tests (A11, A12, A13), the standstill check (A14), and two narrower ones.
+stop-at-end reorder, the hidden-tab behaviour and the standstill cadence are all confirmed against
+real data. **Every path that runs in normal use has now been exercised.** What is left is the three
+failure-mode tests (A11, A12, A13) and two narrower ones.
+
+A14 is worth calling out: it pins the one defect that manual testing was always most likely to
+catch. `nextRead` classified a repeated tick at the same instant as a timeline jump, which put it on
+the one-second interval and re-read the whole store every second for as long as the document stayed
+open. Unit tests now cover it too, but the console going quiet while parked is the observation that
+matters.
 
 **A11 is ready.** The bulk store holds 24 000 rows spanning 02:24:20 → 08:24:19, and at timeline
 position **08:25:00** the six-hour horizon contains **23 955** of them — verified by query — which is
