@@ -41,9 +41,15 @@ Plan B names must match `^[a-z_0-9]+$`. The name is substituted into the events 
 `stateType` and the key/value schema are **immutable once data is written** — a change means
 delete and recreate, which wipes the store. Get these right first.
 
-> **A4 needs `condense` on.** Create the store with it **off**, ingest, confirm the map works, then
-> turn it on and re-check. Testing it the other way round cannot distinguish "condense broke it"
-> from "it never worked".
+> **A4 needs `condense` on, and its default threshold is useless here.** Create the store with
+> condense **off**, ingest, confirm the map works, then turn it on and re-check — the other order
+> cannot distinguish "condense broke it" from "it never worked".
+>
+> When you turn it on, **shorten the duration**. Condense only removes runs *older than* its
+> threshold, and the default is **1 day** while this data is at most 4 hours old — so enabling it
+> with defaults collapses nothing and A4 passes vacuously. Set it to a few minutes
+> (`condense: {enabled: true, duration: {time: 5, timeUnit: MINUTES}}`) so `dave`'s repeats
+> actually collapse.
 
 ---
 
@@ -92,7 +98,22 @@ Then upload each file to its feed:
 The map name is a **column in the CSV**, so one feed and one pipeline serve every store — routing
 is in the data, not the configuration.
 
-Processing is asynchronous and can take minutes. Confirm before moving on:
+Processing is asynchronous and **Plan B takes two stages**, so budget about five minutes:
+
+| Stage | Cadence | Measured |
+|---|---|---|
+| Processor filter task creation | polls on an interval | ~90 s to pick up an uploaded stream |
+| `PlanBFilter` writes a shard | with the task | — |
+| **Plan B state store merge** | cron, every minute | shard becomes queryable |
+
+The SQL Temporal Store has no merge stage, so facts appear as soon as the task runs. Plan B does,
+which is why an events upload looks like it has failed for several minutes. **A Plan B query can
+also return transiently empty while a merge is in flight** — re-run it before concluding anything.
+
+Neither pipeline writes an `Events` output stream: both end in a destination filter, not a writer.
+So "no Events stream" is normal here and is *not* a symptom.
+
+Confirm before moving on:
 
 - `Events` output streams exist and there are **no `Error` streams** on either feed
 - the Plan B document's **Data** tab shows rows

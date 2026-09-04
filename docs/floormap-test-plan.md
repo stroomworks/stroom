@@ -36,12 +36,33 @@ Several Group A tests are not runnable without setting these up first. Worth doi
 | **F-1 · a normal Plan B events store** | `TEMPORAL_STATE`, a handful of entities emitting positions | A1–A9 |
 | **F-2 · an entity that goes idle** | stop emitting for one entity while others continue | A1, A2 |
 | **F-3 · an entity idle beyond the horizon** | write one event **backdated more than 6 hours** and nothing since. Do **not** try to wait out the horizon | A3 |
-| **F-4 · the same store with `condense` on** | flip `condense`, have one entity re-emit an *unchanged* location | A4 |
+| **F-4 · the same store with `condense` on** | flip `condense` **and shorten its duration to a few minutes** — the default 1-day threshold collapses nothing in 4-hour-old data, so A4 would pass vacuously | A4 |
 | **F-5 · a never-written Plan B store** | create the Plan B doc, point a floor map at it, write nothing | A12 |
 | **F-6 · an over-budget store** | more than **20 000** events inside a 6-hour window (≈0.93 events/s sustained) | A11 |
 | **F-7 · a floor map on a SQL Temporal Store** | an existing pre-Plan-B document | A10 |
 
 ---
+
+## Already set up and verified at the data level, 2026-09-04
+
+The Stroom content for Groups A–B exists in **System / Floor Map Test**, built and checked through
+the MCP server: stores, feeds, text converter, both XSLTs, both pipelines, processor filters, and the
+facts and events fixtures ingested. `fetchDependencies` is clean.
+
+Four fixture preconditions were verified by query, so the UI tests below are known to be *capable*
+of discriminating rather than merely set up:
+
+| Verified | Result |
+|---|---|
+| The facts snapshot changes across the desk move | at 07:50 `desk-106` is at `[320,240]`; at 08:05 it is "Desk 106 (moved)" at `[460,240]` — one row per key |
+| **A1's precondition** | `bob` is inside the 6 h horizon with his last event 5 minutes before the newest — a baseline read returns him |
+| **A3's precondition** | `carol` is 7 hours old and a baseline read over `[T−6h, T]` **does not return her** |
+| **A4's precondition** | `dave`'s consecutive values are byte-identical — the runs condense collapses |
+
+Row counts match the generated file exactly, so nothing was corrupted in transit.
+
+**Still to do by hand** (no API reaches these): create the four Floor Map documents, upload
+`events-bulk.csv` for A11, and run every UI test below.
 
 ## Group A — the events delta/baseline change (`0bab388b8c`)
 

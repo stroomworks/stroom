@@ -107,7 +107,7 @@ def facts(now):
 # Events - the entities
 # ---------------------------------------------------------------------------
 
-def events(now, seed=20260904):
+def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
     """The five behaviours the Group A tests need, in one stream.
 
     Each entity exists to make exactly one test decidable:
@@ -126,7 +126,11 @@ def events(now, seed=20260904):
     """
     rnd = random.Random(seed)
     rows = []
-    start = now - timedelta(minutes=30)
+    # Four hours by default: comfortably inside the 6-hour horizon, so a baseline sees all of it,
+    # and wide enough to be easy to find on a timeline that opens on +/-24 hours. A 30-minute
+    # window left almost the whole timeline empty.
+    start = now - timedelta(minutes=span_minutes)
+    step = timedelta(seconds=interval_seconds)
 
     def emit(key, when, location, etype, status="ok", message=""):
         rows.append(row(EVENTS_MAP, key, iso(when), location, etype, status, message))
@@ -135,14 +139,14 @@ def events(now, seed=20260904):
     t = start
     while t <= now:
         emit("alice@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
-        t += timedelta(seconds=10)
+        t += step
 
     # bob - moves for 25 minutes, then goes quiet. A1's subject.
     t = start
     bob_last = now - timedelta(minutes=5)
     while t <= bob_last:
         emit("bob@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
-        t += timedelta(seconds=10)
+        t += step
 
     # carol - a single event beyond the horizon. A3's subject.
     emit("carol@example.org", now - timedelta(hours=7), "desk-103", "person", "ok",
@@ -152,7 +156,7 @@ def events(now, seed=20260904):
     t = start
     while t <= now:
         emit("dave@example.org", t, "desk-105", "person", "ok", "stationary")
-        t += timedelta(seconds=5)
+        t += step
 
     # forklift-7 - coordinate form, drifting across the floor.
     t = start
@@ -160,7 +164,7 @@ def events(now, seed=20260904):
     while t <= now:
         emit("forklift-7", t, "B-GND, %.1f, %.1f" % (x, 180.0), "vehicle", "ok", "")
         x = 100.0 + ((x - 100.0 + 12.0) % 400.0)
-        t += timedelta(seconds=10)
+        t += step
 
     # ghost - references a fact that does not exist. Expected to be dropped.
     emit("ghost@example.org", now - timedelta(minutes=1), "desk-999-does-not-exist",
@@ -194,6 +198,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "out"))
+    ap.add_argument("--span-minutes", type=int, default=240,
+                    help="how far back the events reach (default 240, i.e. inside the 6h horizon)")
+    ap.add_argument("--interval-seconds", type=int, default=120,
+                    help="gap between one entity's events (default 120)")
     ap.add_argument("--bulk-events", type=int, default=24000,
                     help="rows in the over-budget fixture (default 24000, cap is 20000)")
     args = ap.parse_args()
@@ -203,7 +211,8 @@ def main():
     print("Generated at %s (UTC). Regenerate before testing - the horizon is relative." % iso(now))
 
     write(os.path.join(args.out_dir, "facts.csv"), FACTS_HEADER, facts(now))
-    write(os.path.join(args.out_dir, "events.csv"), EVENTS_HEADER, events(now))
+    write(os.path.join(args.out_dir, "events.csv"), EVENTS_HEADER,
+          events(now, args.span_minutes, args.interval_seconds))
     write(os.path.join(args.out_dir, "events-bulk.csv"), EVENTS_HEADER,
           bulk_events(now, args.bulk_events))
 
