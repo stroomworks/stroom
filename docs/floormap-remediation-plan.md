@@ -99,14 +99,13 @@ These cannot be settled from the code. Each blocks or reshapes the fix that foll
 | ~~D3~~ | ~~Keep global name uniqueness?~~ | F1 | **Settled by F12: guard must go, so F1 is mandatory and lands first** |
 | ~~D4~~ | ~~What happens to rows already orphaned by a rename?~~ | F1 | **Moot: no rows exist** |
 | ~~D5~~ | ~~Which of three cases is the deployed `config.yml` in?~~ | F2 | **Moot: the alias accepts all three.** No need to check |
-| D6 | Was the `ONE_DAY_MS` future-margin bound intended behaviour? | F9 | Open — recommend delete the docs |
+| ~~D6~~ | ~~Was the `ONE_DAY_MS` future-margin bound intended behaviour?~~ | F9 | **Answered 2026-09-04: no — docs deleted, F9 done** |
 | D7 | Why was `try (this)` replaced? The stated reason is false. | F10 | Open — needs the author |
 | ~~D8~~ | ~~Is the canvas render rewrite in scope pre-release?~~ | F6 | **Decided: cheap half now, architecture deferred to its own task** |
 | ~~D9~~ | ~~Keep the asset module move, or revert it?~~ | F2 | **Decided 2026-08-26: keep it.** Merge cost accepted; F2 solved by alias + migration |
 
-Seven of the nine are now settled. **Two remain:** D6 (a product call on `ONE_DAY_MS`) and D7 (a
-question for whoever replaced `try (this)`). Neither blocks anything already in progress; each blocks
-exactly one finding, F9 and F10 respectively.
+Eight of the nine are now settled. **One remains:** D7, a question for whoever replaced
+`try (this)`. It blocks F10 and nothing else.
 
 ### ~~D1 — Is there production data in the temporal store yet?~~ — ANSWERED
 
@@ -391,17 +390,36 @@ a separate exercise now. Keeping the module today does not block that.
 **Still not recommended: Option K** (keep as-is), which pays the full upgrade cost for the sake of two
 string constants.
 
-### D6 — Was the `ONE_DAY_MS` bound intended?
+### ~~D6 — Was the `ONE_DAY_MS` bound intended?~~ — ANSWERED 2026-09-04
 
-Four files document a `currentTimeMillis() + ONE_DAY_MS` upper bound on `fetchAll`. It does not exist
-anywhere in the repo and `fetchAll` applies no time predicate at all. Either the behaviour was
-designed and dropped, or the docs were aspirational. Someone needs to say which, because the fix is
-either "implement it" or "delete four blocks of documentation".
+**No. The docs go.** Decided by the user after the evidence below; F9 is done.
 
-**Recommendation.** Delete the docs. "Return the latest version of every key" is a defensible
-contract, and the margin only ever mattered for a future-dated-entry edge case that nothing currently
-depends on. But this is a product call, not a cleanup call — and note the text has already leaked into
-the published OpenAPI description, so external consumers may have read it.
+Four files documented a `currentTimeMillis() + ONE_DAY_MS` upper bound on `fetchAll`. No such bound
+exists — `fetchAll` is a `MAX(effective_time)`-per-key subquery with a single `doc_uuid` predicate and
+no time predicate at all. (Careful with the grep: `ONE_DAY_MS` *does* exist, in
+`FloorMapEditorPresenter` and `FloorMapMapPresenter`, where it pads the timeline's **visible range** —
+±24 h around now, and widening a degenerate `min == max` range. Unrelated to querying, and the likely
+source of the generalisation.)
+
+**What settled it without needing the author** — `fetchAll`'s own javadoc said, ten lines after
+claiming the bound:
+
+> Use this endpoint to back the "Show all" toggle in the Fact List rather than calling `fetchAtTime`
+> with an inflated `timeTo`.
+
+`fetchAll` exists *because* inflating `timeTo` was the workaround. An endpoint added to replace the
+margin trick cannot also be applying it internally. So the margin was a client-side convention for
+"right now" queries against `fetchAtTime`; when `fetchAll` replaced that convention, the sentence
+describing it was carried over instead of deleted. Two confirmations: the same block contradicted
+itself within ten lines ("with no upper-time constraint" / "applies an internal `timeTo`"), and the
+sole caller of `fetchAtTime` passes the slider position exactly — so nothing anywhere used the margin.
+
+**Why implementing it would have been wrong**, not merely expensive: a key whose latest entry is dated
+beyond +24 h would vanish from "Show all", which is the opposite of what that toggle means, and the
+margin would hide a bad timestamp rather than surface it.
+
+**Still worth knowing:** the text reached the published OpenAPI description, so an external consumer
+may have built against a cap that was never there. That is a "who do we tell", not a "what do we do".
 
 ### D7 — Why was `try (this)` replaced with `try/finally`?
 
@@ -912,29 +930,30 @@ every row and the connection is released.
 
 ---
 
-## F9 — `ONE_DAY_MS` documented in four places, implemented nowhere — MEDIUM — **BLOCKED on D6**
+## F9 — `ONE_DAY_MS` documented in four places, implemented nowhere — MEDIUM — **DONE 2026-09-04**
 
 **Files:** `UpdatableTemporalStore`, `UpdatableSqlTemporalStore`, `FetchAtTimeRequest`,
 `SqlTemporalStoreResource`
 
-Four files state the server applies `currentTimeMillis() + ONE_DAY_MS` as an internal upper bound. No
-such constant exists in the repo and `fetchAll` applies no time predicate at all — far-future entries
-are always returned. `FetchAtTimeRequest` goes further and tells callers the constant is "defined on
-this class for convenience", which would not compile. One file contradicts itself within a few lines,
-and the text reaches the published OpenAPI description.
+Four files stated the server applies `currentTimeMillis() + ONE_DAY_MS` as an internal upper bound.
+No such bound exists in the sqlstore module and `fetchAll` applies no time predicate at all — a
+far-future entry is always returned. (`ONE_DAY_MS` itself does exist, but only in two client
+presenters as timeline **display** padding; see D6.) `FetchAtTimeRequest` went further and told
+callers the constant was "defined on this class for convenience", which would not compile. One file
+contradicted itself within a few lines, and the text reached the published OpenAPI description.
 
-### The fix
+### The fix — done
 
-Per D6. If the docs go: delete all four blocks, including the `@Operation` description string, and
-state the real contract ("no upper time bound; the latest version of every key, including future
-effective times"). If the behaviour goes in: implement it once in `UpdatableSqlTemporalStore.fetchAll`
-and define the constant somewhere real.
+D6 answered: the docs went. All four blocks are corrected, including the `@Operation` description
+string, and each now states the real contract — no upper time bound, the latest version of every key,
+including future effective times. `FetchAtTimeRequest` now points callers at `fetchAll` instead of
+telling them to inflate `timeTo` with a constant that does not exist.
 
-### Risk of making this change — **TRIVIAL** (delete docs) / **MEDIUM** (implement)
+### Risk of the change made — **TRIVIAL**
 
-Deleting documentation cannot break anything. *Implementing* the bound would silently change what
-`fetchAll` returns and would hide future-dated entries that callers currently see — a behaviour change
-dressed as a bug fix, which is why D6 needs an answer first.
+Documentation only; no behaviour changed. The alternative, *implementing* the bound, would have
+silently hidden future-dated entries that callers currently see — see D6 for why that would have been
+wrong rather than merely risky.
 
 ---
 

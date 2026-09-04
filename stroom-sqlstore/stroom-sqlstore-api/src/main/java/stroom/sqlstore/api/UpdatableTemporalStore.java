@@ -201,9 +201,9 @@ public interface UpdatableTemporalStore extends HasCrud<TemporalEntry, TemporalE
      * Returns the absolute latest version of every key in the specified map,
      * with no upper-time constraint.
      *
-     * <p>The server computes {@code timeTo = System.currentTimeMillis() + ONE_DAY_MS}
-     * internally so that entries with effective times a short way in the future
-     * are not silently missed. Callers do not need to supply a time value.</p>
+     * <p>No time value is supplied and none is applied: an entry dated in the
+     * future is still that key's latest version, and is returned. Use
+     * {@link #fetchAtTime} when the answer should be bounded to an instant.</p>
      *
      * <p>Used to back the "Show all" toggle in the Floor Map Editor Fact List.</p>
      *

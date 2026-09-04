@@ -241,13 +241,12 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
      * Returns the absolute latest version of every key in the specified map,
      * with no upper-time constraint.
      *
-     * <p>The server applies an internal {@code timeTo} of
-     * {@code System.currentTimeMillis() + ONE_DAY_MS} so that entries with
-     * effective times a short way in the future are not missed. Callers do not
-     * need to supply a time value — hence the simple {@code String} parameter.</p>
+     * <p>No time bound is applied at all, which is the point of the endpoint —
+     * hence the simple {@code String} parameter. A future-dated entry is
+     * returned like any other, because it is that key's latest version.</p>
      *
-     * <p>Use this endpoint to back the "Show all" toggle in the Fact List
-     * rather than calling {@link #fetchAtTime} with an inflated {@code timeTo}.</p>
+     * <p>Use this to back the "Show all" toggle in the Fact List rather than
+     * calling {@link #fetchAtTime} with an inflated {@code timeTo}.</p>
      *
      * <p>Requires {@code VIEW} permission on the map.</p>
      *
@@ -261,8 +260,8 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
             summary = "Fetch absolute latest entry per key (no time constraint)",
             operationId = "fetchAllSqlTemporalStoreEntries",
             description = "Returns the most recent version of every key in the map with no upper-time "
-                    + "bound. Use for the 'Show all' Fact List toggle. "
-                    + "The server applies currentTimeMillis() + ONE_DAY_MS internally.")
+                    + "bound, including entries whose effective time is in the future. "
+                    + "Use for the 'Show all' Fact List toggle.")
     List<TemporalEntry> fetchAll(
             @Parameter(description = "mapName", required = true) String mapName);
 

@@ -38,10 +38,10 @@ import java.util.Objects;
  * margin would silently return data from the future relative to their
  * chosen time.</p>
  *
- * <p>For a "right now" query (e.g. initial load before the user moves the
- * slider), use {@code System.currentTimeMillis() + ONE_DAY_MS} so that entries
- * with effective times a short way in the future are not silently missed.
- * The {@code ONE_DAY_MS} constant is defined on this class for convenience.</p>
+ * <p>That applies to a "right now" query too. Do not inflate {@code timeTo} to
+ * reach future-dated entries — call
+ * {@link SqlTemporalStoreResource#fetchAll(String)} instead, which exists for
+ * exactly that and needs no time value.</p>
  *
  * @see SqlTemporalStoreResource#fetchAll(String) for an unconstrained "show all"
  *      query that does not require a {@code timeTo} value

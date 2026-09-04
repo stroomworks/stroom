@@ -280,10 +280,8 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
      * Returns the absolute latest version of every key in the specified map,
      * with no upper-time constraint.
      *
-     * <p>The server uses {@code currentTimeMillis() + ONE_DAY_MS} as an
-     * internal upper bound so that entries with effective times a short way
-     * in the future are not silently missed. The client does not need to
-     * supply a time value.</p>
+     * <p>No upper bound is applied, so a future-dated entry is returned like any
+     * other — it is that key's latest version. The client supplies no time value.</p>
      *
      * <p>Delegates deduplication to {@link UpdatableTemporalStoreDao#fetchAll(String)}, which
      * does it in the database via a {@code MAX(effective_time)}-per-key subquery joined back for
