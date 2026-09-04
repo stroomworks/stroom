@@ -166,8 +166,10 @@ If that is what you see, the feature is working and everything below is detail.
 | A8 · loop at high speed | **pass** |
 | A9 · nothing polls while hidden | **pass** |
 | A14 · a standing timeline is quiet | **pass** — console silent while parked |
+| A11 · truncating baseline | **pass** — warned once |
+| A12 · unreadable store | **premise was wrong** — see A12; a never-written store returns clean empty, so silence is correct |
 | A4 · condense | **not runnable** — see A4 |
-| A2, A10, A11, A12, A13 | outstanding |
+| A2, A10, A13 | outstanding |
 
 So the delta/baseline machinery, the horizon, the discontinuity hook in both directions, the
 stop-at-end reorder, the hidden-tab behaviour and the standstill cadence are all confirmed against
@@ -351,12 +353,35 @@ only sees 6 hours back from wherever the timeline is. At 08:25 the horizon cover
   whole-store read.
 - **Fail:** repeated warnings, an empty map, or back-to-back full scans.
 
-### A12 · A store that has never been written to
+### A12 · A store that cannot be read · **premise corrected 2026-09-04**
 
-Needs **`Test Floor Map (empty)`** on `floor_map_events_empty`. Ingest nothing into it.
+**As originally written this test was wrong, and an empty console is the correct result.**
 
-- **Expect:** the map stays empty and the console reports the problem **once**.
-- **Fail:** it nags every minute, or fails silently so an unreachable store looks like an empty one.
+The test assumed a never-written Plan B store would *error*, because `StateSearchProvider` catches
+scan failures — including `"Local Plan B shard not found"` from `StoreShard.open` — records the error
+and then still signals completion. That is real code, but a store whose document exists and has
+simply never been written does **not** reach it. Verified by query against
+`floor_map_events_empty`: `errors: []`, `errorMessages: []`, `complete: true`, 0 rows.
+
+So the baseline succeeds, returns nothing, and the map empties correctly and silently. There is no
+message to look for.
+
+**What that actually demonstrates is F14's reporting gap**, empirically: a store with no data and a
+store with no data *in the horizon* are indistinguishable, and both are silent. That silence is a
+known finding, not a fault in this change.
+
+**To exercise the failure path** you need a store that genuinely cannot be read. The cleanest
+trigger is to point a floor map at a Plan B document and then **delete the document** — the map's
+stored reference then resolves to nothing. `floor_map_events_empty` holds no data, so deleting it
+costs nothing.
+
+- **Expect then:** the map keeps whatever positions it had, and the console reports
+  `the events baseline query failed` **once** — not once a minute.
+- **Fail:** repeated reporting, or an empty map with no explanation.
+
+Until that is run, the failure path is covered by reasoning and unit-level argument only. Worth
+knowing, and not a blocker: the once-only reporting mechanism itself is proven, because **A11**
+exercises the same guard on the truncation branch.
 
 ### A13 · A slow baseline reports itself
 
