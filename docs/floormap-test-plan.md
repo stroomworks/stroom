@@ -263,15 +263,31 @@ Turn **off** loop playback in the timeline settings. Play to the end of the rang
 
 ### A8 · Loop at high speed · *test this one hardest*
 
-Turn loop playback **on**, set a high speed, narrow the range to roughly 08:00 → 08:24, and let it
-run for a couple of minutes.
+**One read per wrap is correct** — a wrap sends the timeline backwards, no delta can fix that, and a
+fresh baseline is the only right answer. This test is about the two ways that can go wrong, and both
+are visible **without reading the console**.
 
-- **Expect:** each wrap back to the start redraws within about a second, and the console does **not**
-  show a `startNewSearch` per frame.
-- **Fail:** either the map freezes for up to a minute after each wrap, or the console floods.
+Do not try to judge it from `startNewSearch()`. Every `QueryModel` logs that line: the facts query
+logs one per throttled tick and so does the events delta, so there are already about six a second
+before any baseline. The message cannot distinguish them.
 
-This is where implementation found a defect that the plan and four reviews all missed, so it is the
-test most likely to earn its keep.
+Turn loop playback **on**, narrow the range to about **two minutes** (08:22 → 08:24), and set the
+speed high enough that it wraps every second or two. Let it run for two minutes.
+
+- **Expect:** playback stays smooth, the browser stays responsive, and each wrap redraws within about
+  a second.
+- **Fail — storm:** the browser turns sluggish and the Network panel's request count climbs by an
+  order of magnitude. Two things bound this, so both would have to fail: the 300 ms playback
+  throttle, and the one-second floor between jump-triggered baselines.
+- **Fail — freeze:** after each wrap the map holds its pre-wrap positions for up to a minute before
+  catching up. That is the defect found during implementation, which the plan and four reviews all
+  missed: a wrap was being held back by the 60-second routine interval instead of the one-second
+  jump interval.
+
+**If you want to count baselines precisely:** in the Network panel, Ctrl+F searches request bodies —
+search `eventsBaselineTable`, which only the baseline sends (the delta sends `eventsTable`, the facts
+query `factsTable`). With sub-second wraps you should see at most about one baseline a second, not
+one per wrap.
 
 ### A9 · Nothing polls while hidden
 
