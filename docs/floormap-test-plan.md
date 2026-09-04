@@ -10,16 +10,19 @@ trip, or a Plan B store that has never been written to. This is the part a perso
 
 # Read this first — three things that will otherwise waste your time
 
-### 1. A freshly opened map shows an empty timeline in 1970
+### 1. A freshly opened map shows NOW ± 24 hours, so your data may be off-screen
 
-`selectedTime` starts at `0`, and the timeline opens at ±24 hours around it. So the first thing you
-see on a newly opened Floor Map is **1970**, an empty histogram, and no entities. Nothing is wrong.
+`selectedTime` is initialised to `System.currentTimeMillis()`, and the timeline opens at ±24 hours
+around it. The fixture data sits in a four-hour window in the recent past, so it is on-screen but
+squeezed into a sliver of a 48-hour range — and the current position starts at "now", which is
+*after* all of it.
 
-**Open the timeline settings (the cog on the timeline) and click "Show All".** That fits the range
-to the data. Everything below assumes you have done this.
+**Open the timeline settings (the cog) and click "Show All"** to fit the range to the data, or set
+the range by hand. Everything below assumes you have done one of those.
 
-(That default is a pre-existing wart, not part of what you are testing. It is recorded as an open
-item in the remediation plan.)
+*(An earlier revision of this document claimed the timeline opened in 1970. That was wrong — the
+field has no initialiser at its declaration but is assigned in the constructor, and I had only
+checked the declaration.)*
 
 ### 2. Hard-reload before you start
 
@@ -108,6 +111,24 @@ Events run **04:24:20 → 08:24:20**, one event per entity every 5 minutes, plus
 | `forklift-7` | literal coordinates, not a desk | 08:24:20 | `276, 180` |
 | `carol@example.org` | **one event, 7 hours before the end** | **01:24:20** | `desk-103` |
 | `ghost@example.org` | references `desk-999-does-not-exist` | 08:23:20 | **never drawn** |
+
+## Two kinds of location, and what that looks like on screen
+
+`location` is either a **fact key** or **literal coordinates**, and the fixture uses both on purpose
+— they are separate code paths in `FloorMapLocationResolver`.
+
+| Form | Example | Who | On screen |
+|---|---|---|---|
+| **Fact key** | `desk-103` | `alice`, `bob`, `dave`, `carol` | Resolved against the facts *at the selected time*, so the entity sits exactly on the desk — and **moving the desk moves its occupants**, retroactively |
+| **Coordinates** | `B-GND, 276.0, 180.0` | `forklift-7` | Drawn at those coordinates, full stop. Never on a desk, unaffected by desk moves |
+
+So `forklift-7` tracking along **y = 180** — between the two areas, never on a desk — is correct.
+It is in the fixture to exercise the coordinate path. The four people always land exactly on a desk.
+
+**Movement between two positions is a straight line.** `FloorMapEntityAnimator` interpolates from
+the previous position to the new one over a fixed duration; there is no pathfinding, no corridors and
+no obstacle avoidance. So `alice` going from `desk-101` to `desk-105` crosses the open floor
+diagonally rather than routing around anything. Expected.
 
 ---
 
@@ -350,7 +371,7 @@ Visual only; no test can see any of it.
 - The horizon is **not enforced on a SQL Temporal Store**, which strips all time terms — so
   horizon-drop behaviour is Plan B only.
 - **No background image.** `ground-floor.png` was never uploaded.
-- The **1970 timeline** on a freshly opened map. Pre-existing; click "Show All".
+- The timeline opening at **NOW ± 24 hours** rather than fitted to the data. Click "Show All".
 
 ---
 
