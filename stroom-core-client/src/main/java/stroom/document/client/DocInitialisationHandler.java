@@ -54,6 +54,13 @@ public interface DocInitialisationHandler {
      * Shows an initialisation dialog for a freshly-created document, or
      * does nothing if no initialisation is required.
      *
+     * <p><b>Creation only. This must not be wired into the open path.</b> Cancelling is defined to
+     * <em>delete</em> the document — which is right for a document created moments ago and
+     * abandoned, and catastrophic for one being opened, where the user would expect Cancel to mean
+     * "never mind" rather than "destroy it". The single call site is in
+     * {@code DocumentPluginEventManager.fireShowCreateDocumentDialogEvent}, and it should stay the
+     * only one.</p>
+     *
      * <p>Preconditions:</p>
      * <ul>
      *   <li>{@code docRef} must be non-null and refer to a document that
