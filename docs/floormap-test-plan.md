@@ -1,176 +1,382 @@
-# Floor Map branch — manual test plan
+# Floor Map — manual test plan
 
 **Branch:** `enterprise-floormapping-code-review-b`
-**Written:** 2026-09-04
-**Why this exists:** 31 non-merge commits have landed since the 21 Aug review. Unit tests and
-`./gradlew check` cover the logic; they cannot cover a canvas, a content pack round trip, or a Plan B
-store that has never been written to. This is the part a person has to do.
+**Rewritten:** 2026-09-04, against the fixtures actually loaded (see *The data*, below)
 
-Ordered by risk, not by area. **Group A is the one that matters** — it is the newest change, the
-largest behavioural one, and has zero manual coverage.
-
-Everything diagnostic this feature emits goes to the **browser console**, so keep it open throughout.
-That is itself a known gap (**F14** in the remediation plan): a non-developer would see none of it.
+Unit tests and `./gradlew check` cover the logic. They cannot cover a canvas, a content pack round
+trip, or a Plan B store that has never been written to. This is the part a person has to do.
 
 ---
 
-## Constants the tests refer to
+# Read this first — three things that will otherwise waste your time
 
-| Constant | Value | Where |
+### 1. A freshly opened map shows an empty timeline in 1970
+
+`selectedTime` starts at `0`, and the timeline opens at ±24 hours around it. So the first thing you
+see on a newly opened Floor Map is **1970**, an empty histogram, and no entities. Nothing is wrong.
+
+**Open the timeline settings (the cog on the timeline) and click "Show All".** That fits the range
+to the data. Everything below assumes you have done this.
+
+(That default is a pre-existing wart, not part of what you are testing. It is recorded as an open
+item in the remediation plan.)
+
+### 2. Hard-reload before you start
+
+Ctrl+Shift+R. The UI was rebuilt at 11:08 and the permutation hash changed, so a normal refresh can
+still serve a stale build.
+
+### 3. If the whole UI dies with an empty console, it is not the feature
+
+An orphaned drag glass — see `task-popup-drag-glass-orphaned.md`. Fixed in this build, but if it
+recurs, recover with:
+
+```js
+document.querySelectorAll('.popupPanel-dragGlassVisible')
+        .forEach(e => e.classList.remove('popupPanel-dragGlassVisible'));
+```
+
+Then tell whoever owns that fix, because a recurrence is a regression.
+
+---
+
+# The setup
+
+All in **System / Floor Map Test**.
+
+| Document | Type | Purpose |
 |---|---|---|
-| `HORIZON_MS` | **6 hours** | `FloorMapEventState` — how far back a baseline reaches |
-| `BASELINE_INTERVAL_MS` | **60 s** | routine re-baseline cadence |
-| `JUMP_INTERVAL_MS` | **1 s** | floor between baselines forced by a timeline jump |
-| `MAX_ROWS` | **20 000** | baseline row cap |
-| `MAX_DELTA_ROWS` | **20 000** | per-tick row cap |
-| playback throttle | **300 ms** | `FloorMapTimelinePresenter.PLAYBACK_QUERY_INTERVAL_MS` |
+| `floor_map_facts` | SQL Temporal Store | The floor plan. 10 rows |
+| `floor_map_events` | Plan B, `TEMPORAL_STATE` | The entities. 207 rows |
+| `floor_map_events_bulk` | Plan B, `TEMPORAL_STATE` | 24 000 rows, for **A11** only |
+| `floor_map_events_empty` | Plan B, `TEMPORAL_STATE` | **Deliberately empty**, for **A12** only |
+| `Test Floor Map` | Floor Map | facts + `floor_map_events`. **Almost every test uses this** |
+| `Test Floor Map (bulk)` | Floor Map | facts + `floor_map_events_bulk` |
+| `FLOOR_MAP_FACTS` / `FLOOR_MAP_EVENTS` | Feeds | ingest |
+| `FLOOR_MAP_CSV_WITH_HEADER` | Text Converter | quoted CSV with a header row |
+| `FLOOR_MAP_FACTS_TO_SQLSTORE` / `FLOOR_MAP_EVENTS_TO_PLANB` | XSLTs | CSV → `reference-data:2` |
+| `FLOOR_MAP_FACTS_TO_SQLSTORE` / `FLOOR_MAP_EVENTS_TO_PLANB` | Pipelines | + processor filters |
+
+**Still to create:** `Test Floor Map (empty)` on `floor_map_events_empty` (A12), and
+`Test Floor Map (SQL)` whose events store is a **SQL Temporal Store** (A10).
 
 ---
 
-## Data you need before starting
+# The data
 
-Several Group A tests are not runnable without setting these up first. Worth doing in one pass.
+## The floor plan
 
-| Fixture | How | Used by |
+Six desks and two areas, all placed by an identity matrix, so canvas coordinates are the numbers
+below.
+
+```
+        x=40      80        200       320    400        460    520
+   y=50  +-----------------------------------+                        North Wing
+         |     desk-101   desk-102   desk-103|                        (blue, x 40-400)
+  y=160  +-----------------------------------+
+                          forklift-7 runs along y=180  <- in NEITHER area
+  y=200  +-----------------------------------------------------+      South Wing
+         |     desk-104   desk-105   desk-106 ... desk-106'    |      (green, x 40-520)
+  y=310  +-----------------------------------------------------+
+```
+
+| Fact | Position | In area |
 |---|---|---|
-| **F-1 · a normal Plan B events store** | `TEMPORAL_STATE`, a handful of entities emitting positions | A1–A9 |
-| **F-2 · an entity that goes idle** | stop emitting for one entity while others continue | A1, A2 |
-| **F-3 · an entity idle beyond the horizon** | write one event **backdated more than 6 hours** and nothing since. Do **not** try to wait out the horizon | A3 |
-| **F-4 · the same store with `condense` on** | flip `condense` **and shorten its duration to a few minutes** — the default 1-day threshold collapses nothing in 4-hour-old data, so A4 would pass vacuously | A4 |
-| **F-5 · a never-written Plan B store** | create the Plan B doc, point a floor map at it, write nothing | A12 |
-| **F-6 · an over-budget store** | more than **20 000** events inside a 6-hour window (≈0.93 events/s sustained) | A11 |
-| **F-7 · a floor map on a SQL Temporal Store** | an existing pre-Plan-B document | A10 |
+| `desk-101` | 80, 90 | North Wing |
+| `desk-102` | 200, 90 | North Wing |
+| `desk-103` | 320, 90 | North Wing |
+| `desk-104` | 80, 240 | South Wing |
+| `desk-105` | 200, 240 | South Wing |
+| `desk-106` | 320, 240 **before 07:56:47**, then **460, 240** | South Wing either way |
+| `bg-ground` | background | — |
 
----
+`desk-106` **moves at 07:56:47** and is renamed "Desk 106 (moved)". That single fact is what makes
+the scrub tests decidable — the correct picture depends on where the timeline is.
 
-## Already set up and verified at the data level, 2026-09-04
+There is no background image (`ground-floor.png` was never uploaded), so the canvas is blank behind
+the desks. That is expected and affects no test.
 
-The Stroom content for Groups A–B exists in **System / Floor Map Test**, built and checked through
-the MCP server: stores, feeds, text converter, both XSLTs, both pipelines, processor filters, and the
-facts and events fixtures ingested. `fetchDependencies` is clean.
+## The entities
 
-Four fixture preconditions were verified by query, so the UI tests below are known to be *capable*
-of discriminating rather than merely set up:
+Events run **04:24:20 → 08:24:20**, one event per entity every 5 minutes, plus two outliers.
 
-| Verified | Result |
-|---|---|
-| The facts snapshot changes across the desk move | at 07:50 `desk-106` is at `[320,240]`; at 08:05 it is "Desk 106 (moved)" at `[460,240]` — one row per key |
-| **A1's precondition** | `bob` is inside the 6 h horizon with his last event 5 minutes before the newest — a baseline read returns him |
-| **A3's precondition** | `carol` is 7 hours old and a baseline read over `[T−6h, T]` **does not return her** |
-| **A4's precondition** | `dave`'s consecutive values are byte-identical — the runs condense collapses |
-
-Row counts match the generated file exactly, so nothing was corrupted in transit.
-
-**Still to do by hand** (no API reaches these): create the four Floor Map documents, upload
-`events-bulk.csv` for A11, and run every UI test below.
-
-## Group A — the events delta/baseline change (`0bab388b8c`)
-
-The riskiest item. Positions are now client-side state: each tick reads only what changed, and a
-periodic bounded re-read replaces the state wholesale.
-
-| # | Test | Pass looks like | Failure looks like |
+| Entity | Behaviour | Last seen | Final position |
 |---|---|---|---|
-| **A1** | **Paused idle entity.** Pause with F-2 idle over 20 s | It stays on the map | It vanishes — the old 20-second-window behaviour |
-| **A2** | **Counts hold.** Play with F-2 idle; watch area membership and the "*n* of *m*" group counts | Both hold steady | Counts fall with nobody moving |
-| **A3** | **Horizon boundary.** **Pause first**, then load F-3 | The entity drops out at the next baseline and the group count falls honestly. Also check the *all* idle case | It lingers for ever, or the count claims a presence the store cannot support |
-| **A4** | **`condense` is now safe.** F-4 | The stationary entity remains | It disappears — the reason the setup guide currently says keep `condense` off |
-| **A5** | **Scrub backwards** | No position later than the selected time, and entities **teleport** rather than sliding | Entities animate across the jump, or show future positions |
-| **A6** | **Scrub forwards** | Same, and a baseline runs | Positions from before the jump persist. This is the case the new discontinuity hook exists for |
-| **A7** | **Stop at end** | Correct immediately | Correct only after up to 60 s |
-| **A8** | **Loop at high speed** | Map tracks the wrap; baselines are **not** issued per frame | Either a query storm, or a map frozen through each pass. **The defect found late in implementation — test this one properly** |
-| **A9** | **Hidden tab, paused.** Switch to another tab of the same document for over a minute | **No queries while away**; one baseline immediately on return | Polling continues while hidden |
-| **A10** | **SQL Temporal Store unchanged.** F-7 | Behaves exactly as before; no load reduction | Any behaviour change at all — the defect cannot occur there |
-| **A11** | **Truncating baseline.** F-6 | Warns **once** recommending `condense`; the map shows real positions; the next tick is a **delta**, not another baseline | Repeated warnings, an empty map, or back-to-back full scans |
-| **A12** | **Never-written store.** F-5 | Map stays empty; error reported **once** | Nagging every minute, or a silent empty map |
-| **A13** | **Slow baseline.** F-6, or throttle the network | Reports lateness or failure | Looks indistinguishable from an empty store |
-
-### Accepted behaviours — do not file these as bugs
-
-- A baseline landing after deltas were in flight replaces wholesale, so an entity that moved during
-  its flight can **flicker back one tick** before the next delta corrects it.
-- A **delta** slower than one tick is destroyed by the next tick and its range is never re-queried, so
-  a mover can be stale until the next baseline. The old overlapping window self-healed in one tick;
-  this is the price of not overlapping.
-- **During playback** a pruned entity's counts, roster and membership update but the **glyph
-  persists**, because the draw list re-emits from the animator's last positions and prunes only on the
-  teleport path. Pre-existing, not a regression — which is why A3 says pause first.
-- The horizon is **not enforced on a SQL Temporal Store**, which strips all time terms. Horizon-drop
-  and map-empties behaviours are Plan B only.
+| `alice@example.org` | hops desk to desk throughout | 08:24:20 | `desk-103` |
+| `bob@example.org` | **stops 5 minutes early** | **08:19:20** | `desk-102` |
+| `dave@example.org` | parked, re-emits the **same** value every 5 min | 08:24:20 | `desk-105` |
+| `forklift-7` | literal coordinates, not a desk | 08:24:20 | `276, 180` |
+| `carol@example.org` | **one event, 7 hours before the end** | **01:24:20** | `desk-103` |
+| `ghost@example.org` | references `desk-999-does-not-exist` | 08:23:20 | **never drawn** |
 
 ---
 
-## Group B — assets through the content pack (`ec9c6298e3`)
+# What "working" looks like
 
-`FloorMapStoreImpl` overrode **none** of export, import, copy or delete, so assets were silently
-absent from every content pack. Four operations, and the round trip is the point.
+**Set the timeline to 08:24:20** (the last event). You should see **four** entities:
 
-| # | Test | Pass looks like |
+| You should see | Where | Why |
 |---|---|---|
-| **B1** | Export a floor map with assets, inspect the pack | Asset files are present |
-| **B2** | Import that pack into a clean instance | Assets restored and rendering — backgrounds and icons visible on the canvas |
-| **B3** | Copy a floor map with assets | The copy has its own assets, and editing one does not affect the other |
-| **B4** | Delete a floor map with assets | Assets are removed, not orphaned |
-| **B5** | Export/import a floor map with **no** assets | Works, no errors |
+| `alice` | `desk-103` — North Wing | moved there at 08:24:20 |
+| `bob` | `desk-102` — North Wing | **silent for 5 minutes and still drawn.** This is the whole point of the change |
+| `dave` | `desk-105` — South Wing | parked |
+| `forklift-7` | `276, 180` — **between** the two areas | literal coordinates |
+
+And you should **not** see:
+
+- `carol` — her only event is 7 hours old, beyond the horizon
+- `ghost` — names a desk that does not exist, so there is nowhere to draw it
+
+So: **4 glyphs. North Wing shows 2 occupants, South Wing 1, and one entity in neither.**
+
+If that is what you see, the feature is working and everything below is detail.
 
 ---
 
-## Group C — reference-data ingest (`a6432bd258`, `8cc85ee889`, `9400f3359c`)
+# Group A — the events change. Do these first
 
-Writes now batch at 1 000 and the lookup store resolves once per pipeline run rather than per event.
-Row counts at the batch boundary are unit-tested (`TestSqlStoreFilter`); the pipeline is not.
+Use **`Test Floor Map`** unless a test says otherwise. **Keep the browser console open** — several
+tests are about what it says.
 
-| # | Test | Pass looks like |
+### A1 · An idle entity stays on the map · *the headline test*
+
+Set the timeline to **08:24:20** and leave it paused.
+
+- **Expect:** `bob` is drawn at `desk-102`, even though his last event was 08:19:20 — five minutes
+  earlier.
+- **Fail:** `bob` is missing. That is the old behaviour, where anything silent for 20 seconds
+  vanished.
+
+### A2 · Area occupancy holds while an entity is idle
+
+Play from about **08:00** through to the end.
+
+- **Expect:** North Wing keeps showing 2 occupants right through, including after `bob` goes quiet
+  at 08:19:20.
+- **Fail:** the North Wing count drops to 1 with nobody having moved.
+
+### A3 · An entity beyond the horizon is dropped · *reversible, so do it twice*
+
+The baseline reaches back **6 hours** from wherever the timeline is. `carol`'s only event is at
+01:24:20, so she is in scope or out of scope depending purely on the timeline position.
+
+1. **Pause**, then set the timeline to **07:00:00** — horizon 01:00 → 07:00, which **includes** her.
+   - **Expect:** `carol` appears at `desk-103`.
+2. Now set it to **08:00:00** — horizon 02:00 → 08:00, which **excludes** her.
+   - **Expect:** `carol` disappears, and North Wing's occupancy falls accordingly.
+
+- **Fail:** she never appears at 07:00 (the horizon is not reaching back), or never disappears at
+  08:00 (state is never pruned, which would make the occupant counts a lie).
+
+**Pause first.** During playback a dropped entity's counts update but its glyph lingers, because the
+draw list re-emits from the animator's last positions and only prunes on the teleport path. That is
+pre-existing and not a regression.
+
+### A4 · `condense` is now safe
+
+`dave` re-emits an identical value every 5 minutes. Those repeats are exactly what `condense`
+collapses, and collapsing them used to make him vanish.
+
+1. Confirm `dave` is drawn at `desk-105` at 08:24:20.
+2. Open `floor_map_events` → **enable Condense**, and **set its duration to 5 minutes**.
+3. Wait for a merge (about a minute), reopen the map, return to 08:24:20.
+
+- **Expect:** `dave` is still at `desk-105`.
+- **Fail:** he is gone.
+
+**The duration matters.** Condense only removes runs *older than* its threshold, and the default is
+**1 day** while this data is hours old — so leaving the default collapses nothing and the test
+passes without testing anything.
+
+### A5 · Scrub backwards · *uses the desk that moves*
+
+From 08:24:20, scrub back to **08:19:20**, then to **07:30:00**.
+
+- **Expect at 08:19:20:** `alice` is at `desk-106` in its **moved** position (460, 240) — the far
+  right of South Wing. Entities **jump** to their new positions; they do not slide.
+- **Expect at 07:30:00:** `desk-106` is back at its **original** position (320, 240) and named
+  "Desk 106" — you have scrubbed to before the 07:56:47 move.
+- **Fail:** any entity shown at a position later than the selected time, or entities animating
+  smoothly across the jump instead of teleporting.
+
+### A6 · Scrub forwards
+
+From 07:30:00 scrub forward to 08:24:20.
+
+- **Expect:** the map catches up immediately — `alice` at `desk-103`, `bob` at `desk-102`,
+  `desk-106` back at 460, 240.
+- **Fail:** positions from before the jump persist. A forward jump looks just like a large playback
+  tick, so this is the case the discontinuity hook exists for.
+
+### A7 · Stop at end
+
+Turn **off** loop playback in the timeline settings. Play to the end of the range.
+
+- **Expect:** playback stops and the final positions are correct **immediately**.
+- **Fail:** the map is stale and only corrects itself up to a minute later.
+
+### A8 · Loop at high speed · *test this one hardest*
+
+Turn loop playback **on**, set a high speed, narrow the range to roughly 08:00 → 08:24, and let it
+run for a couple of minutes.
+
+- **Expect:** each wrap back to the start redraws within about a second, and the console does **not**
+  show a `startNewSearch` per frame.
+- **Fail:** either the map freezes for up to a minute after each wrap, or the console floods.
+
+This is where implementation found a defect that the plan and four reviews all missed, so it is the
+test most likely to earn its keep.
+
+### A9 · Nothing polls while hidden
+
+With the timeline **paused**, switch to another tab of the same document (Editor, Settings) for over
+a minute, then come back to Map.
+
+- **Expect:** the console is quiet while you are away, and there is exactly one read on return.
+- **Fail:** searches continue while the Map tab is hidden.
+
+### A10 · A SQL Temporal Store behaves exactly as before
+
+Needs **`Test Floor Map (SQL)`**. Point its events store at a SQL Temporal Store — the simplest way
+is to re-ingest `out/events.csv` through the *facts* pipeline with the `map` column rewritten to a
+SQL store's name.
+
+- **Expect:** no behavioural change of any kind against that store.
+- **Fail:** any difference. The defect being fixed cannot occur there, because that store reinterprets
+  a time range as a snapshot.
+
+### A11 · A store too big for one baseline
+
+Needs **`Test Floor Map (bulk)`** and the bulk data loaded.
+
+**Set the timeline to 08:25:00.** This matters: the bulk data spans 02:24 → 08:24, and the baseline
+only sees 6 hours back from wherever the timeline is. At 08:25 the horizon covers essentially all
+24 000 rows, which exceeds the 20 000-row cap. Sit the timeline at "now" instead and only about
+15 000 rows are in scope — under the cap, so nothing truncates and the test proves nothing.
+
+- **Expect:** the console warns **once** that the baseline hit its 20 000-row limit and recommends
+  `condense`; the map still draws real positions; the next tick is a delta rather than another
+  whole-store read.
+- **Fail:** repeated warnings, an empty map, or back-to-back full scans.
+
+### A12 · A store that has never been written to
+
+Needs **`Test Floor Map (empty)`** on `floor_map_events_empty`. Ingest nothing into it.
+
+- **Expect:** the map stays empty and the console reports the problem **once**.
+- **Fail:** it nags every minute, or fails silently so an unreachable store looks like an empty one.
+
+### A13 · A slow baseline reports itself
+
+Throttle the network in DevTools, or use the bulk map, and watch a baseline take several seconds.
+
+- **Expect:** lateness or failure is reported.
+- **Fail:** it looks indistinguishable from an empty store.
+
+### A14 · A standing timeline is quiet · *new, added 2026-09-04*
+
+Park the timeline anywhere and leave the Map tab open and paused for three minutes.
+
+- **Expect:** no repeating `startNewSearch` in the console. At most one read a minute.
+- **Fail:** a read roughly every second. That was a real bug — a repeated tick at the same instant
+  was misclassified as a timeline jump — and this pins the fix.
+
+---
+
+# Group B — assets through the content pack
+
+`FloorMapStoreImpl` overrode none of export, import, copy or delete, so assets were silently absent
+from every content pack. A broken pack fails quietly, which is why this is worth doing by hand.
+
+You need a map with assets: upload an image on the Assets tab and reference it from a fact's `img`.
+
+| # | Do | Expect |
 |---|---|---|
-| **C1** | Ingest a reference-data stream through `SqlStoreFilter` | Row count matches the input exactly |
-| **C2** | Ingest a stream of **exactly 1 000** entries, and one of 1 001 | Both correct — the boundary |
-| **C3** | A stream whose map name changes partway | Rows land under the right map names |
-| **C4** | An XSLT `lookup()` against a SQL Temporal Store | Still resolves; check an `Error` stream is not produced |
-| **C5** | The store's own Data tab | Still lists entries |
+| B1 | Export a map with assets; inspect the pack | asset files present |
+| B2 | Import that pack into a clean instance | assets restored **and rendering** on the canvas |
+| B3 | Copy the map | the copy has its own assets; editing one does not affect the other |
+| B4 | Delete the map | assets removed, not orphaned |
+| B5 | Export/import a map with **no** assets | works, no errors |
 
 ---
 
-## Group D — canvas and trails (five commits)
+# Group C — reference-data ingest
 
-Purely visual; unit tests cannot see any of it.
+Writes now batch at 1 000 and the lookup store resolves once per pipeline run. Row counts at the
+batch boundary are unit-tested; the pipeline is not.
 
-| # | Test | Pass looks like |
+| # | Do | Expect |
 |---|---|---|
-| **D1** | Movement trails during playback | Taper smoothly, no glowing joins, no hard-edged bands |
-| **D2** | Trails after a time jump | Cleared, not stretched across the jump |
-| **D3** | Trails on a long-lived entity | Fade by age; no unbounded growth or slowdown over several minutes |
-| **D4** | A degenerate canvas transform — zoom fully in and out, resize the pane very small | No exceptions in the console; the matrix-invertibility screening should absorb it |
-| **D5** | Clustering on and off with entities crowded | Glyphs merge and split; cluster tooltips name members consistently with the Tracking and Groups panels |
+| C1 | Ingest a reference stream through `SqlStoreFilter` | row count matches the input exactly |
+| C2 | Ingest exactly **1 000** rows, then **1 001** | both exact — this is the boundary |
+| C3 | A stream whose `map` column changes partway | rows land under the right map names |
+| C4 | An XSLT `lookup()` against a SQL Temporal Store | resolves, and produces no `Error` stream |
+| C5 | The store's Data tab | still lists entries |
 
 ---
 
-## Group E — setup and migration
+# Group D — canvas and trails
 
-| # | Test | Pass looks like |
+Visual only; no test can see any of it.
+
+| # | Do | Expect |
 |---|---|---|
-| **E1** | Start against a **fresh, empty database** | The SQL temporal store's Flyway migration runs at bootstrap; no manual step |
-| **E2** | Start with a config using the **old** `visualisationAsset` / `visualisationAssetDb` keys | Accepted, with a deprecation warning; do not add the new keys alongside — the last occurrence wins |
-| **E3** | Create a new floor map end to end | Init dialog sets the events store, both column settings and the value schema; layers appear; events draw |
-| **E4** | The store chooser popups on the events/facts setup dialog | Titled "Choose Event Store" / "Choose Fact Store" |
+| D1 | Play and watch a mover's trail | tapers smoothly, no glowing joins, no hard bands |
+| D2 | Scrub across the 07:56:47 desk move | trails clear rather than stretching across the jump |
+| D3 | Play for several minutes | trails fade by age; no slowdown, no unbounded growth |
+| D4 | Zoom fully in and out; shrink the pane very small | no console exceptions |
+| D5 | Toggle clustering with entities crowded | glyphs merge and split; cluster tooltips name members consistently with the Tracking and Groups panels |
 
 ---
 
-## Already confirmed — recorded so they are not redone
+# Group E — setup and migration
 
-Reported working during this session's development:
-
-- Creating a new floor map; opening an existing one
-- Multi-select delete and duplicate
-- Entity ID and Location ID column settings populated correctly
-- Layers appearing once the value schema and format match
-- Events drawing on the map after the window fix
+| # | Do | Expect |
+|---|---|---|
+| E1 | Start against a **fresh, empty database** | the SQL temporal store migration runs at bootstrap, no manual step |
+| E2 | Start with the **old** `visualisationAsset` / `visualisationAssetDb` config keys | accepted, with a deprecation warning. Do not add the new keys alongside — the last occurrence wins |
+| E3 | Create a new Floor Map end to end | the init dialog sets both stores, both column settings and the value schema; layers appear; events draw |
+| E4 | The store choosers on the init dialog | titled "Choose Facts Store" / "Choose Events Store" |
 
 ---
 
-## What is *not* in scope here
+# Do not file these as bugs
 
-- **F15** (facts query polling) — written up, not implemented. Nothing to test.
-- **F10** (`try (this)`) — not done; blocked on D7, which is now answerable.
-- **F9 / D6** — documentation only; no behaviour changed.
-- The three `@Disabled` cases in `TestTemporalStoreParity` — they record a known Plan B gap and are
-  expected to fail until Plan B gains a latest-per-key read.
+- A **one-tick flicker** when a baseline lands after deltas were in flight: it replaces state
+  wholesale, so an entity that moved during its flight can jump back one tick before the next delta
+  corrects it.
+- During **playback**, a dropped entity's counts and roster update while its **glyph persists**.
+  Pre-existing, which is why A3 says pause first.
+- The horizon is **not enforced on a SQL Temporal Store**, which strips all time terms — so
+  horizon-drop behaviour is Plan B only.
+- **No background image.** `ground-floor.png` was never uploaded.
+- The **1970 timeline** on a freshly opened map. Pre-existing; click "Show All".
+
+---
+
+# When the data goes stale
+
+Every timestamp above is relative to when the fixtures were generated, and the 6-hour horizon is
+relative to the timeline position. Old data puts every entity out of scope, which looks exactly like
+the bug A3 tests for.
+
+To refresh:
+
+```bash
+python3 docs/floormap-testdata/generate.py
+```
+
+Then re-upload `out/facts.csv` and `out/events.csv` to their feeds, and `out/events-bulk.csv` if you
+are doing A11. Wait about five minutes — Plan B ingests in two stages, a processor task then a merge
+on an every-minute cron.
+
+**All the times in this document shift.** The *relationships* are what matter, and this query
+re-derives the ones you need:
+
+```
+from "floor_map_events" group by Key select Key, max(EffectiveTime) as "Last Seen", count() as "Rows"
+```
+
+- the largest `Last Seen` is the "end of data" position used throughout
+- `bob`'s is 5 minutes earlier — A1
+- `carol`'s is 7 hours earlier — A3's two positions are 30 minutes either side of `carol + 6h`
