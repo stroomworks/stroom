@@ -1661,7 +1661,7 @@ document. Such a map renders no entities until someone sets them by hand, with n
 
 ---
 
-## F15 — The facts query polls three times a second for data that changes weekly — MEDIUM — **NEW 2026-09-04**
+## F15 — The facts query polls three times a second for data that changes weekly — MEDIUM — **BUILT 2026-09-04**
 
 **Files:** `FloorMapMapPresenter.onTimeChange` / `.runQueryAtSelectedTime` / `.parseFacts`,
 `FloorMapTimelinePresenter.PLAYBACK_QUERY_INTERVAL_MS`,
@@ -1804,6 +1804,48 @@ interval; it is the case the cadence exists for.
 
 **Assumption to confirm before building:** hundreds to low thousands of distinct fact keys. At tens of
 thousands the arithmetic changes and the history should be measured first.
+
+### As built, 2026-09-04
+
+Option 4 with option 2 folded in, as recommended. `FloorMapFactHistory` (GWT-free, 24 tests, 9
+mutants killed) holds the history and derives the snapshot; `FloorMapMapPresenter` reads on the
+cadence and on becoming visible; `FloorMapPresenter` gained the outer-tab handler.
+
+**Five things the write-up did not say, found while building it:**
+
+| | Plan | Built |
+|---|---|---|
+| Comparing times | "compute the snapshot at T client-side" — silent on how the time is obtained | **The facts query now also selects `toLong(EffectiveTime)`.** Deriving a snapshot means comparing each row's effective time against T, and the `EffectiveTime` column arrives as *text*. It is ISO-8601 today, but only because StroomQL sets **no `Format`** on select columns, so `Unformatted` calls `ValDate.toString()`. Verified against the live instance: `EffectiveTime` → `2026-09-02T08:11:47.000Z`, `toLong(EffectiveTime)` → `1788336707000`, bare digits. Rather than rest the map's correctness on a formatter default two modules away, the raw column is selected and only it is read. **This also closes the long-standing "events query should carry a raw numeric time" item for the facts half** — and corrects its stated cause: the hazard is not the *user's date-time preference* (that never applies to a StroomQL column), it is that the text form is decided elsewhere. |
+| Arrival order | not considered | **Not relied on.** Rows *do* arrive in `(key, effective_time)` ascending order — the primary key is `(doc_uuid, key_, effective_time)` and InnoDB clusters on it, confirmed live — but the standard read path has no `ORDER BY`, so that is a storage-engine accident. A plan choosing the `map_name` index instead would break it silently. `snapshotAt` compares times explicitly; one test drives rows in reverse order specifically to pin that. |
+| Where the guard goes | "when the facts are unchanged"; refined mid-session to the raw rows | Raw rows, as refined — and **no forced redraw when a history lands.** The obvious-looking `lastFactSnapshotRows = null` before applying a new history would have re-parsed and re-pushed the whole floor plan once a minute for nothing. Unnecessary too: the first history draws because nothing equals `null`. |
+| Reporting | not considered | **Report-once flags**, matching the events baseline. The read repeats every 60 s, so a store that cannot be read would otherwise write to the console once a minute for as long as the document stayed open. |
+| Where the shared read logic lives | a new helper implied | **`FloorMapBaselineQueryHelper` generalised to `FloorMapFullReadQueryHelper`** and used by both. Both reads replace state wholesale, so both need the same guarantee — never apply a possibly-partial result — and that guarantee (the searching→idle edge, the `ERROR`-and-above filter, the helper's own in-flight flag rather than `QueryModel.isSearching()`) is subtle enough that one copy matters more than the two callers' differences. |
+
+**Two behaviour changes worth naming, one of them user-visible:**
+
+1. **Switching to another Stroom document now pauses playback.** Not merely cheaper — *different*.
+   The user returns to the position they left rather than to wherever the clock ran on to. This
+   falls out of the `onContentTabVisible(false)` half of the new hook, and it is the larger share of
+   the load saved, but it is a change in what the feature does and wants agreeing to rather than
+   just testing. Manual test **F8**.
+2. Facts used to reach the canvas from `setData`, i.e. on every poll of a still-running search. They
+   now arrive once, on completion. For a facts query that is imperceptible, and it is the right
+   trade — it is what stops a partial result blanking the floor plan.
+
+**A cost stated rather than optimised:** `snapshotAt` is a linear scan of the whole history per
+tick. At the expected volume that is a few hundred rows against the server round trip it replaces,
+so it is not worth indexing; at the 20 000-row cap it would be worth it, but that volume is already
+reported as misuse of a facts store. Recorded in the javadoc so it is a known property.
+
+**Verified:** `./gradlew check`, `:stroom-app-gwt:gwtDraftCompile`, and the fact-key cardinality
+assumption is *not* settled by this instance — the fixture has 9 keys and 10 rows. The truncation
+warning is what covers a deployment where the assumption is wrong.
+
+**Manual testing outstanding.** Eight tests as Group F in `floormap-test-plan.md`, written against
+the fixture's one moving fact (`desk-106`, which moves at 2026-09-04 07:56:47Z and is the only fact
+in the store whose position depends on the timeline). **F3 — scrubbing backwards past that move — is
+the headline**, because it is the case that changed from a server round trip to a local computation
+and the only one where a mistake in the time comparison would show.
 
 ### Risk of making this change — **LOW** (option 2) / **MEDIUM** (option 4)
 

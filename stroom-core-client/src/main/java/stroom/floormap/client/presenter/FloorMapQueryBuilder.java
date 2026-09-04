@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.ValuePathAccessor;
+import stroom.floormap.shared.FloorMapFactHistory;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.token.QuotedStringUtil;
@@ -43,8 +44,21 @@ public final class FloorMapQueryBuilder {
 
     /**
      * Builds a StroomQL query string that selects {@code Key},
-     * {@code EffectiveTime}, and one column per schema mapping from
-     * the {@code param('FactStore')} source.
+     * {@code EffectiveTime}, {@code toLong(EffectiveTime)}, and one column per
+     * schema mapping from the {@code param('FactStore')} source.
+     *
+     * <p>The {@code toLong(EffectiveTime)} column carries the effective time as raw
+     * epoch millis, aliased {@link FloorMapFactHistory#EFFECTIVE_TIME_MS_COLUMN}.
+     * {@code FloorMapFactHistory} derives the snapshot at a timeline position from
+     * the held history, which means comparing each row's effective time against
+     * that position — and the {@code EffectiveTime} column arrives as text. It is
+     * ISO-8601 today, because StroomQL sets no {@code Format} on select columns and
+     * so {@code Unformatted} calls {@code ValDate.toString()}, but resting the map's
+     * correctness on a formatter default two modules away is not worth the one extra
+     * column it costs to avoid.</p>
+     *
+     * <p>{@code EffectiveTime} itself is retained: it is the readable one, and the
+     * Events Query tab's results table shows these columns to the user.</p>
      *
      * @param schema the value schema mappings; must not be {@code null} or empty
      * @param format the value serialisation format; must not be {@code null}
@@ -53,7 +67,9 @@ public final class FloorMapQueryBuilder {
     public static String buildFactsQuery(final List<FloorMapFieldMapping> schema,
                                          final ValueFormat format) {
         final StringBuilder sb = new StringBuilder();
-        sb.append("from param('FactStore')\nselect \n  Key, \n  EffectiveTime");
+        sb.append("from param('FactStore')\nselect \n  Key, \n  EffectiveTime, \n  toLong(EffectiveTime) as \"")
+                .append(QuotedStringUtil.escapeDoubleQuoted(FloorMapFactHistory.EFFECTIVE_TIME_MS_COLUMN))
+                .append("\"");
 
         for (final FloorMapFieldMapping mapping : schema) {
             final String path = mapping.getPath();

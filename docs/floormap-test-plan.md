@@ -218,9 +218,16 @@ everything below, in descending order of value:
 | **If time** | A2, A7, A9, A13, A10 | Each narrows one behaviour, none is load-bearing on its own. A10 is a regression check on a store the defect cannot affect |
 | **Skip** | **A4** | Not runnable against this fixture — see below |
 
-Outside Group A, **Group B is the one to do regardless of how Group A goes.** It is independent of
-the events change, has never been exercised by hand, and fails silently — a content pack missing its
-assets looks fine until someone imports it somewhere else.
+Outside Group A, two groups matter regardless of how Group A goes.
+
+**Group F** is the newest change (F15 — facts no longer query per tick) and the least exercised.
+**F3 is its headline**: scrubbing backwards past `desk-106`'s move is now computed in the browser
+rather than fetched, so a mistake there shows up in exactly one place and nowhere else. **F8** also
+covers a deliberate behaviour change worth agreeing to — switching to another Stroom document now
+pauses playback.
+
+**Group B** is independent of both query changes, has never been exercised by hand, and fails
+silently — a content pack missing its assets looks fine until someone imports it somewhere else.
 
 ### A1 · An idle entity stays on the map · *the headline test*
 
@@ -541,6 +548,53 @@ Visual only; no test can see any of it.
 | E2 | Start with the **old** `visualisationAsset` / `visualisationAssetDb` config keys | accepted, with a deprecation warning. Do not add the new keys alongside — the last occurrence wins |
 | E3 | Create a new Floor Map end to end | the init dialog sets both stores, both column settings and the value schema; layers appear; events draw |
 | E4 | The store choosers on the init dialog | titled "Choose Facts Store" / "Choose Events Store" |
+
+---
+
+# Group F — the facts change (F15). Do F1, F3 and F6
+
+Facts no longer query per playback tick. The whole history is read once, on a 60-second cadence and
+whenever the Map becomes visible, and each tick's snapshot is derived from it in the browser.
+
+**Use `Test Floor Map` in `System / Floor Map Test`.** Its facts store `floor_map_facts` holds
+**9 keys in 10 rows** — `bg-ground`, `area-north`, `area-south`, `desk-101` … `desk-106`. Every key
+has one version at **2026-09-02 08:11:47Z** except **`desk-106`, which has a second version at
+2026-09-04 07:56:47Z**. That one move is what every correctness test below turns on: it is the only
+fact in the fixture whose position depends on where the timeline is.
+
+| # | Do | Expect | Result |
+|---|---|---|---|
+| **F1** | Open the map. Set the timeline to **before 2026-09-04 07:56:47** (the default NOW−24h end is before it if today is the 4th; otherwise scrub) | The full floor plan draws — background, both areas, six desks — and `desk-106` is at its **original** position | |
+| **F2** | Scrub **forwards** past 07:56:47 | `desk-106` jumps to its **second** position. Nothing else moves | |
+| **F3** | Scrub **backwards** past 07:56:47 | `desk-106` returns to its **original** position. **This is the headline test**: it is now computed in the browser rather than fetched, so a broken time comparison shows up here and nowhere else | |
+| **F4** | Play across 07:56:47 at 1×, then at 10× | `desk-106` moves at the same timeline instant both times. It used to be accurate only to one tick of *wall clock* — about 3 seconds of timeline at 10× | |
+| **F5** | Open DevTools → Network, filter on `search`, and play for 30 seconds | Facts contribute **no** requests during playback. Before this change they were about 3 a second | |
+| **F6** | Write a fact directly to the store (upload to `FLOOR_MAP_FACTS`, or via MCP), then wait on the Map without touching anything | It appears within **60 seconds**. **Then** repeat, but instead of waiting, switch to another Stroom document and back — it appears **immediately** | |
+| **F7** | Move a desk on the **Editor** tab, save, switch to the **Map** tab | The move is there. This path already worked; it is retested because the facts read behind it changed | |
+| **F8** | Play, then switch to a **different Stroom document**, wait 30 seconds, come back | The timeline is **paused where you left it** — see the behaviour change below | |
+
+### One deliberate behaviour change, in F8
+
+Switching to another Stroom document **now pauses playback**. It did not before: `afterSelectTab`
+fires only on this document's *inner* tabs, so the requestAnimationFrame loop kept running and kept
+driving result stores on a document nobody was looking at.
+
+So F8 looks different from how it used to. You now return to the position you left, rather than to
+wherever the clock ran on to while you were away. That is the intended outcome — but it is a change
+in what the feature does, not only in what it costs, so it is worth deciding you want it.
+
+### What would tell you it is wrong
+
+- `desk-106` at its **second** position when the timeline is before 07:56:47 — the time comparison
+  is inverted or the snapshot is not filtering at all.
+- The floor plan **empty** while the events entities still animate — the history read failed and was
+  refused (correct), but nothing had been read successfully first.
+- Any of these in the console, each of which is reported **once** per document:
+  - *"the facts query failed, so the floor plan shown is the last that was read successfully"*
+  - *"the facts store holds more than 20000 historical entries"* — 10 rows here, so this would mean
+    the map is pointed at the wrong store.
+  - *"the facts query is not returning the \"Effective Time Ms\" column"* — the generated query
+    lost the `toLong(EffectiveTime)` column, and the plan is showing latest-regardless-of-time.
 
 ---
 

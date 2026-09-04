@@ -35,6 +35,7 @@ import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapEventState;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapEventsQueryOrder;
+import stroom.floormap.shared.FloorMapFactHistory;
 import stroom.floormap.shared.FloorMapFactTableParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
@@ -51,6 +52,7 @@ import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.Param;
 import stroom.query.api.Result;
+import stroom.query.api.Row;
 import stroom.query.api.TableResult;
 import stroom.query.api.TimeRange;
 import stroom.query.api.token.QuotedStringUtil;
@@ -85,7 +87,7 @@ import java.util.Map;
  *
  * <p>This presenter coordinates the floor-map canvas and the timeline scrubber. Facts are
  * loaded by running a StroomQL query via {@link QueryModel}. Results are parsed by
- * {@link #parseFacts(TableResult)}.</p>
+ * {@link #parseFacts(List, List)}.</p>
  *
  * <p>The Map tab is <strong>read-only</strong>. Unlike
  * {@link FloorMapEditorPresenter}, it sets no edit mode and installs none of the canvas's
@@ -191,6 +193,18 @@ public class FloorMapMapPresenter
     private boolean baselineErrorReported;
 
     /**
+     * Report-once flags for the facts history read.
+     *
+     * <p>The read repeats every 60 s, so a persistent fault — a store that cannot be read, or one
+     * holding far more history than the cap — would otherwise write to the console once a minute
+     * for as long as the document stays open. Same rule as {@link #baselineErrorReported}, and
+     * reset per document read.</p>
+     */
+    private boolean factsHistoryErrorReported;
+
+    private boolean factsHistoryTruncationReported;
+
+    /**
      * Names whichever stage of the events pipeline came up empty, once it has stayed empty.
      *
      * <p>Four stages can each produce nothing and all four look the same on screen. Three of them
@@ -231,7 +245,28 @@ public class FloorMapMapPresenter
      */
     private FloorMapAreaMembership lastAreaMembership = FloorMapAreaMembership.EMPTY;
 
-    private final QueryModel queryModel;
+    /**
+     * Reads every version of every fact, on a slow cadence rather than per tick.
+     *
+     * <p>Replaces a per-tick snapshot query at {@code [T, T]} — about three full fact reads a
+     * second. Facts change roughly weekly, so that poll was not serving playback; it was serving
+     * external write detection at three times a second. {@link FloorMapFactHistory} holds the
+     * history and derives each tick's snapshot locally.</p>
+     */
+    private final FloorMapFullReadQueryHelper factsHistoryQueryHelper;
+
+    /** The held fact history, and the snapshot arithmetic over it. */
+    private final FloorMapFactHistory factHistory = new FloorMapFactHistory();
+
+    /**
+     * The snapshot rows last handed to {@link #parseFacts}, so an unchanged one is skipped.
+     *
+     * <p>The guard is on the <b>rows</b>, not on the parsed facts: {@link Row} implements
+     * {@code equals} and {@link Fact} does not, so comparing rows needs nothing new and skips the
+     * parse as well as the pushes. At the stated change rate this is a hit on essentially every
+     * tick, which is what makes deriving the snapshot per tick cheaper than querying for it.</p>
+     */
+    private List<Row> lastFactSnapshotRows;
 
     /**
      * Runs the document's events query at the selected time, producing the
@@ -252,7 +287,7 @@ public class FloorMapMapPresenter
      * sharing the playback model would mean every 300 ms tick killing the baseline before it
      * finished.</p>
      */
-    private final FloorMapBaselineQueryHelper baselineQueryHelper;
+    private final FloorMapFullReadQueryHelper baselineQueryHelper;
 
     /**
      * Builds the cluster member list on demand. Left as a provider rather than
@@ -420,46 +455,6 @@ public class FloorMapMapPresenter
         // wherever it is named.
         floorMapCanvasPresenter.setEntityNameResolver(this::entityDisplayName);
 
-        // Result component to parse and handle Facts query results
-        final ResultComponent resultConsumer = new ResultComponent() {
-            @Override
-            public OffsetRange getRequestedRange() {
-                return new OffsetRange(0, 1000); // Fetch up to 1000 items
-            }
-
-            @Override
-            public GroupSelection getGroupSelection() {
-                return null;
-            }
-
-            @Override
-            public void reset() {}
-
-            @Override
-            public void startSearch() {}
-
-            @Override
-            public void endSearch() {}
-
-            @Override
-            public void setData(final Result componentResult) {
-                if (componentResult instanceof final TableResult tableResult) {
-                    parseFacts(tableResult);
-                }
-            }
-
-            @Override
-            public void setQueryModel(final QueryModel queryModel) {}
-        };
-
-        this.queryModel = new QueryModel(
-                eventBus,
-                restFactory,
-                dateTimeSettingsFactory,
-                resultStoreModel,
-                () -> QueryTablePreferences.builder().build());
-        this.queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, resultConsumer);
-
         // Result component to parse and handle Events query results — the entity
         // overlay that gets animated during playback.
         final ResultComponent eventsResultConsumer = new ResultComponent() {
@@ -517,9 +512,19 @@ public class FloorMapMapPresenter
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
                 histogramDataModel::process);
 
-        this.baselineQueryHelper = new FloorMapBaselineQueryHelper(
+        this.baselineQueryHelper = new FloorMapFullReadQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
+                FloorMapFullReadQueryHelper.MAX_ROWS,
+                "eventsBaselineTable",
+                "Events Query Baseline",
                 this::applyBaselineOutcome);
+
+        this.factsHistoryQueryHelper = new FloorMapFullReadQueryHelper(
+                eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
+                FloorMapFactHistory.MAX_ROWS,
+                "factsHistoryTable",
+                "Facts History",
+                this::applyFactsHistoryOutcome);
     }
 
     @Override
@@ -686,8 +691,8 @@ public class FloorMapMapPresenter
         this.docUuid = docRef != null ? docRef.getUuid() : null;
         // Initialise and reset every query model BEFORE starting any searches, so that the histogram query
         // started inside updateTimelineRange() is not immediately cancelled by the reset() calls below.
-        queryModel.init(docRef);
-        queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
+        factsHistoryQueryHelper.init(docRef);
+        factsHistoryQueryHelper.reset();
         eventsQueryModel.init(docRef);
         eventsQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
         baselineQueryHelper.init(docRef);
@@ -709,6 +714,15 @@ public class FloorMapMapPresenter
         // below reads everything rather than a delta against a cursor that no longer means
         // anything.
         eventState.clear();
+        // Same reasoning for facts: the document may now point at a different facts store, so the
+        // held history is not evidence about this read. clear() also makes a read due immediately,
+        // which the onTimeChange at the end of this method then issues - and lastFactSnapshotRows
+        // has to go with it, or the unchanged guard could match the new document's first snapshot
+        // against the old document's and skip drawing it.
+        factHistory.clear();
+        lastFactSnapshotRows = null;
+        factsHistoryErrorReported = false;
+        factsHistoryTruncationReported = false;
         baselineErrorReported = false;
         orderNoteReported = false;
         orderCheckedQuery = null;
@@ -839,9 +853,11 @@ public class FloorMapMapPresenter
         // itself while playing.
         floorMapCanvasPresenter.setCurrentTimeText(
                 floorMapTimelinePresenter.formatTime(time));
-        // Facts are a snapshot at T — an instant, which is what a fact set months old needs.
-        runQueryAtSelectedTime(queryModel, getFactsQueryToUse(),
-                "factsTable", "Facts Query Playback", selectedTime, selectedTime);
+        // Facts: no query. The history is held and the snapshot at T derived from it, so playback,
+        // scrub and step are zero-query for facts. The read below fires only when the cadence is
+        // due or the Map has just become visible.
+        readFactsHistoryIfDue();
+        applyFactSnapshot(time);
         readEvents(time);
     }
 
@@ -1035,7 +1051,7 @@ public class FloorMapMapPresenter
      *
      * @param outcome the finished baseline
      */
-    private void applyBaselineOutcome(final FloorMapBaselineQueryHelper.Outcome outcome) {
+    private void applyBaselineOutcome(final FloorMapFullReadQueryHelper.Outcome outcome) {
         if (closed || getEntity() == null) {
             return;
         }
@@ -1070,7 +1086,7 @@ public class FloorMapMapPresenter
                 // threshold, which is also where it can drop a stationary entity. The knobs that
                 // do apply here are the horizon and the row cap.
                 Console.error("Floor map: the events baseline hit its "
-                              + FloorMapBaselineQueryHelper.MAX_ROWS + "-row limit over the last "
+                              + FloorMapFullReadQueryHelper.MAX_ROWS + "-row limit over the last "
                               + (FloorMapEventState.HORIZON_MS / 3_600_000) + " hours, so entities"
                               + " idle for a long time may be missing and will not be pruned."
                               + " The store is producing more events than one baseline can carry;"
@@ -1283,7 +1299,7 @@ public class FloorMapMapPresenter
      *
      * @param tableResult the query result table to parse
      */
-    private void parseFacts(final TableResult tableResult) {
+    private void parseFacts(final List<Column> resultColumns, final List<Row> resultRows) {
         // Same guard as publishEventEntities: a facts result already in flight when the
         // tab was closed has nothing left to update, and this presenter is not unbound
         // on close so the callback still arrives.
@@ -1304,8 +1320,8 @@ public class FloorMapMapPresenter
         }
 
         final List<Fact> facts = FloorMapFactTableParser.parse(
-                tableResult.getColumns(),
-                tableResult.getRows(),
+                resultColumns,
+                resultRows,
                 aliasByRole,
                 Console::error);
 
@@ -1328,6 +1344,108 @@ public class FloorMapMapPresenter
         // their positions.
         reanchorEventEntities();
         updateAreaMembership();
+    }
+
+    /**
+     * Issues a fact history read if one is due, and does nothing otherwise.
+     *
+     * <p>Checked on demand rather than driven by a timer, for the reasons {@link FloorMapEventState}
+     * records for baselines: there is no lifecycle to get wrong, nothing to cancel, and the
+     * decision is unit-testable. The three call sites between them cover everything —
+     * {@link #onTimeChange} while playing, {@link #refresh()} on becoming visible, and
+     * {@link #onRead} on opening.</p>
+     *
+     * <p>Skipped while one is in flight. Issuing again would destroy it and, if a read takes longer
+     * than a tick, it would never complete — the livelock the baseline path documents. Note this is
+     * the helper's own flag and deliberately not {@code QueryModel.isSearching()}, which the REST
+     * failure path never clears.</p>
+     */
+    private void readFactsHistoryIfDue() {
+        if (factsHistoryQueryHelper.isRunning()) {
+            return;
+        }
+        final double nowMs = System.currentTimeMillis();
+        if (!factHistory.needsRead(nowMs)) {
+            return;
+        }
+        final String query = getFactsQueryToUse();
+        if (query == null || query.trim().isEmpty()) {
+            return;
+        }
+        factHistory.markReadIssued(nowMs);
+        factsHistoryQueryHelper.runAll(resolveQueryParams(query), queryParams());
+    }
+
+    /**
+     * Takes a completed fact history read.
+     *
+     * <p>Refuses a failed one. The history replaces the floor plan wholesale, and a failed read is
+     * indistinguishable from an empty store by its rows — applying it would blank the map and, with
+     * nothing else drawing facts, leave it blank until the next cadence. Keeping the previous
+     * history is strictly better: stale beats empty, and the previous history is usually still
+     * right, since facts change weekly.</p>
+     */
+    private void applyFactsHistoryOutcome(final FloorMapFullReadQueryHelper.Outcome outcome) {
+        if (closed || getEntity() == null) {
+            return;
+        }
+        if (outcome.failed()) {
+            if (!factsHistoryErrorReported) {
+                factsHistoryErrorReported = true;
+                Console.error("Floor Map: the facts query failed, so the floor plan shown is the "
+                              + "last that was read successfully. This is reported once; the read "
+                              + "is retried every "
+                              + (FloorMapFactHistory.REFETCH_INTERVAL_MS / 1000) + " seconds.");
+            }
+            return;
+        }
+        final TableResult result = outcome.result();
+        if (result == null) {
+            return;
+        }
+        factHistory.setHistory(result.getColumns(), result.getRows(), outcome.truncated());
+        if (outcome.truncated() && !factsHistoryTruncationReported) {
+            factsHistoryTruncationReported = true;
+            Console.error("Floor Map: the facts store holds more than "
+                          + FloorMapFactHistory.MAX_ROWS + " historical entries, so the floor plan "
+                          + "may be incomplete or show the wrong version of a fact. This is far "
+                          + "above the expected volume - check whether the facts store is being "
+                          + "written to as though it were an events store.");
+        }
+        if (factHistory.shouldWarnMissingTimeColumn()) {
+            Console.error("Floor Map: the facts query is not returning the \""
+                          + FloorMapFactHistory.EFFECTIVE_TIME_MS_COLUMN + "\" column, so the "
+                          + "floor plan shows each fact's latest version regardless of the "
+                          + "timeline position.");
+        }
+        // Deliberately no forced redraw. The first history after an open draws because
+        // lastFactSnapshotRows is still null and nothing equals null; a history whose rows changed
+        // draws because the snapshot differs; and one that came back identical - the normal case at
+        // a weekly change rate - is skipped, which is the whole point. Clearing the guard here
+        // instead would re-parse and re-push the entire floor plan once a minute for nothing.
+        applyFactSnapshot(selectedTime);
+    }
+
+    /**
+     * Derives the facts current at {@code time} from the held history and pushes them if they
+     * differ from the last push.
+     *
+     * <p>The unchanged guard is the other half of this change. Deriving a snapshot is cheap, but
+     * everything downstream of it is not — parsing every row, re-pushing type styles and facts to
+     * the canvas, re-placing every event entity and recomputing area containment. At the stated
+     * change rate the snapshot is identical on essentially every tick, so skipping is the normal
+     * path and doing the work is the exception.</p>
+     */
+    private void applyFactSnapshot(final long time) {
+        if (closed || getEntity() == null || !factHistory.isLoaded()) {
+            return;
+        }
+        final List<Row> snapshot = factHistory.snapshotAt(time);
+        if (snapshot.equals(lastFactSnapshotRows)) {
+            return;
+        }
+        lastFactSnapshotRows = snapshot;
+        parseFacts(factHistory.columns(), snapshot);
     }
 
     /**
@@ -1638,7 +1756,7 @@ public class FloorMapMapPresenter
         super.onClose();
         closed = true;
         floorMapTimelinePresenter.pause();
-        queryModel.reset(DestroyReason.TAB_CLOSE);
+        factsHistoryQueryHelper.reset();
         eventsQueryModel.reset(DestroyReason.TAB_CLOSE);
         baselineQueryHelper.reset();
         histogramQueryHelper.reset();
@@ -1663,7 +1781,32 @@ public class FloorMapMapPresenter
     public void refresh() {
         if (getEntity() != null) {
             eventState.requestBaseline();
+            // Becoming visible is the case the 60 s cadence deliberately does not try to serve:
+            // someone who has just written a fact and wants to see it is, almost by definition,
+            // about to look at the map. So re-read now rather than waiting out the interval.
+            factHistory.requestRead();
             onTimeChange(selectedTime);
+        }
+    }
+
+    /**
+     * Called when this document's own content tab is fronted or backgrounded, as distinct from a
+     * switch between this document's inner tabs.
+     *
+     * <p>Both halves matter. Becoming visible catches up on everything that arrived while the tab
+     * was elsewhere — the same job {@link #refresh()} does for an inner-tab return. Becoming
+     * hidden <b>pauses playback</b>, which it previously did not: {@code afterSelectTab} fires only
+     * on inner-tab switches, so switching to a different Stroom document left the
+     * requestAnimationFrame loop running and ticks arriving, driving result stores on a document
+     * nobody was looking at.</p>
+     *
+     * @param visible whether this document's tab is now the fronted one
+     */
+    public void onContentTabVisible(final boolean visible) {
+        if (visible) {
+            refresh();
+        } else {
+            pauseTimeline();
         }
     }
 

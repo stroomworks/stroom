@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.floormap.shared.FloorMapFactHistory;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.ValueFormat;
@@ -48,6 +49,40 @@ class TestFloorMapQueryBuilder {
         assertThat(query).contains("Key");
         assertThat(query).contains("EffectiveTime");
         assertThat(query).contains("jq(Value, \".type\") as \"type\"");
+    }
+
+    @Test
+    void testBuildFactsQuery_selectsTheRawMillisecondColumn() {
+        // The alias is the contract between this builder and FloorMapFactHistory, which is in
+        // another module and matches the column back by name. Asserted against the constant
+        // rather than a literal so a rename cannot break the pair silently.
+        final String query = FloorMapQueryBuilder.buildFactsQuery(
+                List.of(new FloorMapFieldMapping(".type", Role.TYPE, "Type", null)),
+                ValueFormat.JSON);
+
+        assertThat(query).contains(
+                "toLong(EffectiveTime) as \"" + FloorMapFactHistory.EFFECTIVE_TIME_MS_COLUMN + "\"");
+    }
+
+    @Test
+    void testBuildFactsQuery_keepsTheReadableEffectiveTimeColumnToo() {
+        // The Events Query tab shows these columns to the user, so the raw millis is an addition
+        // rather than a replacement.
+        final String query = FloorMapQueryBuilder.buildFactsQuery(
+                List.of(new FloorMapFieldMapping(".type", Role.TYPE, "Type", null)),
+                ValueFormat.JSON);
+
+        assertThat(query).contains("  EffectiveTime, ");
+    }
+
+    @Test
+    void testBuildFactsQuery_millisecondColumnIsPresentForXmlToo() {
+        final String query = FloorMapQueryBuilder.buildFactsQuery(
+                List.of(new FloorMapFieldMapping("/entry/type", Role.TYPE, "Type", null)),
+                ValueFormat.XML);
+
+        assertThat(query).contains(
+                "toLong(EffectiveTime) as \"" + FloorMapFactHistory.EFFECTIVE_TIME_MS_COLUMN + "\"");
     }
 
     @Test

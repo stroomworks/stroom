@@ -39,18 +39,24 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Runs the Map tab's periodic <b>baseline</b> read: every entity active within the horizon, which
- * replaces what the tab knows rather than adding to it.
+ * Runs a Map tab read that <b>replaces</b> what the tab knows rather than adding to it.
+ *
+ * <p>Two callers, for the same reason. The events <b>baseline</b> reads every entity active within
+ * the horizon; the facts <b>history</b> reads every version of every fact. Both discard the
+ * previous answer wholesale, so both need the same guarantee: never apply a result that might be
+ * partial. That guarantee is the entire content of this class, and it is subtle enough that having
+ * it in one place matters more than the two callers' differences do.</p>
  *
  * <h3>Why this needs its own {@link QueryModel}</h3>
  * <p>{@code QueryModel}'s state is single-valued — one {@code currentSearch}, one
  * {@code currentQueryKey}, one searching flag — and {@code startNewSearch} destroys the previous
- * result store. A baseline sharing the playback model would be destroyed by the next 300 ms tick,
+ * result store. A read sharing the playback model would be destroyed by the next 300 ms tick,
  * every time. Same reason {@code HistogramQueryHelper} owns one, and this follows its shape.</p>
  *
  * <h3>Why the result is delivered on the searching&rarr;idle edge, not from setData</h3>
- * <p>A baseline replaces state wholesale, so applying a <em>partial</em> one drops entities that
- * are still there. Two things make that reachable:</p>
+ * <p>A wholesale replacement applied from a <em>partial</em> result drops things that are still
+ * there — entities in the events case, the whole floor plan in the facts case. Two things make
+ * that reachable:</p>
  * <ul>
  *   <li>{@code StateSearchProvider} catches a scan failure, calls {@code addError}, and then
  *       <b>still</b> calls {@code signalComplete()} — so a broken or never-written Plan B store
@@ -65,10 +71,10 @@ import java.util.function.Consumer;
  * already uses and documents, including its guard against acting on the "not searching" that the
  * <em>start</em> of the next run also reports.</p>
  */
-class FloorMapBaselineQueryHelper {
+class FloorMapFullReadQueryHelper {
 
     /**
-     * The row cap for a baseline.
+     * The row cap for an events baseline.
      *
      * <p>Server-side {@code DataStoreSettings.maxResults} defaults far above this, so this is the
      * binding limit, and it <b>is</b> reached in practice — see {@link Outcome#truncated()}.
@@ -91,6 +97,9 @@ class FloorMapBaselineQueryHelper {
     private static final long TIMEOUT_MS = 30_000L;
 
     private final QueryModel queryModel;
+    private final int maxRows;
+    private final String componentName;
+    private final String taskName;
     private final Consumer<Outcome> outcomeHandler;
 
     /**
@@ -124,11 +133,17 @@ class FloorMapBaselineQueryHelper {
 
     private boolean searching;
 
-    FloorMapBaselineQueryHelper(final EventBus eventBus,
+    FloorMapFullReadQueryHelper(final EventBus eventBus,
                                 final RestFactory restFactory,
                                 final DateTimeSettingsFactory dateTimeSettingsFactory,
                                 final ResultStoreModel resultStoreModel,
+                                final int maxRows,
+                                final String componentName,
+                                final String taskName,
                                 final Consumer<Outcome> outcomeHandler) {
+        this.maxRows = maxRows;
+        this.componentName = componentName;
+        this.taskName = taskName;
         this.outcomeHandler = outcomeHandler;
         this.queryModel = new QueryModel(
                 eventBus,
@@ -141,7 +156,7 @@ class FloorMapBaselineQueryHelper {
         this.queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, new ResultComponent() {
             @Override
             public OffsetRange getRequestedRange() {
-                return new OffsetRange(0, MAX_ROWS);
+                return new OffsetRange(0, maxRows);
             }
 
             @Override
@@ -216,10 +231,10 @@ class FloorMapBaselineQueryHelper {
      * Whether a baseline is in flight.
      *
      * <p>For deciding whether abandoning it is <em>wanted</em>, not whether it is safe —
-     * {@link #run} handles the safety itself. A routine baseline asks the same question the one in
-     * flight is already answering, so replacing it would be a self-destroying loop; one following a
-     * user's jump asks about a position the in-flight read has already left, so it should
-     * replace it.</p>
+     * {@link #run} and {@link #runAll} handle the safety themselves. A routine read asks the same
+     * question the one in flight is already answering, so replacing it would be a self-destroying
+     * loop; one following a user's jump asks about a position the in-flight read has already left,
+     * so it should replace it.</p>
      */
     boolean isRunning() {
         return running;
@@ -258,7 +273,7 @@ class FloorMapBaselineQueryHelper {
     }
 
     /**
-     * Starts a baseline over {@code [from, to]}.
+     * Starts a read bounded to {@code [from, to]} — the events baseline's horizon.
      *
      * @param query  the resolved query text; a blank one is a no-op
      * @param params the store references, matching the substitutions already made in {@code query}
@@ -267,6 +282,34 @@ class FloorMapBaselineQueryHelper {
      *               {@code LESS_THAN}
      */
     void run(final String query, final List<Param> params, final long from, final long to) {
+        start(query, params, new TimeRange("CUSTOM", String.valueOf(from), String.valueOf(to + 1)), to);
+    }
+
+    /**
+     * Starts a read of <b>everything</b> the query matches, with no time bound at all — the facts
+     * history.
+     *
+     * <p>Passing {@code timeRange = null} is what makes it whole-history rather than a snapshot,
+     * and it is load-bearing rather than incidental. With a {@code TimeRange} present,
+     * {@code UpdatableTemporalStoreDaoImpl.getQueryTime} lifts a snapshot boundary out of it and
+     * the DAO returns one row per key at or before that boundary. With none, {@code getQueryTime}
+     * returns null and the standard path returns every historical version — which is precisely what
+     * a client-side snapshot needs, and what {@code HistogramQueryHelper} already relies on for the
+     * same reason.</p>
+     *
+     * <p>The outcome's {@code to()} is meaningless here; the facts path holds no cursor.</p>
+     *
+     * @param query  the resolved query text; a blank one is a no-op
+     * @param params the store references, matching the substitutions already made in {@code query}
+     */
+    void runAll(final String query, final List<Param> params) {
+        start(query, params, null, 0L);
+    }
+
+    private void start(final String query,
+                       final List<Param> params,
+                       final TimeRange timeRange,
+                       final long to) {
         if (query == null || query.trim().isEmpty()) {
             return;
         }
@@ -277,18 +320,18 @@ class FloorMapBaselineQueryHelper {
         pendingTo = to;
         queryModel.startNewSearch(
                 QueryModel.TABLE_COMPONENT_ID,
-                "eventsBaselineTable",
+                componentName,
                 query,
                 params,
-                new TimeRange("CUSTOM", String.valueOf(from), String.valueOf(to + 1)),
+                timeRange,
                 false,  // incremental
                 false,  // storeHistory
-                "Events Query Baseline",
+                taskName,
                 null);  // additionalQueryExpression
     }
 
     /**
-     * A finished baseline: the rows, and whether to trust them.
+     * A finished read: the rows, and whether to trust them.
      */
     static final class Outcome {
 
@@ -302,7 +345,10 @@ class FloorMapBaselineQueryHelper {
             this.to = to;
         }
 
-        /** The upper bound this baseline covered — the cursor the caller should stamp. */
+        /**
+         * The upper bound this read covered — the cursor the events caller should stamp. Zero, and
+         * meaningless, for a {@link #runAll} read.
+         */
         long to() {
             return to;
         }
@@ -310,8 +356,8 @@ class FloorMapBaselineQueryHelper {
         /**
          * Whether the search reported an error, or ended without ever delivering a result.
          *
-         * <p>A failed baseline must not be applied: it cannot be distinguished from an empty
-         * horizon by its rows, and applying it would drop every entity.</p>
+         * <p>A failed read must not be applied: it cannot be distinguished from an empty store by
+         * its rows, and applying it would drop every entity, or blank the whole floor plan.</p>
          */
         boolean failed() {
             return failed;

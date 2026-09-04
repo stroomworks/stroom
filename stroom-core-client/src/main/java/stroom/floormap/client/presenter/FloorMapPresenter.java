@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.content.client.event.ContentTabSelectionChangeEvent;
 import stroom.docref.DocRef;
 import stroom.document.asset.client.presenter.DocumentAssetPresenter;
 import stroom.entity.client.presenter.AbstractTabProvider;
@@ -209,6 +210,40 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         super.onRead(docRef, document, readOnly);
+    }
+
+    /**
+     * Reacts to this <em>document's</em> content tab being fronted or backgrounded.
+     *
+     * <p>{@link #afterSelectTab} covers only this document's inner tabs, so without this a switch
+     * to a different Stroom document left whichever timeline was playing still playing, its result
+     * stores churning on a document nobody was looking at — and, on return, gave the Map no chance
+     * to catch up on facts or events that had arrived meanwhile.</p>
+     *
+     * <p>{@code QueryDocPresenter} and {@code DashboardSuperPresenter} — the other two document
+     * types that run searches — consume this event in exactly this shape.</p>
+     *
+     * <p>Both branches act on {@link #previousContent}, the inner tab actually on screen, rather
+     * than on the Map unconditionally. Two tabs carry a timeline, so hiding must pause whichever
+     * one is showing; and refreshing a Map that is not the visible inner tab would issue reads for
+     * something the user cannot see. This mirrors {@code afterSelectTab}'s own dispatch.</p>
+     */
+    @Override
+    protected void onBind() {
+        super.onBind();
+        registerHandler(getEventBus().addHandler(ContentTabSelectionChangeEvent.getType(), e ->
+                onContentTabVisible(e.getTabData() == this)));
+    }
+
+    private void onContentTabVisible(final boolean visible) {
+        if (previousContent == floorMapMapPresenter && floorMapMapPresenter != null) {
+            floorMapMapPresenter.onContentTabVisible(visible);
+        } else if (previousContent == floorMapEditorPresenter && floorMapEditorPresenter != null
+                   && !visible) {
+            // The Editor has a timeline to pause but no held state to catch up, so it is
+            // deliberately one-sided - the same asymmetry afterSelectTab has.
+            floorMapEditorPresenter.pauseTimeline();
+        }
     }
 
     /**
