@@ -154,6 +154,28 @@ If that is what you see, the feature is working and everything below is detail.
 
 ---
 
+# Results so far — 2026-09-04
+
+| Test | Result |
+|---|---|
+| "What working looks like" reference state | **pass** — which is **A1**, the headline behaviour |
+| A3 · horizon pruning, both directions | **pass** |
+| A5 · scrub backwards | **pass** |
+| A6 · scrub forwards | **pass** |
+| A7 · stop at end | **pass** |
+| A8 · loop at high speed | **pass** |
+| A9 · nothing polls while hidden | **pass** |
+| A4 · condense | **not runnable** — see A4 |
+| A2, A10, A11, A12, A13, A14 | outstanding |
+
+So the delta/baseline machinery, the horizon, the discontinuity hook in both directions, the
+stop-at-end reorder and the hidden-tab behaviour are all confirmed against real data. What is left
+is the three failure-mode tests (A11, A12, A13), the standstill check (A14), and two narrower ones.
+
+**A11 is ready.** The bulk store holds 24 000 rows spanning 02:24:20 → 08:24:19, and at timeline
+position **08:25:00** the six-hour horizon contains **23 955** of them — verified by query — which is
+comfortably over the 20 000 cap, so the truncation path will be exercised rather than skirted.
+
 # Group A — the events change. Do these first
 
 Use **`Test Floor Map`** unless a test says otherwise. **Keep the browser console open** — several
