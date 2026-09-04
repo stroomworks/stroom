@@ -158,7 +158,7 @@ from param('EventStore')
 select EffectiveTime as "Effective Time",
   Key as "Entity ID",
   jq(Value, '.location') as "Location ID",
-  jq(Value, '.type') as "Event Type",
+  jq(Value, '.type') as "Type",
   jq(Value, '.status') as "Status",
   jq(Value, '.message') as "Message"
 ```

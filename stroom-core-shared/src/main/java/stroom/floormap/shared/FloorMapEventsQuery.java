@@ -53,8 +53,29 @@ public final class FloorMapEventsQuery {
     /** Result column holding the entry's effective time; drives the timeline. */
     public static final String EFFECTIVE_TIME_COLUMN = "Effective Time";
 
-    /** Result column holding the event's own type. Not the entity type — see the note below. */
-    public static final String EVENT_TYPE_COLUMN = "Event Type";
+    /**
+     * Result column holding the entity's kind — person, vehicle, asset.
+     *
+     * <p>Aliased {@code Type} because that is the name {@code FloorMapQueryPresenter.parseRows}
+     * matches, case-insensitively, to decide an entity's type. Type is the layer key: it drives
+     * which icon and colour an entity gets, and whether the Layers panel can hide or dim it.</p>
+     *
+     * <p>It was aliased {@code Event Type} until 2026-09-04, which matched nothing, so every entity
+     * fell through to the {@code id.contains("@")} fallback — anything with an email-shaped id
+     * became a person and everything else an {@code object}. A vehicle could not be styled as one.
+     * The two coincide for people, which is why it survived so long.</p>
+     *
+     * <p>The old name also claimed to be the event's own type rather than the entity's. That was
+     * wrong on the data: {@code .type} holds the kind of thing in both stores — the facts schema
+     * maps the same path to {@link FloorMapFieldMapping.Role#TYPE} for desks and areas — while what
+     * happened is carried by {@link #STATUS_COLUMN} and {@link #MESSAGE_COLUMN}.</p>
+     *
+     * <p>Existing documents keep whatever alias their stored query text uses, so a map written
+     * before this change still needs its query edited by hand — one word — or it stays on the
+     * fallback. Matching by a fixed name at all is the weakness; see
+     * {@code docs/task-floormap-events-column-mapping.md}.</p>
+     */
+    public static final String EVENT_TYPE_COLUMN = "Type";
 
     /** Result column holding the event status. */
     public static final String STATUS_COLUMN = "Status";

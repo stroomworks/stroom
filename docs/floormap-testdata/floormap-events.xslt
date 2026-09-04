@@ -6,7 +6,7 @@
   the events query reads a different set of jq paths:
 
       jq(Value, '.location')  -> Location ID   (the only load-bearing one)
-      jq(Value, '.type')      -> Event Type
+      jq(Value, '.type')      -> Type          (the entity's kind; drives its layer and icon)
       jq(Value, '.status')    -> Status
       jq(Value, '.message')   -> Message
 
