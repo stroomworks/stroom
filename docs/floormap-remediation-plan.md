@@ -86,6 +86,7 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 - **Settings-tab state-type check** — the init dialog validates that a Plan B events store is `TEMPORAL_STATE`; the Settings tab does not. Needs an async fetch where `onWrite` is synchronous, so it wants a validation hook rather than an inline check.
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
 - **F14 · four silent failure paths in the events pipeline** — of the four stages that can produce nothing, three say nothing when they do, and the two most likely first-run failures are among them. Every diagnostic goes to the browser console, where a non-developer will not see it. Written up as **F14**.
+- **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
 - **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. Only open question is the re-fetch cadence; recommend 30 s. Written up as **F15**.
 
 ---
@@ -1679,6 +1680,84 @@ backwards across one, and an externally written fact appearing within the cadenc
 - The facts query runs once per cadence during playback, not once per tick — assert on query count.
 - With no facts changing, the canvas, roster and area membership are not re-pushed per tick.
 - A store whose history exceeds the cap warns once and still draws the facts it has.
+
+---
+
+## F16 — A trail reappears when an entity starts moving again — UNTRIAGED — **NEW 2026-09-04**
+
+**Files:** `FloorMapEntityAnimator.advance` (the fade-cancel branch), `.recordTrailPoint`
+
+**Reported from manual testing, 2026-09-04:** "trails becoming activated again when a person moves —
+this looks wrong". Recorded rather than diagnosed; no decision taken and none needed yet.
+
+### What was observed
+
+An entity that has been stationary long enough for its trail to fade starts moving again, and the
+trail comes back rather than starting fresh.
+
+### The likely mechanism — found by reading, **not** yet reproduced
+
+A trail fades over `TRAIL_FADE_DURATION_MS` (2 s) once an animation completes. Each frame,
+`advance` reconsiders every fading trail:
+
+```java
+if (activeAnimations.containsKey(id)) {
+    doneFading.add(id);            // moving again - cancel the fade
+} else if (timestampMs - fade.getValue() >= TRAIL_FADE_DURATION_MS) {
+    entityTrails.remove(id);       // fully faded
+    doneFading.add(id);
+}
+```
+
+Cancelling the fade **removes the fade timer but leaves `entityTrails` intact**. So a new movement
+does not begin a new trail — it resumes the old one, at full opacity, and appends to it.
+
+Two things bound how bad that can look, which is why it is worth measuring before deciding anything:
+
+- A fade that has already run its 2 s course removes the trail, so the effect needs a *second*
+  movement within 2 s of the first finishing.
+- `recordTrailPoint` trims by age (`TRAIL_MAX_AGE_MS`, 20 s) — but **only when a point is recorded**.
+  Nothing trims while an entity is stationary, so the stale points survive until the first frame of
+  the next movement and are dropped on that frame. A single frame of a resurrected trail at full
+  brightness is consistent with "looks wrong" and would be easy to miss in a screenshot.
+
+There is a documented precedent in the same method: an earlier bug where "a trail could be part-way
+through its fade while nothing is animating… drew a fading trail at full opacity for that frame, and
+the next loop tick put it back, which reads as the trail flickering bright." This looks like a
+residual case of the same class.
+
+### A second candidate, which the plan already half-anticipated
+
+F13's *accepted behaviours* include: "a baseline landing after deltas were in flight rewinds
+`lastQueriedTime` and replaces wholesale, so an entity that moved during its flight can flicker back
+one tick." That flicker is a position change, so **the animator records it as movement and draws a
+trail segment for it** — out and back. Accepting the flicker as cosmetic assumed it lasted one tick;
+a trail makes it linger for the trail's lifetime, which is a weaker case than the one that was
+accepted. Worth checking whether what was seen coincides with a baseline landing.
+
+### What to check first
+
+1. Reproduce with a short cadence — `generate.py --interval-seconds 30` gives movements close enough
+   together to hit the within-2-s case repeatedly.
+2. Determine which candidate it is: does it happen on *any* resumed movement (fade-cancel), or only
+   around a baseline (the flicker)? A11's row-limit console line is a rough clock for the latter.
+3. Decide whether the resurrected trail is one frame or persistent. That decides whether this is a
+   cosmetic blemish or a wrong picture.
+
+### Options, unranked and undecided
+
+| | Approach | Note |
+|---|---|---|
+| 1 | Leave it | May be a single frame, in which case the cost of fixing exceeds the benefit |
+| 2 | Discard the trail when a fade is cancelled | One line. Loses continuity for an entity that pauses briefly mid-journey, which is arguably the case the current behaviour is *for* |
+| 3 | Trim by age on every frame, not only when recording a point | Removes the stale-points half without changing the continuity behaviour. Costs a pass over fading trails per frame |
+| 4 | Suppress trail recording for a movement the baseline caused | Only if the second candidate turns out to be the real one; needs the animator to know why a position changed, which it currently does not |
+
+### Risk of leaving it — **LOW**
+
+Cosmetic, on a feature whose trails are explicitly best-effort: F13's decision record already states
+that positions must be correct and trails are best effort. This does not affect positions, counts or
+area membership.
 
 ---
 
