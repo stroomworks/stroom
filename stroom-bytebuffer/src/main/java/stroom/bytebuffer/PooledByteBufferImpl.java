@@ -74,10 +74,8 @@ class PooledByteBufferImpl implements PooledByteBuffer {
      */
     @Override
     public void doWithByteBuffer(final Consumer<ByteBuffer> byteBufferConsumer) {
-        try {
+        try (this) {
             byteBufferConsumer.accept(getByteBuffer());
-        } finally {
-            close();
         }
     }
 

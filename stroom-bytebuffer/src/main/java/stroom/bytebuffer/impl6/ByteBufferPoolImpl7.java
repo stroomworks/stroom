@@ -35,11 +35,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
-// The only local divergence in this file is the identifier `value` renamed to `val`, for
-// compatibility with recent JDKs. Verified behaviour-neutral: neutralise that one rename and
-// the diff against the merge base is empty. Same workaround as RowValueFilter. If upstream has
-// done the same rename, or no longer needs it, take their version wholesale.
 @Singleton
 public class ByteBufferPoolImpl7 implements ByteBufferPool {
 
@@ -222,10 +217,8 @@ public class ByteBufferPoolImpl7 implements ByteBufferPool {
          */
         @Override
         public void doWithByteBuffer(final Consumer<ByteBuffer> byteBufferConsumer) {
-            try {
+            try (this) {
                 byteBufferConsumer.accept(byteBuffer);
-            } finally {
-                close();
             }
         }
 
@@ -301,10 +294,8 @@ public class ByteBufferPoolImpl7 implements ByteBufferPool {
         @Override
         public void doWithByteBuffer(final Consumer<ByteBuffer> byteBufferConsumer) {
             Objects.requireNonNull(byteBuffer, "Already released");
-            try {
+            try (this) {
                 byteBufferConsumer.accept(byteBuffer);
-            } finally {
-                close();
             }
         }
 

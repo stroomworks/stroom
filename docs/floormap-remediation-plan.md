@@ -69,7 +69,6 @@ Both deferred tiers are written up as standalone, self-contained issues in `docs
 
 **Blocked on a decision:**
 
-- **D7** — why was `try (this)` replaced? Needs the author. Blocks **F10**.
 - **F11 · asset servlet** — uploads served same-origin as `html`/`js`/`svg`, vis iframe has no `sandbox`. Sandboxing may break visualisations needing same-origin access.
 - **F11 · playback search churn** — ~6–7 destroy/create/poll cycles per second per Map tab. Needs a correct staleness rule or the map shows stale data. **Not fixed by F13's delta read**, and worth being clear about that: the search *count* is unchanged, because a tick still starts a facts search and an events search. What dropped is the rows each one carries, plus the ticks where the events read is skipped entirely. The churn itself is still there. **F15 removes the facts half of it** — see there.
 - ~~**Entity type from `Event Type`**~~ — **immediate defect fixed 2026-09-04.** `parseRows` matches a column named `type` case-insensitively while the default query aliased it `Event Type`, so entity type always came from the `entityId.contains("@")` fallback — email-shaped ids became people, everything else an `object`, and a vehicle could not be styled as one. Verified against the fixture: `forklift-7` carries `type: vehicle` and was drawn as `object`. The alias is now `Type`; the old name was also a misnomer, since `.type` holds the kind of thing in both stores while what happened is carried by `Status` and `Message`. Facts were never affected — they match by schema role, which is why the Layers panel showed real fact types throughout. **Existing documents keep their stored query text and need a one-word edit**, and nothing migrates them. The structural weakness — three different mechanisms for connecting a column name to a meaning, one of them a hardcoded literal — is written up as `task-floormap-events-column-mapping.md`.
@@ -104,12 +103,14 @@ These cannot be settled from the code. Each blocks or reshapes the fix that foll
 | ~~D4~~ | ~~What happens to rows already orphaned by a rename?~~ | F1 | **Moot: no rows exist** |
 | ~~D5~~ | ~~Which of three cases is the deployed `config.yml` in?~~ | F2 | **Moot: the alias accepts all three.** No need to check |
 | ~~D6~~ | ~~Was the `ONE_DAY_MS` future-margin bound intended behaviour?~~ | F9 | **Answered 2026-09-04: no — docs deleted, F9 done** |
-| D7 | Why was `try (this)` replaced? The stated reason is false. | F10 | Open — needs the author |
+| ~~D7~~ | ~~Why was `try (this)` replaced? The stated reason is false.~~ | F10 | **Answered 2026-09-04: no constraint. Reverted; F10 done** |
 | ~~D8~~ | ~~Is the canvas render rewrite in scope pre-release?~~ | F6 | **Decided: cheap half now, architecture deferred to its own task** |
 | ~~D9~~ | ~~Keep the asset module move, or revert it?~~ | F2 | **Decided 2026-08-26: keep it.** Merge cost accepted; F2 solved by alias + migration |
 
-Eight of the nine are now settled. **One remains:** D7, a question for whoever replaced
-`try (this)`. It blocks F10 and nothing else.
+All nine are now settled. D7 was answered on 2026-09-04: no constraint was recalled, and everything
+checkable said there was none — `try (this)` compiles and passes on Java 25, the change rode along in
+a 38-file commit about the SQL Temporal Store, and the banner justifying it was boilerplate pasted
+from three files where it happened to be accurate. F10 is done.
 
 ### ~~D1 — Is there production data in the temporal store yet?~~ — ANSWERED
 
@@ -425,7 +426,7 @@ margin would hide a bad timestamp rather than surface it.
 **Still worth knowing:** the text reached the published OpenAPI description, so an external consumer
 may have built against a cap that was never there. That is a "who do we tell", not a "what do we do".
 
-### D7 — Why was `try (this)` replaced with `try/finally`?
+### ~~D7 — Why was `try (this)` replaced with `try/finally`?~~ — ANSWERED 2026-09-04: no constraint
 
 The merge marker on `ByteBufferPoolImpl7` says the only divergence is a `value`→`val` rename and that
 neutralising it leaves an empty diff. **Neither is true** — there is no such rename in that file, and
@@ -961,7 +962,7 @@ wrong rather than merely risky.
 
 ---
 
-## F10 — False merge marker hiding a real behaviour change — MEDIUM — **BLOCKED on D7**
+## F10 — False merge marker hiding a real behaviour change — MEDIUM — **DONE 2026-09-04**
 
 **Files:** `ByteBufferPoolImpl7.java:38` and three sibling buffer classes
 
@@ -981,22 +982,33 @@ safe to take from upstream wholesale, on a claim that does not hold.
 The identically-worded banner on `AnnotationDaoImpl` was checked and **is** accurate — that file
 really is only the rename. Do not change it.
 
-### The fix
+### The fix — done
 
-Per D7. If no real constraint exists, restore `try (this)` in all four classes and delete the banner.
-If a constraint does exist, keep `try/finally` but capture and attach the close failure via
-`addSuppressed`, and correct the banner to describe what actually diverges.
+D7 answered: no constraint. `try (this)` is restored at all **five** sites across the four classes —
+the finding said three, but `ByteBufferPoolImpl7` has two — and the false banner is deleted from
+`ByteBufferPoolImpl7` only. The identically-worded banners on `AnnotationDaoImpl`,
+`AbstractMetaListPresenter` and `AbstractNotificationListPresenter` are accurate for those files and
+are left alone.
 
-### Risk of making this change — **LOW**
+**`stroom-bytebuffer` is now byte-identical to `origin/master`.** The local divergence is gone
+rather than corrected, so no `STROOMWORKS-LOCAL` marker is needed and a merge from master cannot
+conflict here — which is exactly what the deleted banner claimed to want.
 
-Restoring `try (this)` returns four files to the upstream form, which is the better-tested path.
-Exception-path behaviour changes are worth a deliberate test, since the whole point is what happens
-when both the body and `close()` throw.
+### Risk of the change made — **LOW**
 
-### Verification
+Four files returned to the upstream form, which is the better-tested path.
+`:stroom-bytebuffer:build`, `:stroom-lmdb:test` and `:stroom-planb-impl:test` all pass — the modules
+that actually consume these buffers.
 
-A unit test where the consumer throws and `close()` also throws, asserting the consumer's exception is
-the one propagated with the close failure attached.
+### Verification — done
+
+`TestPooledByteBufferClose`: the consumer throws **and** `close()` throws, asserting the consumer's
+exception propagates with the close failure **suppressed** rather than replacing it. Plus a
+close-failure-alone case and the happy path.
+
+Confirmed to bite: reinstating `try/finally` fails the test, and fails it in exactly the way the
+finding describes — the propagated exception becomes the `IllegalStateException` from `close()`,
+masking the `IllegalArgumentException` the body threw.
 
 ---
 
