@@ -77,7 +77,6 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 - **Init dialog hardcodes `ValueFormat.JSON` + `initialValueSchema()`** — **deferred 2026-09-04, pending one fact.** A deployment whose facts are XML gets a new floor map that cannot parse them. Not blocked, only unguided: the Settings tab already has a format dropdown built from `ValueFormat.values()` and an editable schema grid, and `buildExtractExpression` emits `jq(...)` or `xpath(...)` per format — so the machinery is complete and only the dialog is fixed. **The detail that shapes any fix:** JSON paths are format-fixed (`.type` works for any JSON), but XML paths are not — the path goes straight to `xpath()` as an XPath from the value's root, and the root element name is deployment-specific. So seeding an XML schema without reading the data only substitutes one wrong answer for another; inference from a sampled value (the dialog already does an async fetch on OK for the Plan B state-type check) is what would actually remove the eight-path hand-edit. **Deferred because it may be theoretical:** every fact store seen in this instance is JSON, including `map_mysql_store`. If no deployment uses XML, documenting JSON as the default is the honest answer.
 - ~~**Map tab's Layers panel never shows discovered types**~~ — **answered by the code, 2026-09-04: intended.** `FloorMapLayersPresenter.rebuild()` gates provisional rows and the Discover footer behind `if (editorMode)`, with the comment *"Editor-only: types seen in the data but not yet saved appear as provisional rows the user can add as layers"*. `editorMode` defaults to `false` and is set `true` only by `FloorMapEditorPresenter:276`. So discovered-but-unsaved types are an authoring affordance and the read-only Map tab correctly shows saved layers only. No decision needed; the item is closed.
 - ~~**A Layers panel with no saved layers says nothing**~~ — **DONE 2026-09-04** (`cffe6bc0e5`), with per-tab wording since the remedy differs. Original text: — the residual of the item above, and a real if small gap: the panel's `list` is a bare `FlowPanel`, so with no type styles configured it is simply blank, and "no layers configured" is indistinguishable from "something is broken". Note `MyDataGrid.setEmptyText(String)` already exists for exactly this purpose (a local addition used by `FloorMapClusterPresenter` and `AbstractQueryDataPresenter`), but this panel is not a `MyDataGrid`, so it needs its own placeholder rather than that call. TRIVIAL, and on the Map tab it should point at the Editor tab, where layers are actually added.
-- **F15 · re-fetch cadence** — 30 s or 60 s, once F15 is built. 30 s recommended; 60 s reuses `FloorMapEventState.BASELINE_INTERVAL_MS`. Only felt by someone watching for their own write to land.
 - **The `fetchAll` OpenAPI correction** — the removed `ONE_DAY_MS` claim was in the published API description, so an external consumer may have built against a cap that never existed. Whether and whom to tell. See D6.
 
 **Ready to do, no decision needed:**
@@ -90,7 +89,7 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
 - **F14 · four silent failure paths in the events pipeline** — **options 2+3 done 2026-09-04.** `FloorMapStageReporter` names whichever stage came up empty, filtered on persistence so the normal facts-after-events startup sequence stays quiet while a permanent fault speaks once. Option 4 — surfacing it on the canvas rather than only in the console — is still open, and is what a non-developer needs. See **F14**.
 - **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
-- **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. Only open question is the re-fetch cadence; recommend 30 s. Written up as **F15**.
+- **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. **Cadence decided 2026-09-04: 60 s plus a re-fetch whenever the Map becomes visible** — better than the 30 s recommended, because it makes the one case that constrains the interval (someone watching for their own write) immediate rather than twice as fast, and reuses an existing constant. Two of the three visibility paths are already wired; the third wants a `ContentTabSelectionChangeEvent` handler on `FloorMapPresenter`, following `QueryDocPresenter` and `DashboardSuperPresenter` — which also lets a Map on a background document stop playing, removing ~6–7 result-store cycles/second nobody is watching. **No open questions; ready to build.** Written up as **F15**.
 
 ---
 
@@ -1740,8 +1739,11 @@ Shape:
 
 1. Fetch full fact history with `timeRange = null`; hold it.
 2. Compute the snapshot at T client-side each tick.
-3. Re-fetch on a cadence for external writes, plus immediately on open, save and tab return — which
-   `refresh()` already does.
+3. Re-fetch every **60 s** (`FloorMapEventState.BASELINE_INTERVAL_MS`) for external writes, plus
+   immediately whenever the Map becomes visible — open, save, inner-tab return (both already
+   wired) and outer-tab return (needs the `ContentTabSelectionChangeEvent` handler). Run the
+   cadence only while visible, so a hidden paused Map does nothing at all and no timer lifecycle is
+   needed — the same reasoning that kept F13 timer-free.
 4. Skip downstream work when the result is unchanged, which will be essentially always.
    **Guard on the raw `TableResult` rows, not on the parsed facts.** `Row` implements
    `equals`/`hashCode`; `Fact` does **not**, so guarding on parsed facts means adding an `equals` to
@@ -1755,16 +1757,50 @@ Shape:
 happens to cross it — accurate to one tick of *wall clock*, which at 10× playback speed is about three
 seconds of timeline. Holding the history makes it exact at every frame.
 
-### The one call to make — cadence
+### Cadence — DECIDED 2026-09-04: **60 s, plus a re-fetch whenever the Map becomes visible**
 
 New facts currently appear within 300 ms; afterwards they appear within one interval. At a weekly
 change rate even 300 s would be five orders of magnitude faster than the data, so the only case that
 constrains this is a person adding a fact and watching for it to land.
 
-**Recommend 30 s:** still a ~360× reduction, worst case half a minute, and with the unchanged-result
-guard each re-fetch costs almost nothing downstream. 60 s would reuse
-`FloorMapEventState.BASELINE_INTERVAL_MS` and save a constant; the difference is felt only by someone
-watching for their own write.
+I had recommended 30 s purely to shorten that wait. **The decision is better than the
+recommendation**, because it attacks that case directly instead of paying for it everywhere: a
+person watching for their own write is, almost by definition, about to *look at the map*. Tying the
+re-fetch to becoming visible makes that case immediate rather than merely twice as fast, and 60 s
+then reuses `FloorMapEventState.BASELINE_INTERVAL_MS` instead of introducing a second constant.
+
+**Two of the three "becomes visible" paths already exist:**
+
+| Path | Hook | State |
+|---|---|---|
+| Inner tab → Map (from Editor, Settings, Events Query) | `FloorMapPresenter.afterSelectTab` → `floorMapMapPresenter.refresh()` | **exists**, and already documented as re-querying facts so Editor edits appear |
+| Document open, and the first `selectTab(MAP)` that `refresh()` skips via its `previousContent != null` guard | `FloorMapMapPresenter.onRead` | **exists** |
+| Another Stroom document → this one (outer content tab) | none | **needs adding** — see below |
+
+**The outer-tab hook is worth adding, and there is an established pattern for it.**
+`ContentTabPanePresenter` fires `ContentTabSelectionChangeEvent` on the event bus, and both
+`QueryDocPresenter:87` and `DashboardSuperPresenter:88` — the two other document types that run
+searches — consume it identically:
+
+```java
+registerHandler(getEventBus().addHandler(ContentTabSelectionChangeEvent.getType(), e ->
+        childPresenter.onContentTabVisible(e.getTabData() == this)));
+```
+
+`FloorMapPresenter` registers no such handler today. Adding one is a few lines against a pattern
+used twice already.
+
+**It also closes a caveat this plan recorded as acceptable.** Rev 5's hidden-tab note says a switch
+to a *different Stroom document* while playing keeps the requestAnimationFrame loop running and
+ticks continuing — "the same load as today, so not a regression". With `onContentTabVisible(false)`
+the Map can pause, exactly as an inner-tab switch already does via `pauseTimeline()`. So one hook
+serves F15's catch-up on `true` and removes background playback churn on `false`. That churn is
+~6–7 result-store cycles per second on a document nobody is looking at, so it is the larger half of
+the win.
+
+**Residual, stated so it is not filed as a bug:** a Map tab left *visible and paused* while a fact
+is written externally still waits up to 60 s. Nothing is hidden and nothing is stale beyond the
+interval; it is the case the cadence exists for.
 
 **Assumption to confirm before building:** hundreds to low thousands of distinct fact keys. At tens of
 thousands the arithmetic changes and the history should be measured first.
