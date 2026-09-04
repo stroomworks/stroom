@@ -129,7 +129,7 @@ public final class FloorMapEventState {
      * <p>For discontinuities the caller knows about and the timeline cannot self-report: opening or
      * re-reading the document, a scrub commit, a step, and stopping at the end. Deliberately
      * <b>not</b> for a loop wrap, which fires per frame and is detected here instead by
-     * {@code t <= lastQueriedTime}.</p>
+     * {@code t < lastQueriedTime}.</p>
      */
     public void requestBaseline() {
         baselineRequested = true;
@@ -175,10 +175,10 @@ public final class FloorMapEventState {
                     : Read.none();
         }
 
-        // Backward, repeated, or a loop wrap: a delta range would be empty or inverted. Or beyond
-        // the horizon, where a delta is no cheaper than the baseline it would replace.
-        final boolean jumped = t <= lastQueriedTime || t - lastQueriedTime > HORIZON_MS;
-        if (jumped) {
+        // A real jump: backward (a loop wrap or a scrub), or so far forward that a delta is no
+        // cheaper than the baseline it would replace. Either way the state is wrong now and no
+        // delta can fix it, so this is the case the short interval exists for.
+        if (t < lastQueriedTime || t - lastQueriedTime > HORIZON_MS) {
             return sinceBaseline > JUMP_INTERVAL_MS
                     ? issueBaseline(t, nowMs, false)
                     : Read.none();
@@ -186,6 +186,18 @@ public final class FloorMapEventState {
 
         if (sinceBaseline > BASELINE_INTERVAL_MS) {
             return issueBaseline(t, nowMs, false);
+        }
+
+        // The same instant again, which is what a paused timeline re-read looks like. Nothing has
+        // been skipped, so there is nothing to fetch — and a delta here would be the zero-width
+        // range that matched no rows on any store and started this whole finding.
+        //
+        // Deliberately NOT treated as a jump. It was, and that was a bug: `t <= lastQueriedTime`
+        // put a repeated tick on the one-second interval, so a timeline sitting still re-read the
+        // whole store every second for as long as the document stayed open. A new document opens
+        // exactly like that, because `selectedTime` starts at 0 and the first baseline stamps 0.
+        if (t == lastQueriedTime) {
+            return Read.none();
         }
         return Read.delta(lastQueriedTime, t);
     }

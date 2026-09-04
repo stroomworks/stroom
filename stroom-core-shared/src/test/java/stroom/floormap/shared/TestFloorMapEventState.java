@@ -219,6 +219,49 @@ class TestFloorMapEventState {
                 .isEqualTo(Read.Kind.BASELINE);
     }
 
+    /**
+     * A repeated tick at the same instant reads nothing, and does not re-baseline every second.
+     *
+     * <p>The regression this pins. {@code t <= lastQueriedTime} classified a repeated tick as a
+     * jump, putting it on {@link FloorMapEventState#JUMP_INTERVAL_MS} — so a timeline sitting still
+     * re-read the whole store every second for as long as the document stayed open. A new document
+     * opens in exactly that state: {@code selectedTime} starts at 0, so the first baseline stamps
+     * 0 and every subsequent read is at 0 too.</p>
+     *
+     * <p>Nothing has been skipped at the same instant, so there is nothing to fetch — and a delta
+     * would be the zero-width range that matches no rows on any store.</p>
+     */
+    @Test
+    void testTheSameInstantAgainReadsNothingRatherThanReBaselining() {
+        final FloorMapEventState state = new FloorMapEventState();
+        state.nextRead(T0, NOW);
+        state.applyBaseline(List.of(entity("alice", "desk-1")), T0);
+
+        int baselines = 0;
+        // Ten seconds of ticks at a standstill: ten chances to re-baseline on the 1 s jump interval.
+        for (int tick = 1; tick <= 33; tick++) {
+            if (state.nextRead(T0, NOW + tick * 300.0).kind() == Read.Kind.BASELINE) {
+                baselines++;
+            }
+        }
+        assertThat(baselines)
+                .as("a standstill must not re-read the whole store every second")
+                .isZero();
+    }
+
+    /** The routine interval still reaches a standstill, so a late arrival is not stranded. */
+    @Test
+    void testAStandstillStillGetsTheRoutineBaseline() {
+        final FloorMapEventState state = new FloorMapEventState();
+        state.nextRead(T0, NOW);
+        state.applyBaseline(List.of(entity("alice", "desk-1")), T0);
+
+        assertThat(state.nextRead(T0, NOW + 5_000).kind()).isEqualTo(Read.Kind.NONE);
+        assertThat(state.nextRead(T0, NOW + FloorMapEventState.BASELINE_INTERVAL_MS + 1).kind())
+                .as("the 60 s cadence is the standstill's catch-up")
+                .isEqualTo(Read.Kind.BASELINE);
+    }
+
     /** A loop wrap or a backward scrub: a delta range would be inverted or empty. */
     @Test
     void testNonAdvancingTimeYieldsABaselineNotANegativeRange() {
