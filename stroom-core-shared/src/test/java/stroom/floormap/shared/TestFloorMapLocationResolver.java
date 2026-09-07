@@ -34,20 +34,71 @@ class TestFloorMapLocationResolver {
     /** The shape events carry when the position was baked in at ingest. */
     @Test
     void testParseCoordinates() {
-        assertThat(FloorMapLocationResolver.parseCoordinates("mapA, 120.5, -40"))
+        assertThat(FloorMapLocationResolver.parseCoordinates("120.5, -40"))
                 .containsExactly(120.5, -40.0);
-        assertThat(FloorMapLocationResolver.parseCoordinates("B-GND,10,20"))
+        assertThat(FloorMapLocationResolver.parseCoordinates("10,20"))
                 .containsExactly(10.0, 20.0);
+        // Whitespace around either part, and a negative or fractional value in either position.
+        assertThat(FloorMapLocationResolver.parseCoordinates("  -0.5 ,  7  "))
+                .containsExactly(-0.5, 7.0);
     }
 
-    /** Anything that is not three comma-separated parts ending in numbers is not a position. */
+    /** Anything that is not two comma-separated numbers is not a position. */
     @Test
     void testNonCoordinatesParseAsNull() {
         assertThat(FloorMapLocationResolver.parseCoordinates(null)).isNull();
         assertThat(FloorMapLocationResolver.parseCoordinates("")).isNull();
         assertThat(FloorMapLocationResolver.parseCoordinates("DSK-L1-03")).isNull();
-        assertThat(FloorMapLocationResolver.parseCoordinates("120.5, -40")).isNull();
-        assertThat(FloorMapLocationResolver.parseCoordinates("mapA, left, right")).isNull();
+        assertThat(FloorMapLocationResolver.parseCoordinates("left, right")).isNull();
+        // A fact key that happens to contain a comma is still a key, because what disambiguates is
+        // both parts being numeric rather than the number of parts.
+        assertThat(FloorMapLocationResolver.parseCoordinates("Desk 12, North")).isNull();
+        // One number is not a position.
+        assertThat(FloorMapLocationResolver.parseCoordinates("120.5")).isNull();
+    }
+
+    /**
+     * The retired three-part form is rejected rather than guessed at.
+     *
+     * <p>Accepting it would mean deciding what {@code "1, 120.5, 340"} means, where a numeric floor
+     * id is indistinguishable from an x: {@code (120.5, 340)} read as three parts,
+     * {@code (1, 120.5)} read as two. Silently wrong either way for somebody.</p>
+     */
+    @Test
+    void testLegacyThreePartFormIsNotCoordinates() {
+        assertThat(FloorMapLocationResolver.parseCoordinates("mapA, 120.5, -40")).isNull();
+        assertThat(FloorMapLocationResolver.parseCoordinates("B-GND,10,20")).isNull();
+        assertThat(FloorMapLocationResolver.parseCoordinates("1, 120.5, 340")).isNull();
+    }
+
+    /** And it is not read as a fact key either, so the caller can name the real problem. */
+    @Test
+    void testLegacyThreePartFormIsNotAReferenceEither() {
+        assertThat(FloorMapLocationResolver.parseReference("mapA, 120.5, -40")).isNull();
+        assertThat(FloorMapLocationResolver.parseReference("B-GND,10,20")).isNull();
+    }
+
+    /** What the caller uses to say why, rather than leaving an entity to vanish. */
+    @Test
+    void testLooksLikeLegacyCoordinates() {
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("B-GND, 120.5, 340")).isTrue();
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("mapA,10,20")).isTrue();
+        // Four parts, last two numeric: still what the old parser would have taken.
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("B, GND, 10, 20")).isTrue();
+    }
+
+    /** It must not claim the new form, a plain key, or anything non-numeric. */
+    @Test
+    void testLooksLikeLegacyCoordinatesIsNarrow() {
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates(null)).isFalse();
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("")).isFalse();
+        // The current form. Reporting this as legacy would tell the user to fix working data.
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("120.5, 340")).isFalse();
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("desk-101")).isFalse();
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("Desk 12, North")).isFalse();
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("mapA, left, right")).isFalse();
+        // Three parts but only the last is numeric.
+        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("a, b, 20")).isFalse();
     }
 
     /** A non-coordinate value is the key of the fact the event happened at. */
@@ -61,7 +112,7 @@ class TestFloorMapLocationResolver {
     /** Coordinates are a position, not a reference — the two readings never overlap. */
     @Test
     void testCoordinatesAreNotAReference() {
-        assertThat(FloorMapLocationResolver.parseReference("mapA, 120.5, -40")).isNull();
+        assertThat(FloorMapLocationResolver.parseReference("120.5, -40")).isNull();
     }
 
     /** Nothing named means nothing to resolve. */

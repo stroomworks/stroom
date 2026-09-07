@@ -30,9 +30,9 @@ import java.util.Objects;
  * in one of two shapes, and this class is what tells them apart:</p>
  *
  * <ul>
- *   <li><b>Coordinates</b> — {@code "<map>, <x>, <y>"}, the position already
- *       baked into the event when it was ingested (typically by an XSLT
- *       {@code lookup} against a location store). Used as-is.</li>
+ *   <li><b>Coordinates</b> — {@code "<x>, <y>"}, the position already baked into the event
+ *       when it was ingested (typically by an XSLT {@code lookup} against a location store).
+ *       Used as-is.</li>
  *   <li><b>A reference</b> — anything else is read as the <em>key of the fact</em>
  *       the event happened at (a desk, a gate, a camera). The entity is then
  *       drawn wherever that fact currently is.</li>
@@ -58,9 +58,20 @@ public final class FloorMapLocationResolver {
     /**
      * Parses a location value as literal coordinates.
      *
-     * <p>The expected form is {@code "<map>, <x>, <y>"} — the leading token
-     * records which floor/background the point is on and is not needed here,
-     * because every fact and entity already shares one map space.</p>
+     * <p>The form is {@code "<x>, <y>"} — two comma-separated numbers.</p>
+     *
+     * <p><b>It used to be {@code "<map>, <x>, <y>"}</b>, with a leading floor or building token
+     * that no line of code ever read: it was early example data that became syntax, because
+     * {@code parts.length < 3} was what told coordinates apart from a fact key. Two numbers say
+     * the same thing without the decoration, and what actually disambiguates is that both parts
+     * are numeric — a key like {@code "Desk 12, North"} still reads as a key.</p>
+     *
+     * <p>The old three-part form is <b>no longer accepted</b>, deliberately rather than for
+     * convenience: accepting both would mean guessing at {@code "1, 120.5, 340"}, where a numeric
+     * floor id is indistinguishable from an x. Read as three parts that is {@code (120.5, 340)};
+     * read as two it is {@code (1, 120.5)} — silently wrong either way for somebody. So it is
+     * rejected, and {@link #looksLikeLegacyCoordinates} exists so the caller can say why rather
+     * than leaving an entity to vanish.</p>
      *
      * @param location the raw location column value; may be {@code null}
      * @return {@code {x, y}}, or {@code null} when the value is not coordinates
@@ -71,15 +82,46 @@ public final class FloorMapLocationResolver {
             return null;
         }
         final String[] parts = location.split(",");
-        if (parts.length < 3) {
+        if (parts.length != 2) {
             return null;
         }
         try {
             return new double[]{
-                    Double.parseDouble(parts[1].trim()),
-                    Double.parseDouble(parts[2].trim())};
+                    Double.parseDouble(parts[0].trim()),
+                    Double.parseDouble(parts[1].trim())};
         } catch (final NumberFormatException e) {
             return null;
+        }
+    }
+
+    /**
+     * Whether a location is the retired {@code "<map>, <x>, <y>"} three-part form.
+     *
+     * <p>For <b>reporting only</b> — such a value is not a location any more, and this exists so
+     * an entity carrying one is explained rather than silently dropped. Without it the entity
+     * would be classified as referencing a fact key that happens to contain commas, and the map
+     * would send the reader looking for a missing desk instead of at the location format.</p>
+     *
+     * <p>Matches on the same test the old parser used, the <em>last two</em> parts being numeric,
+     * so it recognises exactly what used to work and nothing else.</p>
+     *
+     * @param location the raw location column value; may be {@code null}
+     * @return {@code true} if this would have parsed as coordinates before the format changed
+     */
+    public static boolean looksLikeLegacyCoordinates(final String location) {
+        if (location == null) {
+            return false;
+        }
+        final String[] parts = location.split(",");
+        if (parts.length < 3) {
+            return false;
+        }
+        try {
+            Double.parseDouble(parts[parts.length - 2].trim());
+            Double.parseDouble(parts[parts.length - 1].trim());
+            return true;
+        } catch (final NumberFormatException e) {
+            return false;
         }
     }
 
@@ -96,6 +138,11 @@ public final class FloorMapLocationResolver {
         }
         final String trimmed = location.trim();
         if (trimmed.isEmpty() || parseCoordinates(location) != null) {
+            return null;
+        }
+        if (looksLikeLegacyCoordinates(location)) {
+            // Not a key either. Returning it as one would make the map report a missing fact whose
+            // name is a coordinate string, which reads as a data problem rather than a format one.
             return null;
         }
         return trimmed;

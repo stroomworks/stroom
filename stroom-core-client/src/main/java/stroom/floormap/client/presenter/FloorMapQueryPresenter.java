@@ -327,7 +327,7 @@ public class FloorMapQueryPresenter
      * query: this editor tab, and {@link FloorMapMapPresenter}, which owns the
      * timeline-driven playback query feeding the animated entity overlay.</p>
      *
-     * <p>The location column may hold either literal {@code map, x, y}
+     * <p>The location column may hold either literal {@code x, y}
      * coordinates or a reference to the fact the event happened at; the
      * returned objects are only <em>positioned</em> in the first case. The
      * referencing ones carry a {@link FloorMapObject#getLocationRef()} and must
@@ -408,7 +408,7 @@ public class FloorMapQueryPresenter
                     }
 
                     // The location is either coordinates baked into the event at
-                    // ingest ("mapA, x, y") or a reference to the fact the event
+                    // ingest ("x, y") or a reference to the fact the event
                     // happened at. A reference is left for
                     // FloorMapLocationResolver to place against the current
                     // facts, which is what lets a moved object take its visitors

@@ -128,7 +128,7 @@ Events run **04:24:20 → 08:24:20**, one event per entity every 5 minutes, plus
 | Form | Example | Who | On screen |
 |---|---|---|---|
 | **Fact key** | `desk-103` | `alice`, `bob`, `dave`, `carol` | Resolved against the facts *at the selected time*, so the entity sits exactly on the desk — and **moving the desk moves its occupants**, retroactively |
-| **Coordinates** | `B-GND, 276.0, 180.0` | `forklift-7` | Drawn at those coordinates, full stop. Never on a desk, unaffected by desk moves |
+| **Coordinates** | `276.0, 180.0` | `forklift-7` | Drawn at those coordinates, full stop. Never on a desk, unaffected by desk moves. Format changed 2026-09-07 from `map, x, y` — see the protocol's step 3 |
 
 So `forklift-7` tracking along **y = 180** — between the two areas, never on a desk — is correct.
 It is in the fixture to exercise the coordinate path. The four people always land exactly on a desk.

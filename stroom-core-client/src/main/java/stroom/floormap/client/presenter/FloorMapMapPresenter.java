@@ -1284,7 +1284,7 @@ public class FloorMapMapPresenter
                                            + " to place them on, so nothing is drawn. Check the"
                                            + " facts store holds data and that the value schema"
                                            + " matches it. Entities carrying literal"
-                                           + " 'map, x, y' coordinates do not need facts;"
+                                           + " 'x, y' coordinates do not need facts;"
                                            + " these ones name a fact key.");
             case NO_PLACEMENTS -> {
                 // placeEventEntities() already names the mismatching keys on both sides.
@@ -1312,6 +1312,21 @@ public class FloorMapMapPresenter
             || tableResult.getRows().isEmpty()) {
             return;
         }
+        // Check the retired location format before blaming the column settings. The rows parse to
+        // nothing in both cases, but the remedies could not be more different - one is a setting on
+        // this document, the other is the shape of the data in the store.
+        final String legacy = firstLegacyLocation(tableResult);
+        if (legacy != null) {
+            Console.error("Floor map events query returned "
+                          + tableResult.getRows().size()
+                          + " rows but no entities, because the locations are in the retired"
+                          + " three-part form. '" + legacy + "' has a leading map or building"
+                          + " token, which is no longer read - coordinates are now just 'x, y'."
+                          + " Re-ingest the events with the leading token dropped, or point the"
+                          + " Location ID Column at a column that holds a fact key.");
+            return;
+        }
+
         final StringBuilder columns = new StringBuilder();
         if (tableResult.getColumns() != null) {
             for (final Column column : tableResult.getColumns()) {
@@ -1329,8 +1344,44 @@ public class FloorMapMapPresenter
                       + getEntity().getLocationIdColumn()
                       + "'; the result has columns: " + columns
                       + ". Both must name a column the query selects, and the location must hold"
-                      + " either 'map, x, y' coordinates or the key of the object the event"
+                      + " either 'x, y' coordinates or the key of the object the event"
                       + " happened at.");
+    }
+
+    /**
+     * The first location value in the result that is in the retired three-part form, or
+     * {@code null}.
+     *
+     * <p>Only called once a result has parsed to no entities at all, so the scan costs nothing in
+     * the normal case. Returns the offending value rather than a flag, because a message that
+     * quotes the data is what turns "no entities" into an actionable instruction.</p>
+     */
+    private String firstLegacyLocation(final TableResult tableResult) {
+        final int locationIdx = columnIndex(tableResult, getEntity().getLocationIdColumn());
+        if (locationIdx < 0 || tableResult.getRows() == null) {
+            return null;
+        }
+        for (final Row row : tableResult.getRows()) {
+            final List<String> values = row.getValues();
+            if (values != null && locationIdx < values.size()
+                && FloorMapLocationResolver.looksLikeLegacyCoordinates(values.get(locationIdx))) {
+                return values.get(locationIdx);
+            }
+        }
+        return null;
+    }
+
+    private static int columnIndex(final TableResult tableResult, final String name) {
+        if (tableResult.getColumns() == null || name == null) {
+            return -1;
+        }
+        for (int i = 0; i < tableResult.getColumns().size(); i++) {
+            final Column column = tableResult.getColumns().get(i);
+            if (column != null && name.equalsIgnoreCase(column.getName())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

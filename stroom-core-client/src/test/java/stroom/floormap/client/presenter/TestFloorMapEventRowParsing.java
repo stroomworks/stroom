@@ -65,7 +65,7 @@ class TestFloorMapEventRowParsing {
 
         // And the parse agrees, given a result shaped the way that query describes.
         final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "B-GND, 1, 2")),
+                result(row("joe.blogs@example.org", "1, 2")),
                 FloorMapEventsQuery.ENTITY_ID_COLUMN,
                 FloorMapEventsQuery.LOCATION_ID_COLUMN);
         assertThat(parsed).hasSize(1);
@@ -81,16 +81,16 @@ class TestFloorMapEventRowParsing {
         final List<Row> reduced = FloorMapQueryPresenter.latestPerEntity(
                 timedColumns(),
                 List.of(
-                        timedRow("2026-09-01T10:00:00.000Z", "a@x.org", "B-GND, 1, 1"),
-                        timedRow("2026-09-01T10:00:05.000Z", "a@x.org", "B-GND, 2, 2"),
-                        timedRow("2026-09-01T10:00:03.000Z", "b@x.org", "B-GND, 9, 9")),
+                        timedRow("2026-09-01T10:00:00.000Z", "a@x.org", "1, 1"),
+                        timedRow("2026-09-01T10:00:05.000Z", "a@x.org", "2, 2"),
+                        timedRow("2026-09-01T10:00:03.000Z", "b@x.org", "9, 9")),
                 ENTITY_COLUMN,
                 TIME_COLUMN);
 
         assertThat(reduced).hasSize(2);
         // a@x.org keeps the 10:00:05 position, not the 10:00:00 one.
-        assertThat(reduced.get(0).getValues().get(2)).isEqualTo("B-GND, 2, 2");
-        assertThat(reduced.get(1).getValues().get(2)).isEqualTo("B-GND, 9, 9");
+        assertThat(reduced.get(0).getValues().get(2)).isEqualTo("2, 2");
+        assertThat(reduced.get(1).getValues().get(2)).isEqualTo("9, 9");
     }
 
     /** Out-of-order rows must not fool it - the newest wins wherever it sits in the result. */
@@ -177,7 +177,7 @@ class TestFloorMapEventRowParsing {
     @Test
     void testCoordinateRowsAreParsedAndPassedThrough() {
         final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "B-GND, 120.5, 340")),
+                result(row("joe.blogs@example.org", "120.5, 340")),
                 ENTITY_COLUMN,
                 LOCATION_COLUMN);
 

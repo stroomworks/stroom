@@ -162,7 +162,9 @@ def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
     t = start
     x = 100.0
     while t <= now:
-        emit("forklift-7", t, "B-GND, %.1f, %.1f" % (x, 180.0), "vehicle", "ok", "")
+        # Coordinates are "x, y". They used to carry a leading map/building token that no code
+        # ever read - see FloorMapLocationResolver - and the three-part form is now rejected.
+        emit("forklift-7", t, "%.1f, %.1f" % (x, 180.0), "vehicle", "ok", "")
         x = 100.0 + ((x - 100.0 + 12.0) % 400.0)
         t += step
 

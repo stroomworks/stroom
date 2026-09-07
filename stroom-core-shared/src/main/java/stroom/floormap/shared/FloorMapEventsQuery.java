@@ -44,7 +44,7 @@ public final class FloorMapEventsQuery {
     /**
      * Result column holding the entity's location.
      *
-     * <p>Read either as literal {@code map, x, y} coordinates or as the key of the fact the event
+     * <p>Read either as literal {@code x, y} coordinates or as the key of the fact the event
      * happened at — the second form is what lets a moved object take its visitors with it. Also
      * the default value of {@link FloorMapDoc#getLocationIdColumn()}.</p>
      */

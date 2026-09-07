@@ -22,7 +22,25 @@ horizon, which looks exactly like the bug A3 is testing for.
 The CSV stays flat and the XSLTs assemble the JSON value. That is deliberate: the value is a JSON
 object full of double quotes, which no CSV container can carry cleanly, and it puts the value schema
 in one readable place. Only `location` contains commas (the coordinate form,
-`"B-GND, 120.5, 340"`), which the splitter's container chars handle.
+`"120.5, 340"`), which the splitter's container chars handle.
+
+## The coordinate format changed on 2026-09-07
+
+Coordinates in a `location` are now **`"x, y"`**. They used to be `"<map>, <x>, <y>"` with a leading
+map or building token — early example data that became syntax, because the part count was what told
+coordinates apart from a fact key. No line of code ever read the token. The three-part form is now
+**rejected** rather than reinterpreted, so old events draw nothing and say so in the console.
+
+`generate.py` emits the new form. **But regenerating moves every timestamp to "now"**, which
+invalidates every landmark time in `floormap-test-protocol.md` — and, because Plan B is keyed on
+(key, effective time), leaves the old generation's rows in the store alongside the new ones.
+
+So for an instance already loaded with the 2026-09-04 fixtures there is
+**`migrate-forklift-coords.csv`**: `forklift-7`'s 51 events, at exactly their existing effective
+times, with the leading token dropped. `floor_map_events` has `overwrite: true`, so uploading it to
+`FLOOR_MAP_EVENTS` replaces those rows in place and leaves every other entity and every landmark
+time untouched. `forklift-7` is the only entity in the fixture that uses the coordinate form.
+
 
 ---
 
@@ -154,7 +172,7 @@ Every entity in `events.csv` exists to make exactly one test decidable.
 | `bob@example.org` | moves, then **stops 5 minutes before now** | **A1** | **stays** — idle far past the old 20 s window, inside the 6 h horizon |
 | `carol@example.org` | one event **7 hours ago**, nothing since | **A3** | **drops** at the next baseline, and the group count falls with her |
 | `dave@example.org` | parked at `desk-105`, re-emitting the **same** value every 5 s | **A4** | survives with `condense` **on** — these are the rows it collapses |
-| `forklift-7` | coordinate form, `"B-GND, x, y"` | both location forms | drawn at literal coordinates, unaffected by moving desks |
+| `forklift-7` | coordinate form, `"x, y"` | both location forms | drawn at literal coordinates, unaffected by moving desks |
 | `ghost@example.org` | references `desk-999-does-not-exist` | F14 reporting gap | **silently dropped** — expected. Present so the console message is recognisable when it is *not* expected |
 
 And in `facts.csv`:

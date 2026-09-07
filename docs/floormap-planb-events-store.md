@@ -128,7 +128,7 @@ Add a **Plan B Filter** to the pipeline that processes your event feed. It takes
         <map>floor_map_events</map>
         <key>joe.blogs@example.org</key>
         <time>2026-09-01T10:00:05.000Z</time>
-        <value>{"location":"B-GND, 120.5, 340","type":"person","status":"ok","message":"badge in"}</value>
+        <value>{"location":"120.5, 340","type":"person","status":"ok","message":"badge in"}</value>
     </temporal-state>
 </referenceData>
 ```
@@ -171,7 +171,7 @@ tab if your payload differs.
 
 | Form | Example | Behaviour |
 |---|---|---|
-| Coordinates | `"B-GND, 120.5, 340"` | Drawn exactly there. |
+| Coordinates | `"120.5, 340"` | Drawn exactly there. |
 | A fact key | `"desk-114"` | Resolved against the facts store at the current time. |
 
 The second form is the more useful one: the entity is placed wherever that fact currently is, so
@@ -180,6 +180,22 @@ do that.
 
 A `location` naming a fact key that does not exist at the selected time is silently dropped —
 there is nowhere to draw it.
+
+> **Format change, 2026-09-07 — this breaks existing data.** Coordinates used to be
+> `"<map>, <x>, <y>"`, with a leading map or building token. No line of code ever read it; it was
+> early example data that became syntax, because the part count was what told coordinates apart
+> from a fact key. Two numbers say the same thing, and what actually disambiguates is that both
+> parts are numeric — `"Desk 12, North"` still reads as a key.
+>
+> The three-part form is **rejected**, not silently reinterpreted. Accepting both would mean
+> guessing at `"1, 120.5, 340"`, where a numeric floor id is indistinguishable from an x — read as
+> three parts that is `(120.5, 340)`, read as two it is `(1, 120.5)`, and one of those is silently
+> wrong for somebody.
+>
+> **Re-ingest events written in the old form with the leading token dropped.** A map whose events
+> all carry it will draw no entities and say so in the console, naming the offending value. If your
+> data used that token to distinguish floors, note it never had any effect: one floor map is one
+> coordinate space, and every zone was already drawn together.
 
 ---
 

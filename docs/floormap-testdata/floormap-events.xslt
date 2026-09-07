@@ -11,7 +11,7 @@
       jq(Value, '.message')   -> Message
 
   location takes either form:
-    coordinates - "B-GND, 120.5, 340"  drawn exactly there
+    coordinates - "120.5, 340"  drawn exactly there
     a fact key  - "desk-114"           resolved against the facts store at the selected time,
                                        so moving the desk in the Editor moves its occupants
 

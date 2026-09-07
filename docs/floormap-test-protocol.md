@@ -39,12 +39,33 @@ Every time below is **UTC**. Your Stroom user preference may not be.
 difference is your offset — add it to every time in this document. The epoch-millisecond column is
 given throughout as an unambiguous anchor.
 
-## 3. Hard-reload first
+## 3. Migrate `forklift-7`'s coordinates — one upload, before you start
+
+The coordinate format changed on 2026-09-07: a `location` is now **`"x, y"`**, where it used to be
+`"<map>, <x>, <y>"`. The leading token was never read by any code, and the three-part form is now
+**rejected** rather than reinterpreted.
+
+`forklift-7` is the only entity in the fixture that uses coordinates, and its 51 events are still in
+the old form. **Until you do this, `forklift-7` will not be drawn at all** and the console will say
+why — which is itself a correct result, just not the one the tests below expect.
+
+Upload **`docs/floormap-testdata/migrate-forklift-coords.csv`** to the **`FLOOR_MAP_EVENTS`** feed
+through the UI's Upload button. It carries the same 51 events at exactly their existing effective
+times, so `floor_map_events` (`overwrite: true`) replaces them in place — every other entity and
+every landmark time below is untouched.
+
+*Not through the API: this instance's MCP data endpoints are currently failing on
+`Meta$Builder` / `FetchMarkerResult` class resolution, because the MCP server build predates this
+branch. Queries work; uploads do not.*
+
+Confirm it worked with a query, or just check `forklift-7` appears in A0.
+
+## 4. Hard-reload first
 
 `Ctrl-Shift-R`. GWT caches aggressively and a stale permutation will waste your time on symptoms
 that no longer exist.
 
-## 4. If the whole UI freezes with an empty console
+## 5. If the whole UI freezes with an empty console
 
 Not the feature. It is the popup drag-glass defect
 (`docs/task-popup-drag-glass-orphaned.md`): a `div.popupPanel-dragGlassVisible` is left over the
@@ -85,7 +106,7 @@ most of Part 1 turns on:
 | `alice@example.org` | person | hops desk to desk for the whole window. The control: something must move | **yes** — `desk-103` |
 | `bob@example.org` | person | moves, then **stops at 08:19:20** | **yes** — `desk-102`, five minutes idle |
 | `dave@example.org` | person | parked at `desk-105`, re-emitting an unchanged location | **yes** — `desk-105` |
-| `forklift-7` | vehicle | location is **coordinates**, `B-GND, x, 180.0`, not a fact key | **yes** — drifting right |
+| `forklift-7` | vehicle | location is **coordinates**, `x, 180.0`, not a fact key | **yes** — drifting right, *after the migration in step 3* |
 | `carol@example.org` | person | one event at 01:24:20 and nothing after — beyond the 6 h horizon | **no** |
 | `ghost@example.org` | person | location is `desk-999-does-not-exist` | **no**, silently dropped |
 
@@ -213,7 +234,7 @@ events store — two edits, once, and then it is there for good.
 4. Save.
 
 **Why `forklift-7` has to go.** It is the one entity whose location is **coordinates**
-(`B-GND, 100.0, 180.0`) rather than a fact key, so it needs no facts at all and would be placed
+(`100.0, 180.0`) rather than a fact key, so it needs no facts at all and would be placed
 even with the facts store empty. One placed entity makes `classify` return `NONE` and the line never
 appears — which is correct behaviour and exactly what the reporter's own javadoc warns about, but it
 would make this test unrunnable. Excluding it leaves `alice`, `bob`, `carol`, `dave` and `ghost`,
