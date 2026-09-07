@@ -30,11 +30,17 @@ Then upload, through the UI's **Upload** button on each feed:
 |---|---|
 | `docs/floormap-testdata/out/facts.csv` | `FLOOR_MAP_FACTS` |
 | `docs/floormap-testdata/out/events.csv` | `FLOOR_MAP_EVENTS` |
-| `docs/floormap-testdata/out/events-bulk.csv` | `FLOOR_MAP_BATCH` |
+| `docs/floormap-testdata/out/events-bulk.csv` | `FLOOR_MAP_EVENTS` — same feed; its `map` column routes it to `floor_map_events_bulk` |
 
 *Not through the API: this instance's MCP data endpoints currently fail on `Meta$Builder` /
 `FetchMarkerResult` class resolution, because the MCP server build predates this branch. Queries
 work; uploads do not.*
+
+**The ingest XSLT was updated for you** — `FLOOR_MAP_EVENTS_TO_PLANB` in Stroom is a separate
+document from `docs/floormap-testdata/floormap-events.xslt`, and it now reads `locationRef` as well
+as `location`. Without that the new CSV would land with no location at all for every entity except
+`forklift-7`, and nothing would draw. `FLOOR_MAP_FACTS_TO_SQLSTORE` needed no change: the facts CSV
+did not change shape.
 
 **The old rows stay in the store**, because Plan B is keyed on (key, effective time) and the new
 generation lands at new times. That is harmless — they sit hours in the past, outside the horizon —
