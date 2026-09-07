@@ -74,15 +74,20 @@ def write(path, header, rows):
 # Facts - the floor plan
 # ---------------------------------------------------------------------------
 
-def facts(now):
+def facts(now, span_minutes):
     """The floor plan, backdated well before any event so it is always in scope.
 
-    Includes one desk that MOVES partway through the event window. That is what makes A5/A6
-    (scrub backwards/forwards) and D2 meaningful: the correct picture at T depends on T, so a
-    stale facts snapshot is visible rather than merely suspected.
+    Includes one desk that MOVES partway through the event window. That is what makes the
+    scrub-backwards/forwards tests meaningful: the correct picture at T depends on T, so a stale
+    facts snapshot is visible rather than merely suspected.
+
+    The move sits at the MIDDLE of the event window, not near its end. It was 15 minutes before
+    generation, which put it inside the last 6% of the timeline - a fiddly target to scrub across,
+    and scrubbing across it is the whole point of the test. Mid-window gives roughly half the
+    timeline either side.
     """
     laid_out = now - timedelta(days=2)
-    moved_at = now - timedelta(minutes=15)
+    moved_at = now - timedelta(minutes=span_minutes / 2.0)
     rows = []
 
     # Background. Placed by tm-world-to-map like every other fact.
@@ -222,7 +227,8 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     print("Generated at %s (UTC). Regenerate before testing - the horizon is relative." % iso(now))
 
-    write(os.path.join(args.out_dir, "facts.csv"), FACTS_HEADER, facts(now))
+    write(os.path.join(args.out_dir, "facts.csv"), FACTS_HEADER,
+          facts(now, args.span_minutes))
     write(os.path.join(args.out_dir, "events.csv"), EVENTS_HEADER,
           events(now, args.span_minutes, args.interval_seconds))
     write(os.path.join(args.out_dir, "events-bulk.csv"), EVENTS_HEADER,
@@ -236,7 +242,8 @@ def main():
         ("events begin", now - span),
         ("carol's only event, beyond the horizon", now - timedelta(hours=7)),
         ("carol falls out of the 6 h horizon", now - timedelta(hours=1)),
-        ("desk-106 moves, (320,240) -> (460,240)", now - timedelta(minutes=15)),
+        ("desk-106 moves, (320,240) -> (460,240)",
+         now - timedelta(minutes=args.span_minutes / 2.0)),
         ("bob stops emitting", now - timedelta(minutes=5)),
         ("ghost's unplaceable event", now - timedelta(minutes=1)),
         ("events end", now),
@@ -262,7 +269,7 @@ def main():
             "ghost@example.org": "locationRef naming a fact that does not exist; dropped by design",
         },
         "fixtures": {
-            "facts.csv": "the floor plan; desk-106 moves 15 min before generation",
+            "facts.csv": "the floor plan; desk-106 moves at the middle of the event window",
             "events.csv": "alice moves, bob idles 5 min, carol is 7 h old, dave is stationary",
             "events-bulk.csv": "over-budget store for the truncating-baseline test",
         },
