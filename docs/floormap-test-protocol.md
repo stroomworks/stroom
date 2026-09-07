@@ -195,12 +195,26 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 |---|---|---|---|
 | **G1** | Open `Test Floor Map`, then scrub the timeline **well past the end of the data** — a day ahead — and leave it **paused** | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | |
 | **G2** | Press Show All to come back to the data | The line **disappears** as soon as entities are drawn | |
-| **G3** | Events Query tab → set the **Entity ID** dropdown to a column the query does not select → back to Map | **"Events found, but no entity could be read — check the column mapping"**, in the **fault** register: coloured and bordered. The **console** names which role is wrong and lists the result's actual columns — that pairing is the design: the canvas says which stage, the console says why. **Then put the dropdown back** | |
-| **G4** | Events Query tab → set **Location ID Column** to `Type` → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put it back to `Location ID`** | |
+| **G3** | Events Query tab → **press Run first** (see below), then set the **Entity ID** dropdown to the **blank** entry at the top of the list → back to Map | **"Events found, but no entity could be read — check the column mapping"**, in the **fault** register: coloured and bordered. The **console** names which role is unset and lists the result's actual columns — that pairing is the design: the canvas says which stage, the console says why. **Then set Entity ID back** | |
+| **G4** | Events Query tab (Run pressed) → set **Location Ref** to the **`Type`** column, and set **Location** to blank → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put both back** | |
 | **G5** | Open `Test Floor Map (empty)` | The **quiet** "no events" line, **not** a fault. An empty store is not a misconfiguration | |
 | **G6** | Reopen `Test Floor Map`, Show All, and watch the **first second** | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not; a "no floor plan" line flashing on every open would be worse than the silence it replaces | |
 | **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Most delta ticks legitimately return no rows — an entity that has not moved emits nothing — so a naive check would blink once per tick | |
 | **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | |
+
+### Why G3 and G4 need Run pressed first
+
+The dropdowns hold their values from the moment the tab opens, but their **lists are empty until a
+query result arrives on that tab** — they are populated from the result's columns, so with no result
+there is nothing to choose. The values are still there and still displayed; you simply cannot change
+them. Press **Run**, and all four lists fill with the query's column names plus a blank entry at the
+top.
+
+**And you cannot point a role at a column that does not exist.** The list only ever offers columns
+the query *does* select, so the reachable fault is to select the **blank** — unmapping the role.
+That is the better test anyway: unmapping is something a user can do by accident, whereas a role
+naming a column the query does not select can only arise by editing the *query* after the mapping,
+which is a different route with its own console message.
 
 **G3, G4 and G9 are the ones to be most confident about.** They are the only tests that produce a
 *fault*-styled line, so between them they prove the two registers really are different. If they show
