@@ -71,16 +71,7 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 
 **Found while building test fixtures, out of scope for this branch:**
 
-- **`group by` plus a time term returns zero rows on Plan B, and works on a SQL Temporal Store** — noticed 2026-09-07 while checking a fixture query. Silent: no error, just an empty result. Isolated to a controlled pair against `floor_map_events` (Plan B, TEMPORAL_STATE), where only the `group by` differs:
-
-  | Query | Result |
-  |---|---|
-  | `where Key = 'alice@example.org' and EffectiveTime < '2026-09-04T08:00:00.000Z'` + plain `select` | rows, correctly filtered |
-  | the same `where`, plus `group by Key select Key, count()` | **0 rows** |
-  | `group by Key select Key, count()` with **no** time term | rows |
-  | the same shape against `floor_map_facts` (SQL Temporal Store) | rows, correctly filtered |
-
-  Two related traps in the same area: an **epoch-millis** literal in a time term is silently *discarded* rather than rejected, so `EffectiveTime <= 1788508800000` matches everything (consistent with both filters using `parseNormalDateTimeStringToInstant`); and a time term with no `group by` and no `Key` term also returns nothing. **Does not affect the floor map**, which never uses `group by` and passes its ranges as a `TimeRange` rather than as query text — the horizon behaviour is manually verified working (A1, A3). But an events query with a hand-written time term would blank the map with no error, and with F14 option 4 the map would then say *"No events at this time"*, which would be actively misleading. Probably the same area as the `group by`-over-large-sets crash already noted. Not diagnosed; worth raising against Plan B's query layer.
+- **A `where` term on a Plan B field the `select` list omits silently returns zero rows** — noticed 2026-09-07 while checking a fixture query, and it is worse than the shape it was noticed in. First diagnosis was "`group by` plus a time term", which was wrong: it is not specific to `group by`, to `count()`, or to time. `where Key = 'x' select EffectiveTime, EffectiveTime` returns **0** where `select Key, EffectiveTime` returns 51 — the same query with one column renamed. Cause is an ordering bug: the five state DBs build their values extractor from the field index, and `PlanBSearchHelper.search` then *appends* the expression's fields to that same index, so the predicate is handed a position past the end of each row and discards everything. **A SQL Temporal Store is unaffected** (it filters in SQL), so the same StroomQL gives different answers by store type. **The Floor Map is safe by accident**: its generated events query selects `EffectiveTime` as its first column, which is what makes the `TimeRange`-derived horizon terms work — delete that column from a saved query and the map goes blank while the status line says "No events at this time". Written up as `docs/task-planb-where-field-not-selected.md`, with a fix that makes the wrong order unexpressible.
 
 **Blocked on a decision:**
 

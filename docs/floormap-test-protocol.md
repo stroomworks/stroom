@@ -228,11 +228,12 @@ all of which name fact keys.
 timeline is outside the data. If it shows **nothing at all**, `forklift-7` is still being placed —
 check the `where` line saved.
 
-**Do not add a time term to that `where` clause.** On a Plan B store a hand-written time term
-returns zero rows without an error, so the map would go blank and the status line would say "No
-events at this time" — misleading, since the store is full. Noticed while building this fixture and
-recorded in the remediation plan; the map's own horizon is unaffected, because it passes ranges as a
-`TimeRange` rather than as query text.
+**Do not remove the `Effective Time` column from that query, and do not add a time term of your
+own.** On a Plan B store, a `where` term on a field the `select` list omits filters out **every**
+row, silently — so either change would blank the map while the status line said "No events at this
+time", which is exactly the misleading case. Found while building this fixture; written up as
+`docs/task-planb-where-field-not-selected.md`. The map's own horizon works precisely *because* the
+generated query selects `EffectiveTime`.
 
 **What would tell you it is wrong**
 
