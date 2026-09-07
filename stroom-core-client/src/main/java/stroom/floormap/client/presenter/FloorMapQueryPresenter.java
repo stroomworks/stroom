@@ -91,6 +91,16 @@ public class FloorMapQueryPresenter
     protected void onBind() {
         super.onBind();
 
+        // A dropdown change has to mark the document dirty, and nothing did it: the tab wires dirty
+        // to addChangeHandler, which tracks only the query editor. So the mapping was unsaveable on
+        // its own - the save icon stayed disabled and the edit was lost on the next tab switch,
+        // persisting only if an unrelated query-text edit happened to enable saving. Firing
+        // ChangeEvent from here is what the tab is already listening for.
+        getView().setColumnChangeHandler(() -> {
+            currentEventColumns = getView().getEventColumns();
+            ChangeEvent.fire(this);
+        });
+
         // Listen to column updates inside the table so we can update the dropdown lists dynamically.
         registerHandler(queryEditPresenter.addChangeHandler(this::updateColumnSelections));
 
@@ -540,27 +550,29 @@ public class FloorMapQueryPresenter
     }
 
     /**
-     * Registers a handler for changes to <em>this tab's</em> query.
+     * Registers a handler for changes the user makes on <em>this tab</em> — the query text, and the
+     * per-role column dropdowns.
      *
-     * <p>Delegates to the embedded {@link QueryEditPresenter}, whose own
-     * {@code addChangeHandler} uses {@code addHandlerToSource} — so the handler
-     * fires only for this query editor.</p>
+     * <p>Two sources, deliberately. The query editor's own {@code addChangeHandler} uses
+     * {@code addHandlerToSource}, so it fires only for this editor rather than for every
+     * {@code ChangeEvent} on the shared bus — which is why the tab uses it for dirty tracking. But
+     * it knows nothing about the dropdowns, so registering only the delegate left the column
+     * mapping <b>unsaveable on its own</b>: the save icon stayed disabled and the edit was lost on
+     * the next tab switch, persisting only when an unrelated query-text edit happened to enable
+     * saving.</p>
      *
-     * <p>This exists so callers do not have to reach the shared event bus for the
-     * same purpose. {@code ChangeEvent} is fired application-wide — by editor and
-     * theme preferences, dictionary lists, expression editors and query result
-     * tables, some of them on every keystroke — so a bus-level subscription hears
-     * all of it and cannot tell which document, or which feature, it came from.
-     * {@link FloorMapPresenter} previously did exactly that to detect an edit to
-     * the Events Query tab, and consequently marked the floor map dirty whenever
-     * anything anywhere in the application changed.</p>
-     *
-     * @param handler notified when this tab's query changes
-     * @return the registration; unregister it to stop listening
+     * @param handler notified on either kind of change
+     * @return a registration that removes both
      */
-    @Override
     public HandlerRegistration addChangeHandler(final ChangeEvent.ChangeHandler handler) {
-        return queryEditPresenter.addChangeHandler(handler);
+        // Both sources: the embedded query editor, and this presenter's own ChangeEvent for a
+        // dropdown change. Registering only the delegate is what left the mapping unsaveable.
+        final HandlerRegistration query = queryEditPresenter.addChangeHandler(handler);
+        final HandlerRegistration columns = addHandlerToSource(ChangeEvent.getType(), handler);
+        return () -> {
+            query.removeHandler();
+            columns.removeHandler();
+        };
     }
 
     public String getQuery() {
@@ -618,6 +630,9 @@ public class FloorMapQueryPresenter
 
         /** Reads the per-role dropdowns back; a dropdown with nothing selected is unmapped. */
         FloorMapEventColumns getEventColumns();
+
+        /** Registers a handler notified whenever the user changes any role's dropdown. */
+        void setColumnChangeHandler(Runnable handler);
 
         void setColumnMappingsVisible(boolean visible);
     }

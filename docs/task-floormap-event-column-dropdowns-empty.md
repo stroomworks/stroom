@@ -44,6 +44,32 @@ So with no result there are no column names, `setAvailableColumns` is never call
 `populateSelectionBox` never runs. The boxes keep the values `setEventColumns` gave them — see
 below — and offer nothing.
 
+## A second, worse defect found from the same test — now fixed
+
+Changing a dropdown **did not mark the document dirty**, so the save icon stayed disabled and the
+mapping could not be saved at all.
+
+The tab wires dirty from `FloorMapPresenter`:
+
+```java
+registerHandler(eventsQueryPresenter.addChangeHandler(() -> fireDirtyEvent(true)));
+```
+
+and `addChangeHandler` delegated entirely to the embedded query editor, which tracks the **query
+text**. Nothing was listening to the dropdowns — the view exposed no change signal for them at all.
+
+The consequence was worse than "cannot save": the edit persisted **only** as a passenger on an
+unrelated query-text edit, because `write()` reads the dropdowns whenever a save happens for any
+reason. So it worked sometimes, which is the hardest version to notice. Otherwise it was silently
+lost on the next tab switch, with no dirty marker to warn.
+
+**Pre-existing** — the two string settings this replaced had the same gap, which means those column
+settings were never editable on their own either.
+
+**Fixed 2026-09-07:** the view exposes `setColumnChangeHandler`, the presenter fires `ChangeEvent`
+from it, and `addChangeHandler` now registers on both sources rather than only the delegate. The
+tab's dirty wiring is unchanged — it was already listening for exactly this.
+
 ## What this is not
 
 **It is not a data-loss path**, which was the first thing worth ruling out, because `write()` reads

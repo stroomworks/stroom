@@ -131,6 +131,27 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
         });
     }
 
+    /**
+     * Registers a handler notified whenever the user changes any role's dropdown.
+     *
+     * <p>Without this the mapping was <b>unsaveable on its own</b>: the tab marks the document
+     * dirty from {@code addChangeHandler}, which only tracks the <em>query editor</em>, so changing
+     * a dropdown left the save icon disabled and the edit was lost on the next tab switch. It
+     * persisted only as a passenger on an unrelated query-text edit, which is worse than not
+     * working — it worked sometimes.</p>
+     *
+     * @param handler run on each change; {@code null} to remove
+     */
+    @Override
+    public void setColumnChangeHandler(final Runnable handler) {
+        //noinspection unused e
+        boxesByRole.values().forEach(box -> box.addValueChangeHandler(e -> {
+            if (handler != null) {
+                handler.run();
+            }
+        }));
+    }
+
     @Override
     public FloorMapEventColumns getEventColumns() {
         FloorMapEventColumns columns = new FloorMapEventColumns(null);
