@@ -1,5 +1,13 @@
 # Floor Map — manual test plan
 
+> **To run the tests, use [`floormap-test-protocol.md`](floormap-test-protocol.md).** It is the
+> ordered, executable version, re-verified against the live instance on 2026-09-07, and it leads
+> with the thing that will otherwise cost you an hour: the fixture data is three days old, so a
+> freshly opened map is empty until you press Show All.
+>
+> This document stays as the companion — why each test exists, what has already passed, and the
+> reasoning behind the expected values.
+
 **Branch:** `enterprise-floormapping-code-review-b`
 **Rewritten:** 2026-09-04, against the fixtures actually loaded (see *The data*, below)
 

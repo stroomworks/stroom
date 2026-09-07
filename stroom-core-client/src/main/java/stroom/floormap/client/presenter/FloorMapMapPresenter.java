@@ -69,6 +69,7 @@ import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.histogram.client.HistogramDataModel;
 import stroom.widget.histogram.client.HistogramQueryHelper;
 
+import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -257,6 +258,41 @@ public class FloorMapMapPresenter
 
     /** The held fact history, and the snapshot arithmetic over it. */
     private final FloorMapFactHistory factHistory = new FloorMapFactHistory();
+
+    /**
+     * How often to ask whether a facts re-read is due, while the Map is on screen.
+     *
+     * <p>Deliberately much shorter than {@link FloorMapFactHistory#REFETCH_INTERVAL_MS}, and only a
+     * heartbeat: the decision stays in {@code needsRead}, which is unit-tested, and this only
+     * decides how often it is consulted. A heartbeat equal to the interval would be wrong twice
+     * over — {@code needsRead} tests {@code >} the interval, so a tick landing exactly on the
+     * boundary declines and the effective period doubles to two minutes.</p>
+     */
+    private static final int FACTS_CADENCE_HEARTBEAT_MS = 10_000;
+
+    /**
+     * Drives the facts re-read while the Map is visible.
+     *
+     * <p><b>A timer is genuinely needed here, unlike for the events baseline.</b> The cadence was
+     * first written to be checked from {@link #onTimeChange}, following the events state's
+     * timer-free design — but {@code TimeChangeEvent} only fires while the timeline is
+     * <em>playing</em>, so on a paused map nothing ever asked and the 60-second re-read never
+     * happened at all. The interval was unreachable, not merely long.</p>
+     *
+     * <p>The events state can live without one because a paused timeline is a frozen view at T and
+     * events arriving now almost all carry effective times after T, so they are not being hidden.
+     * That argument does not transfer to facts: moving a desk changes the floor plan at
+     * <em>every</em> time, the frozen one included.</p>
+     *
+     * <p>Runs only while the Map is the visible content, so a backgrounded document still does
+     * nothing at all — which is the property the timer-free design was protecting.</p>
+     */
+    private final Timer factsCadenceTimer = new Timer() {
+        @Override
+        public void run() {
+            readFactsHistoryIfDue();
+        }
+    };
 
     /**
      * The snapshot rows last handed to {@link #parseFacts}, so an unchanged one is skipped.
@@ -779,6 +815,9 @@ public class FloorMapMapPresenter
                     floorMapTimelinePresenter.getEndTime());
         }
         onTimeChange(selectedTime);
+        // The Map may already be the tab on screen, in which case no visibility change is coming
+        // to start this. Restarting an already-running timer is harmless.
+        factsCadenceTimer.scheduleRepeating(FACTS_CADENCE_HEARTBEAT_MS);
     }
 
     /**
@@ -1808,6 +1847,7 @@ public class FloorMapMapPresenter
         super.onClose();
         closed = true;
         floorMapTimelinePresenter.pause();
+        factsCadenceTimer.cancel();
         factsHistoryQueryHelper.reset();
         eventsQueryModel.reset(DestroyReason.TAB_CLOSE);
         baselineQueryHelper.reset();
@@ -1857,8 +1897,10 @@ public class FloorMapMapPresenter
     public void onContentTabVisible(final boolean visible) {
         if (visible) {
             refresh();
+            factsCadenceTimer.scheduleRepeating(FACTS_CADENCE_HEARTBEAT_MS);
         } else {
             pauseTimeline();
+            factsCadenceTimer.cancel();
         }
     }
 

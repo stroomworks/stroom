@@ -89,7 +89,7 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
 - ~~**F14 · four silent failure paths in the events pipeline**~~ — **DONE 2026-09-04, all four options.** `FloorMapStageReporter` names whichever stage came up empty; option 4 puts it on the canvas, in two registers so a map that is correctly empty does not look broken. **Building option 4 found that options 2+3 had never reported anything**: `reset()` ran once per tick and exactly one observation happens per read, so the persistence counter was pinned at 1 and its threshold of 3 was unreachable. The silence looked like the pass that test A14 recorded. See **F14** for the fix and for why the status line deliberately does not use that filter.
 - **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
-- **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. **Cadence decided 2026-09-04: 60 s plus a re-fetch whenever the Map becomes visible** — better than the 30 s recommended, because it makes the one case that constrains the interval (someone watching for their own write) immediate rather than twice as fast, and reuses an existing constant. Two of the three visibility paths are already wired; the third wants a `ContentTabSelectionChangeEvent` handler on `FloorMapPresenter`, following `QueryDocPresenter` and `DashboardSuperPresenter` — which also lets a Map on a background document stop playing, removing ~6–7 result-store cycles/second nobody is watching. **No open questions; ready to build.** Written up as **F15**.
+- **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. **Cadence decided 2026-09-04: 60 s plus a re-fetch whenever the Map becomes visible** — better than the 30 s recommended, because it makes the one case that constrains the interval (someone watching for their own write) immediate rather than twice as fast, and reuses an existing constant. Two of the three visibility paths are already wired; the third wants a `ContentTabSelectionChangeEvent` handler on `FloorMapPresenter`, following `QueryDocPresenter` and `DashboardSuperPresenter` — which also lets a Map on a background document stop playing, removing ~6–7 result-store cycles/second nobody is watching. **Built 2026-09-04**; the cadence needed a `Timer` after all, corrected 2026-09-07 when writing the test protocol caught that `TimeChangeEvent` fires only while playing, so a paused map never re-read. See F15's *Correction*. Written up as **F15**.
 
 ---
 
@@ -1796,8 +1796,9 @@ Shape:
 3. Re-fetch every **60 s** (`FloorMapEventState.BASELINE_INTERVAL_MS`) for external writes, plus
    immediately whenever the Map becomes visible — open, save, inner-tab return (both already
    wired) and outer-tab return (needs the `ContentTabSelectionChangeEvent` handler). Run the
-   cadence only while visible, so a hidden paused Map does nothing at all and no timer lifecycle is
-   needed — the same reasoning that kept F13 timer-free.
+   cadence only while visible, so a backgrounded Map does nothing at all. **This needs a timer**
+   — see the correction in *As built*; the timer-free design that works for F13 does not work
+   here.
 4. Skip downstream work when the result is unchanged, which will be essentially always.
    **Guard on the raw `TableResult` rows, not on the parsed facts.** `Row` implements
    `equals`/`hashCode`; `Fact` does **not**, so guarding on parsed facts means adding an `equals` to
@@ -1853,8 +1854,9 @@ serves F15's catch-up on `true` and removes background playback churn on `false`
 the win.
 
 **Residual, stated so it is not filed as a bug:** a Map tab left *visible and paused* while a fact
-is written externally still waits up to 60 s. Nothing is hidden and nothing is stale beyond the
-interval; it is the case the cadence exists for.
+is written externally still waits up to 60 s (in practice up to 70 s, because the cadence is
+consulted on a 10 s heartbeat). Nothing is hidden and nothing is stale beyond that; it is the case
+the cadence exists for.
 
 **Assumption to confirm before building:** hundreds to low thousands of distinct fact keys. At tens of
 thousands the arithmetic changes and the history should be measured first.
@@ -1892,6 +1894,38 @@ cadence and on becoming visible; `FloorMapPresenter` gained the outer-tab handle
 tick. At the expected volume that is a few hundred rows against the server round trip it replaces,
 so it is not worth indexing; at the 20 000-row cap it would be worth it, but that volume is already
 reported as misuse of a facts store. Recorded in the javadoc so it is a known property.
+
+### Correction, 2026-09-07: the cadence needed a timer after all
+
+Writing the test protocol caught this, one step before someone tried to run the test.
+
+The cadence was first checked on demand from `onTimeChange`, following `FloorMapEventState`'s
+timer-free design and stated here as needing "no timer lifecycle". But `TimeChangeEvent` fires only
+while the timeline is **playing** — `FloorMapTimelinePresenter`'s fire is inside `if (playing)` — so
+on a **paused** map nothing ever asked, and the 60-second re-read never happened at all. The
+interval was *unreachable*, not merely long. Both this section and the protocol's draft test asserted
+a re-read that could not occur.
+
+**Why F13 gets away with it and F15 does not.** The events state's own note says a paused timeline is
+a frozen view at T and events arriving now almost all carry effective times after T, so nothing is
+being hidden — a real argument, and it does not transfer. Moving a desk changes the floor plan at
+*every* time, the frozen one included, so a fact write withheld indefinitely is a wrong picture
+rather than a late one.
+
+**Fixed** with a `Timer` on the Map presenter, started when the Map becomes visible and cancelled
+when it stops being visible or the tab closes, so a backgrounded document still does nothing — the
+property the timer-free design was protecting. The heartbeat is **10 s**, deliberately much shorter
+than the interval: the decision stays in the unit-tested `needsRead`, and a heartbeat equal to the
+interval would be wrong twice over, since `needsRead` tests `>` the interval and a tick landing on
+the boundary declines, doubling the effective period to two minutes.
+
+The same change gave the Map one notion of "on screen" instead of two: `afterSelectTab` now calls
+`onContentTabVisible(false)` where it called `pauseTimeline()`, because leaving the Map for a sibling
+tab hides it just as surely as leaving the document does.
+
+**This is the same class of defect as the one F14 option 4 exposed** — an interval or a counter that
+cannot elapse because nothing advances it. Two in two days, both found by writing down what the test
+would observe rather than by reading the code again.
 
 **Verified:** `./gradlew check`, `:stroom-app-gwt:gwtDraftCompile`, and the fact-key cardinality
 assumption is *not* settled by this instance — the fixture has 9 keys and 10 rows. The truncation

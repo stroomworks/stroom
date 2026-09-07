@@ -256,17 +256,19 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         // Pause whichever timeline-bearing tab the user just left.
         if (previousContent != content) {
             if (previousContent == floorMapMapPresenter && floorMapMapPresenter != null) {
-                floorMapMapPresenter.pauseTimeline();
+                // Not just pauseTimeline(): leaving the Map for a sibling tab hides it just as
+                // surely as leaving the document does, and its facts cadence should stop either way.
+                floorMapMapPresenter.onContentTabVisible(false);
             } else if (previousContent == floorMapEditorPresenter && floorMapEditorPresenter != null) {
                 floorMapEditorPresenter.pauseTimeline();
             }
 
-            // Returning to the Map tab re-queries facts so edits saved from the
-            // Editor tab (moved objects, new icons/backgrounds) are visible —
-            // the Map tab otherwise only re-queries on its own timeline moves.
+            // Returning to the Map tab re-reads facts so edits saved from the
+            // Editor tab (moved objects, new icons/backgrounds) are visible, and
+            // restarts the cadence the branch above stopped.
             if (content == floorMapMapPresenter && floorMapMapPresenter != null
                     && previousContent != null) {
-                floorMapMapPresenter.refresh();
+                floorMapMapPresenter.onContentTabVisible(true);
             }
 
             previousContent = content;
