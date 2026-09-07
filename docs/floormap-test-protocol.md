@@ -63,6 +63,7 @@ this branch, so tell me if it recurs.
 | Events store (Plan B) | `floor_map_events` |
 | Facts store (SQL Temporal) | `floor_map_facts` |
 | Empty-store map | `Test Floor Map (empty)` |
+| Empty **facts** store, for G9 | `floor_map_facts_empty` — created 2026-09-07, deliberately never written to |
 | Over-budget map (~24 000 events) | `Test Floor Map (bulk)` → `floor_map_events_bulk` |
 | SQL-store comparison map | `System / Enterprise Floor Mapping Demo / Floor Map` |
 
@@ -178,14 +179,60 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 | **G7** | Play through 04:30 → 08:00, where entities are present throughout | No line, and **no flicker**. Most delta ticks legitimately return no rows — an entity that has not moved emits nothing — so a naive check would blink once per tick | |
 | **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | |
 
-**G3 is the one to be most confident about.** It is the only test here that produces a *fault*-styled
-line, so it is the one that proves the two registers are actually different. If G3 shows a quiet
-line, the whole distinction is broken and G1/G5 passing means nothing.
+**G3, G4 and G9 are the ones to be most confident about.** They are the only tests that produce a
+*fault*-styled line, so between them they prove the two registers really are different. If they show
+a quiet line, the whole distinction is broken and G1/G5 passing means nothing.
 
-**Not reachable with this fixture:** the fourth stage, `NO_FACTS` ("No floor plan at this time…"),
-needs a map with a populated events store and an **empty** facts store. No such pair exists in the
-instance. Say the word and I will create one — it is an empty SQL Temporal Store plus a floor map
-document pointing at it, two minutes through the API.
+### G9 — the fourth stage, `NO_FACTS`
+
+This one needs a one-off setup, because it is the only stage that requires events **present** and
+facts **absent**, and no such pair existed. `floor_map_facts_empty` now does (created through the
+API on 2026-09-07, never written to). You need to make the map that pairs it with the populated
+events store — two edits, once, and then it is there for good.
+
+**Setup — do this once**
+
+1. Right-click `Test Floor Map` → **Copy**. Rename the copy **`Test Floor Map (no facts)`**.
+   Copying rather than creating is deliberate: it brings the value schema and both column settings
+   with it, which a new document would make you retype.
+2. **Settings** tab → change the **Facts Store** to `floor_map_facts_empty`. Leave the Events Store
+   as `floor_map_events`.
+3. **Events Query** tab → add one line, so the query reads:
+
+   ```
+   from param('EventStore')
+   where Key != 'forklift-7'
+   select EffectiveTime as "Effective Time",
+     Key as "Entity ID",
+     jq(Value, '.location') as "Location ID",
+     jq(Value, '.type') as "Type",
+     jq(Value, '.status') as "Status",
+     jq(Value, '.message') as "Message"
+   ```
+
+4. Save.
+
+**Why `forklift-7` has to go.** It is the one entity whose location is **coordinates**
+(`B-GND, 100.0, 180.0`) rather than a fact key, so it needs no facts at all and would be placed
+even with the facts store empty. One placed entity makes `classify` return `NONE` and the line never
+appears — which is correct behaviour and exactly what the reporter's own javadoc warns about, but it
+would make this test unrunnable. Excluding it leaves `alice`, `bob`, `carol`, `dave` and `ghost`,
+all of which name fact keys.
+
+| # | Do | Expect | Result |
+|---|---|---|---|
+| **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to **08:00:00** | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | |
+| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | |
+
+**If G9 shows "No events at this time" instead**, the `where` clause has excluded too much, or the
+timeline is outside the data. If it shows **nothing at all**, `forklift-7` is still being placed —
+check the `where` line saved.
+
+**Do not add a time term to that `where` clause.** On a Plan B store a hand-written time term
+returns zero rows without an error, so the map would go blank and the status line would say "No
+events at this time" — misleading, since the store is full. Noticed while building this fixture and
+recorded in the remediation plan; the map's own horizon is unaffected, because it passes ranges as a
+`TimeRange` rather than as query text.
 
 **What would tell you it is wrong**
 
@@ -275,7 +322,7 @@ Building F14 option 4 turned up that F14's earlier options had **never reported 
 per-tick `reset()` pinned the persistence counter at 1, so its threshold of 3 was unreachable. The
 silence was recorded as a passing test, because quiet was the expected result there.
 
-So if a whole session comes back clean, that is worth a moment's suspicion rather than relief. **G3
-and G4 are the antidote**: they are the only tests here that force a message to appear. If those two
-produce their lines, the quiet results elsewhere mean something. If they do not, nothing else in
-Session G does.
+So if a whole session comes back clean, that is worth a moment's suspicion rather than relief.
+**G3, G4 and G9 are the antidote**: they are the only tests here that force a message to appear, and
+G9 forces one on the console too. If those three produce their lines, the quiet results elsewhere
+mean something. If they do not, nothing else in Session G does.

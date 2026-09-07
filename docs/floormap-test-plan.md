@@ -634,6 +634,12 @@ Two visual registers, and telling them apart is most of what these tests check:
 | **G7** | With a screen reader, focus the canvas while G1 is showing | The map's accessible name includes the explanation, and it is announced **once**, not repeatedly | |
 | **G8** | Narrow the pane hard (drag the dock wide) while a line is showing | The line stays readable and does not overlap the scale bar in the bottom-left | |
 
+**The fourth stage needs its own fixture.** `NO_FACTS` requires events present and facts absent, and
+nothing paired that way until `floor_map_facts_empty` was created on 2026-09-07. It also requires
+excluding `forklift-7`, whose location is coordinates rather than a fact key — it needs no facts, so
+it would be placed anyway and one placed entity makes the classifier return `NONE`. The recipe is
+**G9** in `floormap-test-protocol.md`.
+
 ### What would tell you it is wrong
 
 - A **fault**-styled line for G1 or G4 — the two cases that are not faults. That is the failure that
