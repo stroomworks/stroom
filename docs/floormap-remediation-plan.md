@@ -98,7 +98,7 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 - ~~**Settings-tab state-type check**~~ — **DONE 2026-09-04** (`f31fd583d4`). No validation hook was needed after all: the events-store selection handler already existed and is the better place, because telling someone at the moment they choose beats telling them when they try to leave. A rejected choice reverts to the last valid one rather than clearing, and a failed fetch leaves the selection alone, since it says nothing about the store's type.
 - **Events query should carry a raw numeric time** — `latestPerEntity` compares the *rendered* time, so a non-lexicographic date pattern preference picks the wrong row. **Narrowed by F13, not closed:** the default query now reduces by arrival order and never looks at the time column at all, so this is reachable only for a query that sorts or that takes its entity id from somewhere other than the store `Key` — see `FloorMapEventsQueryOrder`. The honest fix is still a query-contract change carrying a raw numeric time. See Appendix F.1.
 - ~~**F14 · four silent failure paths in the events pipeline**~~ — **DONE 2026-09-04, all four options.** `FloorMapStageReporter` names whichever stage came up empty; option 4 puts it on the canvas, in two registers so a map that is correctly empty does not look broken. **Building option 4 found that options 2+3 had never reported anything**: `reset()` ran once per tick and exactly one observation happens per read, so the persistence counter was pinned at 1 and its threshold of 3 was unreachable. The silence looked like the pass that test A14 recorded. See **F14** for the fix and for why the status line deliberately does not use that filter.
-- **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
+- **F16 · a trail reappears when an entity starts moving again** — UNTRIAGED, written up as `task-floormap-trail-resumes-after-pause.md`; reported from manual testing 2026-09-04 and recorded so it is not lost. Cancelling a trail's fade because the entity moved again leaves `entityTrails` intact, so the new movement resumes the old trail at full opacity rather than starting a new one; age trimming runs only when a point is recorded, so stale points survive a stationary period and are dropped on the first frame of the next movement. A second candidate is F13's accepted one-tick flicker, which the animator would record as movement and draw — an assumption worth revisiting, since a trail makes a one-tick flicker linger. Not diagnosed, not reproduced, no decision needed yet. Written up as **F16**.
 - **F15 · the facts query polls 3×/second for data that changes weekly** — the poll is not serving playback (the answer is almost always identical); it is serving external write detection, at 300 ms intervals, for facts the user says change about once a week. Fetching full history once with `timeRange = null` and computing the snapshot client-side makes playback, scrub and step zero-query for facts, removes half of F11's result-store churn, and improves accuracy at high playback speed. The obvious forward-window version is broken by the same snapshot-lifting the parity report documents, and is recorded so it is not re-proposed. **Cadence decided 2026-09-04: 60 s plus a re-fetch whenever the Map becomes visible** — better than the 30 s recommended, because it makes the one case that constrains the interval (someone watching for their own write) immediate rather than twice as fast, and reuses an existing constant. Two of the three visibility paths are already wired; the third wants a `ContentTabSelectionChangeEvent` handler on `FloorMapPresenter`, following `QueryDocPresenter` and `DashboardSuperPresenter` — which also lets a Map on a background document stop playing, removing ~6–7 result-store cycles/second nobody is watching. **Built 2026-09-04**; the cadence needed a `Timer` after all, corrected 2026-09-07 when writing the test protocol caught that `TimeChangeEvent` fires only while playing, so a paused map never re-read. See F15's *Correction*. Written up as **F15**.
 
 ---
@@ -953,9 +953,32 @@ because the two viable fixes both need a decision rather than just work:
 queue, which applies backpressure, so a held cursor pins a pooled DB connection where the eager
 fetch merely inflated heap.
 
-Two StroomQL defects block the tidier fixes and are worth raising separately: a single-column
-`select` throws `ArrayIndexOutOfBoundsException`, and `group by` over a large result set throws
-`Index 0 out of bounds`.
+### Correction, 2026-09-07: the two "StroomQL defects" do not reproduce
+
+This section claimed two blockers — that a single-column `select` throws
+`ArrayIndexOutOfBoundsException` and that `group by` over a large result set throws
+`Index 0 out of bounds` — and recommended raising both. **Neither reproduces.** Retried against the
+live instance:
+
+| Query | Result |
+|---|---|
+| `from "floor_map_facts" select Key` | works |
+| `from "floor_map_facts" select count()` | works |
+| `from "floor_map_facts" group by Key select Key` | works |
+| `from "floor_map_events_bulk" group by Key select Key, count()` — 24 000 rows, 60 groups | works |
+| `from "fmba" group by Key select Key, count()` — 1 000 groups | works |
+
+So the shapes the notes described are fine, and **the constraint on F8's fix is lifted**: a
+bucket-aggregating query is expressible after all.
+
+**The likely explanation is that both were the Plan B field-index bug seen before it was
+understood** — `docs/task-planb-where-field-not-selected.md`. A predicate handed a field-index
+position past the end of a row is exactly the shape that produces an index-out-of-bounds, and both
+observations were made while querying Plan B stores with `where` terms. If so they are already
+written up, once, correctly.
+
+Recorded rather than deleted because the notes were acted on: they were cited as a reason not to
+attempt SQL-side bucketing in F8, and that reason is now withdrawn.
 
 ---
 

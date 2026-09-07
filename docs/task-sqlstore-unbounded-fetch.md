@@ -128,12 +128,13 @@ Three things to settle first:
   any `where` filter; a derived query would show all events in the store. Arguably the fix (density
   should describe the store) or arguably a regression (density should match the map). Needs a
   decision, not a preference.
-- **`select EffectiveTime` alone is not an option.** Observed against this instance: a
-  single-column `select` throws `ArrayIndexOutOfBoundsException`. Two columns are needed, hence
-  `Key, EffectiveTime`.
-- **SQL-side bucketing via `group by` is not an option either.** Observed: `group by` over a large
-  result set throws `Index 0 out of bounds`. Both of these are worth raising separately — they
-  block the tidier fixes here.
+- **Two claimed StroomQL blockers were withdrawn on 2026-09-07.** This section said a
+  single-column `select` throws `ArrayIndexOutOfBoundsException` and that `group by` over a large
+  result set throws `Index 0 out of bounds`. Retried against the live instance, **neither
+  reproduces** — including `group by` over 24 000 rows and over 1 000 groups. So `select
+  EffectiveTime` alone and SQL-side bucketing are both available, and fix B below is less
+  constrained than it was written to be. The likely explanation is that both were the Plan B
+  field-index bug seen before it was understood; see `task-planb-where-field-not-selected.md`.
 
 This removes the payload but **not** the row count: the server still materialises one row per
 version per key.
