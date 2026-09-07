@@ -1559,7 +1559,7 @@ Manual testing is still outstanding — the list is in the implementation plan.
 
 ---
 
-## F14 — Four silent failure paths in the events pipeline — MEDIUM — **DONE 2026-09-04** (options 2, 3 and 4)
+## F14 — Four silent failure paths in the events pipeline — MEDIUM — **DONE 2026-09-04** (options 2, 3 and 4); **manually verified 2026-09-07**
 
 **Files:** `FloorMapMapPresenter.reportUnparsedEvents`, `.placeEventEntities`, `.updateCanvas`
 (Editor), `FloorMapCanvasViewImpl`
@@ -1774,7 +1774,7 @@ document. Such a map renders no entities until someone sets them by hand, with n
 
 ---
 
-## F15 — The facts query polls three times a second for data that changes weekly — MEDIUM — **BUILT 2026-09-04**
+## F15 — The facts query polls three times a second for data that changes weekly — MEDIUM — **BUILT 2026-09-04**; **manually verified 2026-09-07**
 
 **Files:** `FloorMapMapPresenter.onTimeChange` / `.runQueryAtSelectedTime` / `.parseFacts`,
 `FloorMapTimelinePresenter.PLAYBACK_QUERY_INTERVAL_MS`,

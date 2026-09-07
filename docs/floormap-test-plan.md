@@ -22,6 +22,47 @@ trip, or a Plan B store that has never been written to. This is the part a perso
 
 ---
 
+# Results — 2026-09-07
+
+Run against fixtures regenerated that morning, after the location split and the events column
+mapping landed. **Groups A, F and G all pass.**
+
+| Group | What it covers | Result |
+|---|---|---|
+| **A** | the events delta/baseline change (F13) | **pass** — re-run after the format change |
+| **F** | facts no longer queried per tick (F15) | **pass**, 8 tests including the paused-cadence case |
+| **G** | the map says why it is empty (F14 option 4) | **pass**, 10 tests including the `NO_FACTS` fixture |
+
+**G3, G4 and G9 passing is the part that matters.** They are the only tests that force a message to
+appear — two fault-styled lines and one console message — so they are what makes the *quiet* results
+elsewhere meaningful. Without them, G1 and G5 showing nothing alarming would be indistinguishable
+from the line never working at all, which is precisely how F14's earlier options passed their test
+while reporting nothing.
+
+**F's paused case (F6) is worth calling out.** It pins the defect that writing the protocol found:
+the 60-second facts re-read was checked only from a playback tick, so on a paused map it never
+happened. The test asserts one request in eighty seconds; zero is the regression.
+
+**Three defects were found by running these**, all fixed, none of which the unit tests could have
+caught:
+
+- the `NO_ENTITIES_PARSED` line named the Entity ID column when the *location* roles were at fault —
+  a message pointing at the one setting that was right
+- a dropdown change did not mark the document dirty, so the mapping could not be saved on its own
+- G3 as written was impossible: a role cannot be pointed at a column the query does not select, so
+  the reachable fault is unmapping one
+
+## Still outstanding
+
+| | |
+|---|---|
+| **H1**, **H2** | the two Group A tests skipped as low value |
+| **B3**, **B4**, **B5** | content packs — copy, delete, and the no-assets case |
+| **E1**, **E2** | fresh-database bootstrap, and the deprecated config keys |
+
+**E1 is the one to prioritise.** It is the only test here that cannot be run after release, and a
+broken bootstrap is discovered by a customer rather than by us.
+
 # Results so far — 2026-09-04
 
 | Test | Result |
