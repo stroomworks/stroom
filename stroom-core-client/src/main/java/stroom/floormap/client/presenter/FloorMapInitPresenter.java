@@ -25,6 +25,7 @@ import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.explorer.shared.ExplorerResource;
 import stroom.explorer.shared.ExplorerServiceDeleteRequest;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEventColumns;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapResource;
@@ -326,10 +327,10 @@ public class FloorMapInitPresenter
                             .factsStoreRef(factsDocRef)
                             .eventsStoreRef(eventsDocRef)
                             .eventsQuery(FloorMapEventsQuery.defaultQuery())
-                            // The query above aliases these two columns; without them the
-                            // parse matches nothing and no entity ever reaches the canvas.
-                            .entityIdColumn(FloorMapEventsQuery.ENTITY_ID_COLUMN)
-                            .locationIdColumn(FloorMapEventsQuery.LOCATION_ID_COLUMN)
+                            // The query above aliases exactly these columns; without the mapping
+                            // the parse matches nothing and no entity reaches the canvas. Both are
+                            // generated from FloorMapEventRole, so they cannot disagree.
+                            .eventColumns(FloorMapEventColumns.defaults())
                             .valueFormat(ValueFormat.JSON)
                             .valueSchema(FloorMapFieldMapping.initialValueSchema())
                             .build();

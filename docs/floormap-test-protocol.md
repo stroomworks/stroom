@@ -11,54 +11,59 @@ Parts 2 and 3 are about 20 minutes each and cover older work that has never been
 
 ---
 
-# Before you start — read this, it will save you an hour
+# Before you start — regenerate the data
 
-## 1. The fixture data is three days old, and the map will look empty
+## 1. The events CSV changed shape, so the fixtures must be rebuilt
 
-The data was generated on **2026-09-04**. A floor map opens showing **NOW ± 24 hours**, which today
-is 2026-09-06 → 2026-09-08. **Every entity is about three days off the left-hand edge of that
-window.**
+A location is now **two separate fields**: `location` for literal `"x, y"` coordinates and
+`locationRef` for the key of the fact an event happened at. One field used to carry both, told
+apart by shape. So `events.csv` has a new column and the data in the store is the wrong shape —
+nothing will draw until you reload.
 
-So a freshly opened map shows **the floor plan but no people**, plus a line across the top saying
-*"No events at this time"*. **That is correct on all three counts** — and it is also test **G1**, for
-free.
+```bash
+python3 docs/floormap-testdata/generate.py
+```
 
-**The way in is the "Show All" button on the timeline.** Every test below assumes you have pressed
-it, unless it says otherwise.
+Then upload, through the UI's **Upload** button on each feed:
 
-You could instead regenerate the data so it sits at "now" (`docs/floormap-testdata/README.md`), but
-then every timestamp in this document changes and you would have two generations of `alice` in the
-store. Absolute times are more checkable. Stay with the old data.
+| File | Feed |
+|---|---|
+| `docs/floormap-testdata/out/facts.csv` | `FLOOR_MAP_FACTS` |
+| `docs/floormap-testdata/out/events.csv` | `FLOOR_MAP_EVENTS` |
+| `docs/floormap-testdata/out/events-bulk.csv` | `FLOOR_MAP_BATCH` |
 
-## 2. Check which time zone your timeline is showing
+*Not through the API: this instance's MCP data endpoints currently fail on `Meta$Builder` /
+`FetchMarkerResult` class resolution, because the MCP server build predates this branch. Queries
+work; uploads do not.*
 
-Every time below is **UTC**. Your Stroom user preference may not be.
+**The old rows stay in the store**, because Plan B is keyed on (key, effective time) and the new
+generation lands at new times. That is harmless — they sit hours in the past, outside the horizon —
+but it means "no entities at all" after reloading means the upload failed, not that the old data is
+interfering.
 
-**Press "Show All" and read the timeline's two end labels.** They should span
-**2026-09-04 01:11:47 → 08:24:20**. If they read something else with the same 7h13m span, that
-difference is your offset — add it to every time in this document. The epoch-millisecond column is
-given throughout as an unambiguous anchor.
+## 2. Read your landmark times from the manifest, not from this document
 
-## 3. Migrate `forklift-7`'s coordinates — one upload, before you start
+`generate.py` writes every timestamp relative to the moment it runs, because the 6-hour horizon is
+relative to the timeline position. So it also writes **`out/manifest.json`**, which lists every time
+this protocol refers to, in UTC and epoch millis:
 
-The coordinate format changed on 2026-09-07: a `location` is now **`"x, y"`**, where it used to be
-`"<map>, <x>, <y>"`. The leading token was never read by any code, and the three-part form is now
-**rejected** rather than reinterpreted.
+```bash
+python3 -m json.tool docs/floormap-testdata/out/manifest.json
+```
 
-`forklift-7` is the only entity in the fixture that uses coordinates, and its 51 events are still in
-the old form. **Until you do this, `forklift-7` will not be drawn at all** and the console will say
-why — which is itself a correct result, just not the one the tests below expect.
+Keep it open. Where a test below says **"desk-106 moves"** or **"bob stops"**, that manifest entry
+is the time to scrub to.
 
-Upload **`docs/floormap-testdata/migrate-forklift-coords.csv`** to the **`FLOOR_MAP_EVENTS`** feed
-through the UI's Upload button. It carries the same 51 events at exactly their existing effective
-times, so `floor_map_events` (`overwrite: true`) replaces them in place — every other entity and
-every landmark time below is untouched.
+This replaces the absolute times earlier drafts carried. A stale landmark looks exactly like the bug
+the test is checking for — an entity that is not where the document says — which cost a session
+before it was noticed.
 
-*Not through the API: this instance's MCP data endpoints are currently failing on
-`Meta$Builder` / `FetchMarkerResult` class resolution, because the MCP server build predates this
-branch. Queries work; uploads do not.*
+## 3. Check which time zone your timeline is showing
 
-Confirm it worked with a query, or just check `forklift-7` appears in A0.
+The manifest is **UTC**. Your Stroom user preference may not be.
+
+Press **Show All** and compare the timeline's right-hand end with the manifest's `generatedAt`. Any
+difference is your offset; apply it throughout.
 
 ## 4. Hard-reload first
 
@@ -84,7 +89,7 @@ this branch, so tell me if it recurs.
 | Events store (Plan B) | `floor_map_events` |
 | Facts store (SQL Temporal) | `floor_map_facts` |
 | Empty-store map | `Test Floor Map (empty)` |
-| Empty **facts** store, for G9 | `floor_map_facts_empty` — created 2026-09-07, deliberately never written to |
+| Empty **facts** store, for G9 | `floor_map_facts_empty` |
 | Over-budget map (~24 000 events) | `Test Floor Map (bulk)` → `floor_map_events_bulk` |
 | SQL-store comparison map | `System / Enterprise Floor Mapping Demo / Floor Map` |
 
@@ -92,35 +97,26 @@ this branch, so tell me if it recurs.
 
 `bg-ground` (background), `area-north`, `area-south` (areas), and `desk-101` … `desk-106`.
 
-All nine were created at **2026-09-02 08:11:47**. One of them moves, and that single move is what
+All nine are laid out two days before generation. One of them moves, and that single move is what
 most of Part 1 turns on:
 
-> **`desk-106` moves at 2026-09-04 07:56:47** — from `(320, 240)` to `(460, 240)`, and its label
-> changes from "Desk 106" to **"Desk 106 (moved)"**. It is the only fact in the store whose position
-> depends on where the timeline is.
+> **`desk-106` moves** — from `(320, 240)` to `(460, 240)`, and its label changes from "Desk 106" to
+> **"Desk 106 (moved)"**. Fifteen minutes before the end of the data; the manifest gives the exact
+> time. It is the only fact whose position depends on where the timeline is.
 
 ## The entities — 6, of which 4 should be drawn
 
-| Entity | Type | Behaviour | Drawn at 08:24:20? |
+**Note which location form each uses.** `forklift-7` is the **only** coordinate-form entity, so it
+is the only one exercising that path — and the only one that will *not* move when you move a desk.
+
+| Entity | Form | Behaviour | Drawn at the right-hand end? |
 |---|---|---|---|
-| `alice@example.org` | person | hops desk to desk for the whole window. The control: something must move | **yes** — `desk-103` |
-| `bob@example.org` | person | moves, then **stops at 08:19:20** | **yes** — `desk-102`, five minutes idle |
-| `dave@example.org` | person | parked at `desk-105`, re-emitting an unchanged location | **yes** — `desk-105` |
-| `forklift-7` | vehicle | location is **coordinates**, `x, 180.0`, not a fact key | **yes** — drifting right, *after the migration in step 3* |
-| `carol@example.org` | person | one event at 01:24:20 and nothing after — beyond the 6 h horizon | **no** |
-| `ghost@example.org` | person | location is `desk-999-does-not-exist` | **no**, silently dropped |
-
-## Landmark times
-
-| Landmark | UTC | epoch ms |
-|---|---|---|
-| Facts created (all 9) | 2026-09-02 08:11:47 | 1788336707000 |
-| `carol`'s only events | 2026-09-04 01:11:47 – 01:24:20 | 1788484307000 – 1788485060000 |
-| Events begin | 2026-09-04 04:24:20 | 1788495860000 |
-| **`carol` falls out of the horizon** | 2026-09-04 07:24:20 | 1788506660000 |
-| **`desk-106` moves** | 2026-09-04 07:56:47 | 1788508607000 |
-| `bob` stops | 2026-09-04 08:19:20 | 1788509960000 |
-| Events end | 2026-09-04 08:24:20 | 1788510260000 |
+| `alice@example.org` | `locationRef` | hops desk to desk throughout. The control: something must move | **yes** |
+| `bob@example.org` | `locationRef` | moves, then **stops 5 minutes before the end** | **yes**, idle |
+| `dave@example.org` | `locationRef` | parked at `desk-105`, re-emitting an unchanged value | **yes** |
+| `forklift-7` | **`location`** | drifts across the floor on literal coordinates, not a fact key | **yes** |
+| `carol@example.org` | `locationRef` | one event 7 hours back — beyond the 6 h horizon | **no** |
+| `ghost@example.org` | `locationRef` | names `desk-999-does-not-exist` | **no**, dropped |
 
 ---
 
@@ -128,12 +124,12 @@ most of Part 1 turns on:
 
 ## Session A — the reference state (2 min)
 
-**A0.** Open `Test Floor Map`. Press **Show All**. Drag the scrubber to the far right, i.e.
-**08:24:20**, and leave it **paused**.
+**A0.** Open `Test Floor Map`. Press **Show All**. Drag the scrubber to the **far right** (the
+manifest's `generatedAt`) and leave it **paused**.
 
-**Expect:** the floor plan, and **exactly four** entities — `alice` on `desk-103`, `bob` on
-`desk-102`, `dave` on `desk-105`, and `forklift-7` out on its own coordinates. No status line. The
-Tracking panel lists four.
+**Expect:** the floor plan, and **exactly four** entities — `alice`, `bob` and `dave` each on a
+desk, and `forklift-7` out on its own coordinates away from any desk. `carol` and `ghost` absent.
+No status line. The Tracking panel lists four.
 
 This single state proves the headline events behaviour: **`bob` is still on the map** although his
 last event was five minutes earlier. Before this branch, anything silent for twenty seconds
@@ -154,10 +150,10 @@ browser. `desk-106`'s one move is the only thing that can show whether that arit
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **F1** | Scrub to **07:30:00** and pause. Look at `desk-106` | Bottom-right at `(320, 240)`, labelled **"Desk 106"** | |
-| **F2** | Scrub forward to **08:10:00** | `desk-106` has jumped **right**, to `(460, 240)`, labelled **"Desk 106 (moved)"**. Nothing else has moved | |
-| **F3** | Scrub **back** to 07:30:00 · **the headline test** | `desk-106` returns to `(320, 240)` and **"Desk 106"**. This is the case that changed from a server round trip to a browser computation, so a mistake in the time comparison shows here and nowhere else | |
-| **F4** | Set the scrubber to 07:50:00, play at **1×** until past 07:56:47, then repeat at **10×** | `desk-106` moves at the same timeline instant both times. It used to be accurate only to one tick of *wall clock* — about three seconds of timeline at 10× | |
+| **F1** | Scrub to **30 minutes before** the desk-106 move and pause. Look at `desk-106` | Bottom-right at `(320, 240)`, labelled **"Desk 106"** | |
+| **F2** | Scrub **past** the move | `desk-106` has jumped **right**, to `(460, 240)`, labelled **"Desk 106 (moved)"**. Nothing else has moved | |
+| **F3** | Scrub **back** before it again · **the headline test** | `desk-106` returns to `(320, 240)` and **"Desk 106"**. This is the case that changed from a server round trip to a browser computation, so a mistake in the time comparison shows here and nowhere else | |
+| **F4** | Start a few minutes before the move and play at **1×** past it, then repeat at **10×** | `desk-106` moves at the same timeline instant both times. It used to be accurate only to one tick of *wall clock* — about three seconds of timeline at 10× | |
 | **F5** | DevTools → Network, filter `search`, then play for 30 s | Facts contribute **no** requests while playing. There will be one about every 60 s, and one each time you switch to the Map tab. Before this change there were about three a second | |
 | **F6** | Leave the Map visible and **paused** for **80 seconds**, watching Network | **One** facts request appears, and only one. **Zero is a regression** — this is the case that was broken until 2026-09-07, when the cadence was only consulted while playing, so a paused map never re-read at all | |
 | **F6b** | Switch to the **Editor** tab and leave it for two minutes, watching Network | **No** facts requests. The cadence must stop when the Map is not the tab on screen, or a backgrounded document keeps polling | |
@@ -166,7 +162,7 @@ browser. `desk-106`'s one move is the only thing that can show whether that arit
 
 **What would tell you it is wrong**
 
-- `desk-106` at `(460, 240)` when the timeline is before 07:56:47 → the time comparison is inverted.
+- `desk-106` at `(460, 240)` when the timeline is before its move → the time comparison is inverted.
 - `desk-106` never moving at all → the snapshot is not filtering by time.
 - The floor plan **empty** while entities still animate → a facts read failed and was refused
   (correct) with nothing having been read successfully first.
@@ -191,13 +187,13 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **G1** | Open `Test Floor Map` and **do not** press Show All. Leave it at the default NOW ± 24 h, paused | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | |
-| **G2** | Press Show All and scrub into the data | The line **disappears** as soon as entities are drawn | |
+| **G1** | Open `Test Floor Map`, then scrub the timeline **well past the end of the data** — a day ahead — and leave it **paused** | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | |
+| **G2** | Press Show All to come back to the data | The line **disappears** as soon as entities are drawn | |
 | **G3** | Events Query tab → set **Entity ID Column** to `Nonsense` → back to Map | **"Events found, but no entity matched the Entity ID column"**, in the **fault** register: coloured and bordered. **Then put it back to `Entity ID`** | |
 | **G4** | Events Query tab → set **Location ID Column** to `Type` → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put it back to `Location ID`** | |
 | **G5** | Open `Test Floor Map (empty)` | The **quiet** "no events" line, **not** a fault. An empty store is not a misconfiguration | |
 | **G6** | Reopen `Test Floor Map`, Show All, and watch the **first second** | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not; a "no floor plan" line flashing on every open would be worse than the silence it replaces | |
-| **G7** | Play through 04:30 → 08:00, where entities are present throughout | No line, and **no flicker**. Most delta ticks legitimately return no rows — an entity that has not moved emits nothing — so a naive check would blink once per tick | |
+| **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Most delta ticks legitimately return no rows — an entity that has not moved emits nothing — so a naive check would blink once per tick | |
 | **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | |
 
 **G3, G4 and G9 are the ones to be most confident about.** They are the only tests that produce a
@@ -242,7 +238,7 @@ all of which name fact keys.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to **08:00:00** | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | |
+| **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to about an hour before the end | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | |
 | **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | |
 
 **If G9 shows "No events at this time" instead**, the `where` clause has excluded too much, or the
@@ -273,7 +269,7 @@ you are here.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **H1** (was A2) | Set the timeline to **08:24:20** and read the Groups panel's occupancy counts. Note them. Now play forward — there is nothing after 08:24:20, so the clock runs on with no new events | The counts **hold**. They must not fall while `bob` sits idle on `desk-102`. Before this branch, an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | |
+| **H1** (was A2) | Set the timeline to the **far right** and read the Groups panel's occupancy counts. Note them. Now play forward — there is nothing after the end of the data, so the clock runs on with no new events | The counts **hold**. They must not fall while `bob` sits idle. Before this branch, an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | |
 | **H2** (was A13) | Open `Test Floor Map (bulk)`, Show All, and watch the console while it loads | Either nothing, or **one** message about the 20 000-row limit — not a repeat every minute. ~24 000 events is deliberately over budget | |
 
 ---

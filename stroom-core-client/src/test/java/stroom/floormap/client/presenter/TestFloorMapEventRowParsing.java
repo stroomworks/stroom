@@ -17,6 +17,8 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.shared.Fact;
+import stroom.floormap.shared.FloorMapEventColumns;
+import stroom.floormap.shared.FloorMapEventRole;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
@@ -42,33 +44,39 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestFloorMapEventRowParsing {
 
     private static final String ENTITY_COLUMN = FloorMapEventsQuery.ENTITY_ID_COLUMN;
-    private static final String LOCATION_COLUMN = FloorMapEventsQuery.LOCATION_ID_COLUMN;
+    private static final String LOCATION_COLUMN = FloorMapEventsQuery.LOCATION_COLUMN;
+    private static final String REF_COLUMN = FloorMapEventsQuery.LOCATION_REF_COLUMN;
     private static final String TIME_COLUMN = FloorMapEventsQuery.EFFECTIVE_TIME_COLUMN;
+
+    /** The mapping a new document gets, which is what the default query aliases. */
+    private static final FloorMapEventColumns DEFAULTS = FloorMapEventColumns.defaults();
 
     /**
      * The default query must alias exactly the columns a new document is told to read.
      *
-     * <p>These are two separate fields of {@link stroom.floormap.shared.FloorMapDoc} written by
-     * the same statement in {@code FloorMapInitPresenter}, and nothing at runtime checks they
-     * correspond: a mismatch leaves {@code parseRows} matching no column, returning no entities,
-     * and the map looking as though playback is off while the query still returns rows. Building
-     * the query from the constants makes the two agree by construction; this asserts the
-     * construction actually holds, and that the surrounding StroomQL still quotes them as column
-     * aliases rather than, say, interpolating them somewhere harmless.</p>
+     * <p>Both the query text and the default mapping are generated from
+     * {@link FloorMapEventRole}, so they agree by construction. This asserts the construction
+     * actually holds — and that the surrounding StroomQL still quotes each name as a column alias
+     * rather than, say, interpolating it somewhere harmless. The {@code Event Type} defect was
+     * exactly this pairing coming apart.</p>
      */
     @Test
-    void testDefaultQueryAliasesTheDefaultColumns() {
+    void testDefaultQueryAliasesEveryRolesDefaultColumn() {
         final String query = FloorMapEventsQuery.defaultQuery();
 
-        assertThat(query).contains("as \"" + FloorMapEventsQuery.ENTITY_ID_COLUMN + "\"");
-        assertThat(query).contains("as \"" + FloorMapEventsQuery.LOCATION_ID_COLUMN + "\"");
+        for (final FloorMapEventRole role : FloorMapEventRole.values()) {
+            assertThat(query)
+                    .as("default query aliases " + role)
+                    .contains("as \"" + role.getDefaultColumn() + "\"");
+            assertThat(DEFAULTS.getColumn(role))
+                    .as("default mapping names " + role + "'s own default")
+                    .isEqualTo(role.getDefaultColumn());
+        }
 
         // And the parse agrees, given a result shaped the way that query describes.
-        final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "1, 2")),
-                FloorMapEventsQuery.ENTITY_ID_COLUMN,
-                FloorMapEventsQuery.LOCATION_ID_COLUMN);
-        assertThat(parsed).hasSize(1);
+        assertThat(FloorMapQueryPresenter.parseRows(
+                result(row("joe.blogs@example.org", "1, 2", null)), DEFAULTS, null))
+                .hasSize(1);
     }
 
     // -----------------------------------------------------------------------
@@ -133,7 +141,7 @@ class TestFloorMapEventRowParsing {
 
         final List<Row> reduced = FloorMapQueryPresenter.latestPerEntity(
                 columns,
-                List.of(row("a@x.org", "first"), row("a@x.org", "last")),
+                List.of(twoColumnRow("a@x.org", "first"), twoColumnRow("a@x.org", "last")),
                 ENTITY_COLUMN,
                 TIME_COLUMN);
 
@@ -173,13 +181,11 @@ class TestFloorMapEventRowParsing {
         return Row.builder().values(Arrays.asList(time, entity, location)).build();
     }
 
-    /** The legacy shape: coordinates baked into the event, used as they stand. */
+    /** Coordinates baked into the event, used as they stand. */
     @Test
     void testCoordinateRowsAreParsedAndPassedThrough() {
         final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "120.5, 340")),
-                ENTITY_COLUMN,
-                LOCATION_COLUMN);
+                result(row("joe.blogs@example.org", "120.5, 340", null)), DEFAULTS, null);
 
         assertThat(parsed).hasSize(1);
         assertThat(parsed.getFirst().getLocationRef()).isNull();
@@ -197,9 +203,7 @@ class TestFloorMapEventRowParsing {
     @Test
     void testReferenceRowsAreParsedAndPlacedOnTheObject() {
         final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "G-MAIN_ENTRANCE")),
-                ENTITY_COLUMN,
-                LOCATION_COLUMN);
+                result(row("joe.blogs@example.org", null, "G-MAIN_ENTRANCE")), DEFAULTS, null);
 
         assertThat(parsed).hasSize(1);
         assertThat(parsed.getFirst().getLocationRef()).isEqualTo("G-MAIN_ENTRANCE");
@@ -215,35 +219,122 @@ class TestFloorMapEventRowParsing {
     @Test
     void testTypeFallsBackToPersonForAnEmailId() {
         final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "G-MAIN_ENTRANCE")),
-                ENTITY_COLUMN,
-                LOCATION_COLUMN);
+                result(row("joe.blogs@example.org", null, "G-MAIN_ENTRANCE")), DEFAULTS, null);
 
         assertThat(parsed.getFirst().getType()).isEqualTo("person");
     }
 
     /**
-     * A location column the query does not select yields nothing at all — the
-     * silent failure that looks like animation being switched off, and the
-     * reason {@code FloorMapMapPresenter} logs this case.
+     * Both location roles pointing at columns the query does not select yields nothing at all —
+     * the silent failure that looks like animation being switched off, and the reason
+     * {@code FloorMapMapPresenter} logs this case.
      */
     @Test
-    void testUnmappedLocationColumnYieldsNoEntities() {
+    void testBothLocationRolesUnmappedYieldsNoEntities() {
+        final FloorMapEventColumns mapping = DEFAULTS
+                .with(FloorMapEventRole.LOCATION, "Nope")
+                .with(FloorMapEventRole.LOCATION_REF, "Also Nope");
+
         assertThat(FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", "G-MAIN_ENTRANCE")),
-                ENTITY_COLUMN,
-                "Location Ref"))
+                result(row("joe.blogs@example.org", null, "G-MAIN_ENTRANCE")), mapping, null))
                 .isEmpty();
     }
 
-    /** A row whose location the query returned as null is skipped, not placed at the origin. */
+    /**
+     * Either location role on its own is enough.
+     *
+     * <p>A store whose events only ever carry fact keys has no coordinate column at all, and
+     * leaving that role unset must not disable the map.</p>
+     */
     @Test
-    void testNullLocationIsSkipped() {
+    void testOneLocationRoleIsEnough() {
+        final FloorMapEventColumns refOnly = DEFAULTS.with(FloorMapEventRole.LOCATION, null);
         assertThat(FloorMapQueryPresenter.parseRows(
-                result(row("joe.blogs@example.org", null)),
-                ENTITY_COLUMN,
-                LOCATION_COLUMN))
+                result(row("joe.blogs@example.org", null, "G-MAIN_ENTRANCE")), refOnly, null))
+                .hasSize(1);
+
+        final FloorMapEventColumns coordsOnly = DEFAULTS.with(FloorMapEventRole.LOCATION_REF, null);
+        assertThat(FloorMapQueryPresenter.parseRows(
+                result(row("joe.blogs@example.org", "1, 2", null)), coordsOnly, null))
+                .hasSize(1);
+    }
+
+    /** A row with neither is skipped, not placed at the origin. */
+    @Test
+    void testRowWithNoLocationAtAllIsSkipped() {
+        assertThat(FloorMapQueryPresenter.parseRows(
+                result(row("joe.blogs@example.org", null, null)), DEFAULTS, null))
                 .isEmpty();
+    }
+
+    /**
+     * Both set: coordinates win, and the contradiction is reported.
+     *
+     * <p>Coordinates win because they need no lookup. It is reported because only one of the two
+     * can be true, so a row carrying both is bad data rather than a preference — and reported
+     * <b>once</b> per result, since the same rows arrive three times a second during playback.</p>
+     */
+    @Test
+    void testCoordinatesWinOverAReferenceAndTheClashIsReportedOnce() {
+        final List<String> warnings = new ArrayList<>();
+        final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
+                result(
+                        row("a@x.org", "1, 2", "G-MAIN_ENTRANCE"),
+                        row("b@x.org", "3, 4", "G-MAIN_ENTRANCE")),
+                DEFAULTS,
+                warnings::add);
+
+        assertThat(parsed).hasSize(2);
+        assertThat(parsed.getFirst().getLocationRef()).isNull();
+        assertThat(parsed.getFirst().getX()).isEqualTo(1);
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst()).contains("a@x.org").contains("both");
+    }
+
+    /**
+     * A malformed coordinate is reported as such, not read as a fact key.
+     *
+     * <p>The single-column scheme could not do this: anything that was not two numbers became a
+     * reference, so a typo in a position was reported as a missing desk.</p>
+     */
+    @Test
+    void testMalformedCoordinatesAreReportedRatherThanTreatedAsAKey() {
+        final List<String> warnings = new ArrayList<>();
+        final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
+                result(row("a@x.org", "120.5 340", null)), DEFAULTS, warnings::add);
+
+        assertThat(parsed).isEmpty();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst()).contains("120.5 340");
+    }
+
+    /** A fact key that looks like coordinates works, which the single-column scheme made impossible. */
+    @Test
+    void testAReferenceMayLookLikeCoordinates() {
+        final List<FloorMapObject> parsed = FloorMapQueryPresenter.parseRows(
+                result(row("a@x.org", null, "100, 200")), DEFAULTS, null);
+
+        assertThat(parsed).hasSize(1);
+        assertThat(parsed.getFirst().getLocationRef()).isEqualTo("100, 200");
+    }
+
+    /** The type column is read from the mapping, not from a column literally named "type". */
+    @Test
+    void testTypeComesFromTheMappedColumn() {
+        final List<Column> columns = new ArrayList<>();
+        columns.add(Column.builder().id(ENTITY_COLUMN).name(ENTITY_COLUMN).build());
+        columns.add(Column.builder().id(REF_COLUMN).name(REF_COLUMN).build());
+        columns.add(Column.builder().id("Kind").name("Kind").build());
+        final TableResult res = new TableResult(
+                "table", columns,
+                List.of(Row.builder()
+                        .values(Arrays.asList("forklift-7", "G-MAIN_ENTRANCE", "vehicle"))
+                        .build()),
+                null, 1L, null, null);
+
+        final FloorMapEventColumns mapping = DEFAULTS.with(FloorMapEventRole.TYPE, "Kind");
+        assertThat(FloorMapQueryPresenter.parseRows(res, mapping, null).getFirst().getType())
+                .isEqualTo("vehicle");
     }
 
     // -----------------------------------------------------------------------
@@ -255,10 +346,16 @@ class TestFloorMapEventRowParsing {
                 FloorMapTransformationMatrix.identity(), new double[]{10, 20}));
     }
 
-    private static Row row(@SuppressWarnings("SameParameterValue") final String entityId,
-                           final String location) {
+    /** A two-value row, for the latestPerEntity cases that never reach the location split. */
+    private static Row twoColumnRow(final String entityId, final String location) {
+        return Row.builder().values(Arrays.asList(entityId, location)).build();
+    }
+
+    private static Row row(final String entityId,
+                           final String location,
+                           final String locationRef) {
         return Row.builder()
-                .values(Arrays.asList(entityId, location))
+                .values(Arrays.asList(entityId, location, locationRef))
                 .build();
     }
 
@@ -266,6 +363,7 @@ class TestFloorMapEventRowParsing {
         final List<Column> columns = new ArrayList<>();
         columns.add(Column.builder().id(ENTITY_COLUMN).name(ENTITY_COLUMN).build());
         columns.add(Column.builder().id(LOCATION_COLUMN).name(LOCATION_COLUMN).build());
+        columns.add(Column.builder().id(REF_COLUMN).name(REF_COLUMN).build());
         return new TableResult(
                 "table", columns, Arrays.asList(rows), null, (long) rows.length, null, null);
     }

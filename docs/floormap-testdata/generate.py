@@ -27,7 +27,10 @@ EVENTS_MAP = "floor_map_events"
 BULK_MAP = "floor_map_events_bulk"
 
 FACTS_HEADER = "map,key,time,type,name,x,y,img,matrix,geometry,fill,opacity"
-EVENTS_HEADER = "map,key,time,location,type,status,message"
+# location and locationRef are separate fields, split 2026-09-07. Set exactly one per event:
+# location is literal "x, y" coordinates, locationRef is the key of the fact the event happened
+# at. Both set is contradictory data - location wins and the map reports the clash.
+EVENTS_HEADER = "map,key,time,location,locationRef,type,status,message"
 
 IDENTITY = "1 0 0 1 0 0"
 
@@ -132,45 +135,51 @@ def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
     start = now - timedelta(minutes=span_minutes)
     step = timedelta(seconds=interval_seconds)
 
-    def emit(key, when, location, etype, status="ok", message=""):
-        rows.append(row(EVENTS_MAP, key, iso(when), location, etype, status, message))
+    def emit_ref(key, when, location_ref, etype, status="ok", message=""):
+        """An event that names the fact it happened at, so it follows the fact if it moves."""
+        rows.append(row(EVENTS_MAP, key, iso(when), "", location_ref, etype, status, message))
+
+    def emit_coords(key, when, x, y, etype, status="ok", message=""):
+        """An event carrying its own position, frozen at ingest."""
+        rows.append(row(EVENTS_MAP, key, iso(when),
+                        "%.1f, %.1f" % (x, y), "", etype, status, message))
 
     # alice - a mover, every 10s for the whole window.
     t = start
     while t <= now:
-        emit("alice@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
+        emit_ref("alice@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
         t += step
 
     # bob - moves for 25 minutes, then goes quiet. A1's subject.
     t = start
     bob_last = now - timedelta(minutes=5)
     while t <= bob_last:
-        emit("bob@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
+        emit_ref("bob@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
         t += step
 
     # carol - a single event beyond the horizon. A3's subject.
-    emit("carol@example.org", now - timedelta(hours=7), "desk-103", "person", "ok",
-         "last seen before the horizon")
+    emit_ref("carol@example.org", now - timedelta(hours=7), "desk-103", "person", "ok",
+             "last seen before the horizon")
 
     # dave - parked at desk-105, re-emitting the same value. A4's subject.
     t = start
     while t <= now:
-        emit("dave@example.org", t, "desk-105", "person", "ok", "stationary")
+        emit_ref("dave@example.org", t, "desk-105", "person", "ok", "stationary")
         t += step
 
     # forklift-7 - coordinate form, drifting across the floor.
     t = start
     x = 100.0
     while t <= now:
-        # Coordinates are "x, y". They used to carry a leading map/building token that no code
-        # ever read - see FloorMapLocationResolver - and the three-part form is now rejected.
-        emit("forklift-7", t, "%.1f, %.1f" % (x, 180.0), "vehicle", "ok", "")
+        # The only entity using the coordinate form, so it is what proves that path works. Its
+        # position is frozen at ingest: it does not follow a desk being moved in the Editor.
+        emit_coords("forklift-7", t, x, 180.0, "vehicle", "ok", "")
         x = 100.0 + ((x - 100.0 + 12.0) % 400.0)
         t += step
 
     # ghost - references a fact that does not exist. Expected to be dropped.
-    emit("ghost@example.org", now - timedelta(minutes=1), "desk-999-does-not-exist",
-         "person", "ok", "unplaceable on purpose")
+    emit_ref("ghost@example.org", now - timedelta(minutes=1), "desk-999-does-not-exist",
+             "person", "ok", "unplaceable on purpose")
 
     rows.sort(key=lambda r: r.split(",")[2])
     return rows
@@ -190,8 +199,9 @@ def bulk_events(now, total):
     entities = ["bulk-%03d" % i for i in range(60)]
     for i in range(total):
         when = now - span + (span * (i / float(total)))
+        # All fact-key form: the bulk fixture is about row volume, not the location split.
         rows.append(row(BULK_MAP, rnd.choice(entities), iso(when),
-                        rnd.choice(DESKS)[0], "person", "ok", ""))
+                        "", rnd.choice(DESKS)[0], "person", "ok", ""))
     rows.sort(key=lambda r: r.split(",")[2])
     return rows
 
@@ -218,17 +228,43 @@ def main():
     write(os.path.join(args.out_dir, "events-bulk.csv"), EVENTS_HEADER,
           bulk_events(now, args.bulk_events))
 
+    # Every landmark the test protocol needs, computed here rather than written into the protocol
+    # by hand. Absolute times in a document go stale the moment the data is regenerated, and a
+    # stale landmark looks exactly like the bug the test is checking for - which cost a session.
+    span = timedelta(minutes=args.span_minutes)
+    landmarks = [
+        ("events begin", now - span),
+        ("carol's only event, beyond the horizon", now - timedelta(hours=7)),
+        ("carol falls out of the 6 h horizon", now - timedelta(hours=1)),
+        ("desk-106 moves, (320,240) -> (460,240)", now - timedelta(minutes=15)),
+        ("bob stops emitting", now - timedelta(minutes=5)),
+        ("ghost's unplaceable event", now - timedelta(minutes=1)),
+        ("events end", now),
+    ]
+
     manifest = {
         "generatedAt": iso(now),
         "factsMap": FACTS_MAP,
         "eventsMap": EVENTS_MAP,
         "bulkEventsMap": BULK_MAP,
         "horizonHours": 6,
+        "landmarks": [
+            {"what": what, "utc": iso(when), "epochMs": int(when.timestamp() * 1000)}
+            for what, when in landmarks
+        ],
+        "entities": {
+            "alice@example.org": "locationRef, hops desk to desk throughout. The control",
+            "bob@example.org": "locationRef, stops 5 min before the end. The idle-entity subject",
+            "carol@example.org": "locationRef, one event 7 h back, i.e. outside the horizon",
+            "dave@example.org": "locationRef, parked at desk-105 re-emitting an unchanged value",
+            "forklift-7": "location, the ONLY coordinate-form entity, so the only one that "
+                          "exercises that path",
+            "ghost@example.org": "locationRef naming a fact that does not exist; dropped by design",
+        },
         "fixtures": {
-            "facts.csv": "F-7 floor plan; desk-106 moves 15 min before generation",
-            "events.csv": "F-1/F-2/F-3/F-4; alice moves, bob idles 5 min, "
-                          "carol is 7 h old, dave is stationary",
-            "events-bulk.csv": "F-6 over-budget store for A11",
+            "facts.csv": "the floor plan; desk-106 moves 15 min before generation",
+            "events.csv": "alice moves, bob idles 5 min, carol is 7 h old, dave is stationary",
+            "events-bulk.csv": "over-budget store for the truncating-baseline test",
         },
     }
     with open(os.path.join(args.out_dir, "manifest.json"), "w", encoding="utf-8") as f:

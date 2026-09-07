@@ -155,8 +155,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                                final FloorMapDoc document,
                                final boolean readOnly) {
                 presenter.read(docRef, document.getEventsQuery(), document.getEventsQueryTimeRange(),
-                        document.getEventsQueryTablePreferences(), document.getEntityIdColumn(),
-                        document.getLocationIdColumn(), true,
+                        document.getEventsQueryTablePreferences(), document.getEventColumns(), true,
                         FloorMapQueryPresenter.buildQueryVariables(document));
                 presenter.setTaskMonitorFactory(FloorMapPresenter.this);
             }
@@ -168,8 +167,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                         .eventsQuery(presenter.getQuery())
                         .eventsQueryTimeRange(presenter.getQueryTimeRange())
                         .eventsQueryTablePreferences(presenter.getQueryTablePreferences())
-                        .entityIdColumn(presenter.getEntityIdColumn())
-                        .locationIdColumn(presenter.getLocationIdColumn())
+                        .eventColumns(presenter.getEventColumns())
                         .build();
             }
         });

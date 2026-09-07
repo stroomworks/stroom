@@ -18,6 +18,8 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
+import stroom.floormap.shared.FloorMapEventColumns;
+import stroom.floormap.shared.FloorMapEventRole;
 import stroom.item.client.SelectionBox;
 
 import com.google.gwt.uibinder.client.UiBinder;
@@ -28,7 +30,9 @@ import com.google.gwt.user.client.ui.Widget;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewImpl;
 
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 
 /**
@@ -42,6 +46,17 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
 
     private final Widget widget;
 
+    /**
+     * The dropdown for each role.
+     *
+     * <p>Built once from the {@code @UiField}s rather than looked up per call, so the mapping
+     * between a role and its control is stated in exactly one place. A role added to
+     * {@link FloorMapEventRole} without a field here fails on the first {@code get}, which is the
+     * failure mode to want: the alternative is a role that silently cannot be set.</p>
+     */
+    private final Map<FloorMapEventRole, SelectionBox<String>> boxesByRole =
+            new EnumMap<>(FloorMapEventRole.class);
+
     @UiField
     SimplePanel queryEditContainer;
     @UiField
@@ -49,20 +64,28 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
     @UiField
     SelectionBox<String> entityIdColumn;
     @UiField
-    SelectionBox<String> locationIdColumn;
+    SelectionBox<String> locationColumn;
+    @UiField
+    SelectionBox<String> locationRefColumn;
+    @UiField
+    SelectionBox<String> typeColumn;
 
     @Inject
     public FloorMapQueryViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
 
-        // The FormGroups around these two carry identity="entityColumn" /
-        // "locationColumn" and a visible label, but SelectionBox is a composite whose
-        // root is a wrapper div — so setIdentity() puts the id on the wrapper and the
-        // <label for> resolves to a non-labelable element, naming nothing. Both boxes
-        // announced as unnamed. Name the inner input directly instead; the label text
-        // is duplicated here deliberately, since the FormGroup's copy cannot reach it.
-        FloorMapAria.labelInnerControl(entityIdColumn, "Entity ID Column");
-        FloorMapAria.labelInnerControl(locationIdColumn, "Location ID Column");
+        boxesByRole.put(FloorMapEventRole.ENTITY_ID, entityIdColumn);
+        boxesByRole.put(FloorMapEventRole.LOCATION, locationColumn);
+        boxesByRole.put(FloorMapEventRole.LOCATION_REF, locationRefColumn);
+        boxesByRole.put(FloorMapEventRole.TYPE, typeColumn);
+
+        // The FormGroups around these carry identity="..." and a visible label, but SelectionBox is
+        // a composite whose root is a wrapper div - so setIdentity() puts the id on the wrapper and
+        // the <label for> resolves to a non-labelable element, naming nothing. Every box announced
+        // as unnamed. Name the inner input directly instead; the label text is duplicated here
+        // deliberately, since the FormGroup's copy cannot reach it.
+        boxesByRole.forEach((role, box) ->
+                FloorMapAria.labelInnerControl(box, role.getDisplayName() + " Column"));
     }
 
     @Override
@@ -76,13 +99,16 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
     }
 
     /**
-     * Replaces the available items in both column-mapping dropdowns with the given
-     * column names, preceded by an empty "none selected" entry.
+     * Replaces the available items in every column-mapping dropdown with the given column names,
+     * preceded by an empty "none selected" entry.
+     *
+     * <p>The empty entry is what makes a role <em>unmappable</em> as well as mappable, which
+     * matters for both location roles: a store whose events only carry fact keys has no coordinate
+     * column, and pointing the role at some other column would be worse than leaving it unset.</p>
      */
     @Override
     public void setAvailableColumns(final List<String> columnNames) {
-        populateSelectionBox(entityIdColumn, columnNames);
-        populateSelectionBox(locationIdColumn, columnNames);
+        boxesByRole.values().forEach(box -> populateSelectionBox(box, columnNames));
     }
 
     private static void populateSelectionBox(final SelectionBox<String> box,
@@ -97,23 +123,21 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
     }
 
     @Override
-    public void setEntityIdColumn(final String entityId) {
-        entityIdColumn.setValue(entityId);
+    public void setEventColumns(final FloorMapEventColumns eventColumns) {
+        boxesByRole.forEach((role, box) -> {
+            final String column = eventColumns == null ? null : eventColumns.getColumn(role);
+            // The empty string, not null: it is the "none selected" item the box actually holds.
+            box.setValue(column == null ? "" : column);
+        });
     }
 
     @Override
-    public void setLocationIdColumn(final String locationId) {
-        locationIdColumn.setValue(locationId);
-    }
-
-    @Override
-    public String getEntityIdColumn() {
-        return entityIdColumn.getValue();
-    }
-
-    @Override
-    public String getLocationIdColumn() {
-        return locationIdColumn.getValue();
+    public FloorMapEventColumns getEventColumns() {
+        FloorMapEventColumns columns = new FloorMapEventColumns(null);
+        for (final Map.Entry<FloorMapEventRole, SelectionBox<String>> entry : boxesByRole.entrySet()) {
+            columns = columns.with(entry.getKey(), entry.getValue().getValue());
+        }
+        return columns;
     }
 
     @Override

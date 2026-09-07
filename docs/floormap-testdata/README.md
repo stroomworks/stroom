@@ -24,22 +24,38 @@ object full of double quotes, which no CSV container can carry cleanly, and it p
 in one readable place. Only `location` contains commas (the coordinate form,
 `"120.5, 340"`), which the splitter's container chars handle.
 
-## The coordinate format changed on 2026-09-07
+## Location is two fields as of 2026-09-07 — the CSV changed shape
 
-Coordinates in a `location` are now **`"x, y"`**. They used to be `"<map>, <x>, <y>"` with a leading
-map or building token — early example data that became syntax, because the part count was what told
-coordinates apart from a fact key. No line of code ever read the token. The three-part form is now
-**rejected** rather than reinterpreted, so old events draw nothing and say so in the console.
+`events.csv` has a **new column**. A location is now two separate fields, and an event sets exactly
+one of them:
 
-`generate.py` emits the new form. **But regenerating moves every timestamp to "now"**, which
-invalidates every landmark time in `floormap-test-protocol.md` — and, because Plan B is keyed on
-(key, effective time), leaves the old generation's rows in the store alongside the new ones.
+| Field | Holds | Behaviour |
+|---|---|---|
+| `location` | literal coordinates, `"x, y"` | fixed at ingest; does **not** follow a fact that is later moved |
+| `locationRef` | the key of the fact the event happened at | resolved at the selected time, so moving the fact moves its occupants |
 
-So for an instance already loaded with the 2026-09-04 fixtures there is
-**`migrate-forklift-coords.csv`**: `forklift-7`'s 51 events, at exactly their existing effective
-times, with the leading token dropped. `floor_map_events` has `overwrite: true`, so uploading it to
-`FLOOR_MAP_EVENTS` replaces those rows in place and leaves every other entity and every landmark
-time untouched. `forklift-7` is the only entity in the fixture that uses the coordinate form.
+One field used to carry both, told apart by shape — two numbers meant a position, anything else a
+key. That made a fact key which looked like two numbers, or contained a comma, impossible to
+express; and it read a malformed coordinate as a reference to a fact that did not exist, so the map
+reported a missing desk rather than a bad number.
+
+Coordinates also lost a leading map/building token (`"B-GND, 120.5, 340"`) that no line of code ever
+read. It had become *syntax* — the part count was the discriminator — which is why it could not
+simply be deleted from the data.
+
+**Both set on one event is contradictory data.** `location` wins, because it needs no lookup, and
+the map reports the clash once in the console.
+
+In the generated fixture, **`forklift-7` is the only entity using `location`**; every other entity
+uses `locationRef`. So it is the only one that exercises the coordinate path, and the only one that
+will not move when you move a desk.
+
+**Regenerate and reload — a targeted patch is no longer possible**, because the shape changed rather
+than one field's contents. Regenerating moves every timestamp to "now", which is why `manifest.json`
+now lists every landmark the test protocol needs; read the times from there rather than from the
+protocol. The old generation's rows stay in the store, since Plan B is keyed on (key, effective
+time) and the new ones land at new times — harmless, being hours in the past and outside the
+horizon.
 
 
 ---

@@ -32,6 +32,8 @@ import stroom.floormap.shared.FloorMapDocSession;
 import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
+import stroom.floormap.shared.FloorMapEventColumns;
+import stroom.floormap.shared.FloorMapEventRole;
 import stroom.floormap.shared.FloorMapEventState;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapEventsQueryOrder;
@@ -202,6 +204,9 @@ public class FloorMapMapPresenter
      * reset per document read.</p>
      */
     private boolean factsHistoryErrorReported;
+
+    /** So a contradictory or malformed location is named once per document, not once per tick. */
+    private boolean eventDataFaultReported;
 
     private boolean factsHistoryTruncationReported;
 
@@ -774,6 +779,7 @@ public class FloorMapMapPresenter
         lastFactSnapshotRows = null;
         factsHistoryErrorReported = false;
         factsHistoryTruncationReported = false;
+        eventDataFaultReported = false;
         stageReporter.reset();
         floorMapCanvasPresenter.setEmptyStatus(null, false);
         baselineErrorReported = false;
@@ -1200,15 +1206,32 @@ public class FloorMapMapPresenter
      * and only the map's reduction needs to differ.</p>
      */
     private List<FloorMapObject> parseEventRows(final TableResult tableResult) {
+        final FloorMapEventColumns eventColumns = getEntity().getEventColumns();
         return FloorMapQueryPresenter.parseRows(
                 tableResult.getColumns(),
                 FloorMapQueryPresenter.latestPerEntity(
                         tableResult.getColumns(),
                         tableResult.getRows(),
-                        getEntity().getEntityIdColumn(),
+                        eventColumns.getColumn(FloorMapEventRole.ENTITY_ID),
                         arrivalOrderTrusted() ? null : FloorMapEventsQuery.EFFECTIVE_TIME_COLUMN),
-                getEntity().getEntityIdColumn(),
-                getEntity().getLocationIdColumn());
+                eventColumns,
+                // Report-once, because this runs on every events read - three times a second
+                // during playback - and parseRows already caps itself at one message per result.
+                this::reportEventDataFault);
+    }
+
+    /**
+     * Reports a contradictory or malformed location, once per document read.
+     *
+     * <p>{@code parseRows} caps itself at one message per result, which is not enough on its own:
+     * the same rows arrive on every tick, so an unfixed fault would still write to the console
+     * three times a second for as long as the map was open.</p>
+     */
+    private void reportEventDataFault(final String message) {
+        if (!eventDataFaultReported) {
+            eventDataFaultReported = true;
+            Console.error(message + " Reported once per document.");
+        }
     }
 
     /**
@@ -1223,7 +1246,7 @@ public class FloorMapMapPresenter
             orderCheckedQuery = query;
             final boolean sorts = FloorMapEventsQueryOrder.hasSortClause(query);
             final boolean keyed = FloorMapEventsQueryOrder.bindsEntityIdToStoreKey(
-                    query, getEntity().getEntityIdColumn());
+                    query, getEntity().getEventColumns().getColumn(FloorMapEventRole.ENTITY_ID));
             arrivalOrderTrusted = !sorts && keyed;
             if (!arrivalOrderTrusted && !orderNoteReported) {
                 orderNoteReported = true;
@@ -1232,8 +1255,10 @@ public class FloorMapMapPresenter
                              + " rather than by the order rows arrive in, because "
                              + (sorts
                                      ? "the events query sorts."
-                                     : "its " + getEntity().getEntityIdColumn() + " column is not"
-                                       + " the store Key.")
+                                     : "its "
+                                       + getEntity().getEventColumns()
+                                               .getColumn(FloorMapEventRole.ENTITY_ID)
+                                       + " column is not the store Key.")
                              + " The query is unchanged; only the map's reduction differs. This is"
                              + " the weaker of the two, since the time column is compared as"
                              + " rendered. Reported once per document.");
@@ -1312,21 +1337,6 @@ public class FloorMapMapPresenter
             || tableResult.getRows().isEmpty()) {
             return;
         }
-        // Check the retired location format before blaming the column settings. The rows parse to
-        // nothing in both cases, but the remedies could not be more different - one is a setting on
-        // this document, the other is the shape of the data in the store.
-        final String legacy = firstLegacyLocation(tableResult);
-        if (legacy != null) {
-            Console.error("Floor map events query returned "
-                          + tableResult.getRows().size()
-                          + " rows but no entities, because the locations are in the retired"
-                          + " three-part form. '" + legacy + "' has a leading map or building"
-                          + " token, which is no longer read - coordinates are now just 'x, y'."
-                          + " Re-ingest the events with the leading token dropped, or point the"
-                          + " Location ID Column at a column that holds a fact key.");
-            return;
-        }
-
         final StringBuilder columns = new StringBuilder();
         if (tableResult.getColumns() != null) {
             for (final Column column : tableResult.getColumns()) {
@@ -1336,39 +1346,29 @@ public class FloorMapMapPresenter
                 columns.append(column.getName());
             }
         }
+
+        // Name the mapping role by role rather than as two settings. An unmapped role reads as
+        // "(not set)", which is the difference between "pointing at the wrong column" and "not
+        // pointing anywhere" - remedies that look identical in a message listing only values.
+        final StringBuilder mapping = new StringBuilder();
+        final FloorMapEventColumns eventColumns = getEntity().getEventColumns();
+        for (final FloorMapEventRole role : FloorMapEventRole.values()) {
+            if (!mapping.isEmpty()) {
+                mapping.append(", ");
+            }
+            final String column = eventColumns.getColumn(role);
+            mapping.append(role.getDisplayName()).append(" = ")
+                    .append(column == null ? "(not set)" : "'" + column + "'");
+        }
+
         Console.error("Floor map events query returned "
                       + tableResult.getRows().size()
-                      + " rows but no entities. Entity ID Column is '"
-                      + getEntity().getEntityIdColumn()
-                      + "', Location ID Column is '"
-                      + getEntity().getLocationIdColumn()
-                      + "'; the result has columns: " + columns
-                      + ". Both must name a column the query selects, and the location must hold"
-                      + " either 'x, y' coordinates or the key of the object the event"
-                      + " happened at.");
-    }
-
-    /**
-     * The first location value in the result that is in the retired three-part form, or
-     * {@code null}.
-     *
-     * <p>Only called once a result has parsed to no entities at all, so the scan costs nothing in
-     * the normal case. Returns the offending value rather than a flag, because a message that
-     * quotes the data is what turns "no entities" into an actionable instruction.</p>
-     */
-    private String firstLegacyLocation(final TableResult tableResult) {
-        final int locationIdx = columnIndex(tableResult, getEntity().getLocationIdColumn());
-        if (locationIdx < 0 || tableResult.getRows() == null) {
-            return null;
-        }
-        for (final Row row : tableResult.getRows()) {
-            final List<String> values = row.getValues();
-            if (values != null && locationIdx < values.size()
-                && FloorMapLocationResolver.looksLikeLegacyCoordinates(values.get(locationIdx))) {
-                return values.get(locationIdx);
-            }
-        }
-        return null;
+                      + " rows but no entities. The column mapping is: " + mapping
+                      + "; the result has columns: " + columns
+                      + ". " + FloorMapEventRole.ENTITY_ID.getDisplayName() + " must name a column"
+                      + " the query selects, and so must at least one of "
+                      + FloorMapEventRole.LOCATION.getDisplayName() + " and "
+                      + FloorMapEventRole.LOCATION_REF.getDisplayName() + ".");
     }
 
     private static int columnIndex(final TableResult tableResult, final String name) {

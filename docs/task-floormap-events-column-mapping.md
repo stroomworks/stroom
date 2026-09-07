@@ -4,7 +4,34 @@
 `FloorMapEventsQuery`, `FloorMapQueryPresenter.parseRows`, `FloorMapInitPresenter`
 **Origin:** the "entity type from `Event Type`" item in `docs/floormap-remediation-plan.md`. The
 immediate defect was fixed 2026-09-04 by renaming the alias; this is the structural half.
-**Status:** open, no decision taken.
+**Status:** **DONE 2026-09-07** — option 2, the role-to-column mapping, plus the location /
+location-ref split that prompted it.
+
+> **What was built, and where it differs from this write-up.**
+>
+> `FloorMapEventRole` (ENTITY_ID, LOCATION, LOCATION_REF, TYPE) and `FloorMapEventColumns` replace
+> the two string settings *and* the hardcoded `"type"` literal. The Events Query tab has one
+> dropdown per role. The query stays free text, as option 2 argued.
+>
+> **Location became two roles**, which this document did not anticipate. One column carried both a
+> position and a fact key, told apart by shape — so a fact key that looked like two numbers, or
+> contained a comma, was inexpressible, and a malformed coordinate was reported as a missing desk.
+> Two roles need no discrimination at all, which deleted more code than the mapping added.
+>
+> **`Status` and `Message` did not become roles.** This document listed them as a free benefit;
+> nothing reads them, and a mapping entry for a value no code consumes is a promise the feature
+> does not keep. They stay in the default query as display columns.
+>
+> **No fallback chain.** The migration section below proposed one; existing setups were authorised
+> to break. Instead `getEventColumns()` substitutes the defaults when the document has no mapping —
+> not a fallback but the observation that the default mapping and the default query are generated
+> from the same constants, so a document that never changed its aliases is already described by the
+> defaults. The `@`-heuristic type fallback survives, as recommended.
+>
+> **The acceptance criterion "a document created before the change renders exactly as it does
+> today" holds for default aliases only.** A document with hand-edited aliases needs its mapping
+> setting, and the Map tab now names the mapping role by role — including `(not set)` — rather than
+> drawing nothing in silence.
 
 ---
 

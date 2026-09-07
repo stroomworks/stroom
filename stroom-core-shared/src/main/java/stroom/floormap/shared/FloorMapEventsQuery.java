@@ -19,36 +19,48 @@ package stroom.floormap.shared;
 /**
  * The events query a new {@link FloorMapDoc} starts with, and the column names it aliases.
  *
- * <p>These belong together because they have to agree. The floor map finds the entity and its
- * location by matching {@link FloorMapDoc#getEntityIdColumn()} and
- * {@link FloorMapDoc#getLocationIdColumn()} against the result column names, exactly; a name that
- * matches nothing leaves the index at {@code -1} and the whole parse returns no entities. The map
- * then looks exactly as it does when animation is switched off, while the query itself still
- * returns rows perfectly well — so a disagreement between the query text and the two column
- * settings is both easy to introduce and hard to read back from the symptom.</p>
+ * <p>These belong together because they have to agree. The floor map finds each meaning by
+ * matching {@link FloorMapDoc#getEventColumns()} against the result column names, exactly; a name
+ * that matches nothing leaves the index at {@code -1} and the whole parse returns no entities. The
+ * map then looks exactly as it does when animation is switched off, while the query itself still
+ * returns rows perfectly well — so a disagreement between the query text and the mapping is both
+ * easy to introduce and hard to read back from the symptom.</p>
  *
- * <p>{@link #defaultQuery()} therefore interpolates the same constants that
- * {@code FloorMapInitPresenter} stores as the initial column settings, rather than repeating the
- * aliases as literal text. Renaming a column here changes the query and the settings together or
- * not at all.</p>
+ * <p>{@link #defaultQuery()} therefore interpolates {@link FloorMapEventRole#getDefaultColumn()},
+ * the same values {@link FloorMapEventColumns#defaults()} seeds the mapping with, rather than
+ * repeating the aliases as literal text. Renaming a column changes the query and the mapping
+ * together or not at all — which is what the {@code Event Type} defect broke, where the query said
+ * {@code Event Type} and the parser looked for {@code type}.</p>
  */
 public final class FloorMapEventsQuery {
 
     /**
      * Result column holding the entity identity — the key events are grouped by.
      *
-     * <p>Also the default value of {@link FloorMapDoc#getEntityIdColumn()}.</p>
+     * <p>Defined by {@link FloorMapEventRole#ENTITY_ID}; this constant is the same string, kept
+     * for the callers that name the column rather than the role.</p>
      */
-    public static final String ENTITY_ID_COLUMN = "Entity ID";
+    public static final String ENTITY_ID_COLUMN = FloorMapEventRole.ENTITY_ID.getDefaultColumn();
 
     /**
-     * Result column holding the entity's location.
+     * Result column holding literal {@code "x, y"} coordinates.
      *
-     * <p>Read either as literal {@code x, y} coordinates or as the key of the fact the event
-     * happened at — the second form is what lets a moved object take its visitors with it. Also
-     * the default value of {@link FloorMapDoc#getLocationIdColumn()}.</p>
+     * <p>Fixed at ingest, so an entity placed this way does <b>not</b> follow a fact that is later
+     * moved. See {@link #LOCATION_REF_COLUMN} for the form that does.</p>
      */
-    public static final String LOCATION_ID_COLUMN = "Location ID";
+    public static final String LOCATION_COLUMN = FloorMapEventRole.LOCATION.getDefaultColumn();
+
+    /**
+     * Result column holding the key of the fact the event happened at.
+     *
+     * <p>Split from {@link #LOCATION_COLUMN} on 2026-09-07. One column used to carry both forms,
+     * told apart by <em>shape</em> — two numbers meant a position, anything else a key. That made
+     * a fact key which happened to look like two numbers, or to contain a comma, impossible to
+     * express; it needed a rule about part counts to be documented, learned and preserved; and it
+     * meant a malformed position was silently read as a reference to a fact that did not exist,
+     * reported as a missing desk rather than as a bad coordinate.</p>
+     */
+    public static final String LOCATION_REF_COLUMN = FloorMapEventRole.LOCATION_REF.getDefaultColumn();
 
     /** Result column holding the entry's effective time; drives the timeline. */
     public static final String EFFECTIVE_TIME_COLUMN = "Effective Time";
@@ -75,7 +87,7 @@ public final class FloorMapEventsQuery {
      * fallback. Matching by a fixed name at all is the weakness; see
      * {@code docs/task-floormap-events-column-mapping.md}.</p>
      */
-    public static final String EVENT_TYPE_COLUMN = "Type";
+    public static final String EVENT_TYPE_COLUMN = FloorMapEventRole.TYPE.getDefaultColumn();
 
     /** Result column holding the event status. */
     public static final String STATUS_COLUMN = "Status";
@@ -102,7 +114,8 @@ public final class FloorMapEventsQuery {
         return "from param('EventStore')\n"
                + "select EffectiveTime as \"" + EFFECTIVE_TIME_COLUMN + "\",\n"
                + "  Key as \"" + ENTITY_ID_COLUMN + "\",\n"
-               + "  jq(Value, '.location') as \"" + LOCATION_ID_COLUMN + "\",\n"
+               + "  jq(Value, '.location') as \"" + LOCATION_COLUMN + "\",\n"
+               + "  jq(Value, '.locationRef') as \"" + LOCATION_REF_COLUMN + "\",\n"
                + "  jq(Value, '.type') as \"" + EVENT_TYPE_COLUMN + "\",\n"
                + "  jq(Value, '.status') as \"" + STATUS_COLUMN + "\",\n"
                + "  jq(Value, '.message') as \"" + MESSAGE_COLUMN + "\"";

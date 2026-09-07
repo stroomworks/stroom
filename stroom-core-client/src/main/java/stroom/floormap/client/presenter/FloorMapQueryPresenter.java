@@ -24,6 +24,8 @@ import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEventColumns;
+import stroom.floormap.shared.FloorMapEventRole;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
@@ -35,6 +37,7 @@ import stroom.query.client.presenter.QueryEditPresenter;
 import stroom.query.client.presenter.QueryResultTablePresenter;
 import stroom.query.shared.QueryTablePreferences;
 import stroom.task.client.TaskMonitorFactory;
+import stroom.util.client.Console;
 
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
@@ -47,6 +50,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import javax.inject.Inject;
 
 /**
@@ -57,16 +61,18 @@ import javax.inject.Inject;
  * {@link FloorMapObject} lists, and fires {@link FloorMapDataEvent} so the
  * canvas can display the matched entities.  Also provides column-mapping
  * dropdowns that let the user choose which result columns contain the entity
- * ID and location. There is no dropdown for the type column: it is auto-detected by a column
- * literally named "type" (case-insensitively), with an {@code @}-heuristic person fallback.</p>
+ * ID, both location forms and the entity type — one dropdown per {@link FloorMapEventRole},
+ * driven by the mapping on the document rather than by settings and a hardcoded column name. The
+ * type dropdown replaced an auto-detect on a column literally named "type"; the
+ * {@code @}-heuristic person fallback survives for data that carries no type at all.</p>
  */
 public class FloorMapQueryPresenter
         extends MyPresenterWidget<FloorMapQueryView>
         implements HasToolbar, HasClose, HasChangeHandlers {
 
     private final QueryEditPresenter queryEditPresenter;
-    private String currentEntityColumn;
-    private String currentLocationColumn;
+    /** Which result column carries each event role. Never {@code null} once {@code read} has run. */
+    private FloorMapEventColumns currentEventColumns = FloorMapEventColumns.defaults();
     /** UUID of the document being queried, stamped onto {@link FloorMapDataEvent}. */
     private String docUuid;
     /** {@code true} while this tab's query is running — see {@link #onBind()}. */
@@ -165,14 +171,14 @@ public class FloorMapQueryPresenter
 
         if (tableResult != null) {
             final List<FloorMapObject> objects = parseRows(
-                    tableResult, currentEntityColumn, currentLocationColumn);
+                    tableResult, currentEventColumns, Console::error);
             FloorMapDataEvent.fire(FloorMapQueryPresenter.this, docUuid, objects);
         }
     }
 
     /**
-     * Refreshes the entity/location column dropdowns from the latest table
-     * columns, preserving the user's current selections where possible.
+     * Refreshes the per-role column dropdowns from the latest table columns, preserving the user's
+     * current selections where possible.
      */
     private void updateColumnSelections() {
         final List<Column> columns = queryEditPresenter.getQueryResultPresenter()
@@ -185,25 +191,27 @@ public class FloorMapQueryPresenter
                     .map(Column::getName)
                     .toList();
 
-            // Save the user's current selection before repopulating.
-            final String selectedEntity = getView().getEntityIdColumn();
-            final String selectedLocation = getView().getLocationIdColumn();
+            // Save what is selected now, before repopulating drops anything the new result does
+            // not offer.
+            final FloorMapEventColumns onScreen = getView().getEventColumns();
             getView().setAvailableColumns(colNames);
 
-            // Re-apply selections if they still exist in the updated column list.
-            if (colNames.contains(selectedEntity)) {
-                getView().setEntityIdColumn(selectedEntity);
-                this.currentEntityColumn = selectedEntity;
-            } else if (colNames.contains(currentEntityColumn)) {
-                getView().setEntityIdColumn(currentEntityColumn);
+            FloorMapEventColumns next = currentEventColumns;
+            for (final FloorMapEventRole role : FloorMapEventRole.values()) {
+                final String selected = onScreen.getColumn(role);
+                final String stored = currentEventColumns.getColumn(role);
+                // Prefer what is on screen, fall back to what is stored, and leave the role
+                // unmapped rather than silently pointing it at a column that no longer exists.
+                if (selected != null && colNames.contains(selected)) {
+                    next = next.with(role, selected);
+                } else if (stored != null && colNames.contains(stored)) {
+                    next = next.with(role, stored);
+                } else {
+                    next = next.with(role, null);
+                }
             }
-
-            if (colNames.contains(selectedLocation)) {
-                getView().setLocationIdColumn(selectedLocation);
-                this.currentLocationColumn = selectedLocation;
-            } else if (colNames.contains(currentLocationColumn)) {
-                getView().setLocationIdColumn(currentLocationColumn);
-            }
+            currentEventColumns = next;
+            getView().setEventColumns(currentEventColumns);
         }
     }
 
@@ -327,108 +335,143 @@ public class FloorMapQueryPresenter
      * query: this editor tab, and {@link FloorMapMapPresenter}, which owns the
      * timeline-driven playback query feeding the animated entity overlay.</p>
      *
-     * <p>The location column may hold either literal {@code x, y}
-     * coordinates or a reference to the fact the event happened at; the
-     * returned objects are only <em>positioned</em> in the first case. The
-     * referencing ones carry a {@link FloorMapObject#getLocationRef()} and must
-     * be run through {@link FloorMapLocationResolver#resolve} against the
-     * current facts before they are drawn.</p>
+     * <p>An entity is positioned outright when its {@link FloorMapEventRole#LOCATION} column holds
+     * coordinates; one carrying a {@link FloorMapEventRole#LOCATION_REF} instead gets a
+     * {@link FloorMapObject#getLocationRef()} and must be run through
+     * {@link FloorMapLocationResolver#resolve} against the current facts before it is drawn.</p>
      *
-     * @param tableResult    the query result to parse
-     * @param entityColumn   the column name holding the entity id
-     * @param locationColumn the column name holding the location — {@code map,
-     *                       x, y} coordinates or a fact key
+     * @param tableResult  the query result to parse
+     * @param eventColumns which result column carries each role
+     * @param warnings     receives a message for contradictory or malformed location data, at most
+     *                     one per result; may be {@code null}
      * @return a list of map objects; never {@code null}
      */
     static List<FloorMapObject> parseRows(final TableResult tableResult,
-                                          final String entityColumn,
-                                          final String locationColumn) {
+                                          final FloorMapEventColumns eventColumns,
+                                          final Consumer<String> warnings) {
         if (tableResult == null) {
             return new ArrayList<>();
         }
-        return parseRows(tableResult.getColumns(), tableResult.getRows(), entityColumn, locationColumn);
+        return parseRows(tableResult.getColumns(), tableResult.getRows(), eventColumns, warnings);
     }
 
     /**
-     * As {@link #parseRows(TableResult, String, String)}, over a caller-supplied row list.
+     * As {@link #parseRows(TableResult, FloorMapEventColumns, Consumer)}, over a caller-supplied
+     * row list.
      *
      * <p>Split out so a caller can filter the rows first — {@link #latestPerEntity} reduces a
      * time window to one row per entity — without rebuilding a {@link TableResult} whose
      * {@code totalResults} would then disagree with its contents.</p>
      *
-     * @param columns        the result columns; may be {@code null}
-     * @param rows           the rows to parse; may be {@code null}
-     * @param entityColumn   the column name holding the entity id
-     * @param locationColumn the column name holding the location
+     * @param columns      the result columns; may be {@code null}
+     * @param rows         the rows to parse; may be {@code null}
+     * @param eventColumns which result column carries each role
+     * @param warnings     receives a message for contradictory or malformed location data, at most
+     *                     one per result; may be {@code null}
      * @return a list of map objects; never {@code null}
      */
     static List<FloorMapObject> parseRows(final List<Column> columns,
                                           final List<Row> rows,
-                                          final String entityColumn,
-                                          final String locationColumn) {
+                                          final FloorMapEventColumns eventColumns,
+                                          final Consumer<String> warnings) {
         final List<FloorMapObject> list = new ArrayList<>();
 
-        if (rows == null || columns == null) {
+        if (rows == null || columns == null || eventColumns == null) {
             return list;
         }
 
-        int entityColIndex = -1;
-        int locationColIndex = -1;
-        int typeColIndex = -1;
+        final int entityIdx = columnIndex(columns, eventColumns.getColumn(FloorMapEventRole.ENTITY_ID));
+        final int locationIdx = columnIndex(columns, eventColumns.getColumn(FloorMapEventRole.LOCATION));
+        final int refIdx = columnIndex(columns, eventColumns.getColumn(FloorMapEventRole.LOCATION_REF));
+        final int typeIdx = columnIndex(columns, eventColumns.getColumn(FloorMapEventRole.TYPE));
 
-        // Find the index of the columns selected by the user in the UI dropdowns.
-        for (int i = 0; i < columns.size(); i++) {
-            final Column col = columns.get(i);
-
-            if (col.getName().equals(entityColumn)) {
-                entityColIndex = i;
-            } else if (col.getName().equals(locationColumn)) {
-                locationColIndex = i;
-            } else if (col.getName().equalsIgnoreCase("type")) {
-                typeColIndex = i;
-            }
+        // No identity, nothing to draw. Either location role on its own is enough - a store whose
+        // events only ever carry fact keys has no Location column at all, and one whose events are
+        // all pre-resolved has no Location Ref.
+        if (entityIdx == -1 || (locationIdx == -1 && refIdx == -1)) {
+            return list;
         }
 
-        if (entityColIndex == -1 || locationColIndex == -1) {
-            return list; // Columns are not mapped yet.
-        }
-
+        boolean bothWarned = false;
         for (final Row row : rows) {
             final List<String> values = row.getValues();
-            if (values.size() > entityColIndex && values.size() > locationColIndex) {
-                final String entityId = values.get(entityColIndex);
-                final String locationStr = values.get(locationColIndex);
+            if (values == null || values.size() <= entityIdx) {
+                continue;
+            }
+            final String entityId = values.get(entityIdx);
+            if (entityId == null) {
+                continue;
+            }
 
-                if (entityId != null && locationStr != null) {
-                    String type = "object";
-                    if (typeColIndex != -1 && values.size() > typeColIndex) {
-                        type = values.get(typeColIndex);
-                    } else if (entityId.contains("@")) {
-                        type = FloorMapJsonKeys.PERSON; // Fallback: email contains "@" = person.
-                    }
+            String type = "object";
+            if (typeIdx != -1 && values.size() > typeIdx && values.get(typeIdx) != null) {
+                type = values.get(typeIdx);
+            } else if (entityId.contains("@")) {
+                // Kept as a last resort: data carrying no type at all is a real case, and dropping
+                // this would change behaviour for anyone relying on it.
+                type = FloorMapJsonKeys.PERSON;
+            }
 
-                    // The location is either coordinates baked into the event at
-                    // ingest ("x, y") or a reference to the fact the event
-                    // happened at. A reference is left for
-                    // FloorMapLocationResolver to place against the current
-                    // facts, which is what lets a moved object take its visitors
-                    // with it — baked coordinates cannot.
-                    final double[] coords = FloorMapLocationResolver.parseCoordinates(locationStr);
-                    if (coords != null) {
-                        list.add(new FloorMapObject(entityId, type, coords[0], coords[1]));
-                    } else {
-                        final String ref = FloorMapLocationResolver.parseReference(locationStr);
-                        if (ref != null) {
-                            final FloorMapObject object = new FloorMapObject(entityId, type, 0, 0);
-                            object.setLocationRef(ref);
-                            list.add(object);
-                        }
-                    }
-                }
+            final String locationStr = cell(values, locationIdx);
+            final String refStr = FloorMapLocationResolver.parseReference(cell(values, refIdx));
+
+            // Location wins, because it needs no lookup. Both set is contradictory data rather than
+            // a preference, so it is warned about once per result - warning per row would be three
+            // messages a second during playback.
+            if (locationStr != null && refStr != null && !bothWarned && warnings != null) {
+                bothWarned = true;
+                warnings.accept("Floor map events: '" + entityId + "' carries both a "
+                                + FloorMapEventRole.LOCATION.getDisplayName() + " and a "
+                                + FloorMapEventRole.LOCATION_REF.getDisplayName()
+                                + ". Only one can be true, and the coordinates are being used"
+                                + " because they need no lookup. Fix the data, or unmap one of the"
+                                + " two roles on the Events Query tab.");
+            }
+
+            final double[] coords = FloorMapLocationResolver.parseCoordinates(locationStr);
+            if (coords != null) {
+                list.add(new FloorMapObject(entityId, type, coords[0], coords[1]));
+            } else if (refStr != null) {
+                final FloorMapObject object = new FloorMapObject(entityId, type, 0, 0);
+                object.setLocationRef(refStr);
+                list.add(object);
+            } else if (locationStr != null && warnings != null && !bothWarned) {
+                // A Location that is not two numbers is malformed, full stop. Under the old
+                // single-column scheme it silently became a reference to a fact named after a
+                // coordinate string, and the map reported a missing desk.
+                bothWarned = true;
+                warnings.accept("Floor map events: '" + entityId + "' has "
+                                + FloorMapEventRole.LOCATION.getDisplayName() + " '" + locationStr
+                                + "', which is not two comma-separated numbers. Coordinates are"
+                                + "'x, y'; a fact key belongs in "
+                                + FloorMapEventRole.LOCATION_REF.getDisplayName() + ".");
             }
         }
 
         return list;
+    }
+
+    /** The value at {@code index}, or {@code null} when absent, blank, or the column is unmapped. */
+    private static String cell(final List<String> values, final int index) {
+        if (index < 0 || index >= values.size()) {
+            return null;
+        }
+        final String value = values.get(index);
+        return value == null || value.trim().isEmpty() ? null : value;
+    }
+
+    /** Exact match, as the mapping promises: an alias that matches nothing is a fault, not a hint. */
+    private static int columnIndex(final List<Column> columns, final String name) {
+        if (name == null) {
+            return -1;
+        }
+        for (int i = 0; i < columns.size(); i++) {
+            final Column column = columns.get(i);
+            if (column != null && name.equals(column.getName())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -439,7 +482,7 @@ public class FloorMapQueryPresenter
     public void read(final FloorMapDoc doc) {
         read(doc.asDocRef(), doc.getEventsQuery(), doc.getEventsQueryTimeRange(),
                 doc.getEventsQueryTablePreferences(),
-                doc.getEntityIdColumn(), doc.getLocationIdColumn(), true,
+                doc.getEventColumns(), true,
                 buildQueryVariables(doc));
     }
 
@@ -451,24 +494,22 @@ public class FloorMapQueryPresenter
      * @param query                the StroomQL query text
      * @param timeRange            the time range filter; may be {@code null}
      * @param queryTablePreferences table column preferences; may be {@code null}
-     * @param entityIdColumn       the column name for entity IDs; may be {@code null}
-     * @param locationIdColumn     the column name for locations; may be {@code null}
+     * @param eventColumns         which result column carries each event role
      * @param showColumnMappings   {@code true} to show the column-mapping dropdowns
      */
     public void read(final DocRef docRef,
                      final String query,
                      final TimeRange timeRange,
                      final QueryTablePreferences queryTablePreferences,
-                     final String entityIdColumn,
-                     final String locationIdColumn,
+                     final FloorMapEventColumns eventColumns,
                      final boolean showColumnMappings,
                      final Map<String, String> queryVariables) {
         this.docUuid = docRef != null ? docRef.getUuid() : null;
-        this.currentEntityColumn = entityIdColumn;
-        this.currentLocationColumn = locationIdColumn;
+        this.currentEventColumns = eventColumns == null
+                ? FloorMapEventColumns.defaults()
+                : eventColumns;
 
-        getView().setEntityIdColumn(currentEntityColumn);
-        getView().setLocationIdColumn(currentLocationColumn);
+        getView().setEventColumns(currentEventColumns);
         getView().setColumnMappingsVisible(showColumnMappings);
 
         // Populate the inner query editor.
@@ -488,12 +529,10 @@ public class FloorMapQueryPresenter
      * @return a new document copy with the query state applied
      */
     public FloorMapDoc write(final FloorMapDoc doc) {
-        this.currentEntityColumn = getView().getEntityIdColumn();
-        this.currentLocationColumn = getView().getLocationIdColumn();
+        this.currentEventColumns = getView().getEventColumns();
 
         return doc.copy()
-                .entityIdColumn(currentEntityColumn)
-                .locationIdColumn(currentLocationColumn)
+                .eventColumns(currentEventColumns)
                 .eventsQuery(queryEditPresenter.getQuery())
                 .eventsQueryTimeRange(queryEditPresenter.getTimeRange())
                 .eventsQueryTablePreferences(queryEditPresenter.write())
@@ -536,12 +575,8 @@ public class FloorMapQueryPresenter
         return queryEditPresenter.write();
     }
 
-    public String getEntityIdColumn() {
-        return getView().getEntityIdColumn();
-    }
-
-    public String getLocationIdColumn() {
-        return getView().getLocationIdColumn();
+    public FloorMapEventColumns getEventColumns() {
+        return getView().getEventColumns();
     }
 
     public void setTaskMonitorFactory(final TaskMonitorFactory taskMonitorFactory) {
@@ -578,13 +613,11 @@ public class FloorMapQueryPresenter
 
         void setAvailableColumns(List<String> columnNames);
 
-        void setEntityIdColumn(String entityId);
+        /** Applies a mapping to the per-role dropdowns; an unmapped role selects nothing. */
+        void setEventColumns(FloorMapEventColumns eventColumns);
 
-        void setLocationIdColumn(String locationId);
-
-        String getEntityIdColumn();
-
-        String getLocationIdColumn();
+        /** Reads the per-role dropdowns back; a dropdown with nothing selected is unmapped. */
+        FloorMapEventColumns getEventColumns();
 
         void setColumnMappingsVisible(boolean visible);
     }

@@ -58,47 +58,33 @@ class TestFloorMapLocationResolver {
     }
 
     /**
-     * The retired three-part form is rejected rather than guessed at.
+     * The three-part form is not coordinates, and is now nothing special.
      *
-     * <p>Accepting it would mean deciding what {@code "1, 120.5, 340"} means, where a numeric floor
-     * id is indistinguishable from an x: {@code (120.5, 340)} read as three parts,
-     * {@code (1, 120.5)} read as two. Silently wrong either way for somebody.</p>
+     * <p>It used to be <em>the</em> coordinate form, then a rejected legacy form that had to be
+     * recognised so it could be reported. With Location and Location Ref as separate columns there
+     * is nothing to disambiguate: a Location that is not two numbers is malformed, and the parser
+     * that reads it says so.</p>
      */
     @Test
-    void testLegacyThreePartFormIsNotCoordinates() {
+    void testThreePartValueIsNotCoordinates() {
         assertThat(FloorMapLocationResolver.parseCoordinates("mapA, 120.5, -40")).isNull();
         assertThat(FloorMapLocationResolver.parseCoordinates("B-GND,10,20")).isNull();
         assertThat(FloorMapLocationResolver.parseCoordinates("1, 120.5, 340")).isNull();
     }
 
-    /** And it is not read as a fact key either, so the caller can name the real problem. */
+    /**
+     * A reference is whatever the Location Ref column says, trimmed.
+     *
+     * <p>No shape rule at all, which is the point of the split: a fact key that looks like two
+     * numbers, or contains a comma, is now expressible. Under the single-column scheme neither
+     * was.</p>
+     */
     @Test
-    void testLegacyThreePartFormIsNotAReferenceEither() {
-        assertThat(FloorMapLocationResolver.parseReference("mapA, 120.5, -40")).isNull();
-        assertThat(FloorMapLocationResolver.parseReference("B-GND,10,20")).isNull();
-    }
-
-    /** What the caller uses to say why, rather than leaving an entity to vanish. */
-    @Test
-    void testLooksLikeLegacyCoordinates() {
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("B-GND, 120.5, 340")).isTrue();
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("mapA,10,20")).isTrue();
-        // Four parts, last two numeric: still what the old parser would have taken.
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("B, GND, 10, 20")).isTrue();
-    }
-
-    /** It must not claim the new form, a plain key, or anything non-numeric. */
-    @Test
-    void testLooksLikeLegacyCoordinatesIsNarrow() {
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates(null)).isFalse();
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("")).isFalse();
-        // The current form. Reporting this as legacy would tell the user to fix working data.
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("120.5, 340")).isFalse();
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("desk-101")).isFalse();
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("Desk 12, North")).isFalse();
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("mapA, left, right")).isFalse();
-        // Three parts but only the last is numeric.
-        assertThat(FloorMapLocationResolver.looksLikeLegacyCoordinates("a, b, 20")).isFalse();
+    void testReferenceHasNoShapeRule() {
+        assertThat(FloorMapLocationResolver.parseReference("100, 200")).isEqualTo("100, 200");
+        assertThat(FloorMapLocationResolver.parseReference("Desk 12, North"))
+                .isEqualTo("Desk 12, North");
+        assertThat(FloorMapLocationResolver.parseReference("  desk-101  ")).isEqualTo("desk-101");
     }
 
     /** A non-coordinate value is the key of the fact the event happened at. */
@@ -107,12 +93,6 @@ class TestFloorMapLocationResolver {
         assertThat(FloorMapLocationResolver.parseReference("DSK-L1-03")).isEqualTo("DSK-L1-03");
         assertThat(FloorMapLocationResolver.parseReference("  G-MAIN_ENTRANCE  "))
                 .isEqualTo("G-MAIN_ENTRANCE");
-    }
-
-    /** Coordinates are a position, not a reference — the two readings never overlap. */
-    @Test
-    void testCoordinatesAreNotAReference() {
-        assertThat(FloorMapLocationResolver.parseReference("120.5, -40")).isNull();
     }
 
     /** Nothing named means nothing to resolve. */

@@ -148,22 +148,24 @@ public class FloorMapDoc extends AbstractDoc {
     private final FloorMapTransformationMatrix matrix;
 
     /**
-     * The name of the column in the events query result that identifies
-     * the entity (e.g. a person or asset).
-     * May be {@code null} if not configured; consumed by
-     * {@code FloorMapQueryPresenter}.
+     * Which result column of the events query carries each {@link FloorMapEventRole}.
+     *
+     * <p>Replaced the {@code entityIdColumn} and {@code locationIdColumn} string settings, and the
+     * hardcoded {@code "type"} literal the parser used for the entity's kind, on 2026-09-07. Three
+     * mechanisms for one relationship became one; see {@link FloorMapEventRole} for what that
+     * asymmetry cost.</p>
+     *
+     * <p>Never {@code null}: the constructor substitutes {@link FloorMapEventColumns#defaults()}
+     * for a document saved before the change, so one using the default aliases — which every
+     * document created by the init dialog does — keeps working untouched, and is written back
+     * explicitly on its next save. That is not a fallback chain but the observation that the
+     * default mapping and the default query are generated from the same {@link FloorMapEventRole}
+     * constants, so a document that never changed its aliases is already described by the
+     * defaults. One with hand-edited aliases needs the mapping setting, and the Map tab names the
+     * mapping role by role rather than drawing nothing in silence.</p>
      */
     @JsonProperty
-    private final String entityIdColumn;
-
-    /**
-     * The name of the column in the events query result that identifies
-     * the location (e.g. a room or zone).
-     * May be {@code null} if not configured; consumed by
-     * {@code FloorMapQueryPresenter}.
-     */
-    @JsonProperty
-    private final String locationIdColumn;
+    private final FloorMapEventColumns eventColumns;
 
     /**
      * Reference to the SQL Temporal Store document used as the facts store.
@@ -328,8 +330,8 @@ public class FloorMapDoc extends AbstractDoc {
      * @param description                 free-text description; may be {@code null}
      * @param template                    HTML tooltip template; may be {@code null}
      * @param matrix                      global canvas matrix; defaults to identity if {@code null}
-     * @param entityIdColumn              events-query entity column name; may be {@code null}
-     * @param locationIdColumn            events-query location column name; may be {@code null}
+     * @param eventColumns                events-query role to column mapping; may be
+     *                                    {@code null} on a document predating the mapping
      * @param factsStoreRef               facts store {@link DocRef}; may be {@code null}
      * @param eventsStoreRef              Plan B events store {@link DocRef}; may be {@code null}
      * @param eventsQuery                 StroomQL for the events store; may be {@code null}
@@ -357,8 +359,7 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("description") final String description,
                        @JsonProperty("template") final String template,
                        @JsonProperty("matrix") final FloorMapTransformationMatrix matrix,
-                       @JsonProperty("entityIdColumn") final String entityIdColumn,
-                       @JsonProperty("locationIdColumn") final String locationIdColumn,
+                       @JsonProperty("eventColumns") final FloorMapEventColumns eventColumns,
                        @JsonProperty("factsStoreRef")
                        @JsonAlias("temporalStoreRef")
                        final DocRef factsStoreRef,
@@ -385,8 +386,9 @@ public class FloorMapDoc extends AbstractDoc {
         this.description = description;
         this.template = template;
         this.matrix = matrix != null ? matrix : FloorMapTransformationMatrix.identity();
-        this.entityIdColumn = entityIdColumn;
-        this.locationIdColumn = locationIdColumn;
+        // Defaulted here rather than in the getter, so callers never see null and the document is
+        // made explicit on its next save.
+        this.eventColumns = eventColumns == null ? FloorMapEventColumns.defaults() : eventColumns;
 
         this.factsStoreRef = factsStoreRef;
         this.eventsStoreRef = eventsStoreRef;
@@ -422,23 +424,12 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
-     * Returns the name of the column in the events query result that
-     * identifies the entity (e.g. a person or asset ID).
+     * Returns which result column carries each event role.
      *
-     * @return the entity ID column name, or {@code null} if not configured
+     * @return the mapping; never {@code null}
      */
-    public String getEntityIdColumn() {
-        return entityIdColumn;
-    }
-
-    /**
-     * Returns the name of the column in the events query result that
-     * identifies the location (e.g. a room or zone ID).
-     *
-     * @return the location ID column name, or {@code null} if not configured
-     */
-    public String getLocationIdColumn() {
-        return locationIdColumn;
+    public FloorMapEventColumns getEventColumns() {
+        return eventColumns;
     }
 
     /**
@@ -627,8 +618,7 @@ public class FloorMapDoc extends AbstractDoc {
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
                Objects.equals(matrix, that.matrix) &&
-               Objects.equals(entityIdColumn, that.entityIdColumn) &&
-               Objects.equals(locationIdColumn, that.locationIdColumn) &&
+               Objects.equals(eventColumns, that.eventColumns) &&
                Objects.equals(factsStoreRef, that.factsStoreRef) &&
                Objects.equals(eventsStoreRef, that.eventsStoreRef) &&
                Objects.equals(eventsQuery, that.eventsQuery) &&
@@ -653,8 +643,7 @@ public class FloorMapDoc extends AbstractDoc {
                 description,
                 template,
                 matrix,
-                entityIdColumn,
-                locationIdColumn,
+                eventColumns,
                 factsStoreRef,
                 eventsStoreRef,
                 eventsQuery,
@@ -731,8 +720,7 @@ public class FloorMapDoc extends AbstractDoc {
         private String template;
         private String description;
         private FloorMapTransformationMatrix matrix;
-        private String entityIdColumn;
-        private String locationIdColumn;
+        private FloorMapEventColumns eventColumns;
 
         private DocRef factsStoreRef;
         private DocRef eventsStoreRef;
@@ -762,8 +750,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.template = doc.template;
             this.description = doc.description;
             this.matrix = doc.matrix;
-            this.entityIdColumn = doc.entityIdColumn;
-            this.locationIdColumn = doc.locationIdColumn;
+            this.eventColumns = doc.eventColumns;
             this.factsStoreRef = doc.factsStoreRef;
             this.eventsStoreRef = doc.eventsStoreRef;
             this.eventsQuery = doc.eventsQuery;
@@ -816,24 +803,13 @@ public class FloorMapDoc extends AbstractDoc {
         }
 
         /**
-         * Sets the entity ID column name for the events query.
+         * Sets which result column carries each event role.
          *
-         * @param entityIdColumn the column name, or {@code null} to clear
+         * @param eventColumns the mapping, or {@code null} to clear
          * @return this builder
          */
-        public Builder entityIdColumn(final String entityIdColumn) {
-            this.entityIdColumn = entityIdColumn;
-            return self();
-        }
-
-        /**
-         * Sets the location ID column name for the events query.
-         *
-         * @param locationIdColumn the column name, or {@code null} to clear
-         * @return this builder
-         */
-        public Builder locationIdColumn(final String locationIdColumn) {
-            this.locationIdColumn = locationIdColumn;
+        public Builder eventColumns(final FloorMapEventColumns eventColumns) {
+            this.eventColumns = eventColumns;
             return self();
         }
 
@@ -987,8 +963,7 @@ public class FloorMapDoc extends AbstractDoc {
                     description,
                     template,
                     matrix,
-                    entityIdColumn,
-                    locationIdColumn,
+                    eventColumns,
                     factsStoreRef,
                     eventsStoreRef,
                     eventsQuery,

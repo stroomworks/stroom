@@ -128,7 +128,7 @@ Add a **Plan B Filter** to the pipeline that processes your event feed. It takes
         <map>floor_map_events</map>
         <key>joe.blogs@example.org</key>
         <time>2026-09-01T10:00:05.000Z</time>
-        <value>{"location":"120.5, 340","type":"person","status":"ok","message":"badge in"}</value>
+        <value>{"locationRef":"desk-114","type":"person","status":"ok","message":"badge in"}</value>
     </temporal-state>
 </referenceData>
 ```
@@ -157,45 +157,59 @@ The default events query the Floor Map writes reads the payload with `jq`:
 from param('EventStore')
 select EffectiveTime as "Effective Time",
   Key as "Entity ID",
-  jq(Value, '.location') as "Location ID",
+  jq(Value, '.location') as "Location",
+  jq(Value, '.locationRef') as "Location Ref",
   jq(Value, '.type') as "Type",
   jq(Value, '.status') as "Status",
   jq(Value, '.message') as "Message"
 ```
 
-So `Value` should be a JSON object with `location`, `type`, `status` and `message`. Only
-`location` is load-bearing — the others are display columns. Edit the query on the Events Query
-tab if your payload differs.
+So `Value` should be a JSON object with `locationRef` (or `location`), `type`, `status` and
+`message`. `Status` and `Message` are selected but not read by anything — they are there for you to
+use in the results table. Edit the query on the Events Query tab if your payload differs.
 
-### `location` takes two forms
+**If you rename an alias, change the mapping to match.** The Events Query tab has one dropdown per
+meaning — Entity ID, Location, Location Ref, Type — and each must name a column the query selects.
+The defaults above and the default mapping are generated from the same constants, so a document
+created by the init dialog already agrees; a hand-edited query does not until you say so.
 
-| Form | Example | Behaviour |
+### Location is two separate fields
+
+Set **exactly one** per event.
+
+| Field | Example | Behaviour |
 |---|---|---|
-| Coordinates | `"120.5, 340"` | Drawn exactly there. |
-| A fact key | `"desk-114"` | Resolved against the facts store at the current time. |
+| `locationRef` | `"desk-114"` | Resolved against the facts store at the current time. |
+| `location` | `"120.5, 340"` | Drawn exactly there, whatever the facts say. |
 
-The second form is the more useful one: the entity is placed wherever that fact currently is, so
-**moving a desk in the Editor moves everyone recorded as being at it**. Baked coordinates cannot
-do that.
+`locationRef` is the one you usually want: the entity is placed wherever that fact currently is, so
+**moving a desk in the Editor moves everyone recorded as being at it**, retroactively. Baked
+coordinates cannot do that — they are frozen at ingest, so an entity keeps visiting a place nothing
+occupies any more.
+
+**Both set is contradictory data**, since only one can be true. `location` wins, because it needs no
+lookup, and the map reports the clash once in the console. Fix the data, or unmap one of the two
+roles on the Events Query tab.
 
 A `location` naming a fact key that does not exist at the selected time is silently dropped —
 there is nowhere to draw it.
 
-> **Format change, 2026-09-07 — this breaks existing data.** Coordinates used to be
-> `"<map>, <x>, <y>"`, with a leading map or building token. No line of code ever read it; it was
-> early example data that became syntax, because the part count was what told coordinates apart
-> from a fact key. Two numbers say the same thing, and what actually disambiguates is that both
-> parts are numeric — `"Desk 12, North"` still reads as a key.
+> **Format change, 2026-09-07 — this breaks existing data.** A location used to be **one** field
+> whose two readings were told apart by shape: two comma-separated numbers meant a position,
+> anything else meant a fact key. Coordinates additionally carried a leading map or building token
+> (`"B-GND, 120.5, 340"`) that no line of code ever read.
 >
-> The three-part form is **rejected**, not silently reinterpreted. Accepting both would mean
-> guessing at `"1, 120.5, 340"`, where a numeric floor id is indistinguishable from an x — read as
-> three parts that is `(120.5, 340)`, read as two it is `(1, 120.5)`, and one of those is silently
-> wrong for somebody.
+> Sniffing the shape had real costs. A fact key that happened to look like two numbers, or to
+> contain a comma, could not be expressed at all. The part-count rule had to be documented, learned
+> and preserved. And a malformed coordinate silently became a reference to a fact that did not
+> exist, so the map reported a missing desk rather than a bad number.
 >
-> **Re-ingest events written in the old form with the leading token dropped.** A map whose events
-> all carry it will draw no entities and say so in the console, naming the offending value. If your
-> data used that token to distinguish floors, note it never had any effect: one floor map is one
-> coordinate space, and every zone was already drawn together.
+> **Re-ingest events as `locationRef` (or `location` for real coordinates), with the leading token
+> dropped.** A map whose events still use the old single field will draw no entities and say so in
+> the console. Nothing migrates automatically.
+>
+> If your data used that token to distinguish floors, note it never had any effect: one floor map is
+> one coordinate space, and every zone was already drawn together.
 
 ---
 

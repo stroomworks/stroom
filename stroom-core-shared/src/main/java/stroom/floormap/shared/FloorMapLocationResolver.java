@@ -23,31 +23,34 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Places event entities on the map by resolving the <em>location</em> their
- * events name.
+ * Places event entities on the map by resolving the fact their events reference.
  *
- * <p>An event says "this entity was at that location". The location can arrive
- * in one of two shapes, and this class is what tells them apart:</p>
+ * <p>An event says "this entity was at that location", and the events query carries two separate
+ * columns for it:</p>
  *
  * <ul>
- *   <li><b>Coordinates</b> — {@code "<x>, <y>"}, the position already baked into the event
- *       when it was ingested (typically by an XSLT {@code lookup} against a location store).
- *       Used as-is.</li>
- *   <li><b>A reference</b> — anything else is read as the <em>key of the fact</em>
- *       the event happened at (a desk, a gate, a camera). The entity is then
- *       drawn wherever that fact currently is.</li>
+ *   <li><b>Location</b> — {@code "<x>, <y>"}, the position already baked into the event at ingest
+ *       (typically by an XSLT {@code lookup} against a location store). Used as-is.</li>
+ *   <li><b>Location Ref</b> — the <em>key of the fact</em> the event happened at (a desk, a gate,
+ *       a camera). The entity is drawn wherever that fact currently is.</li>
  * </ul>
  *
- * <p>The distinction matters because baked coordinates are frozen at ingest
- * time: move the desk on the Editor tab and every event that ever happened at
- * it still reports the desk's old position, so entities keep visiting a place
- * nothing occupies any more. A reference is resolved against the facts loaded
- * for the current timeline instant, so moving the fact moves the entities with
- * it — retroactively, which matches how the editor persists a move (the fact's
- * existing shard is rewritten in place rather than time-versioned).</p>
+ * <p>The distinction matters because baked coordinates are frozen at ingest time: move the desk on
+ * the Editor tab and every event that ever happened at it still reports the desk's old position, so
+ * entities keep visiting a place nothing occupies any more. A reference is resolved against the
+ * facts loaded for the current timeline instant, so moving the fact moves the entities with it —
+ * retroactively, which matches how the editor persists a move (the fact's existing shard is
+ * rewritten in place rather than time-versioned).</p>
  *
- * <p>Kept out of the presenters, and free of GWT types, so the parse and the
- * placement rules are unit-testable on the JVM.</p>
+ * <p><b>This class no longer decides which form a value is.</b> One column used to carry both, told
+ * apart by shape — two numbers meant a position, anything else a key. That is now two columns and
+ * two {@link FloorMapEventRole}s, so a fact key that happens to look like two numbers, or to
+ * contain a comma, is expressible; there is no part-count rule to learn; and a malformed coordinate
+ * is reported as a malformed coordinate rather than as a reference to a desk that does not
+ * exist.</p>
+ *
+ * <p>Kept out of the presenters, and free of GWT types, so the parse and the placement rules are
+ * unit-testable on the JVM.</p>
  */
 public final class FloorMapLocationResolver {
 
@@ -56,26 +59,18 @@ public final class FloorMapLocationResolver {
     }
 
     /**
-     * Parses a location value as literal coordinates.
+     * Parses the Location column as literal coordinates.
      *
-     * <p>The form is {@code "<x>, <y>"} — two comma-separated numbers.</p>
+     * <p>The form is {@code "<x>, <y>"} — two comma-separated numbers. A string rather than two
+     * numeric columns for consistency with the other composite values the feature stores that way,
+     * the placement matrix among them.</p>
      *
-     * <p><b>It used to be {@code "<map>, <x>, <y>"}</b>, with a leading floor or building token
-     * that no line of code ever read: it was early example data that became syntax, because
-     * {@code parts.length < 3} was what told coordinates apart from a fact key. Two numbers say
-     * the same thing without the decoration, and what actually disambiguates is that both parts
-     * are numeric — a key like {@code "Desk 12, North"} still reads as a key.</p>
+     * <p>Anything else is <b>malformed</b>, not a reference: the column's role says it holds
+     * coordinates, so there is no second reading to fall back to. Returning {@code null} lets the
+     * caller say so.</p>
      *
-     * <p>The old three-part form is <b>no longer accepted</b>, deliberately rather than for
-     * convenience: accepting both would mean guessing at {@code "1, 120.5, 340"}, where a numeric
-     * floor id is indistinguishable from an x. Read as three parts that is {@code (120.5, 340)};
-     * read as two it is {@code (1, 120.5)} — silently wrong either way for somebody. So it is
-     * rejected, and {@link #looksLikeLegacyCoordinates} exists so the caller can say why rather
-     * than leaving an entity to vanish.</p>
-     *
-     * @param location the raw location column value; may be {@code null}
-     * @return {@code {x, y}}, or {@code null} when the value is not coordinates
-     *         (which makes it a {@link #parseReference reference})
+     * @param location the raw Location column value; may be {@code null}
+     * @return {@code {x, y}}, or {@code null} when the value is not two numbers
      */
     public static double[] parseCoordinates(final String location) {
         if (location == null) {
@@ -95,57 +90,17 @@ public final class FloorMapLocationResolver {
     }
 
     /**
-     * Whether a location is the retired {@code "<map>, <x>, <y>"} three-part form.
+     * Normalises a Location Ref column value to the fact key it names.
      *
-     * <p>For <b>reporting only</b> — such a value is not a location any more, and this exists so
-     * an entity carrying one is explained rather than silently dropped. Without it the entity
-     * would be classified as referencing a fact key that happens to contain commas, and the map
-     * would send the reader looking for a missing desk instead of at the location format.</p>
-     *
-     * <p>Matches on the same test the old parser used, the <em>last two</em> parts being numeric,
-     * so it recognises exactly what used to work and nothing else.</p>
-     *
-     * @param location the raw location column value; may be {@code null}
-     * @return {@code true} if this would have parsed as coordinates before the format changed
+     * @param locationRef the raw Location Ref column value; may be {@code null}
+     * @return the trimmed key, or {@code null} when blank
      */
-    public static boolean looksLikeLegacyCoordinates(final String location) {
-        if (location == null) {
-            return false;
-        }
-        final String[] parts = location.split(",");
-        if (parts.length < 3) {
-            return false;
-        }
-        try {
-            Double.parseDouble(parts[parts.length - 2].trim());
-            Double.parseDouble(parts[parts.length - 1].trim());
-            return true;
-        } catch (final NumberFormatException e) {
-            return false;
-        }
-    }
-
-    /**
-     * Parses a location value as a reference to the fact the event happened at.
-     *
-     * @param location the raw location column value; may be {@code null}
-     * @return the referenced fact key, or {@code null} when the value is blank
-     *         or is literal {@link #parseCoordinates coordinates}
-     */
-    public static String parseReference(final String location) {
-        if (location == null) {
+    public static String parseReference(final String locationRef) {
+        if (locationRef == null) {
             return null;
         }
-        final String trimmed = location.trim();
-        if (trimmed.isEmpty() || parseCoordinates(location) != null) {
-            return null;
-        }
-        if (looksLikeLegacyCoordinates(location)) {
-            // Not a key either. Returning it as one would make the map report a missing fact whose
-            // name is a coordinate string, which reads as a data problem rather than a format one.
-            return null;
-        }
-        return trimmed;
+        final String trimmed = locationRef.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
