@@ -2,11 +2,15 @@
 
 **Component:** `stroom-core-client` — `FloorMapQueryPresenter.updateColumnSelections`,
 `FloorMapQueryViewImpl.setAvailableColumns`
-**Severity:** low. Nothing is lost or broken; the tab is briefly unusable and looks broken, which is
-the part that costs time.
+**Severity:** low. Nothing is lost; the tab is briefly unusable and looks broken, which is the part
+that costs time.
 **Found:** 2026-09-07, while running test G3 of `docs/floormap-test-protocol.md`. That test could not
 be followed as written because of this.
-**Status:** diagnosed, not fixed. No data-loss path — see *What this is not*.
+**Status:** **this issue is the empty-list half, and it is not fixed.** Testing it turned up a second
+and worse defect in the same control — a dropdown change did not mark the document dirty, so the
+mapping could not be saved on its own — and **that half is fixed** (`c51afa2c0d`). Both are described
+here because they present as one symptom: dropdowns you cannot use. No data-loss path in either;
+see *What this is not*.
 
 ---
 
