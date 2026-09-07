@@ -212,4 +212,25 @@ class TestFloorMapStageReporter {
             }
         }
     }
+
+    /**
+     * No status line may name a single column setting.
+     *
+     * <p>{@link Stage#NO_ENTITIES_PARSED} used to say "no entity matched the Entity ID column", and
+     * the first time it appeared in anger the Entity ID column was correct — both <em>location</em>
+     * roles were the problem. A line that sends the reader to the wrong setting is worse than
+     * silence, so the canvas names the stage and the console names the specifics.</p>
+     */
+    @Test
+    void noStatusTextBlamesOneParticularColumn() {
+        for (final Stage stage : Stage.values()) {
+            final String text = stage.getStatusText();
+            if (text != null) {
+                assertThat(text)
+                        .as("status text for " + stage + " must not single out a column setting")
+                        .doesNotContain("Entity ID column")
+                        .doesNotContain("Location ID column");
+            }
+        }
+    }
 }

@@ -1633,6 +1633,24 @@ modes exist only on the Editor tab, which has its own canvas instance, and this 
 set by the Map tab. Bottom-centre was tried first and rejected — it runs into the scale bar on a
 narrow pane, and the pane is routinely narrow with the dock open.
 
+### And running it found a defect in option 4, 2026-09-07
+
+`NO_ENTITIES_PARSED`'s status line said *"Events found, but no entity matched the Entity ID
+column"*. The first time it appeared in anger the Entity ID column was **correct** — the events
+query still aliased the old single `Location ID` column, so both *location* roles pointed at names
+the query did not select, and `parseRows` bailed before reading a single row.
+
+So the line named the one setting that was right, and sent the reader away from the two that were
+wrong. That is worse than the silence this whole finding replaced, and it is the exact failure mode
+F14 exists to remove.
+
+There are **three** causes behind that one stage — the entity role unmatched, both location roles
+unmatched, or every row's entity value null — and the canvas line has room for none of them. So the
+line now names the stage and points at the mapping (*"no entity could be read — check the column
+mapping"*), and the console message, which already lists the mapping role by role alongside the
+result's actual columns, carries the specifics. A test pins that no status text singles out a column
+setting.
+
 ### Building option 4 found a defect in options 2 and 3
 
 **The persistence filter never let anything through.** `stageReporter.reset()` was called at the top

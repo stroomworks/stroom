@@ -71,8 +71,22 @@ public final class FloorMapStageReporter {
         NONE(null, false),
         /** The events query completed and returned no rows at all. */
         NO_EVENT_ROWS("No events at this time", false),
-        /** Rows came back, but none parsed into an entity — the column names do not match. */
-        NO_ENTITIES_PARSED("Events found, but no entity matched the Entity ID column", true),
+        /**
+         * Rows came back, but none parsed into an entity.
+         *
+         * <p><b>The text deliberately names no single column.</b> It used to say "no entity matched
+         * the Entity ID column", which is one of at least three causes and was the wrong one the
+         * first time it appeared in anger: the Entity ID column matched perfectly and it was both
+         * <em>location</em> roles that pointed at names the query did not select. A message that
+         * sends the reader to the wrong setting is worse than the silence this whole finding
+         * replaced. The console message lists the mapping role by role alongside the result's
+         * actual columns, which is where the specifics belong.</p>
+         *
+         * <p>The three causes: the entity role names a column the query does not select; both
+         * location roles do; or every row's entity value is null.</p>
+         */
+        NO_ENTITIES_PARSED("Events found, but no entity could be read — check the column mapping",
+                true),
         /** Entities exist and none could be placed, and there are no facts to place them against. */
         NO_FACTS("No floor plan at this time, so entities have nowhere to be placed", true),
         /** Entities and facts both exist, but no entity's location matches a fact key. */
