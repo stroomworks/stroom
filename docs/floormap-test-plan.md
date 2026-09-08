@@ -77,6 +77,22 @@ would have disabled the limit on exactly the deployments it was added for. And E
 that compares the *migrated* schema against the jOOQ classes generated at build time; a mismatch
 fails on a read or write and nowhere else.
 
+## E2 — the renamed config keys · **pass, 2026-09-08**, after a fix
+
+Failed first. The old key was accepted and its value silently discarded, so the compiled default
+applied — no error, no warning, and the Properties screen reporting Default as though nothing had
+been set. Fixed the same day by rejecting the old key at boot rather than aliasing it; retested and
+both halves now hold:
+
+| | |
+|---|---|
+| old key present | boot fails, naming `appConfig.documentAsset` as the replacement |
+| key renamed | Stroom starts, and the Properties screen shows the value with source **YAML** |
+
+**The second half had never been verified before.** Every earlier version of this test established
+only that a key was *accepted*, which turns out to be indistinguishable from tolerated-and-ignored.
+Detail in `docs/task-config-deprecated-key-alias-ineffective.md`.
+
 ## Still outstanding
 
 | | |

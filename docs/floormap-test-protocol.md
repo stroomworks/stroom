@@ -418,7 +418,7 @@ confirm the object is still there — that is the read back.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb` | **Boot fails**, naming the new spelling: *"'appConfig.visualisationAsset' is now 'appConfig.documentAsset'"*. That is the intended behaviour as of 2026-09-08 — a rename the operator must know about is the case where failing is right. Rename the key and Stroom starts | **retest after rebuild** — originally failed 2026-09-08 by accepting and ignoring the key; fixed the same day |
+| **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb` | **Boot fails**, naming the new spelling: *"'appConfig.visualisationAsset' is now 'appConfig.documentAsset'"*. That is the intended behaviour as of 2026-09-08 — a rename the operator must know about is the case where failing is right. Rename the key and Stroom starts | **pass** 2026-09-08 — boot failed naming the replacement; renaming the key started Stroom with the Properties screen showing `1M`, source **YAML** |
 
 **This test was rewritten twice, and both mistakes are worth knowing.** It first expected a
 *deprecation warning* — nothing logged one, so that sent the tester hunting for a line that could
