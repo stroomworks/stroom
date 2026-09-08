@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,9 @@ import stroom.data.store.api.Target;
 import stroom.meta.api.MetaProperties;
 import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.PathwaysDoc;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
-import stroom.planb.impl.db.trace.PathwayEventsDb;
-import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.PathwaysDb.SimpleDb;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.Severity;

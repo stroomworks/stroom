@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,19 +20,19 @@ import stroom.docstore.api.DocumentStoreBinder;
 import stroom.job.api.ScheduledJobsBinder;
 import stroom.lifecycle.api.LifecycleBinder;
 import stroom.pipeline.xsltfunctions.PlanBLookup;
+import stroom.planb.impl.dao.BatchDestination;
+import stroom.planb.impl.dao.DefaultBatchDestination;
 import stroom.planb.impl.data.MergeProcessor;
-import stroom.planb.impl.data.PlanBRemoteQueryResourceImpl;
-import stroom.planb.impl.data.PlanBShardInfoServiceImpl;
-import stroom.planb.impl.data.ShardManager;
-import stroom.planb.impl.data.TracesRemoteQueryResourceImpl;
-import stroom.planb.impl.db.BatchDestination;
-import stroom.planb.impl.db.DefaultBatchDestination;
+import stroom.planb.impl.data.query.PlanBRemoteQueryResourceImpl;
+import stroom.planb.impl.data.query.PlanBShardInfoServiceImpl;
+import stroom.planb.impl.data.shard.ShardManager;
+import stroom.planb.impl.fs.MergeStrategy;
 import stroom.planb.impl.fs.SharedFileStoreCleaner;
 import stroom.planb.impl.fs.SharedFileStoreDocStore;
 import stroom.planb.impl.fs.SharedFileStoreMergeProcessor;
+import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.impl.pipeline.PlanBElementModule;
 import stroom.planb.impl.pipeline.PlanBLookupImpl;
-import stroom.planb.impl.pipeline.StateFetcherImpl;
 import stroom.planb.impl.pipeline.StateProviderImpl;
 import stroom.planb.impl.rest.FileTransferClient;
 import stroom.planb.impl.rest.FileTransferClientImpl;
@@ -40,11 +40,11 @@ import stroom.planb.impl.rest.FileTransferResourceImpl;
 import stroom.planb.impl.rest.FileTransferService;
 import stroom.planb.impl.rest.FileTransferServiceImpl;
 import stroom.planb.shared.PlanBDoc;
+import stroom.planb.shared.StateType;
 import stroom.query.api.QueryNodeResolver;
 import stroom.query.api.datasource.DataSourceProvider;
 import stroom.query.common.v2.IndexFieldProvider;
 import stroom.query.common.v2.SearchProvider;
-import stroom.query.language.functions.StateFetcher;
 import stroom.query.language.functions.StateProvider;
 import stroom.searchable.api.Searchable;
 import stroom.util.RunnableWrapper;
@@ -65,8 +65,9 @@ public class PlanBModule extends AbstractModule {
         install(new PlanBElementModule());
 
         bind(PlanBLookup.class).to(PlanBLookupImpl.class);
-        GuiceUtil.buildMultiBinder(binder(), StateProvider.class).addBinding(StateProviderImpl.class);
-        bind(StateFetcher.class).to(StateFetcherImpl.class);
+        // A single StateProvider binding, deliberately, so a second provider is a duplicate binding error
+        // at startup rather than a silent precedence problem. See gh-5692.
+        bind(StateProvider.class).to(StateProviderImpl.class);
 
         // Caches
         bind(PlanBDocCache.class).to(PlanBDocCacheImpl.class);
@@ -90,6 +91,10 @@ public class PlanBModule extends AbstractModule {
         bind(FileTransferClient.class).to(FileTransferClientImpl.class);
         bind(FileTransferService.class).to(FileTransferServiceImpl.class);
         bind(SharedFileStoreMergeProcessor.class);
+        bind(SharedFileStorePublisher.class);
+        // Declared empty here so the map exists even in a build that contributes no strategies;
+        // each store type that lives on the shared file store adds its own binding.
+        GuiceUtil.buildMapBinder(binder(), StateType.class, MergeStrategy.class);
 
         bind(QueryNodeResolver.class).to(QueryNodeResolverImpl.class);
 
@@ -99,8 +104,7 @@ public class PlanBModule extends AbstractModule {
         RestResourcesBinder.create(binder())
                 .bind(PlanBDocResourceImpl.class)
                 .bind(FileTransferResourceImpl.class)
-                .bind(PlanBRemoteQueryResourceImpl.class)
-                .bind(TracesRemoteQueryResourceImpl.class);
+                .bind(PlanBRemoteQueryResourceImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), DataSourceProvider.class)
                 .addBinding(StateSearchProvider.class);
@@ -135,9 +139,9 @@ public class PlanBModule extends AbstractModule {
                         .advanced(true));
 
         ScheduledJobsBinder.create(binder())
-                .bindJobTo(SharedFileStoreMergeRunnable.class, builder -> builder
+                .bindJobTo(PlanBSharedFileStoreMergeRunnable.class, builder -> builder
                         .name("Plan B Shared FS Merge")
-                        .description("Distributed merge of sharded Plan B batch stores on the shared file store")
+                        .description("Distributed merge of Plan B batches on the shared file store")
                         .cronSchedule(CronExpressions.EVERY_MINUTE.getExpression())
                         .advanced(true));
 
@@ -145,12 +149,12 @@ public class PlanBModule extends AbstractModule {
 
         bind(SharedFileStoreCleaner.class).asEagerSingleton();
         ScheduledJobsBinder.create(binder())
-                .bindJobTo(ShardHousekeepingRunnable.class, builder -> builder
-                        .name("Plan B Shard Housekeeping")
-                        .description("Detects orphaned shard directories on the shared filesystem and "
-                                + "moves them to trash, then drains trash entries from previous runs. "
-                                + "Covers all PlanB doc types (PlanBDoc, TracesDoc, etc.).")
-                        .cronSchedule(CronExpressions.EVERY_HOUR.getExpression())
+                .bindJobTo(PlanBSharedFileStoreHousekeepingRunnable.class, builder -> builder
+                        .name("Plan B Shared FS Housekeeping")
+                        .description("Detects orphaned directories on the shared file store and "
+                                + "moves them to trash, then empties trash entries from previous runs. "
+                                + "Also deletes unused local copies of archive buckets.")
+                        .cronSchedule(CronExpressions.EVERY_5TH_MINUTE.getExpression())
                         .advanced(true));
 
         LifecycleBinder.create(binder())
@@ -189,19 +193,23 @@ public class PlanBModule extends AbstractModule {
         }
     }
 
-    private static class SharedFileStoreMergeRunnable extends RunnableWrapper {
+    private static class PlanBSharedFileStoreMergeRunnable extends RunnableWrapper {
 
         @Inject
-        SharedFileStoreMergeRunnable(final SharedFileStoreMergeProcessor mergeProcessor) {
+        PlanBSharedFileStoreMergeRunnable(final SharedFileStoreMergeProcessor mergeProcessor) {
             super(mergeProcessor::merge);
         }
     }
 
-    private static class ShardHousekeepingRunnable extends RunnableWrapper {
+    private static class PlanBSharedFileStoreHousekeepingRunnable extends RunnableWrapper {
 
         @Inject
-        ShardHousekeepingRunnable(final SharedFileStoreCleaner executor) {
-            super(executor::exec);
+        PlanBSharedFileStoreHousekeepingRunnable(final SharedFileStoreCleaner executor,
+                                                 final ShardManager shardManager) {
+            super(() -> {
+                executor.exec();
+                shardManager.closeRetiredArchiveShards();
+            });
         }
     }
 

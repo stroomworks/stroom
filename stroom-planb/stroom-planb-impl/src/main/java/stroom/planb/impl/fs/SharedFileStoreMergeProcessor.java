@@ -16,21 +16,26 @@
 
 package stroom.planb.impl.fs;
 
-import stroom.bytebuffer.impl6.ByteBufferFactory;
-import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.cluster.lock.api.ClusterLockService;
-import stroom.node.api.NodeInfo;
 import stroom.planb.impl.PlanBConfig;
 import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.PlanBDocCache;
-import stroom.planb.impl.db.StatePaths;
+import stroom.planb.impl.data.archive.BucketGranularityUtil;
+import stroom.planb.shared.AbstractPlanBSettings;
+import stroom.planb.shared.BucketGranularity;
 import stroom.planb.shared.PlanBDocument;
+import stroom.planb.shared.RetentionSettings;
+import stroom.planb.shared.StateType;
 import stroom.security.api.SecurityContext;
 import stroom.task.api.TaskContext;
 import stroom.task.api.TaskContextFactory;
 import stroom.util.io.FileUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.logging.LogUtil;
+import stroom.util.shared.NullSafe;
+import stroom.util.shared.time.SimpleDuration;
+import stroom.util.time.SimpleDurationUtil;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -40,80 +45,115 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+/**
+ * Drives the merge cycle for every doc held on a shared file store.
+ *
+ * <p>Owns only what every store type shares: finding the docs and shards with work, holding the
+ * per-shard cluster lock, choosing complete batches, counting failed attempts against a batch,
+ * deleting merged batches, and applying retention to the archive buckets. What actually happens to
+ * a shard's batches inside the lock is the {@link MergeStrategy} bound for its
+ * {@link StateType} — a store type with no strategy is not merged.
+ */
 @Singleton
 public class SharedFileStoreMergeProcessor {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SharedFileStoreMergeProcessor.class);
 
+    /**
+     * Merge attempts to allow a single batch before it is quarantined. Retrying is normally right,
+     * because most failures are transient or clear once space is reclaimed, but a batch that can
+     * never merge must stop consuming a cycle's worth of copying and merging forever.
+     */
+    private static final int MAX_BATCH_MERGE_ATTEMPTS = 10;
+
+    private static final OperationMarker RETENTION_MARKER =
+            new OperationMarker(PlanBConstants.RETENTION_LAST_FILE_NAME);
+
     private final ClusterLockService clusterLockService;
-    private final ByteBuffers byteBuffers;
-    private final ByteBufferFactory byteBufferFactory;
-    private final Provider<PlanBConfig> configProvider;
-    private final StatePaths statePaths;
     private final SecurityContext securityContext;
     private final TaskContextFactory taskContextFactory;
-    private final SharedFileStorePublisher publisher;
-    private final List<SharedFileStoreOperation> operations;
+    private final ExecutorService mergeExecutor;
     private final PlanBDocCache planBDocCache;
+    private final Map<StateType, MergeStrategy> mergeStrategies;
 
     @Inject
     public SharedFileStoreMergeProcessor(final ClusterLockService clusterLockService,
-                                         final ByteBuffers byteBuffers,
-                                         final ByteBufferFactory byteBufferFactory,
                                          final Provider<PlanBConfig> configProvider,
-                                         final StatePaths statePaths,
-                                         final NodeInfo nodeInfo,
                                          final SecurityContext securityContext,
                                          final TaskContextFactory taskContextFactory,
-                                         final PlanBDocCache planBDocCache) {
+                                         final PlanBDocCache planBDocCache,
+                                         final Map<StateType, MergeStrategy> mergeStrategies) {
         this.clusterLockService = clusterLockService;
-        this.byteBuffers = byteBuffers;
-        this.byteBufferFactory = byteBufferFactory;
-        this.configProvider = configProvider;
-        this.statePaths = statePaths;
         this.securityContext = securityContext;
         this.taskContextFactory = taskContextFactory;
-        this.publisher = new SharedFileStorePublisher(nodeInfo);
-        this.operations = List.of(new RetentionOperation(), new ArchiveOperation(publisher));
+        this.mergeExecutor = createMergeExecutor(configProvider.get().getShardMergeThreadCount());
         this.planBDocCache = planBDocCache;
+        this.mergeStrategies = mergeStrategies;
+    }
+
+    private static ExecutorService createMergeExecutor(final int threadCount) {
+        final AtomicInteger threadNo = new AtomicInteger();
+        return new ThreadPoolExecutor(
+                threadCount,
+                threadCount,
+                60L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(),
+                runnable -> {
+                    final Thread thread = new Thread(
+                            runnable,
+                            "Plan B Shard Merge #" + threadNo.incrementAndGet());
+                    thread.setDaemon(true);
+                    thread.setPriority(3);
+                    return thread;
+                });
     }
 
     public void merge() {
         securityContext.asProcessingUser(() -> {
-            taskContextFactory.context("Plan B Shared FS Merge", taskContext -> {
-                LOGGER.info("Starting Plan B Shared FS Merge");
+            LOGGER.debug("Starting Plan B Shared FS Merge");
 
-                final List<PlanBDocument> planBDocs = planBDocCache.getAll();
-                for (final PlanBDocument doc : planBDocs) {
-                    if (doc.getSharedPath() != null && doc.getShardCount() > 0) {
-                        try {
-                            mergeDoc(doc, taskContext);
-                        } catch (final Exception e) {
-                            LOGGER.error("Error merging shards for doc {}", doc.getName(), e);
-                        }
+            final TaskContext taskContext = taskContextFactory.current();
+            final List<PlanBDocument> planBDocs = planBDocCache.getAll();
+            Collections.shuffle(planBDocs);
+
+            for (final PlanBDocument doc : planBDocs) {
+                if (SharedFileStore.isConfigured(doc)) {
+                    try {
+                        mergeDoc(doc, taskContext);
+                    } catch (final Exception e) {
+                        LOGGER.error("Error merging shards for doc {}", doc.getName(), e);
                     }
                 }
+            }
 
-                LOGGER.info("Finished Plan B Shared FS Merge");
-            }).run();
+            LOGGER.debug("Finished Plan B Shared FS Merge");
         });
     }
 
     private void mergeDoc(final PlanBDocument doc, final TaskContext parentTaskContext) {
-        final Path sharedPath = Path.of(doc.getSharedPath());
-        final Path processingDocDir = sharedPath
+        final MergeStrategy strategy = mergeStrategies.get(doc.getStateType());
+        if (strategy == null) {
+            LOGGER.debug(() -> "No merge strategy for " + doc.getStateType() + ", skipping " + doc.getName());
+            return;
+        }
+
+        final Path processingDocDir = SharedFileStore.rootOf(doc)
                 .resolve(PlanBConstants.PROCESSING_DIR_NAME)
-                .resolve(doc.getUuid());
-        final Path sharedShardsDocDir = sharedPath
-                .resolve(PlanBConstants.SHARDS_DIR_NAME)
                 .resolve(doc.getUuid());
 
         // Shuffle shard indices so concurrent nodes naturally scatter across
@@ -121,11 +161,14 @@ public class SharedFileStoreMergeProcessor {
         // race for shard 0 first, causing O(N²) failed lock attempts per cycle
         // instead of O(N).  With a shuffle each node is likely to win a
         // different shard, giving close to 1:1 work distribution.
-        final List<Integer> shardIndices = new ArrayList<>(doc.getShardCount());
-        for (int i = 0; i < doc.getShardCount(); i++) {
+        final int shardCount = SharedFileStore.shardCountOf(doc);
+        final List<Integer> shardIndices = new ArrayList<>(shardCount);
+        for (int i = 0; i < shardCount; i++) {
             shardIndices.add(i);
         }
         Collections.shuffle(shardIndices);
+
+        final List<CompletableFuture<Void>> futures = new ArrayList<>();
 
         for (final int shardIndex : shardIndices) {
             final String shardIndexStr = PlanBConstants.formatShardIndex(shardIndex);
@@ -136,69 +179,71 @@ public class SharedFileStoreMergeProcessor {
             // the same key the last-named batch wins.
             completeBatchDirs.sort(Comparator.comparing(p -> p.getFileName().toString()));
 
-            // Evaluate operations outside the lock (read-only, safe to race).
-            // Results are re-validated inside the lock before acting.
-            final boolean operationDue = operations.stream()
-                    .anyMatch(op -> op.isDue(doc, sharedShardsDocDir, shardIndex));
-
-            if (!completeBatchDirs.isEmpty() || operationDue) {
+            // Evaluate outside the lock (read-only, safe to race). Re-validated inside the lock
+            // before acting.
+            if (!completeBatchDirs.isEmpty() || retentionDue(doc, shardIndex)) {
                 final Runnable runnable = taskContextFactory.childContext(parentTaskContext,
                         "Merge doc " + doc.getName() + " shard " + shardIndexStr,
                         taskContext -> securityContext.asProcessingUser(() ->
-                                mergeShard(doc, shardIndex, completeBatchDirs, sharedShardsDocDir)));
-                try {
-                    runnable.run();
-                } catch (final Exception e) {
-                    LOGGER.error("Error processing shard {} for doc {}",
-                            shardIndexStr, doc.getName(), e);
-                }
+                                mergeShard(strategy, doc, shardIndex, completeBatchDirs)));
+
+                futures.add(CompletableFuture
+                        .runAsync(runnable, mergeExecutor)
+                        .exceptionally(t -> {
+                            LOGGER.error("Error processing shard {} for doc {}",
+                                    shardIndexStr, doc.getName(), t);
+                            return null;
+                        }));
             }
+        }
+
+        // Wait for all shard merges to complete before returning.
+        if (!futures.isEmpty()) {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         }
     }
 
-    private void mergeShard(final PlanBDocument doc,
+    private void mergeShard(final MergeStrategy strategy,
+                            final PlanBDocument doc,
                             final int shardIndex,
-                            final List<Path> completeBatchDirs,
-                            final Path sharedShardsDocDir) {
+                            final List<Path> completeBatchDirs) {
         final String lockName = PlanBConstants.getMergeLockName(doc.getUuid(), shardIndex);
         LOGGER.debug(() -> "Attempting to acquire lock " + lockName);
         clusterLockService.tryLock(lockName, () -> {
             try {
-                LOGGER.info("Acquired lock {}, starting merge/maintenance", lockName);
+                LOGGER.debug("Acquired lock {}, starting merge/maintenance", lockName);
 
-                // Recover any orphaned .tmp_ / .old_ dirs left by an interrupted push.
-                // Must run before opening the shard so syncFromSharedStoreIfRequired()
-                // sees a consistent shard directory.
-                publisher.recoverOrphaned(sharedShardsDocDir, shardIndex);
+                // Re-check now the lock is held: another node may have run retention since the
+                // pre-lock check.
+                final boolean retentionDue = retentionDue(doc, shardIndex);
+                if (retentionDue) {
+                    final SimpleDuration interval = checkInterval(doc);
+                    LOGGER.debug(() -> LogUtil.message("Running retention for {} (every {}, next due {})",
+                            lockName, interval, SimpleDurationUtil.plus(Instant.now(), interval)));
+                }
 
-                final SharedFileStoreShard shard = new SharedFileStoreShard(
-                        byteBuffers, byteBufferFactory, configProvider, statePaths, doc, shardIndex,
-                        statePaths.getMergingDir());
-                try {
-                    boolean modified = mergeAllBatches(shard, completeBatchDirs);
+                final MergeContext ctx = new MergeContext(doc, shardIndex, lockName, retentionDue);
+                final MergeResult result = strategy.mergeShard(ctx, completeBatchDirs);
 
-                    final SharedFileStoreOperationContext ctx = new SharedFileStoreOperationContext(
-                            doc, shardIndex, shard, sharedShardsDocDir, lockName);
-                    for (final SharedFileStoreOperation op : operations) {
-                        modified |= op.run(ctx);
-                    }
+                if (retentionDue) {
+                    // Runs regardless of whether anything currently writes buckets, so buckets left
+                    // by a previous configuration are cleaned up too.
+                    deleteExpiredArchiveShards(ctx);
+                    RETENTION_MARKER.recordRun(archiveDocDir(doc), shardIndex);
+                }
 
-                    if (modified) {
-                        publisher.push(doc, shardIndex, shard);
-                    }
+                result.failures().forEach(this::recordBatchFailure);
+                cleanUpMergedBatches(result.mergedBatchDirs());
 
-                    cleanUpMergedBatches(completeBatchDirs);
-                    LOGGER.info("Successfully completed merge/maintenance for {}", lockName);
-                } finally {
-                    final Path mergeShardDir = shard.getShardDir();
-                    shard.dispose();
-                    // The merge shard runs in an isolated subdirectory of mergingDir rather than
-                    // shardDir. Clean it up now that the merge is done and published.
-                    try {
-                        FileUtil.deleteDir(mergeShardDir);
-                    } catch (final Exception e) {
-                        LOGGER.warn("Failed to clean up merge directory {}: {}", mergeShardDir, e.getMessage());
-                    }
+                if (!result.failures().isEmpty()) {
+                    LOGGER.error(() -> LogUtil.message(
+                                    "Completed merge/maintenance for {} with {} of {} batches failing",
+                                    lockName,
+                                    result.failures().size(),
+                                    completeBatchDirs.size()),
+                            result.firstFailure());
+                } else {
+                    LOGGER.debug("Successfully completed merge/maintenance for {}", lockName);
                 }
             } catch (final IOException e) {
                 LOGGER.error("Error during merge/maintenance for {}", lockName, e);
@@ -207,42 +252,130 @@ public class SharedFileStoreMergeProcessor {
         });
     }
 
+    // -----------------------------------------------------------------------
+    // Retention
+    // -----------------------------------------------------------------------
+
     /**
-     * Merges each batch directory into the shard. Returns {@code true} if at
-     * least one batch was successfully merged.
+     * Whether retention is due for this shard. How often it is checked comes from the doc's own
+     * {@link RetentionSettings#getCheckInterval()} — not from the retention period, which decides
+     * only which data is deleted. Retention is therefore honoured to within that interval.
+     *
+     * <p>Safe to call outside the shard cluster lock: it only reads a marker file.
      */
-    private boolean mergeAllBatches(final SharedFileStoreShard shard,
-                                    final List<Path> completeBatchDirs) throws IOException {
-        boolean modified = false;
-        for (final Path batchDir : completeBatchDirs) {
-            modified |= mergeSingleBatch(shard, batchDir);
+    static boolean retentionDue(final PlanBDocument doc, final int shardIndex) {
+        final RetentionSettings retention = retentionSettings(doc);
+        if (retention == null || !retention.isEnabled()) {
+            return false;
         }
-        return modified;
+        final Instant lastRun = RETENTION_MARKER.lastRun(archiveDocDir(doc), shardIndex);
+        return lastRun == null
+               || Instant.now().isAfter(SimpleDurationUtil.plus(lastRun, retention.getCheckInterval()));
+    }
+
+    static void deleteExpiredArchiveShards(final MergeContext ctx) {
+        final RetentionSettings retention = retentionSettings(ctx.doc());
+        if (retention == null || !retention.isEnabled()) {
+            return;
+        }
+        final Instant retentionBefore =
+                SimpleDurationUtil.minus(Instant.now(), retention.getDuration());
+
+        final Path archiveShardDir = archiveDocDir(ctx.doc())
+                .resolve(PlanBConstants.formatShardIndex(ctx.shardIndex()));
+
+        if (!Files.exists(archiveShardDir)) {
+            return;
+        }
+
+        try (final Stream<Path> dateDirs = Files.list(archiveShardDir)) {
+            for (final Path dateDir : dateDirs.toList()) {
+                if (!Files.isDirectory(dateDir)) {
+                    continue;
+                }
+                final String dateLabel = dateDir.getFileName().toString();
+
+                // The directory name records how the bucket was written, so it is the only thing that
+                // can decode it: a doc whose granularity has since changed still has buckets in the
+                // old layout.
+                final BucketGranularity granularity = BucketGranularityUtil.detect(dateLabel);
+
+                if (granularity == null) {
+                    LOGGER.warn("Cannot determine granularity for archive dir {}, skipping", dateDir);
+                    continue;
+                }
+
+                final Instant bucketEnd = BucketGranularityUtil.bucketEnd(granularity, dateLabel);
+                if (bucketEnd == null) {
+                    LOGGER.warn("Cannot parse bucket end for archive dir {}, skipping", dateDir);
+                    continue;
+                }
+
+                if (retentionBefore.isAfter(bucketEnd)) {
+                    LOGGER.debug("Deleting expired archive shard {} for {}", dateLabel, ctx.lockName());
+                    FileUtil.deleteDir(dateDir);
+                }
+            }
+        } catch (final IOException e) {
+            LOGGER.error("Error scanning archive shards in {}: {}", archiveShardDir, e.getMessage(), e);
+        }
     }
 
     /**
-     * Copies a batch directory to a local temp location, merges it into the
-     * shard, and cleans up the temp copy. Returns {@code true} if the shard
-     * was modified.
+     * Where a doc's archive buckets live, and with them the {@code .retention.last} marker that gates
+     * pruning them. {@link ArchiveShardLocator} only treats directories as buckets, so a marker file
+     * alongside them is ignored.
      */
-    private boolean mergeSingleBatch(final SharedFileStoreShard shard, final Path batchDir) throws IOException {
-        LOGGER.info("Merging batch {}", batchDir);
-        final Path localTempBatchDir = Files.createTempDirectory("planb_merge_");
+    private static Path archiveDocDir(final PlanBDocument doc) {
+        return SharedFileStore.rootOf(doc)
+                .resolve(PlanBConstants.ARCHIVE_DIR_NAME)
+                .resolve(doc.getUuid());
+    }
+
+    private static RetentionSettings retentionSettings(final PlanBDocument doc) {
+        return NullSafe.get(doc, PlanBDocument::getSettings, AbstractPlanBSettings::getRetention);
+    }
+
+    private static SimpleDuration checkInterval(final PlanBDocument doc) {
+        return NullSafe.get(doc, PlanBDocument::getSettings, AbstractPlanBSettings::getRetention,
+                RetentionSettings::getCheckInterval);
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch bookkeeping
+    // -----------------------------------------------------------------------
+
+    /**
+     * Records that a batch failed to merge so that a batch which can never merge is eventually
+     * quarantined by {@link #collectBatchDirs} instead of being retried on every cycle forever.
+     */
+    private void recordBatchFailure(final Path batchDir, final Exception failure) {
+        final Path failedFile = batchDir.resolve(PlanBConstants.FAILED_FILE_NAME);
+        final int attempts = readFailedAttempts(batchDir) + 1;
         try {
-            copyIfExists(batchDir.resolve(PlanBConstants.DATA_FILE_NAME),
-                    localTempBatchDir.resolve(PlanBConstants.DATA_FILE_NAME));
-            shard.merge(localTempBatchDir);
-            return true;
-        } finally {
-            FileUtil.deleteDir(localTempBatchDir);
+            Files.writeString(failedFile, attempts + "\n" + Instant.now() + "\n" + failure);
+        } catch (final IOException e) {
+            LOGGER.error("Error writing .failed marker to {}", batchDir, e);
+        }
+    }
+
+    private int readFailedAttempts(final Path batchDir) {
+        final Path failedFile = batchDir.resolve(PlanBConstants.FAILED_FILE_NAME);
+        if (!Files.isRegularFile(failedFile)) {
+            return 0;
+        }
+        try {
+            final String first = Files.readString(failedFile).lines().findFirst().orElse("");
+            return Integer.parseInt(first.trim());
+        } catch (final IOException | NumberFormatException e) {
+            LOGGER.debug(() -> LogUtil.message("Unreadable .failed marker in {}", batchDir), e);
+            return 0;
         }
     }
 
     /**
-     * Writes {@code .merged} markers and immediately deletes batch directories.
-     * Pathways processing is now triggered by the live shard's
-     * {@code trace-pathways-pending} DBI rather than via file-system events,
-     * so batch directories are no longer retained for downstream consumers.
+     * Writes {@code .merged} markers and immediately deletes batch directories. Nothing downstream
+     * reads a merged batch directory, so none is kept.
      */
     private void cleanUpMergedBatches(final List<Path> batchDirs) {
         for (final Path batchDir : batchDirs) {
@@ -266,9 +399,17 @@ public class SharedFileStoreMergeProcessor {
         if (Files.exists(shardBatchDir)) {
             try (final Stream<Path> batchStream = Files.list(shardBatchDir)) {
                 batchStream.forEach(batchDir -> {
-                    if (Files.exists(batchDir.resolve(PlanBConstants.COMPLETE_FILE_NAME))
+                    if (Files.exists(batchDir.resolve(PlanBConstants.VERSION_FILE_NAME))
                             && !Files.exists(batchDir.resolve(PlanBConstants.MERGED_FILE_NAME))) {
-                        completeBatchDirs.add(batchDir);
+                        final int attempts = readFailedAttempts(batchDir);
+                        if (attempts >= MAX_BATCH_MERGE_ATTEMPTS) {
+                            LOGGER.warn(() -> LogUtil.message(
+                                    "Quarantining batch {} after {} failed merge attempts. It will " +
+                                    "not be retried until its {} marker is removed.",
+                                    batchDir, attempts, PlanBConstants.FAILED_FILE_NAME));
+                        } else {
+                            completeBatchDirs.add(batchDir);
+                        }
                     }
                 });
             } catch (final IOException e) {
@@ -276,11 +417,5 @@ public class SharedFileStoreMergeProcessor {
             }
         }
         return completeBatchDirs;
-    }
-
-    private static void copyIfExists(final Path src, final Path dst) throws IOException {
-        if (Files.exists(src)) {
-            Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING);
-        }
     }
 }

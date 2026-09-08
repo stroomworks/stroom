@@ -16,6 +16,8 @@
 
 package stroom.planb.impl;
 
+import java.util.List;
+
 public final class PlanBConstants {
 
     public static final String WRITER_DIR_NAME = "writer";
@@ -24,9 +26,16 @@ public final class PlanBConstants {
     public static final String UNZIP_DIR_NAME = "unzip";
     public static final String MERGING_DIR_NAME = "merging";
     public static final String SHARDS_DIR_NAME = "shards";
+    public static final String HOLDING_DIR_NAME = "holding";
     public static final String SNAPSHOTS_DIR_NAME = "snapshots";
+    public static final String ARCHIVE_CACHE_DIR_NAME = "archive_cache";
+    public static final String ARCHIVE_LOCAL_DIR_NAME = "archive_local";
     public static final String PROCESSING_DIR_NAME = "processing";
     public static final String TRASH_DIR_NAME = "trash";
+    public static final String ARCHIVE_DIR_NAME = "archive";
+
+    public static final List<String> STAGE_DIR_NAMES = List.of(
+            HOLDING_DIR_NAME, PROCESSING_DIR_NAME, ARCHIVE_DIR_NAME);
 
     public static final String TMP_DIR_SUFFIX = ".tmp";
     public static final String TMP_DIR_PREFIX = ".tmp_";
@@ -37,17 +46,15 @@ public final class PlanBConstants {
     public static final String SNAPSHOT_INFO_FILE_NAME = "snapshot.txt";
 
     public static final String DATA_FILE_NAME = "data.mdb";
+    public static final String DATA_TMP_FILE_NAME = ".tmp_data.mdb";
     public static final String LOCK_FILE_NAME = "lock.mdb";
-    public static final String COMPLETE_FILE_NAME = ".complete";
     public static final String MERGED_FILE_NAME = ".merged";
     public static final String VERSION_FILE_NAME = ".version";
+    public static final String FAILED_FILE_NAME = ".failed";
     public static final String RETENTION_LAST_FILE_NAME = ".retention.last";
-    public static final String ARCHIVE_DIR_NAME          = "archive";
-    public static final String ARCHIVAL_LAST_FILE_NAME   = ".archival.last";
+    public static final String COMPACTION_LAST_FILE_NAME = ".compaction.last";
 
-    private PlanBConstants() {
-        // Utility class
-    }
+    private PlanBConstants() {}
 
     public static String getMergeLockName(final String docUuid, final int shardIndex) {
         return "planb-merge-" + docUuid + "-" + shardIndex;
@@ -57,10 +64,6 @@ public final class PlanBConstants {
         return "planb-merge-" + docUuid + "-";
     }
 
-    /**
-     * Formats a shard index as a zero-padded four-digit string.
-     * Example: {@code formatShardIndex(3)} returns {@code "0003"}.
-     */
     public static String formatShardIndex(final int shardIndex) {
         return String.format("%04d", shardIndex);
     }

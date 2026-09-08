@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,10 @@ package stroom.planb.client.view;
 
 import stroom.document.client.event.ChangeUiHandlers;
 import stroom.planb.client.presenter.TraceSettingsPresenter.TraceSettingsView;
-import stroom.planb.shared.ArchivalSettings;
+import stroom.planb.shared.BucketGranularity;
 import stroom.planb.shared.RetentionSettings;
-import stroom.planb.shared.SnapshotSettings;
+import stroom.planb.shared.SharedFileStoreSettings;
+import stroom.util.shared.time.SimpleDuration;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
@@ -35,60 +36,71 @@ public class TraceSettingsViewImpl
 
     private final Widget widget;
     private final GeneralSettingsWidget generalSettingsWidget;
-    private final SharedFileStoreSettingsWidget shardingSettingsWidget;
-    private final SnapshotSettingsWidget snapshotSettingsWidget;
+    private final TraceGeneralSettingsWidget traceGeneralSettingsWidget;
+    private final PublishingSettingsWidget publishingSettingsWidget;
     private final RetentionSettingsWidget retentionSettingsWidget;
-    private final ArchivalSettingsWidget archivalSettingsWidget;
+    private final SharedFileStoreSettingsWidget sharedFileStoreSettingsWidget;
 
     @UiField
-    SettingsGroup generalPanel;
+    SettingsGroup sharedFileStorePanel;
     @UiField
-    SettingsGroup snapshotPanel;
+    SettingsGroup publishingPanel;
+    @UiField
+    SettingsGroup storagePanel;
     @UiField
     SettingsGroup retentionPanel;
-    @UiField
-    SettingsGroup shardingArchivingPanel;
 
     @Inject
     public TraceSettingsViewImpl(final Binder binder,
                                  final GeneralSettingsWidget generalSettingsWidget,
-                                 final SharedFileStoreSettingsWidget shardingSettingsWidget,
-                                 final SnapshotSettingsWidget snapshotSettingsWidget,
+                                 final TraceGeneralSettingsWidget traceGeneralSettingsWidget,
+                                 final PublishingSettingsWidget publishingSettingsWidget,
                                  final RetentionSettingsWidget retentionSettingsWidget,
-                                 final ArchivalSettingsWidget archivalSettingsWidget) {
+                                 final SharedFileStoreSettingsWidget sharedFileStoreSettingsWidget) {
         widget = binder.createAndBindUi(this);
         this.generalSettingsWidget = generalSettingsWidget;
-        this.shardingSettingsWidget = shardingSettingsWidget;
-        this.snapshotSettingsWidget = snapshotSettingsWidget;
+        this.traceGeneralSettingsWidget = traceGeneralSettingsWidget;
+        this.publishingSettingsWidget = publishingSettingsWidget;
         this.retentionSettingsWidget = retentionSettingsWidget;
-        this.archivalSettingsWidget = archivalSettingsWidget;
-        generalPanel.add(generalSettingsWidget.asWidget());
-        snapshotPanel.add(snapshotSettingsWidget.asWidget());
+        this.sharedFileStoreSettingsWidget = sharedFileStoreSettingsWidget;
+
+        sharedFileStorePanel.add(sharedFileStoreSettingsWidget.asWidget());
+        publishingPanel.add(publishingSettingsWidget.asWidget());
+
+        // Max store size and the per-trace span limit are both about how much space this store may
+        // take, so they share one panel.
+        final FlowPanel storageContent = new FlowPanel();
+        storageContent.addStyleName("form");
+        final Widget general = generalSettingsWidget.asWidget();
+        general.removeStyleName("max");
+        storageContent.add(general);
+        storageContent.add(traceGeneralSettingsWidget.asWidget());
+        storagePanel.add(storageContent);
+
+        // A trace store has one environment per bucket and shard, so the limit is per file rather
+        // than the size of the whole store, and neither write option reaches the shared file store.
+        generalSettingsWidget.setMaxStoreSizeHelpText(
+                "The size limit for each file in the store. A trace store has one file per time "
+                + "bucket and shard, so the whole store can be much bigger than this.");
+        generalSettingsWidget.setWriteOptionsVisible(false);
+
         retentionPanel.add(retentionSettingsWidget.asWidget());
 
-        final FlowPanel shardingArchivingContent = new FlowPanel();
-        shardingArchivingContent.add(shardingSettingsWidget.asWidget());
-        shardingArchivingContent.add(archivalSettingsWidget.asWidget());
-        shardingArchivingPanel.add(shardingArchivingContent);
+        // Trace retention deletes by insert time whatever this says, so there is nothing to offer.
+        retentionSettingsWidget.setUseStateTimeVisible(false);
+
+        // The shared file store merge processor is the only thing that acts on the check frequency.
+        retentionSettingsWidget.setCheckIntervalVisible(true);
     }
 
     @Override
     public void setUiHandlers(final ChangeUiHandlers uiHandlers) {
         super.setUiHandlers(uiHandlers);
         generalSettingsWidget.setUiHandlers(uiHandlers);
-        // When the Enable Shared File Store checkbox or path changes, propagate the
-        // enable state to the archival widget so the Archiving Enabled checkbox
-        // is gated on the same condition.
-        shardingSettingsWidget.setUiHandlers(() -> {
-            archivalSettingsWidget.setHasSharedPath(
-                    shardingSettingsWidget.isEnableSharedFileStore());
-            if (uiHandlers != null) {
-                uiHandlers.onChange();
-            }
-        });
-        snapshotSettingsWidget.setUiHandlers(uiHandlers);
+        traceGeneralSettingsWidget.setUiHandlers(uiHandlers);
+        publishingSettingsWidget.setUiHandlers(uiHandlers);
         retentionSettingsWidget.setUiHandlers(uiHandlers);
-        archivalSettingsWidget.setUiHandlers(uiHandlers);
+        sharedFileStoreSettingsWidget.setUiHandlers(uiHandlers);
     }
 
     @Override
@@ -107,61 +119,33 @@ public class TraceSettingsViewImpl
     }
 
     @Override
-    public Boolean getSynchroniseMerge() {
-        return generalSettingsWidget.getSynchroniseMerge();
+    public Long getMaxSpansPerTrace() {
+        return traceGeneralSettingsWidget.getMaxSpansPerTrace();
     }
 
     @Override
-    public void setSynchroniseMerge(final Boolean synchroniseMerge) {
-        generalSettingsWidget.setSynchroniseMerge(synchroniseMerge);
+    public void setMaxSpansPerTrace(final Long maxSpansPerTrace) {
+        traceGeneralSettingsWidget.setMaxSpansPerTrace(maxSpansPerTrace);
     }
 
     @Override
-    public Boolean getOverwrite() {
-        return generalSettingsWidget.getOverwrite();
+    public BucketGranularity getGranularity() {
+        return publishingSettingsWidget.getGranularity();
     }
 
     @Override
-    public void setOverwrite(final Boolean overwrite) {
-        generalSettingsWidget.setOverwrite(overwrite);
+    public void setGranularity(final BucketGranularity granularity) {
+        publishingSettingsWidget.setGranularity(granularity);
     }
 
     @Override
-    public String getSharedPath() {
-        return shardingSettingsWidget.getSharedPath();
+    public SimpleDuration getMaxWaitForData() {
+        return publishingSettingsWidget.getMaxWaitForData();
     }
 
     @Override
-    public void setSharedPath(final String sharedPath) {
-        shardingSettingsWidget.setSharedPath(sharedPath);
-    }
-
-    @Override
-    public boolean isEnableSharedFileStore() {
-        return shardingSettingsWidget.isEnableSharedFileStore();
-    }
-
-    @Override
-    public void setEnableSharedFileStore(final boolean enable) {
-        shardingSettingsWidget.setEnableSharedFileStore(enable);
-        // Archiving is only available when the shared file store is enabled —
-        // propagate immediately so setArchival() doesn't need to worry about ordering.
-        archivalSettingsWidget.setHasSharedPath(enable);
-    }
-
-    @Override
-    public void setSharedFileStorePathLocked(final boolean locked) {
-        shardingSettingsWidget.setSharedFileStorePathLocked(locked);
-    }
-
-    @Override
-    public int getShardCount() {
-        return shardingSettingsWidget.getShardCount();
-    }
-
-    @Override
-    public void setShardCount(final int count) {
-        shardingSettingsWidget.setShardCount(count);
+    public void setMaxWaitForData(final SimpleDuration maxWaitForData) {
+        publishingSettingsWidget.setMaxWaitForData(maxWaitForData);
     }
 
     @Override
@@ -175,44 +159,27 @@ public class TraceSettingsViewImpl
     }
 
     @Override
-    public SnapshotSettings getSnapshotSettings() {
-        return snapshotSettingsWidget.getSnapshotSettings();
+    public SharedFileStoreSettings getSharedFileStore() {
+        return sharedFileStoreSettingsWidget.getSharedFileStore();
     }
 
     @Override
-    public void setSnapshotSettings(final SnapshotSettings snapshotSettings) {
-        snapshotSettingsWidget.setSnapshotSettings(snapshotSettings);
+    public void setSharedFileStore(final SharedFileStoreSettings sharedFileStore) {
+        sharedFileStoreSettingsWidget.setSharedFileStore(sharedFileStore);
     }
 
     @Override
-    public ArchivalSettings getArchival() {
-        return archivalSettingsWidget.getArchival();
-    }
-
-    @Override
-    public void setArchival(final ArchivalSettings archival) {
-        archivalSettingsWidget.setArchival(archival);
-    }
-
-    @Override
-    public void setShardingEnabled(final boolean shardingEnabled) {
-        generalSettingsWidget.setShardingEnabled(shardingEnabled);
-        retentionSettingsWidget.setShardingEnabled(shardingEnabled);
-        snapshotSettingsWidget.setShardingEnabled(shardingEnabled);
-    }
-
-    @Override
-    public void setShardCountLocked(final boolean locked) {
-        shardingSettingsWidget.setShardCountLocked(locked);
+    public void setSharedFileStoreLocked(final boolean locked) {
+        sharedFileStoreSettingsWidget.setSharedFileStoreLocked(locked);
     }
 
     @Override
     public void onReadOnly(final boolean readOnly) {
         generalSettingsWidget.onReadOnly(readOnly);
-        shardingSettingsWidget.onReadOnly(readOnly);
-        snapshotSettingsWidget.onReadOnly(readOnly);
+        traceGeneralSettingsWidget.onReadOnly(readOnly);
+        publishingSettingsWidget.onReadOnly(readOnly);
         retentionSettingsWidget.onReadOnly(readOnly);
-        archivalSettingsWidget.onReadOnly(readOnly);
+        sharedFileStoreSettingsWidget.onReadOnly(readOnly);
     }
 
     public interface Binder extends UiBinder<Widget, TraceSettingsViewImpl> {

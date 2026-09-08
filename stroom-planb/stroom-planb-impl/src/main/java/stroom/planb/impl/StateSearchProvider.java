@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import stroom.docref.DocRef;
 import stroom.docstore.api.DocFinder;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.index.shared.IndexFieldImpl;
-import stroom.planb.impl.data.ShardManager;
+import stroom.planb.impl.data.shard.ShardManager;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.PlanBDocument;
 import stroom.query.api.ExpressionUtil;

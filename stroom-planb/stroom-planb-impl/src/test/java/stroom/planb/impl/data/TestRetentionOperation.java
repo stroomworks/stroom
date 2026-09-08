@@ -17,12 +17,7 @@
 package stroom.planb.impl.data;
 
 import stroom.planb.impl.PlanBConstants;
-import stroom.planb.impl.data.ArchivalGranularityUtil;
-import stroom.planb.impl.fs.RetentionOperation;
-import stroom.planb.impl.fs.SharedFileStoreOperationContext;
-import stroom.planb.impl.fs.SharedFileStoreShard;
 import stroom.planb.shared.ArchivalGranularity;
-import stroom.planb.shared.ArchivalSettings;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.RetentionSettings;
 import stroom.planb.shared.SharedFileStoreSettings;

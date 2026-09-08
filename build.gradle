@@ -278,6 +278,16 @@ subprojects {
     test {
         useJUnitPlatform()
 
+        // Gradle forks the test JVMs, so a -D on the gradle command line reaches the daemon and
+        // stops there. Forward the ones measurement tests use to scale or enable themselves, e.g.
+        // -DtestFilterCount for TestProcessorTaskQueryPlans and -DrunProcessorBenchmark for
+        // TestProcessorTaskDispatchBenchmark. Deliberately a narrow prefix rather than the whole
+        // system property set, which would make test runs depend on whatever the daemon happens
+        // to have been started with.
+        systemProperties System.properties.findAll { key, value ->
+            key.startsWith("test") || key.startsWith("bench") || key.startsWith("run")
+        }
+
         // set heap size for the test JVM(s)
 //        minHeapSize = "128m"
 //        maxHeapSize = "8G"
@@ -287,6 +297,11 @@ subprojects {
         // not to exhaust all cores. Removing it doesn't seem to speed it up.
         maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
         // maxParallelForks = Runtime.runtime.availableProcessors() ?: 1
+
+        // Capture the report output location here (where 'reports' is in scope on the
+        // Test task) so the TestListener below can reference it. Inside the anonymous
+        // TestListener class 'reports' is not resolvable.
+        def junitXmlOutputLocation = reports.junitXml.outputLocation
 
         addTestListener(new TestListener() {
             @Override
@@ -319,7 +334,7 @@ subprojects {
 
                     // test class failed so add its project info and test report file to a global list for
                     // processing at the end of the build
-                    def reportFileName = "${reports.junitXml.outputLocation}/TEST-${descriptor.className}.xml"
+                    def reportFileName = "${junitXmlOutputLocation.get().asFile}/TEST-${descriptor.className}.xml"
                     def reportFile = file(reportFileName)
                     def pair = new Tuple2("${project.name} ${descriptor.name}", reportFile)
                     failedTestReportFiles.add(pair)

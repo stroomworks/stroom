@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,13 +27,14 @@ import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayLocks;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
-import stroom.planb.impl.db.trace.PathwaysDb;
-import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.PathwaysDb;
+import stroom.planb.impl.dao.trace.PathwaysDb.SimpleDb;
 import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.Severity;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -72,22 +73,29 @@ public class TraceProcessor {
                 if (!processed) {
                     final Optional<Trace> optTrace = traceFunction.apply(traceId);
                     if (optTrace.isEmpty()) {
-                        // No usable trace in shard (either no spans, or spans but no root span).
-                        // Likely caused by a processing-queue purge or partial data loss.
-                        // Mark as processed so it is skipped on future ticks.
-                        LOGGER.warn("Skipping incomplete trace root {} in shard (no spans or no root " +
-                                        "span found); marking as processed to suppress future re-scans",
+                        // findTrace returns empty only when the bucket holds no span at all for this
+                        // trace — a trace with spans but no root span still comes back. Mark as
+                        // processed so it is skipped on future ticks.
+                        LOGGER.warn("Skipping trace root {} as the bucket holds no spans for it; " +
+                                        "marking as processed to suppress future re-scans",
                                 HexStringUtil.encode(traceId));
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();
                     } else {
                         final Trace trace = optTrace.get();
-                        LOGGER.debug(() -> "\n" + trace);
-                        // Tag every event produced for this trace with the trace id.
-                        messageReceiver.beginTrace(traceId);
-                        buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
-                        processingStatus.insert(writer, keyByteBuffer, PROCESSED);
-                        writer.tryCommit();
+                        LOGGER.debug(() -> "\n" + trace.toString());
+                        if (trace.root() == null) {
+                            // A pathway is keyed on the root span's name, and this trace has no root
+                            // span. Left unmarked rather than marked processed, because the root may
+                            // still arrive: nothing offers a trace for processing until it has one, so
+                            // leaving the marker off costs nothing and keeps the trace eligible.
+                            messageReceiver.log(Severity.WARNING, () -> "Skipping trace "
+                                    + HexStringUtil.encode(traceId) + " as it has no root span");
+                        } else {
+                            buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
+                            processingStatus.insert(writer, keyByteBuffer, PROCESSED);
+                            writer.tryCommit();
+                        }
                     }
                 }
                 return null;

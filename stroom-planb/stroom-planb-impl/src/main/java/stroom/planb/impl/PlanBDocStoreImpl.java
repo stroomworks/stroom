@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,13 @@ import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.StoreFactory;
-import stroom.planb.impl.db.StatePaths;
+import stroom.planb.shared.AbstractPlanBSettings;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.StateType;
 import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.util.shared.EntityServiceException;
+import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -42,7 +44,6 @@ public class PlanBDocStoreImpl
         implements PlanBDocStore {
 
     private final SecurityContext securityContext;
-    private final Provider<StatePaths> statePathsProvider;
     private final Provider<ClusterLockService> clusterLockServiceProvider;
 
     @Inject
@@ -50,37 +51,52 @@ public class PlanBDocStoreImpl
             final StoreFactory storeFactory,
             final PlanBDocSerialiser serialiser,
             final SecurityContext securityContext,
-            final Provider<StatePaths> statePathsProvider,
             final Provider<ClusterLockService> clusterLockServiceProvider) {
         super(storeFactory,
+                securityContext,
                 serialiser,
                 PlanBDoc.TYPE,
                 PlanBDoc::builder,
                 PlanBDoc::copy);
         this.securityContext = securityContext;
-        this.statePathsProvider = statePathsProvider;
         this.clusterLockServiceProvider = clusterLockServiceProvider;
     }
 
+    /**
+     * Create a state store, defaulting its state type.
+     * <p>
+     * The default is applied to the document SKELETON rather than by reading the new document back and
+     * writing it again. A second write is authorised against a document whose permissions are not
+     * attached until after this method returns ({@code ExplorerServiceImpl.create} calls
+     * {@code createNode} afterwards), so it succeeds only because {@code hasDocumentPermission} lets
+     * an administrator through before consulting any permission row — a non-admin creating a state
+     * store is refused.
+     */
     @Override
     public DocRef createDocument(final String name) {
         validateName(name);
 
-        final DocRef created = getStore().createDocument(name);
+        final DocRef created = getStore().createDocument(name,
+                (uuid, docName, version, createTime, updateTime, createUser, updateUser) -> PlanBDoc
+                        .builder()
+                        .uuid(uuid)
+                        .name(docName)
+                        .version(version)
+                        .createTimeMs(createTime)
+                        .updateTimeMs(updateTime)
+                        .createUser(createUser)
+                        .updateUser(updateUser)
+                        .stateType(StateType.TEMPORAL_STATE)
+                        .build());
 
-        // Double-check the feed wasn't created elsewhere at the same time.
+        // Double-check no state store with this name was created elsewhere at the same time.
         if (checkDuplicateName(name, created)) {
-            // Delete the newly created document as the key is duplicated.
-
-            // Delete as a processing user to ensure we are allowed to delete the item as documents do not have
-            // permissions added to them until after they are created in the store.
-            securityContext.asProcessingUser(() -> getStore().deleteDocument(created));
+            // Delete the newly created document as the key is duplicated. getStore() is the
+            // deliberately unchecked handle, which is what undoing our own create needs: the document
+            // has no permissions yet, and the authority to remove it is that we just made it.
+            getStore().deleteDocument(created);
             throwNameException(name);
         }
-
-        PlanBDoc doc = getStore().readDocument(created);
-        doc = doc.copy().stateType(StateType.TEMPORAL_STATE).build();
-        getStore().writeDocument(doc);
 
         return created;
     }
@@ -120,6 +136,10 @@ public class PlanBDocStoreImpl
             throwNameException(name);
         }
 
+        // Copy reads the source document, so it needs VIEW on it. This override reaches
+        // getStore() directly, which is the unchecked handle, so the check the base applies is
+        // applied here.
+        checkDocumentPermission(docRef, DocumentPermission.VIEW);
         return getStore().copyDocument(docRef.getUuid(), newName);
     }
 
@@ -191,55 +211,16 @@ public class PlanBDocStoreImpl
     @Override
     public PlanBDoc writeDocument(final PlanBDoc document) {
         validateName(document.getName());
-
-        final DocRef docRef = DocRef.builder()
-                .type(document.getType())
-                .uuid(document.getUuid())
-                .name(document.getName())
-                .build();
-        final PlanBDoc oldDoc = getStore().readDocument(docRef);
-        if (oldDoc != null
-            && document.getShardCount() > 0
-            && oldDoc.getShardCount() != document.getShardCount()) {
-            if (hasData(oldDoc)) {
-                throw new EntityServiceException(
-                        "Cannot change shard count: data has already been written to this store.");
-            }
-        }
+        validateSettings(document);
 
         return super.writeDocument(document);
     }
 
-    private boolean hasData(final PlanBDoc doc) {
-        if (doc == null) {
-            return false;
+    private void validateSettings(final PlanBDoc document) {
+        final String error = AbstractPlanBSettings.validationError(
+                NullSafe.get(document, PlanBDoc::getSettings));
+        if (error != null) {
+            throw new EntityServiceException(error);
         }
-        // 1. Check shared storage
-        final String sharedPathStr = doc.getSharedPath();
-        if (sharedPathStr != null && !sharedPathStr.isBlank()) {
-            try {
-                final Path sharedRoot = Path.of(sharedPathStr);
-                if (Files.exists(sharedRoot.resolve(PlanBConstants.PROCESSING_DIR_NAME).resolve(doc.getUuid())) ||
-                    Files.exists(sharedRoot.resolve(PlanBConstants.SHARDS_DIR_NAME).resolve(doc.getUuid()))) {
-                    return true;
-                }
-            } catch (final Exception e) {
-                // Ignore
-            }
-        }
-        // 2. Check local storage
-        try {
-            final Path localRoot = statePathsProvider.get().getShardDir();
-            if (Files.isDirectory(localRoot)) {
-                try (final java.util.stream.Stream<Path> list = Files.list(localRoot)) {
-                    if (list.anyMatch(p -> p.getFileName().toString().startsWith(doc.getUuid()))) {
-                        return true;
-                    }
-                }
-            }
-        } catch (final Exception e) {
-            // Ignore
-        }
-        return false;
     }
 }

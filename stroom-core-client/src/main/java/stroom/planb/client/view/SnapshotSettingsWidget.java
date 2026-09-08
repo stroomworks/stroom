@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,12 @@ import com.google.gwt.uibinder.client.UiHandler;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 
-public class SnapshotSettingsWidget extends AbstractSettingsWidget implements SnapshotSettingsView {
+/**
+ * Whether reads come from snapshots pushed to other nodes. Only a store served over HTTP has
+ * snapshots, so this has no place in a trace store — see
+ * {@link stroom.planb.shared.AbstractHttpStoreSettings}.
+ */
+public class SnapshotSettingsWidget extends AbstractSettingsWidget {
 
     private final Widget widget;
 
@@ -37,17 +42,18 @@ public class SnapshotSettingsWidget extends AbstractSettingsWidget implements Sn
     @UiField
     CustomCheckBox useSnapshotsForQuery;
 
+    private boolean readOnly;
+
     @Inject
     public SnapshotSettingsWidget(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
     @Override
-    public Widget asWidget() {
+    Widget asWidget() {
         return widget;
     }
 
-    @Override
     public SnapshotSettings getSnapshotSettings() {
         return new SnapshotSettings(
                 useSnapshotsForLookup.getValue(),
@@ -55,45 +61,25 @@ public class SnapshotSettingsWidget extends AbstractSettingsWidget implements Sn
                 useSnapshotsForQuery.getValue());
     }
 
-    @Override
     public void setSnapshotSettings(final SnapshotSettings snapshotSettings) {
         if (snapshotSettings != null) {
-            final boolean lookupVal = !shardingEnabled && snapshotSettings.isUseSnapshotsForLookup();
-            final boolean getVal = !shardingEnabled && snapshotSettings.isUseSnapshotsForGet();
-            final boolean queryVal = !shardingEnabled && snapshotSettings.isUseSnapshotsForQuery();
-            this.useSnapshotsForLookup.setValue(lookupVal);
-            this.useSnapshotsForGet.setValue(getVal);
-            this.useSnapshotsForQuery.setValue(queryVal);
+            useSnapshotsForLookup.setValue(snapshotSettings.isUseSnapshotsForLookup());
+            useSnapshotsForGet.setValue(snapshotSettings.isUseSnapshotsForGet());
+            useSnapshotsForQuery.setValue(snapshotSettings.isUseSnapshotsForQuery());
         }
-    }
-
-    private boolean readOnly;
-    private boolean shardingEnabled;
-
-    public void setShardingEnabled(final boolean shardingEnabled) {
-        this.shardingEnabled = shardingEnabled;
-        updateStates();
     }
 
     private void updateStates() {
-        final boolean enabled = !readOnly && !shardingEnabled;
+        final boolean enabled = !readOnly;
         useSnapshotsForLookup.setEnabled(enabled);
         useSnapshotsForGet.setEnabled(enabled);
         useSnapshotsForQuery.setEnabled(enabled);
-
-        if (shardingEnabled) {
-            useSnapshotsForLookup.setValue(false);
-            useSnapshotsForGet.setValue(false);
-            useSnapshotsForQuery.setValue(false);
-        }
     }
 
-    @Override
     public void onReadOnly(final boolean readOnly) {
         this.readOnly = readOnly;
         updateStates();
     }
-
 
     @UiHandler("useSnapshotsForLookup")
     public void onUseSnapshotsForLookup(final ValueChangeEvent<Boolean> event) {

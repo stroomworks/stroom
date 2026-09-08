@@ -18,7 +18,7 @@ package stroom.pathways.impl.events;
 
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
 
 public class ConstraintMutationEvent implements PathwayEvent {
     private final String nodeUuid;

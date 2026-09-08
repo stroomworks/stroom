@@ -26,16 +26,27 @@ import stroom.importexport.api.ImportExportActionHandler;
 import stroom.meta.shared.Meta;
 import stroom.node.api.NodeInfo;
 import stroom.planb.impl.PlanBConfig;
+import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.PlanBDocCache;
-import stroom.planb.impl.db.BatchDestination;
-import stroom.planb.impl.db.DefaultBatchDestination;
-import stroom.planb.impl.db.PlanBStreamWriter;
-import stroom.planb.impl.db.PlanBStreamWriterFactory;
-import stroom.planb.impl.db.StatePaths;
-import stroom.planb.impl.db.state.StateDb;
-import stroom.planb.impl.db.state.StateRequest;
+import stroom.planb.impl.PlanBPaths;
+import stroom.planb.impl.dao.BatchDestination;
+import stroom.planb.impl.dao.Db;
+import stroom.planb.impl.dao.DefaultBatchDestination;
+import stroom.planb.impl.dao.PlanBDb;
+import stroom.planb.impl.dao.PlanBStreamWriter;
+import stroom.planb.impl.dao.PlanBStreamWriterFactory;
+import stroom.planb.impl.dao.ShardKeyRouter;
+import stroom.planb.impl.dao.state.StateDb;
+import stroom.planb.impl.dao.state.StateRequest;
+import stroom.planb.impl.data.shard.ShardManager;
+import stroom.planb.impl.data.value.State;
+import stroom.planb.impl.fs.HoldingAreaMergeStrategy;
+import stroom.planb.impl.fs.LocalArchive;
+import stroom.planb.impl.fs.MergeStrategy;
+import stroom.planb.impl.fs.SharedFileStore;
 import stroom.planb.impl.fs.SharedFileStoreMergeProcessor;
 import stroom.planb.impl.fs.SharedFileStorePartDestination;
+import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.impl.rest.FileTransferClient;
 import stroom.planb.impl.rest.RestPartDestination;
 import stroom.planb.impl.serde.keyprefix.KeyPrefix;
@@ -87,7 +98,7 @@ class TestSharedFileStoreMerge {
     @TempDir
     Path tempDir;
 
-    private StatePaths statePaths;
+    private PlanBPaths planBPaths;
     private PlanBConfig planBConfig;
     private PlanBDoc doc;
     private Path sharedRootDir;
@@ -116,7 +127,7 @@ class TestSharedFileStoreMerge {
     void setUp() throws IOException {
         mocks = MockitoAnnotations.openMocks(this);
         documentActionHandlers = new HashMap<>();
-        statePaths = new StatePaths(tempDir.resolve("local_state"));
+        planBPaths = new PlanBPaths(tempDir.resolve("local_state"));
         sharedRootDir = tempDir.resolve("shared_store");
         Files.createDirectories(sharedRootDir);
 
@@ -135,6 +146,11 @@ class TestSharedFileStoreMerge {
 
         executor = Runnable::run;
         when(executorProvider.get()).thenReturn(executor);
+
+        // SharedFileStoreMergeProcessor.merge passes this straight to childContext, and the childContext
+        // stub below matches with any(TaskContext.class), which does not match null. Left unstubbed the
+        // stub misses, childContext returns null, and the merge dies with an NPE inside runAsync.
+        when(taskContextFactory.current()).thenReturn(Mockito.mock(TaskContext.class));
 
         // Setup TaskContextFactory stubbing to just run the runnable
         doAnswer(invocation -> {
@@ -193,7 +209,7 @@ class TestSharedFileStoreMerge {
         final PlanBStreamWriterFactory shardWriters = new PlanBStreamWriterFactory(
                 BYTE_BUFFERS,
                 BYTE_BUFFER_FACTORY,
-                statePaths,
+                planBPaths,
                 batchPublisher,
                 new SharedFileStorePartDestination(),
                 new RestPartDestination(fileTransferClient));
@@ -219,67 +235,80 @@ class TestSharedFileStoreMerge {
                 null,
                 nodeInfo,
                 () -> planBConfig,
-                statePaths,
+                planBPaths,
                 fileTransferClient,
                 taskContextFactory,
                 executorProvider,
                 () -> documentActionHandlers
         );
 
-        final SharedFileStoreMergeProcessor mergeProcessor = new SharedFileStoreMergeProcessor(
-                clusterLockService,
+        final SharedFileStorePublisher publisher =
+                new SharedFileStorePublisher(nodeInfo, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, planBPaths);
+        // This doc is a STATE store given a shared file store, so map the holding strategy onto
+        // STATE rather than TRACE.
+        final MergeStrategy holdingStrategy = new HoldingAreaMergeStrategy(
                 BYTE_BUFFERS,
                 BYTE_BUFFER_FACTORY,
                 () -> planBConfig,
-                statePaths,
-                nodeInfo,
+                planBPaths,
+                publisher,
+                new LocalArchive(publisher, planBPaths));
+        final SharedFileStoreMergeProcessor mergeProcessor = new SharedFileStoreMergeProcessor(
+                clusterLockService,
+                () -> planBConfig,
                 securityContext,
                 taskContextFactory,
-                planBDocCache
+                planBDocCache,
+                Map.of(StateType.STATE, holdingStrategy)
         );
 
-        // Run the merge
+        // merge() joins on every shard's future before returning, so the merge is complete here.
         mergeProcessor.merge();
 
-        // Give async executors a brief moment to complete the merge and exceed the 1-second sync check interval
-        Thread.sleep(1500);
-
         // 3. Verify files are copied back and cleaned up on shared store
-        // The processing folder should now be empty or deleted (each batch folder containing .complete should be gone)
+        // The processing folder should now be empty or deleted (each merged batch folder is removed)
         try (var batchDirs = Files.walk(sharedProcessingDir, 3)) {
-            final boolean hasComplete = batchDirs
-                    .filter(p -> p.getFileName().toString().equals(".complete"))
+            final boolean hasVersion = batchDirs
+                    .filter(p -> p.getFileName().toString().equals(".version"))
                     .anyMatch(Files::exists);
-            assertThat(hasComplete).isFalse();
+            assertThat(hasVersion).isFalse();
         }
 
-        // The shards folder should now contain the main merged shards
-        final Path sharedShardDir = sharedRootDir.resolve("shards").resolve(doc.getUuid());
+        // The holding folder should now contain the main merged shards
+        final Path sharedShardDir = sharedRootDir
+                .resolve(PlanBConstants.HOLDING_DIR_NAME).resolve(doc.getUuid());
         assertThat(sharedShardDir).exists();
 
-        // Both shard 0 and shard 1 should exist, have a .version and .complete file
+        // Nothing writes to the shared shards/ tree. A call site left pointing at it would fail
+        // silently — an empty holding shard and lost in-flight data — so assert it is never created.
+        assertThat(sharedRootDir.resolve(PlanBConstants.SHARDS_DIR_NAME)).doesNotExist();
+
+        // Both shard 0 and shard 1 should exist, with data.mdb and a .version marker
         for (int i = 0; i < 2; i++) {
             final Path shardIndexDir = sharedShardDir.resolve(String.format("%04d", i));
             assertThat(shardIndexDir.resolve("data.mdb")).exists();
             assertThat(shardIndexDir.resolve(".version")).exists();
-            assertThat(shardIndexDir.resolve(".complete")).exists();
         }
 
-        // Verify query capability on the merged database
-        final String val1 = realShardManager.get(doc.getName(), "key1", reader -> {
-            if (reader instanceof final StateDb stateDb) {
-                return stateDb.getState(new StateRequest(KeyPrefix.create("key1"))).val().toString();
-            }
-            return null;
-        });
-        final String val2 = realShardManager.get(doc.getName(), "key2", reader -> {
-            if (reader instanceof final StateDb stateDb) {
-                return stateDb.getState(new StateRequest(KeyPrefix.create("key2"))).val().toString();
-            }
-            return null;
-        });
+        // Both keys survived the merge, in whichever shard they hashed to. Read the published shards
+        // directly: a store on the shared file store has no local copy to read through ShardManager.
+        assertThat(readPublished(sharedShardDir, "key1")).isEqualTo("value1");
+        assertThat(readPublished(sharedShardDir, "key2")).isEqualTo("value2");
+    }
 
-        assertThat(val1).isEqualTo("value1");
-        assertThat(val2).isEqualTo("value2");
+    /**
+     * Reads a key from whichever published shard holds it, by copying that shard's {@code data.mdb} to a
+     * local directory and opening it read-only — no LMDB env is ever opened on the shared store.
+     */
+    private String readPublished(final Path sharedShardDir, final String key) throws IOException {
+        final int shardIndex = ShardKeyRouter.computeShardIndex(key, SharedFileStore.shardCountOf(doc));
+        final Path localDir = Files.createTempDirectory(tempDir, "read_" + key + "_");
+        Files.copy(sharedShardDir.resolve(PlanBConstants.formatShardIndex(shardIndex))
+                        .resolve(PlanBConstants.DATA_FILE_NAME),
+                localDir.resolve(PlanBConstants.DATA_FILE_NAME));
+        try (final Db<?, ?> db = PlanBDb.open(
+                doc, localDir, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, true, true)) {
+            return ((StateDb) db).getState(new StateRequest(KeyPrefix.create(key))).val().toString();
+        }
     }
 }

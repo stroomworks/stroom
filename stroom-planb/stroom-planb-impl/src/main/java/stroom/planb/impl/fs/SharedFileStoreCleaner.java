@@ -26,17 +26,17 @@ import jakarta.inject.Singleton;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -46,24 +46,29 @@ import java.util.stream.Stream;
  *
  * <p>On each execution:</p>
  * <ol>
- *   <li><b>Orphan detection</b> — scans {@code sharedPath/shards/} and
- *       {@code sharedPath/processing/} for UUID directories with no
- *       corresponding live document, and renames them into
- *       {@code sharedPath/trash/} (atomic, fast). A grace period prevents
+ *   <li><b>Orphan detection</b> — scans every {@link PlanBConstants#STAGE_DIR_NAMES} subdirectory of
+ *       a shared root for UUID directories with no corresponding live document, and hands each such
+ *       UUID to {@link SharedFileStoreTrash}. A grace period prevents
  *       newly-created shard directories from being incorrectly orphaned.</li>
  *   <li><b>Trash drain</b> — recursively deletes everything under
  *       {@code sharedPath/trash/}. Runs after orphan detection so orphans
  *       found in this pass are also drained immediately.</li>
  * </ol>
  *
+ * <p>Orphan detection deletes data because a UUID is absent, so it fails closed: if any document store
+ * cannot enumerate what is live, or a root's live set comes back empty, nothing is swept that cycle. An
+ * incomplete list would otherwise read as a directory full of orphans.</p>
+ *
  * <p>Safe to run concurrently across multiple cluster nodes. If a previous
  * execution is still running on this node the new trigger is skipped.</p>
  *
- * <p>On startup, {@link #startup()} removes orphaned {@code .tmp_} directories
- * from the shared {@code processing/} area that were left by a previous JVM
- * crash. Only directories older than {@link #ORPHANED_TMP_AGE} are deleted, to
- * avoid racing with a concurrently-starting peer node whose push may have just
- * created a {@code .tmp_} directory.
+ * <p>On startup, {@link #startup()} removes orphaned batch directories whose name ends
+ * {@code .tmp} from the shared {@code processing/} area — the half-written state
+ * {@link SharedFileStoreWriter#copyToSharedStore} leaves if the JVM dies before its rename. Only
+ * directories older than {@link #ORPHANED_TMP_AGE} are deleted, to avoid racing with a
+ * concurrently-starting peer node whose write may have just created one. The {@code .tmp_}-prefixed
+ * dirs left by a whole-shard push are a different marker, recovered by
+ * {@link SharedFileStorePublisher#recoverOrphaned} instead.
  */
 @Singleton
 public class SharedFileStoreCleaner {
@@ -79,14 +84,11 @@ public class SharedFileStoreCleaner {
     static final Duration ORPHAN_GRACE_PERIOD = Duration.ofHours(1);
 
     /**
-     * Minimum age of a {@code .tmp_} directory in the shared store's
+     * Minimum age of a {@code .tmp}-suffixed batch directory in the shared store's
      * {@code processing/} area before it is considered an orphan left by a
      * previous JVM crash and eligible for deletion at startup.
      */
     static final Duration ORPHANED_TMP_AGE = Duration.ofMinutes(5);
-
-    private static final List<String> SHARD_SUBDIRS =
-            List.of(PlanBConstants.SHARDS_DIR_NAME, PlanBConstants.PROCESSING_DIR_NAME);
 
     private final Set<SharedFileStoreDocStore> dataSources;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -109,30 +111,48 @@ public class SharedFileStoreCleaner {
     }
 
     /**
-     * Startup lifecycle hook — removes orphaned {@code .tmp_} directories from
+     * Startup lifecycle hook — removes orphaned {@code .tmp}-suffixed batch directories from
      * the shared filesystem's {@code processing/} area.
      *
      * <p>Only directories older than {@link #ORPHANED_TMP_AGE} are removed.
-     * This avoids a race with a concurrently-starting peer node whose push
-     * operation may have just created a {@code .tmp_} directory.
+     * This avoids a race with a concurrently-starting peer node whose write
+     * may have just created one.
      */
     public void startup() {
-        LOGGER.info("Starting PlanB shared filesystem tmp cleanup");
+        LOGGER.debug("Starting PlanB shared filesystem tmp cleanup");
         final Instant cutoff = Instant.now().minus(ORPHANED_TMP_AGE);
 
+        // Only the set of roots is used here, not document liveness, so a failed enumeration costs a
+        // boot's worth of cleanup rather than risking data: a .tmp batch dir carries no .version marker,
+        // and SharedFileStoreMergeProcessor.collectBatchDirs skips any batch without one.
+        final Optional<Map<Path, Set<String>>> liveUuidsBySharedPath = collectLiveUuids();
+        liveUuidsBySharedPath.ifPresent(map -> map.keySet()
+                .forEach(sharedRoot -> cleanupOrphanedTmpDirs(sharedRoot, cutoff)));
+
+        LOGGER.debug("Completed PlanB shared filesystem tmp cleanup");
+    }
+
+    // Live UUIDs of every registered document store, grouped by shared root. Empty means a store failed
+    // to enumerate, so the result cannot be treated as a complete list of live documents.
+    private Optional<Map<Path, Set<String>>> collectLiveUuids() {
         final Map<Path, Set<String>> liveUuidsBySharedPath = new HashMap<>();
         for (final SharedFileStoreDocStore source : dataSources) {
-            source.getLiveSharedPathData().forEach((sharedPath, uuids) ->
+            final Map<Path, Set<String>> sourceData;
+            try {
+                sourceData = source.getLiveSharedPathData();
+            } catch (final Exception e) {
+                LOGGER.error(() -> "Could not list live documents from "
+                                   + source.getClass().getSimpleName()
+                                   + ", so this run cannot tell a live document from an orphan and is "
+                                   + "abandoned: " + e.getMessage(), e);
+                return Optional.empty();
+            }
+            sourceData.forEach((sharedPath, uuids) ->
                     liveUuidsBySharedPath
-                            .computeIfAbsent(sharedPath, k -> new java.util.HashSet<>())
+                            .computeIfAbsent(sharedPath, k -> new HashSet<>())
                             .addAll(uuids));
         }
-
-        for (final Path sharedRoot : liveUuidsBySharedPath.keySet()) {
-            cleanupOrphanedTmpDirs(sharedRoot, cutoff);
-        }
-
-        LOGGER.info("Completed PlanB shared filesystem tmp cleanup");
+        return Optional.of(liveUuidsBySharedPath);
     }
 
     private void cleanupOrphanedTmpDirs(final Path sharedRoot, final Instant cutoff) {
@@ -150,7 +170,7 @@ public class SharedFileStoreCleaner {
                                             .endsWith(PlanBConstants.TMP_DIR_SUFFIX))
                                     .filter(p -> isOlderThan(p, cutoff))
                                     .forEach(p -> {
-                                        LOGGER.info("Deleting orphaned tmp directory: {}", p);
+                                        LOGGER.debug("Deleting orphaned tmp directory: {}", p);
                                         FileUtil.deleteDir(p);
                                     });
                         } catch (final IOException e) {
@@ -167,96 +187,78 @@ public class SharedFileStoreCleaner {
     }
 
     private void housekeep() {
-        LOGGER.info("Starting PlanB shard housekeeping");
+        LOGGER.debug("Starting PlanB shard housekeeping");
 
-        // Merge live UUID sets across all registered doc-type stores,
-        // grouping by shared filesystem root path.
-        final Map<Path, Set<String>> liveUuidsBySharedPath = new HashMap<>();
-        for (final SharedFileStoreDocStore source : dataSources) {
-            source.getLiveSharedPathData().forEach((sharedPath, uuids) ->
-                    liveUuidsBySharedPath
-                            .computeIfAbsent(sharedPath, k -> new java.util.HashSet<>())
-                            .addAll(uuids));
-        }
-
+        final Optional<Map<Path, Set<String>>> liveUuidsBySharedPath = collectLiveUuids();
         if (liveUuidsBySharedPath.isEmpty()) {
+            return;
+        }
+        if (liveUuidsBySharedPath.get().isEmpty()) {
             LOGGER.debug("No doc configs with a shared path — nothing to housekeep");
             return;
         }
 
-        for (final Map.Entry<Path, Set<String>> entry : liveUuidsBySharedPath.entrySet()) {
+        for (final Map.Entry<Path, Set<String>> entry : liveUuidsBySharedPath.get().entrySet()) {
             housekeepSharedPath(entry.getKey(), entry.getValue());
         }
 
-        LOGGER.info("Completed PlanB shard housekeeping");
+        LOGGER.debug("Completed PlanB shard housekeeping");
     }
 
     private void housekeepSharedPath(final Path sharedRoot, final Set<String> liveUuids) {
         LOGGER.debug(() -> "Housekeeping shared path: " + sharedRoot);
 
-        // Step 1: orphan detection — before drain so newly-detected orphans
-        // are included in the same drain pass.
-        for (final String subdir : SHARD_SUBDIRS) {
-            detectOrphans(sharedRoot, subdir, liveUuids);
+        if (liveUuids.isEmpty()) {
+            // A root is only in the map because some document reported it, so an empty set means the
+            // enumeration lost them. Sweeping now would read every UUID directory under this root as an
+            // orphan and trash live data.
+            LOGGER.warn(() -> "No live documents reported for " + sharedRoot
+                              + ", so orphan detection is skipped for it this run");
+        } else {
+            // Before the drain, so orphans found now are drained in the same pass.
+            findOrphanUuids(sharedRoot, liveUuids)
+                    .forEach(uuid -> SharedFileStoreTrash.trashDoc(sharedRoot, uuid));
         }
 
-        // Step 2: drain trash.
         drainTrash(sharedRoot);
     }
 
-    /**
-     * Scans {@code sharedRoot/<subdir>/} for UUID directories absent from
-     * {@code liveUuids} whose last-modified time is older than
-     * {@link #ORPHAN_GRACE_PERIOD}, and renames them into
-     * {@code sharedRoot/trash/}.
-     */
-    private void detectOrphans(final Path sharedRoot,
-                                final String subdir,
-                                final Set<String> liveUuids) {
-        final Path scanDir = sharedRoot.resolve(subdir);
-        if (!Files.isDirectory(scanDir)) {
-            return;
-        }
-
+    // UUIDs with data under sharedRoot that are absent from liveUuids and whose every stage dir predates
+    // the grace period. Checked across all of a document's stage dirs, not each alone: a dir touched
+    // recently means something is still writing the document, so it keeps all of its data or none.
+    private Set<String> findOrphanUuids(final Path sharedRoot, final Set<String> liveUuids) {
         final Instant cutoff = Instant.now().minus(ORPHAN_GRACE_PERIOD);
+        final Map<String, Boolean> candidates = new HashMap<>();
 
-        try (final var stream = Files.list(scanDir)) {
-            stream.forEach(uuidDir -> {
-                final String uuid = uuidDir.getFileName().toString();
-                if (liveUuids.contains(uuid)) {
-                    return;
-                }
-                if (!isOlderThan(uuidDir, cutoff)) {
-                    LOGGER.debug(() -> "Skipping recently-modified potential orphan "
-                            + "(within grace period): " + uuidDir);
-                    return;
-                }
-                trashDir(sharedRoot, uuidDir, uuid, subdir);
-            });
-        } catch (final IOException e) {
-            LOGGER.error(() -> "Error scanning " + scanDir + " for orphans: " + e.getMessage(), e);
+        for (final String stage : PlanBConstants.STAGE_DIR_NAMES) {
+            final Path scanDir = sharedRoot.resolve(stage);
+            if (!Files.isDirectory(scanDir)) {
+                continue;
+            }
+            try (final Stream<Path> stream = Files.list(scanDir)) {
+                stream.filter(Files::isDirectory).forEach(uuidDir -> {
+                    final String uuid = uuidDir.getFileName().toString();
+                    if (liveUuids.contains(uuid)) {
+                        return;
+                    }
+                    candidates.merge(uuid, isOlderThan(uuidDir, cutoff), Boolean::logicalAnd);
+                });
+            } catch (final IOException e) {
+                LOGGER.error(() -> "Error scanning " + scanDir + " for orphans: " + e.getMessage(), e);
+            }
         }
-    }
 
-    private void trashDir(final Path sharedRoot,
-                          final Path src,
-                          final String uuid,
-                          final String subdir) {
-        final String trashEntryName = uuid + "-" + System.currentTimeMillis();
-        final Path dest = sharedRoot
-                .resolve(PlanBConstants.TRASH_DIR_NAME)
-                .resolve(trashEntryName)
-                .resolve(subdir);
-        try {
-            Files.createDirectories(dest.getParent());
-            Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE);
-            LOGGER.info("Moved orphaned shard directory to trash: {} -> {}", src, dest);
-        } catch (final NoSuchFileException e) {
-            // Another node already moved it — safe to ignore.
-            LOGGER.debug(() -> "Orphan already moved by another node: " + src);
-        } catch (final IOException e) {
-            LOGGER.warn(() -> "Could not move orphan to trash: " + src + " — " + e.getMessage());
-        }
+        candidates.forEach((uuid, expired) -> {
+            if (!expired) {
+                LOGGER.debug(() -> "Skipping recently-modified potential orphan "
+                                   + "(within grace period): " + uuid);
+            }
+        });
+
+        return candidates.entrySet().stream()
+                .filter(Map.Entry::getValue)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
     }
 
     /**
@@ -270,7 +272,7 @@ public class SharedFileStoreCleaner {
 
         try (final var stream = Files.list(trashDir)) {
             stream.forEach(entry -> {
-                LOGGER.info("Draining trash entry: {}", entry);
+                LOGGER.debug("Draining trash entry: {}", entry);
                 if (!FileUtil.deleteDir(entry)) {
                     LOGGER.warn(() -> "Could not fully delete trash entry: " + entry);
                 }

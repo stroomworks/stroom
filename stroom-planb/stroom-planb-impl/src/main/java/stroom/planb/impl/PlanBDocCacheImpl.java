@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import stroom.cache.api.LoadingStroomCache;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocFinder;
 import stroom.docstore.api.DocumentActionHandler;
-import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.api.DocumentTypeName;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.planb.shared.PlanBDocument;
@@ -79,31 +78,45 @@ public class PlanBDocCacheImpl implements PlanBDocCache, Clearable, EntityEvent.
 
     private PlanBDocument create(final String name) {
         return securityContext.asProcessingUserResult(() -> {
-            final Map<DocumentTypeName, DocumentActionHandler> handlers = documentActionHandlersProvider.get();
-
             PlanBDocument result = null;
             for (final String type : planBDocumentTypes) {
                 final List<DocRef> matches = docFinder.findByName(type, name);
                 for (final DocRef docRef : matches) {
-                    final DocumentActionHandler<?> handler = handlers.get(new DocumentTypeName(docRef.getType()));
-                    if (handler != null) {
-                        final Object loaded = handler.readDocument(docRef);
-                        if (loaded instanceof final PlanBDocument planBDoc) {
-                            if (result != null) {
-                                throw new RuntimeException(
-                                        "Unexpectedly found more than one state doc with key: " + name);
-                            }
-                            result = planBDoc;
+                    final PlanBDocument planBDoc = loadFromDocRef(docRef);
+                    if (planBDoc != null) {
+                        if (result != null) {
+                            throw new RuntimeException(
+                                    "Unexpectedly found more than one state doc with key: " + name);
                         }
+                        result = planBDoc;
                     }
                 }
             }
 
             if (result == null) {
-                throw new DocumentNotFoundException(DocRef.builder().name(name).build());
+                throw new PlanBDocNotFoundException(name);
             }
             return result;
         });
+    }
+
+    /**
+     * Loads a {@link PlanBDocument} directly from a known {@link DocRef} via its
+     * document handler, bypassing the {@link DocFinder#findByName} lookup. Returns
+     * {@code null} if there is no handler for the doc's type or the loaded document
+     * is not a {@link PlanBDocument}.
+     */
+    private PlanBDocument loadFromDocRef(final DocRef docRef) {
+        final Map<DocumentTypeName, DocumentActionHandler> handlers = documentActionHandlersProvider.get();
+        final DocumentActionHandler<?> handler = handlers.get(new DocumentTypeName(docRef.getType()));
+        if (handler == null) {
+            return null;
+        }
+        final Object loaded = handler.readDocument(docRef);
+        if (loaded instanceof final PlanBDocument planBDoc) {
+            return planBDoc;
+        }
+        return null;
     }
 
     @Override
@@ -116,7 +129,11 @@ public class PlanBDocCacheImpl implements PlanBDocCache, Clearable, EntityEvent.
                 if (handler instanceof final ImportExportActionHandler ieHandler) {
                     for (final DocRef docRef : ieHandler.listDocuments()) {
                         try {
-                            final PlanBDocument doc = cache.get(docRef.getName());
+                            // listDocuments() already gives us the full DocRef, so on a cache
+                            // miss load straight from it rather than re-resolving by name via
+                            // create()/findByName. Warm cache entries are still reused.
+                            final PlanBDocument doc = cache.get(docRef.getName(),
+                                    name -> loadFromDocRef(docRef));
                             if (doc != null) {
                                 results.add(doc);
                             }

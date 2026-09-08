@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,10 +67,6 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
     @Override
     protected void onRead(final DocRef docRef, final PathwaysDoc doc, final boolean readOnly) {
         getView().setTemporalOrderingTolerance(doc.getTemporalOrderingTolerance());
-        getView().setAllowPathwayCreation(doc.isAllowPathwayCreation());
-        getView().setAllowPathwayMutation(doc.isAllowPathwayMutation());
-        getView().setAllowConstraintCreation(doc.isAllowConstraintCreation());
-        getView().setAllowConstraintMutation(doc.isAllowConstraintMutation());
         traceStorePresenter.setSelectedEntityReference(doc.getTracesDocRef(), true);
         feedPresenter.setSelectedEntityReference(doc.getInfoFeed(), true);
         getView().setProcessingNode(doc.getProcessingNode());
@@ -81,10 +77,6 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         return doc
                 .copy()
                 .temporalOrderingTolerance(getView().getTemporalOrderingTolerance())
-                .allowPathwayCreation(getView().isAllowPathwayCreation())
-                .allowPathwayMutation(getView().isAllowPathwayMutation())
-                .allowConstraintCreation(getView().isAllowConstraintCreation())
-                .allowConstraintMutation(getView().isAllowConstraintMutation())
                 .tracesDocRef(traceStorePresenter.getSelectedEntityReference())
                 .infoFeed(feedPresenter.getSelectedEntityReference())
                 .processingNode(getView().getProcessingNode())

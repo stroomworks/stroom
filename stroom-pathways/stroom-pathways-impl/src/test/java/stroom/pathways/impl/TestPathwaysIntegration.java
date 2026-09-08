@@ -21,9 +21,9 @@ import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.pathways.shared.TracesDoc;
 import stroom.pathways.shared.otel.trace.Span;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
-import stroom.planb.impl.db.trace.TraceDb;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.TraceDb;
 import stroom.planb.shared.RetentionSettings;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.planb.shared.StateType;
@@ -44,24 +44,16 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for the {@code trace-roots-merge-time} DBI that underpins
- * the completion-based pathways processing mechanism.
+ * Integration tests for the {@code trace-pathways-pending} DBI trigger
+ * introduced as part of the completion-based pathways processing mechanism.
  *
  * <p>They verify directly on {@link TraceDb} that:
  * <ul>
- *   <li>Inserting a root span (empty {@code parentSpanId}) populates the
- *       merge-time index.</li>
- *   <li>Inserting only child spans does NOT populate the merge-time index.</li>
- *   <li>The grace-period cutoff used by
- *       {@link PathwaysProcessor#exec()} (via {@link TraceDb#iterateRootsMergedBefore})
- *       correctly selects only traces whose root-span merge time has elapsed the
- *       threshold.</li>
+ *   <li>Inserting a root span (empty {@code parentSpanId}) records a merge time.</li>
+ *   <li>Inserting only child spans does not.</li>
+ *   <li>The cutoff passed to {@link TraceDb#iterateRootsMergedBefore} selects on the time the
+ *       store took the trace on, so a caller can bound what it picks up.</li>
  * </ul>
- *
- * <p>The index is keyed by the wall-clock time at which the root span was merged
- * into the store ({@code System.currentTimeMillis()} at insertion), NOT by the
- * span's declared end time — so the grace period is measured from receipt,
- * independent of out-of-order delivery.
  */
 class TestPathwaysIntegration {
 
@@ -81,7 +73,7 @@ class TestPathwaysIntegration {
                 .name(name)
                 .stateType(StateType.TRACE)
                 .settings(new TraceSettings.Builder()
-                        .sharedFileStore(new SharedFileStoreSettings(2, null, null))
+                        .sharedFileStore(new SharedFileStoreSettings(2, null))
                         .maxStoreSize(ByteSize.ofMebibytes(10).getBytes())
                         .retention(new RetentionSettings.Builder()
                                 .duration(SimpleDuration.ZERO)
@@ -120,11 +112,11 @@ class TestPathwaysIntegration {
 
     /**
      * Inserting a root span (empty {@code parentSpanId}) into {@link TraceDb}
-     * must populate the {@code trace-roots-merge-time} DBI, so the trace-ID is
-     * yielded by {@link TraceDb#iterateRootsMergedBefore}.
+     * must populate the {@code trace-pathways-pending} DBI with the trace-ID
+     * and the root span's end-time-epoch-ms.
      */
     @Test
-    void testRootSpanPopulatesMergeTimeIndex() throws Exception {
+    void testRootSpanPopulatesPendingDbi() throws Exception {
         final TracesDoc doc = buildTracesDoc("traces_root_span_test");
         final Path dbPath = Files.createDirectories(tempDir.resolve("db_root"));
 
@@ -149,11 +141,11 @@ class TestPathwaysIntegration {
 
     /**
      * Inserting only child spans (non-empty {@code parentSpanId}) must NOT
-     * populate the {@code trace-roots-merge-time} DBI — only root-span
+     * populate the {@code trace-pathways-pending} DBI — only root-span
      * insertions trigger it.
      */
     @Test
-    void testChildSpanDoesNotPopulateMergeTimeIndex() throws Exception {
+    void testChildSpanDoesNotPopulatePendingDbi() throws Exception {
         final TracesDoc doc = buildTracesDoc("traces_child_span_test");
         final Path dbPath = Files.createDirectories(tempDir.resolve("db_child"));
 
@@ -176,10 +168,9 @@ class TestPathwaysIntegration {
     }
 
     /**
-     * The grace-period cutoff is based on the wall-clock time at which the
-     * root span was merged into the store (not the span's declared end time).
-     * Traces merged after the cutoff are still within the grace period and
-     * should NOT be returned by {@link TraceDb#iterateRootsMergedBefore}.
+     * The cutoff selects on the wall-clock time at which the root span was merged into the store,
+     * not the span's declared end time, so a trace merged after the cutoff is not returned by
+     * {@link TraceDb#iterateRootsMergedBefore}.
      *
      * <p>This test verifies:
      * <ul>
@@ -188,12 +179,12 @@ class TestPathwaysIntegration {
      * </ul>
      */
     @Test
-    void testGracePeriodCutoffFiltersEligibleTraces() throws Exception {
+    void testCutoffFiltersEligibleTraces() throws Exception {
         final TracesDoc doc = buildTracesDoc("traces_cutoff_test");
         final Path dbPath = Files.createDirectories(tempDir.resolve("db_cutoff"));
 
         // Record a cutoff time BEFORE insertion so that the merge times of both
-        // traces will be >= cutoff (i.e. both still within the grace period).
+        // traces will be >= cutoff.
         final long cutoffBeforeInsert = Instant.now().toEpochMilli() - 1_000L;
 
         final Span rootA = buildRootSpan(
@@ -213,10 +204,10 @@ class TestPathwaysIntegration {
                 writer.commit();
             }
 
-            // Cutoff strictly before insertion → grace period not yet elapsed for either trace.
-            final List<byte[]> stillInGracePeriod = new ArrayList<>();
-            db.iterateRootsMergedBefore(cutoffBeforeInsert, stillInGracePeriod::add);
-            assertThat(stillInGracePeriod).isEmpty();
+            // Cutoff strictly before insertion → neither trace is in range.
+            final List<byte[]> beforeCutoff = new ArrayList<>();
+            db.iterateRootsMergedBefore(cutoffBeforeInsert, beforeCutoff::add);
+            assertThat(beforeCutoff).isEmpty();
 
             // Long.MAX_VALUE cutoff → all inserted root traces are eligible.
             final List<byte[]> allEligible = new ArrayList<>();

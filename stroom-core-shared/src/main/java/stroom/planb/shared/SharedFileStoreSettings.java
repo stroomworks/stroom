@@ -25,24 +25,22 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Objects;
 
 /**
- * Configuration for the shared file store used by a {@link HasSharedFileStore} PlanB store.
+ * Where a {@link HasSharedFileStore} store's data lives on the shared filesystem, and how many ways
+ * it is split.
  *
- * <p>Combines three related concerns that all require the shared file store to be
- * active:
+ * <p>Only these two, because they are all that every shared file store store type has in common.
+ * Whether the data is bucketed at all, what a bucket means, and whether writes pass through a
+ * holding shard first are decided by the store type, so those settings live on its own settings
+ * class — see {@link HasHoldingAreaSettings}.
+ *
  * <ul>
- *   <li><b>shardCount</b> — how many LMDB shards the store is split across.</li>
- *   <li><b>sharedPath</b> — path to the shared filesystem used for multi-node
- *       replication and archiving. {@code null} or blank means the shared file
- *       store is disabled.</li>
- *   <li><b>archival</b> — optional time-based archival policy; {@code null} means
- *       archival is not configured.</li>
+ *   <li><b>shardCount</b> — how many LMDB shards the store is split across, by key hash. 1 means
+ *       unsharded.</li>
+ *   <li><b>sharedPath</b> — path to the shared filesystem used for multi-node replication. Blank or
+ *       {@code null} means the shared file store is not configured.</li>
  * </ul>
- *
- * <p>Archival is nested here (rather than being a sibling field on the enclosing
- * settings class) because it is only meaningful when the shared file store is
- * active — archival data is written to the shared path.
  */
-@JsonPropertyOrder({"shardCount", "sharedPath", "archival"})
+@JsonPropertyOrder({"shardCount", "sharedPath"})
 @JsonInclude(Include.NON_NULL)
 public final class SharedFileStoreSettings {
 
@@ -52,25 +50,12 @@ public final class SharedFileStoreSettings {
     @JsonProperty("sharedPath")
     private final String sharedPath;
 
-    @JsonProperty("archival")
-    private final ArchivalSettings archival;
-
     @JsonCreator
     public SharedFileStoreSettings(
             @JsonProperty("shardCount") final int shardCount,
-            @JsonProperty("sharedPath") final String sharedPath,
-            @JsonProperty("archival") final ArchivalSettings archival) {
+            @JsonProperty("sharedPath") final String sharedPath) {
         this.shardCount = shardCount;
         this.sharedPath = sharedPath;
-        this.archival = archival;
-    }
-
-    /**
-     * Convenience constructor for cases where no archival policy is needed
-     * (e.g. tests, or stores that have not yet configured archival).
-     */
-    public SharedFileStoreSettings(final int shardCount, final String sharedPath) {
-        this(shardCount, sharedPath, null);
     }
 
     public int getShardCount() {
@@ -79,14 +64,6 @@ public final class SharedFileStoreSettings {
 
     public String getSharedPath() {
         return sharedPath;
-    }
-
-    /**
-     * Returns the archival policy for this store, or {@code null} if archival
-     * has not been configured.
-     */
-    public ArchivalSettings getArchival() {
-        return archival;
     }
 
     @Override
@@ -98,19 +75,17 @@ public final class SharedFileStoreSettings {
             return false;
         }
         return shardCount == other.shardCount &&
-               Objects.equals(sharedPath, other.sharedPath) &&
-               Objects.equals(archival, other.archival);
+               Objects.equals(sharedPath, other.sharedPath);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(shardCount, sharedPath, archival);
+        return Objects.hash(shardCount, sharedPath);
     }
 
     @Override
     public String toString() {
         return "SharedFileStoreSettings[shardCount=" + shardCount +
-               ", sharedPath=" + sharedPath +
-               ", archival=" + archival + "]";
+               ", sharedPath=" + sharedPath + "]";
     }
 }

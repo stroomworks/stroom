@@ -17,7 +17,7 @@
 package stroom.pathways.impl.events;
 
 import stroom.pathways.shared.otel.trace.NanoTime;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
 
 public class RequiredConstraintAbsentEvent implements PathwayEvent {
     private final String nodeUuid;
