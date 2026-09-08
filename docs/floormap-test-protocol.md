@@ -433,11 +433,10 @@ E3 and E4 passed on 2026-09-04.
 
 # Also outstanding, not a test
 
-Two orphaned processor filters need deleting in **Monitoring → Processing**. No API covers this, so
-it needs the UI:
-
-- `19925dea-cb9b-45df-9735-de0014ae531a`
-- `1994b331-f3c9-44ad-ba03-82abeda5d1f3`
+~~Two orphaned processor filters need deleting in **Monitoring → Processing**~~ — **resolved
+2026-09-08** by the clean database, which took them with it. Kept here only so that a reappearance
+is recognised rather than rediscovered: they were `19925dea-cb9b-45df-9735-de0014ae531a` and
+`1994b331-f3c9-44ad-ba03-82abeda5d1f3`, and no API covers deleting one, so a recurrence needs the UI.
 
 ---
 
