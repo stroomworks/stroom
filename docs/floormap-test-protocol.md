@@ -32,9 +32,12 @@ Then upload, through the UI's **Upload** button on each feed:
 | `docs/floormap-testdata/out/events.csv` | `FLOOR_MAP_EVENTS` |
 | `docs/floormap-testdata/out/events-bulk.csv` | `FLOOR_MAP_EVENTS` — same feed; its `map` column routes it to `floor_map_events_bulk` |
 
-*Not through the API: this instance's MCP data endpoints currently fail on `Meta$Builder` /
-`FetchMarkerResult` class resolution, because the MCP server build predates this branch. Queries
-work; uploads do not.*
+*Not through the API. Two separate reasons, both current: the MCP server's data endpoints fail on
+`Meta$Builder` / `FetchMarkerResult` class resolution because its build predates this branch; and
+after a **clean database** the server's stored API token no longer authenticates at all
+(`AUTH_HEADER_REJECTED`, HTTP 401), because the admin account is newly created. Re-issue a key under
+**Tools → API Keys** and update the MCP server's `Authorization` header if you want the query tools
+back.*
 
 **The ingest XSLT was updated for you** — `FLOOR_MAP_EVENTS_TO_PLANB` in Stroom is a separate
 document from `docs/floormap-testdata/floormap-events.xslt`, and it now reads `locationRef` as well
@@ -316,9 +319,84 @@ passes, the honest follow-up is to make the impossible case impossible rather th
 
 # Part 3 — setup and migration. The one that cannot be run later · **20 min**
 
+## E1 — the bootstrap migration · **check this before you touch anything else**
+
+> **Order matters more than anything else in this test.** The defect was that the SQL Temporal
+> Store's connection provider was created *long after* bootstrap, by which time
+> `DbMigrationState.haveBootstrapMigrationsBeenDone()` was already true and `FlywayUtil.migrate`
+> returned without consulting Flyway at all. So `updatable_temporal_store` was never created on a
+> clean start, and once dropped no restart recreated it.
+>
+> If you create a Floor Map or a SQL Temporal Store document first, you cannot tell a table that
+> was created at bootstrap from one created later. **Check the database before using the UI for
+> anything.**
+
+**E1a — the tables exist.** Against the fresh database, before anything else:
+
+```sql
+SHOW TABLES LIKE 'updatable_temporal_store';
+SHOW TABLES LIKE 'visualisation_assets%';
+```
+
+Expect `updatable_temporal_store`, and three document-asset tables:
+`visualisation_assets`, `visualisation_assets_draft`, `visualisation_assets_update_delete`.
+
+**`updatable_temporal_store` missing is the regression** — that is precisely the defect, and it is
+the one assertion this test exists for.
+
+**E1b — Flyway ran, rather than something else creating them.** Each module keeps its own history
+table:
+
+```sql
+SELECT version, description, success, installed_on FROM sqlstore_schema_history;
+SELECT version, description, success, installed_on FROM visualisation_assets_schema_history;
+```
+
+Expect one row each — `07.13.00.001` for sqlstore, `07.11.00.001` for document-asset — both with
+`success = 1`. Two things to read off the timestamps: they should be within seconds of each other
+and of startup, because both providers are resolved from the same `Set<DataSource>` that
+`BootstrapUtil` forces into existence; and neither should be materially later than the rest of
+Stroom's history tables.
+
+**E1c — the schema is the post-F1 one.** There is only one sqlstore migration, and F1's fix is baked
+into it rather than added by a second migration with a name→UUID backfill. So a clean database
+should start correct with nothing to migrate:
+
+```sql
+SHOW CREATE TABLE updatable_temporal_store;
+```
+
+Expect `PRIMARY KEY (doc_uuid, key_, effective_time)` — **keyed on `doc_uuid`, not `map_name`**.
+`map_name` should be present but only as a denormalised label with its own non-unique index. If the
+primary key mentions `map_name`, the wrong migration ran.
+
+**E1d — then use it.** Only now: create a SQL Temporal Store document, write something to it
+(the Floor Map init dialog will do), and read it back. This is the part that proves the table is
+usable rather than merely present, and it is E3 in effect.
+
+**E1e — while you have a clean instance**, two things only a fresh database can show:
+
+- **No error banner or stack trace at startup**, and nothing in the log about a failed or skipped
+  migration for `stroom-sqlstore` or `stroom-document-asset`.
+- **`documentAsset.maxUploadSize` defaults to 50 MiB** with no config override present. Every
+  existing config file omits the property, so a fresh instance is the only place the absent-value
+  default is exercised for real — and a null cap would have disabled the limit on exactly the
+  deployments it was added for.
+
+| # | Result |
+|---|---|
+| E1a · `updatable_temporal_store` and the three asset tables exist | |
+| E1b · both Flyway history tables have one successful row, timed with startup | |
+| E1c · primary key is `(doc_uuid, key_, effective_time)` | |
+| E1d · a SQL Temporal Store document can be created, written and read | |
+| E1e · clean startup, and the 50 MiB upload default applies | |
+
+---
+
+## E2 — the deprecated config keys
+
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **E1** | Start Stroom against a **fresh, empty database** | The SQL Temporal Store migration runs at bootstrap with **no manual step**. **Do this one.** It is the only test here that cannot be run after release, and a broken bootstrap is discovered by a customer rather than by us | |
 | **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb` | Accepted, with a deprecation warning. Do **not** add the new keys alongside — the last occurrence wins, so the test would prove nothing | |
 
 E3 and E4 passed on 2026-09-04.
