@@ -1,10 +1,10 @@
 # An abandoned dialog drag leaves a glass pane that kills the whole UI
 
 **Component:** `stroom-core-client-widget` — `stroom.widget.popup.client.view`
+(`AbstractPopupPanel`, `Dialog`, `ResizableDialog`), and `stroom.data.grid.client.Glass`
 **Severity:** High. Every modal dialog in Stroom is affected, the entire UI becomes
 unresponsive, and nothing in the normal diagnostic toolkit points at the cause.
-**Found:** 2026-09-04, while setting up floor map test data. Not floor-map specific.
-**Status:** fixed locally on `enterprise-floormapping-code-review-b`; raise upstream.
+**Status:** a fix is described below and has been applied on a fork; it needs raising upstream.
 
 ---
 
@@ -63,7 +63,7 @@ The orphan then sits on the body for the life of the page:
 
 ## Reproduction
 
-1. Open any modal dialog — a document's Settings, or "Initialise New Floor Map".
+1. Open any modal dialog.
 2. Press and hold on its title bar and drag toward the edge of the screen.
 3. Release the button **outside the browser window**.
 4. Move the mouse back over the page and click anything.
@@ -83,7 +83,7 @@ Or find the element at the end of `<body>` in the Elements panel and delete the 
 
 ## Fix as applied
 
-Three hunks, all marked `STROOMWORKS-LOCAL`.
+Three hunks.
 
 **`AbstractPopupPanel`**
 
@@ -109,7 +109,7 @@ The instinct is to hide the glass on a document-level mouse-up. That does not wo
 case: for a release outside the browser window **there is no event to listen for**. Hence the
 mousemove check, which is the earliest observable moment.
 
-`onUnload` alone would not have helped here either — the dialog in the observed incident closed
+`onUnload` alone is not sufficient either. In the case that prompted this, the dialog closed
 cleanly on OK, minutes after the drag was abandoned, and by then the glass had been up the whole
 time. Both halves are needed: one for the deterministic case, one for the undetectable one.
 

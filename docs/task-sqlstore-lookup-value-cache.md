@@ -4,23 +4,21 @@
 **Component:** SQL Temporal Store pipeline lookup (`stroom-sqlstore`)
 **Priority:** Medium — a throughput ceiling on the ingest path, not a correctness bug
 **Risk:** Medium (see *Risks* — caching temporal data is easy to get subtly wrong)
-**Origin:** Floor Map pre-production code review, 21 Aug 2026. Finding **F5** in
-`docs/floormap-remediation-plan.md`, where the store-resolution half was taken and the value cache
-deliberately deferred.
+**Status:** open, and **not blocked on a decision** — deferred on capacity alone. A
+`(map, key, time-bucket)` cache was proposed first, and agreeing the bucket size is what stalled it;
+that turned out to be an artefact of the proposal rather than of the problem, so there is nothing to
+settle before picking this up. See *Why the obvious approaches do not work*.
 
-> **Not blocked on a decision.** The remediation plan originally proposed a
-> `(map, key, time-bucket)` cache, and agreeing that bucket is what stalled this. That requirement
-> was an artefact of the proposal rather than of the problem — see *Why the obvious approaches do
-> not work* and *Proposed approach*. This is deferred on capacity alone; it can be picked up
-> without anything being settled first.
-
-> Line references are as of commit `8ee09c4952`.
+> Methods are named rather than given line numbers, which drift. Where a number appears it has been
+> checked against the current tree.
 
 ---
 
 ## Problem
 
-`SqlStoreLookupImpl.lookup()` is reached from `ReferenceData.getValue`, the same hot path as
+`SqlStoreLookupImpl.lookup()` is reached from `ReferenceData.doGetValue`, which dispatches on the
+`pipelineReference`'s type and routes a `SqlTemporalStoreDoc` reference here. That is the same hot
+path as
 LMDB-backed reference data. A translation calling `lookup()` once per event over a million-event
 stream calls it a million times.
 
@@ -42,13 +40,18 @@ join (select doc_uuid, key_, max(effective_time) as max_time
 Nothing amortises this. The classic reference-data path absorbs the equivalent cost through the
 off-heap store and the effective-stream cache; this path has neither.
 
-Repeated lookups of the **same key** are the dominant pattern for the stores this feature uses — a
-location store is asked "where is entity X" over and over as events for X stream past — so the hit
-rate available is high and entirely unexploited.
+**How much hit rate is available depends on the data, and is worth measuring rather than
+assuming.** The pattern that makes a cache pay is repeated lookups of the same key — an enrichment
+that resolves the same small set of identifiers over and over as events stream past. That is a
+common shape for reference data, but it is not guaranteed: a lookup keyed on something
+high-cardinality, or one that walks distinct keys, has nothing to reuse.
 
-## Already done (do **not** redo — this is the cheap tier from the same finding)
+So the case for this work is the **absence of any amortisation at all**, not an assumed hit rate.
+Measure the repeat rate on a representative stream before sizing anything.
 
-Commit `8cc85ee889` took the two safe parts:
+## What is already in place — build on it, do not redo it
+
+Two safe parts were taken separately:
 
 - **Store resolution is memoised per pipeline instance.** `SqlStoreLookupImpl` holds
   `Map<String, DocRef> resolvedStores` and is `@PipelineScoped`. Resolving a name lists the
@@ -57,7 +60,7 @@ Commit `8cc85ee889` took the two safe parts:
 - **The XML parser is pooled.** `SqlStoreValueProxy.resolveValue` takes a reader from
   `XMLReaderPool.getDefault()` instead of constructing a `SAXParser` per value.
 
-Two invariants were established there that this work must preserve:
+Two invariants came with that work, and this must preserve both:
 
 - The memoised map caches **identity, not authorisation**. `UpdatableSqlTemporalStore.find(DocRef,
   criteria)` calls `checkPermission(storeDocRef, VIEW)` on **every** lookup, deliberately, because
@@ -79,7 +82,7 @@ a millisecond apart can legitimately resolve to different entries.
 | `(key, exactEventTimeMs)` | Yes | **No** — hit rate approaches zero when events have distinct timestamps, which is the case that matters |
 | `(key, eventTimeMs / bucket)` | **Approximately** — returns values up to one bucket stale | Yes, but the bucket has to match the data's real granularity, and guessing coarse is silently wrong |
 
-The third is what the remediation plan originally proposed, and it is why this stalled: it needs a
+The third is what was proposed first, and it is why this stalled: it needs a
 granularity nobody can safely commit to on behalf of every deployment.
 
 ## Proposed approach — cache the validity interval
@@ -130,8 +133,8 @@ half-open (`validFrom <= T < validTo`) because the query is `effective_time <= T
 boundary tests first.
 
 **Read-after-write within a run.** A pipeline that both writes and reads the same store could serve
-its own stale interval. Invalidate the key on write. This is called out in the remediation plan and
-needs a test rather than an argument.
+its own stale interval. Invalidate the key on write — and prove it with a test rather than an
+argument.
 
 **Permission checks must not be skipped.** The current code re-checks on every `find` for a stated
 reason. A cache that serves a value without re-checking would turn a memoisation into a
@@ -157,6 +160,5 @@ here.
 - `UpdatableSqlTemporalStore.find(DocRef, ExpressionCriteria)` — the per-lookup permission check
 - `UpdatableTemporalStoreDaoImpl.find` / `getQueryTime` — the snapshot query and how the time term
   is lifted out of the expression
-- Finding **F5** in `docs/floormap-remediation-plan.md`
-- `docs/task-floormap-incremental-canvas-render.md` — the other deferred tier from this review,
-  same pattern
+- `docs/task-floormap-incremental-canvas-render.md` — a deferred performance tier of the same
+  shape: a cheap allocation-level half taken, an architectural half left

@@ -3,7 +3,7 @@
 **Component:** `stroom-planb` — `PlanBSearchHelper`, and the five state DBs that call it
 **Severity:** high. A query returns a **wrong answer** — an empty result — with no error, no warning
 and nothing in the logs.
-**Found:** 2026-09-07, while checking a floor-map test fixture query. Not a floor-map defect; the
+**Found by:** checking a Floor Map test fixture query. Not a Floor Map defect; the
 floor map is safe, but only by accident of its generated query's shape — see *Why this matters
 beyond the query bar*.
 **Status:** diagnosed and reproduced against a live instance; not fixed.
@@ -15,13 +15,14 @@ beyond the query bar*.
 > On a Plan B store, a `where` term on a field that the `select` list does not **also** reference
 > filters out **every** row.
 
-It is not specific to time fields, to `group by`, or to `count()`. Those were the shapes it was
-first noticed in; each turned out to be an instance of the general rule.
+It is not specific to time fields, to `group by`, or to `count()` — each of those turns out to be an
+instance of the general rule, and they are tabulated below because they are the shapes it is most
+likely to be met in.
 
 ## Reproduction
 
-Against a `TEMPORAL_STATE` store holding 207 rows across 6 keys
-(`floor_map_events` in `System / Floor Map Test`):
+Against a `TEMPORAL_STATE` store holding 207 rows across 6 keys, one of which is
+`alice@example.org`:
 
 | # | Query | Rows | |
 |---|---|---|---|
@@ -34,7 +35,7 @@ Against a `TEMPORAL_STATE` store holding 207 rows across 6 keys
 field is absent from the select list, and in each passing case it is present. Nothing else differs —
 no aggregation, no grouping, no time semantics.
 
-The shapes it was first noticed in, all explained by the same rule:
+The shapes it is most likely to be met in, all explained by the same rule:
 
 | Query | Rows | Why |
 |---|---|---|
@@ -75,7 +76,7 @@ return new ValuesFunctionFactory(Column.builder().format(Format.TEXT).build(), i
 Position 1 is past the end of a one-value row. The predicate reads nothing, evaluates false, and
 every row is discarded. No exception is thrown, so nothing surfaces.
 
-**Ordering is the whole bug.** The helper's line 53 comment — *"Ensure we have fields for all
+**Ordering is the whole bug.** The helper's own comment on those lines — *"Ensure we have fields for all
 expression criteria"* — describes exactly the right intention, executed one step too late.
 
 ## Scope
@@ -95,7 +96,7 @@ before writing a fix that claims to cover them.
 
 **A SQL Temporal Store is not affected.** `UpdatableTemporalStoreDaoImpl` applies the criteria as a
 SQL `WHERE`, so rows are filtered in the database and no field index is involved. Query 4's
-equivalent against `floor_map_facts` returns correctly filtered rows. This is therefore also a
+equivalent against a SQL Temporal Store returns correctly filtered rows. This is therefore also a
 **store-type divergence**: the same StroomQL gives different answers depending on which store backs
 it, which is the harder half of the problem to discover.
 
