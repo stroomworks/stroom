@@ -352,11 +352,22 @@ SELECT version, description, success, installed_on FROM sqlstore_schema_history;
 SELECT version, description, success, installed_on FROM visualisation_assets_schema_history;
 ```
 
-Expect one row each — `07.13.00.001` for sqlstore, `07.11.00.001` for document-asset — both with
-`success = 1`. Two things to read off the timestamps: they should be within seconds of each other
-and of startup, because both providers are resolved from the same `Set<DataSource>` that
-`BootstrapUtil` forces into existence; and neither should be materially later than the rest of
-Stroom's history tables.
+Expect **two rows each**: a `<< Flyway Baseline >>` row at version `1`, then the migration —
+`07.13.00.001` for sqlstore, `07.11.00.001` for document-asset — all with `success = 1`. The
+baseline row is there because `FlywayUtil` sets `baselineOnMigrate(true)`; it is normal, not a sign
+of a pre-existing schema.
+
+**The migration row is the assertion, and its absence is the regression** — note *absence*, not
+failure. `FlywayUtil.migrate` branches on
+`DbMigrationState.haveBootstrapMigrationsBeenDone()`: if the flag is already set it logs *"Skipping
+database migration for module …"* and returns without consulting Flyway at all. Under the old
+wiring the sqlstore provider was created after the flag was set, so that branch was taken and the
+history table stayed **empty**. A row with `success = 1` is proof the migrating branch ran.
+
+Read the timestamps too: within seconds of each other and of startup, because both providers are
+resolved from the same `Set<DataSource>` that `BootstrapUtil` forces into existence. Minutes later
+would mean they are still being created lazily on first use — which is what E1a's
+"before you touch the UI" rule is there to catch.
 
 **E1c — the schema is the post-F1 one.** There is only one sqlstore migration, and F1's fix is baked
 into it rather than added by a second migration with a name→UUID backfill. So a clean database
@@ -370,9 +381,19 @@ Expect `PRIMARY KEY (doc_uuid, key_, effective_time)` — **keyed on `doc_uuid`,
 `map_name` should be present but only as a denormalised label with its own non-unique index. If the
 primary key mentions `map_name`, the wrong migration ran.
 
-**E1d — then use it.** Only now: create a SQL Temporal Store document, write something to it
-(the Floor Map init dialog will do), and read it back. This is the part that proves the table is
-usable rather than merely present, and it is E3 in effect.
+**E1d — then write to it, not just create it.** Creating a SQL Temporal Store *document* proves
+nothing about the table: `updatable_temporal_store` is a single shared table scoped by `doc_uuid`,
+and a new document adds no row to it. The document lives in the doc store.
+
+So a **write and a read back** are needed, and they test something the first three checks cannot:
+the jOOQ classes are generated from the schema at build time, so if the migration on a clean
+database produced a schema that differs from the one the generated code expects, every read and
+write fails — and only a read or write shows it.
+
+Cheapest route with no ingest pipeline on a clean instance: create a **Floor Map** through the init
+dialog pointing at the store, then on the **Editor** tab add an object and save. That flushes
+through `SqlTemporalStoreResource.applyChanges` straight into the table. Reload the document and
+confirm the object is still there — that is the read back.
 
 **E1e — while you have a clean instance**, two things only a fresh database can show:
 
@@ -385,11 +406,11 @@ usable rather than merely present, and it is E3 in effect.
 
 | # | Result |
 |---|---|
-| E1a · `updatable_temporal_store` and the three asset tables exist | |
-| E1b · both Flyway history tables have one successful row, timed with startup | |
-| E1c · primary key is `(doc_uuid, key_, effective_time)` | |
-| E1d · a SQL Temporal Store document can be created, written and read | |
-| E1e · clean startup, and the 50 MiB upload default applies | |
+| E1a · `updatable_temporal_store` and the three asset tables exist | **pass** 2026-09-08 |
+| E1b · both history tables carry baseline + migration, `success = 1`, timed with startup | **pass** 2026-09-08 — document-asset 07:20:19, sqlstore 07:20:24 |
+| E1c · primary key is `(doc_uuid, key_, effective_time)` | **pass** 2026-09-08 |
+| E1d · a store can be written to and read back | outstanding — creating the document is not enough, see above |
+| E1e · clean startup, and the 50 MiB upload default applies | **pass** 2026-09-08 — a 110 MB upload was refused, naming the 50 MB limit |
 
 ---
 
