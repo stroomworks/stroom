@@ -1,117 +1,105 @@
-# SQL Temporal Store: unbounded result sets materialised in memory
+# SQL Temporal Store: a search with no time range loads the whole store into heap
 
-**Component:** `stroom-sqlstore` — `UpdatableTemporalStoreDaoImpl`, `UpdatableSqlTemporalStore`;
-`stroom-core-client` — `HistogramQueryHelper`, `FloorMapMapPresenter`, `FloorMapEditorPresenter`
-**Origin:** F8 in `docs/floormap-remediation-plan.md`. Partly addressed by `9400f3359c`, which
-stopped the search reading the `longtext` value column when no coprocessor wants it.
-**Status:** open. Scoping this write-up changed the diagnosis — see *Correction* below.
-**Severity:** medium. Heap and result-set size scale with total store history, with no cap
-anywhere in the path.
+**Component:** `stroom-sqlstore` — `UpdatableTemporalStoreDaoImpl.search` and `.fetchAll`,
+`UpdatableSqlTemporalStore.search`
+**Severity:** medium. Heap use and result-set size scale with the store's total history, with no cap
+anywhere in the path. No wrong answers; it is a resource ceiling.
+**Status:** open.
 
 ---
 
-## Correction to the earlier assessment
+## The defect
 
-The remediation plan records F8 as "partly done — `9400f3359c` drops the `longtext` read", and I
-repeated that as "the remaining exposure is row count, not payload".
+`UpdatableTemporalStoreDaoImpl.search` (line 472) takes a `Consumer<TemporalEntry>`, which implies
+streaming. Both of its branches end in `.fetch()` (lines 511 and 533), so jOOQ materialises the
+**entire** result as a `Result` in heap before the consumer sees its first row. The `Consumer`
+signature is decoration.
 
-**That is wrong for the default configuration.** `9400f3359c` reads the value column only when a
-coprocessor asks for it, and the floor map timeline histogram runs **the user's own events query
-text verbatim** (`FloorMapMapPresenter.buildEventsHistogramQuery`). The default events query is
-[`FloorMapEventsQuery.defaultQuery()`](../stroom-core-shared/src/main/java/stroom/floormap/shared/FloorMapEventsQuery.java#L102):
-
-```
-from param('EventStore')
-select EffectiveTime as "Effective Time",
-  Key as "Entity ID",
-  jq(Value, '.location') as "Location ID",
-  jq(Value, '.type') as "Type",
-  jq(Value, '.status') as "Status",
-  jq(Value, '.message') as "Message"
-```
-
-Four `jq(Value, …)` calls put `Value` in the coprocessor field index, so
-`UpdatableSqlTemporalStore.fieldIndexWants(coprocessors, "Value")` returns `true` and every row's
-full `longtext` is read after all. The mitigation applies only to a query that never mentions
-`Value` — and such a query cannot drive a floor map, because the location lives inside the value.
-
-This is not inference: the map demonstrably resolves locations from `jq(Value, '.location')`, and
-the only channel by which a value reaches the expression evaluator is the field-index-ordered
-`Val[]` array. If `Value` were absent from the field index, locations would be null.
-
----
-
-## Two problems, wrongly grouped
-
-F8 named `search` and `fetchAll` together. They have different causes, different magnitudes, and
-different fixes. `find()` is fine — it applies `.limit()`/`.offset()` from the page request on both
-branches, and is not part of this.
-
-### 1. `search()` with no time range — the real one
-
-`UpdatableTemporalStoreDaoImpl.search()` (line 472) takes a `Consumer<TemporalEntry>`, which
-implies streaming. Both branches end in `.fetch()` (lines 511 and 533), so jOOQ materialises the
-entire `Result` in heap before the consumer sees row one. The `Consumer` signature is decoration.
-
-The null-`queryTime` branch (the `else` at line 519) has **no time predicate at all** — it filters on
-`doc_uuid` plus the caller's criteria and returns *every version of every key*. There is no `LIMIT`
-in the DAO, and no cap in the sqlstore module: the generic search path's
-`DataStoreSettings.maxResults` (default 1,000,000) applies to the coprocessor output, i.e. **after**
+The branch that matters is the one taken when the criteria carry **no time term** (the `else` at
+line 519). It filters on `doc_uuid` plus whatever the caller asked for and returns *every version of
+every key*. There is no `LIMIT` in the DAO, and no cap in the module: the generic search path's
+`DataStoreSettings.maxResults` (default 1,000,000) applies to the coprocessor **output**, i.e. after
 the DAO has already built the whole list.
 
-**The floor map histogram takes that branch deliberately.**
-`HistogramQueryHelper.run()` passes `timeRange = null` with a javadoc explaining why: a present
-`TimeRange` makes `getQueryTime` lift a snapshot boundary and return one row per key, which is
-right for the map and useless for a density histogram. So the histogram asks for all history by
-design — and then filters to the visible range **client-side** in `HistogramDataModel`.
+`find()` is fine — it applies `.limit()`/`.offset()` from the page request on both branches — and is
+not part of this.
 
-So on document open and on every timeline range change (`FloorMapMapPresenter.runHistogramQuery`,
-called from three sites including `updateTimelineRange`), the server loads every event ever
-recorded, values included, into heap — in order to extract timestamps and throw the rest away. The
-client's `getRequestedRange` of 10,000 bounds only what is shipped to the browser, not what the
-server builds.
+## Who takes that branch, and how often
 
-One nuance that constrains the fixes below: `HistogramDataModel.parse` skips out-of-range rows
-(deliberately, rather than clamping them to the edge bins), but it *also* tracks `minTime`/`maxTime`
-across **every** row to feed the timeline's "Show All". So all-history is not purely waste today —
-the extent is genuinely used. See fix B for why that costs nothing to preserve.
+The Floor Map's **timeline density histogram**. `HistogramQueryHelper.run` passes
+`timeRange = null` deliberately, and its javadoc explains why: with a `TimeRange` present the DAO
+lifts a snapshot boundary out of it and returns one row per key, which is right for a point-in-time
+map and useless for a histogram that needs every entry across a window. So it asks for all history
+by design, then filters to the visible range **client-side**.
 
-### 2. `fetchAll()` — milder than F8 implies, and not fixable by streaming
+That query re-runs on document open and on every timeline range change. So the server loads every
+event ever recorded, into heap, in order to extract timestamps and discard the rest.
 
-`fetchAll()` (line 243) joins against a `MAX(effective_time) GROUP BY key` subquery, so it returns
-**one row per key**, not every version. Row count is bounded by key cardinality rather than by
-history. F8's framing overstated this.
+Two nuances that constrain the fixes below:
 
-It is still uncapped and unpaginated, and it ships the full value of every key. The one caller is
-`FloorMapEditorPresenter.fetchAllKeysForFactList()` (line 865), feeding the Fact List in "Show all"
-mode — and that genuinely needs the values, since `FactObject.fromEntry(entry, schema)` parses them
-against the value schema. For a facts store (locations on a floor plan) the cardinality is small
-and this is fine; pointed at a high-cardinality store it will exhaust the browser or the server.
+- **The client's row cap does not help.** `HistogramQueryHelper` requests `OffsetRange(0, 10000)`,
+  which bounds what is shipped to the browser, not what the server builds.
+- **All-history is not purely waste today.** `HistogramDataModel.parse` skips out-of-range rows
+  (deliberately, rather than clamping them to the edge bins) but *also* tracks `minTime`/`maxTime`
+  across **every** row, to feed the timeline's "Show All". So the extent is genuinely used.
 
-**`fetchLazy()` cannot help here.** The return type is `List<TemporalEntry>` from the DAO through
-`UpdatableTemporalStore` and out of `SqlTemporalStoreResource` as a REST response body. Streaming
-into a list you then return whole achieves nothing. The fix is a cap, pagination, or a keys-and-
-locations projection — an API change, not a fetch-mode change.
+## The payload, and why the existing guard is not enough
 
----
+`UpdatableSqlTemporalStore.search` reads the `longtext` value column only when a coprocessor asks
+for it:
+
+```java
+final boolean includeValue = fieldIndexWants(
+        coprocessors, UpdatableTemporalStore.VALUE_FIELD.getFldName());
+```
+
+That is correct and worth keeping. It is also **insufficient for the caller that most needs it**,
+because the histogram runs the Floor Map's own events query text verbatim, and the default events
+query pulls the event's properties out of the JSON value:
+
+```
+jq(Value, '.location') as "Location",
+jq(Value, '.locationRef') as "Location Ref",
+jq(Value, '.type') as "Type",
+...
+```
+
+Four references to `Value` put it in the coprocessor field index, so `includeValue` is `true` and
+every row's full `longtext` is read after all. A query that avoids `Value` cannot drive a floor map
+at all, because the position lives inside the value.
+
+So the exposure is row count **and** payload, in the default configuration.
+
+## `fetchAll` is a different, milder problem
+
+`fetchAll` (line 243) joins against a `MAX(effective_time) GROUP BY key` subquery, so it returns
+**one row per key** rather than every version. Its row count is bounded by key cardinality, not by
+history.
+
+It is still uncapped and unpaginated, and it ships the full value of every key. Its one caller feeds
+the Floor Map editor's fact list in "show all" mode, and genuinely needs those values. For a facts
+store — objects on a floor plan — cardinality is small and this is fine; pointed at a
+high-cardinality store it will exhaust the browser or the server.
+
+**`fetchLazy()` cannot help `fetchAll`.** Its return type is `List<TemporalEntry>` from the DAO,
+through `UpdatableTemporalStore`, and out of `SqlTemporalStoreResource` as a REST response body.
+Streaming into a list you then return whole achieves nothing. Its fix is a cap, pagination, or a
+narrower projection — an API change, not a fetch-mode change.
 
 ## Scope
 
-- **SQL Temporal Store only.** Plan B streams: `PlanBSearchHelper` iterates an LMDB cursor applying
-  a row predicate, so it never materialises the result set. It has its own unrelated problem — it
-  scans the whole store regardless of range (standing `TODO` at line 61) — which is a scan-cost
-  issue, not a heap issue.
-- Any StroomQL query against a SQL Temporal Store with no time term is affected, not just the floor
-  map. The floor map histogram is simply the one caller that does it on a timer.
-
----
+- **SQL Temporal Store only.** The Plan B store streams: its search iterates an LMDB cursor
+  applying a row predicate, so it never materialises the result set. (It has an unrelated problem —
+  it scans the whole store regardless of range — which is a scan-cost issue, not a heap one.)
+- Any StroomQL query against a SQL Temporal Store with no time term is affected, not only the Floor
+  Map. The histogram is simply the one caller that does it repeatedly and unattended.
 
 ## Suggested fixes, in order of value
 
 ### A. Stop the histogram asking for values (client-side, low risk)
 
-Have `buildEventsHistogramQuery` derive a two-column query from `FloorMapDoc.getEventsStoreRef()`
-instead of reusing `getEventsQuery()`:
+Have the Floor Map derive a two-column histogram query from its events store rather than reusing the
+full events query:
 
 ```
 from "<events store name>"
@@ -119,74 +107,55 @@ select Key, EffectiveTime
 ```
 
 `Value` then never enters the field index, `includeValue` is `false`, and the payload disappears.
-This is the shape `buildEventsHistogramQuery` **already** builds as its fallback when no events
-query is configured, so the code exists.
+The Floor Map already builds a query of exactly this shape as its fallback when no events query is
+configured, so the code exists.
 
-Three things to settle first:
+**This changes what the density bars mean, and that needs a decision, not a preference.** Today they
+reflect the user's events query including any `where` filter; a derived query would show everything
+in the store. Arguably the fix — density should describe the store — or arguably a regression —
+density should match the map.
 
-- **It changes what the density bars mean.** Today they reflect the user's events query including
-  any `where` filter; a derived query would show all events in the store. Arguably the fix (density
-  should describe the store) or arguably a regression (density should match the map). Needs a
-  decision, not a preference.
-- **Two claimed StroomQL blockers were withdrawn on 2026-09-07.** This section said a
-  single-column `select` throws `ArrayIndexOutOfBoundsException` and that `group by` over a large
-  result set throws `Index 0 out of bounds`. Retried against the live instance, **neither
-  reproduces** — including `group by` over 24 000 rows and over 1 000 groups. So `select
-  EffectiveTime` alone and SQL-side bucketing are both available, and fix B below is less
-  constrained than it was written to be. The likely explanation is that both were the Plan B
-  field-index bug seen before it was understood; see `task-planb-where-field-not-selected.md`.
+It removes the payload but **not** the row count: the server still materialises one row per version
+per key.
 
-This removes the payload but **not** the row count: the server still materialises one row per
-version per key.
+### B. Bound the row count (server-side, the right answer)
 
-### B. Bound the row count (server-side, needs a decision)
+Do not ship rows for a histogram at all — aggregate to time buckets in SQL and return counts. There
+is nowhere to put that today, because the histogram goes through the generic StroomQL/coprocessor
+path, so it needs a purpose-built endpoint (`/histogram` on `SqlTemporalStoreResource`, taking a
+store, a range and a bucket count) and a client that calls it instead of the generic query model.
 
-The honest fix for the histogram is to not ship rows at all — aggregate to time buckets in SQL and
-return counts. There is nowhere to put that today: the histogram goes through the generic
-StroomQL/coprocessor path, so it would need a purpose-built endpoint
-(`/histogram` on `SqlTemporalStoreResource`, taking a store, a range and a bucket count) and a
-client that calls it instead of `QueryModel`. Larger than A, and the right answer.
-
-Two things make this cheaper than it sounds. `SqlTemporalStoreResource.getTimeRange` **already
-exists** as an endpoint (`getSqlTemporalStoreTimeRange`), backed by a single
-`SELECT MIN(effective_time), MAX(effective_time)` — so the "Show All" extent that currently
-justifies fetching all history is already obtainable for free, and a bucket endpoint would sit
-directly beside it. And the bucketing arithmetic is already written client-side in
+Cheaper than it sounds, for two reasons. `SqlTemporalStoreResource.getTimeRange` **already exists**,
+backed by a single `SELECT MIN(effective_time), MAX(effective_time)` — so the "Show All" extent that
+currently justifies fetching all history is already obtainable for free, and a bucket endpoint would
+sit beside it. And the bucketing arithmetic is already written client-side in
 `HistogramDataModel.parse`; moving it into SQL is a translation, not a new algorithm.
 
 Failing that, a configurable row cap in the DAO with a reported truncation is better than the
 current silent unbounded fetch.
 
-### C. `fetchLazy()`/`fetchStream()` on `search()` — do **not** do this first
+### C. `fetchLazy()`/`fetchStream()` on `search` — do **not** reach for this first
 
 It looks like the obvious fix and it trades one failure mode for a worse one. The consumer is
 `coprocessors.accept(arr)`, which feeds the LMDB data store's **write queue**, and that queue
 applies backpressure when full. Lazy fetching holds an open cursor, and therefore a pooled DB
-connection, for as long as consumption takes — so a slow or blocked LMDB writer would pin a
-connection instead of merely inflating heap. Connection-pool exhaustion under load is harder to
-diagnose and affects the whole instance, where an OOM on one search is at least attributable.
+connection, for as long as consumption takes — so a slow or blocked writer would pin a connection
+rather than merely inflating heap. Connection-pool exhaustion under load is harder to diagnose and
+affects the whole instance, where an OOM on one search is at least attributable.
 
-If it is done anyway: the cursor must be closed on the exception path, and the interaction with
-`taskContextFactory`'s termination needs checking, since a terminated task must not leak the
-cursor.
-
----
+If it is done anyway: the cursor must be closed on the exception path, and the interaction with task
+termination needs checking, since a terminated task must not leak it.
 
 ## Verification
 
-`TestUpdatableTemporalStoreDaoImplDB` with a row count comfortably above any fetch size:
+`TestUpdatableTemporalStoreDaoImplDB`, with a row count comfortably above any fetch size:
 
-- `search()` with a null time range sees every row, and the connection is released afterwards.
+- `search()` with no time term sees every row, and the connection is released afterwards.
 - `search()` with `includeValue = false` returns null values and, critically, does **not** read the
-  `longtext` — assert on the generated SQL, not just the result, or `9400f3359c`'s guard can regress
+  `longtext` — assert on the generated SQL, not just the result, or that guard can regress
   invisibly.
 - `fetchAll()` returns exactly one row per key, the latest.
 - `find()` still honours `limit`/`offset` on both branches.
 
-For fix A, a client test that the histogram query text contains no reference to `Value` for a
-document whose events query does.
-
-## Not in scope
-
-The `9400f3359c` `includeValue` guard is correct and should stay — it is just insufficient on its
-own, because the caller that most needs it asks for the value for unrelated reasons.
+For fix A, a client test that the generated histogram query text contains no reference to `Value`
+for a document whose events query does.

@@ -996,8 +996,10 @@ the way out through REST, so `fetchLazy()` is inapplicable to it.
 
 ### Status
 
-Not fixed. Written up in full at `docs/task-sqlstore-unbounded-fetch.md` for raising as an issue,
-because the two viable fixes both need a decision rather than just work:
+Not fixed. Written up in full at `docs/task-sqlstore-unbounded-fetch.md`, which is deliberately
+**self-contained** — no reference to this plan, this branch or its commit history — so it can be
+raised as an issue and read by someone coming to the code fresh. The two viable fixes both need a
+decision rather than just work:
 
 - the client-side fix changes what the timeline density bars mean (all events in the store, versus
   the user's filtered events query);
