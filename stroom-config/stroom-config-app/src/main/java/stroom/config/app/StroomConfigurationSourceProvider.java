@@ -131,16 +131,6 @@ public class StroomConfigurationSourceProvider implements ConfigurationSourcePro
     /**
      * Fails the boot when a renamed config key is present, naming the new spelling.
      *
-     * <p>Deliberately an error rather than back-compatibility. Accepting the old name was tried and
-     * is <b>worse than either alternative</b>: {@link #mergeInDefaultConfig} injects the compiled
-     * defaults under the new name, and since an alias is only another spelling of the same
-     * property, last-one-wins gave the injected default the win. So the key was accepted and the
-     * operator's value silently replaced — no error, no warning, nothing in the log, and the
-     * Properties screen reporting the default as though nothing had been set. For
-     * {@code visualisationAssetDb} that meant a customised asset database connection quietly
-     * falling back to {@code commonDbDetails}, i.e. assets written somewhere other than
-     * configured.</p>
-     *
      * <p>Raised here rather than left to Jackson's {@code FAIL_ON_UNKNOWN_PROPERTIES}, which does
      * also fail but reports an unrecognised field without saying what to do about it. A rename is
      * the one config error where the fix can be stated exactly, so it is worth stating.</p>
@@ -165,9 +155,7 @@ public class StroomConfigurationSourceProvider implements ConfigurationSourcePro
         if (!problems.isEmpty()) {
             throw new RuntimeException(LogUtil.message(
                     "Configuration file {} uses {} config key(s) that have been renamed. "
-                    + "Rename them to continue: {}. "
-                    + "Do not add the new name alongside the old one - they are the same property, "
-                    + "and which one applied would depend on their order in the file.",
+                    + "Rename them to continue: {}.",
                     Paths.get(path).toAbsolutePath().normalize(),
                     problems.size(),
                     String.join("; ", problems)));
