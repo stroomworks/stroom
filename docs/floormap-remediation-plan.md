@@ -980,14 +980,27 @@ Both end in `.fetch()` with no `LIMIT`, so the streaming `Consumer` signature is
 whole result is materialised before the consumer sees a row. `find()` paginates correctly (it
 applies `.limit()`/`.offset()` on both branches); these two do not.
 
-### Correction to this entry
+### Two corrections to this entry
 
-This was recorded as "**PARTLY DONE** — `9400f3359c` drops the `longtext` read", and that was
-repeated as "the remaining exposure is row count, not payload". **Wrong for the default
-configuration.** `9400f3359c` reads the value only when a coprocessor wants it, and the histogram
-runs the user's own events query text — whose default calls `jq(Value, …)` four times, putting
-`Value` in the field index. So the `longtext` is read after all, and a query that avoids it cannot
-drive a floor map, because the location lives inside the value.
+**First**, it was recorded as "**PARTLY DONE** — `9400f3359c` drops the `longtext` read", and that
+was repeated as "the remaining exposure is row count, not payload". The guard reads the value only
+when a coprocessor wants it, and the generated facts query wraps every mapped schema path in
+`jq(Value, …)` — so `Value` is in the field index and the payload is read after all. Not avoidable
+for that caller: a fact's position, type and image all live inside the value.
+
+**Second, and pointed out 2026-09-08: the caller named here was wrong.** This entry, and the
+write-up, blamed the **timeline density histogram** and had it hitting the SQL Temporal Store on
+every range change. It does not. `buildEventsHistogramQuery` prefers the *events* query, and the
+events store chooser is restricted to `PlanBDoc.TYPE` — so the histogram queries **Plan B**, which
+streams and never materialises a result set. It reaches a SQL store only in the fallback for a
+document with no events query at all, which the creation dialog always writes.
+
+The routine SQL-store caller with no time term is **F15's facts history read**, which passes
+`timeRange = null` by design and re-runs on the 60-second cadence. That materially lowers the
+severity: facts are keys plus a couple of rows a week, so the volume through this path is small.
+What remains is that the DAO offers **no cap at all**, so the failure mode if volume ever grows is an
+OOM rather than a truncated result — and a SQL Temporal Store is a general-purpose document that
+nothing stops holding high-volume data.
 
 Scoping also showed the two findings do not belong together. `search` with a null time range is
 unbounded in history; `fetchAll` deduplicates via `MAX(effective_time) GROUP BY key` and so returns
@@ -998,13 +1011,12 @@ the way out through REST, so `fetchLazy()` is inapplicable to it.
 
 Not fixed. Written up in full at `docs/task-sqlstore-unbounded-fetch.md`, which is deliberately
 **self-contained** — no reference to this plan, this branch or its commit history — so it can be
-raised as an issue and read by someone coming to the code fresh. The two viable fixes both need a
-decision rather than just work:
+raised as an issue and read by someone coming to the code fresh.
 
-- the client-side fix changes what the timeline density bars mean (all events in the store, versus
-  the user's filtered events query);
-- the server-side fix wants a purpose-built bucket-count endpoint, which is the right answer and
-  larger than this review's remit.
+With the caller corrected, the fix is simpler than this entry first claimed and needs no decision:
+**cap the fetch and report the truncation**, converting an OOM into a partial answer that names
+itself. The histogram-shaped fixes that were proposed here — a two-column query, a SQL bucket
+endpoint — belong to Plan B if they belong anywhere, and are not this issue.
 
 `fetchLazy()` on `search` is explicitly **not** recommended first: the consumer feeds the LMDB write
 queue, which applies backpressure, so a held cursor pins a pooled DB connection where the eager
