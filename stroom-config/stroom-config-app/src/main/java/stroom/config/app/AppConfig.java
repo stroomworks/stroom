@@ -68,7 +68,6 @@ import stroom.util.shared.IsStroomConfig;
 import stroom.util.shared.PropertyPath;
 import stroom.util.shared.validation.ValidationSeverity;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
@@ -154,17 +153,17 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_UI_URI = "uiUri";
     public static final String PROP_NAME_DOCUMENT_ASSET = "documentAsset";
     public static final String PROP_NAME_DOCUMENT_ASSET_DB = "documentAssetDb";
-    /**
-     * Former names of the two properties above, from before the visualisation-asset subsystem
-     * was generalised into {@code stroom.document.asset}. Accepted on read via {@link JsonAlias}
-     * so an existing config.yml keeps working; the new names are always written. Deprecated -
-     * remove these, the aliases and the config-table path migration together once no deployment
-     * uses the old names.
-     */
-    @Deprecated
-    public static final String PROP_NAME_VISUALISATION_ASSET_DEPRECATED = "visualisationAsset";
-    @Deprecated
-    public static final String PROP_NAME_VISUALISATION_ASSET_DB_DEPRECATED = "visualisationAssetDb";
+    // The former names of the two properties above - visualisationAsset and visualisationAssetDb,
+    // from before the visualisation-asset subsystem was generalised into stroom.document.asset -
+    // are REJECTED at boot by StroomConfigurationSourceProvider.rejectRenamedKeys, which names the
+    // new spelling.
+    //
+    // They were briefly accepted via @JsonAlias here instead, and that could never have worked:
+    // StroomConfigurationSourceProvider merges the compiled defaults into the operator's YAML under
+    // the NEW name before Dropwizard parses it, and an alias is only another spelling of the same
+    // property - so last-one-wins gave the injected default the win and the operator's value was
+    // silently discarded on every boot. Accepted-and-ignored is worse than either alternative, so
+    // the alias is gone and the old name is now an error naming its replacement.
     public static final String PROP_NAME_VOLUMES = "volumes";
 
     private final boolean haltBootOnConfigValidationFailure;
@@ -340,10 +339,8 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_UI) final UiConfig uiConfig,
                      @JsonProperty(PROP_NAME_UI_URI) final UiUriConfig uiUri,
                      @JsonProperty(PROP_NAME_DOCUMENT_ASSET)
-                     @JsonAlias(PROP_NAME_VISUALISATION_ASSET_DEPRECATED)
                      final DocumentAssetConfig documentAssetConfig,
                      @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB)
-                     @JsonAlias(PROP_NAME_VISUALISATION_ASSET_DB_DEPRECATED)
                      final DocumentAssetDbConfig documentAssetDbConfig,
                      @JsonProperty(PROP_NAME_VOLUMES) final VolumeConfig volumeConfig) {
         this.haltBootOnConfigValidationFailure = Objects.requireNonNullElse(haltBootOnConfigValidationFailure,

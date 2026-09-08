@@ -418,14 +418,14 @@ confirm the object is still there — that is the read back.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb`, giving one a **distinctive value** so you can tell bound from ignored | **FAIL, 2026-09-08.** The key is accepted — Stroom boots, which is what the alias was for — but the value is silently discarded and the compiled default applies. See `docs/task-config-deprecated-key-alias-ineffective.md` | **fail** |
+| **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb` | **Boot fails**, naming the new spelling: *"'appConfig.visualisationAsset' is now 'appConfig.documentAsset'"*. That is the intended behaviour as of 2026-09-08 — a rename the operator must know about is the case where failing is right. Rename the key and Stroom starts | **retest after rebuild** — originally failed 2026-09-08 by accepting and ignoring the key; fixed the same day |
 
-**Two corrections to how this test was written.** There is **no deprecation warning** — nothing logs
-anything, so do not go looking for one. And "it started" is not the assertion: a key that is
-tolerated-and-ignored looks identical to one that is tolerated-and-applied, which is exactly how this
-defect survived. Set a value you can observe, then read it off the **Properties** screen, where the
-YAML column is separate from the default. Do **not** add the new key alongside — last occurrence
-wins and the test would prove nothing.
+**This test was rewritten twice, and both mistakes are worth knowing.** It first expected a
+*deprecation warning* — nothing logged one, so that sent the tester hunting for a line that could
+not appear. It then expected the key to be *accepted*, and "it started" turned out not to be an
+assertion at all: a key that is tolerated-and-ignored looks identical to one that is
+tolerated-and-applied, which is exactly how the defect survived a fortnight and a passing unit test.
+What settles it now is a boot that fails and says what to rename.
 
 E3 and E4 passed on 2026-09-04.
 

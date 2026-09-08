@@ -38,7 +38,7 @@ Last reconciled against `git log origin/master..HEAD` on **2026-09-01** (24 comm
 | | Finding | Commit(s) |
 |---|---|---|
 | F1 | Temporal store keyed on document name | `94d101554d` |
-| F2 | Config keys renamed with no deprecation shim | `44d344cee2` — **half only**, see F2; moved out of Done 2026-09-08 |
+| F2 | Config keys renamed with no deprecation shim | `44d344cee2`, then **reworked 2026-09-08** — the shim was accepted-and-ignored; the old key is now rejected at boot naming its replacement |
 | F3 | Every SAX event logs at INFO | `438106dc1f` |
 | F4 | Unbatched insert per reference entry | `a6432bd258` |
 | F7 | `hasInverse()` promises a check it does not perform | `c7d9573e6b` |
@@ -586,7 +586,7 @@ What remains:
 
 ---
 
-## F2 — Config keys renamed with no deprecation shim — MEDIUM — **HALF DONE**; the shim stops the boot failure but never carries a value — see the correction below
+## F2 — Config keys renamed with no deprecation shim — MEDIUM — **DONE 2026-09-08**, the second time; the shim was replaced by an explicit rejection — see the correction below
 
 > **Decide D9 first.** F2 exists only because the asset code moved modules. If D9 goes to Option R
 > (revert the extraction), this entire finding disappears — no rename, no upgrade note, no config-table
@@ -752,9 +752,26 @@ directly and the defect is in a step that runs before the annotation is consulte
 states the choice. Third instance on this branch of a test pinning the mechanism rather than the
 outcome, after F14's persistence filter and F15's cadence.
 
-Written up as `docs/task-config-deprecated-key-alias-ineffective.md`. **Not fixed** — the fix is in
-`StroomConfigurationSourceProvider`, which runs on every boot for every deployment, so it wants a
-decision rather than a commit.
+**Fixed 2026-09-08, by rejecting rather than by making the alias work** — the operator's call, and
+the better one. `StroomConfigurationSourceProvider.rejectRenamedKeys` fails the boot naming the
+replacement, before the defaults merge; the `@JsonAlias` declarations are gone, so there is one
+mechanism instead of two.
+
+**F2's original framing was the mistake.** It treated "an upgraded `config.yml` fails to boot" as
+the defect and back-compatibility as the fix. A rename the operator has to know about is exactly the
+case where a boot failure is the *right* behaviour: it is the only signal that arrives before the
+wrong value is in use. A working alias would have been silent, leaving the old spelling in the file
+indefinitely until the alias was removed one day and boot failed then instead — with nothing in
+between, since nothing logged a warning.
+
+The config-table migration stays, and that asymmetry is deliberate: a database row can be re-pointed
+unambiguously and there is no file for the operator to edit, whereas a YAML key cannot be handled
+silently without the loader choosing between two spellings on the operator's behalf — which is what
+went wrong. Migrate what migrates cleanly; reject what needs a human.
+
+`TestAppConfigDeprecatedAssetKeys` is replaced by `TestRenamedConfigKeys`, which starts from a
+**file** and asserts the **outcome**. Full detail in
+`docs/task-config-deprecated-key-alias-ineffective.md`.
 
 ## F3 — Every SAX event on the ingest path logs at INFO — CRITICAL — **DONE 2026-08-25** (`438106dc1f`)
 
