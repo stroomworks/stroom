@@ -44,7 +44,7 @@ Last reconciled against `git log origin/master..HEAD` on **2026-09-01** (24 comm
 | F7 | `hasInverse()` promises a check it does not perform | `c7d9573e6b` |
 | F12 | Name-clash guard leaks document existence | `94d101554d` |
 | C1–C7 | Javadoc corrections (~65) | `bc9abcedf4` |
-| — | Migration never ran at bootstrap (found by running it) | `9c23723c9a` |
+| — | Migration never ran at bootstrap (found by running it) | `9c23723c9a` — **verified on a clean database 2026-09-08**, E1 |
 | — | Four trail defects (found by running it) | `0cdec0fef9` … `e62fb67de9` |
 | — | Events store → Plan B, and its playback fallout | `db0cd682ee`, `8ee09c4952` |
 | — | Assets never exported, imported, copied or deleted | `ec9c6298e3` |

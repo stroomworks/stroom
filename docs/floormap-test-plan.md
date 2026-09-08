@@ -52,6 +52,31 @@ caught:
 - G3 as written was impossible: a role cannot be pointed at a column the query does not select, so
   the reachable fault is unmapping one
 
+## E1 — the bootstrap migration · **pass, 2026-09-08**
+
+Run against a genuinely clean database, which is the only way this test means anything. All five
+checks pass:
+
+| | |
+|---|---|
+| E1a | `updatable_temporal_store` and the three `visualisation_assets*` tables exist |
+| E1b | both history tables carry a Flyway baseline row plus their migration, `success = 1` — document-asset at 07:20:19, sqlstore at 07:20:24, i.e. during startup and before the UI was touched |
+| E1c | primary key is `(doc_uuid, key_, effective_time)`, so the post-F1 schema, with nothing to migrate |
+| E1d | a fact written through the Editor tab saved and reloaded correctly |
+| E1e | clean startup, and a 110 MB upload refused naming the 50 MB limit |
+
+**This closes the most expensive finding of the review to verify.** `updatable_temporal_store` was
+never created by a normal startup — the sqlstore provider was built after
+`haveBootstrapMigrationsBeenDone()` was set, so `FlywayUtil.migrate` returned without consulting
+Flyway and the history table stayed *empty*. The table existed only by accident of timing, and once
+dropped no restart recreated it. E1b's migration row is the proof that branch now runs.
+
+**Two of the five could only ever be tested here.** E1e's 50 MiB default is exercised only on an
+instance with no config override, and every existing config file omits the property — so a null cap
+would have disabled the limit on exactly the deployments it was added for. And E1d is the only check
+that compares the *migrated* schema against the jOOQ classes generated at build time; a mismatch
+fails on a read or write and nowhere else.
+
 ## Still outstanding
 
 | | |

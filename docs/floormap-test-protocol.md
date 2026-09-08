@@ -409,7 +409,7 @@ confirm the object is still there — that is the read back.
 | E1a · `updatable_temporal_store` and the three asset tables exist | **pass** 2026-09-08 |
 | E1b · both history tables carry baseline + migration, `success = 1`, timed with startup | **pass** 2026-09-08 — document-asset 07:20:19, sqlstore 07:20:24 |
 | E1c · primary key is `(doc_uuid, key_, effective_time)` | **pass** 2026-09-08 |
-| E1d · a store can be written to and read back | outstanding — creating the document is not enough, see above |
+| E1d · a store can be written to and read back | **pass** 2026-09-08 — object saved and reloaded correctly, so the migrated schema matches the generated jOOQ classes |
 | E1e · clean startup, and the 50 MiB upload default applies | **pass** 2026-09-08 — a 110 MB upload was refused, naming the 50 MB limit |
 
 ---
