@@ -38,7 +38,7 @@ Last reconciled against `git log origin/master..HEAD` on **2026-09-01** (24 comm
 | | Finding | Commit(s) |
 |---|---|---|
 | F1 | Temporal store keyed on document name | `94d101554d` |
-| F2 | Config keys renamed with no deprecation shim | `44d344cee2` |
+| F2 | Config keys renamed with no deprecation shim | `44d344cee2` — **half only**, see F2; moved out of Done 2026-09-08 |
 | F3 | Every SAX event logs at INFO | `438106dc1f` |
 | F4 | Unbatched insert per reference entry | `a6432bd258` |
 | F7 | `hasInverse()` promises a check it does not perform | `c7d9573e6b` |
@@ -586,7 +586,7 @@ What remains:
 
 ---
 
-## F2 — Config keys renamed with no deprecation shim — MEDIUM — **DONE 2026-08-26**
+## F2 — Config keys renamed with no deprecation shim — MEDIUM — **HALF DONE**; the shim stops the boot failure but never carries a value — see the correction below
 
 > **Decide D9 first.** F2 exists only because the asset code moved modules. If D9 goes to Option R
 > (revert the extraction), this entire finding disappears — no rename, no upgrade note, no config-table
@@ -725,6 +725,36 @@ test that a config containing the old key fails with a message naming the new on
 a test asserting old-key and new-key configs resolve to identical datasources.
 
 ---
+
+### Correction, 2026-09-08: the shim is only half a fix
+
+Found by running test **E2** against a clean instance. An old key no longer fails the boot — that
+half is real — but the value is then **silently discarded**, so the operator's setting has no effect
+and the Properties screen reports the compiled default.
+
+`StroomConfigurationSourceProvider.open()` merges a tree built from `new AppConfig()` into the
+operator's YAML before Dropwizard parses it. That defaults tree is produced by `valueToTree`, which
+uses `@JsonProperty` names only, so it always contains `documentAsset` and never
+`visualisationAsset`. The parsed YAML therefore carries **both** keys with the injected default
+second — and an alias is another spelling of the same property, so last-one-wins hands the default
+the win. Every boot.
+
+The commit that added the alias documented exactly this hazard and told operators to *"rename the
+key rather than add the new one alongside"*. The loader adds the new one alongside on their behalf.
+
+`documentAssetDb` is the serious half: the merge injects `connection: {}`, so a customised asset
+database connection silently falls back to `commonDbDetails` — assets written to a different
+database than configured. It has no database-override route either, being `@BootStrapConfig` with
+`@ReadOnly` connection fields.
+
+**`TestAppConfigDeprecatedAssetKeys` passes throughout**, because it deserialises `AppConfig`
+directly and the defect is in a step that runs before the annotation is consulted. Its javadoc even
+states the choice. Third instance on this branch of a test pinning the mechanism rather than the
+outcome, after F14's persistence filter and F15's cadence.
+
+Written up as `docs/task-config-deprecated-key-alias-ineffective.md`. **Not fixed** — the fix is in
+`StroomConfigurationSourceProvider`, which runs on every boot for every deployment, so it wants a
+decision rather than a commit.
 
 ## F3 — Every SAX event on the ingest path logs at INFO — CRITICAL — **DONE 2026-08-25** (`438106dc1f`)
 

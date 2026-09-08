@@ -418,7 +418,14 @@ confirm the object is still there — that is the read back.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb` | Accepted, with a deprecation warning. Do **not** add the new keys alongside — the last occurrence wins, so the test would prove nothing | |
+| **E2** | Start with the **old** config keys `visualisationAsset` / `visualisationAssetDb`, giving one a **distinctive value** so you can tell bound from ignored | **FAIL, 2026-09-08.** The key is accepted — Stroom boots, which is what the alias was for — but the value is silently discarded and the compiled default applies. See `docs/task-config-deprecated-key-alias-ineffective.md` | **fail** |
+
+**Two corrections to how this test was written.** There is **no deprecation warning** — nothing logs
+anything, so do not go looking for one. And "it started" is not the assertion: a key that is
+tolerated-and-ignored looks identical to one that is tolerated-and-applied, which is exactly how this
+defect survived. Set a value you can observe, then read it off the **Properties** screen, where the
+YAML column is separate from the default. Do **not** add the new key alongside — last occurrence
+wins and the test would prove nothing.
 
 E3 and E4 passed on 2026-09-04.
 
