@@ -1,13 +1,23 @@
 # Floor Map — test protocol
 
-**Run this document.** It is ordered, each step says exactly what to do and exactly what to expect,
-and every expected value below was read back from the live instance on **2026-09-07 07:09 UTC**.
+**Run this document.** It is ordered, each step says exactly what to do and exactly what to expect.
+Most expected values were read back from the live instance on **2026-09-07 07:09 UTC**.
+
+**Revised 2026-09-09**, after Plan B gained a server-side latest-per-key read and the Floor Map's
+client-side event state was retired behind it. Those revisions are **derived from the code, not read
+back from a running instance** — the MCP connection was down — so treat Session R, the entity table
+and A0's count as predictions this run is meant to confirm, rather than as observations to match.
+Everything dated 2026-09-07 or earlier was observed.
 
 `floormap-test-plan.md` is the companion: it explains *why* each test exists and records what has
 already passed. This document is what you work through.
 
-**Estimated time:** Part 1 is about 25 minutes and covers everything built in the last two days.
+**Estimated time:** Part 1 is about 35 minutes and covers everything built in the last three days.
 Parts 2 and 3 are about 20 minutes each and cover older work that has never been exercised by hand.
+
+**The single most informative check** is A0's entity count. It was four and is now five, and the
+entity that changed answer — `carol` — is the one whose absence used to prove the six-hour horizon
+existed. If she is drawn, the retirement works. If she is not, stop.
 
 ---
 
@@ -46,15 +56,17 @@ as `location`. Without that the new CSV would land with no location at all for e
 did not change shape.
 
 **The old rows stay in the store**, because Plan B is keyed on (key, effective time) and the new
-generation lands at new times. That is harmless — they sit hours in the past, outside the horizon —
-but it means "no entities at all" after reloading means the upload failed, not that the old data is
-interfering.
+generation lands at new times. Harmless, but **less harmless than it was**: the read now takes each
+entity's latest row at or before the selected time with no lower bound, so an old row is no longer
+ignored for being far in the past — it is simply superseded by a newer one for the same key. A key
+that appears *only* in an old generation will now be drawn. If you see an entity this protocol does
+not list, that is why; deleting the store's contents between generations avoids it.
 
 ## 2. Read your landmark times from the manifest, not from this document
 
-`generate.py` writes every timestamp relative to the moment it runs, because the 6-hour horizon is
-relative to the timeline position. So it also writes **`out/manifest.json`**, which lists every time
-this protocol refers to, in UTC and epoch millis:
+`generate.py` writes every timestamp relative to the moment it runs, so that the fixture always
+lands near the timeline's default position. So it also writes **`out/manifest.json`**, which lists
+every time this protocol refers to, in UTC and epoch millis:
 
 ```bash
 python3 -m json.tool docs/floormap-testdata/out/manifest.json
@@ -124,8 +136,18 @@ is the only one exercising that path — and the only one that will *not* move w
 | `bob@example.org` | `locationRef` | moves, then **stops 5 minutes before the end** | **yes**, idle |
 | `dave@example.org` | `locationRef` | parked at `desk-105`, re-emitting an unchanged value | **yes** |
 | `forklift-7` | **`location`** | drifts across the floor on literal coordinates, not a fact key | **yes** |
-| `carol@example.org` | `locationRef` | one event 7 hours back — beyond the 6 h horizon | **no** |
+| `carol@example.org` | `locationRef` | one event 7 hours back | **yes** — see below |
 | `ghost@example.org` | `locationRef` | names `desk-999-does-not-exist` | **no**, dropped |
+
+> **`carol` changed answer on 2026-09-09, and is now the most informative row in this table.**
+> She used to be the horizon's witness: one event seven hours back, beyond the six-hour re-read, so
+> she was *not* drawn and that absence was the point. The horizon is gone — Plan B now answers
+> "latest row at or before T" server-side with no lower bound — so **carol is drawn**, at the
+> position she reported seven hours ago.
+>
+> If carol is missing, the retirement of the client-side event state has regressed. If she is
+> present, that alone confirms the new read is reaching past any window. She is worth checking
+> before anything else in Part 1.
 
 ---
 
@@ -136,19 +158,60 @@ is the only one exercising that path — and the only one that will *not* move w
 **A0.** Open `Test Floor Map`. Press **Show All**. Drag the scrubber to the **far right** (the
 manifest's `generatedAt`) and leave it **paused**.
 
-**Expect:** the floor plan, and **exactly four** entities — `alice`, `bob` and `dave` each on a
-desk, and `forklift-7` out on its own coordinates away from any desk. `carol` and `ghost` absent.
-No status line. The Tracking panel lists four.
+**Expect:** the floor plan, and **exactly five** entities — `alice`, `bob` and `dave` each on a
+desk, `forklift-7` out on its own coordinates away from any desk, and `carol` on the desk she
+reported seven hours ago. Only `ghost` is absent. No status line. The Tracking panel lists five.
 
-This single state proves the headline events behaviour: **`bob` is still on the map** although his
-last event was five minutes earlier. Before this branch, anything silent for twenty seconds
-vanished.
+**This count changed on 2026-09-09 and the change is the point.** It was four: `bob` was the
+witness that an entity silent for five minutes stays on the map, where before this branch anything
+silent for twenty seconds vanished. `carol` was *excluded* as the witness for the six-hour horizon.
+The horizon is gone — Plan B answers "latest row at or before the selected time" server-side — so
+carol is drawn and the answer is five.
+
+So this single state now proves both halves: an entity idle for minutes is kept, and an entity idle
+for hours is kept too.
 
 | | Result |
 |---|---|
-| A0 · four entities, `bob` present, no status line | |
+| A0 · **five** entities, `bob` and `carol` both present, `ghost` absent, no status line | |
 
 **If A0 fails, stop and tell me** — everything below assumes it.
+
+---
+
+## Session R — the client-side event state is retired (F13) · **10 min**
+
+Plan B gained a server-side latest-per-key read, so the machinery that kept positions in the
+browser — a delta per tick, a six-hour re-baseline to correct it, a row-cap policy, two cadence
+intervals — is deleted. One query per tick now asks for every entity's latest row at or before the
+selected time, and the answer replaces what is drawn.
+
+**Nothing here has ever been run by hand.** The build proves the semantics
+(`TestTemporalStoreParity`), not the wiring.
+
+| # | Do | Expect | Result |
+|---|---|---|---|
+| **R1** | From A0's paused far-right position, open the browser's Network tab, clear it, and **wait 90 seconds** without touching anything | **No events requests at all.** Nothing polls: reads happen on a timeline tick, and a paused timeline does not tick. Facts are separate — one facts request is expected (Session F) and is not this | |
+| **R2** | Press play and watch Network | One events request per throttled tick, roughly **three a second**, each a fresh search. Same rate as before; what changed is what comes back, not how often | |
+| **R3** | Pick any events request and read its response | **One row per entity**, not a window of history. Five rows for this fixture. If you see several rows for `alice`, the server is not reducing and everything else here is unsafe | |
+| **R4** | Scrub **backwards** to the middle of the data, pause | Entities **teleport** rather than sliding, and positions are those at the scrubbed-to instant — no position later than it. `carol` stays drawn throughout | |
+| **R5** | Scrub **forwards** past the end of the data | Positions hold at their last reported values; `carol` and `bob` both remain. Nothing blanks | |
+| **R6** | Turn **Condense** on for the events store (Plan B doc → Settings), reprocess nothing, and reload the map | No change to what is drawn. Condense now only affects storage — the read takes each entity's latest row whatever it is. This was unsafe before the retirement | |
+| **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and the console reports the read failed **once** — not once per tick. Then set it back | |
+
+**Why R1 and R7 are the two that matter.** R1 is the one that regressed most easily: the old code
+checked a cadence on demand *because* nothing was allowed to poll, and if the retirement
+accidentally reintroduced a timer this is where it shows. R7 exercises the only remaining
+report-once flag on this path; a store that has never been written to reports an error on every
+read, so a missing flag turns into console spam three times a second.
+
+**What would tell you it is wrong**
+
+- Several rows for one entity in R3 — the server is not reducing, and R4/R5 become meaningless.
+- `carol` disappearing at any point. She is seven hours stale, so she is the canary for a lower
+  bound creeping back into the query.
+- Any events request while paused in R1.
+- A repeated console message in R7.
 
 ---
 
@@ -202,7 +265,7 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 | **G4** | Events Query tab (Run pressed) → set **Location Ref** to the **`Type`** column, and set **Location** to blank → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put both back** | |
 | **G5** | Open `Test Floor Map (empty)` | The **quiet** "no events" line, **not** a fault. An empty store is not a misconfiguration | |
 | **G6** | Reopen `Test Floor Map`, Show All, and watch the **first second** | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not; a "no floor plan" line flashing on every open would be worse than the silence it replaces | |
-| **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Most delta ticks legitimately return no rows — an entity that has not moved emits nothing — so a naive check would blink once per tick | |
+| **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Every read now returns the whole set rather than only what changed, so a tick returning no rows means the store genuinely holds nothing at or before that instant — which is what the line is for | |
 | **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | |
 
 ### Why G3 and G4 need Run pressed first
@@ -272,8 +335,10 @@ check the `where` line saved.
 own.** On a Plan B store, a `where` term on a field the `select` list omits filters out **every**
 row, silently — so either change would blank the map while the status line said "No events at this
 time", which is exactly the misleading case. Found while building this fixture; written up as
-`docs/task-planb-where-field-not-selected.md`. The map's own horizon works precisely *because* the
-generated query selects `EffectiveTime`.
+`docs/task-planb-where-field-not-selected.md`. The map is safe from it twice over — the read's own
+time bound now routes the query to Plan B's snapshot path, where the field ordering is correct, and
+the generated query selects `EffectiveTime` anyway — but a term on a **non-time** field you add
+yourself is covered by neither.
 
 **What would tell you it is wrong**
 
@@ -292,8 +357,8 @@ you are here.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **H1** (was A2) | Set the timeline to the **far right** and read the Groups panel's occupancy counts. Note them. Now play forward — there is nothing after the end of the data, so the clock runs on with no new events | The counts **hold**. They must not fall while `bob` sits idle. Before this branch, an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | |
-| **H2** (was A13) | Open `Test Floor Map (bulk)`, Show All, and watch the console while it loads | Either nothing, or **one** message about the 20 000-row limit — not a repeat every minute. ~24 000 events is deliberately over budget | |
+| **H1** (was A2) | Set the timeline to the **far right** and read the Groups panel's occupancy counts. Note them. Now play forward — there is nothing after the end of the data, so the clock runs on with no new events | The counts **hold**, and now hold indefinitely rather than for a bounded window. `bob` is idle and `carol` has been idle for seven hours; both must stay counted. Before this branch an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | |
+| **H2** (was A13) | Open `Test Floor Map (bulk)`, Show All, and watch the console while it loads | **Nothing.** This test used to expect a row-cap message, because ~24 000 events exceeded the 20 000-row read. The read is one row per *entity* now, and the bulk fixture has far fewer than 20 000 entities, so the cap is unreachable by event volume. A cap message here means the read is no longer reducing server-side — report it | |
 
 ---
 
@@ -446,13 +511,20 @@ is recognised rather than rediscovered: they were `19925dea-cb9b-45df-9735-de001
   come back to the position you left rather than to wherever the clock ran on to. Inner-tab switches
   have always paused; this makes the outer tab behave the same way.
 - **The timeline opening at NOW ± 24 hours** rather than fitted to the data. Press Show All.
-- **A one-tick flicker** when a baseline lands while deltas were in flight: it replaces state
-  wholesale, so an entity that moved during its flight can jump back one tick before the next delta
-  corrects it.
-- **During playback**, a dropped entity's counts and roster update while its **glyph persists**.
-  Pre-existing, which is why the horizon tests say pause first.
-- **The horizon is not enforced on a SQL Temporal Store**, which strips all time terms — so
-  horizon-drop behaviour is Plan B only.
+- ~~**A one-tick flicker** when a baseline lands while deltas were in flight~~ — **gone
+  2026-09-09.** There are no deltas and no baseline; each read is one snapshot that replaces the
+  drawn set, so there is nothing in flight to be overtaken. A position jumping backwards during
+  playback is now worth reporting rather than expecting.
+- ~~**During playback**, a dropped entity's counts and roster update while its **glyph
+  persists**~~ — **cannot happen now.** Nothing is dropped for being idle, because nothing prunes
+  on absence. If counts and glyphs disagree, report it.
+- ~~**The horizon is not enforced on a SQL Temporal Store**~~ — **there is no horizon on either
+  store.** Both now answer "latest row at or before the selected time", so the two behave the same
+  way here. That was the whole point of retiring the client-side state.
+- **An entity that stopped emitting long ago is still drawn**, at the position it last reported.
+  This is the deliberate counterpart of the horizon going: absence is no longer distinguishable
+  from stillness, so the positioned count is even less of a head-count than before. `carol` is the
+  fixture's witness for it.
 - **No background image** on `Test Floor Map` unless you have uploaded one.
 - **Trails resuming at full opacity** when an entity starts moving again. Known and untriaged —
   **F16** in the remediation plan. Report anything *else* trail-shaped.
