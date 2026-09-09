@@ -2,7 +2,7 @@
 """Generate Floor Map test data for docs/floormap-test-plan.md.
 
 Every timestamp is relative to the moment of generation, because two of the fixtures depend on it:
-the baseline horizon is six hours back from the *selected* time, and the timeline opens on the
+the timeline opens on the span of the data, and the
 span of the data. So the output goes stale - regenerate before a test session rather than reusing
 last week's files.
 
@@ -122,9 +122,11 @@ def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
 
       alice   - hops desk to desk throughout. The control: something must move.
       bob     - moves, then stops 5 minutes before now. Idle well past the old 20-second window
-                but inside the 6-hour horizon, so A1 asserts he STAYS.
-      carol   - one event 7 hours ago and nothing since, i.e. outside the horizon, so A3 asserts
-                she DROPS. Backdated deliberately: waiting out a six-hour horizon is not a test.
+                so A1 asserts he STAYS.
+      carol   - one event 7 hours ago and nothing since. She used to be dropped, as the witness for
+                a six-hour re-read horizon; that horizon is gone as of 2026-09-09 and she is now
+                drawn at the position she last reported. Backdated deliberately - she is the check
+                that the read reaches past any window.
       dave    - stationary, re-emitting an UNCHANGED location every 5s. These are exactly the
                 rows condense collapses, so A4 asserts he survives with condense on.
       forklift-7 - the coordinate form of location rather than a fact key, so both paths are
@@ -134,7 +136,7 @@ def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
     """
     rnd = random.Random(seed)
     rows = []
-    # Four hours by default: comfortably inside the 6-hour horizon, so a baseline sees all of it,
+    # Four hours by default, so the timeline opens on a useful span,
     # and wide enough to be easy to find on a timeline that opens on +/-24 hours. A 30-minute
     # window left almost the whole timeline empty.
     start = now - timedelta(minutes=span_minutes)
@@ -162,9 +164,9 @@ def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
         emit_ref("bob@example.org", t, rnd.choice(DESKS)[0], "person", "ok", "seen")
         t += step
 
-    # carol - a single event beyond the horizon. A3's subject.
+    # carol - a single event 7 h back. The check that no lower bound is applied.
     emit_ref("carol@example.org", now - timedelta(hours=7), "desk-103", "person", "ok",
-             "last seen before the horizon")
+             "last seen 7 hours before the rest")
 
     # dave - parked at desk-105, re-emitting the same value. A4's subject.
     t = start
@@ -191,7 +193,7 @@ def events(now, span_minutes=240, interval_seconds=120, seed=20260904):
 
 
 def bulk_events(now, total):
-    """Over-budget fixture for A11: more rows inside the 6-hour horizon than the 20 000 cap.
+    """Bulk fixture: far more event rows than the 20 000 read cap.
 
     Spread across six hours and many entities so the truncation is a genuine cap rather than one
     entity's history. 20 000 rows over six hours is 0.93 events/second sustained - which a hundred
@@ -216,7 +218,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "out"))
     ap.add_argument("--span-minutes", type=int, default=240,
-                    help="how far back the events reach (default 240, i.e. inside the 6h horizon)")
+                    help="how far back the events reach, in minutes (default 240)")
     ap.add_argument("--interval-seconds", type=int, default=120,
                     help="gap between one entity's events (default 120)")
     ap.add_argument("--bulk-events", type=int, default=24000,
@@ -225,7 +227,7 @@ def main():
 
     now = datetime.now(timezone.utc).replace(microsecond=0)
     os.makedirs(args.out_dir, exist_ok=True)
-    print("Generated at %s (UTC). Regenerate before testing - the horizon is relative." % iso(now))
+    print("Generated at %s (UTC). Regenerate before testing - every time is relative to now." % iso(now))
 
     write(os.path.join(args.out_dir, "facts.csv"), FACTS_HEADER,
           facts(now, args.span_minutes))
@@ -240,8 +242,7 @@ def main():
     span = timedelta(minutes=args.span_minutes)
     landmarks = [
         ("events begin", now - span),
-        ("carol's only event, beyond the horizon", now - timedelta(hours=7)),
-        ("carol falls out of the 6 h horizon", now - timedelta(hours=1)),
+        ("carol's only event, 7 h before the data ends", now - timedelta(hours=7)),
         ("desk-106 moves, (320,240) -> (460,240)",
          now - timedelta(minutes=args.span_minutes / 2.0)),
         ("bob stops emitting", now - timedelta(minutes=5)),
@@ -254,7 +255,6 @@ def main():
         "factsMap": FACTS_MAP,
         "eventsMap": EVENTS_MAP,
         "bulkEventsMap": BULK_MAP,
-        "horizonHours": 6,
         "landmarks": [
             {"what": what, "utc": iso(when), "epochMs": int(when.timestamp() * 1000)}
             for what, when in landmarks
@@ -262,7 +262,7 @@ def main():
         "entities": {
             "alice@example.org": "locationRef, hops desk to desk throughout. The control",
             "bob@example.org": "locationRef, stops 5 min before the end. The idle-entity subject",
-            "carol@example.org": "locationRef, one event 7 h back, i.e. outside the horizon",
+            "carol@example.org": "locationRef, one event 7 h back and nothing since; still drawn, at that position",
             "dave@example.org": "locationRef, parked at desk-105 re-emitting an unchanged value",
             "forklift-7": "location, the ONLY coordinate-form entity, so the only one that "
                           "exercises that path",

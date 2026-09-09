@@ -4,9 +4,9 @@ Fixtures for [`../floormap-test-plan.md`](../floormap-test-plan.md). Generates t
 Stroom content to ingest it, for the Group A tests plus the facts floor plan everything else needs.
 
 **Regenerate before every test session.** Every timestamp is relative to the moment of generation,
-because two fixtures depend on it: the baseline horizon reaches six hours back from the *selected*
-time, and the timeline opens on the span of the data. Yesterday's files put every entity outside the
-horizon, which looks exactly like the bug A3 is testing for.
+so that the timeline opens on a useful span and the landmarks in `manifest.json` line up with what
+you see. Yesterday's files still work — the read has no lower bound as of 2026-09-09 — but the
+timeline opens somewhere unhelpful and every landmark time is a day out.
 
 ---
 
@@ -54,8 +54,10 @@ will not move when you move a desk.
 than one field's contents. Regenerating moves every timestamp to "now", which is why `manifest.json`
 now lists every landmark the test protocol needs; read the times from there rather than from the
 protocol. The old generation's rows stay in the store, since Plan B is keyed on (key, effective
-time) and the new ones land at new times — harmless, being hours in the past and outside the
-horizon.
+time) and the new ones land at new times. That used to be harmless because old rows fell outside
+the read's six-hour horizon; there is no horizon now, so an old row is superseded only if a newer
+one exists for the same key. A key present in an old generation and absent from the new one **will
+still be drawn** — delete the store's contents between generations if that matters.
 
 
 ---
@@ -185,7 +187,7 @@ Every entity in `events.csv` exists to make exactly one test decidable.
 | Entity | Behaviour | Test | Expected |
 |---|---|---|---|
 | `alice@example.org` | hops desk to desk every 10 s for 30 min | control | moves, animates, leaves a trail |
-| `bob@example.org` | moves, then **stops 5 minutes before now** | **A1** | **stays** — idle far past the old 20 s window, inside the 6 h horizon |
+| `bob@example.org` | moves, then **stops 5 minutes before now** | **A1** | **stays** — idle far past the old 20 s window |
 | `carol@example.org` | one event **7 hours ago**, nothing since | **A3** | **drops** at the next baseline, and the group count falls with her |
 | `dave@example.org` | parked at `desk-105`, re-emitting the **same** value every 5 s | **A4** | survives with `condense` **on** — these are the rows it collapses |
 | `forklift-7` | coordinate form, `"x, y"` | both location forms | drawn at literal coordinates, unaffected by moving desks |
@@ -210,7 +212,7 @@ cap — so **A11**'s baseline truncates. That is not a contrived number: 20 000 
 - **`ground-floor.png` does not exist.** The background fact names an image that is not uploaded, so
   no background renders. Upload one as a document asset and set `img` to its name if you want the
   backdrop; none of the Group A tests need it.
-- **Do not wait out the horizon.** It is six hours. `carol` is backdated instead, which is why A3 is
+- **Do not wait for anything to age out.** `carol` is backdated instead, which is why she is
   a two-minute test rather than an afternoon.
 - **A3 says pause first.** During playback a pruned entity's counts, roster and membership update
   but the glyph persists, because the draw list re-emits from the animator's last positions and
