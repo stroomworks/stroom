@@ -202,13 +202,13 @@ selected time, and the answer replaces what is drawn.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **R1** | From A0's paused far-right position, open the browser's Network tab, clear it, and **wait 90 seconds** without touching anything | **No events requests at all.** Nothing polls: reads happen on a timeline tick, and a paused timeline does not tick. Facts are separate — one facts request is expected (Session F) and is not this | |
-| **R2** | Press play and watch Network | One events request per throttled tick, roughly **three a second**, each a fresh search. Same rate as before; what changed is what comes back, not how often | |
-| **R3** | Pick any events request and read its response | **One row per entity**, not a window of history. Five rows for this fixture. If you see several rows for `alice`, the server is not reducing and everything else here is unsafe | |
-| **R4** | Scrub **backwards** to the middle of the data, pause | Entities **teleport** rather than sliding, and positions are those at the scrubbed-to instant — no position later than it. `carol` stays drawn throughout | |
-| **R5** | Scrub **forwards** past the end of the data | Positions hold at their last reported values; `carol` and `bob` both remain. Nothing blanks | |
-| **R6** | Turn **Condense** on for `floor_map_events` **with a threshold of a few minutes**, wait for the next 10-minute boundary, and reload the map | `dave` is **still drawn**, at `desk-105`. His identical rows collapse to the earliest one, and the read takes each entity's latest row at or before the selected time whatever that row is — so a collapsed run no longer costs him his position. Before the retirement a collapsed run could fall outside the six-hour window and he would vanish | **pass** 2026-09-09, at the store level |
-| **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and the console reports the read failed **once** — not once per tick. Then set it back | |
+| **R1** | From A0's paused far-right position, open the browser's Network tab, clear it, and **wait 90 seconds** without touching anything | **No events requests at all.** Nothing polls: reads happen on a timeline tick, and a paused timeline does not tick. Facts are separate — one facts request is expected (Session F) and is not this | **pass** 2026-09-09 |
+| **R2** | Press play and watch Network | One events request per throttled tick, roughly **three a second**, each a fresh search. Same rate as before; what changed is what comes back, not how often | **pass** 2026-09-09 |
+| **R3** | Pick any events request and read its response | **One row per entity**, not a window of history. Five rows for this fixture. If you see several rows for `alice`, the server is not reducing and everything else here is unsafe | **pass** 2026-09-09 |
+| **R4** | Scrub **backwards** to the middle of the data, pause | Entities **teleport** rather than sliding, and positions are those at the scrubbed-to instant — no position later than it. `carol` stays drawn throughout | **pass** 2026-09-09 |
+| **R5** | Scrub **forwards** past the end of the data | Positions hold at their last reported values; `carol` and `bob` both remain. Nothing blanks | **pass** 2026-09-09 |
+| **R6** | Turn **Condense** on for `floor_map_events` **with a threshold of a few minutes**, wait for the next 10-minute boundary, and reload the map | `dave` is **still drawn**, at `desk-105`. His identical rows collapse to the earliest one, and the read takes each entity's latest row at or before the selected time whatever that row is — so a collapsed run no longer costs him his position. Before the retirement a collapsed run could fall outside the six-hour window and he would vanish | **pass** 2026-09-09 — store level, then the map |
+| **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and the console reports the read failed **once** — not once per tick. Then set it back | **pass** 2026-09-09 |
 
 **R6 needs the API, and is worthless without it.** The Plan B settings UI's duration dropdown
 starts at **days**, and this fixture is four hours old — so turning Condense on through the UI
@@ -267,15 +267,15 @@ browser. `desk-106`'s one move is the only thing that can show whether that arit
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **F1** | Scrub to **30 minutes before** the desk-106 move and pause. Look at `desk-106` | Bottom-right at `(320, 240)`, labelled **"Desk 106"** | |
-| **F2** | Scrub **past** the move | `desk-106` has jumped **right**, to `(460, 240)`, labelled **"Desk 106 (moved)"**. Nothing else has moved | |
-| **F3** | Scrub **back** before it again · **the headline test** | `desk-106` returns to `(320, 240)` and **"Desk 106"**. This is the case that changed from a server round trip to a browser computation, so a mistake in the time comparison shows here and nowhere else | |
-| **F4** | Start a few minutes before the move and play at **1×** past it, then repeat at **10×** | `desk-106` moves at the same timeline instant both times. It used to be accurate only to one tick of *wall clock* — about three seconds of timeline at 10× | |
-| **F5** | DevTools → Network, filter `search`, then play for 30 s | Facts contribute **no** requests while playing. There will be one about every 60 s, and one each time you switch to the Map tab. Before this change there were about three a second | |
-| **F6** | Leave the Map visible and **paused** for **80 seconds**, watching Network | **One** facts request appears, and only one. **Zero is a regression** — this is the case that was broken until 2026-09-07, when the cadence was only consulted while playing, so a paused map never re-read at all | |
-| **F6b** | Switch to the **Editor** tab and leave it for two minutes, watching Network | **No** facts requests. The cadence must stop when the Map is not the tab on screen, or a backgrounded document keeps polling | |
-| **F7** | Move a desk on the **Editor** tab, save, switch to **Map** | The move is there immediately, not 60 s later | |
-| **F8** | Play, switch to a **different Stroom document**, wait 30 s, come back | The timeline is **paused where you left it**. Intended — see *Not bugs* | |
+| **F1** | Scrub to **30 minutes before** the desk-106 move and pause. Look at `desk-106` | Bottom-right at `(320, 240)`, labelled **"Desk 106"** | **pass** 2026-09-09 |
+| **F2** | Scrub **past** the move | `desk-106` has jumped **right**, to `(460, 240)`, labelled **"Desk 106 (moved)"**. Nothing else has moved | **pass** 2026-09-09 |
+| **F3** | Scrub **back** before it again · **the headline test** | `desk-106` returns to `(320, 240)` and **"Desk 106"**. This is the case that changed from a server round trip to a browser computation, so a mistake in the time comparison shows here and nowhere else | **pass** 2026-09-09 |
+| **F4** | Start a few minutes before the move and play at **1×** past it, then repeat at **10×** | `desk-106` moves at the same timeline instant both times. It used to be accurate only to one tick of *wall clock* — about three seconds of timeline at 10× | **pass** 2026-09-09 |
+| **F5** | DevTools → Network, filter `search`, then play for 30 s | Facts contribute **no** requests while playing. There will be one about every 60 s, and one each time you switch to the Map tab. Before this change there were about three a second | **pass** 2026-09-09 |
+| **F6** | Leave the Map visible and **paused** for **80 seconds**, watching Network | **One** facts request appears, and only one. **Zero is a regression** — this is the case that was broken until 2026-09-07, when the cadence was only consulted while playing, so a paused map never re-read at all | **pass** 2026-09-09 |
+| **F6b** | Switch to the **Editor** tab and leave it for two minutes, watching Network | **No** facts requests. The cadence must stop when the Map is not the tab on screen, or a backgrounded document keeps polling | **pass** 2026-09-09 |
+| **F7** | Move a desk on the **Editor** tab, save, switch to **Map** | The move is there immediately, not 60 s later | **pass** 2026-09-09 |
+| **F8** | Play, switch to a **different Stroom document**, wait 30 s, come back | The timeline is **paused where you left it**. Intended — see *Not bugs* | **pass** 2026-09-09 |
 
 **What would tell you it is wrong**
 
@@ -402,6 +402,12 @@ yourself is covered by neither.
 >
 > If you want the *unambiguously* empty case for G5's original purpose, point
 > `Test Floor Map (empty)` at `floor_map_events` and scrub to before the data starts instead.
+>
+> **R7 passed on 2026-09-09**, and R7 is this same condition: a never-written store reported the
+> read as *failed*, once. So expect G5 to show the error rather than the quiet line, and the code's
+> answer is the one that holds — a store that was never written is not distinguishable from a query
+> that could not run. Confirm it at G5 rather than assuming, since R7 pointed an existing document
+> at the empty store while G5 opens a document already configured that way.
 
 **What would tell you it is wrong**
 
