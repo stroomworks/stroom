@@ -56,10 +56,10 @@ Last reconciled against `git log origin/master..HEAD` on **2026-09-01** (24 comm
 |---|---|---|
 | F5 | Store resolved once per pipeline run (`8cc85ee889`) | Value cache — **deferred**, raised as `task-sqlstore-lookup-value-cache.md` |
 | F6 | Per-frame rebuild and trail growth (`7ab7b0bdbd` + trail commits) | Architecture tier, deferred by D8; see `task-floormap-incremental-canvas-render.md` |
-| F8 | `includeValue` guard (`9400f3359c`) — **correct but insufficient**, see F8 | `search` still ends in `.fetch()` with no time predicate. Written up as `task-sqlstore-unbounded-fetch.md`; both viable fixes need a decision |
+| F8 | `includeValue` guard (`9400f3359c`) — **correct but insufficient**, see F8 | `search` still ends in `.fetch()` with no time predicate. Written up as `task-sqlstore-unbounded-fetch.md`. **Deferred 2026-09-09**, with the fix settled rather than open: cap the fetch and report the truncation |
 | F11 | **9 of 11 items** — verified in code 2026-09-04 | **2 items**: playback search churn (needs a decision), asset servlet (out of scope, raised elsewhere) |
 
-All three deferred tiers are written up as standalone, self-contained issues in `docs/`. F5 and F6 are blocked only on capacity; F8 needs a decision first.
+All three deferred tiers are written up as standalone, self-contained issues in `docs/`, and as of 2026-09-09 all three are blocked only on capacity. F8 stopped needing a decision when its caller was corrected — the choice existed only because the timeline histogram was thought to be hitting this path. See F8.
 
 **F11 recount, 2026-09-04.** The header said "6 of 11" and the *Left* cell said "4 items", which did not add up and was stale either way. Each row of the F11 table was checked against the code: `GWT.log` gone; both `from`-clause interpolations wrapped in `QuotedStringUtil.escapeDoubleQuoted`; `TermHandler` chains the cause at all three sites; the histogram fallback constants are `rgba(21,101,192,…)`, matching blue-800 in the stylesheet; `populateDraft` uses `.where(...)`; `applyChanges` batches consecutive same-type runs; group duplicate and group delete each reload once and `deleteAllShardsForKeys` takes the whole key list; the duplicated sentinel paragraph is gone. Plus the upload cap and the `DocumentPluginEventManager` banner, done today.
 
@@ -100,7 +100,7 @@ All three deferred tiers are written up as standalone, self-contained issues in 
 **Ready to do, no decision needed:**
 
 - ~~**Entity ID Column and Location ID Column need help text**~~ — **DONE 2026-09-04** (`c592f55636`). `Location ID Column` already had `helpText`; only `Entity ID Column` was missing it, which is the asymmetry that made it noticeable. Original note: The two settings on the **Events Query tab** are the least self-explanatory controls in the feature and the most damaging to get wrong: each must name a **column the events query actually selects**, and if either does not match, `parseRows` matches nothing, no entity reaches the canvas, and the map looks as though playback is switched off while the query still returns rows. Nothing on screen says any of that. See *Help text* below.
-- **F8 remainder** — `fetchLazy()` and a histogram-only query.
+- ~~**F8 remainder** — `fetchLazy()` and a histogram-only query.~~ — **both wrong, and the item is deferred as of 2026-09-09.** `fetchLazy()` is explicitly not the fix to reach for first: the consumer feeds the LMDB write queue, which applies backpressure, so a held cursor pins a pooled DB connection where the eager fetch merely inflated heap. The histogram-only query was aimed at a caller that does not exist — the histogram queries Plan B. What remains is one settled fix, cap and report, waiting on capacity. See F8.
 - ~~**F11 · no upload size cap**~~ — **DONE 2026-09-04** (`cdeee65cc0`). `documentAsset.maxUploadSize`, default 50 MiB, enforced in the service where the upload is already a temp file, so it is one stat call rather than a counting stream. Note the bytes are accepted to disk before being refused — bounding that belongs in the HTTP layer — but the durable cost is the blob, and that is stopped. Tests pin the absent-value default, since every existing config file omits the property and a null cap would have disabled the limit on exactly the installations it was added for.
 - ~~**F11 · `DocumentPluginEventManager` banner**~~ — **DONE 2026-09-04** (`50847657f4`). Said *opening*; it is creating. Corrected, and `DocInitialisationHandler` now states the constraint where an implementer will see it — acting on the old wording would have been destructive, since the handler's cancel path deletes the document.
 - ~~**Settings-tab state-type check**~~ — **DONE 2026-09-04** (`f31fd583d4`). No validation hook was needed after all: the events-store selection handler already existed and is the better place, because telling someone at the moment they choose beats telling them when they try to leave. A rejected choice reverts to the last valid one rather than clearing, and a failed fetch leaves the selection alone, since it says nothing about the store's type.
@@ -972,7 +972,7 @@ Extend `TestFloorMapTransformationMatrix` with `e = NaN` / `f = Infinity` cases 
 
 ---
 
-## F8 — Unbounded result sets materialised in memory — MEDIUM — **WRITTEN UP, not fixed** (`docs/task-sqlstore-unbounded-fetch.md`)
+## F8 — Unbounded result sets materialised in memory — MEDIUM — **DEFERRED 2026-09-09, written up, not fixed** (`docs/task-sqlstore-unbounded-fetch.md`)
 
 **File:** `UpdatableTemporalStoreDaoImpl.java:472` (`search`), `243` (`fetchAll`)
 
@@ -1009,7 +1009,8 @@ the way out through REST, so `fetchLazy()` is inapplicable to it.
 
 ### Status
 
-Not fixed. Written up in full at `docs/task-sqlstore-unbounded-fetch.md`, which is deliberately
+**Deferred 2026-09-09** and not fixed — blocked on capacity, not on a decision. Written up in full
+at `docs/task-sqlstore-unbounded-fetch.md`, which is deliberately
 **self-contained** — no reference to this plan, this branch or its commit history — so it can be
 raised as an issue and read by someone coming to the code fresh.
 
@@ -1038,7 +1039,9 @@ live instance:
 | `from "fmba" group by Key select Key, count()` — 1 000 groups | works |
 
 So the shapes the notes described are fine, and **the constraint on F8's fix is lifted**: a
-bucket-aggregating query is expressible after all.
+bucket-aggregating query is expressible after all. That no longer bears on F8, whose fix is a cap
+rather than a bucketed query — but it removes a false blocker that was being carried around, and it
+matters wherever bucketing is genuinely wanted.
 
 **The likely explanation is that both were the Plan B field-index bug seen before it was
 understood** — `docs/task-planb-where-field-not-selected.md`. A predicate handed a field-index
@@ -2280,8 +2283,8 @@ half of the churn, F15 addresses the facts half, and what is left after both is 
 Sequence F15's cheap tier (skip the downstream work when the parsed facts are unchanged) first: it is
 separable, carries no query-semantics risk, and makes the periodic re-fetch nearly free.
 
-**Later, scheduled separately.** F6 architecture tier (per D8), F8 lazy fetching, and asset
-sandboxing.
+**Later, scheduled separately.** F6 architecture tier (per D8), F8's fetch cap (**not** lazy
+fetching — see F8), and asset sandboxing.
 
 Rationale: everything severe is now also cheap, so it all lands early. The only genuinely expensive
 item left is the canvas render architecture (F6 tier two), which is a performance ceiling rather than
