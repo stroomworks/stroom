@@ -18,7 +18,7 @@ package stroom.config.app;
 
 import stroom.activity.impl.dao.ActivityConfig;
 import stroom.ai.impl.AiConfig;
-import stroom.ai.shared.AskStroomAIConfig;
+import stroom.ai.shared.AskStroomAiConfig;
 import stroom.analytics.impl.AnalyticsConfig;
 import stroom.annotation.impl.AnnotationConfig;
 import stroom.aws.s3.impl.S3Config;
@@ -173,7 +173,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final ActivityConfig activityConfig;
     private final AnalyticsConfig analyticsConfig;
     private final AnnotationConfig annotationConfig;
-    private final AskStroomAIConfig askStroomAIConfig;
+    private final AskStroomAiConfig askStroomAIConfig;
     private final ContentStoreConfig contentStoreConfig;
     private final ContentIndexConfig contentIndexConfig;
     private final AutoContentCreationConfig autoContentCreationConfig;
@@ -233,7 +233,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new AiConfig(),
                 new AnalyticsConfig(),
                 new AnnotationConfig(),
-                new AskStroomAIConfig(),
+                new AskStroomAiConfig(),
                 new AutoContentCreationConfig(),
                 new ByteBufferPoolConfig(),
                 new ClusterConfig(),
@@ -292,7 +292,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_AI) final AiConfig aiConfig,
                      @JsonProperty(PROP_NAME_ANALYTICS) final AnalyticsConfig analyticsConfig,
                      @JsonProperty(PROP_NAME_ANNOTATION) final AnnotationConfig annotationConfig,
-                     @JsonProperty(PROP_NAME_ASK_STROOM_AI) final AskStroomAIConfig askStroomAIConfig,
+                     @JsonProperty(PROP_NAME_ASK_STROOM_AI) final AskStroomAiConfig askStroomAIConfig,
                      @JsonProperty(PROP_NAME_AUTO_CONTENT_CREATION) final AutoContentCreationConfig autoContentCreationConfig,
                      @JsonProperty(PROP_NAME_BYTE_BUFFER_POOL) final ByteBufferPoolConfig byteBufferPoolConfig,
                      @JsonProperty(PROP_NAME_CLUSTER) final ClusterConfig clusterConfig,
@@ -439,7 +439,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     }
 
     @JsonProperty(PROP_NAME_ASK_STROOM_AI)
-    public AskStroomAIConfig getAskStroomAIConfig() {
+    public AskStroomAiConfig getAskStroomAIConfig() {
         return askStroomAIConfig;
     }
 

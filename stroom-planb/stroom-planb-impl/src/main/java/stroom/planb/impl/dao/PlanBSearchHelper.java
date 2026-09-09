@@ -20,6 +20,8 @@ import stroom.entity.shared.ExpressionCriteria;
 import stroom.lmdb.stream.LmdbIterable;
 import stroom.query.api.Column;
 import stroom.query.api.DateTimeSettings;
+import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.Format;
 import stroom.query.common.v2.ExpressionPredicateFactory;
@@ -29,17 +31,88 @@ import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.Values;
 import stroom.query.language.functions.ValuesConsumer;
+import stroom.util.date.DateUtil;
 
 import org.lmdbjava.Dbi;
 import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
 public class PlanBSearchHelper {
+
+    /**
+     * Extracts the "as at" instant from a search expression, if the caller has
+     * asked for a point-in-time view of the store.
+     *
+     * <p>A time term with {@code EQUALS}, {@code LESS_THAN} or
+     * {@code LESS_THAN_OR_EQUAL_TO} identifies such a request. The trigger
+     * conditions deliberately mirror
+     * {@code UpdatableTemporalStoreDaoImpl.getQueryTime} so that the SQL
+     * Temporal Store and Plan B answer the same question the same way — see
+     * {@code TemporalStateDb.search} for why that matters.</p>
+     *
+     * @param criteria      the search criteria; may be {@code null}
+     * @param timeFieldName the name of the store's time field
+     * @return the instant to view the store as at, or {@code null} when the
+     *         expression carries no such term
+     */
+    public static Instant getQueryTime(final ExpressionCriteria criteria,
+                                       final String timeFieldName) {
+        if (criteria == null || criteria.getExpression() == null) {
+            return null;
+        }
+        final List<ExpressionTerm> timeTerms = ExpressionUtil.terms(
+                criteria.getExpression(),
+                List.of(timeFieldName));
+
+        for (final ExpressionTerm term : timeTerms) {
+            if (timeFieldName.equals(term.getField()) &&
+                    (term.getCondition() == ExpressionTerm.Condition.EQUALS ||
+                     term.getCondition() == ExpressionTerm.Condition.LESS_THAN ||
+                     term.getCondition() == ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO)) {
+                try {
+                    return Instant.ofEpochMilli(DateUtil.parseUnknownString(term.getValue()));
+                } catch (final RuntimeException e) {
+                    // Unparseable value — ignore this term and keep checking.
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns a copy of the expression with every term on the given time field
+     * removed.
+     *
+     * <p>Used by the point-in-time search path, which replaces the caller's
+     * time terms with its own "latest at or before" rule. Removing them is not
+     * merely an optimisation: a zero-width time range arrives as
+     * {@code time >= T AND time < T}, which no row can satisfy.</p>
+     *
+     * @param expression    the expression to copy; may be {@code null}
+     * @param timeFieldName the name of the time field whose terms to drop
+     * @return the expression without time terms, or {@code null} if none given
+     */
+    public static ExpressionOperator removeTimeTerms(final ExpressionOperator expression,
+                                                    final String timeFieldName) {
+        if (expression == null) {
+            return null;
+        }
+        return ExpressionUtil.copyOperator(
+                expression,
+                item -> {
+                    if (item instanceof final ExpressionTerm term) {
+                        return term.getField() != null
+                               && !timeFieldName.equals(term.getField());
+                    }
+                    return true;
+                });
+    }
 
     public static void search(final Txn<ByteBuffer> readTxn,
                               final ExpressionCriteria criteria,

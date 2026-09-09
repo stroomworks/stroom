@@ -21,7 +21,7 @@ import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.planb.impl.dao.temporalstate.TemporalStateDb;
 import stroom.planb.impl.dao.temporalstate.TemporalStateFields;
-import stroom.planb.impl.data.TemporalState;
+import stroom.planb.impl.data.value.TemporalState;
 import stroom.planb.impl.serde.keyprefix.KeyPrefix;
 import stroom.planb.impl.serde.temporalkey.TemporalKey;
 import stroom.planb.shared.PlanBDoc;
@@ -40,7 +40,6 @@ import stroom.util.shared.TemporalEntry;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -71,17 +70,29 @@ import static org.assertj.core.api.Assertions.assertThat;
  * compared because Plan B has no equivalent, and Plan B's value type column is not compared
  * because the SQL store stores everything as text.</p>
  *
- * <h3>Three of these are {@code @Disabled}, and that is the finding</h3>
- * <p>They fail. The two stores are <em>not</em> interchangeable: the SQL store treats an upper time
- * bound as a snapshot boundary and returns each key's latest version at or before it, while Plan B
- * treats every time term as a row filter. So a key whose only version predates the bound is
- * returned by one store and not the other.</p>
+ * <h3>The parity gap these tests recorded is closed</h3>
+ * <p>Three of these were {@code @Disabled} because the two stores were <em>not</em>
+ * interchangeable: the SQL store treated an upper time bound as a snapshot boundary and returned
+ * each key's latest version at or before it, while Plan B treated every time term as a row filter.
+ * A key whose only version predated the bound was returned by one store and not the other.</p>
  *
- * <p>They are disabled rather than deleted because they state the requirement correctly and should
- * pass the day Plan B gains a latest-per-key read — at which point the disabling comes off and
- * {@link #testPlanBAloneAppliesTimeTermsAsFiltersNotAsSnapshots}, which pins current behaviour, is
- * deleted. Leaving them failing instead would make every build red for a gap that is understood,
- * documented in {@code docs/temporal-store-parity-report.md}, and not this test's to fix.</p>
+ * <p>Plan B gained a latest-per-key read on 2026-09-09, arriving with upstream's Traces work:
+ * {@code TemporalStateDb.search} now lifts a time term via {@code PlanBSearchHelper.getQueryTime}
+ * and, when it finds one, takes a {@code searchAsAt} path instead. So the three are enabled, and
+ * the test that pinned the old behaviour is deleted, exactly as this javadoc used to say it should
+ * be.</p>
+ *
+ * <p><b>Note how parity was reached, because it is not the direction anyone would have chosen.</b>
+ * Plan B adopted the SQL store's semantics rather than the SQL store being fixed — and that
+ * includes the surprising half: {@code searchAsAt} calls
+ * {@code PlanBSearchHelper.removeTimeTerms}, which like {@code getFilteredExpression} strips
+ * <em>every</em> time term, so a caller's lower bound is now discarded on both stores whenever an
+ * upper bound is present. {@link #testWorkedExampleInTheParityReport} pins that, and
+ * {@code docs/temporal-store-parity-report.md} predates it and needs revising.</p>
+ *
+ * <p>The consequence to watch for is anything that needs <em>every</em> version in a range rather
+ * than a snapshot — a density histogram, for instance. Plan B used to answer that correctly and no
+ * longer does.</p>
  *
  * <h3>What this does not cover</h3>
  * <p>The SQL store's extra CRUD ({@code create}, {@code update}, {@code fetch}, {@code delete},
@@ -178,10 +189,6 @@ class TestTemporalStoreParity {
      * <p>This is the case the whole comparison exists for. A floor map asks "what is the state at
      * time T" by bounding the time, and the two stores are expected to answer identically.</p>
      */
-    @Disabled("Records a known parity gap rather than a regression - see"
-            + " docs/temporal-store-parity-report.md. Re-enable when Plan B gains a"
-            + " latest-per-key read; testPlanBAloneAppliesTimeTermsAsFiltersNotAsSnapshots"
-            + " pins today's behaviour meanwhile.")
     @Test
     void testUpperTimeBoundSelectsTheSameRowsInBothStores(@TempDir final Path tempDir) {
         final Fixture fixture = writeToBoth(tempDir, List.of(
@@ -205,10 +212,6 @@ class TestTemporalStoreParity {
      * version of this test used a single key and passed for the wrong reason — with one key whose
      * latest version at or before T2 <em>is</em> the row at T2, the two semantics coincide.</p>
      */
-    @Disabled("Records a known parity gap rather than a regression - see"
-            + " docs/temporal-store-parity-report.md. Re-enable when Plan B gains a"
-            + " latest-per-key read; testPlanBAloneAppliesTimeTermsAsFiltersNotAsSnapshots"
-            + " pins today's behaviour meanwhile.")
     @Test
     void testExactTimeTermSelectsTheSameRowsInBothStores(@TempDir final Path tempDir) {
         final Fixture fixture = writeToBoth(tempDir, List.of(
@@ -246,51 +249,6 @@ class TestTemporalStoreParity {
     }
 
     /**
-     * Characterises Plan B alone, so the two stores' behaviours can be compared even when no
-     * database is available to run the parity cases above.
-     *
-     * <p>Asserts nothing about what Plan B <em>should</em> do — it records what it does, against
-     * data whose SQL-store answers are already pinned by {@code TestUpdatableTemporalStoreDaoImplDB}.
-     * If Plan B is ever changed to match, this test fails and should be deleted along with the
-     * parity gap it documents.</p>
-     */
-    @Test
-    void testPlanBAloneAppliesTimeTermsAsFiltersNotAsSnapshots(@TempDir final Path tempDir) {
-        final Fixture fixture = writeToBothPlanBOnly(tempDir, List.of(
-                row("gate", T1, "gate@T1"),
-                row("gate", T2, "gate@T2"),
-                row("gate", T3, "gate@T3"),
-                row("door", T1, "door@T1")));
-
-        // Upper bound. The SQL store returns one row per key - the latest at or before the bound -
-        // which for this data is gate@T2 and door@T1, i.e. 2 rows.
-        final List<Triple> upperBound = searchPlanB(fixture, ExpressionOperator.builder()
-                .addTerm(UpdatableTemporalStore.TIME_FIELD.getFldName(),
-                        ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO, BETWEEN_T2_AND_T3)
-                .build());
-        assertThat(upperBound)
-                .as("Plan B applies the bound as a row filter, returning every version at or "
-                    + "before it rather than the latest per key")
-                .containsExactly(
-                        new Triple("door", T1, "door@T1"),
-                        new Triple("gate", T1, "gate@T1"),
-                        new Triple("gate", T2, "gate@T2"));
-
-        // Equality. The SQL store treats this as a snapshot at T2, returning gate@T2 and door@T1.
-        final List<Triple> exact = searchPlanB(fixture, ExpressionOperator.builder()
-                .addTerm(UpdatableTemporalStore.TIME_FIELD.getFldName(),
-                        ExpressionTerm.Condition.EQUALS, T2_ISO)
-                .build());
-        assertThat(exact)
-                .as("Plan B matches the instant exactly; the SQL store resolves a snapshot at it")
-                .containsExactly(new Triple("gate", T2, "gate@T2"));
-
-        // No time term. Both stores return everything, so this one already agrees.
-        final List<Triple> all = searchPlanB(fixture, ExpressionOperator.builder().build());
-        assertThat(all).hasSize(4);
-    }
-
-    /**
      * A range with both bounds must select the same rows in both stores.
      *
      * <p>This is where the SQL store's snapshot heuristic is at its most surprising. The upper
@@ -298,10 +256,6 @@ class TestTemporalStoreParity {
      * <em>every</em> time term from the SQL condition — including the caller's lower bound. So the
      * result can contain a row older than the range the caller asked for.</p>
      */
-    @Disabled("Records a known parity gap rather than a regression - see"
-            + " docs/temporal-store-parity-report.md. Re-enable when Plan B gains a"
-            + " latest-per-key read; testPlanBAloneAppliesTimeTermsAsFiltersNotAsSnapshots"
-            + " pins today's behaviour meanwhile.")
     @Test
     void testBothTimeBoundsSelectTheSameRowsInBothStores(@TempDir final Path tempDir) {
         final Fixture fixture = writeToBoth(tempDir, List.of(
@@ -326,6 +280,11 @@ class TestTemporalStoreParity {
      * are wrong the conclusions are worthless, so they are asserted here rather than reasoned about
      * — this is documentation with a build behind it. Unlike the parity cases above, this asserts
      * what each store <em>does</em>, so it passes today and fails when either store changes.</p>
+     *
+     * <p><b>It did change, on 2026-09-09.</b> Every Plan B expectation below moved when Plan B
+     * gained its snapshot path, so the report's worked example is stale and its comparison of the
+     * two stores no longer describes the code. The numbers here are the current ones; the report
+     * has not been rewritten to match.</p>
      */
     @Test
     void testWorkedExampleInTheParityReport(@TempDir final Path tempDir) {
@@ -341,7 +300,6 @@ class TestTemporalStoreParity {
                 row("alice", nineThirty, "desk-2"),
                 row("bob", nine, "desk-3")));
 
-        final Triple alice0900 = new Triple("alice", nine, "desk-1");
         final Triple alice0930 = new Triple("alice", nineThirty, "desk-2");
         final Triple bob0900 = new Triple("bob", nine, "desk-3");
 
@@ -354,8 +312,8 @@ class TestTemporalStoreParity {
                 .as("Query 1, SQL: one row per key - two people in the right places")
                 .containsExactly(alice0930, bob0900);
         assertThat(searchPlanB(fixture, whereIsEveryone))
-                .as("Query 1, Plan B: every version - alice appears twice")
-                .containsExactly(alice0900, alice0930, bob0900);
+                .as("Query 1, Plan B: now a snapshot too - one row per key, agreeing with SQL")
+                .containsExactly(alice0930, bob0900);
 
         // Query 2 - "show me the morning's activity", a histogram over 08:00-12:00.
         final ExpressionOperator morningActivity = ExpressionOperator.builder()
@@ -368,8 +326,9 @@ class TestTemporalStoreParity {
                 .as("Query 2, SQL: alice's 09:00 move is missing from the chart")
                 .containsExactly(alice0930, bob0900);
         assertThat(searchPlanB(fixture, morningActivity))
-                .as("Query 2, Plan B: all three events - the correct density")
-                .containsExactly(alice0900, alice0930, bob0900);
+                .as("Query 2, Plan B: alice's 09:00 move is now missing here too, so neither store"
+                    + " can answer a density question - this is what the snapshot path cost")
+                .containsExactly(alice0930, bob0900);
 
         // Query 3 - "what changed after 09:15?" The bug.
         final ExpressionOperator changedAfter0915 = ExpressionOperator.builder()
@@ -383,8 +342,9 @@ class TestTemporalStoreParity {
                     + "lower bound of 09:15 - getFilteredExpression strips it")
                 .containsExactly(alice0930, bob0900);
         assertThat(searchPlanB(fixture, changedAfter0915))
-                .as("Query 3, Plan B: only the change that actually falls in the range")
-                .containsExactly(alice0930);
+                .as("Query 3, Plan B: it strips the lower bound the same way now, via"
+                    + " removeTimeTerms - so the quirk is shared rather than fixed")
+                .containsExactly(alice0930, bob0900);
     }
 
     // -----------------------------------------------------------------------

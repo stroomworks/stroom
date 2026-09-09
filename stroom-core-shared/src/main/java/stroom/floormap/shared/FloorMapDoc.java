@@ -192,6 +192,10 @@ public class FloorMapDoc extends AbstractDoc {
      * {@code TEMPORAL_STATE}; the pickers restrict the choice to Plan B documents but
      * cannot filter on state type, so a mismatch surfaces as a query-time error.</p>
      *
+     * <p>For Plan B that name is load-bearing twice over: the {@code <map>} element of an
+     * ingest XSLT must <em>equal the store's own name</em> too, so renaming this document
+     * breaks ingest lookups as well as the events query.</p>
+     *
      * May be {@code null} if not yet configured.
      */
     @JsonProperty

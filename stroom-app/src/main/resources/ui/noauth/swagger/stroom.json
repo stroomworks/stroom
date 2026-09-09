@@ -713,7 +713,7 @@
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AskStroomAIConfig"
+                  "$ref" : "#/components/schemas/AskStroomAiConfig"
                 }
               }
             },
@@ -831,7 +831,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/AskStroomAIConfig"
+                "$ref" : "#/components/schemas/AskStroomAiConfig"
               }
             }
           },
@@ -3732,8 +3732,8 @@
             "description" : "default response"
           }
         },
-        "summary" : "Fetch an analytic rule doc by its UUID",
-        "tags" : [ "Queries" ]
+        "summary" : "Fetch a data gen doc by its UUID",
+        "tags" : [ "Data Generators" ]
       },
       "put" : {
         "operationId" : "updateDataGen",
@@ -3768,8 +3768,8 @@
             "description" : "default response"
           }
         },
-        "summary" : "Update an analytic rule doc",
-        "tags" : [ "Queries" ]
+        "summary" : "Update a data gen doc",
+        "tags" : [ "Data Generators" ]
       }
     },
     "/dbStatus/v1" : {
@@ -9762,6 +9762,33 @@
         "tags" : [ "Processor Tasks" ]
       }
     },
+    "/processorTask/v1/claimStatus/{nodeName}" : {
+      "get" : {
+        "operationId" : "getProcessorClaimStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "nodeName",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProcessorClaimStatus"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Get what a node is doing about claiming its own processor tasks",
+        "tags" : [ "Processor Tasks" ]
+      }
+    },
     "/processorTask/v1/find" : {
       "post" : {
         "operationId" : "findProcessorTasks",
@@ -15273,6 +15300,9 @@
             "items" : {
               "$ref" : "#/components/schemas/AiChatMessage"
             }
+          },
+          "workingMessage" : {
+            "$ref" : "#/components/schemas/AiChatMessage"
           }
         }
       },
@@ -15349,7 +15379,8 @@
             "enum" : [ "STROOM_QL_VERSION_0_1", "SIGMA" ]
           },
           "level" : {
-            "type" : "string"
+            "type" : "string",
+            "enum" : [ "LOW", "MEDIUM", "HIGH", "CRITICAL" ]
           },
           "name" : {
             "type" : "string"
@@ -15376,7 +15407,8 @@
             "type" : "boolean"
           },
           "status" : {
-            "type" : "string"
+            "type" : "string",
+            "enum" : [ "EXPERIMENTAL", "TESTING", "STABLE", "DEPRECATED" ]
           },
           "suppressDuplicateNotifications" : {
             "type" : "boolean"
@@ -15816,7 +15848,7 @@
           }
         }
       },
-      "AskStroomAIConfig" : {
+      "AskStroomAiConfig" : {
         "type" : "object",
         "properties" : {
           "attachmentDownloadTimeoutMs" : {
@@ -15825,6 +15857,18 @@
           },
           "chatSystemPrompt" : {
             "type" : "string"
+          },
+          "dockLocation" : {
+            "type" : "string",
+            "enum" : [ "TOP", "LEFT", "BOTTOM", "RIGHT" ]
+          },
+          "dockSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "dockType" : {
+            "type" : "string",
+            "enum" : [ "DIALOG", "TAB", "FLOAT", "DOCK" ]
           },
           "enableDebugDetail" : {
             "type" : "boolean"
@@ -15871,7 +15915,7 @@
             "$ref" : "#/components/schemas/AiChat"
           },
           "config" : {
-            "$ref" : "#/components/schemas/AskStroomAIConfig"
+            "$ref" : "#/components/schemas/AskStroomAiConfig"
           },
           "context" : {
             "$ref" : "#/components/schemas/AskStroomAiContext"
@@ -21729,6 +21773,9 @@
           "cookiesEnabled" : {
             "type" : "boolean"
           },
+          "followRedirects" : {
+            "type" : "boolean"
+          },
           "keepAlive" : {
             "$ref" : "#/components/schemas/SimpleDuration"
           },
@@ -24279,6 +24326,60 @@
           }
         }
       },
+      "ProcessorClaimStatus" : {
+        "type" : "object",
+        "properties" : {
+          "backedOffFilterCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "claimAttempts" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "claimTasksOnWorker" : {
+            "type" : "boolean"
+          },
+          "eligibleFilterCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "emptyClaims" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "error" : {
+            "type" : "string"
+          },
+          "filtersWithWorkCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lastHeartbeatAgeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "lockedMetaReleases" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "nodeName" : {
+            "type" : "string"
+          },
+          "summaryAgeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "tasksClaimed" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "tasksInFlight" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
       "ProcessorFilter" : {
         "type" : "object",
         "properties" : {
@@ -24316,6 +24417,10 @@
           "minMetaCreateTimeMs" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "parentFilterId" : {
+            "type" : "integer",
+            "format" : "int32"
           },
           "pipelineName" : {
             "type" : "string"
@@ -25603,9 +25708,6 @@
             "type" : "string",
             "enum" : [ "STROOM_QL_VERSION_0_1", "SIGMA" ]
           },
-          "level" : {
-            "type" : "string"
-          },
           "name" : {
             "type" : "string"
           },
@@ -25632,9 +25734,6 @@
           },
           "reportSettings" : {
             "$ref" : "#/components/schemas/ReportSettings"
-          },
-          "status" : {
-            "type" : "string"
           },
           "suppressDuplicateNotifications" : {
             "type" : "boolean"
@@ -25663,6 +25762,15 @@
       "ReportSettings" : {
         "type" : "object",
         "properties" : {
+          "aiSummaryEnabled" : {
+            "type" : "boolean"
+          },
+          "aiSummaryModel" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "aiSummaryPrompt" : {
+            "type" : "string"
+          },
           "fileType" : {
             "type" : "string",
             "enum" : [ "EXCEL", "CSV", "TSV", "MARKDOWN" ]
@@ -27355,6 +27463,12 @@
             "type" : "boolean"
           },
           "formatOutput" : {
+            "type" : "boolean"
+          },
+          "hasOutput" : {
+            "type" : "boolean"
+          },
+          "indicativeCounts" : {
             "type" : "boolean"
           },
           "indicators" : {
@@ -29956,15 +30070,8 @@
       "UserPreferences" : {
         "type" : "object",
         "properties" : {
-          "aiDockLocation" : {
-            "type" : "string"
-          },
-          "aiDockSize" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "aiDockType" : {
-            "type" : "string"
+          "askStroomAiConfig" : {
+            "$ref" : "#/components/schemas/AskStroomAiConfig"
           },
           "dateTimePattern" : {
             "type" : "string",

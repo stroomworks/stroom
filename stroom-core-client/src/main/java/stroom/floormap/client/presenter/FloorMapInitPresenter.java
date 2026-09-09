@@ -65,10 +65,14 @@ import java.util.function.Consumer;
  * {@link PlanBDoc}, which is only ever read. The OK button remains disabled until
  * both are selected.</p>
  *
- * <p>The floor map references each store by <em>name</em> only — the name is
- * substituted into the {@code param('FactStore')} / {@code param('EventStore')}
- * placeholders of the stored queries — so neither store is coupled to a
- * particular store implementation beyond what this picker allows.</p>
+ * <p>The two stores are deliberately <em>not</em> interchangeable: facts are
+ * edited in place through {@code SqlTemporalStoreResource}, which only the SQL
+ * Temporal Store implements, while events are append-only ingest and belong in
+ * Plan B. Each picker therefore admits exactly one document type.</p>
+ *
+ * <p>At query time the floor map references each store by <em>name</em> only —
+ * the name is substituted into the {@code param('FactStore')} /
+ * {@code param('EventStore')} placeholders of the stored queries.</p>
  *
  * <p>The default events query this dialog writes selects {@code EffectiveTime},
  * {@code Key} and {@code Value}, which of the Plan B state types only
