@@ -104,15 +104,26 @@ this branch, so tell me if it recurs.
 
 ## Where things are
 
-| | |
-|---|---|
-| **Main test map** | `System / Floor Map Test / Test Floor Map` |
-| Events store (Plan B) | `floor_map_events` |
-| Facts store (SQL Temporal) | `floor_map_facts` |
-| Empty-store map | `Test Floor Map (empty)` |
-| Empty **facts** store, for G9 | `floor_map_facts_empty` |
-| Over-budget map (~24 000 events) | `Test Floor Map (bulk)` → `floor_map_events_bulk` |
-| SQL-store comparison map | `System / Enterprise Floor Mapping Demo / Floor Map` |
+Everything lives in **`System / MB Tests`** — verified against the instance on 2026-09-09.
+
+| Document | Facts store | Events store | Used by |
+|---|---|---|---|
+| `Test Floor Map` | `floor_map_facts` | `floor_map_events` | Sessions A, R, F, G1–G8, and B3/B4 |
+| `Test Floor map (bulk)` | `floor_map_facts` | `floor_map_events_bulk` | H2 |
+| `Test Floor Map (empty)` | `floor_map_facts` | `floor_map_events_empty` | G5, B5 |
+| `Test Floor Map (no facts)` | `floor_map_facts_empty` | `floor_map_events` | G9, G10 |
+
+**Note the casing.** The bulk map is `Test Floor map (bulk)` — lowercase `m` in "map" — which is
+what exists, so search for it that way. Everything else is title case.
+
+The stores are `floor_map_facts`, `floor_map_facts_empty` (SQL Temporal) and `floor_map_events`,
+`floor_map_events_bulk`, `floor_map_events_empty` (Plan B, all `TEMPORAL_STATE`).
+
+**Two maps this document used to name no longer exist.** The `Enterprise Floor Mapping Demo` map
+went with the clean database, and `Test Floor Map (SQL)` — an events store that is a SQL Temporal
+Store, for the store-parity comparison — was never rebuilt. That comparison is now covered by
+`TestTemporalStoreParity` in the build, which asserts both stores answer identically, so there is
+little left for a hand test to add.
 
 ## The floor plan — 9 facts, 10 versions
 
@@ -151,7 +162,7 @@ is the only one exercising that path — and the only one that will *not* move w
 
 ---
 
-# Part 1 — the last two days' work. Do this part first
+# Part 1 — the last three days' work. Do this part first
 
 ## Session A — the reference state (2 min)
 
@@ -196,8 +207,20 @@ selected time, and the answer replaces what is drawn.
 | **R3** | Pick any events request and read its response | **One row per entity**, not a window of history. Five rows for this fixture. If you see several rows for `alice`, the server is not reducing and everything else here is unsafe | |
 | **R4** | Scrub **backwards** to the middle of the data, pause | Entities **teleport** rather than sliding, and positions are those at the scrubbed-to instant — no position later than it. `carol` stays drawn throughout | |
 | **R5** | Scrub **forwards** past the end of the data | Positions hold at their last reported values; `carol` and `bob` both remain. Nothing blanks | |
-| **R6** | Turn **Condense** on for the events store (Plan B doc → Settings), reprocess nothing, and reload the map | No change to what is drawn. Condense now only affects storage — the read takes each entity's latest row whatever it is. This was unsafe before the retirement | |
+| **R6** | Turn **Condense** on for `floor_map_events` **with a threshold of a few minutes**, wait for a merge, and reload the map | `dave` is **still drawn**, at `desk-105`. His seven identical rows collapse to the earliest one, and the read takes each entity's latest row at or before the selected time whatever that row is — so a collapsed run no longer costs him his position. Before the retirement a collapsed run could fall outside the six-hour window and he would vanish | |
 | **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and the console reports the read failed **once** — not once per tick. Then set it back | |
+
+**R6 needs the API, and is worthless without it.** The Plan B settings UI's duration dropdown
+starts at **days**, and this fixture is four hours old — so turning Condense on through the UI
+collapses nothing at all and R6 passes without testing anything. Set the threshold below a day
+first, e.g.
+
+```
+condense: { enabled: true, duration: { time: 5, timeUnit: MINUTES } }
+```
+
+If you cannot set it, **skip R6 rather than recording it as a pass** — a quiet result here means
+the knob never engaged, not that the behaviour is right.
 
 **Why R1 and R7 are the two that matter.** R1 is the one that regressed most easily: the old code
 checked a cadence on demand *because* nothing was allowed to poll, and if the retirement
@@ -263,7 +286,7 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 | **G2** | Press Show All to come back to the data | The line **disappears** as soon as entities are drawn | |
 | **G3** | Events Query tab → **press Run first** (see below), then set the **Entity ID** dropdown to the **blank** entry at the top of the list → back to Map | **"Events found, but no entity could be read — check the column mapping"**, in the **fault** register: coloured and bordered. The **console** names which role is unset and lists the result's actual columns — that pairing is the design: the canvas says which stage, the console says why. **Then set Entity ID back** | |
 | **G4** | Events Query tab (Run pressed) → set **Location Ref** to the **`Type`** column, and set **Location** to blank → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put both back** | |
-| **G5** | Open `Test Floor Map (empty)` | The **quiet** "no events" line, **not** a fault. An empty store is not a misconfiguration | |
+| **G5** | Open `Test Floor Map (empty)` | **Either** the quiet "no events" line **or** a reported read failure — and which one you get is the finding, not a pass/fail. See the note below; record which you saw | |
 | **G6** | Reopen `Test Floor Map`, Show All, and watch the **first second** | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not; a "no floor plan" line flashing on every open would be worse than the silence it replaces | |
 | **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Every read now returns the whole set rather than only what changed, so a tick returning no rows means the store genuinely holds nothing at or before that instant — which is what the line is for | |
 | **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | |
@@ -340,9 +363,27 @@ time bound now routes the query to Plan B's snapshot path, where the field order
 the generated query selects `EffectiveTime` anyway — but a term on a **non-time** field you add
 yourself is covered by neither.
 
+> **G5 and R7 point at the same store, and this document used to expect opposite things of it.**
+> `floor_map_events_empty` has never been written to. G5 assumed that reads as a legitimately empty
+> store and asserted the quiet line; R7 assumes it reads as a *failure* and asserts an error
+> reported once. Only one can be right, and the code says R7: `StoreShard.open` throws
+> "Local Plan B shard not found" for a store with no shard, `StateSearchProvider` catches it, adds
+> it to the result store and signals completion anyway — so the read reports failure rather than
+> emptiness.
+>
+> But that depends on whether a merge has ever created an empty shard, which is not something this
+> document can assert for you. **So run G5, record which of the two you see, and treat the answer as
+> data**: the quiet line means an empty shard exists and emptiness is distinguishable from breakage;
+> the error means it is not, which is the hazard written up in
+> `docs/task-planb-where-field-not-selected.md` — a store that was never written and a query that
+> could not run look the same to a caller.
+>
+> If you want the *unambiguously* empty case for G5's original purpose, point
+> `Test Floor Map (empty)` at `floor_map_events` and scrub to before the data starts instead.
+
 **What would tell you it is wrong**
 
-- A **fault**-styled line for G1 or G5 — the two cases that are *not* faults. This is the failure
+- A **fault**-styled line for G1 — one of the cases that is *not* a fault. This is the failure
   that matters most, because it teaches people to ignore the line.
 - A line on the **Editor** tab.
 - A line during G6, or blinking during G7.
