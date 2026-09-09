@@ -1,8 +1,10 @@
 # Plan B: a `where` term on a field the `select` list omits silently returns zero rows
 
 **Component:** `stroom-planb` — `PlanBSearchHelper.search`, and the five state DBs that call it
-**Severity:** high. A query returns a **wrong answer** — an empty result — with no error, no warning
-and nothing in the logs.
+**Severity:** high. A query returns a **wrong answer** — an empty result that looks like a
+successful search over no data. The cause is an exception, but it is caught, recorded on the result
+store, logged at `debug` only, and followed by a normal completion signal, so in practice there is
+nothing to see.
 **Found by:** checking a Floor Map test fixture query. Not a Floor Map defect; the
 floor map is safe, but only by accident of its generated query's shape — see *Why this matters
 beyond the query bar*.
@@ -11,10 +13,23 @@ path that does the registration in the right order, so on that one store the def
 query with no liftable time term. The other four state DBs are unchanged. See *What a later change
 fixed by accident*.
 
-> **A note on evidence.** The reproduction below was run against a live instance before
-> `TemporalStateDb` gained its second path. The mechanism has been re-read against the current code
-> and the analysis updated, but **the queries have not been re-run**. Where this document predicts
-> which of them still fail, it says so; treat those as predictions to confirm, not as results.
+> **Re-verified 2026-09-09**, at the storage layer rather than through StroomQL, against the
+> current code:
+>
+> | Case | Result |
+> |---|---|
+> | fall-through path, filter on `Key`, field index **contains** `Key` | 2 rows — correct |
+> | fall-through path, filter on `Key`, field index **omits** `Key` | **throws `ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1`** |
+> | `searchAsAt` path, filter on `EffectiveTime`, field index **omits** it | 2 rows — correct |
+>
+> So the defect is live on the fall-through path, upstream's `searchAsAt` ordering is sound, and the
+> narrowing described above is confirmed rather than inferred. The third row is what makes the first
+> two worth trusting: the same malformed shape succeeds on the corrected path, so this is the
+> ordering and not something else.
+>
+> The StroomQL-level reproduction table below was recorded before `TemporalStateDb` gained its
+> second path and **has not been re-run** — queries 1 and 2 should be unaffected by it, and queries
+> 3 and 4 are predicted to have changed. The storage-layer result above is the authoritative one.
 
 ---
 
@@ -95,8 +110,38 @@ final Integer index = fieldIndex.getPos(fieldName);
 return new ValuesFunctionFactory(Column.builder().format(Format.TEXT).build(), index);
 ```
 
-Position 1 is past the end of a one-value row. The predicate reads nothing, evaluates false, and
-every row is discarded. No exception is thrown, so nothing surfaces.
+Position 1 is past the end of a one-value row, so reading it **throws**:
+
+```
+java.lang.ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1
+    at stroom.query.language.functions.ArrayValues.getValue(ArrayValues.java:29)
+    at stroom.query.common.v2.ValuesFunctionFactory.lambda$createStringExtractor$0
+    at stroom.query.common.v2.ExpressionPredicateFactory$StringEquals.test
+    at stroom.planb.impl.dao.PlanBSearchHelper.search(PlanBSearchHelper.java:137)
+```
+
+**An earlier version of this document said no exception was thrown and the predicate simply
+evaluated false. That was wrong**, and the real chain matters because it splits the defect in two.
+`StateSearchProvider` (line 270) wraps the scan in `catch (RuntimeException e)`, logs it at
+**`LOGGER.debug`**, adds it to the result store's errors, and then **still calls
+`signalComplete()`**:
+
+```java
+} catch (final RuntimeException e) {
+    LOGGER.debug(e::getMessage, e);
+    resultStore.addError(e);
+}
+...
+resultStore.signalComplete();
+```
+
+So the query completes normally with zero rows, and the cause is logged only if debug logging
+happens to be on for that class. That is why it presents as a silent wrong answer: **the storage
+layer is loud and the search provider silences it.**
+
+Two things are therefore worth fixing, and they are independent. The ordering is the defect. The
+swallowing is why nobody found out — a scan that threw is not a completed search, and reporting it
+as one costs a caller the chance to distinguish "no data" from "your query could not be run".
 
 **Ordering is the whole bug.** The helper's own comment on those lines — *"Ensure we have fields for all
 expression criteria"* — describes exactly the right intention, executed one step too late.
@@ -191,6 +236,21 @@ well they stop it recurring:
    `Function<FieldIndex, ValuesExtractor>` — so the helper registers the fields and then asks for
    the extractor. The order becomes unexpressible in the wrong sequence, which is the only version
    that makes this unrepeatable. Recommended.
+
+### And separately, stop reporting a failed scan as a completed one
+
+`StateSearchProvider` catches every `RuntimeException` from the scan, logs it at `debug`, adds it to
+the result store and then signals completion regardless. That is what turned a thrown exception into
+a silent empty result, and it will do the same for the next storage-layer fault — so it is worth
+fixing whether or not the ordering is fixed with it.
+
+The minimum is to log at `error` rather than `debug`. Better is to distinguish a scan that failed
+from one that legitimately found nothing, so a caller can tell "no data" from "your query could not
+be run" — the Floor Map, for instance, reports *"No events at this time"* on an empty result and
+would otherwise keep saying that about a query which never ran.
+
+Note this is also why a never-written Plan B store presents as an empty one, which the Floor Map has
+its own report-once guard for. Same root, different symptom.
 
 **Risk: low.** The fix makes the extractor produce values for fields that are filtered but not
 selected — exactly what already happens for every query that selects the filtered field, which is

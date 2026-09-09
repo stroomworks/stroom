@@ -1049,6 +1049,13 @@ position past the end of a row is exactly the shape that produces an index-out-o
 observations were made while querying Plan B stores with `where` terms. If so they are already
 written up, once, correctly.
 
+**Confirmed 2026-09-09.** Reproduced at the storage layer: a filter on a field the field index omits
+throws `ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1` out of
+`ArrayValues.getValue`, via `ExpressionPredicateFactory$StringEquals.test` and
+`PlanBSearchHelper.search`. So the two "StroomQL defects" were this bug wearing StroomQL's clothes,
+and there is nothing separate to raise. It also explains why they stopped reproducing: the retries
+used queries that selected what they filtered on.
+
 Recorded rather than deleted because the notes were acted on: they were cited as a reason not to
 attempt SQL-side bucketing in F8, and that reason is now withdrawn.
 
