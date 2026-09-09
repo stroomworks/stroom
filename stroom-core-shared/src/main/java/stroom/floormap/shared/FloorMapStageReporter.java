@@ -40,7 +40,7 @@ package stroom.floormap.shared;
  * {@link #reset()} from a time change, starts the count again.</p>
  *
  * <p>GWT-free with the counting explicit, so the filtering can be tested without a canvas — the
- * same shape as {@link FloorMapEventState} and {@link FloorMapQueryThrottle}.</p>
+ * same shape as {@link FloorMapFactHistory} and {@link FloorMapQueryThrottle}.</p>
  */
 public final class FloorMapStageReporter {
 

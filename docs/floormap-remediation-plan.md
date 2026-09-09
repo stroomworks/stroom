@@ -1229,7 +1229,45 @@ permission model and the timing difference remains observable.
 
 ---
 
-## F13 — Plan B has no server-side latest-per-key, so the Map tab fetches a window it discards — HIGH — **NEW 2026-09-01, reframed twice**
+## F13 — Plan B has no server-side latest-per-key, so the Map tab fetches a window it discards — HIGH — **RESOLVED 2026-09-09: upstream shipped Option A, and Option C is retired**
+
+> **Option A landed, from upstream, to the letter.** `TemporalStateDb.search` now lifts a time term
+> via `PlanBSearchHelper.getQueryTime` and takes a `searchAsAt` path when it finds one — which is
+> what *Option A — reduce inside Plan B's search path, as the SQL store already does* asked for,
+> including the trigger. It arrived with the Traces work (`17371533de`), not as a response to this
+> proposal, so `planb-snapshot-read-proposal.md` was never needed.
+>
+> **Option C is retired behind it.** `FloorMapEventState` (422 lines) and its 551-line test are
+> deleted, along with `eventsQueryModel`, `runQueryAtSelectedTime`, the per-tick delta, the delta
+> cursor, the six-hour horizon, the two not-befores and the truncation-upsert policy. `readEvents`
+> is now eight lines: run the events query at `[0, t]` through the same full-read helper the facts
+> history uses, and replace the drawn set with what comes back. Every read the Map tab makes now
+> goes through that one helper.
+>
+> **The lower bound is 0 rather than absent, deliberately.** Both stores discard a lower bound once
+> an upper one is present, so a window would be ignored rather than honoured. Zero says what is
+> meant and stays correct if that ever changes.
+> `TestTemporalStoreParity.testALowerBoundAddsNothingOnceAnUpperBoundIsPresent` pins the
+> equivalence, and was written **before** the deletion, so the premise was proved rather than
+> assumed.
+>
+> **What did not improve.** `searchAsAt` still iterates the whole store — it keeps one row per key
+> prefix instead of emitting all of them. So rows transferred fall to one per entity and rows
+> scanned are unchanged. Option A makes playback *correct*, not cheap; "playback costs no queries"
+> is still unbuilt. The 300 ms throttle remains the only thing bounding scan rate, exactly as
+> before.
+>
+> **What stays, and why.** `latestPerEntity` and `FloorMapEventsQueryOrder` are kept though the
+> reduction is now a no-op — it is O(one row per entity), and drawing two positions for one entity
+> is the failure this whole finding was about. Retained as insurance against a server behaviour
+> that changed days ago, with a javadoc saying so, so the next reader prunes deliberately or not at
+> all.
+>
+> **Manual testing outstanding.** The 13-item list under *Verification* was written for Option C.
+> Tests 3, 4, 8 and 11 describe horizon and truncation behaviour that no longer exists; the rest
+> still apply and none has been re-run.
+
+
 
 **Files:** `FloorMapMapPresenter.runQueryAtSelectedTime` / `EVENTS_WINDOW_MS` /
 `publishEventEntities`, `FloorMapQueryPresenter.latestPerEntity` / `parseRows`,

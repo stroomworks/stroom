@@ -50,7 +50,7 @@ map are **Condense** and **Retention**.
 
 | Setting | Default | Use | Why |
 |---|---|---|---|
-| **Condense** | *off* | **safe to enable, but it will not reduce what the map reads** | It was unsafe before — see below. It is now harmless, and also close to irrelevant to the Floor Map: its shortest available threshold is longer than the horizon. |
+| **Condense** | *off* | **safe to enable; it makes no difference to what the map reads** | It was unsafe before — see below. The map now reads one row per entity regardless of how many versions the store holds, so condensing changes storage only. |
 | **Retention** | *off* (1 year if enabled) | off, or longer than you need to scrub back | Retention deletes old entries. The timeline can only scrub back as far as the data still exists. |
 | **Temporal precision** | `Millisecond` | `Millisecond`, or `Second` | Part of the key. Coarser than your event rate merges distinct events into one key. Only coarsen if events are genuinely no denser than that. |
 | **Overwrite** | `true` | `true` | Two events for the same entity at the same instant: the later write wins. With `false` the first is kept. Either is defensible; `true` matches re-ingesting corrected data. |
@@ -77,43 +77,36 @@ playback tick reads only what changed since the last one and updates what it hol
 re-read of the last six hours corrects it. An entity that stops emitting keeps its position instead
 of vanishing, so condensing its repeats away costs nothing.
 
-**But it will not make the periodic re-read cheaper**, and an earlier version of this guide
-wrongly said it would. Condense only collapses runs **older than its threshold**
-(`TemporalStateDb.condense` skips anything at or after it), and the shortest threshold the Plan B
-settings offer is **1 day** — the unit dropdown starts at days. The horizon is six hours. So
-everything the map reads at a live timeline position is newer than any threshold you can set, and
-none of it is ever condensed.
+**But it does not make the map's read cheaper either.** Condense collapses runs **older than its
+threshold** (`TemporalStateDb.condense` skips anything at or after it), and the shortest threshold
+the Plan B settings offer is **1 day** — the unit dropdown starts at days. So nothing the map reads
+at a live timeline position is ever condensed. It changes what the store costs to keep, not what a
+query returns.
 
-Where condense does apply is playback further back than its threshold. That is also the only place
-it can still hurt: a stationary entity's run is collapsed to its earliest entry, and if that entry
-falls outside the six hours before the scrubbed-to position, the entity is not drawn there. So
-condense trades a storage saving for a gap in deep historical playback, and buys the Floor Map
-nothing at the live end.
-
-The read is capped at 20 000 rows, which over six hours is 0.93 events/second sustained — a hundred
-entities emitting once a minute already exceeds it, and the map warns when it does. The remedies
-that actually apply are a **shorter horizon**, a **higher row cap**, or the upstream latest-per-key
-read; not condense.
+Where condense can still hurt is playback further back than its threshold: a stationary entity's
+run is collapsed to its earliest entry, so its reported position is that entry's rather than the
+run's. The entity is still drawn, because the read takes its latest row at or before the selected
+time whatever that row happens to be.
 
 ### How far back the map can see
 
-The re-read reaches **six hours** back from the selected time (`FloorMapEventState.HORIZON_MS`).
-So the failure mode, stated plainly: **an entity with no events in the last six hours is not
-shown.**
+**All the way.** The read asks for every entity's latest row at or before the selected time, with no
+lower bound, and Plan B answers that in one pass — so an entity that last emitted a year ago is
+still drawn, at the position it last reported.
 
-That bound is deliberate rather than incidental. Without it, Plan B returns every event of the
-alphabetically-first entities and truncates in key order, because it scans the whole store applying
-a row predicate — so "some entities, chosen by key order" would be the alternative, which is not
-something an operator can act on. It also keeps an invariant the code documents: the positioned
-count is not a head-count of who is on site, and state that never shrank would quietly turn it into
-one.
+That is a change. Until 2026-09-09 Plan B had no latest-per-key read, so the map held positions as
+client-side state and corrected them with a bounded re-read reaching six hours back; the failure
+mode then was *"an entity with no events in the last six hours is not shown."* Plan B gained the
+read — see `planb-snapshot-read-proposal.md`, which proposed it — and the horizon, the periodic
+re-baseline and the per-tick delta went with it.
 
-**What this means for your data:** nothing, for anything emitting at all regularly. There is no
-longer a 20-second obligation. Emit at whatever rate suits the source.
+One consequence is worth stating, because it is the counterpart of that bound disappearing: the
+positioned count is **not** a head-count of who is on site, and is less so now than before. An
+entity that stopped emitting a year ago still counts. Nothing prunes on absence, because absence is
+no longer distinguishable from stillness.
 
-The horizon disappears when Plan B gains a server-side latest-per-key read — see
-`planb-snapshot-read-proposal.md`. Until then it is the cost of Plan B applying a query's time
-range literally where the SQL Temporal Store reinterprets it as a snapshot.
+**What this means for your data:** nothing. Emit at whatever rate suits the source. There is no
+20-second obligation, and no horizon to stay inside.
 
 ---
 
@@ -230,8 +223,8 @@ In order, because each step depends on the one before:
 |---|---|
 | `returned N rows but no entities` | The entity/location column names do not match the query's columns. |
 | `none of the N event entities could be placed … facts query returned keys like 'X'` | `location` values name fact keys that do not exist. |
-| `the events baseline query failed` | The store is unreachable or has never been written to. Reported once per document, not once a minute. |
-| `the events baseline hit its 20000-row limit` | The store produces more events than one baseline can carry. A shorter horizon or a higher cap; **not** Condense, which cannot reach this data. Reported once per document. |
+| `the events query failed` | The store is unreachable or has never been written to. Positions from before the failure stay on screen. Reported once per document. |
+| `the events query hit its 20000-row limit` | The store holds more distinct **entities** than the cap allows — the read is one row per entity, so this is not about history depth. A higher cap is the only fix; **not** Condense. Reported once per document. |
 | *nothing at all* | No rows at all. Check ingest and the timeline position. |
 
 Note the last row: an empty result and empty facts both produce **silence** rather than a message.

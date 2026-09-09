@@ -67,21 +67,23 @@ import java.util.Map;
  * therefore compares times explicitly and does not care what order the rows are in.</p>
  *
  * <p>GWT-free and pure, so the decision logic and the snapshot arithmetic are unit-testable without
- * a browser or a clock — the same shape as {@link FloorMapEventState}.</p>
+ * a browser or a clock — the same shape as {@link FloorMapQueryThrottle}.</p>
  */
 public final class FloorMapFactHistory {
 
     /**
      * How long the held history may go unrefreshed while the Map is visible.
      *
-     * <p>Deliberately the same 60 s as {@link FloorMapEventState#BASELINE_INTERVAL_MS}, which is
-     * also why that constant is reused rather than a second one introduced. The interval only
+     * <p>60 s. This was originally borrowed from the events read's re-baseline interval so one
+     * constant served both; that machinery has since been retired — the stores can now reduce to
+     * latest-per-key server-side, so the events read needs no cadence of its own — and the
+     * constant lives here, where an interval is still needed. The interval only
      * bounds how long an <em>externally written</em> fact stays unseen; the case that would
      * actually feel it — someone adding a fact and watching for it to land — is served instead by
      * re-reading whenever the Map becomes visible, since a person watching for their own write is
      * about to look at the map.</p>
      */
-    public static final long REFETCH_INTERVAL_MS = FloorMapEventState.BASELINE_INTERVAL_MS;
+    public static final long REFETCH_INTERVAL_MS = 60_000L;
 
     /**
      * The row cap for a history read.
@@ -128,8 +130,7 @@ public final class FloorMapFactHistory {
      * <p><b>Issued, not applied.</b> Stamping on apply would let a read slower than the caller's
      * tick interval be re-issued by the next tick — and each {@code startNewSearch} destroys the
      * search in flight, so the read would never complete and facts would stop updating altogether.
-     * This is the livelock {@link FloorMapEventState} documents for baselines; the same reasoning
-     * applies here for the same reason.</p>
+     * The events read had the same hazard while it kept a cadence of its own.</p>
      *
      * @param nowMs wall-clock millis, passed in so this stays testable
      * @return {@code true} if the caller should read the whole history
@@ -181,8 +182,7 @@ public final class FloorMapFactHistory {
      * at or before {@code t}. A key whose first version is later than {@code t} is absent, which is
      * correct — it did not exist yet.
      *
-     * <p>Returned in first-seen key order so the canvas draw order is stable between ticks, for the
-     * same reason {@link FloorMapEventState} holds a {@code LinkedHashMap}.</p>
+     * <p>Returned in first-seen key order so the canvas draw order is stable between ticks.</p>
      *
      * <p>Ties on effective time keep the later row, matching
      * {@link FloorMapFactTableParser}'s last-row-wins.</p>

@@ -34,7 +34,6 @@ import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapEventColumns;
 import stroom.floormap.shared.FloorMapEventRole;
-import stroom.floormap.shared.FloorMapEventState;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapEventsQueryOrder;
 import stroom.floormap.shared.FloorMapFactHistory;
@@ -171,36 +170,31 @@ public class FloorMapMapPresenter
     private List<FloorMapObject> lastRawEventObjects;
 
     /**
-     * Every entity's last known position, and the decision of what to read next.
+     * Whether the next events read to land follows a discrete time jump.
      *
-     * <p>Positions are client-side state because a query cannot answer "where is everyone" against
-     * a Plan B store: it has no latest-per-key read, so the only options are an instant (which
-     * matches nothing) or a window (which loses anyone who has not moved lately). So each tick
-     * reads what <em>changed</em> and upserts it, and a periodic bounded re-read corrects the
-     * accumulated state. See {@link FloorMapEventState}.</p>
-     */
-    private final FloorMapEventState eventState = new FloorMapEventState();
-
-    /**
-     * Whether the next baseline to land follows a discrete time jump.
+     * <p>Set by the timeline's discontinuity callback and consumed when a read applies, at which
+     * point the canvas is told to discard animation state so entities teleport across the jump
+     * rather than sliding. Consumed on <b>apply</b> rather than on request because the facts query
+     * returns first and re-pushes the previous entity list, which would otherwise eat the teleport
+     * before the read arrived.</p>
      *
-     * <p>Set by the timeline's discontinuity callback and consumed when a baseline applies, at
-     * which point the canvas is told to discard animation state so entities teleport across the
-     * jump rather than sliding. Consumed on <b>apply</b> rather than on request because the facts
-     * query returns first and re-pushes the previous entity list, which would otherwise eat the
-     * teleport before the baseline arrived.</p>
+     * <p>It also licenses abandoning a read already in flight: that read was issued for a position
+     * the user has since left, so replacing it is correct rather than merely tolerable.</p>
      */
     private boolean pendingDiscontinuity;
 
-    /** Whether a baseline failure has already been reported for this document. */
-    private boolean baselineErrorReported;
+    /** Whether an events read failure has already been reported for this document. */
+    private boolean eventsErrorReported;
+
+    /** Whether the events read hitting its row cap has already been reported for this document. */
+    private boolean eventsTruncationReported;
 
     /**
      * Report-once flags for the facts history read.
      *
      * <p>The read repeats every 60 s, so a persistent fault — a store that cannot be read, or one
      * holding far more history than the cap — would otherwise write to the console once a minute
-     * for as long as the document stays open. Same rule as {@link #baselineErrorReported}, and
+     * for as long as the document stays open. Same rule as {@link #eventsErrorReported}, and
      * reset per document read.</p>
      */
     private boolean factsHistoryErrorReported;
@@ -222,18 +216,6 @@ public class FloorMapMapPresenter
 
     /** Rows the last applied events read returned, for {@link #stageReporter}. */
     private int lastEventRowCount;
-
-    /**
-     * The upper bound the in-flight delta was issued for.
-     *
-     * <p>Used to stamp the cursor when the result lands, rather than reading {@link #selectedTime}
-     * then. A result arrives at least a round trip after it was asked for, and playback ticks
-     * three times a second, so by arrival the selected time has usually moved on. Stamping the
-     * later time would mark a range as read that nobody read, and its events would be missed until
-     * the next baseline. Safe as a single field because {@code QueryModel} discards a response
-     * whose search is no longer current, so only the most recent issue can land.</p>
-     */
-    private long pendingDeltaTo;
 
     /** Query text the {@link #arrivalOrderTrusted} answer belongs to. */
     private String orderCheckedQuery;
@@ -310,25 +292,20 @@ public class FloorMapMapPresenter
     private List<Row> lastFactSnapshotRows;
 
     /**
-     * Runs the document's events query at the selected time, producing the
-     * entity overlay that {@link FloorMapCanvasPresenter} animates.
+     * Runs the document's events query at the selected time, producing the entity overlay that
+     * {@link FloorMapCanvasPresenter} animates.
      *
-     * <p>The Map tab owns this query rather than {@link FloorMapQueryPresenter}
-     * (the Events Query tab): that presenter is created lazily, the first time
-     * its tab is opened, so a Map tab depending on it showed no live entities at
-     * all — and therefore no movement animation — until the user happened to
-     * visit another tab.</p>
-     */
-    private final QueryModel eventsQueryModel;
-
-    /**
-     * Runs the periodic full re-read that {@link #eventState} is corrected against.
+     * <p>The Map tab owns this query rather than {@link FloorMapQueryPresenter} (the Events Query
+     * tab): that presenter is created lazily, the first time its tab is opened, so a Map tab
+     * depending on it showed no live entities at all — and therefore no movement animation — until
+     * the user happened to visit another tab.</p>
      *
-     * <p>A separate {@link QueryModel} because {@code startNewSearch} destroys the previous search:
-     * sharing the playback model would mean every 300 ms tick killing the baseline before it
-     * finished.</p>
+     * <p>A full-read helper rather than a bare {@link QueryModel} because the read replaces the
+     * drawn set wholesale, so it must apply only on the searching-to-idle edge and only when the
+     * search reported no errors — a partial or failed result would otherwise blank the map. The
+     * helper also owns the row cap and the in-flight flag.</p>
      */
-    private final FloorMapFullReadQueryHelper baselineQueryHelper;
+    private final FloorMapFullReadQueryHelper eventsQueryHelper;
 
     /**
      * Builds the cluster member list on demand. Left as a provider rather than
@@ -496,48 +473,6 @@ public class FloorMapMapPresenter
         // wherever it is named.
         floorMapCanvasPresenter.setEntityNameResolver(this::entityDisplayName);
 
-        // Result component to parse and handle Events query results — the entity
-        // overlay that gets animated during playback.
-        final ResultComponent eventsResultConsumer = new ResultComponent() {
-            @Override
-            public OffsetRange getRequestedRange() {
-                return new OffsetRange(0, MAX_DELTA_ROWS);
-            }
-
-            @Override
-            public GroupSelection getGroupSelection() {
-                return null;
-            }
-
-            @Override
-            public void reset() {}
-
-            @Override
-            public void startSearch() {}
-
-            @Override
-            public void endSearch() {}
-
-            @Override
-            public void setData(final Result componentResult) {
-                if (componentResult instanceof final TableResult tableResult) {
-                    applyDeltaResult(tableResult);
-                }
-            }
-
-            @Override
-            public void setQueryModel(final QueryModel queryModel) {}
-        };
-
-        this.eventsQueryModel = new QueryModel(
-                eventBus,
-                restFactory,
-                dateTimeSettingsFactory,
-                resultStoreModel,
-                () -> QueryTablePreferences.builder().build());
-        this.eventsQueryModel.addResultComponent(
-                QueryModel.TABLE_COMPONENT_ID, eventsResultConsumer);
-
         // Histogram data model — buckets timestamps and notifies the timeline.
         this.histogramDataModel = new HistogramDataModel(HISTOGRAM_BINS);
         this.histogramDataModel.setDataHandler(
@@ -553,12 +488,12 @@ public class FloorMapMapPresenter
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
                 histogramDataModel::process);
 
-        this.baselineQueryHelper = new FloorMapFullReadQueryHelper(
+        this.eventsQueryHelper = new FloorMapFullReadQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
                 FloorMapFullReadQueryHelper.MAX_ROWS,
-                "eventsBaselineTable",
-                "Events Query Baseline",
-                this::applyBaselineOutcome);
+                "eventsTable",
+                "Events Query Playback",
+                this::applyEventsOutcome);
 
         this.factsHistoryQueryHelper = new FloorMapFullReadQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
@@ -687,13 +622,11 @@ public class FloorMapMapPresenter
         floorMapTimelinePresenter.setClearAnimationStateHandler(
                 floorMapCanvasPresenter::clearAnimationState);
 
-        // Re-read from scratch at the discrete jumps. A backward jump is self-detecting — the
-        // delta range would be inverted — but a forward scrub or step looks exactly like a large
-        // playback tick, so without this signal it would take the delta path and the map would
-        // hold positions from before the jump. Deliberately not wired to the handler above, which
-        // fires per frame while looping.
+        // The discrete jumps. Every read is now a snapshot at the selected time, so a jump needs
+        // no different query — but it does need the read in flight abandoned rather than waited
+        // for, and the canvas told to teleport rather than animate across it. Deliberately not
+        // wired to the handler above, which fires per frame while looping.
         floorMapTimelinePresenter.setDiscontinuityHandler(() -> {
-            eventState.requestBaseline();
             pendingDiscontinuity = true;
             // A jump is new evidence, and the emptiness of the instant we left says nothing about
             // the one we arrived at. Without this, scrubbing through a sparse stretch would
@@ -749,10 +682,8 @@ public class FloorMapMapPresenter
         // started inside updateTimelineRange() is not immediately cancelled by the reset() calls below.
         factsHistoryQueryHelper.init(docRef);
         factsHistoryQueryHelper.reset();
-        eventsQueryModel.init(docRef);
-        eventsQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
-        baselineQueryHelper.init(docRef);
-        baselineQueryHelper.reset();
+        eventsQueryHelper.init(docRef);
+        eventsQueryHelper.reset();
         histogramQueryHelper.init(docRef);
         histogramQueryHelper.reset();
         factsHistogramQueryHelper.init(docRef);
@@ -765,11 +696,6 @@ public class FloorMapMapPresenter
         lastFacts = null;
         lastEventObjects = null;
         lastRawEventObjects = null;
-        // Positions from the previous read of this document are not evidence about this one: the
-        // stores it points at may have changed. clear() re-arms the baseline, so the first tick
-        // below reads everything rather than a delta against a cursor that no longer means
-        // anything.
-        eventState.clear();
         // Same reasoning for facts: the document may now point at a different facts store, so the
         // held history is not evidence about this read. clear() also makes a read due immediately,
         // which the onTimeChange at the end of this method then issues - and lastFactSnapshotRows
@@ -782,7 +708,8 @@ public class FloorMapMapPresenter
         eventDataFaultReported = false;
         stageReporter.reset();
         floorMapCanvasPresenter.setEmptyStatus(null, false);
-        baselineErrorReported = false;
+        eventsErrorReported = false;
+        eventsTruncationReported = false;
         orderNoteReported = false;
         orderCheckedQuery = null;
         lastAreaMembership = FloorMapAreaMembership.EMPTY;
@@ -924,14 +851,23 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Issues whatever read {@link #eventState} decides this tick needs.
+     * Reads every entity's position as at {@code t}.
      *
-     * <p>Three outcomes. A <b>delta</b> covers only {@code (previous, t]} and is upserted, so an
-     * entity that has not moved keeps its position instead of vanishing. A <b>baseline</b> covers
-     * the horizon and replaces the state, correcting anything the deltas accumulated wrongly and
-     * dropping whoever has been idle beyond it. <b>Nothing</b> means a baseline is structurally due
-     * but was attempted too recently to try again — issuing one anyway would be back-to-back
-     * whole-store scans.</p>
+     * <p>One query per tick, reduced server-side to the latest row per key at or before {@code t}.
+     * That is a capability the temporal stores gained after this feature was written; before it,
+     * the only options were an instant (which matched nothing on Plan B) or a window (which lost
+     * anyone who had not moved lately), and the client kept accumulated positions to work around
+     * the absence. It does not any more — see the class javadoc.</p>
+     *
+     * <p><b>The lower bound is 0 rather than a window, deliberately.</b> Both stores lift the
+     * upper bound out as a snapshot boundary and then discard every time term, so a narrower lower
+     * bound would be ignored rather than honoured — {@code TestTemporalStoreParity} pins that. Zero
+     * says what is meant, and stays correct if a store ever stops discarding it.</p>
+     *
+     * <p>A read already in flight is normally left alone: it answers the same question about a
+     * position at most a tick old, and abandoning it per tick would destroy searches faster than
+     * they complete. A jump is the exception, because the read in flight is for a position the user
+     * has already left.</p>
      *
      * @param t the timeline position being read at
      */
@@ -940,92 +876,9 @@ public class FloorMapMapPresenter
         if (query == null || query.trim().isEmpty()) {
             return;
         }
-        final FloorMapEventState.Read read = eventState.nextRead(t, System.currentTimeMillis());
-        switch (read.kind()) {
-            case BASELINE -> {
-                // A baseline already in flight is normally left alone. Issue-time stamping stops
-                // one slower than a tick being re-issued every tick, but not one slower than the
-                // interval destroying itself on its own periodic re-issue — and silently, since a
-                // destroyed search reports no error rather than failing. Skipping is safe because
-                // the read in flight answers the same question; the interval comes round again.
-                //
-                // A forced baseline is the exception. It follows a jump the user has just made, so
-                // the read in flight covers a position they have already left: abandoning it is
-                // correct rather than merely tolerable, and waiting up to a minute for the map to
-                // follow a scrub is not.
-                if (!baselineQueryHelper.isRunning() || read.forced()) {
-                    baselineQueryHelper.run(
-                            resolveQueryParams(query), queryParams(), read.from(), read.to());
-                }
-            }
-            case DELTA -> {
-                pendingDeltaTo = read.to();
-                runQueryAtSelectedTime(eventsQueryModel, query,
-                        "eventsTable", "Events Query Playback", read.from(), read.to());
-            }
-            case NONE -> {
-                // Nothing to read; the state on screen is the most recent answer there is.
-            }
-            default -> throw new IllegalStateException("Unhandled read kind: " + read.kind());
+        if (!eventsQueryHelper.isRunning() || pendingDiscontinuity) {
+            eventsQueryHelper.run(resolveQueryParams(query), queryParams(), 0L, t);
         }
-    }
-
-    /**
-     * Starts a search for the given query text over {@code [from, to]}. A {@code null}/blank query
-     * is a no-op.
-     *
-     * <p><strong>Why the range matters.</strong> {@code ResultStoreManager.addTimeRangeExpression}
-     * turns a range into {@code time >= from AND time < to}. A zero-width range — which is what
-     * this method once built for both queries — is therefore {@code >= T AND < T}: unsatisfiable for
-     * every row, for any {@code T}. It only ever worked because {@code SqlTemporalStore}
-     * reinterprets it rather than applying it: its DAO lifts the upper bound out as a snapshot time,
-     * strips every time term from the SQL, and returns {@code max(effective_time) <= T} per key.
-     * Plan B has no such reinterpretation — {@code PlanBSearchHelper} evaluates the expression
-     * row by row — so it faithfully returned nothing at all.</p>
-     *
-     * <p>So the facts query asks for the instant {@code [T, T]}, which is exactly the snapshot it
-     * wants: a fact set months old must still be visible, and a bounded window would hide it. The
-     * events query asks for real, non-empty ranges instead — see {@link #readEvents}. On a SQL
-     * Temporal Store both degenerate to the same latest-per-key snapshot at {@code to}, because its
-     * DAO strips the lower bound; the ranges matter to Plan B.</p>
-     *
-     * <p>1 ms is added to {@code to} because the generated term is {@code LESS_THAN}, so a bare
-     * {@code to} would exclude anything at exactly that instant.</p>
-     *
-     * @param model         the query model to run the search on
-     * @param query         the StroomQL query text; may be {@code null} or blank
-     * @param componentName the table component name for the search
-     * @param taskName      recorded as the search's query info, which is consumed by the search
-     *                      audit event log - not shown in the task monitor
-     * @param from          inclusive lower bound
-     * @param to            inclusive upper bound
-     */
-    private void runQueryAtSelectedTime(final QueryModel model,
-                                        final String query,
-                                        final String componentName,
-                                        final String taskName,
-                                        final long from,
-                                        final long to) {
-        if (query == null || query.trim().isEmpty()) {
-            return;
-        }
-        final TimeRange timeRange = new TimeRange(
-                "CUSTOM",
-                String.valueOf(from),
-                String.valueOf(to + 1));
-        model.startNewSearch(
-                QueryModel.TABLE_COMPONENT_ID,
-                componentName,
-                // Resolve param('FactStore') / param('EventStore') references in
-                // the query text so the from-clause resolves correctly.
-                resolveQueryParams(query),
-                queryParams(),
-                timeRange,
-                false,
-                false,
-                taskName,
-                null
-        );
     }
 
     /**
@@ -1058,40 +911,7 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Applies one playback tick's worth of change.
-     *
-     * <p>An upsert, so an entity absent from this tick keeps the position it had. That is the whole
-     * point of the delta: a Plan B store cannot answer "where is everyone", only "what happened
-     * between these two times", and everyone who did not move is missing from every answer.</p>
-     *
-     * <p>Applied straight from {@code setData} rather than waiting for the search to finish, unlike
-     * a baseline. A delta only ever adds, so a partial one is harmless and a lost one is corrected
-     * by the next baseline; only the wholesale-replacing baseline needs to be sure it is complete.
-     * </p>
-     *
-     * @param tableResult the delta result to apply
-     */
-    private void applyDeltaResult(final TableResult tableResult) {
-        // A result already in flight when the tab was closed must not be applied: it carries this
-        // document's UUID, so a reopened copy would take it. The columns are read below, so a null
-        // result has to stop here too.
-        if (closed || getEntity() == null || tableResult == null) {
-            return;
-        }
-        final List<FloorMapObject> entities = parseEventRows(tableResult);
-        lastEventRowCount = NullSafe.size(tableResult.getRows());
-        reportUnparsedEvents(tableResult, entities);
-        eventState.applyDelta(entities, pendingDeltaTo);
-        if (isTruncated(tableResult)) {
-            // The tick was cut mid-entity, so a position may be stale and lastQueriedTime cannot
-            // be trusted as a cursor. A baseline is the only way to find out what was missed.
-            eventState.requestBaseline();
-        }
-        publishKnownEntities();
-    }
-
-    /**
-     * Applies — or refuses — a finished baseline.
+     * Applies — or refuses — a finished events read.
      *
      * <p>Three outcomes, deliberately different:</p>
      * <ul>
@@ -1109,20 +929,18 @@ public class FloorMapMapPresenter
      *
      * @param outcome the finished baseline
      */
-    private void applyBaselineOutcome(final FloorMapFullReadQueryHelper.Outcome outcome) {
+    private void applyEventsOutcome(final FloorMapFullReadQueryHelper.Outcome outcome) {
         if (closed || getEntity() == null) {
             return;
         }
         if (outcome.failed()) {
-            // Clears the request, so the retry comes from the ordinary cadence rather than the next
-            // tick — otherwise a store that has never been written to is re-scanned three times a
-            // second for as long as the document stays open.
-            eventState.onBaselineFailed();
-            if (!baselineErrorReported) {
-                baselineErrorReported = true;
-                Console.error("Floor map: the events baseline query failed, so entity positions are"
-                              + " those from before it ran. Check the events store exists and has"
-                              + " been written to. Further failures for this document are not"
+            // Keep whatever is on screen: a failed read says nothing about where anyone is, and
+            // blanking the map on a transient error would be worse than showing a stale position.
+            if (!eventsErrorReported) {
+                eventsErrorReported = true;
+                Console.error("Floor map: the events query failed, so entity positions are those"
+                              + " from before it ran. Check the events store exists and has been"
+                              + " written to. Further failures for this document are not"
                               + " reported.");
             }
             return;
@@ -1135,24 +953,16 @@ public class FloorMapMapPresenter
         lastEventRowCount = tableResult == null ? 0 : NullSafe.size(tableResult.getRows());
         reportUnparsedEvents(tableResult, entities);
 
-        if (outcome.truncated()) {
-            if (eventState.applyTruncatedBaseline(entities, outcome.to())) {
-                // Deliberately does NOT recommend condense. Condense only collapses runs older
-                // than its threshold, and the shortest that document's UI offers is one day -
-                // four times the horizon - so nothing the baseline reads at a live timeline
-                // position is ever condensed. It helps only for playback further back than the
-                // threshold, which is also where it can drop a stationary entity. The knobs that
-                // do apply here are the horizon and the row cap.
-                Console.error("Floor map: the events baseline hit its "
-                              + FloorMapFullReadQueryHelper.MAX_ROWS + "-row limit over the last "
-                              + (FloorMapEventState.HORIZON_MS / 3_600_000) + " hours, so entities"
-                              + " idle for a long time may be missing and will not be pruned."
-                              + " The store is producing more events than one baseline can carry;"
-                              + " a shorter horizon or a higher row cap is the fix."
-                              + " Reported once per document.");
-            }
-        } else {
-            eventState.applyBaseline(entities, outcome.to());
+        if (outcome.truncated() && !eventsTruncationReported) {
+            eventsTruncationReported = true;
+            // The read is one row per entity now, so hitting the cap means the store holds more
+            // distinct entities than the cap allows - not more history. Narrowing the time range
+            // would not help; only a higher cap would.
+            Console.error("Floor map: the events query hit its "
+                          + FloorMapFullReadQueryHelper.MAX_ROWS + "-row limit, so some entities"
+                          + " are missing from the map. The read returns one row per entity, so"
+                          + " this store holds more entities than the cap allows."
+                          + " Reported once per document.");
         }
 
         // Re-arm the teleport here rather than when the jump was reported. After a scrub the facts
@@ -1163,7 +973,7 @@ public class FloorMapMapPresenter
             pendingDiscontinuity = false;
             floorMapCanvasPresenter.clearAnimationState();
         }
-        publishKnownEntities();
+        publishKnownEntities(entities);
     }
 
     /**
@@ -1171,11 +981,12 @@ public class FloorMapMapPresenter
      *
      * <p>Called after every applied read, and the assignment to {@code lastRawEventObjects} is
      * load-bearing rather than bookkeeping: {@link #reanchorEventEntities()} re-pushes that field
-     * on <em>every</em> facts tick, so leaving it holding a single delta's rows would have the
-     * facts path repeatedly reducing the map to whoever moved last.</p>
+     * on <em>every</em> facts tick, so leaving it stale would have the facts path repeatedly
+     * redrawing an older set of positions.</p>
+     *
+     * @param entities every entity the read returned; never {@code null}
      */
-    private void publishKnownEntities() {
-        final List<FloorMapObject> entities = eventState.known();
+    private void publishKnownEntities(final List<FloorMapObject> entities) {
         lastRawEventObjects = entities;
         final List<FloorMapObject> placed = placeEventEntities();
         reportEmptyStage(entities.size(), placed.size());
@@ -1204,6 +1015,15 @@ public class FloorMapMapPresenter
      * either sends this to the time comparison instead. Neither rewrites the query: it belongs to
      * the user, its results table is a separate execution that must keep showing what they wrote,
      * and only the map's reduction needs to differ.</p>
+     *
+     * <p><b>This reduction is now belt-and-braces, and kept deliberately.</b> The read passes an
+     * upper time bound, which both stores lift as a snapshot boundary, so a result should already
+     * hold one row per entity and there is nothing for {@code latestPerEntity} to reduce. It is
+     * retained because it is O(one row per entity) on a list that size, and because drawing two
+     * positions for one entity is the exact failure this whole path was built to prevent — cheap
+     * insurance against a server-side behaviour that changed recently. Anyone pruning it should
+     * take {@link FloorMapEventsQueryOrder} with it, and should be sure no reachable events query
+     * can return an unreduced result first.</p>
      */
     private List<FloorMapObject> parseEventRows(final TableResult tableResult) {
         final FloorMapEventColumns eventColumns = getEntity().getEventColumns();
@@ -1296,11 +1116,11 @@ public class FloorMapMapPresenter
         }
         switch (stage) {
             case NO_EVENT_ROWS -> Console.error("Floor map: the events query returned no rows at"
-                                                + " this time. Check the events store holds data,"
-                                                + " and that the timeline is somewhere that data"
-                                                + " covers — the map reads back at most "
-                                                + (FloorMapEventState.HORIZON_MS / 3_600_000)
-                                                + " hours from the selected time.");
+                                                + " this time. The read is a snapshot at the"
+                                                + " selected time with no lower bound, so this"
+                                                + " means the store holds nothing at or before it"
+                                                + " — check it holds data, and that the timeline"
+                                                + " is not before the data starts.");
             // The detailed column-mismatch message is emitted by reportUnparsedEvents, which has
             // the result's columns to name. Saying it twice would be worse than saying it once.
             case NO_ENTITIES_PARSED -> {
@@ -1455,7 +1275,7 @@ public class FloorMapMapPresenter
     /**
      * Issues a fact history read if one is due, and does nothing otherwise.
      *
-     * <p>Checked on demand rather than driven by a timer, for the reasons {@link FloorMapEventState}
+     * <p>Checked on demand rather than driven by a timer, for the reasons {@link FloorMapFactHistory}
      * records for baselines: there is no lifecycle to get wrong, nothing to cancel, and the
      * decision is unit-testable. The three call sites between them cover everything —
      * {@link #onTimeChange} while playing, {@link #refresh()} on becoming visible, and
@@ -1900,8 +1720,7 @@ public class FloorMapMapPresenter
         floorMapTimelinePresenter.pause();
         factsCadenceTimer.cancel();
         factsHistoryQueryHelper.reset();
-        eventsQueryModel.reset(DestroyReason.TAB_CLOSE);
-        baselineQueryHelper.reset();
+        eventsQueryHelper.reset();
         histogramQueryHelper.reset();
         factsHistogramQueryHelper.reset();
     }
@@ -1923,7 +1742,6 @@ public class FloorMapMapPresenter
      */
     public void refresh() {
         if (getEntity() != null) {
-            eventState.requestBaseline();
             // Becoming visible is the case the 60 s cadence deliberately does not try to serve:
             // someone who has just written a fact and wants to see it is, almost by definition,
             // about to look at the map. So re-read now rather than waiting out the interval.

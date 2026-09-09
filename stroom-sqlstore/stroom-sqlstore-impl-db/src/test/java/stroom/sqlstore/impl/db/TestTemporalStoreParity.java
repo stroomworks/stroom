@@ -274,6 +274,57 @@ class TestTemporalStoreParity {
     }
 
     /**
+     * A lower bound adds nothing once an upper bound is present, on either store.
+     *
+     * <p>This is narrow and load-bearing. The Floor Map's events playback used to issue a
+     * <em>delta</em> query per tick — {@code [previousSelectedTime, T + 1)} — because neither store
+     * could reduce to latest-per-key server-side and a narrow window was the cheapest way to bound
+     * what came back. Both stores now lift the upper bound as a snapshot boundary and discard every
+     * time term, so that delta returns exactly what an unbounded-below snapshot at {@code T + 1}
+     * returns. The delta is not merely redundant, it is indistinguishable — which is what licenses
+     * deleting the machinery that maintained the cursor for it.</p>
+     *
+     * <p>{@code door} is the discriminator: its only version is at T1, outside {@code [T2, T3)}, so
+     * a store honouring the lower bound would omit it. Both return it.</p>
+     */
+    @Test
+    void testALowerBoundAddsNothingOnceAnUpperBoundIsPresent(@TempDir final Path tempDir) {
+        final Fixture fixture = writeToBoth(tempDir, List.of(
+                row("gate", T1, "gate@T1"),
+                row("gate", T2, "gate@T2"),
+                row("door", T1, "door@T1")));
+
+        final ExpressionOperator windowed = ExpressionOperator.builder()
+                .addTerm(UpdatableTemporalStore.TIME_FIELD.getFldName(),
+                        ExpressionTerm.Condition.GREATER_THAN_OR_EQUAL_TO, T2_ISO)
+                .addTerm(UpdatableTemporalStore.TIME_FIELD.getFldName(),
+                        ExpressionTerm.Condition.LESS_THAN, T3_ISO)
+                .build();
+        final ExpressionOperator upperOnly = ExpressionOperator.builder()
+                .addTerm(UpdatableTemporalStore.TIME_FIELD.getFldName(),
+                        ExpressionTerm.Condition.LESS_THAN, T3_ISO)
+                .build();
+
+        final List<Triple> expected = List.of(
+                new Triple("door", T1, "door@T1"),
+                new Triple("gate", T2, "gate@T2"));
+
+        assertThat(searchPlanB(fixture, windowed))
+                .as("Plan B, windowed: the lower bound is discarded, so door@T1 is returned"
+                    + " despite falling outside the window")
+                .containsExactlyElementsOf(expected);
+        assertThat(searchPlanB(fixture, upperOnly))
+                .as("Plan B, upper bound only: identical, which is why a delta query buys nothing")
+                .containsExactlyElementsOf(expected);
+        assertThat(searchSql(fixture, windowed))
+                .as("SQL store, windowed: the same, via getFilteredExpression")
+                .containsExactlyElementsOf(expected);
+        assertThat(searchSql(fixture, upperOnly))
+                .as("SQL store, upper bound only: identical")
+                .containsExactlyElementsOf(expected);
+    }
+
+    /**
      * Pins the worked example in {@code docs/temporal-store-parity-report.md}.
      *
      * <p>That report weighs four options against one store and three queries. If the numbers in it
