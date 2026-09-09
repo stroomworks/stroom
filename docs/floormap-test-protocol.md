@@ -207,7 +207,7 @@ selected time, and the answer replaces what is drawn.
 | **R3** | Pick any events request and read its response | **One row per entity**, not a window of history. Five rows for this fixture. If you see several rows for `alice`, the server is not reducing and everything else here is unsafe | |
 | **R4** | Scrub **backwards** to the middle of the data, pause | Entities **teleport** rather than sliding, and positions are those at the scrubbed-to instant — no position later than it. `carol` stays drawn throughout | |
 | **R5** | Scrub **forwards** past the end of the data | Positions hold at their last reported values; `carol` and `bob` both remain. Nothing blanks | |
-| **R6** | Turn **Condense** on for `floor_map_events` **with a threshold of a few minutes**, wait for a merge, and reload the map | `dave` is **still drawn**, at `desk-105`. His seven identical rows collapse to the earliest one, and the read takes each entity's latest row at or before the selected time whatever that row is — so a collapsed run no longer costs him his position. Before the retirement a collapsed run could fall outside the six-hour window and he would vanish | |
+| **R6** | Turn **Condense** on for `floor_map_events` **with a threshold of a few minutes**, wait for the next 10-minute boundary, and reload the map | `dave` is **still drawn**, at `desk-105`. His identical rows collapse to the earliest one, and the read takes each entity's latest row at or before the selected time whatever that row is — so a collapsed run no longer costs him his position. Before the retirement a collapsed run could fall outside the six-hour window and he would vanish | **pass** 2026-09-09, at the store level |
 | **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and the console reports the read failed **once** — not once per tick. Then set it back | |
 
 **R6 needs the API, and is worthless without it.** The Plan B settings UI's duration dropdown
@@ -221,6 +221,28 @@ condense: { enabled: true, duration: { time: 5, timeUnit: MINUTES } }
 
 If you cannot set it, **skip R6 rather than recording it as a pass** — a quiet result here means
 the knob never engaged, not that the behaviour is right.
+
+> **R6 was run at the store level on 2026-09-09 and passed**, which means the UI half is all that
+> is left to confirm. Condense with a 5-minute threshold took the 29-row fixture to 21: `dave` 7
+> rows to 1, and — not anticipated — `alice` 7 to 6 and `bob` 6 to 5, because each had two
+> consecutive events at the same desk. `forklift-7` was untouched, every coordinate being different.
+> A snapshot then still returned all six entities, `dave` among them at `desk-105` from his single
+> surviving row.
+>
+> The bound was pushed out to **18:00** as well, putting `dave`'s row 11 h 52 m in the past and
+> `carol`'s 14 h 52 m. Both still came back. That is the check worth copying if you repeat this:
+> staying inside six hours would have passed under the old horizon too, so only a gap wider than
+> the horizon distinguishes "no lower bound" from "a window that happened to be big enough".
+>
+> **Condense has been set back to off**, which is the documented default for this fixture. The rows
+> it collapsed do not come back with it — re-upload `events.csv` to restore them, which you need to
+> do anyway for the full fixture.
+
+**And condense does not run when you enable it.** It is driven by the *Plan B state store maintain*
+job, which is `EVERY_10_MINUTES` (`PlanBModule`), not by the every-minute merge — so nothing happens
+until the next :00, :10, :20 and so on. Checking a minute after enabling it shows the uncondensed
+store and proves nothing. `checkInterval` in the settings does not change this; the job schedule
+does.
 
 **Why R1 and R7 are the two that matter.** R1 is the one that regressed most easily: the old code
 checked a cadence on demand *because* nothing was allowed to poll, and if the retirement
