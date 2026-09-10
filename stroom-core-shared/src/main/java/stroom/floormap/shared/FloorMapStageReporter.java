@@ -35,9 +35,9 @@ package stroom.floormap.shared;
  * transient and self-correcting, and logging it would produce noise on every single startup, which
  * trains people to ignore the one message that matters.</p>
  *
- * <p>So a stage must be empty for {@link #PERSISTENCE_TICKS} consecutive observations before it is
- * reported, and each episode is reported once rather than repeatedly. A stage that changes, or a
- * {@link #reset()} from a time change, starts the count again.</p>
+ * <p>So a stage must be empty continuously for {@link #PERSISTENCE_MS} before it is reported, and
+ * each episode is reported once rather than repeatedly. A stage that changes, or a
+ * {@link #reset()} from a time change, starts the clock again.</p>
  *
  * <p>GWT-free with the counting explicit, so the filtering can be tested without a canvas — the
  * same shape as {@link FloorMapFactHistory} and {@link FloorMapQueryThrottle}.</p>
@@ -45,13 +45,24 @@ package stroom.floormap.shared;
 public final class FloorMapStageReporter {
 
     /**
-     * How many consecutive observations a stage must stay empty before it is reported.
+     * How long a stage must stay empty, continuously, before it is reported.
      *
-     * <p>Three, against a ~300 ms playback tick, is about a second — long enough that the normal
-     * facts-after-events startup sequence passes unremarked, and short enough that a genuinely
-     * broken configuration is named while the user is still looking at it.</p>
+     * <p>A second — long enough that the normal facts-after-events startup sequence passes
+     * unremarked, and short enough that a genuinely broken configuration is named while the user is
+     * still looking at it.</p>
+     *
+     * <p><b>This was a count of observations until 2026-09-10, and that was wrong.</b> Three
+     * observations against a ~300 ms playback tick is about the same second, so the two agree while
+     * something is playing — but a count assumes a stream of observations, and a <em>paused</em>
+     * timeline produces exactly one. So the threshold was unreachable precisely when the map was
+     * sitting still in front of someone wondering why it was empty, which is the case worth
+     * reporting. Elapsed time holds in both.</p>
+     *
+     * <p>The counterpart is that the caller must keep observing while paused, or nothing
+     * re-evaluates the elapsed time and the message still never arrives. That is what the Map tab's
+     * facts heartbeat does.</p>
      */
-    public static final int PERSISTENCE_TICKS = 3;
+    public static final long PERSISTENCE_MS = 1_000L;
 
     /**
      * Which stage produced nothing, and what to say about it on the map.
@@ -120,7 +131,8 @@ public final class FloorMapStageReporter {
     }
 
     private Stage current = Stage.NONE;
-    private int consecutive;
+    /** When {@link #current} was first observed, or {@code 0} when there is no run. */
+    private long stageSinceMs;
     private boolean reportedCurrent;
 
     /**
@@ -160,24 +172,24 @@ public final class FloorMapStageReporter {
     /**
      * Records one observation and returns the stage to report, if any.
      *
-     * @return the stage, the first time it has been empty for {@link #PERSISTENCE_TICKS}
-     *         consecutive observations; otherwise {@code null}
+     * @param nowMs wall-clock millis, passed in so the filtering stays testable without a clock
+     * @return the stage, the first time it has been continuously empty for {@link #PERSISTENCE_MS};
+     *         otherwise {@code null}
      */
     public Stage observe(final int eventRows,
                          final int entities,
                          final int facts,
-                         final int placed) {
+                         final int placed,
+                         final long nowMs) {
         final Stage stage = classify(eventRows, entities, facts, placed);
 
         if (stage != current) {
             current = stage;
-            consecutive = 1;
+            stageSinceMs = nowMs;
             reportedCurrent = false;
-        } else {
-            consecutive++;
         }
 
-        if (Stage.NONE == stage || reportedCurrent || consecutive < PERSISTENCE_TICKS) {
+        if (Stage.NONE == stage || reportedCurrent || nowMs - stageSinceMs < PERSISTENCE_MS) {
             return null;
         }
         reportedCurrent = true;
@@ -193,14 +205,13 @@ public final class FloorMapStageReporter {
      * problem where there is merely no data at those times.</p>
      *
      * <p><b>Calling it per tick defeats the filter entirely,</b> which is what it originally did.
-     * Exactly one {@link #observe} happens per events read, so a reset on every tick pinned
-     * {@link #consecutive} at 1 and {@link #PERSISTENCE_TICKS} was never reached — nothing was ever
-     * reported. Successive playback ticks are not unrelated evidence: three in a row with no rows
-     * is a real second of emptiness, and saying so is the point.</p>
+     * A reset on every tick restarted the run each time, so the threshold was never reached and
+     * nothing was ever reported. Successive playback ticks are not unrelated evidence: a run of
+     * them with no rows is a real second of emptiness, and saying so is the point.</p>
      */
     public void reset() {
         current = Stage.NONE;
-        consecutive = 0;
+        stageSinceMs = 0;
         reportedCurrent = false;
     }
 }

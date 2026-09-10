@@ -370,26 +370,24 @@ all of which name fact keys.
 | # | Do | Expect | Result |
 |---|---|---|---|
 | **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to about an hour before the end | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | **pass** 2026-09-10 |
-| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | **FAIL** 2026-09-10 — see below |
+| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | **FAIL** 2026-09-10, fixed same day — **re-run** |
 
-> **G10 fails, and it cannot pass as written.** The console message needs
-> `FloorMapStageReporter.PERSISTENCE_TICKS` — three — *consecutive* observations of the same stage,
-> and an observation only happens when an **events read lands**. A paused timeline issues no events
-> reads at all (that is R1, which passes), so a scrub gives exactly one observation and the counter
-> never leaves 1.
+> **G10 failed on 2026-09-10 and has been fixed. Re-run it.** The console message used to need
+> three *consecutive observations* of the same stage, and an observation only happens when an events
+> read lands — but a paused timeline issues no events reads at all (that is R1, which passes), so
+> the scrub G9 asks for gave exactly one observation and the counter never left 1. The canvas line
+> was unaffected because `reanchorEventEntities` refreshes it on every facts tick without ever
+> calling `observe`, which is why G9 passed while G10 did not.
 >
-> The canvas line is unaffected because it comes from a different path: `reanchorEventEntities`
-> refreshes it on every facts tick but never calls `observe`. Hence G9 passing and G10 not.
+> The gate's own javadoc named the flaw: it was sized against "a ~300 ms playback tick", so it
+> assumed a tick stream a paused map does not have. And the transient it exists to filter — events
+> landing a tick before facts — cannot happen while paused, because nothing is arriving.
 >
-> The gate's own javadoc says it is sized against "a ~300 ms playback tick", which is the flaw —
-> it assumes a tick stream that a paused map does not have. And the transient it exists to filter,
-> events landing a tick before facts, cannot occur while paused, because nothing is arriving. So the
-> persistence requirement is unsatisfiable exactly when it is also unnecessary.
->
-> **Not fixed.** The fix is to skip the persistence gate when the timeline is not playing, so one
-> settled observation is enough. Until then, G10 is only reachable by leaving the map **playing** in
-> a state that produces the stage — press play with `Test Floor Map (no facts)` open and let it run
-> a second.
+> **The fix** counts elapsed time instead of observations (`PERSISTENCE_MS`, one second), and the
+> Map tab's facts heartbeat now re-asks every 10 s so that something notices the second has passed.
+> So expect the console line **within about ten seconds** of the canvas line while paused, rather
+> than immediately — that gap is the fix working, not a fault. During playback the two still arrive
+> together, since ticks re-ask three times a second.
 
 **If G9 shows "No events at this time" instead**, the `where` clause has excluded too much, or the
 timeline is outside the data. If it shows **nothing at all**, `forklift-7` is still being placed —

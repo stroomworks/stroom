@@ -29,6 +29,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TestFloorMapStageReporter {
 
+    private static final long TICK = 300L;   // the playback throttle
+    private static final long T0 = 1_700_000_000_000L;
+
+
     // -----------------------------------------------------------------------
     // Classification
     // -----------------------------------------------------------------------
@@ -86,19 +90,44 @@ class TestFloorMapStageReporter {
     void testTheTransientFactsAfterEventsSequenceReportsNothing() {
         final FloorMapStageReporter reporter = new FloorMapStageReporter();
 
-        // Two ticks with events but no facts yet, then the facts land.
-        assertThat(reporter.observe(10, 4, 0, 0)).isNull();
-        assertThat(reporter.observe(10, 4, 0, 0)).isNull();
-        assertThat(reporter.observe(10, 4, 9, 4)).isNull();
+        // Two ticks with events but no facts yet, then the facts land - all inside the threshold.
+        assertThat(reporter.observe(10, 4, 0, 0, T0)).isNull();
+        assertThat(reporter.observe(10, 4, 0, 0, T0 + TICK)).isNull();
+        assertThat(reporter.observe(10, 4, 9, 4, T0 + 2 * TICK)).isNull();
     }
 
     @Test
     void testAPersistentStageIsReportedOnceTheThresholdIsReached() {
         final FloorMapStageReporter reporter = new FloorMapStageReporter();
-        for (int i = 1; i < FloorMapStageReporter.PERSISTENCE_TICKS; i++) {
-            assertThat(reporter.observe(10, 0, 9, 0)).as("observation %d", i).isNull();
-        }
-        assertThat(reporter.observe(10, 0, 9, 0)).isEqualTo(Stage.NO_ENTITIES_PARSED);
+        assertThat(reporter.observe(10, 0, 9, 0, T0))
+                .as("the first observation only starts the clock")
+                .isNull();
+        assertThat(reporter.observe(10, 0, 9, 0, T0 + FloorMapStageReporter.PERSISTENCE_MS - 1))
+                .as("one millisecond short")
+                .isNull();
+        assertThat(reporter.observe(10, 0, 9, 0, T0 + FloorMapStageReporter.PERSISTENCE_MS))
+                .isEqualTo(Stage.NO_ENTITIES_PARSED);
+    }
+
+    /**
+     * The regression this design exists for: a <b>paused</b> map observes once and then not again
+     * until something asks. Two observations a long way apart must report, because the stage has
+     * genuinely persisted - a count of observations could never satisfy this.
+     */
+    @Test
+    void testTwoObservationsFarApartReportWithoutATickStream() {
+        final FloorMapStageReporter reporter = new FloorMapStageReporter();
+        assertThat(reporter.observe(10, 4, 0, 0, T0)).isNull();
+        assertThat(reporter.observe(10, 4, 0, 0, T0 + 10_000))
+                .as("ten seconds later, via the facts heartbeat rather than a playback tick")
+                .isEqualTo(Stage.NO_FACTS);
+    }
+
+    /** One observation is never enough, however late it is - there is nothing to compare it to. */
+    @Test
+    void testASingleObservationNeverReports() {
+        final FloorMapStageReporter reporter = new FloorMapStageReporter();
+        assertThat(reporter.observe(10, 0, 9, 0, T0 + 60_000)).isNull();
     }
 
     /** Once per episode, not once per tick — otherwise it nags for as long as the map is open. */
@@ -107,7 +136,7 @@ class TestFloorMapStageReporter {
         final FloorMapStageReporter reporter = new FloorMapStageReporter();
         int reports = 0;
         for (int i = 0; i < 50; i++) {
-            if (reporter.observe(10, 0, 9, 0) != null) {
+            if (reporter.observe(10, 0, 9, 0, T0 + i * TICK) != null) {
                 reports++;
             }
         }
@@ -120,7 +149,7 @@ class TestFloorMapStageReporter {
         final FloorMapStageReporter reporter = new FloorMapStageReporter();
         Stage first = null;
         for (int i = 0; i < 5; i++) {
-            final Stage s = reporter.observe(10, 0, 9, 0);
+            final Stage s = reporter.observe(10, 0, 9, 0, T0 + i * TICK);
             if (s != null) {
                 first = s;
             }
@@ -129,7 +158,7 @@ class TestFloorMapStageReporter {
 
         Stage second = null;
         for (int i = 0; i < 5; i++) {
-            final Stage s = reporter.observe(0, 0, 9, 0);
+            final Stage s = reporter.observe(0, 0, 9, 0, T0 + (10 + i) * TICK);
             if (s != null) {
                 second = s;
             }
@@ -142,13 +171,13 @@ class TestFloorMapStageReporter {
     void testRecoveringAndFailingAgainReportsAgain() {
         final FloorMapStageReporter reporter = new FloorMapStageReporter();
         for (int i = 0; i < 5; i++) {
-            reporter.observe(10, 0, 9, 0);
+            reporter.observe(10, 0, 9, 0, T0 + i * TICK);
         }
-        reporter.observe(10, 4, 9, 4);            // recovered
+        reporter.observe(10, 4, 9, 4, T0 + 5 * TICK);            // recovered
 
         int reports = 0;
         for (int i = 0; i < 5; i++) {
-            if (reporter.observe(10, 0, 9, 0) != null) {
+            if (reporter.observe(10, 0, 9, 0, T0 + (10 + i) * TICK) != null) {
                 reports++;
             }
         }
@@ -165,11 +194,11 @@ class TestFloorMapStageReporter {
     @Test
     void testResetOnTimeChangeStartsTheCountAgain() {
         final FloorMapStageReporter reporter = new FloorMapStageReporter();
-        for (int i = 1; i < FloorMapStageReporter.PERSISTENCE_TICKS; i++) {
-            reporter.observe(0, 0, 9, 0);
+        for (int i = 0; i < 6; i++) {
+            reporter.observe(0, 0, 9, 0, T0 + i * TICK);
             reporter.reset();
         }
-        assertThat(reporter.observe(0, 0, 9, 0))
+        assertThat(reporter.observe(0, 0, 9, 0, T0 + 60_000))
                 .as("each observation was for a different instant, so none of them accumulate")
                 .isNull();
     }

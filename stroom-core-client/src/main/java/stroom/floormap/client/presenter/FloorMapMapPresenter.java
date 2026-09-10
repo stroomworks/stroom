@@ -278,6 +278,12 @@ public class FloorMapMapPresenter
         @Override
         public void run() {
             readFactsHistoryIfDue();
+            // Re-evaluate the empty-stage report as well. The reporter waits for a stage to persist
+            // for a second before naming it, and it can only notice that second has passed when
+            // something asks it again - so on a paused timeline, which issues no events reads at
+            // all, this heartbeat is the only thing that ever asks. Without it the canvas line
+            // appears and the console explanation never does.
+            reassessEmptyStage();
         }
     };
 
@@ -1105,9 +1111,25 @@ public class FloorMapMapPresenter
      * <p>This is the only place that can see all four stages at once, which is why the
      * classification lives here rather than beside any one of them.</p>
      */
+    /**
+     * Re-runs the empty-stage assessment against the state already on screen.
+     *
+     * <p>Costs a placement pass and nothing else — no query. Exists because
+     * {@link FloorMapStageReporter} gates on elapsed time and therefore needs asking more than
+     * once, while a paused timeline produces exactly one events read. Cheap enough at the
+     * heartbeat's cadence, and a no-op before the first read has landed.</p>
+     */
+    private void reassessEmptyStage() {
+        if (closed || getEntity() == null || lastRawEventObjects == null) {
+            return;
+        }
+        reportEmptyStage(lastRawEventObjects.size(), placeEventEntities().size());
+    }
+
     private void reportEmptyStage(final int entities, final int placed) {
         final FloorMapStageReporter.Stage stage = stageReporter.observe(
-                lastEventRowCount, entities, NullSafe.size(lastFacts), placed);
+                lastEventRowCount, entities, NullSafe.size(lastFacts), placed,
+                System.currentTimeMillis());
 
         refreshEmptyStatus(entities, placed);
 
