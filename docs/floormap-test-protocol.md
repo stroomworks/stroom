@@ -304,32 +304,14 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **G1** | Open `Test Floor Map`. Set the timeline **start** date to earlier than the **earliest** event — `carol`'s, from the manifest, which is ~3 h before everyone else's — then drag the scrubber fully **left**, before that time, and leave it **paused** | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | |
-| **G2** | Press Show All to come back to the data | The line **disappears** as soon as entities are drawn | |
-
-> **Scrubbing *forward* past the end of the data no longer produces this line, and this document told
-> you to do exactly that until 2026-09-10.** The read is each entity's latest row at or before the
-> selected time, with **no lower bound** — so however far ahead you go, every entity's last known
-> position still comes back and the map is populated. Verified against the store: a snapshot after
-> the data returns all six entities; one before the earliest event returns nothing.
->
-> Two consequences for running G1:
->
-> - You have to go **backwards**, and past `carol` specifically. She emits ~3 h before the others,
->   so a position between her event and the rest still returns her — one entity is enough to keep
->   the line away.
-> - The default window is NOW ± 24 h, which starts *after* `carol` on a fixture more than a day old,
->   so you must widen the **start** date before the scrubber can reach her. Show All will not do it:
->   it fits the range *to* the data, leaving nowhere earlier to stand.
->
-> When setting that date, **click a day cell in the calendar** — changing only the month or year
-> navigates the display without changing the selection, and OK then returns the value unchanged.
-| **G3** | Events Query tab → **press Run first** (see below), then set the **Entity ID** dropdown to the **blank** entry at the top of the list → back to Map | **"Events found, but no entity could be read — check the column mapping"**, in the **fault** register: coloured and bordered. The **console** names which role is unset and lists the result's actual columns — that pairing is the design: the canvas says which stage, the console says why. **Then set Entity ID back** | |
-| **G4** | Events Query tab (Run pressed) → set **Location Ref** to the **`Type`** column, and set **Location** to blank → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put both back** | |
-| **G5** | Open `Test Floor Map (empty)` | **Either** the quiet "no events" line **or** a reported read failure — and which one you get is the finding, not a pass/fail. See the note below; record which you saw | |
-| **G6** | Reopen `Test Floor Map`, Show All, and watch the **first second** | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not; a "no floor plan" line flashing on every open would be worse than the silence it replaces | |
-| **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Every read now returns the whole set rather than only what changed, so a tick returning no rows means the store genuinely holds nothing at or before that instant — which is what the line is for | |
-| **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | |
+| **G1** | Open `Test Floor Map`. Set the timeline **start** date to earlier than the **earliest** event — `carol`'s, from the manifest, which is ~3 h before everyone else's — then drag the scrubber fully **left**, before that time, and leave it **paused** | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | **pass** 2026-09-10 |
+| **G2** | Press Show All to come back to the data | The line **disappears** as soon as entities are drawn | **pass** 2026-09-10 |
+| **G3** | Events Query tab → **press Run first** (see below), then set the **Entity ID** dropdown to the **blank** entry at the top of the list → back to Map | **"Events found, but no entity could be read — check the column mapping"**, in the **fault** register: coloured and bordered. The **console** names which role is unset and lists the result's actual columns — that pairing is the design: the canvas says which stage, the console says why. **Then set Entity ID back** | **pass** 2026-09-10 |
+| **G4** | Events Query tab (Run pressed) → set **Location Ref** to the **`Type`** column, and set **Location** to blank → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put both back** | **pass** 2026-09-10 |
+| **G5** | Open `Test Floor Map (empty)` | **Either** the quiet "no events" line **or** a reported read failure — and which one you get is the finding, not a pass/fail. See the note below; record which you saw | **pass** 2026-09-10 |
+| **G6** | Reopen `Test Floor Map`, Show All, and watch the **first second** | **Nothing appears at all.** Facts and events arrive from independent reads, so there is a moment where events have landed and facts have not; a "no floor plan" line flashing on every open would be worse than the silence it replaces | **pass** 2026-09-10 |
+| **G7** | Play through the middle of the data, where entities are present throughout | No line, and **no flicker**. Every read now returns the whole set rather than only what changed, so a tick returning no rows means the store genuinely holds nothing at or before that instant — which is what the line is for | **pass** 2026-09-10 |
+| **G8** | Drag the right-hand dock wide so the canvas is narrow, while G3's line is showing | The line stays readable and does not collide with the scale bar bottom-left | **pass** 2026-09-10 |
 
 ### Why G3 and G4 need Run pressed first
 
@@ -387,8 +369,27 @@ all of which name fact keys.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to about an hour before the end | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | |
-| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | |
+| **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to about an hour before the end | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | **pass** 2026-09-10 |
+| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | **FAIL** 2026-09-10 — see below |
+
+> **G10 fails, and it cannot pass as written.** The console message needs
+> `FloorMapStageReporter.PERSISTENCE_TICKS` — three — *consecutive* observations of the same stage,
+> and an observation only happens when an **events read lands**. A paused timeline issues no events
+> reads at all (that is R1, which passes), so a scrub gives exactly one observation and the counter
+> never leaves 1.
+>
+> The canvas line is unaffected because it comes from a different path: `reanchorEventEntities`
+> refreshes it on every facts tick but never calls `observe`. Hence G9 passing and G10 not.
+>
+> The gate's own javadoc says it is sized against "a ~300 ms playback tick", which is the flaw —
+> it assumes a tick stream that a paused map does not have. And the transient it exists to filter,
+> events landing a tick before facts, cannot occur while paused, because nothing is arriving. So the
+> persistence requirement is unsatisfiable exactly when it is also unnecessary.
+>
+> **Not fixed.** The fix is to skip the persistence gate when the timeline is not playing, so one
+> settled observation is enough. Until then, G10 is only reachable by leaving the map **playing** in
+> a state that produces the stage — press play with `Test Floor Map (no facts)` open and let it run
+> a second.
 
 **If G9 shows "No events at this time" instead**, the `where` clause has excluded too much, or the
 timeline is outside the data. If it shows **nothing at all**, `forklift-7` is still being placed —
