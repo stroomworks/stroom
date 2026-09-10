@@ -8272,8 +8272,8 @@ paths:
   /sqltemporalstore/v1/fetchAll:
     post:
       description: Returns the most recent version of every key in the map with no
-        upper-time bound. Use for the 'Show all' Fact List toggle. The server applies
-        currentTimeMillis() + ONE_DAY_MS internally.
+        upper-time bound, including entries whose effective time is in the future. Use
+        for the 'Show all' Fact List toggle.
       operationId: fetchAllSqlTemporalStoreEntries
       requestBody:
         content:
