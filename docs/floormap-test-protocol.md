@@ -492,9 +492,25 @@ B1 and B2 passed on 2026-09-04. These three did not.
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **B3** | Right-click `Test Floor Map` → Copy. Open the copy's Assets tab | The copy has **its own** assets. Upload a different image to the copy and confirm the original is unchanged | |
-| **B4** | Delete the copy. Then check no orphaned asset rows remain | Assets removed, not orphaned. This needs a DB look or a fresh export to confirm properly — flag it if you cannot | |
-| **B5** | Export `Test Floor Map (empty)`, which has **no** assets, then import it back | Works, no errors. The empty case is exactly where a new code path tends to break | |
+| **B3** | Right-click `Test Floor Map` → Copy. Open the copy's Assets tab | The copy has **its own** assets. Upload a different image to the copy and confirm the original is unchanged | **pass** 2026-09-10 |
+| **B4** | Delete the copy. Then check no orphaned asset rows remain | Assets removed, not orphaned. This needs a DB look or a fresh export to confirm properly — flag it if you cannot | **pass** 2026-09-10 |
+| **B5** | Export `Test Floor Map (empty)`, which has **no** assets, then import it back | Works, no errors. The empty case is exactly where a new code path tends to break | **pass** 2026-09-10 |
+
+> **B4 was confirmed at the database level on 2026-09-10**, which is what its own wording asks for.
+> Every `owner_doc_uuid` in `stroom.visualisation_assets` and `..._draft` resolves to a live row in
+> `doc`, and `..._update_delete` is empty. No orphans.
+>
+> Two incidental findings while looking, neither a B4 failure:
+>
+> - **Asset paths are stored unnormalised.** One row's path is `/ floorplan-ontology-foo.svg` —
+>   hex `2F 20 66`, so a literal space after the slash. Nothing trims it, and `path_hash` hashes
+>   what it is given, so `/foo.svg` and `/ foo.svg` are two distinct assets that look identical in
+>   a list.
+> - **A draft upload survives without ever being saved.** `..._draft` holds
+>   `/DSD Report … Appendix 2.xlsx` against `empty_floormap` with no matching live row, so it was
+>   staged and abandoned. Whether anything ever reclaims it is unestablished — if not, every
+>   abandoned upload keeps its blob, and `documentAsset.maxUploadSize` allows 50 MiB of it at a
+>   time. Worth settling before this ships, since the check is cheap and the failure is silent.
 
 **On B3** — you said copying onto a map that already has assets does not make sense as a user
 action, and you are right. `copyLiveAssets` is documented as *"will throw an error if assets already
