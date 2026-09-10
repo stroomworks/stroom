@@ -304,8 +304,26 @@ top of the canvas naming which one. **Map tab only** — the Editor has its own 
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **G1** | Open `Test Floor Map`, then scrub the timeline **well past the end of the data** — a day ahead — and leave it **paused** | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | |
+| **G1** | Open `Test Floor Map`. Set the timeline **start** date to earlier than the **earliest** event — `carol`'s, from the manifest, which is ~3 h before everyone else's — then drag the scrubber fully **left**, before that time, and leave it **paused** | **"No events at this time"**, in the **quiet** register. Paused is the point: it is when someone is actually puzzling over an empty map, and it is what the first attempt at this got wrong. The floor plan is still drawn — only the people are missing | |
 | **G2** | Press Show All to come back to the data | The line **disappears** as soon as entities are drawn | |
+
+> **Scrubbing *forward* past the end of the data no longer produces this line, and this document told
+> you to do exactly that until 2026-09-10.** The read is each entity's latest row at or before the
+> selected time, with **no lower bound** — so however far ahead you go, every entity's last known
+> position still comes back and the map is populated. Verified against the store: a snapshot after
+> the data returns all six entities; one before the earliest event returns nothing.
+>
+> Two consequences for running G1:
+>
+> - You have to go **backwards**, and past `carol` specifically. She emits ~3 h before the others,
+>   so a position between her event and the rest still returns her — one entity is enough to keep
+>   the line away.
+> - The default window is NOW ± 24 h, which starts *after* `carol` on a fixture more than a day old,
+>   so you must widen the **start** date before the scrubber can reach her. Show All will not do it:
+>   it fits the range *to* the data, leaving nowhere earlier to stand.
+>
+> When setting that date, **click a day cell in the calendar** — changing only the month or year
+> navigates the display without changing the selection, and OK then returns the value unchanged.
 | **G3** | Events Query tab → **press Run first** (see below), then set the **Entity ID** dropdown to the **blank** entry at the top of the list → back to Map | **"Events found, but no entity could be read — check the column mapping"**, in the **fault** register: coloured and bordered. The **console** names which role is unset and lists the result's actual columns — that pairing is the design: the canvas says which stage, the console says why. **Then set Entity ID back** | |
 | **G4** | Events Query tab (Run pressed) → set **Location Ref** to the **`Type`** column, and set **Location** to blank → back to Map | **"Entities reference locations that are not on this floor plan"**, **fault** register. Every entity now claims to be at `person` or `vehicle`, which no fact key matches. **Then put both back** | |
 | **G5** | Open `Test Floor Map (empty)` | **Either** the quiet "no events" line **or** a reported read failure — and which one you get is the finding, not a pass/fail. See the note below; record which you saw | |
