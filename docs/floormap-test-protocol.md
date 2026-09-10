@@ -208,7 +208,7 @@ selected time, and the answer replaces what is drawn.
 | **R4** | Scrub **backwards** to the middle of the data, pause | Entities **teleport** rather than sliding, and positions are those at the scrubbed-to instant — no position later than it. `carol` stays drawn throughout | **pass** 2026-09-09 |
 | **R5** | Scrub **forwards** past the end of the data | Positions hold at their last reported values; `carol` and `bob` both remain. Nothing blanks | **pass** 2026-09-09 |
 | **R6** | Turn **Condense** on for `floor_map_events` **with a threshold of a few minutes**, wait for the next 10-minute boundary, and reload the map | `dave` is **still drawn**, at `desk-105`. His identical rows collapse to the earliest one, and the read takes each entity's latest row at or before the selected time whatever that row is — so a collapsed run no longer costs him his position. Before the retirement a collapsed run could fall outside the six-hour window and he would vanish | **pass** 2026-09-09 — store level, then the map |
-| **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and the console reports the read failed **once** — not once per tick. Then set it back | **pass** 2026-09-09 |
+| **R7** | Point the document's events store at a **Plan B store that has never been written to**, and open the Map | The map is empty and says so in the **quiet** register — *"the events query returned no rows at this time"* — **once**, not once per tick. **Not** a reported failure: see the note below. Then set it back | **pass** 2026-09-10, expectation corrected |
 
 **R6 needs the API, and is worthless without it.** The Plan B settings UI's duration dropdown
 starts at **days**, and this fixture is four hours old — so turning Condense on through the UI
@@ -247,8 +247,9 @@ does.
 **Why R1 and R7 are the two that matter.** R1 is the one that regressed most easily: the old code
 checked a cadence on demand *because* nothing was allowed to poll, and if the retirement
 accidentally reintroduced a timer this is where it shows. R7 exercises the only remaining
-report-once flag on this path; a store that has never been written to reports an error on every
-read, so a missing flag turns into console spam three times a second.
+report-once flag on this path. A never-written store produces the quiet no-rows line rather than an
+error, but it produces it on *every* read, so a missing flag still turns into console spam three
+times a second while playing.
 
 **What would tell you it is wrong**
 
@@ -402,29 +403,25 @@ time bound now routes the query to Plan B's snapshot path, where the field order
 the generated query selects `EffectiveTime` anyway — but a term on a **non-time** field you add
 yourself is covered by neither.
 
-> **G5 and R7 point at the same store, and this document used to expect opposite things of it.**
-> `floor_map_events_empty` has never been written to. G5 assumed that reads as a legitimately empty
-> store and asserted the quiet line; R7 assumes it reads as a *failure* and asserts an error
-> reported once. Only one can be right, and the code says R7: `StoreShard.open` throws
-> "Local Plan B shard not found" for a store with no shard, `StateSearchProvider` catches it, adds
-> it to the result store and signals completion anyway — so the read reports failure rather than
-> emptiness.
+> **G5 and R7 point at the same store, and this document once expected opposite things of it.
+> Settled 2026-09-10: both now expect the quiet line.**
 >
-> But that depends on whether a merge has ever created an empty shard, which is not something this
-> document can assert for you. **So run G5, record which of the two you see, and treat the answer as
-> data**: the quiet line means an empty shard exists and emptiness is distinguishable from breakage;
-> the error means it is not, which is the hazard written up in
-> `docs/task-planb-where-field-not-selected.md` — a store that was never written and a query that
-> could not run look the same to a caller.
+> A never-written Plan B store returns an empty result **cleanly**. It does not report a failure.
+> Verified on the filesystem: a shard directory is materialised for a Plan B document whether or not
+> anything was ever ingested — for one never-written store the directory appeared about eighty
+> minutes after the document was created, holding a real but empty `data.mdb`. So
+> `AbstractStoreShard.open` finds `Files.exists(shardDir)` true, opens the empty database, and the
+> search completes with no rows and no error.
 >
-> If you want the *unambiguously* empty case for G5's original purpose, point
-> `Test Floor Map (empty)` at `floor_map_events` and scrub to before the data starts instead.
+> **That makes `open`'s "Local Plan B shard directory not found" throw a signal of something else
+> entirely** — a shard directory that *should* exist and has gone missing, from a deleted directory
+> or an unmounted volume. It is not the never-written case, and an earlier version of this note said
+> it was.
 >
-> **R7 passed on 2026-09-09**, and R7 is this same condition: a never-written store reported the
-> read as *failed*, once. So expect G5 to show the error rather than the quiet line, and the code's
-> answer is the one that holds — a store that was never written is not distinguishable from a query
-> that could not run. Confirm it at G5 rather than assuming, since R7 pointed an existing document
-> at the empty store while G5 opens a document already configured that way.
+> So emptiness *is* distinguishable from breakage here, which is the better outcome and the opposite
+> of what this note previously warned. If you want the unambiguously-empty case for G5, either store
+> works; pointing `Test Floor Map (empty)` at `floor_map_events` and scrubbing before the data
+> starts gives the same result by a different route.
 
 **What would tell you it is wrong**
 
@@ -464,11 +461,11 @@ you are here.
 > the server reduces first. So watch the **canvas** as much as the console: ~60 entities drawn
 > across `desk-101`…`desk-106` is the strong evidence, an absent message the weak.
 >
-> One loose end from the void run. R7 passes, and R7 says a never-written Plan B store reports the
-> read as *failed* — so opening the bulk map on the empty store should have shown that error rather
-> than silence. It showed silence. That discrepancy is unexplained: either the failure report is
-> conditional on something R7 did not capture, or an empty shard existed for that store. Worth
-> chasing if an empty store is ever mistaken for a working one.
+> **The loose end from the void run is closed.** It looked as though R7 and that run disagreed — R7
+> expecting a never-written store to report a *failure*, and the run seeing silence. **The silence
+> was right and R7's expectation was wrong**: a Plan B document gets an empty shard directory
+> whether or not anything was ingested, so the search opens an empty database and completes with no
+> rows and no error. R7 is corrected; nothing about that run was anomalous.
 >
 > That costs the test something: **every group buildable from this fixture has `Positioned` equal to
 > its total**, so at the far right the count cannot distinguish "counted correctly" from "counted

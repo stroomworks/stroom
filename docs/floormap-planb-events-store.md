@@ -223,7 +223,7 @@ In order, because each step depends on the one before:
 |---|---|
 | `returned N rows but no entities` | The entity/location column names do not match the query's columns. |
 | `none of the N event entities could be placed … facts query returned keys like 'X'` | `location` values name fact keys that do not exist. |
-| `the events query failed` | The store is unreachable or has never been written to. Positions from before the failure stay on screen. Reported once per document. |
+| `the events query failed` | The store is unreachable, or its shard directory has gone missing — a deleted directory or an unmounted volume. **Not** simply an empty store: a Plan B document that has never been written to still gets an empty shard, so it reads as no rows rather than as a failure. Positions from before the failure stay on screen. Reported once per document. |
 | `the events query hit its 20000-row limit` | The store holds more distinct **entities** than the cap allows — the read is one row per entity, so this is not about history depth. A higher cap is the only fix; **not** Condense. Reported once per document. |
 | *nothing at all* | No rows at all. Check ingest and the timeline position. |
 
