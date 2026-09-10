@@ -184,7 +184,7 @@ for hours is kept too.
 
 | | Result |
 |---|---|
-| A0 · **five** entities, `bob` and `carol` both present, `ghost` absent, no status line | |
+| A0 · **five** entities, `bob` and `carol` both present, `ghost` absent, no status line | **pass** 2026-09-09 |
 
 **If A0 fails, stop and tell me** — everything below assumes it.
 
@@ -370,9 +370,9 @@ all of which name fact keys.
 | # | Do | Expect | Result |
 |---|---|---|---|
 | **G9** | Open `Test Floor Map (no facts)`, press Show All, scrub to about an hour before the end | **"No floor plan at this time, so entities have nowhere to be placed"**, in the **fault** register. The canvas is completely bare — no desks, no areas, no entities | **pass** 2026-09-10 |
-| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | **FAIL** 2026-09-10, fixed same day — **re-run** |
+| **G10** | Console, while G9 is showing | *"entities were found but there are no facts to place them on"* — **once**, not once a minute | **pass** 2026-09-10, after the fix below |
 
-> **G10 failed on 2026-09-10 and has been fixed. Re-run it.** The console message used to need
+> **G10 failed on 2026-09-10, was fixed the same day, and passes.** The console message used to need
 > three *consecutive observations* of the same stage, and an observation only happens when an events
 > read lands — but a paused timeline issues no events reads at all (that is R1, which passes), so
 > the scrub G9 asks for gave exactly one observation and the counter never left 1. The canvas line
