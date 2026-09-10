@@ -451,17 +451,24 @@ you are here.
 > exactly what the dialog documents itself as listing. Worth stating because a group of
 > alice/bob/carol/ghost reading `3 of 4` would be the sharper test, and it is not available.
 >
-> **H2 was recorded clean on 2026-09-10 and the result is void**, because `floor_map_events_bulk`
-> was empty — `events-bulk.csv` had never been uploaded. H2 expects *no* row-cap message, and an
-> empty store gives no row-cap message for the trivial reason, so a clean result says nothing about
-> whether the read reduces server-side. **Upload `events-bulk.csv` and run it again.** This is the
-> suspicion the closing section of this document asks for: a quiet result is only evidence when
-> something was there to be noisy about.
+> **H2 was recorded clean once before it meant anything.** On the first attempt
+> `floor_map_events_bulk` was empty, `events-bulk.csv` never having been uploaded — and H2 expects
+> *no* row-cap message, which an empty store satisfies for the trivial reason. That result was
+> struck as void rather than banked. It is the suspicion the closing section of this document asks
+> for: a quiet result is only evidence when something was there to be noisy about.
 >
-> While re-running it, note that a never-written Plan B store reports the read as *failed* — that is
-> R7, which passes. So opening the bulk map on an empty store should have produced that error line
-> rather than silence, and if it did not, **that** is worth reporting: it would mean the failure
-> report is conditional on something R7 did not capture.
+> **The passing run had the data**, and the numbers are the point: 24 000 events across **60**
+> entities, and a snapshot returns exactly 60 rows — confirmed directly against the store, not
+> inferred from the absent message. Before the retirement those 24 000 events exceeded the
+> 20 000-row cap and the map warned; the cap is now unreachable by event volume, but only because
+> the server reduces first. So watch the **canvas** as much as the console: ~60 entities drawn
+> across `desk-101`…`desk-106` is the strong evidence, an absent message the weak.
+>
+> One loose end from the void run. R7 passes, and R7 says a never-written Plan B store reports the
+> read as *failed* — so opening the bulk map on the empty store should have shown that error rather
+> than silence. It showed silence. That discrepancy is unexplained: either the failure report is
+> conditional on something R7 did not capture, or an empty shard existed for that store. Worth
+> chasing if an empty store is ever mistaken for a working one.
 >
 > That costs the test something: **every group buildable from this fixture has `Positioned` equal to
 > its total**, so at the far right the count cannot distinguish "counted correctly" from "counted
@@ -472,7 +479,7 @@ you are here.
 |---|---|---|---|
 | **H0** | **Setup, once.** Groups panel — third tab of the right-hand dock — create a group, e.g. `Occupancy`, and tick `alice@example.org`, `bob@example.org` and `carol@example.org`. Save the document | The group's **Positioned** column reads `3 of 3` with the timeline at the far right. Note that every group starts **hidden** and creating one changes nothing on the canvas, so this column is the only confirmation that membership landed | **pass** 2026-09-10 |
 | **H1** (was A2) | Set the timeline to the **far right** and read the Groups panel's **Positioned** column. Note it. Now play forward — there is nothing after the end of the data, so the clock runs on with no new events | The count **holds** at `3 of 3`, and now holds indefinitely rather than for a bounded window. `bob` stopped emitting five minutes before the end and `carol` a day earlier; both must stay counted. Before this branch an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | **pass** 2026-09-10 |
-| **H2** (was A13) | Open `Test Floor map (bulk)`, Show All, and watch the console while it loads | **Nothing.** This test used to expect a row-cap message, because ~24 000 events exceeded the 20 000-row read. The read is one row per *entity* now, and the bulk fixture has far fewer than 20 000 entities, so the cap is unreachable by event volume. A cap message here means the read is no longer reducing server-side — report it | **VOID** 2026-09-10 — see below |
+| **H2** (was A13) | Open `Test Floor map (bulk)`, Show All, and watch the console while it loads | **Nothing.** This test used to expect a row-cap message, because ~24 000 events exceeded the 20 000-row read. The read is one row per *entity* now, and the bulk fixture has far fewer than 20 000 entities, so the cap is unreachable by event volume. A cap message here means the read is no longer reducing server-side — report it | **pass** 2026-09-10, on the second attempt — see below |
 
 ---
 
