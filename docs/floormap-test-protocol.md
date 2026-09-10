@@ -441,9 +441,25 @@ yourself is covered by neither.
 Ten of this group passed on 2026-09-04. These two were skipped as low value; they are cheap now that
 you are here.
 
+> **H1 needs a group, and nothing else in this document creates one.** A group is assembled by hand
+> and the creation dialog does not make one, so the Groups panel is empty on a fresh document and
+> there is no count to read. H0 is that setup.
+>
+> **`ghost@example.org` cannot be added, and that is not a dialog fault.** The candidate list is the
+> Tracking roster, which is fed *placed* entities (`entityList.update(placed)`). `ghost` names
+> `desk-999-does-not-exist`, never resolves, and so is never on the map to be offered — which is
+> exactly what the dialog documents itself as listing. Worth stating because a group of
+> alice/bob/carol/ghost reading `3 of 4` would be the sharper test, and it is not available.
+>
+> That costs the test something: **every group buildable from this fixture has `Positioned` equal to
+> its total**, so at the far right the count cannot distinguish "counted correctly" from "counted
+> everything". If you want to watch the number move, scrub to G1's position — before `carol`'s event
+> — where the same group should read `0 of 3`.
+
 | # | Do | Expect | Result |
 |---|---|---|---|
-| **H1** (was A2) | Set the timeline to the **far right** and read the Groups panel's occupancy counts. Note them. Now play forward — there is nothing after the end of the data, so the clock runs on with no new events | The counts **hold**, and now hold indefinitely rather than for a bounded window. `bob` is idle and `carol` has been idle for seven hours; both must stay counted. Before this branch an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | |
+| **H0** | **Setup, once.** Groups panel — third tab of the right-hand dock — create a group, e.g. `Occupancy`, and tick `alice@example.org`, `bob@example.org` and `carol@example.org`. Save the document | The group's **Positioned** column reads `3 of 3` with the timeline at the far right. Note that every group starts **hidden** and creating one changes nothing on the canvas, so this column is the only confirmation that membership landed | |
+| **H1** (was A2) | Set the timeline to the **far right** and read the Groups panel's **Positioned** column. Note it. Now play forward — there is nothing after the end of the data, so the clock runs on with no new events | The count **holds** at `3 of 3`, and now holds indefinitely rather than for a bounded window. `bob` stopped emitting five minutes before the end and `carol` a day earlier; both must stay counted. Before this branch an idle entity dropped out of area membership after twenty seconds while its glyph stayed on screen | |
 | **H2** (was A13) | Open `Test Floor Map (bulk)`, Show All, and watch the console while it loads | **Nothing.** This test used to expect a row-cap message, because ~24 000 events exceeded the 20 000-row read. The read is one row per *entity* now, and the bulk fixture has far fewer than 20 000 entities, so the cap is unreachable by event volume. A cap message here means the read is no longer reducing server-side — report it | |
 
 ---
