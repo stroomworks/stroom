@@ -56,10 +56,14 @@ Last reconciled against `git log origin/master..HEAD` on **2026-09-01** (24 comm
 |---|---|---|
 | F5 | Store resolved once per pipeline run (`8cc85ee889`) | Value cache — **deferred**, raised as `task-sqlstore-lookup-value-cache.md` |
 | F6 | Per-frame rebuild and trail growth (`7ab7b0bdbd` + trail commits) | Architecture tier, deferred by D8; see `task-floormap-incremental-canvas-render.md` |
-| F8 | `includeValue` guard (`9400f3359c`) — **correct but insufficient**, see F8 | `search` still ends in `.fetch()` with no time predicate. Written up as `task-sqlstore-unbounded-fetch.md`. **Deferred 2026-09-09**, with the fix settled rather than open: cap the fetch and report the truncation |
+| F8 | `includeValue` guard (`9400f3359c`) — **correct but insufficient**, see F8 | `search` still ends in `.fetch()` with no time predicate. **Raised as a deferred task 2026-09-10** (`task-sqlstore-unbounded-fetch.md`), with the fix settled rather than open: cap the fetch and report the truncation |
 | F11 | **9 of 11 items** — verified in code 2026-09-04 | **2 items**: playback search churn (needs a decision), asset servlet (out of scope, raised elsewhere) |
 
-All three deferred tiers are written up as standalone, self-contained issues in `docs/`, and as of 2026-09-09 all three are blocked only on capacity. F8 stopped needing a decision when its caller was corrected — the choice existed only because the timeline histogram was thought to be hitting this path. See F8.
+All three deferred tiers are written up as standalone, self-contained issues in `docs/` and **raised as deferred tasks**; all three are blocked only on capacity. F8 stopped needing a decision when its caller was corrected — the choice existed only because the timeline histogram was thought to be hitting this path. See F8.
+
+**Nothing in this plan is now awaiting a decision.** What remains is capacity, and the two findings
+written up after the plan was last reviewed — `task-openapi-spec-stale-for-traces.md` (upstream) and
+`task-document-asset-drafts-never-reclaimed.md`.
 
 **F11 recount, 2026-09-04.** The header said "6 of 11" and the *Left* cell said "4 items", which did not add up and was stale either way. Each row of the F11 table was checked against the code: `GWT.log` gone; both `from`-clause interpolations wrapped in `QuotedStringUtil.escapeDoubleQuoted`; `TermHandler` chains the cause at all three sites; the histogram fallback constants are `rgba(21,101,192,…)`, matching blue-800 in the stylesheet; `populateDraft` uses `.where(...)`; `applyChanges` batches consecutive same-type runs; group duplicate and group delete each reload once and `deleteAllShardsForKeys` takes the whole key list; the duplicated sentinel paragraph is gone. Plus the upload cap and the `DocumentPluginEventManager` banner, done today.
 
@@ -983,7 +987,7 @@ Extend `TestFloorMapTransformationMatrix` with `e = NaN` / `f = Infinity` cases 
 
 ---
 
-## F8 — Unbounded result sets materialised in memory — MEDIUM — **DEFERRED 2026-09-09, written up, not fixed** (`docs/task-sqlstore-unbounded-fetch.md`)
+## F8 — Unbounded result sets materialised in memory — MEDIUM — **RAISED as a deferred task 2026-09-10; not fixed** (`docs/task-sqlstore-unbounded-fetch.md`)
 
 **File:** `UpdatableTemporalStoreDaoImpl.java:472` (`search`), `243` (`fetchAll`)
 
