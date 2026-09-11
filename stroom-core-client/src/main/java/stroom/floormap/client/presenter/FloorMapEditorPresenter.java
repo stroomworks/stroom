@@ -760,6 +760,17 @@ public class FloorMapEditorPresenter
      *       padded to [min − 1 day, max + 1 day], since a zero-length range breaks playback.</li>
      * </ul>
      *
+     * <p>A real range is also handed to
+     * {@link FloorMapTimelinePresenter#setDataRange(long, long)}, which is what enables the
+     * <b>Show All</b> button. That is the only thing that enables it, and on the Map tab it comes
+     * from the events histogram — which this tab has none of, and needs none of: the store's own
+     * min and max already are the extent Show All should fit to. Without this the button sits
+     * permanently greyed, which is how it behaved until 2026-09-11.</p>
+     *
+     * <p>Deliberately not called from the {@code min == max} branch. {@code setDataRange} would
+     * accept it, but the Show All handler guards on {@code dataRangeMin < dataRangeMax}, so arming
+     * it for a single-instant store would light the button up and do nothing when pressed.</p>
+     *
      * @param range the time range returned by the server; never {@code null}
      */
     private void initTimeline(final TemporalStoreTimeRange range) {
@@ -774,6 +785,7 @@ public class FloorMapEditorPresenter
             final long max = range.getMaxEffectiveTimeMs();
             if (min < max) {
                 floorMapTimelinePresenter.setTimeRange(min, max);
+                floorMapTimelinePresenter.setDataRange(min, max);
             } else {
                 // A store holding a single effective time reports min == max, which is not
                 // a usable playback range — a zero-length range leaves the step buttons and
