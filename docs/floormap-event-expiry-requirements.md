@@ -2,10 +2,12 @@
 
 **Component:** Floor Map — the Map tab's events read and the entity overlay it draws
 **Branch:** `enterprise-floor-mapping-events-last-forever`
-**Status:** requirements, revision 3. The mechanism is still unchosen (**D1**) and one behaviour
-question is narrowed but open (**D3**). Everything else is decided — see §0. Revision 3 records a
+**Status:** requirements, revision 4. The mechanism is **decided — M3** (§5, D1); one behaviour
+question is narrowed but open (**D3**). Everything else is decided — see §0. Implementation plan:
+`docs/floormap-event-expiry-plan.md`. Revision 3 records a
 server-side parameter change built and verified on 2026-09-11 (**§9.7**), which supersedes parts of
-§9.3, §9.5 and §9.6 and sharpens D1 without settling it.
+§9.3, §9.5 and §9.6. Revision 4 settles **D1 in favour of M3** (§5) and points at the
+implementation plan.
 **Raised by:** "events now stay around forever — the last event for a particular ID should
 disappear after a time. Ideally the time should be configurable somehow."
 
@@ -24,6 +26,7 @@ disappear after a time. Ideally the time should be configurable somehow."
 | `condense` (D6) | **Impractical; specify that it must be turned off.** | **R12** becomes a stated constraint rather than an open question. |
 | Where configured (D7) | **Settings tab or, probably better, the timeline settings dialog.** | Explored — §9.2. The timeline dialog is affordable; the plumbing it needs is named. |
 | Roster behaviour (A15/D3) | **Needs more exploration.** | Explored — §9.1. Findings and a recommendation; the call is still yours. |
+| Mechanism (D1) — *2026-09-11* | **M3**, the `having` clause with the floor as a query parameter. | §5 has the reasoning, including why the objection that had favoured M2 does not hold. |
 
 ---
 
@@ -395,17 +398,41 @@ Set retention on the store; old rows are deleted, and a key whose rows have all 
 | Leaves the histogram alone (§2) | yes | yes | **no** — see M3(1) | yes |
 | Upstream change needed | no | **yes** | no *(one already made — §9.7)* | no |
 
-**Recommendation.** M2 is the only mechanism with no asterisk, and the floor-map side of it is one
-argument at one call site. M3 is exact and ahead of the cap, but it buys that by putting a per-tick
-value into text shared with an execution that must not be filtered, and the failure mode is an empty
-timeline rather than an error. M1 is not worth building: it fails R9 and is wrong per-viewer.
+**Recommendation — M3, revised 2026-09-11.** Earlier revisions recommended M2 on the strength of
+one objection to M3: that the histogram shares the query text and must read all history, so the
+expiry clause would have to be *stripped* for it — the "find where the clause ends" problem
+`FloorMapEventsQueryOrder` refuses to solve for `sort`.
 
-**The upstream row is less decisive than it looks.** M3's "no" was always about the floor map's own
-code, not about the query language — and §9.7 records an upstream query-language change made,
-marked and tested in this branch anyway. So the real question behind D1 is not *whether* we are
-willing to change upstream-owned code, which is now settled by precedent, but whether the histogram
-can be made to read whole history while the map reads a bounded one **from the same query text**.
-M2 avoids that question entirely; M3 has to answer it.
+**That objection was wrong, and it was the load-bearing one.** The clause does not need stripping.
+It carries its floor as a parameter, so an execution that must not filter simply **binds the floor to
+zero**:
+
+```java
+histogramQueryHelper.run(query, queryParams(0L));   // epoch — the clause passes everything
+```
+
+`DateExpressionParser` parses a bare number as epoch milliseconds
+(`DateExpressionParser.java:158` → `fromEpochMillis`), so the neutral value is just `"0"`. No text
+is rewritten, and no clause boundary has to be found. I was reasoning from the shape the problem had
+before the parameter work rather than from the current code.
+
+With that removed, two things decide it, and both favour M3:
+
+- **R6 comes free.** M3's filter runs in the LMDB result store, above both temporal stores, so Plan B
+  and the SQL store behave identically by construction. M2 needs two separate store changes that
+  must be kept in step by hand — and only Plan B has a `searchAsAt` path to change at all.
+- **Blast radius.** M2 changes what a lower time bound *means* for **every** consumer of both
+  temporal stores (A13) — a dashboard writing `EffectiveTime > X and <= Y` would start honouring
+  `X`. That is a large semantic change to shared code in service of one document type's display
+  rule. M3 changes one document's query.
+
+There is also an argument from where the rule belongs. Expiry is presentation, not storage (R10 —
+nothing is deleted). A filter above the store expresses that; a filter inside the store's
+point-in-time path does not.
+
+**M2 remains the better answer** if expiry should be invisible and impossible for a user to edit
+out, or if binding the floor at three call sites feels too easy to get wrong. **M1 is not worth
+building**: it fails R9 and is wrong per-viewer.
 
 ---
 
@@ -464,11 +491,15 @@ Build gates unchanged: `./gradlew check` (never module-scoped) and, for any clie
 
 ## 8. Open decisions
 
-**D1 — Mechanism. Open, and the balance has shifted towards M2 (§9.7).** M2 (exact, no query-text
-involvement, needs an upstream change to shared *store* code) versus M3 (exact, implementable only
-since the 2026-09-11 parameter change, but still puts a per-tick filter into text the histogram must
-read unfiltered). M1 is not recommended. §5 has the comparison; §9.7 has what changed and why it
-does not rescue M3.
+**D1 — Mechanism. Answered 2026-09-11: M3**, and the reasoning is in §5. The objection that had
+been carrying M2 — that the histogram would need the expiry clause stripped from shared query text —
+does not hold: the clause takes its floor as a parameter, so an execution that must not filter binds
+that floor to zero. What is left favours M3, because it satisfies R6 without two store changes
+agreeing, and because M2 would change the meaning of a lower time bound for every consumer of both
+temporal stores (A13) to fix one document type's display rule.
+
+M2 stays the answer if expiry should be invisible and un-editable. M1 is not recommended. The
+implementation plan is `docs/floormap-event-expiry-plan.md`.
 
 **D3 — Does an expired entity leave the tracking roster? Narrowed, still yours.** §9.1 explores it:
 the union's justification is obsolete, pruning is already handled safely by existing code, and there
