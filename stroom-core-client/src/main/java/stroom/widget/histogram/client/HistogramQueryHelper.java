@@ -21,6 +21,7 @@ import stroom.docref.DocRef;
 import stroom.query.api.DestroyReason;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
+import stroom.query.api.Param;
 import stroom.query.api.Result;
 import stroom.query.api.TableResult;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
@@ -34,6 +35,7 @@ import stroom.util.shared.Severity;
 
 import com.google.web.bindery.event.shared.EventBus;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -172,9 +174,12 @@ public class HistogramQueryHelper {
      * historical entry.  Client-side filtering in {@link HistogramDataModel}
      * then restricts entries to the visible range.
      *
-     * @param query the StroomQL query text to execute
+     * @param query  the StroomQL query text to execute
+     * @param params the query parameters, or {@code null} when the query uses none. The
+     *               {@code from} clause resolves {@code param('key')} server-side, so a query
+     *               naming its data source that way will not resolve without them
      */
-    public void run(final String query) {
+    public void run(final String query, final List<Param> params) {
         if (query == null || query.trim().isEmpty()) {
             return;
         }
@@ -182,7 +187,7 @@ public class HistogramQueryHelper {
                 QueryModel.TABLE_COMPONENT_ID,
                 "histogramTable",
                 query,
-                null,   // params
+                params,
                 null,   // timeRange — deliberately null, see Javadoc above
                 false,  // incremental
                 false,  // storeHistory

@@ -51,7 +51,6 @@ import stroom.query.api.Column;
 import stroom.query.api.Param;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
-import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultStoreModel;
@@ -862,13 +861,17 @@ public class FloorMapMapPresenter
             return;
         }
         if (!eventsQueryHelper.isRunning() || pendingDiscontinuity) {
-            eventsQueryHelper.run(resolveQueryParams(query), queryParams(), 0L, t);
+            eventsQueryHelper.run(query, queryParams(), 0L, t);
         }
     }
 
     /**
-     * The document's store references as query {@link Param}s, matching the
-     * substitutions {@link #resolveQueryParams(String)} makes in the text.
+     * The document's store references as query {@link Param}s.
+     *
+     * <p>Every read this tab makes passes these, including the histogram — a query naming its
+     * store as {@code from param('EventStore')} does not resolve without them. They used to be
+     * substituted into the query text here as well; the {@code from} clause now resolves
+     * {@code param()} server-side, so the text is sent exactly as the user wrote it.</p>
      *
      * @return the params, or {@code null} when the document declares none
      */
@@ -1274,7 +1277,7 @@ public class FloorMapMapPresenter
             return;
         }
         factHistory.markReadIssued(nowMs);
-        factsHistoryQueryHelper.runAll(resolveQueryParams(query), queryParams());
+        factsHistoryQueryHelper.runAll(query, queryParams());
     }
 
     /**
@@ -1623,34 +1626,10 @@ public class FloorMapMapPresenter
     private void runHistogramQuery(final long start, final long end) {
         histogramDataModel.setRange(start, end);
 
-        final String query = resolveQueryParams(getEventsQueryToUse());
+        final String query = getEventsQueryToUse();
         if (query != null && !query.trim().isEmpty()) {
-            histogramQueryHelper.run(query);
+            histogramQueryHelper.run(query, queryParams());
         }
-    }
-
-    /**
-     * Resolves {@code param('X')} references (e.g. {@code param('EventStore')},
-     * {@code param('FactStore')}) against the configured store names, mirroring
-     * the substitution done for the playback query in {@link #onTimeChange}.
-     *
-     * @param query the raw query text; may be {@code null}
-     * @return the query with param references substituted, or the original
-     *         value if it (or the entity) is {@code null}
-     */
-    private String resolveQueryParams(final String query) {
-        if (query == null || getEntity() == null) {
-            return query;
-        }
-        final Map<String, String> vars =
-                FloorMapQueryPresenter.buildQueryVariables(getEntity());
-        String resolved = query;
-        for (final Map.Entry<String, String> entry : vars.entrySet()) {
-            resolved = resolved.replace(
-                    "param('" + entry.getKey() + "')",
-                    "\"" + QuotedStringUtil.escapeDoubleQuoted(entry.getValue()) + "\"");
-        }
-        return resolved;
     }
 
     /**

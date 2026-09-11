@@ -35,7 +35,6 @@ import stroom.query.api.Param;
 import stroom.query.api.QLVisResult;
 import stroom.query.api.Result;
 import stroom.query.api.TimeRange;
-import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.QueryEditPresenter.QueryEditView;
 import stroom.query.client.view.QueryResultTabsView;
 import stroom.query.shared.QueryTablePreferences;
@@ -419,31 +418,27 @@ public class QueryEditPresenter
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
 
         // STROOMWORKS-LOCAL: added for FloorMap in commit d2ecee9a35 — KEEP LOCAL ON MERGE FROM
-        // master. Upstream has no param() substitution at all. Dropping this block breaks
-        // FloorMap's param('FactStore') / param('EventStore') references, which are how a floor
-        // map selects its temporal stores, so upstream's version must NOT win here.
+        // master. Upstream passes no params here at all. Dropping this breaks FloorMap's
+        // param('FactStore') / param('EventStore') references, which are how a floor map selects
+        // its temporal stores, so upstream's version must NOT win here.
         //
-        // Substitute param('key') references with quoted values so that
-        // the from clause (which only accepts string literals) resolves correctly.
-        // The params are also passed natively to the search model so that
-        // param() calls in expressions work via the standard Stroom mechanism.
-        // Values are escaped for the literal they land in — a store name containing a quote
-        // would otherwise terminate it early and produce malformed query text.
-        String queryText = editorPresenter.getText();
+        // The query text is sent exactly as written. It used to be rewritten first — every
+        // param('key') replaced by its quoted value — because the from clause accepted only a
+        // string literal. SearchRequestFactory.resolveDataSourceName now resolves param() there,
+        // so the values travel as ordinary Params and the text is left alone. That also keeps the
+        // error offsets the editor highlights aligned with what the user is looking at, which
+        // rewriting the text silently broke.
         List<Param> params = null;
         if (queryVariables != null && !queryVariables.isEmpty()) {
             params = new ArrayList<>();
             for (final Map.Entry<String, String> entry : queryVariables.entrySet()) {
                 params.add(new Param(entry.getKey(), entry.getValue()));
-                queryText = queryText.replace(
-                        "param('" + entry.getKey() + "')",
-                        "\"" + QuotedStringUtil.escapeDoubleQuoted(entry.getValue()) + "\"");
             }
         }
         queryModel.startNewSearch(
                 null,
                 null,
-                queryText,
+                editorPresenter.getText(),
                 params,
                 queryToolbarPresenter.getTimeRange(),
                 true,
@@ -462,12 +457,10 @@ public class QueryEditPresenter
 
     /**
      * Sets query parameters to be made available during query execution.
-     * <p><em>Every</em> occurrence of {@code param('key')} in the query text is replaced with the
-     * quoted value by plain text substitution before the query reaches the parser — not just
-     * those in the {@code from} clause, though that clause is the reason it is needed, since it
-     * accepts only string literals. The parameters are additionally passed natively via the
-     * standard Stroom {@link Param} pipeline, which therefore only ever serves parameter
-     * references written in some other form.</p>
+     *
+     * <p>They are passed natively as {@link Param}s and the query text is sent unmodified, so a
+     * {@code param('key')} reference resolves server-side wherever it appears — including the
+     * {@code from} clause, which {@code SearchRequestFactory.resolveDataSourceName} handles.</p>
      *
      * @param queryVariables parameter key → value map, or {@code null}
      */
