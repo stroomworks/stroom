@@ -28,6 +28,9 @@ import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
+import stroom.util.client.Console;
+import stroom.util.shared.ErrorMessage;
+import stroom.util.shared.Severity;
 
 import com.google.web.bindery.event.shared.EventBus;
 
@@ -35,14 +38,28 @@ import java.util.function.Consumer;
 
 /**
  * Encapsulates a {@link QueryModel} for histogram queries against temporal stores.
- * <p>
- * This helper creates a lightweight {@link ResultComponent} that receives
- * {@link TableResult} data and forwards it to the provided result handler.
- * </p>
+ *
+ * <p>This helper creates a lightweight {@link ResultComponent} that receives {@link TableResult}
+ * data and forwards it to the provided result handler.</p>
+ *
+ * <p><b>Failures are reported rather than drawn as an empty histogram.</b> Every way this query can
+ * fail produces no bars, which is also what a store with nothing in it produces — so without the
+ * error listener registered in the constructor the two are indistinguishable to the user, and the
+ * more likely of the two (a query that will not resolve) looks like the harmless one. The result
+ * handler cannot cover this, because a failure of that kind never reaches {@code setData}.</p>
  */
 public class HistogramQueryHelper {
 
     private final QueryModel queryModel;
+
+    /**
+     * Whether a failure has already been reported for this helper.
+     *
+     * <p>The histogram re-runs on every timeline range change, so a persistent fault — a query that
+     * cannot resolve, a store that is unreachable — would otherwise repeat its message for as long
+     * as the user keeps moving the timeline.</p>
+     */
+    private boolean errorReported;
 
     public HistogramQueryHelper(final EventBus eventBus,
                                 final RestFactory restFactory,
@@ -93,6 +110,32 @@ public class HistogramQueryHelper {
         };
 
         queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, resultComponent);
+
+        // Without this a failed histogram is indistinguishable from a store with nothing in it:
+        // both draw no bars. The failures that actually happen here are quiet ones — a query whose
+        // `from` clause did not resolve, or an unbound parameter, either of which produces zero
+        // rows and an error message that nothing was listening for. Neither reaches setData, so the
+        // result handler cannot report them.
+        //
+        // Only ERROR and above. A WARNING does not empty the bars, and the histogram has no state
+        // to protect, so there is nothing to be gained by reporting one.
+        queryModel.addSearchErrorListener(errors -> {
+            if (errors == null || errorReported) {
+                return;
+            }
+            for (final ErrorMessage error : errors) {
+                if (error != null
+                    && error.getSeverity() != null
+                    && error.getSeverity().greaterThanOrEqual(Severity.ERROR)) {
+                    errorReported = true;
+                    Console.error("Histogram: the query failed, so the timeline shows no density"
+                                  + " bars. This is not the same as there being no data."
+                                  + " Cause: " + error.getMessage()
+                                  + " Further failures are not reported.");
+                    return;
+                }
+            }
+        });
     }
 
     /**
@@ -106,8 +149,13 @@ public class HistogramQueryHelper {
 
     /**
      * Resets the underlying query model, destroying the current result store.
+     *
+     * <p>Also re-arms failure reporting. This is called when a document is (re-)read, so a fault
+     * that was reported for the previous document is reported again for the next one rather than
+     * being suppressed for the life of the session.</p>
      */
     public void reset() {
+        errorReported = false;
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
     }
 

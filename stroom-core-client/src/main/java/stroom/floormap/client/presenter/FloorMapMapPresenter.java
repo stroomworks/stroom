@@ -48,20 +48,13 @@ import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapStageReporter;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.Column;
-import stroom.query.api.DestroyReason;
-import stroom.query.api.GroupSelection;
-import stroom.query.api.OffsetRange;
 import stroom.query.api.Param;
-import stroom.query.api.Result;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
-import stroom.query.api.TimeRange;
 import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryModel;
-import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
-import stroom.query.shared.QueryTablePreferences;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.NullSafe;
@@ -120,15 +113,6 @@ public class FloorMapMapPresenter
     public static final Object DOCK = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
-
-    /**
-     * The row cap for one playback tick.
-     *
-     * <p>Twenty times the facts cap. A tick covers only what changed since the last one, so this is
-     * generous — but a truncated tick leaves a stale position until the next baseline, and the cap
-     * is cheap when it is not reached.</p>
-     */
-    private static final int MAX_DELTA_ROWS = 20_000;
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
@@ -320,7 +304,6 @@ public class FloorMapMapPresenter
     private final Provider<FloorMapClusterPresenter> floorMapClusterPresenter;
 
     private final HistogramQueryHelper histogramQueryHelper;
-    private final HistogramQueryHelper factsHistogramQueryHelper;
     private final HistogramDataModel histogramDataModel;
 
     /**
@@ -486,11 +469,9 @@ public class FloorMapMapPresenter
         this.histogramDataModel.setDataRangeHandler(
                 range -> floorMapTimelinePresenter.setDataRange(range[0], range[1]));
 
-        // Histogram query helpers — one for events, one for facts.
+        // Histogram query helper. One, for events: the density bars count event activity, and
+        // the events store is the only store this tab reads them from.
         this.histogramQueryHelper = new HistogramQueryHelper(
-                eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
-                histogramDataModel::process);
-        this.factsHistogramQueryHelper = new HistogramQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
                 histogramDataModel::process);
 
@@ -640,10 +621,10 @@ public class FloorMapMapPresenter
             // problem where there is simply no data at those times.
             //
             // Deliberately here and not in readEvents(), where it used to be. Exactly one
-            // observation happens per events read, so resetting every tick pinned the counter at
-            // one and PERSISTENCE_TICKS was never reached - nothing was ever reported. Successive
-            // playback ticks are not unrelated: three in a row with no rows is a real second of
-            // emptiness, which is precisely what is worth saying.
+            // observation happens per events read, so resetting every tick restarted the
+            // reporter's clock before it could ever run out - nothing was ever reported.
+            // Successive playback ticks are not unrelated: a second of them with no rows is a real
+            // second of emptiness, which is precisely what is worth saying.
             stageReporter.reset();
             // The line itself is deliberately left standing until the read that follows replaces
             // it. Clearing here would make it blink off and back on for every scrub within one
@@ -675,8 +656,8 @@ public class FloorMapMapPresenter
     /**
      * {@inheritDoc}
      *
-     * <p>Initialises and resets all four query mechanisms — the facts and events
-     * {@link QueryModel}s and both histogram query helpers — then starts the timeline and
+     * <p>Initialises and resets all three query mechanisms — the facts and events
+     * {@link QueryModel}s and the histogram query helper — then starts the timeline and
      * triggers an initial time-change to load facts. The timeline range is only initialised on
      * the first read; save-triggered re-reads preserve it. This tab no longer holds an
      * object-edit presenter; that form belongs to the Editor tab.</p>
@@ -692,8 +673,6 @@ public class FloorMapMapPresenter
         eventsQueryHelper.reset();
         histogramQueryHelper.init(docRef);
         histogramQueryHelper.reset();
-        factsHistogramQueryHelper.init(docRef);
-        factsHistogramQueryHelper.reset();
 
         // A (re-)opened document starts with a fresh entity roster and no
         // inherited area containment.
@@ -1094,24 +1073,6 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Whether a result was cut by its row cap.
-     *
-     * <p>{@code getTotalResults()} is populated independently of the rows returned, so a larger
-     * total is the cap biting.</p>
-     */
-    private static boolean isTruncated(final TableResult tableResult) {
-        return tableResult.getTotalResults() != null
-               && tableResult.getRows() != null
-               && tableResult.getTotalResults() > tableResult.getRows().size();
-    }
-
-    /**
-     * Reports whichever stage of the pipeline came up empty, once it has stayed empty.
-     *
-     * <p>This is the only place that can see all four stages at once, which is why the
-     * classification lives here rather than beside any one of them.</p>
-     */
-    /**
      * Re-runs the empty-stage assessment against the state already on screen.
      *
      * <p>Costs a placement pass and nothing else — no query. Exists because
@@ -1126,6 +1087,12 @@ public class FloorMapMapPresenter
         reportEmptyStage(lastRawEventObjects.size(), placeEventEntities().size());
     }
 
+    /**
+     * Reports whichever stage of the pipeline came up empty, once it has stayed empty.
+     *
+     * <p>This is the only place that can see all four stages at once, which is why the
+     * classification lives here rather than beside any one of them.</p>
+     */
     private void reportEmptyStage(final int entities, final int placed) {
         final FloorMapStageReporter.Stage stage = stageReporter.observe(
                 lastEventRowCount, entities, NullSafe.size(lastFacts), placed,
@@ -1213,19 +1180,6 @@ public class FloorMapMapPresenter
                       + FloorMapEventRole.LOCATION_REF.getDisplayName() + ".");
     }
 
-    private static int columnIndex(final TableResult tableResult, final String name) {
-        if (tableResult.getColumns() == null || name == null) {
-            return -1;
-        }
-        for (int i = 0; i < tableResult.getColumns().size(); i++) {
-            final Column column = tableResult.getColumns().get(i);
-            if (column != null && name.equalsIgnoreCase(column.getName())) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     /**
      * The schema roles that map onto columns of the facts query's result table. Area roles
      * are absent from pre-area schemas, so their aliases can be null and simply go
@@ -1244,8 +1198,6 @@ public class FloorMapMapPresenter
      * placement matrix; the canvas applies the transform at render time rather than this method
      * pre-transforming them. A background is simply an image fact, not a special case, and
      * {@link FloorMapObject} is the event-entity type - this method does not produce them.</p>
-     *
-     * @param tableResult the query result table to parse
      */
     private void parseFacts(final List<Column> resultColumns, final List<Row> resultRows) {
         // Same guard as publishEventEntities: a facts result already in flight when the
@@ -1297,11 +1249,12 @@ public class FloorMapMapPresenter
     /**
      * Issues a fact history read if one is due, and does nothing otherwise.
      *
-     * <p>Checked on demand rather than driven by a timer, for the reasons {@link FloorMapFactHistory}
-     * records for baselines: there is no lifecycle to get wrong, nothing to cancel, and the
-     * decision is unit-testable. The three call sites between them cover everything —
-     * {@link #onTimeChange} while playing, {@link #refresh()} on becoming visible, and
-     * {@link #onRead} on opening.</p>
+     * <p>The decision lives in {@code needsRead} rather than here, so it is unit-testable and this
+     * method only asks. Two call sites ask it: {@link #onTimeChange}, which covers playback and
+     * every timeline move, and the {@code factsCadenceTimer} heartbeat, which covers a visible but
+     * stationary timeline — where no tick fires and nothing else would ever ask.
+     * {@link #refresh()} and {@link #onRead} reach it too, but transitively through
+     * {@link #onTimeChange}, so they are not separate paths to keep working.</p>
      *
      * <p>Skipped while one is in flight. Issuing again would destroy it and, if a read takes longer
      * than a tick, it would never complete — the livelock the baseline path documents. Note this is
@@ -1424,10 +1377,10 @@ public class FloorMapMapPresenter
      *
      * <p><b>Deliberately not gated on the console's persistence filter.</b> That filter exists
      * because a repeated log line is noise, and a stage must therefore have been empty for
-     * {@link FloorMapStageReporter#PERSISTENCE_TICKS} before it is written. A status line has the
-     * opposite property: rewriting the same text is invisible, and waiting three observations means
-     * saying nothing at all on a <em>paused</em> timeline, where exactly one events read ever lands
-     * — which is precisely when someone is staring at an empty map wondering why.</p>
+     * {@link FloorMapStageReporter#PERSISTENCE_MS} before it is written. A status line has the
+     * opposite property: rewriting the same text is invisible, so there is nothing to suppress and
+     * every reason to be immediate — an empty map is precisely when someone is staring at it
+     * wondering why, and a second of silence is a second of no explanation.</p>
      *
      * <p>What the tick count was really standing in for is checked directly instead. Facts and
      * events come from independent reads, so "there are no facts" and "the facts have not arrived
@@ -1436,10 +1389,12 @@ public class FloorMapMapPresenter
      * could not before F15, when facts were re-queried per tick and there was no held state to
      * ask.</p>
      *
-     * <p>It does not flicker during playback either, and the reason is worth stating because it is
-     * not obvious: with the F13 delta read, most ticks legitimately return no rows — an entity that
-     * has not moved emits nothing — but {@link FloorMapStageReporter#classify} tests
-     * {@code placed > 0} first, so a map with entities on it never reaches the empty branches.</p>
+     * <p>It does not flicker during playback either. Every read is now a full latest-per-key
+     * snapshot at the selected time, so a map with entities returns one row per entity on every
+     * tick rather than only when something moves — and in any case
+     * {@link FloorMapStageReporter#classify} tests {@code placed > 0} first, so a map with entities
+     * on it never reaches the empty branches. That second guard is what made this safe back when
+     * ticks could legitimately return nothing, and it is worth keeping for the same reason.</p>
      */
     private void refreshEmptyStatus(final int entities, final int placed) {
         if (!factHistory.isLoaded()) {
@@ -1631,32 +1586,46 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Runs a histogram query over the full [start, end] range.
-     * <p>
-     * Uses the events query if one is configured, otherwise falls back to the
-     * facts query.  Only <em>one</em> query is used to avoid double-counting
-     * when both events and facts are sourced from the same data store.
-     * <p>
-     * The {@link HistogramQueryHelper} passes {@code null} for the TimeRange
-     * to bypass temporal-lookup deduplication — see its Javadoc for details.
+     * Runs the histogram query over the full {@code [start, end]} range.
+     *
+     * <p><b>The events query is the only source.</b> The density bars say when entities were
+     * active, which is a question only the events store answers; a floor map with no events query
+     * has no activity to plot, so it correctly shows no bars rather than substituting something
+     * else.</p>
+     *
+     * <p>There used to be a facts fallback — a minimal query against the facts store, plus a second
+     * helper for it — justified by a comment saying one query at a time avoided double-counting
+     * "when both events and facts are sourced from the same data store". <b>That cannot happen.</b>
+     * The two store references are type-disjoint and enforced as such wherever they can be set:
+     * the facts store is a {@code SqlTemporalStoreDoc} because the Editor tab writes spatial data
+     * back to it, and the events store is a {@code PlanBDoc} that is only ever read — see
+     * {@link FloorMapInitPresenter}. So the fallback answered a different question (when was the
+     * floor plan last edited) in the place reserved for this one, and its second helper could only
+     * ever run a query with an unresolvable {@code from} clause. Both are gone.</p>
+     *
+     * <p>{@code param('EventStore')} is resolved into the text here rather than passed as a
+     * {@link stroom.query.api.Param}: {@link HistogramQueryHelper#run} passes no params at all, so
+     * an unresolved {@code from} clause would fail the query and leave the bars empty. The same
+     * applies to any other {@code param()} anyone adds to the events query later — only the store
+     * names are substituted here. The bars are still empty when that happens, but the helper's
+     * error listener reports it, so it reads as a failure rather than as a store with nothing in
+     * it.</p>
+     *
+     * <p>The events query's own {@code select} must include a timestamp column that
+     * {@link HistogramDataModel#findTimeColumnIndex} recognises — {@code EffectiveTime} or
+     * {@code EventTime}, either spelling. Without one every row is skipped and the bars are empty
+     * while the query itself succeeds.</p>
+     *
+     * <p>{@link HistogramQueryHelper} also passes {@code null} for the TimeRange, which is what
+     * keeps this read on the all-history path rather than the one-row-per-key snapshot the map
+     * overlay wants — see its javadoc.</p>
      */
     private void runHistogramQuery(final long start, final long end) {
         histogramDataModel.setRange(start, end);
 
-        // Prefer the events query — it typically selects from the same store
-        // as the facts query and already includes a timestamp column.
-        // Resolve param('EventStore')/param('FactStore') in the text: the
-        // histogram helpers run with no params, so an unresolved from-clause
-        // would make the query fail and leave the density bars empty.
-        final String eventsHistQuery = resolveQueryParams(buildEventsHistogramQuery());
-        if (eventsHistQuery != null && !eventsHistQuery.trim().isEmpty()) {
-            histogramQueryHelper.run(eventsHistQuery);
-        } else {
-            // No events query configured — fall back to the facts query.
-            final String factsHistQuery = resolveQueryParams(getFactsQueryToUse());
-            if (factsHistQuery != null && !factsHistQuery.trim().isEmpty()) {
-                factsHistogramQueryHelper.run(factsHistQuery);
-            }
+        final String query = resolveQueryParams(getEventsQueryToUse());
+        if (query != null && !query.trim().isEmpty()) {
+            histogramQueryHelper.run(query);
         }
     }
 
@@ -1685,36 +1654,6 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Returns the query text to use for the events histogram.
-     * <p>
-     * If the user has configured an events query, it is returned as-is.
-     * The query's own {@code SELECT} clause is expected to include a recognised
-     * timestamp column (e.g. {@code EffectiveTime} or {@code EventTime}) that
-     * {@link HistogramDataModel#findTimeColumnIndex} can detect.
-     * <p>
-     * If no events query is configured, falls back to a minimal query against
-     * the configured temporal store selecting {@code EffectiveTime}.
-     *
-     * @return the histogram query text, or {@code null} if no query can be built
-     */
-    private String buildEventsHistogramQuery() {
-        final String eventsQuery = getEntity() != null ? getEntity().getEventsQuery() : null;
-        if (eventsQuery != null && !eventsQuery.trim().isEmpty()) {
-            return eventsQuery;
-        }
-
-        // Fallback: derive a histogram query from the configured temporal store.
-        final DocRef storeRef = getEntity() != null ? getEntity().getFactsStoreRef() : null;
-        if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
-            return "from \"" + QuotedStringUtil.escapeDoubleQuoted(storeRef.getName()) + "\"\n"
-                   + "select \n"
-                   + "  Key, \n"
-                   + "  EffectiveTime";
-        }
-        return null;
-    }
-
-    /**
      * Pauses the timeline if it is currently playing.
      *
      * <p>Called by {@link FloorMapPresenter} when the user navigates away from
@@ -1730,7 +1669,7 @@ public class FloorMapMapPresenter
      *
      * <p>Closing a document tab does not unbind its presenters, so without this a
      * closed Map tab keeps a paused-but-live pipeline: the timeline's playback
-     * loop, five result stores on the server, and an event-bus handler that still
+     * loop, three result stores on the server, and an event-bus handler that still
      * accepts entity data for this document's UUID. A reopened copy of the
      * document shares that UUID, so the dead tab's query results land on the live
      * tab's canvas.</p>
@@ -1744,7 +1683,6 @@ public class FloorMapMapPresenter
         factsHistoryQueryHelper.reset();
         eventsQueryHelper.reset();
         histogramQueryHelper.reset();
-        factsHistogramQueryHelper.reset();
     }
 
     /**
