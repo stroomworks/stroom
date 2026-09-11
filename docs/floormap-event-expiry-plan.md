@@ -51,12 +51,38 @@ select EffectiveTime as "Effective Time",
   ...
 ```
 
-**Prove this first — it is the one thing the whole plan rests on.** The clause references the column
-*alias*, which the `select` defines further down. `SearchRequestFactory` collects having-referenced
-fields into `additionalFields` (`:401`) and adds a hidden column for any that were not selected
-(`:937`–`:945`), so referencing `Effective Time` should resolve whether or not it is selected — and
-here it is selected, so no hidden column should be created. That is a reading of the code, not a
-demonstration. **Write the test before anything else in this plan.**
+**Tested 2026-09-11, and the clause above does not work.** `TestHavingOnSelectAlias` proves the
+rule: **the `having` field and the column's name must be the same string.** Where a `select`
+renames a field and the `having` names the alias, `SearchRequestFactory` adds a *second* column of
+that name whose expression is the alias as a string literal, and `RowUtil.createColumnNameValExtractor`
+— a `HashMap` keyed by name — binds the filter to it, because it is last. Every row then presents
+constant text where a date is wanted and **every row is rejected**. Naming the source field instead
+throws `Field not found`. Written up in
+`docs/task-query-having-on-an-alias-filters-everything-out.md`.
+
+**So the alias has to change.** The events query currently selects
+`EffectiveTime as "Effective Time"`, and that alias is `FloorMapEventsQuery.EFFECTIVE_TIME_COLUMN`.
+Drop the space:
+
+```
+from param('EventStore')
+having EffectiveTime > param('ExpiryFloor')
+select EffectiveTime,
+  Key as "Entity ID",
+  ...
+```
+
+`EFFECTIVE_TIME_COLUMN` becomes `"EffectiveTime"`. Three things read it and all are fine:
+`latestPerEntity`'s time-column argument (`FloorMapMapPresenter:1024`) takes it from the constant; a
+console message (`:1062`) just names it; and `TestFloorMapEventRowParsing` derives its fixture from
+the constant. `HistogramDataModel.findTimeColumnIndex` already accepts `EffectiveTime` and
+`Effective Time`, case-insensitively, so the density bars are unaffected. The only visible change is
+the column header in the Events Query tab's results table.
+
+**Two alternatives, if the header matters.** Select the field twice —
+`EffectiveTime as "Effective Time", EffectiveTime as ExpiryTime` — and filter on the second, which
+costs a visible duplicate column; or fix the upstream defect, which is the right answer eventually
+but is not a prerequisite for this work.
 
 ### W3 — binding the floor
 
@@ -223,11 +249,10 @@ pre-empts "why do the bars show data the map does not", which is otherwise a puz
 
 **Unit — GWT-free, JVM-tested, mutation-tested, following `TestFloorMapEventState`'s shape.**
 
-1. **First, before anything else:** a `having` clause referencing a selected column alias parses,
-   and filters as expected. This is W2's unproven premise.
-2. A `having` clause referencing an alias that is *not* selected adds a hidden column and still
-   filters (the `additionalFields` path) — worth pinning even though the default query does not need
-   it, because a user's own query might.
+1. ~~A `having` clause referencing a selected column alias filters as expected.~~ **Done** —
+   `TestHavingOnSelectAlias`, and the answer was no. The query shape changed accordingly (W2).
+2. A `having` whose field matches the column name filters correctly, and adds no duplicate column —
+   covered by the same class, and the shape the plan now uses.
 3. `ExpiryFloor = 0` passes every row.
 4. An entity whose last event is `D − 1 ms` before `T` is kept; `D + 1 ms` before `T` is dropped, and
    the test states which side of the boundary is inclusive.
@@ -245,9 +270,9 @@ pre-empts "why do the bars show data the map does not", which is otherwise a puz
 12. The timeline density bars still show activity from before the expiry window (the zero-floor
     path).
 13. The Events Query tab still returns rows from before the window.
-14. `condense` enabled on the store with a stationary re-emitting entity: record what actually
-    happens. **This is the test that turns R12 from reasoning into evidence** — A10's reading of
-    `TemporalStateDb.condense` is counter-intuitive and the code is dense.
+14. ~~`condense` enabled on the store with a stationary re-emitting entity.~~ **Not needed** —
+    condense is defined to collapse to the earliest entry (A8), so the conflict with expiry follows
+    from the specification rather than from an observation.
 15. Verify against `events-bulk.csv` that the entity count is below `MAX_ROWS` both with and without
     expiry, so test 10's result is not confounded by truncation.
 
@@ -262,13 +287,12 @@ pre-flight would have caught.
 
 Each says what it rests on and what changes if it is wrong.
 
-**A1 — `having` can reference a column alias defined in the `select` below it.**
-*Rests on:* `additionalFields` (`SearchRequestFactory.java:401`, `:937`) collecting having-referenced
-fields and adding columns for them.
-*If wrong:* the clause must reference the underlying field (`EffectiveTime`) rather than the alias,
-or move into a `where` — and a `where` on a time field is lifted as a snapshot boundary by both
-stores, which would break the read entirely. **This is the assumption most likely to be wrong and
-the cheapest to test.** Test 1 exists for it.
+**~~A1 — `having` can reference a column alias defined in the `select` below it.~~**
+**Tested 2026-09-11 and false.** A `having` naming an alias silently rejects every row; naming the
+source field throws. The field and the column name must be the same string, so the events query's
+time column is renamed from `Effective Time` to `EffectiveTime` — see W2. The plan survives with
+that one change. `TestHavingOnSelectAlias` pins both the working and the broken shapes, and the
+upstream defect is written up separately.
 
 **A2 — an expiry clause in the events query is inert when its floor is zero.**
 *Rests on:* `DateExpressionParser` reading a bare number as epoch millis, and epoch preceding every
@@ -292,9 +316,10 @@ user's date-time preference.
 still shows history and lengthening the duration restores entities with no re-ingest (R10).
 
 **A8 — `condense` collapses a run to its *earliest* entry**, which is why it conflicts with expiry.
-*Rests on:* a reading of `TemporalStateDb.condense` (`:472`).
-*Still unproven on a live store* — manual test 14 exists for exactly this, and the docs rewrite in
-R12 should wait for it.
+**Confirmed as specified behaviour**, not merely as a reading of `TemporalStateDb.condense` (`:472`):
+condense is *defined* to collapse back to the earliest entry, so if it ever did otherwise that would
+be a Plan B defect rather than a surprise here. No test needed, and the R12 documentation change can
+proceed without waiting for one.
 
 **A9 — every execution of the events query is one we control.** Four are known: the overlay, the
 histogram, the facts history read and the Events Query tab. A fifth added later that forgets to bind
@@ -313,8 +338,9 @@ supports it, and group edits already travel that route.
 
 ## Sequencing
 
-1. **Test A1 first.** If `having` cannot reference the alias, the shape of W2 changes and everything
-   downstream moves with it.
+1. ~~Test A1 first.~~ **Done, and it changed W2**: the time column is renamed
+   `Effective Time` → `EffectiveTime` so the `having` field matches it. Everything downstream is
+   unaffected.
 2. W1 (document field) and W2 (query text) together — neither is useful alone.
 3. W3 (binding), which is where the behaviour first becomes visible.
 4. W4 (the control), after which it is configurable rather than compiled in.
