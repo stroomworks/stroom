@@ -62,8 +62,9 @@ bound is decoration. `TestTemporalStoreParity.testALowerBoundAddsNothingOnceAnUp
 ### 1.2 Why it reads that way
 
 This is recent and intentional. Commit `09f20c2c5f` retired a client-side state machine
-(`FloorMapEventState`, deltas per tick, a six-hour re-baseline horizon) once upstream shipped
-server-side latest-per-key. The retirement was correct — but the horizon it deleted was also the
+(`FloorMapEventState`, deltas per tick, a six-hour re-baseline horizon) once server-side
+latest-per-key existed — added **locally** by `b1c8cb2870` (2026-08-27), not by upstream, as
+revisions of this document up to 2026-09-14 wrongly claimed. The retirement was correct — but the horizon it deleted was also the
 only thing that ever aged an entity out. The read went from "the last 6 hours" to "all of history",
 and nothing replaced the bound.
 
@@ -276,11 +277,19 @@ counter-intuitive and the code is dense. Acceptance test 11.
 and retention) every ten (`CronExpressions.EVERY_10_MINUTES`, `PlanBModule.java:126`).
 *Consequence:* any store-level mechanism (M4) expires on a ten-minute granularity at best.
 
-**A12 — `stroom-planb` and `stroom-sqlstore` are upstream-owned.** A change there is either an
-upstream contribution or a local fix carrying the repo's `STROOMWORKS-LOCAL` merge markers.
+**A12 — ~~`stroom-planb` and `stroom-sqlstore` are upstream-owned.~~ Corrected 2026-09-14.**
+`stroom-sqlstore` does **not exist on `origin/master`** — the whole module is local. `stroom-planb`
+is upstream-owned as a *module*, but the snapshot path this work depends on — `searchAsAt`,
+`getQueryTime`, `removeTimeTerms` — was added locally by `b1c8cb2870` and is absent from
+`origin/master`. So a change to either store's point-in-time behaviour modifies **our own code in
+an upstream-owned file**, which is a weaker constraint than the one this assumption asserted and
+than the one that shaped the M2/M3 comparison in §5.
 
 **A13 — Changing the stores' treatment of a lower bound is a semantic change to a shared path**,
-not a floor-map-private one. Any dashboard, query or `View` writing
+not a floor-map-private one. **Still true after A12's correction**, and now the stronger of the two
+objections to M2: ownership turns out to be cheap, but the blast radius does not change — the
+behaviour is shared by every consumer of either store regardless of who wrote it. Any dashboard,
+query or `View` writing
 `where EffectiveTime > X and EffectiveTime <= Y` against a temporal store currently gets
 latest-per-key at `≤ Y` with `X` ignored; after M2 it would get that only where the row is also
 `>= X`. Arguably what the author wrote and expected, but it is a change, and
@@ -929,11 +938,16 @@ because `HistogramQueryHelper` passes `timeRange = null` deliberately.
 
 #### What genuinely shifts the balance
 
-Not the mechanics — the **precedent**. M2's only real objection was that it means changing
-upstream-owned store code (A12, A13). This session has now made, marked and verified exactly that
-kind of change in upstream-owned query code, with tests. The ownership boundary is the same; the
-question of whether we are willing to cross it has been answered once in the affirmative, which
-makes M2's cost easier to size:
+Not the mechanics — the **precedent**. M2's objection was that it means changing upstream-owned
+store code (A12, A13). This session has now made, marked and verified exactly that kind of change in
+upstream-owned query code, with tests.
+
+**And A12 turned out to overstate the constraint** (corrected 2026-09-14): the store behaviour M2
+would change is itself local — `searchAsAt` and `getQueryTime` were added by `b1c8cb2870`, and
+`stroom-sqlstore` is not on `origin/master` at all. So M2 never meant changing upstream's design;
+it meant changing ours, in one upstream-owned file and one local module. What survives is A13 — the
+blast radius across every consumer of either store — which is unaffected by who wrote the code.
+That makes M2's cost easier to size:
 
 - a change of comparable scale, in `PlanBSearchHelper.removeTimeTerms` / `TemporalStateDb.searchAsAt`
   and the SQL store's sub-select;

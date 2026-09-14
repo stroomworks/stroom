@@ -22,7 +22,7 @@ fixed by accident*.
 > | fall-through path, filter on `Key`, field index **omits** `Key` | **throws `ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1`** |
 > | `searchAsAt` path, filter on `EffectiveTime`, field index **omits** it | 2 rows — correct |
 >
-> So the defect is live on the fall-through path, upstream's `searchAsAt` ordering is sound, and the
+> So the defect is live on the fall-through path, the `searchAsAt` ordering is sound, and the
 > narrowing described above is confirmed rather than inferred. The third row is what makes the first
 > two worth trusting: the same malformed shape succeeds on the corrected path, so this is the
 > ordering and not something else.

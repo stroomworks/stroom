@@ -2,7 +2,12 @@
 
 **To:** Plan B maintainers
 **From:** Stroomworks (Enterprise Floor Mapping)
-**Status:** proposal — nothing has been changed in Plan B, and we would not change it without you
+**Status:** **superseded in practice, 2026-09-14 — please read this first.** When written, nothing
+had been changed in Plan B. Since then `b1c8cb2870` (2026-08-27) added `getQueryTime`,
+`removeTimeTerms` and a `searchAsAt` path to `TemporalStateDb` **in our fork**, by the
+inferred-from-the-expression route this proposal explicitly argues against (§1). We did change it
+without you, and this document did not catch up. The ask below still stands as a description of
+what we think the right shape is; it no longer describes the state of our tree.
 
 ---
 

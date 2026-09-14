@@ -71,7 +71,7 @@ written up after the plan was last reviewed — `task-openapi-spec-stale-for-tra
 
 **Local fix landed, destination still upstream:**
 
-- **F13 · Plan B has no server-side latest-per-key** — HIGH, and a behavioural regression introduced with the Plan B move: an entity that stops emitting disappears after 20 seconds, where the SQL Temporal Store returned its last known position however old. Exactly **one** Map feature is affected — positions; the histogram works natively on Plan B and everything else is downstream. The 20s window is a workaround for the missing reduction and **nothing consumes it**. Two tracks (**F13**): the destination is a server-side reduction in `TemporalStateDb.search`, mirroring what `UpdatableTemporalStoreDaoImpl.search` already does — but its trigger and date-parser questions are **upstream Plan B policy**, so the local plan of record is client-side carry-forward (Option C). Option B is broken by construction. Reviewed twice; both earlier framings of the fix were wrong and are recorded as such. **Option C is implemented as of 2026-09-03** (`0bab388b8c`) — see *As built*, which records five places the implementation diverged from the plan, including one the plan and four reviews all got wrong (a loop wrap froze the map). **Manual testing effectively complete, 2026-09-04.** Ten of Group A pass against real fixtures in `System / Floor Map Test`: the reference state (= A1), horizon pruning both ways, both scrub directions, stop-at-end, loop-at-speed, hidden-tab, the standstill cadence, the truncating baseline, and no behavioural change on a SQL Temporal Store (run against the pre-existing `Enterprise Floor Mapping Demo / Floor Map`, which is a real SQL-store map rather than a reconstruction). Two turned out not to be tests: the condense case is unrunnable (1-day floor, see *As built*), and the never-written-store case returns a clean empty result so silence is the correct outcome. Two low-value ones remain. Detail and per-test observations in `floormap-test-plan.md`. The condense test is **not runnable** — see F13's *As built* note on the 1-day floor. Full state in `floormap-test-plan.md`. The upstream ask stands: nothing local depends on it any more, but until it lands the horizon and the two `condense`-related instructions in `floormap-planb-events-store.md` stay.
+- **F13 · Plan B has no server-side latest-per-key** — HIGH, and a behavioural regression introduced with the Plan B move: an entity that stops emitting disappears after 20 seconds, where the SQL Temporal Store returned its last known position however old. Exactly **one** Map feature is affected — positions; the histogram works natively on Plan B and everything else is downstream. The 20s window is a workaround for the missing reduction and **nothing consumes it**. Two tracks (**F13**): the destination is a server-side reduction in `TemporalStateDb.search`, mirroring what `UpdatableTemporalStoreDaoImpl.search` already does — judged at the time to raise trigger and date-parser questions that were **upstream Plan B policy**, so the local plan of record was client-side carry-forward (Option C). *Corrected 2026-09-14: the reduction was in fact built locally in `b1c8cb2870`, so that judgement was overtaken by events rather than upheld.* Option B is broken by construction. Reviewed twice; both earlier framings of the fix were wrong and are recorded as such. **Option C is implemented as of 2026-09-03** (`0bab388b8c`) — see *As built*, which records five places the implementation diverged from the plan, including one the plan and four reviews all got wrong (a loop wrap froze the map). **Manual testing effectively complete, 2026-09-04.** Ten of Group A pass against real fixtures in `System / Floor Map Test`: the reference state (= A1), horizon pruning both ways, both scrub directions, stop-at-end, loop-at-speed, hidden-tab, the standstill cadence, the truncating baseline, and no behavioural change on a SQL Temporal Store (run against the pre-existing `Enterprise Floor Mapping Demo / Floor Map`, which is a real SQL-store map rather than a reconstruction). Two turned out not to be tests: the condense case is unrunnable (1-day floor, see *As built*), and the never-written-store case returns a clean empty result so silence is the correct outcome. Two low-value ones remain. Detail and per-test observations in `floormap-test-plan.md`. The condense test is **not runnable** — see F13's *As built* note on the 1-day floor. Full state in `floormap-test-plan.md`. The upstream ask stands: nothing local depends on it any more, but until it lands the horizon and the two `condense`-related instructions in `floormap-planb-events-store.md` stay.
 
 **Done 2026-09-07:**
 
@@ -1270,13 +1270,24 @@ permission model and the timing difference remains observable.
 
 ---
 
-## F13 — Plan B has no server-side latest-per-key, so the Map tab fetches a window it discards — HIGH — **RESOLVED 2026-09-09: upstream shipped Option A, and Option C is retired**
+## F13 — Plan B has no server-side latest-per-key, so the Map tab fetches a window it discards — HIGH — **RESOLVED 2026-09-09: Option A is in place locally, and Option C is retired**
 
-> **Option A landed, from upstream, to the letter.** `TemporalStateDb.search` now lifts a time term
-> via `PlanBSearchHelper.getQueryTime` and takes a `searchAsAt` path when it finds one — which is
-> what *Option A — reduce inside Plan B's search path, as the SQL store already does* asked for,
-> including the trigger. It arrived with the Traces work (`17371533de`), not as a response to this
-> proposal, so `planb-snapshot-read-proposal.md` was never needed.
+> **CORRECTION, 2026-09-14 — this did not come from upstream.** The paragraph below originally said
+> Option A "landed, from upstream, to the letter" with the Traces work (`17371533de`). That is
+> false, and it was repeated in commit `09f20c2c5f`'s message and in the event-expiry requirements.
+> `searchAsAt`, `PlanBSearchHelper.getQueryTime` and `removeTimeTerms` were added by
+> **`b1c8cb2870` "Fix map to handle events plan b store" (2026-08-27), a local commit in this
+> fork** — eleven days *before* the Traces merge, which is unrelated. `origin/master` contains none
+> of them. I read the code as upstream's because it sits in an upstream-owned module, and the
+> javadoc I took as evidence — that the trigger conditions "deliberately mirror
+> `UpdatableTemporalStoreDaoImpl.getQueryTime`" — is our own comment describing our own alignment
+> to our own SQL Temporal Store, which is itself local and does not exist on `origin/master`.
+>
+> **Option A is implemented, in this fork.** `TemporalStateDb.search` lifts a time term via
+> `PlanBSearchHelper.getQueryTime` and takes a `searchAsAt` path when it finds one — which is what
+> *Option A — reduce inside Plan B's search path, as the SQL store already does* asked for,
+> including the trigger. But it is ours to maintain, not upstream's to have shipped, and
+> `b1c8cb2870` carries **no `STROOMWORKS-LOCAL` markers** on either file it changed.
 >
 > **Option C is retired behind it.** `FloorMapEventState` (422 lines) and its 551-line test are
 > deleted, along with `eventsQueryModel`, `runQueryAtSelectedTime`, the per-tick delta, the delta
