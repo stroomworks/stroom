@@ -142,6 +142,45 @@ the same criteria once the instant is known.
   stating explicitly because the two coincide in the common case and diverge exactly when someone
   scrubs back — which is the case the Floor Map cares about most.
 
+### How this differs from a `TimeRange`, and one useful equivalence
+
+`as at T within D` and `TimeRange(T − D, T)` name the same two instants, so it is worth being exact
+about why one cannot replace the other.
+
+**A `TimeRange` is a row filter; `as at` is a per-key reduction.** The range selects rows whose time
+falls in the window and returns *all* of them — many per key. The snapshot returns **at most one row
+per key**: the latest at or before `T`. No time range can express that, which is the entire reason
+this work exists.
+
+| | `TimeRange(F, T)` | `as at T within D` |
+|---|---|---|
+| Shape | row filter | per-key reduction, then a staleness guard |
+| Rows per key | every row in the window | at most one |
+| With no lower bound | all history | **the state, however old** — no range equivalent |
+| Who reduces | the caller, after transfer | the store, during the scan |
+| Transferred | every row in the window | one row per surviving key |
+
+**The useful equivalence.** Where a floor *is* given, filtering rows first and reducing afterwards
+gives exactly the same answer as reducing first and then discarding a stale survivor. Let
+`L(k)` be the latest row for key `k` at or before `T`:
+
+- if `L(k) ≥ F`, then `L(k)` lies in `[F, T]` and is also the latest row *in* that window, so both
+  orders return the same row;
+- if `L(k) < F`, then no row for `k` exists in `[F, T]` at all — any such row would be ≤ `T` and
+  > `L(k)`, contradicting `L(k)` being the latest ≤ `T` — so both orders return nothing.
+
+Two things follow. It justifies **B3**: the implementation may apply the floor at `searchAsAt`'s
+retention test rather than after the reduction, and get the same result more cheaply. And it explains
+why the retired windowed workaround was not *wrong* so much as **mis-motivated** — its window was a
+transfer bound chosen for cost, not a staleness tolerance chosen for meaning, so it dropped entities
+whose state was still perfectly current.
+
+**One boundary difference to carry into the tests.** `addTimeRangeExpression` renders a range as
+`>= from AND < to`, so a `TimeRange` is `[F, T)` — the upper bound is exclusive. `as at T` is
+inclusive at `T`. The existing client already compensates by passing `to + 1`
+(`FloorMapFullReadQueryHelper.run`), which is the sort of correction that disappears once the
+instant is stated rather than encoded in a range.
+
 **Decide this before writing anything**, because it determines whether the work is a parser change
 plus plumbing (B) or plumbing alone (D).
 
