@@ -79,10 +79,31 @@ the constant. `HistogramDataModel.findTimeColumnIndex` already accepts `Effectiv
 `Effective Time`, case-insensitively, so the density bars are unaffected. The only visible change is
 the column header in the Events Query tab's results table.
 
-**Two alternatives, if the header matters.** Select the field twice —
-`EffectiveTime as "Effective Time", EffectiveTime as ExpiryTime` — and filter on the second, which
-costs a visible duplicate column; or fix the upstream defect, which is the right answer eventually
-but is not a prerequisite for this work.
+**Decided 2026-09-14: drop the aliases where the field already reads well.** The rename is forced
+on the time column, and the same reasoning makes the query simpler elsewhere, so `Key as "Entity ID"`
+becomes `Key` too:
+
+```
+from param('EventStore')
+having EffectiveTime > param('ExpiryFloor')
+select EffectiveTime,
+  Key,
+  jq(Value, '.location') as "Location",
+  jq(Value, '.locationRef') as "Location Ref",
+  jq(Value, '.type') as "Type",
+  jq(Value, '.status') as "Status",
+  jq(Value, '.message') as "Message"
+```
+
+**The four `jq` columns must keep their aliases** — without one, the column's name is the expression
+text (`jq(Value, '.location')`), which is no use as a mapping key and worse to read than the alias it
+replaced. Only a column whose underlying field is already a good name can lose its alias.
+
+`FloorMapEventRole.ENTITY_ID.getDefaultColumn()` therefore becomes `"Key"`, which keeps
+`defaultQuery()` and `FloorMapEventColumns.defaults()` interpolating from the same constant — the
+agreement `FloorMapEventsQuery`'s javadoc exists to protect. The visible cost is the results-table
+header: `Key` and `EffectiveTime` rather than `Entity ID` and `Effective Time`. The role's
+`getDisplayName()` is separate and unchanged, so error messages still say "Entity ID".
 
 ### W3 — binding the floor
 
@@ -97,14 +118,21 @@ entry for the map's own read. One call site changes meaningfully:
 | Call site | Floor |
 |---|---|
 | `readEvents` — the overlay | `t − eventExpiry.getApproxMillis()` |
-| `runHistogramQuery` — density bars | `0` — must read all history (§2 of the spec) |
-| `readFactsHistoryIfDue` — facts | `0`; the facts query has no expiry clause, so the binding is inert, and passing it keeps the three sites uniform |
-| Events Query tab | `0`, via `buildQueryVariables` |
+| `runHistogramQuery` — density bars | `Long.MIN_VALUE` — must read all history (§2 of the spec) |
+| `readFactsHistoryIfDue` — facts | `Long.MIN_VALUE`; the facts query has no expiry clause, so the binding is inert, and passing it keeps the three sites uniform |
+| Events Query tab | `Long.MIN_VALUE`, via `buildQueryVariables` |
 
-**Why zero rather than omitting the parameter.** An unbound `param()` in a value position resolves
-to null, which becomes an empty term value, which throws `MatchException` during predicate
-construction — zero rows plus an error. Binding zero is the difference between "no filter" and "the
-query is broken", and they must not look alike.
+**Why `Long.MIN_VALUE` and not zero.** Zero is 1970-01-01, not "no floor". A store holding anything
+earlier would have it silently dropped from exactly the reads that are supposed to show everything —
+unlikely data, but the failure would be invisible and the cost of avoiding it is nil.
+`TestHavingOnSelectAlias` pins both halves: a 1969 row is rejected by a zero floor and passes a
+`Long.MIN_VALUE` one. `Long.MIN_VALUE` milliseconds is comfortably inside `Instant`'s range, so it
+parses rather than throwing — also asserted, because the arithmetic is not obvious.
+
+**Why bind anything rather than omit the parameter.** An unbound `param()` in a value position
+resolves to null, which becomes an empty term value, which throws `MatchException` during predicate
+construction — zero rows plus an error. Binding a neutral floor is the difference between "no
+filter" and "the query is broken", and they must not look alike.
 
 **Why a bare number is a valid floor.** `DateExpressionParser` parses a `NUMBER` token as epoch
 milliseconds (`DateExpressionParser.java:158` → `fromEpochMillis`), so `String.valueOf(floorMs)`
@@ -253,7 +281,8 @@ pre-empts "why do the bars show data the map does not", which is otherwise a puz
    `TestHavingOnSelectAlias`, and the answer was no. The query shape changed accordingly (W2).
 2. A `having` whose field matches the column name filters correctly, and adds no duplicate column —
    covered by the same class, and the shape the plan now uses.
-3. `ExpiryFloor = 0` passes every row.
+3. ~~`ExpiryFloor = 0` passes every row.~~ **Done, and it does not** — zero rejects pre-1970 rows;
+   `Long.MIN_VALUE` is the neutral value. Both pinned in `TestHavingOnSelectAlias`.
 4. An entity whose last event is `D − 1 ms` before `T` is kept; `D + 1 ms` before `T` is dropped, and
    the test states which side of the boundary is inclusive.
 5. The floor is `T − D` for the scrubber position, not `now − D` (R2).
@@ -294,11 +323,11 @@ time column is renamed from `Effective Time` to `EffectiveTime` — see W2. The 
 that one change. `TestHavingOnSelectAlias` pins both the working and the broken shapes, and the
 upstream defect is written up separately.
 
-**A2 — an expiry clause in the events query is inert when its floor is zero.**
-*Rests on:* `DateExpressionParser` reading a bare number as epoch millis, and epoch preceding every
-real event.
-*If wrong:* the histogram and the Events Query tab filter when they must not, and the whole
-"no stripping needed" argument that decided D1 in M3's favour collapses back to M2.
+**A2 — an expiry clause is inert when its floor is `Long.MIN_VALUE`.** **Tested 2026-09-14.**
+Zero was the original choice and is *not* inert — it is 1970, and it drops earlier rows. The neutral
+value is `Long.MIN_VALUE`, which parses and passes everything.
+*If this were wrong:* the histogram and the Events Query tab would filter when they must not, and
+the "no stripping needed" argument that decided D1 in M3's favour would collapse back to M2.
 
 **A3 — the `having` filter runs ahead of the fetch row cap.** Verified in `LmdbDataStore`
 (`:1074`, `:1081`), but it is behaviour rather than contract and could change upstream.

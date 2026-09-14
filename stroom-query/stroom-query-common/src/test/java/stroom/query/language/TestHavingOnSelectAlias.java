@@ -68,6 +68,13 @@ class TestHavingOnSelectAlias {
 
     private static final long FLOOR_MS = 1_757_000_000_000L;
 
+    /** The shape that works: the {@code having} field and the column name are the same string. */
+    private static final String WORKING_QUERY = """
+            from "events"
+            having EffectiveTime > param('ExpiryFloor')
+            select EffectiveTime, Key as "Entity ID"
+            """;
+
     /** The clause parses, and the parameter is substituted into the term. */
     @Test
     void theClauseParsesAndTheFloorIsSubstituted() {
@@ -214,6 +221,46 @@ class TestHavingOnSelectAlias {
 
         assertThat(predicate.test(rowWithTimeAt(tableSettings, 0, FLOOR_MS + 60_000L))).isTrue();
         assertThat(predicate.test(rowWithTimeAt(tableSettings, 0, FLOOR_MS - 60_000L))).isFalse();
+    }
+
+    /**
+     * <b>Zero is not a neutral floor.</b>
+     *
+     * <p>The Floor Map's expiry design has executions that must not filter — the timeline histogram
+     * and the Events Query tab — bind a floor that passes everything rather than removing the
+     * clause. Epoch was the obvious candidate and is wrong: a store holding anything from before
+     * 1970 would have it silently dropped from exactly the reads that are supposed to show
+     * everything.</p>
+     */
+    @Test
+    void zeroIsNotANeutralFloorBecauseItRejectsPre1970Rows() {
+        final TableSettings tableSettings = tableSettings(WORKING_QUERY, 0L);
+        final Predicate<Values> predicate = predicateFor(tableSettings);
+
+        final long apollo11 = -14_182_940_000L;   // 1969-07-20, comfortably before epoch
+        assertThat(predicate.test(rowWithTimeAt(tableSettings, 0, apollo11)))
+                .describedAs("a pre-1970 row is dropped by a zero floor")
+                .isFalse();
+    }
+
+    /**
+     * <b>{@code Long.MIN_VALUE} is a neutral floor, and parses.</b>
+     *
+     * <p>Worth asserting rather than assuming: the value travels as a bare number and
+     * {@code DateExpressionParser} turns it into an {@code Instant}, which has a narrower range
+     * than {@code long} milliseconds might suggest. It is in range, and it passes a date no
+     * plausible store holds anything before.</p>
+     */
+    @Test
+    void longMinValueIsANeutralFloor() {
+        final TableSettings tableSettings = tableSettings(WORKING_QUERY, Long.MIN_VALUE);
+        final Predicate<Values> predicate = predicateFor(tableSettings);
+
+        final long apollo11 = -14_182_940_000L;
+        assertThat(predicate.test(rowWithTimeAt(tableSettings, 0, apollo11)))
+                .describedAs("a pre-1970 row passes").isTrue();
+        assertThat(predicate.test(rowWithTimeAt(tableSettings, 0, FLOOR_MS)))
+                .describedAs("a modern row passes").isTrue();
     }
 
     // -----------------------------------------------------------------------
