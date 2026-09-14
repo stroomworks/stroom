@@ -74,7 +74,8 @@ callee has to guess which was meant.
 
 ## What we would like instead
 
-**An explicit request, and ordinary time predicates left alone.** Two capabilities:
+**An explicit request, and ordinary time predicates left alone.** Two capabilities, plus a third
+that is smaller and separable:
 
 **1. Snapshot with a staleness tolerance.** One row per key, the latest at or before `T`, and
 optionally **only if that latest is no older than `D`**. The tolerance is the part we care about
@@ -136,27 +137,6 @@ before `T`:
 
 So an implementation is free to apply the floor at the retention test inside the single forward pass,
 which costs one comparison per entry and no extra structure. That is where we would put it.
-
-## The `condense` interaction, which we think is the strongest argument
-
-`condense` keeps the earliest entry of a run of identical values.
-
-Under a **snapshot** read that is lossless: the value at any `T` is unchanged, because the surviving
-earliest-of-run *is* the latest entry at or before `T`.
-
-Under a **windowed** read it is lossy: a key re-emitting an unchanged value has its repeats removed,
-the survivor falls outside the window, and the key vanishes from the result while the store still
-holds its correct current value.
-
-So `condense` is safe with the read we are asking for and unsafe with the workaround it replaces. We
-currently document "leave condense off" for our users, which is a shame for a feature that is
-otherwise exactly right for our data.
-
-*One caveat on our own proposal:* a staleness tolerance re-introduces a version of this. A stationary
-entity that keeps re-emitting an identical value has its repeats condensed away, so its surviving
-entry's time regresses and it looks stale when it is not. That is a property of any age-based rule
-against `condense`, not of your implementation, and we expect to tell users to choose one or the
-other. We mention it so you do not discover it as a surprise.
 
 ## What we are asking
 
