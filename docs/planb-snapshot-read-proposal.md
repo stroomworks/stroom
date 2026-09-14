@@ -2,7 +2,11 @@
 
 **To:** Plan B maintainers
 **From:** Stroomworks (Enterprise Floor Mapping)
-**Status:** **superseded in practice, 2026-09-14 — please read this first.** When written, nothing
+**Status:** **superseded, 2026-09-14, by `docs/planb-explicit-read-mode-proposal.md`** — which is
+the version written to be sent, and says all of this more briefly. Keep this one for the five
+syntax options in §1, which the new note does not repeat.
+
+**Also superseded in practice — please read this next.** When written, nothing
 had been changed in Plan B. Since then `b1c8cb2870` (2026-08-27) added `getQueryTime`,
 `removeTimeTerms` and a `searchAsAt` path to `TemporalStateDb` **in our fork**, by the
 inferred-from-the-expression route this proposal explicitly argues against (§1). We did change it
