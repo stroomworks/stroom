@@ -84,13 +84,79 @@ analysis stands; what has changed is that we can now pick one rather than ask fo
 | **D** | A request API beside `search`, in the style of `getState` | Explicit, no grammar change, but invisible to anyone writing StroomQL by hand |
 | **E** | A store setting `readMode: SNAPSHOT \| HISTORY` | **Rejected in the proposal and still rejected**: the Floor Map needs both answers from one store |
 
-**Recommendation: B, with D as the mechanism underneath.** The floor belongs in the same clause —
-`as at '09:45' since '06:45'` — because it is part of one question, not two filters that happen to
-be adjacent. If a grammar change is judged too costly, A expresses the same thing with
-`StateAt`/`StateSince` reserved fields and no parser work.
+**These serve two different callers, and the Floor Map is the awkward one.** B and C read well for
+a person writing a query by hand, but they carry the instant as a **literal** — and the Floor Map's
+instant moves three times a second as the scrubber does. Literals in saved query text would mean
+rewriting that text per tick, which is precisely the client-side substitution just removed from this
+codebase.
+
+**Recommendation: D is the mechanism, B is the affordance.** The request carries the snapshot
+instant and the floor as values beside the query — the way `TimeRange` does today, but explicit and
+with two of them — so programmatic callers never touch the query text. B can sit on top of it later
+for people writing queries by hand, lowering onto the same criteria. If a grammar change is never
+wanted, A expresses the human-facing form with `StateAt`/`StateSince` reserved fields and no parser
+work.
 
 **Decide this before writing anything**, because it determines whether the work is a parser change
-or a criteria change.
+or a criteria change — and D alone is a criteria change.
+
+## How expiry works under this design
+
+Asserted above and worth spelling out, because it is the main thing the change buys and it differs
+from M3 in more than mechanism.
+
+**The document field is unchanged.** `FloorMapDoc.eventExpiry`, a `SimpleDuration`, absent reads as
+24 hours, edited in the timeline settings dialog. Everything in W1 and W4 of
+`docs/floormap-event-expiry-plan.md` survives as written.
+
+**The floor is computed at the call site and travels on the request.** `readEvents` already holds
+the scrubber position `t`; the floor is `t - eventExpiry.getApproxMillis()`. Instead of
+`run(query, params, 0L, t)` it becomes something like `run(query, params, snapshotAt(t, floor))` —
+two values on the request, and **no change to the query text at all**.
+
+**What each execution passes, which is where this gets simpler than M3:**
+
+| Execution | Request carries | Result |
+|---|---|---|
+| Map overlay | snapshot at `t`, floor `t − D` | one row per entity, entities unseen since the floor omitted |
+| Timeline histogram | a **range** `[A, B)` | every row in the visible window — no whole-store read, no client-side discard |
+| Facts history | nothing | full history, as now |
+| Events Query tab | nothing | exactly what the user wrote, unfiltered |
+
+Compare M3's version of that table: a `having` clause present in all four, a floor parameter bound
+at three call sites, and a `Long.MIN_VALUE` convention that any new call site must know to honour.
+**The neutral floor disappears entirely**, because "no snapshot request" is expressible where "no
+filter" was not.
+
+**What this changes for the user, in both directions.**
+
+- *Better:* expiry cannot be broken by editing the query. Under M3 deleting one line silently
+  disables it — a consequence we documented and accepted because there was no alternative. Here
+  there is nothing in the text to delete.
+- *Better:* the Events Query tab shows unfiltered history, which is what a query editor should do.
+  Under M3 it showed the clause and had to be given a neutral floor to stop it filtering.
+- *Worse:* expiry becomes **invisible** in the query. Someone reading the events query cannot see
+  why the map shows fewer entities than the tab does. The help text carries more weight as a result,
+  and should say plainly that the map applies the expiry and the tab does not — W7's text needs
+  rewriting for this, not just retitling.
+
+**What does not change.**
+
+- **`condense` is still incompatible** (R12). It collapses a run of identical values to its earliest
+  entry, so a stationary entity's last-seen time regresses and it expires while still being
+  reported. That is a property of `condense` against any age-based rule, wherever the rule is
+  applied.
+- **The boundary rule still has to be stated** — whether a row exactly at the floor is kept — and
+  tested. Moving the comparison into the store does not decide it.
+- **Changing the duration still takes effect on the next tick**, with no re-read or migration.
+
+**One genuinely new question.** Is "latest per key at or before `T`, but only if that latest is at or
+after `F`" a coherent thing to ask a temporal store, or is it a floor-map concern that has been
+pushed down a layer? I think coherent: it is "what was the state at `T`, discounting anything that
+has not been confirmed since `F`", which is a staleness tolerance and a normal thing to want of a
+state store. But it is worth asking aloud before it becomes an API, because the alternative —
+returning the row and letting the caller drop it — keeps the store simpler at the cost of
+transferring rows nobody wants.
 
 ## Phases
 
@@ -111,8 +177,8 @@ should happen regardless of what is decided below.
   inverse, and both stores are asserted to answer the explicit forms identically.
 
 **Phase 3 — the Floor Map switches to it.**
-- Expiry becomes the snapshot floor. No `having`, no per-tick parameter, no neutral-floor
-  convention, no clause in user-editable text.
+- Expiry becomes the snapshot floor — see *How expiry works under this design*. No `having`, no
+  per-tick parameter, no neutral-floor convention, no clause in user-editable text.
 - The histogram asks for a range and stops reading the whole store; the 10 000 cap stops being
   reachable in normal use, and truncation detection becomes a safety net rather than the only
   defence.
