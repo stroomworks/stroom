@@ -91,14 +91,59 @@ rewriting that text per tick, which is precisely the client-side substitution ju
 codebase.
 
 **Recommendation: D is the mechanism, B is the affordance.** The request carries the snapshot
-instant and the floor as values beside the query — the way `TimeRange` does today, but explicit and
-with two of them — so programmatic callers never touch the query text. B can sit on top of it later
-for people writing queries by hand, lowering onto the same criteria. If a grammar change is never
-wanted, A expresses the human-facing form with `StateAt`/`StateSince` reserved fields and no parser
-work.
+instant and the floor as values, so programmatic callers never touch the query text. B sits on top
+of it for people writing queries by hand, lowering onto the same criteria.
+
+**One correction to how cheap D is.** An earlier draft of this plan said the request would carry
+them "the way `TimeRange` does today". It does not: `TimeRange` never reaches the store either.
+`StateSearchProvider.createResultStore` builds `new ExpressionCriteria(query.getExpression())`
+(`:223`) and discards everything else on the `Query` — params, time range, all of it. **The
+expression is the only caller-supplied channel that reaches `TemporalStateDb` today**, which is
+exactly why `b1c8cb2870` put the trigger in the expression: it had no other option without adding
+plumbing. So D is not free — it needs a second value threaded through
+`SearchProvider.createResultStore` → `reader.search(...)`, either by widening `ExpressionCriteria`
+or by passing a small read-mode object alongside it. Small, ours, and worth naming rather than
+assuming.
+
+### Expressing the staleness tolerance in syntax B
+
+The instant alone is `from people_events as at '09:45'`. The tolerance has to join it, and there are
+two shapes:
+
+```
+from people_events as at '09:45' within 3h        -- duration
+from people_events as at '09:45' since '06:45'    -- absolute
+```
+
+**`within` is the better primary form**, for three reasons:
+
+- **It states the intent rather than a derived value.** "The state at 09:45, using only entries
+  within 3 hours of it" is the question. `since '06:45'` makes a reader subtract to see what the
+  tolerance was, and makes the *writer* compute it.
+- **It is what the caller holds.** The Floor Map stores a `SimpleDuration` and a scrubber position;
+  `within` takes them as they are, where `since` obliges the client to compute `t − D` first.
+- **It composes with a relative instant.** `as at now() within 3h` reads cleanly; the `since`
+  equivalent is `as at now() since now() - 3h`, which says `now()` twice and invites the two to
+  drift apart.
+
+Duration literals are precedented — `DateExpressionParser.parseDuration` already handles `3h`,
+`1d` and the rest, and StroomQL's existing `window <field> by <duration>` clause establishes that a
+time clause may take one. (Borrowing `window`'s *vocabulary* is fine; the proposal's warning about
+`window` is about where its signal lands, not about how it reads.)
+
+**Accept both, lowering `since` onto `within`** if absolute floors turn out to be wanted — they are
+the same criteria once the instant is known.
+
+**Two rules the grammar should carry:**
+
+- **`within` requires `as at`.** A tolerance with no anchor is meaningless, and making it a suffix
+  of the snapshot clause is what "part of one question" means concretely.
+- **`within D` means `[T − D, T]`**, anchored on the snapshot instant rather than on `now()`. Worth
+  stating explicitly because the two coincide in the common case and diverge exactly when someone
+  scrubs back — which is the case the Floor Map cares about most.
 
 **Decide this before writing anything**, because it determines whether the work is a parser change
-or a criteria change — and D alone is a criteria change.
+plus plumbing (B) or plumbing alone (D).
 
 ## How expiry works under this design
 
@@ -109,10 +154,12 @@ from M3 in more than mechanism.
 24 hours, edited in the timeline settings dialog. Everything in W1 and W4 of
 `docs/floormap-event-expiry-plan.md` survives as written.
 
-**The floor is computed at the call site and travels on the request.** `readEvents` already holds
-the scrubber position `t`; the floor is `t - eventExpiry.getApproxMillis()`. Instead of
-`run(query, params, 0L, t)` it becomes something like `run(query, params, snapshotAt(t, floor))` —
-two values on the request, and **no change to the query text at all**.
+**The floor travels on the request, not in the text.** `readEvents` already holds the scrubber
+position `t`, and the document holds the duration, so `run(query, params, 0L, t)` becomes something
+like `run(query, params, snapshotAt(t, expiry))` — and **no change to the query text at all**. Note
+this needs the pass-through named above: nothing but the expression reaches the store today. If the
+tolerance is expressed as a duration (`within`), the client passes the `SimpleDuration` it already
+has and the store does the subtraction against the instant it was given.
 
 **What each execution passes, which is where this gets simpler than M3:**
 
