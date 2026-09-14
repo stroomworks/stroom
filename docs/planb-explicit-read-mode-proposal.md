@@ -96,6 +96,28 @@ predicate already looks like it means. We need this for a density histogram over
 today we pass no range at all and read the whole store, because any upper bound would turn the query
 into a snapshot.
 
+*To be clear about what we are and are not asking here:* we know a honoured range would bound what
+crosses the wire, not necessarily what is scanned. Your own `TODO` at `PlanBSearchHelper:61` —
+*"it would be faster if we limit the iteration to keys based on the criteria"* — is about exactly
+that, and for `TEMPORAL_STATE` it looks hard to us: the key is `<prefix><time>`, so time is the
+suffix and a time range cannot narrow an LMDB key range without a second, time-ordered index. We are
+not asking for that. Bounding the transfer is the part we need; if the scan stays full-store, that
+is fine at our volumes.
+
+**3. A store time extent — smaller, separable, and possibly not worth your trouble.** `MIN` and
+`MAX` of the effective time across a store, in one call. We use it to offer a "show all data"
+control on a timeline: fit the visible range to what the store actually holds.
+
+Our SQL-backed store answers this with a single aggregate. For Plan B we currently infer it from
+whatever rows a query happened to return, which is wrong as soon as that result is capped. We had
+assumed first-and-last-key would do it and it does not, for the reason above — the first key is the
+alphabetically-first entity's *earliest* entry, not the store's earliest. So it would want either a
+key scan or a maintained pair, and `TraceStats` suggests you already have a pattern for the latter.
+
+We raise it because it is the same class of question — something a temporal store knows and cannot
+currently be asked — but it is independent of the read-mode question and we would not want it to
+complicate that decision.
+
 **The mechanism matters less to us than the explicitness.** A reserved field the store consumes
 (`where StateAt = …`), a clause, or a request object beside the expression would all do. The clause
 reads best; the request object avoids a grammar change but needs the plumbing mentioned above. We
@@ -139,7 +161,8 @@ other. We mention it so you do not discover it as a surprise.
 ## What we are asking
 
 1. **Does the gap look real to you** — is "state of everything as at `T`" a question you would want
-   `TEMPORAL_STATE` to answer, or is it deliberately out of scope?
+   `TEMPORAL_STATE` to answer, or is it deliberately out of scope? (And separately, the time extent
+   in (3) — a yes or no on that one would help us decide whether to work around it.)
 2. **If it is in scope, does the staleness tolerance belong in the store** or is it a caller's
    concern? We think it is a store question — "as at `T`, discounting anything not confirmed since
    `F`" is a normal thing to ask of a state store — but it is your API.
