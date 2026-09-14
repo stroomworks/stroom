@@ -80,7 +80,10 @@ Two further consequences from the same cause:
 
 - **Show All inherits it.** `HistogramDataModel` derives the data extent from the fetched rows and
   hands it to `dataRangeHandler`, which is what enables and drives Show All. On a truncated read,
-  Show All fits the timeline to the extent of an arbitrary subset.
+  Show All fits the timeline to the extent of an arbitrary subset. **This is not a choice the Map
+  tab made** — see option 4: the store it reads offers no way to ask for its own extent, so
+  inferring it from the rows is the only option available. The Editor tab, reading a SQL Temporal
+  Store, asks the store and gets an exact answer.
 - **The map overlay is better protected than the histogram.** Its read returns one row per key, so
   its 20,000 cap is a cap on *distinct entities*. The histogram asks for raw history, so its 10,000
   is a cap on *events* — a far lower ceiling on the same store, and the one that will be reached
@@ -119,8 +122,41 @@ turns a silent wrong answer into a visible one:
    expiry needs, and solving it once would serve both.
 3. **Raise the cap.** Not a fix. It moves the threshold and keeps the silence.
 
-Option 1 is the one worth costing: it removes the cap problem rather than reporting it, and it makes
-the transfer proportional to the *chart* rather than to the store.
+4. **Give Plan B a `getTimeRange`, and use it for Show All.** This fixes a *different symptom* from
+   the other three — it leaves the bars exactly as they are and corrects only the data extent — but
+   it is worth listing here because that extent is the part with a known-good implementation sitting
+   next to it.
+
+   The Editor tab's Show All is exact, because facts live in a SQL Temporal Store and
+   `UpdatableTemporalStoreDaoImpl.getTimeRange` answers with a single aggregate:
+   `SELECT MIN(effective_time), MAX(effective_time) WHERE doc_uuid = ?`. One row, no cap, no
+   client-side scan. The Map tab cannot do the same because **Plan B has no equivalent** — the
+   events store is always a `PlanBDoc`, and nothing in `stroom-planb` exposes a store's time extent.
+
+   **It is not as cheap as first-and-last-key, which is the tempting wrong answer.** A temporal key
+   is written prefix-then-time (`LimitedStringKeySerde.write` puts the key bytes down and appends
+   the time; the read takes the time from the trailing bytes), so LMDB orders by **entity, then
+   time**. The first key in the database is the alphabetically-first entity's *earliest* entry, not
+   the store's earliest — the same key-order trap that makes a truncated read unrepresentative.
+
+   Two honest implementations:
+
+   - **A cursor scan over keys**, tracking min and max time. `O(n)` in keys but it deserialises no
+     values, runs once per call rather than per tick, and its result is eminently cacheable — a
+     store's extent changes only on ingest.
+   - **Maintained metadata**, a min/max pair updated as entries are written or merged. Plan B
+     already does exactly this shape elsewhere: `TraceStats` is *"maintained incrementally as spans
+     arrive, so the merge-cycle finalize is O(1) per trace instead of re-scanning every span"*, and
+     carries running `maxEnd` / `lastActivityMs` values. The same reasoning applies, and the merge
+     processor is already rewriting the shard.
+
+   The second is the better shape and the larger change. The first is enough to make Show All exact
+   and is independent of everything else in this document.
+
+**Option 1 is the one worth costing** for the bars: it removes the cap problem rather than reporting
+it, and makes the transfer proportional to the *chart* rather than to the store. **Option 4 is the
+one worth doing first for Show All**, since it is self-contained and restores parity with a tab that
+already gets this right.
 
 ## Verification
 
@@ -130,5 +166,8 @@ the transfer proportional to the *chart* rather than to the store.
 - If option 1 is taken: the bars match the current ones for a store below the cap — the grouped
   query must not change what is plotted, only how it is counted — and the number of rows transferred
   is the bin count rather than the event count.
+- If option 4 is taken: Show All on the Map tab fits the timeline to the store's true extent on a
+  store past the cap, where today it fits to a subset; and the extent matches what the Editor tab
+  reports for a store holding the same times.
 
 There is currently no automated coverage of `HistogramDataModel` or `HistogramQueryHelper` at all.
