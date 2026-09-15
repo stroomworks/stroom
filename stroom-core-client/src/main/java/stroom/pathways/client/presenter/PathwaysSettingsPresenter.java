@@ -24,7 +24,9 @@ import stroom.feed.shared.FeedDoc;
 import stroom.pathways.client.presenter.PathwaysSettingsPresenter.PathwaysSettingsView;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.TracesDoc;
+import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.security.shared.DocumentPermission;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.time.SimpleDuration;
 
 import com.google.inject.Inject;
@@ -74,6 +76,7 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         traceStorePresenter.setSelectedEntityReference(doc.getTracesDocRef(), true);
         feedPresenter.setSelectedEntityReference(doc.getInfoFeed(), true);
         getView().setProcessingNode(doc.getProcessingNode());
+        getView().setSharedFileStore(doc.getSharedFileStore());
     }
 
     @Override
@@ -88,7 +91,18 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
                 .tracesDocRef(traceStorePresenter.getSelectedEntityReference())
                 .infoFeed(feedPresenter.getSelectedEntityReference())
                 .processingNode(getView().getProcessingNode())
+                .sharedFileStore(configuredSharedFileStore())
                 .build();
+    }
+
+    // The editor always hands back a settings object, filling an untouched form in as an empty path and
+    // a shard count of one. Storing that would make every document look configured, so a blank path is
+    // written as no shared file store at all, which is what the document's absent state means.
+    private SharedFileStoreSettings configuredSharedFileStore() {
+        final SharedFileStoreSettings settings = getView().getSharedFileStore();
+        return settings == null || NullSafe.isBlankString(settings.getSharedPath())
+                ? null
+                : settings;
     }
 
     public interface PathwaysSettingsView
@@ -121,5 +135,9 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         String getProcessingNode();
 
         void setProcessingNode(String processingNode);
+
+        SharedFileStoreSettings getSharedFileStore();
+
+        void setSharedFileStore(SharedFileStoreSettings sharedFileStore);
     }
 }

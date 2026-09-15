@@ -22,6 +22,7 @@ import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.util.shared.time.SimpleDuration;
 import stroom.util.shared.time.TimeUnit;
 
@@ -58,6 +59,7 @@ import java.util.Objects;
         "createUser",
         "updateUser",
         "description",
+        "sharedFileStore",
         "pathways"})
 @JsonInclude(Include.NON_NULL)
 public class PathwaysDoc extends AbstractDoc {
@@ -90,6 +92,16 @@ public class PathwaysDoc extends AbstractDoc {
     private final DocRef infoFeed;
     @JsonProperty
     private final String processingNode;
+    /**
+     * Where this document's learnt model lives on the shared filesystem, and how many ways it is
+     * split, or {@code null} while it has not been configured.
+     *
+     * <p>Shares {@link SharedFileStoreSettings} with the Plan B store types, which is where the path
+     * and shard count mean the same two things, but a Pathways document is not a Plan B store and
+     * carries them directly rather than through a settings object.
+     */
+    @JsonProperty
+    private final SharedFileStoreSettings sharedFileStore;
 
     @JsonCreator
     public PathwaysDoc(@JsonProperty("uuid") final String uuid,
@@ -108,7 +120,8 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("allowConstraintMutation") final Boolean allowConstraintMutation,
                        @JsonProperty("tracesDocRef") final DocRef tracesDocRef,
                        @JsonProperty("infoFeed") final DocRef infoFeed,
-                       @JsonProperty("processingNode") final String processingNode) {
+                       @JsonProperty("processingNode") final String processingNode,
+                       @JsonProperty("sharedFileStore") final SharedFileStoreSettings sharedFileStore) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.temporalOrderingTolerance = temporalOrderingTolerance;
@@ -124,6 +137,7 @@ public class PathwaysDoc extends AbstractDoc {
         this.tracesDocRef = tracesDocRef;
         this.infoFeed = infoFeed;
         this.processingNode = processingNode;
+        this.sharedFileStore = sharedFileStore;
     }
 
     /**
@@ -182,6 +196,10 @@ public class PathwaysDoc extends AbstractDoc {
         return processingNode;
     }
 
+    public SharedFileStoreSettings getSharedFileStore() {
+        return sharedFileStore;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -203,7 +221,8 @@ public class PathwaysDoc extends AbstractDoc {
                Objects.equals(pathways, that.pathways) &&
                Objects.equals(tracesDocRef, that.tracesDocRef) &&
                Objects.equals(infoFeed, that.infoFeed) &&
-               Objects.equals(processingNode, that.processingNode);
+               Objects.equals(processingNode, that.processingNode) &&
+               Objects.equals(sharedFileStore, that.sharedFileStore);
     }
 
     @Override
@@ -218,7 +237,8 @@ public class PathwaysDoc extends AbstractDoc {
                 allowConstraintMutation,
                 tracesDocRef,
                 infoFeed,
-                processingNode);
+                processingNode,
+                sharedFileStore);
     }
 
     @Override
@@ -234,6 +254,7 @@ public class PathwaysDoc extends AbstractDoc {
                ", tracesDocRef=" + tracesDocRef +
                ", infoFeed=" + infoFeed +
                ", processingNode=" + processingNode +
+               ", sharedFileStore=" + sharedFileStore +
                '}';
     }
 
@@ -258,6 +279,7 @@ public class PathwaysDoc extends AbstractDoc {
         private DocRef tracesDocRef;
         private DocRef infoFeed;
         private String processingNode;
+        private SharedFileStoreSettings sharedFileStore;
 
         private Builder() {
         }
@@ -274,6 +296,7 @@ public class PathwaysDoc extends AbstractDoc {
             this.tracesDocRef = pathwaysDoc.tracesDocRef;
             this.infoFeed = pathwaysDoc.infoFeed;
             this.processingNode = pathwaysDoc.processingNode;
+            this.sharedFileStore = pathwaysDoc.sharedFileStore;
         }
 
         public Builder description(final String description) {
@@ -326,6 +349,11 @@ public class PathwaysDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder sharedFileStore(final SharedFileStoreSettings sharedFileStore) {
+            this.sharedFileStore = sharedFileStore;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -343,13 +371,14 @@ public class PathwaysDoc extends AbstractDoc {
                     description,
                     temporalOrderingTolerance,
                     pathways,
-                    allowPathwayCreation = true,
-                    allowPathwayMutation = true,
-                    allowConstraintCreation = true,
-                    allowConstraintMutation = true,
+                    allowPathwayCreation,
+                    allowPathwayMutation,
+                    allowConstraintCreation,
+                    allowConstraintMutation,
                     tracesDocRef,
                     infoFeed,
-                    processingNode);
+                    processingNode,
+                    sharedFileStore);
         }
     }
 }

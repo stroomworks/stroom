@@ -19,6 +19,8 @@ package stroom.pathways.client.view;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.pathways.client.presenter.PathwaysSettingsPresenter.PathwaysSettingsView;
 import stroom.pathways.client.presenter.PathwaysSettingsUiHandlers;
+import stroom.planb.client.view.SharedFileStoreSettingsWidget;
+import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.util.shared.time.SimpleDuration;
 import stroom.util.shared.time.TimeUnit;
 import stroom.widget.customdatebox.client.DurationPicker;
@@ -40,7 +42,10 @@ public class PathwaysSettingsViewImpl
         implements PathwaysSettingsView, ReadOnlyChangeHandler {
 
     private final Widget widget;
+    private final SharedFileStoreSettingsWidget sharedFileStoreWidget;
 
+    @UiField
+    SimplePanel sharedFileStore;
     @UiField
     SimplePanel traceStore;
     @UiField
@@ -59,8 +64,12 @@ public class PathwaysSettingsViewImpl
     TextBox processingNode;
 
     @Inject
-    public PathwaysSettingsViewImpl(final Binder binder) {
+    public PathwaysSettingsViewImpl(final Binder binder,
+                                    final SharedFileStoreSettingsWidget sharedFileStoreWidget) {
         widget = binder.createAndBindUi(this);
+        this.sharedFileStoreWidget = sharedFileStoreWidget;
+        sharedFileStoreWidget.setUiHandlers(this::fireChange);
+        sharedFileStore.setWidget(sharedFileStoreWidget.asWidget());
         temporalOrderingTolerance.smallTimeMode();
         temporalOrderingTolerance.setValue(new SimpleDuration(0, TimeUnit.NANOSECONDS));
     }
@@ -135,8 +144,19 @@ public class PathwaysSettingsViewImpl
     }
 
     @Override
+    public SharedFileStoreSettings getSharedFileStore() {
+        return sharedFileStoreWidget.getSharedFileStore();
+    }
+
+    @Override
+    public void setSharedFileStore(final SharedFileStoreSettings settings) {
+        sharedFileStoreWidget.setSharedFileStore(settings);
+    }
+
+    @Override
     public void onReadOnly(final boolean readOnly) {
         temporalOrderingTolerance.setEnabled(!readOnly);
+        sharedFileStoreWidget.onReadOnly(readOnly);
     }
 
     @Override

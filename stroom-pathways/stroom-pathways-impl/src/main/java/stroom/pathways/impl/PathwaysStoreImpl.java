@@ -19,6 +19,7 @@ package stroom.pathways.impl;
 import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
+import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.security.api.SecurityContext;
@@ -46,6 +47,31 @@ public class PathwaysStoreImpl
                 PathwaysDoc::builder,
                 PathwaysDoc::copy);
         this.clusterLockServiceProvider = clusterLockServiceProvider;
+    }
+
+    /**
+     * Registers this document's references to the feed it writes findings to and to the trace store it
+     * reads, so both appear on the Dependencies screen, both are reported when the target is deleted,
+     * and both are rewritten when a copy or an import lands the target under a different uuid.
+     *
+     * <p>This does nothing for a rename. {@link stroom.docref.DocRef} equality is on uuid alone, so a
+     * renamed target is the same reference and nothing here is rewritten; the Dependencies screen gets
+     * the new name from {@code DocDependencyService.propagateName}, and the name stored inside this
+     * document stays as it was. That matters because {@link PathwaysProcessor} resolves the trace store
+     * by the name held in {@code tracesDocRef}, so renaming a trace store still stops it finding one.
+     */
+    @Override
+    protected DependencyRemapFunction<PathwaysDoc> getDependencyRemapFunction() {
+        return (doc, remapper) -> {
+            final PathwaysDoc.Builder builder = doc.copy();
+            if (doc.getTracesDocRef() != null) {
+                builder.tracesDocRef(remapper.remap(doc.getTracesDocRef()));
+            }
+            if (doc.getInfoFeed() != null) {
+                builder.infoFeed(remapper.remap(doc.getInfoFeed()));
+            }
+            return builder.build();
+        };
     }
 
     @Override

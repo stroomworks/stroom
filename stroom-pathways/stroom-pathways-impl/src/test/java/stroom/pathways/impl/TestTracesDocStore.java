@@ -24,6 +24,7 @@ import stroom.pathways.shared.TracesDoc;
 import stroom.planb.impl.PlanBPaths;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.planb.shared.TraceSettings;
+import stroom.security.api.SecurityContext;
 import stroom.util.shared.EntityServiceException;
 
 import jakarta.inject.Provider;
@@ -56,6 +57,8 @@ class TestTracesDocStore {
     private TracesDocSerialiser serialiser;
     @Mock
     private ClusterLockService clusterLockService;
+    @Mock
+    private SecurityContext securityContext;
 
     private PlanBPaths planBPaths;
     private TracesDocStoreImpl storeImpl;
@@ -64,6 +67,9 @@ class TestTracesDocStore {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         doReturn(store).when(storeFactory).createStore(any(), any(), any(), any(), any());
+        // These tests are about validation and shared data, so the user always holds the permission.
+        // TestTracesDocStorePermissions covers the refusal.
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(true);
 
         planBPaths = new PlanBPaths(tempDir.resolve("local_state"));
         final Provider<PlanBPaths> planBPathsProvider = () -> planBPaths;
@@ -72,7 +78,8 @@ class TestTracesDocStore {
         storeImpl = new TracesDocStoreImpl(
                 storeFactory,
                 serialiser,
-                lockServiceProvider);
+                lockServiceProvider,
+                securityContext);
     }
 
     @Test

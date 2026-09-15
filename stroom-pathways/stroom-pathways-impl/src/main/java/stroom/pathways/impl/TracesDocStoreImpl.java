@@ -18,6 +18,7 @@ package stroom.pathways.impl;
 
 import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
@@ -31,10 +32,13 @@ import stroom.planb.impl.fs.SharedFileStore;
 import stroom.planb.impl.fs.SharedFileStoreDocStore;
 import stroom.planb.impl.fs.SharedFileStoreTrash;
 import stroom.planb.shared.AbstractPlanBSettings;
+import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.EntityServiceException;
 import stroom.util.shared.Message;
+import stroom.util.shared.PermissionException;
 import stroom.util.shared.Severity;
 
 import jakarta.inject.Inject;
@@ -51,6 +55,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Singleton
@@ -61,19 +66,50 @@ public class TracesDocStoreImpl implements TracesDocStore, SharedFileStoreDocSto
     private final Store<TracesDoc> store;
     private final TracesDocSerialiser serialiser;
     private final Provider<ClusterLockService> clusterLockServiceProvider;
+    private final SecurityContext securityContext;
 
     @Inject
     TracesDocStoreImpl(final StoreFactory storeFactory,
                        final TracesDocSerialiser serialiser,
-                       final Provider<ClusterLockService> clusterLockServiceProvider) {
+                       final Provider<ClusterLockService> clusterLockServiceProvider,
+                       final SecurityContext securityContext) {
         this.store = storeFactory.createStore(
                 serialiser,
                 TracesDoc.TYPE,
                 TracesDoc::tracesBuilder,
                 TracesDoc::copyTraces,
-                () -> null);
+                TracesDocStoreImpl::dependencyRemapFunction);
         this.serialiser = serialiser;
         this.clusterLockServiceProvider = clusterLockServiceProvider;
+        this.securityContext = securityContext;
+    }
+
+    // Rewrites this document's reference to its Pathways document, and by doing so registers it in
+    // doc_dependency — DependencyRemapper.remap records every reference it is handed. That is what puts
+    // the link on the Dependencies screen, lists the document as broken once the Pathways document is
+    // deleted, and rewrites the reference when a copy or an import lands the Pathways document under a
+    // different uuid. A rename is not this: DocRef equality is on uuid alone, so a renamed target is
+    // the same reference, and the new name reaches the Dependencies screen through
+    // DocDependencyService.propagateName instead.
+    private static DependencyRemapFunction<TracesDoc> dependencyRemapFunction() {
+        return (doc, remapper) -> doc.getPathwaysDocRef() == null
+                ? doc
+                : doc.copyTraces()
+                        .pathwaysDocRef(remapper.remap(doc.getPathwaysDocRef()))
+                        .build();
+    }
+
+    // Throws unless the current user holds the permission on the document. AbstractDocumentStore does
+    // this for the document types that extend it. This store wraps Store directly instead, and Store is
+    // a persistence layer that does what it is asked, so without this a trace store could be written or
+    // deleted by anyone who could reach the REST resource.
+    private void checkPermission(final DocRef docRef, final DocumentPermission permission) {
+        if (!securityContext.hasDocumentPermission(docRef, permission)) {
+            throw new PermissionException(
+                    securityContext.getUserRef(),
+                    "You are not authorised to " + permission.getDisplayValue().toLowerCase()
+                    + " " + docRef);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -106,8 +142,14 @@ public class TracesDocStoreImpl implements TracesDocStore, SharedFileStoreDocSto
 
     @Override
     public void deleteDocument(final DocRef docRef) {
+        // 0. Refuse a caller who may not delete this document, before anything is read or removed.
+        //    Step 1 rejects a null ref anyway, so requiring one here costs nothing and keeps the
+        //    permission check from dereferencing one.
+        Objects.requireNonNull(docRef);
+        checkPermission(docRef, DocumentPermission.DELETE);
+
         // Read the doc BEFORE deleting the config so we can capture the sharedPath.
-        final TracesDoc doc = docRef != null && docRef.getUuid() != null
+        final TracesDoc doc = docRef.getUuid() != null
                 ? store.readDocument(DocRef.builder()
                         .uuid(docRef.getUuid())
                         .type(TracesDoc.TYPE)
@@ -125,7 +167,7 @@ public class TracesDocStoreImpl implements TracesDocStore, SharedFileStoreDocSto
         }
 
         // 3. Clean up cluster merge locks.
-        if (docRef != null && docRef.getUuid() != null) {
+        if (docRef.getUuid() != null) {
             try {
                 clusterLockServiceProvider.get()
                         .deleteLocks(PlanBConstants.getMergeLockPrefix(docRef.getUuid()));
@@ -171,6 +213,11 @@ public class TracesDocStoreImpl implements TracesDocStore, SharedFileStoreDocSto
 
     @Override
     public TracesDoc writeDocument(final TracesDoc document) {
+        checkPermission(DocRef.builder()
+                .type(document.getType())
+                .uuid(document.getUuid())
+                .name(document.getName())
+                .build(), DocumentPermission.EDIT);
         validateSettings(document);
         checkShardCountUnchanged(DocRef.builder()
                 .type(document.getType())
