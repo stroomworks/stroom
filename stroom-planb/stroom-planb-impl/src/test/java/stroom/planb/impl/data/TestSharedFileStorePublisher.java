@@ -37,6 +37,7 @@ import org.mockito.MockitoAnnotations;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,7 +69,8 @@ class TestSharedFileStorePublisher {
         mocks = MockitoAnnotations.openMocks(this);
         when(nodeInfo.getThisNodeName()).thenReturn("test-node");
         planBPaths = new PlanBPaths(tempDir.resolve("local_state"));
-        publisher = new SharedFileStorePublisher(nodeInfo, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, planBPaths);
+        publisher = new SharedFileStorePublisher(nodeInfo, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, planBPaths,
+                Map.of());
 
         sharedRoot = tempDir.resolve("shared");
         Files.createDirectories(sharedRoot);

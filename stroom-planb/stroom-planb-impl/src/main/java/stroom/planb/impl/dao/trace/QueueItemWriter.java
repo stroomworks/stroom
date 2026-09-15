@@ -22,7 +22,6 @@ import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -62,11 +61,13 @@ public class QueueItemWriter {
      *                  the order of.
      * @return the finished item's directory, or empty where there was nothing to send. Writing an
      * empty item would cost a whole environment to say so.
+     * @throws IOException where the item could not be written. Nothing is left behind that a consumer
+     *                     would pick up, so a caller that can retry loses nothing by doing so.
      */
     public Optional<Path> write(final TraceDb source,
                                 final Collection<byte[]> traceIds,
                                 final Path targetDir,
-                                final long orderKey) {
+                                final long orderKey) throws IOException {
         if (traceIds.isEmpty()) {
             return Optional.empty();
         }
@@ -93,10 +94,7 @@ public class QueueItemWriter {
             Files.move(tmpDir, itemDir, StandardCopyOption.ATOMIC_MOVE);
             return Optional.of(itemDir);
 
-        } catch (final IOException e) {
-            deleteQuietly(tmpDir);
-            throw new UncheckedIOException(e);
-        } catch (final RuntimeException e) {
+        } catch (final IOException | RuntimeException e) {
             deleteQuietly(tmpDir);
             throw e;
         }

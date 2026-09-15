@@ -829,6 +829,17 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
      */
     @Override
     public void mergeComplete() {
+        mergeComplete(traceIdBytes -> {
+        });
+    }
+
+    /**
+     * @param handedOver told the raw id of every trace that became newly complete in this store — one
+     *                   that has just gained a real root it did not have before, which is the same
+     *                   condition {@code stampMergeTime} fires on. Called inside the write transaction,
+     *                   so it must not touch another environment; collect and act afterwards.
+     */
+    public void mergeComplete(final Consumer<byte[]> handedOver) {
         if (pendingRootRebuilds.isEmpty()) {
             return;
         }
@@ -874,6 +885,7 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                     // so a trace with no root span still waits rather than being handed on.
                     if (optOldRoot.isEmpty() && !rebuilt.isOrphan()) {
                         stampMergeTime(writeTxn, traceIdBytes);
+                        handedOver.accept(traceIdBytes);
                     }
                     writer.tryCommit();
                 } catch (final LmdbNativeException e) {
@@ -1381,6 +1393,21 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                 putDirect(target.traceRootsDbi, targetWriter.getWriteTxn(), traceIdBytes, rawVal);
                 targetWriter.tryCommit();
             }
+        });
+    }
+
+    // The stored roots of named traces, in one read transaction — a point lookup each, since the roots
+    // DBI is keyed by trace id alone. A trace with no stored root is skipped rather than reported as
+    // absent: a caller names traces this store has just rooted, so that would be a contradiction, and
+    // guessing a name for one would send it to the wrong owner.
+    public void forEachRoot(final Collection<byte[]> traceIds,
+                            final BiConsumer<byte[], TraceRoot> consumer) {
+        env.read(readTxn -> {
+            for (final byte[] traceIdBytes : traceIds) {
+                getTraceRoot(readTxn, traceIdBytes)
+                        .ifPresent(root -> consumer.accept(traceIdBytes, root));
+            }
+            return null;
         });
     }
 

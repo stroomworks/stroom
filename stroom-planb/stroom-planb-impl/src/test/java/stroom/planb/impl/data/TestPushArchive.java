@@ -48,6 +48,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -298,8 +299,8 @@ class TestPushArchive {
 
     private SharedFileStorePublisher newPublisher() {
         // pushArchive does not use NodeInfo, so null is fine here.
-        return new SharedFileStorePublisher(
-                null, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, new PlanBPaths(localState));
+        return new SharedFileStorePublisher(null, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, new PlanBPaths(localState),
+                Map.of());
     }
 
     private Path stagingDir() {

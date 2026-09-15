@@ -243,7 +243,8 @@ class TestSharedFileStoreMerge {
         );
 
         final SharedFileStorePublisher publisher =
-                new SharedFileStorePublisher(nodeInfo, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, planBPaths);
+                new SharedFileStorePublisher(nodeInfo, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, planBPaths,
+                Map.of());
         // This doc is a STATE store given a shared file store, so map the holding strategy onto
         // STATE rather than TRACE.
         final MergeStrategy holdingStrategy = new HoldingAreaMergeStrategy(

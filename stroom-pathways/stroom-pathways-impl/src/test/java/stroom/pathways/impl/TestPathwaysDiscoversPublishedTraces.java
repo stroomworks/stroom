@@ -61,6 +61,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -161,7 +162,8 @@ class TestPathwaysDiscoversPublishedTraces {
 
         // pushArchive does not use NodeInfo, so null is fine here.
         new SharedFileStorePublisher(null, BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
-                new PlanBPaths(tempDir.resolve("local_state")))
+                new PlanBPaths(tempDir.resolve("local_state")),
+                Map.of())
                 .pushArchive(tracesDoc, 0, new StagedArchive(dayLabel, deltaDir));
 
         assertThat(bucketDir(shared, tracesDoc, dayLabel).resolve(PlanBConstants.VERSION_FILE_NAME))

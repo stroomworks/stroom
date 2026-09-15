@@ -23,6 +23,7 @@ import stroom.pathways.shared.TracesDoc;
 import stroom.pathways.shared.TracesStore;
 import stroom.planb.impl.PlanBDocumentTypes;
 import stroom.planb.impl.fs.HoldingAreaMergeStrategy;
+import stroom.planb.impl.fs.MergeCompletionStrategy;
 import stroom.planb.impl.fs.MergeStrategy;
 import stroom.planb.impl.fs.SharedFileStoreDocStore;
 import stroom.planb.shared.StateType;
@@ -66,6 +67,11 @@ public class PathwaysModule extends AbstractModule {
         // buckets that queries read.
         GuiceUtil.buildMapBinder(binder(), StateType.class, MergeStrategy.class)
                 .addBinding(StateType.TRACE, HoldingAreaMergeStrategy.class);
+
+        // Once a bucket has merged, a trace store linked to a Pathways document hands the traces that
+        // became newly complete over to it.
+        GuiceUtil.buildMapBinder(binder(), StateType.class, MergeCompletionStrategy.class)
+                .addBinding(StateType.TRACE, TraceMergeCompletionStrategy.class);
     }
 
     private static class ProcessPathways extends RunnableWrapper {

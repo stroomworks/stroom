@@ -24,6 +24,7 @@ import stroom.planb.impl.PlanBPaths;
 import stroom.planb.impl.dao.Db;
 import stroom.planb.impl.dao.PlanBDb;
 import stroom.planb.shared.PlanBDocument;
+import stroom.planb.shared.StateType;
 import stroom.util.io.FileUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -37,6 +38,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -71,16 +73,19 @@ public class SharedFileStorePublisher {
     private final NodeInfo nodeInfo;
     private final ByteBuffers byteBuffers;
     private final ByteBufferFactory byteBufferFactory;
+    private final Map<StateType, MergeCompletionStrategy> mergeCompletionStrategies;
     private final Path archiveLocalDir;
 
     @Inject
     public SharedFileStorePublisher(final NodeInfo nodeInfo,
                                     final ByteBuffers byteBuffers,
                                     final ByteBufferFactory byteBufferFactory,
-                                    final PlanBPaths planBPaths) {
+                                    final PlanBPaths planBPaths,
+                                    final Map<StateType, MergeCompletionStrategy> mergeCompletionStrategies) {
         this.nodeInfo = nodeInfo;
         this.byteBuffers = byteBuffers;
         this.byteBufferFactory = byteBufferFactory;
+        this.mergeCompletionStrategies = mergeCompletionStrategies;
 
         // Clear any local archive dirs left by a previous JVM crash; each push removes its own on the way
         // out, so anything present at startup is dead. Mirrors MergeProcessor's treatment of
@@ -215,7 +220,13 @@ public class SharedFileStorePublisher {
                 // Lets the bucket rebuild its own derived state from the records it now holds, rather
                 // than inheriting whatever the batch happened to carry. merge() maintains the per-record
                 // stats this needs and queues every record it touched.
-                db.mergeComplete();
+                //
+                // A store type with something further to do with what the merge found does it here, in
+                // the same step, because only the merge knows what that was — and doing it before the
+                // bucket is published means a failure retries rather than strands it.
+                mergeCompletionStrategies
+                        .getOrDefault(doc.getStateType(), MergeCompletionStrategy.DEFAULT)
+                        .completeMerge(doc, db);
             }
             // Keep the archive layout as data.mdb + .version only: drop the lock file LMDB created
             // locally during the merge (it is recreated on the next open).

@@ -43,6 +43,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -148,7 +149,8 @@ class TestBucketMergeTimeIndex {
 
         // pushArchive does not use NodeInfo, so null is fine here.
         new SharedFileStorePublisher(null, BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
-                new PlanBPaths(tempDir.resolve("local_state")))
+                new PlanBPaths(tempDir.resolve("local_state")),
+                Map.of())
                 .pushArchive(doc, 0, new StagedArchive(DAY_LABEL, deltaDir));
 
         return shared

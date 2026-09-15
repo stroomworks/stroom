@@ -112,7 +112,7 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void everyTraceComesBackWithItsStringsIntact() {
+    void everyTraceComesBackWithItsStringsIntact() throws IOException {
         final Map<String, Trace> expected = readAllFromBucket();
 
         final Path itemDir = writeItem(allTraceIds()).orElseThrow();
@@ -132,7 +132,7 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void aNameTooLongToStoreInlineStillComesBack() {
+    void aNameTooLongToStoreInlineStillComesBack() throws IOException {
         final Path itemDir = writeItem(allTraceIds()).orElseThrow();
         final Map<String, Trace> actual = readAllFromItem(itemDir);
 
@@ -143,7 +143,7 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void theStoredRootsComeWithTheTraces() {
+    void theStoredRootsComeWithTheTraces() throws IOException {
         final Path itemDir = writeItem(allTraceIds()).orElseThrow();
 
         final Map<String, TraceRoot> roots = new LinkedHashMap<>();
@@ -161,7 +161,7 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void onlyTheNamedTracesAreCopied() {
+    void onlyTheNamedTracesAreCopied() throws IOException {
         final Path itemDir = writeItem(List.of(idBytes(TRACE_UID))).orElseThrow();
 
         try (final QueueItemReader reader = openItem(itemDir)) {
@@ -171,13 +171,13 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void nothingIsWrittenWhenThereIsNothingToSend() {
+    void nothingIsWrittenWhenThereIsNothingToSend() throws IOException {
         assertThat(writeItem(List.of())).isEmpty();
         assertThat(queueDir).isEmptyDirectory();
     }
 
     @Test
-    void theOrderKeyIsBothInTheNameAndInTheItem() {
+    void theOrderKeyIsBothInTheNameAndInTheItem() throws IOException {
         final long orderKey = 1_700_000_000_123L;
         final Path itemDir = writer.write(openBucket(), allTraceIds(), queueDir, orderKey).orElseThrow();
 
@@ -190,7 +190,7 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void itemsSortOldestFirst() {
+    void itemsSortOldestFirst() throws IOException {
         final Path second = writer.write(openBucket(), allTraceIds(), queueDir, 2_000L).orElseThrow();
         final Path first = writer.write(openBucket(), allTraceIds(), queueDir, 1_000L).orElseThrow();
         final Path third = writer.write(openBucket(), allTraceIds(), queueDir, 3_000L).orElseThrow();
@@ -215,7 +215,7 @@ class TestQueueItemRoundTrip {
     }
 
     @Test
-    void anItemFromAnIncompatibleProducerIsRefused() {
+    void anItemFromAnIncompatibleProducerIsRefused() throws IOException {
         final Path itemDir = writeItem(allTraceIds()).orElseThrow();
         overwriteFormatVersion(itemDir, QueueItem.FORMAT_VERSION + 1);
 
@@ -251,7 +251,7 @@ class TestQueueItemRoundTrip {
         return TraceDb.create(bucketDir, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, doc, false);
     }
 
-    private Optional<Path> writeItem(final List<byte[]> traceIds) {
+    private Optional<Path> writeItem(final List<byte[]> traceIds) throws IOException {
         try (final TraceDb bucket = openBucket()) {
             return writer.write(bucket, traceIds, queueDir, System.currentTimeMillis());
         }
