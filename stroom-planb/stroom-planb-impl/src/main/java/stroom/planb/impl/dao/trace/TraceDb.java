@@ -94,6 +94,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -1122,13 +1123,14 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
         }
     }
 
-    // Every span of one trace, found by prefix since a span key starts with its trace id. Raw bytes across,
-    // no decode/re-encode: a span's value is opaque here, and copyLookupsTo gives the delta the lookup tables
-    // it needs to decode it later.
-    private void copySpansTo(final TraceDb deltaDb,
-                             final LmdbWriter deltaWriter,
-                             final Txn<ByteBuffer> srcTxn,
-                             final byte[] traceIdBytes) {
+    // Every span of one trace, found by prefix since a span key starts with its trace id. Raw bytes
+    // across, no decode/re-encode: a span's value is opaque here, and copyLookupsTo gives the target the
+    // lookup tables it needs to decode it later. Used to stage a publish delta and to build a queue
+    // item, which is why the target is not named for either.
+    void copySpansTo(final TraceDb target,
+                     final LmdbWriter targetWriter,
+                     final Txn<ByteBuffer> srcTxn,
+                     final byte[] traceIdBytes) {
         byteBuffers.useBytes(traceIdBytes, prefixBuffer -> {
             final LmdbKeyRange keyRange = LmdbKeyRange.builder().prefix(prefixBuffer).build();
             LmdbIterable.iterate(srcTxn, dbi, keyRange, (key, val) -> {
@@ -1136,8 +1138,8 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                 key.duplicate().get(rawKey);
                 final byte[] rawVal = new byte[val.remaining()];
                 val.duplicate().get(rawVal);
-                putDirect(deltaDb.dbi, deltaWriter.getWriteTxn(), rawKey, rawVal);
-                deltaWriter.tryCommit();
+                putDirect(target.dbi, targetWriter.getWriteTxn(), rawKey, rawVal);
+                targetWriter.tryCommit();
             });
         });
     }
@@ -1331,10 +1333,68 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
 
     // Without these the UID / hash integers inside archived span values cannot be decoded. Only the
     // DBIs in LOOKUP_DBI_NAMES go; the bucket derives its own roots and indexes.
-    private void copyLookupsTo(final TraceDb archive) {
+    // Everything a set of traces needs in order to be read somewhere else: the spans, the roots, and
+    // the lookup tables the span values reference. Taking all three from the same store is what makes
+    // it safe — a span in this store always uses this store's lookup numbers, however many cycles its
+    // trace took to arrive, because merge renumbers anything that references a lookup as it goes in.
+    void copyTracesTo(final TraceDb target, final Collection<byte[]> traceIds) {
+        target.env.write(targetWriter -> {
+            env.read(srcTxn -> {
+                for (final byte[] traceIdBytes : traceIds) {
+                    copySpansTo(target, targetWriter, srcTxn, traceIdBytes);
+                    copyRootTo(target, targetWriter, srcTxn, traceIdBytes);
+                }
+                return null;
+            });
+            return null;
+        });
+        copyLookupsTo(target);
+    }
+
+    // For the queue item classes in this package, which have to reach the environment to read and
+    // write their own table in it. Package private: nothing outside should be opening DBIs on a store
+    // it does not own.
+    PlanBEnv getEnv() {
+        return env;
+    }
+
+    void copyLookupsTo(final TraceDb archive) {
         for (final String name : LOOKUP_DBI_NAMES) {
             copyNamedDbi(name, this.env, archive.env);
         }
+    }
+
+    // The stored root row for one trace, raw bytes. Unlike a span value, a root value carries its own
+    // name and times rather than referencing a lookup table, so it copies with nothing else needing to
+    // come with it. Silently does nothing where the trace has no root row: a caller that selects traces
+    // whose root has arrived will not hit that, and a caller that does not should not be handed a
+    // half-formed root.
+    void copyRootTo(final TraceDb target,
+                    final LmdbWriter targetWriter,
+                    final Txn<ByteBuffer> srcTxn,
+                    final byte[] traceIdBytes) {
+        byteBuffers.useBytes(traceIdBytes, keyBuffer -> {
+            final ByteBuffer val = traceRootsDbi.get(srcTxn, keyBuffer);
+            if (val != null) {
+                final byte[] rawVal = new byte[val.remaining()];
+                val.duplicate().get(rawVal);
+                putDirect(target.traceRootsDbi, targetWriter.getWriteTxn(), traceIdBytes, rawVal);
+                targetWriter.tryCommit();
+            }
+        });
+    }
+
+    // Every stored root, in trace-id order. Needs no secondary index because the roots DBI is keyed by
+    // trace id alone, which is also why the callback can hand back the id without decoding the value.
+    void forEachRoot(final BiConsumer<byte[], TraceRoot> consumer) {
+        env.read(readTxn -> {
+            LmdbIterable.iterate(readTxn, traceRootsDbi, (key, val) -> {
+                final byte[] traceIdBytes = new byte[TRACE_ID_BYTES];
+                key.duplicate().get(traceIdBytes);
+                consumer.accept(traceIdBytes, traceRootValueSerde.read(val.duplicate()));
+            });
+            return null;
+        });
     }
 
     // Opens the named DBI on both envs, creating it where absent, so a target that has never held one
