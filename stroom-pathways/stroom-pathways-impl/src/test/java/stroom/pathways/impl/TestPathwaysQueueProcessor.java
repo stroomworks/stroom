@@ -54,10 +54,12 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -89,6 +91,8 @@ class TestPathwaysQueueProcessor {
     private ClusterLockService clusterLockService;
     @Mock
     private SecurityContext securityContext;
+    @Mock
+    private PathwaysShardStore shardStore;
 
     private Path pathwaysShared;
     private Path bucketDir;
@@ -124,6 +128,13 @@ class TestPathwaysQueueProcessor {
             return null;
         }).when(clusterLockService).tryLock(anyString(), any(Runnable.class));
 
+        // Hand the work a local directory and run it, which is all these tests need of the model
+        // store. TestPathwaysShardStore covers the copying itself.
+        doAnswer(invocation -> {
+            final Path localDir = Files.createTempDirectory(tempDir, "localShard");
+            return invocation.getArgument(2, Predicate.class).test(localDir);
+        }).when(shardStore).withShard(any(), anyInt(), any());
+
         tracesDoc = PlanBDoc.builder()
                 .uuid(UUID.randomUUID().toString())
                 .name("test-traces")
@@ -133,7 +144,7 @@ class TestPathwaysQueueProcessor {
         bucketDir = Files.createDirectories(tempDir.resolve("bucket"));
 
         processor = new PathwaysQueueProcessor(
-                pathwaysStore, clusterLockService, securityContext,
+                pathwaysStore, shardStore, clusterLockService, securityContext,
                 BYTE_BUFFERS, BYTE_BUFFER_FACTORY, () -> new MetricRegistry());
     }
 

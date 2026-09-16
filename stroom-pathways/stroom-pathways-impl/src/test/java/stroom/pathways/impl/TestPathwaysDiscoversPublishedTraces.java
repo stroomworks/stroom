@@ -71,16 +71,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Whether a trace that has finished its journey — ingested, held, published into a time bucket —
  * is then picked up and turned into a pathway.
  *
- * <p>It drives the real entry point, {@code PathwaysProcessor.exec()}, so a trace that goes
- * undiscovered shows up here the way it would in the product: still listed in the trace screens,
- * contributing to no pathway, with nothing logged to say it was skipped.
+ * <p>It drives {@code PathwaysProcessor.exec()}, which searches the archive for traces it has not
+ * processed. Nothing schedules that any more — the job now drains the queue trace stores hand over
+ * instead — so this covers the path only for as long as it survives. A trace that goes undiscovered
+ * shows up here the way it used to in the product: still listed in the trace screens, contributing
+ * to no pathway, with nothing logged to say it was skipped.
  *
  * <p>Two traces are published together, differing only in how long their span names are. That is
  * not cosmetic. A name over 32 bytes is stored through the lookup table and a shorter one inline,
  * which sends the two spans down different routes when the bucket is merged — one decoded and
  * written through {@code insert}, one copied by a direct put. Both must still end up carrying the
  * {@code trace-roots-merge-time} entry pathways searches on, so both must yield a pathway.
-
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)

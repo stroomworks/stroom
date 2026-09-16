@@ -97,6 +97,7 @@ public class PathwaysQueueProcessor {
     static final int SHARD_THREADS = 4;
 
     private final PathwaysStore pathwaysStore;
+    private final PathwaysShardStore shardStore;
     private final ClusterLockService clusterLockService;
     private final SecurityContext securityContext;
     private final ByteBuffers byteBuffers;
@@ -116,12 +117,14 @@ public class PathwaysQueueProcessor {
 
     @Inject
     public PathwaysQueueProcessor(final PathwaysStore pathwaysStore,
+                                  final PathwaysShardStore shardStore,
                                   final ClusterLockService clusterLockService,
                                   final SecurityContext securityContext,
                                   final ByteBuffers byteBuffers,
                                   final ByteBufferFactory byteBufferFactory,
                                   final Metrics metrics) {
         this.pathwaysStore = pathwaysStore;
+        this.shardStore = shardStore;
         this.clusterLockService = clusterLockService;
         this.securityContext = securityContext;
         this.byteBuffers = byteBuffers;
@@ -208,7 +211,8 @@ public class PathwaysQueueProcessor {
                     // Each shard re-establishes the processing user: the identity is held per thread,
                     // so it does not travel to a pool thread on its own.
                     .runAsync(() -> securityContext.asProcessingUser(
-                            () -> clusterLockService.tryLock(lockName, () -> drain(shardDir))),
+                            () -> clusterLockService.tryLock(
+                                    lockName, () -> drain(doc, shard, shardDir))),
                             shardExecutor)
                     .exceptionally(t -> {
                         LOGGER.error(() -> LogUtil.message("Error draining {}: {}",
@@ -236,10 +240,28 @@ public class PathwaysQueueProcessor {
         return "pathways-" + pathwaysDocUuid + "-";
     }
 
-    // Applies what this hold has time for, then deletes exactly what was applied.
-    private void drain(final Path shardDir) {
-        final Instant deadline = Instant.now().plus(MAX_TIME_PER_HOLD);
+    // Applies what this hold has time for into a local copy of the shard's model, pushes the model
+    // back, then deletes exactly what went into it.
+    private void drain(final PathwaysDoc doc, final int shardIndex, final Path shardDir) {
         final List<Path> applied = new ArrayList<>();
+        try {
+            shardStore.withShard(doc, shardIndex, localDir -> applyBatch(shardDir, localDir, applied));
+        } catch (final IOException e) {
+            // The model could not be taken down or put back, so nothing here was committed. Leaving
+            // the items queued is the whole point: they are applied again by whoever gets the shard
+            // next, rather than being dropped on the floor here.
+            LOGGER.error(() -> LogUtil.message("Could not work shard {} of {}, leaving {} item(s) queued: {}",
+                    shardIndex, doc.getName(), applied.size(), e.getMessage()), e);
+            return;
+        }
+        deleteAll(applied);
+    }
+
+    // Fills `applied` with the items that went in, so the caller can delete exactly those once the
+    // model is safely back on the shared store. Returns whether the local model changed, which is what
+    // decides whether it is worth pushing.
+    private boolean applyBatch(final Path shardDir, final Path localDir, final List<Path> applied) {
+        final Instant deadline = Instant.now().plus(MAX_TIME_PER_HOLD);
         long traces = 0;
 
         for (final Path item : itemsIn(shardDir)) {
@@ -260,19 +282,18 @@ public class PathwaysQueueProcessor {
             }
         }
 
-        // Anything learnt from the batch would be committed here, before the deletes below. That
-        // order is not arbitrary: deleting first and dying loses those traces with nothing left to
-        // say they were never applied, while committing first only risks applying an item twice,
-        // which is a hazard this design already carries. Nothing is committed while applying only
-        // counts.
-
-        deleteAll(applied);
         tracesApplied.mark(traces);
 
         final int itemCount = applied.size();
         final long traceCount = traces;
         LOGGER.debug(() -> LogUtil.message("Applied {} item(s) holding {} trace(s) from {}",
                 itemCount, traceCount, shardDir));
+
+        // Nothing is written into localDir while applying only counts, so there is nothing to push
+        // and the model is left alone. Returning true here once a trace really changes the model is
+        // what makes the push happen — and it happens before the caller deletes these items, because
+        // deleting first and then dying loses them with nothing left to say they were never applied.
+        return false;
     }
 
     private long apply(final Path item) {
