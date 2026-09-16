@@ -159,6 +159,120 @@ public class HistogramDataModel {
         return bins;
     }
 
+    /**
+     * Places counts that the server has already bucketed.
+     *
+     * <p>The counterpart to {@link #process(TableResult)}, which counts individual events. Where the
+     * query groups by a time bucket, each row is one bucket and a count, so the number of rows is
+     * bounded by the range rather than by how many events the store holds — which is the whole
+     * reason for grouping server-side.</p>
+     *
+     * <p><b>Columns are taken by position, not by name.</b> The caller generated the query, so it
+     * knows the first column is the bucket and the second is its count; matching on a name would
+     * couple this to the exact text of a query it does not own, and an aggregate's default column
+     * name is not something to depend on.</p>
+     *
+     * <p>Bins are sized to the range at the given width, so one bin is one bucket and no
+     * redistribution is needed. A bucket outside the visible range is skipped rather than clamped to
+     * an edge bin, for the same reason {@link #process(TableResult)} skips it: clamping would pile
+     * activity from outside the range onto the first and last bars.</p>
+     *
+     * @param tableResult  the grouped result; a null or empty one yields empty bins
+     * @param bucketWidthMs the width each row covers, which must match the width the query grouped
+     *                      by, or counts land in the wrong bars
+     * @return the per-bin counts, also passed to the data handler
+     */
+    public int[] processBuckets(final TableResult tableResult, final long bucketWidthMs) {
+        final long range = rangeEnd - rangeStart;
+        if (bucketWidthMs <= 0 || range <= 0) {
+            final int[] empty = new int[binCount];
+            notifyDataHandler(empty);
+            return empty;
+        }
+
+        final long firstBucket = floorTo(rangeStart, bucketWidthMs);
+        final int bins = (int) (((floorTo(rangeEnd, bucketWidthMs) - firstBucket) / bucketWidthMs) + 1L);
+        final int[] counts = new int[Math.max(1, bins)];
+
+        if (tableResult == null || tableResult.getRows() == null) {
+            notifyDataHandler(counts);
+            return counts;
+        }
+
+        long minTime = Long.MAX_VALUE;
+        long maxTime = Long.MIN_VALUE;
+
+        for (final Row row : tableResult.getRows()) {
+            final List<String> values = row.getValues();
+            if (values == null || values.size() < 2) {
+                continue;
+            }
+            final Long bucketStart = parseTime(values.get(0));
+            if (bucketStart == null) {
+                continue;
+            }
+
+            // The extent is the data's, not the visible range's, so "Show All" can reach data
+            // outside what is currently shown. A bucket stands for everything within its width.
+            if (bucketStart < minTime) {
+                minTime = bucketStart;
+            }
+            if (bucketStart + bucketWidthMs > maxTime) {
+                maxTime = bucketStart + bucketWidthMs;
+            }
+
+            if (bucketStart < firstBucket || bucketStart > rangeEnd) {
+                continue;
+            }
+            final int index = (int) ((bucketStart - firstBucket) / bucketWidthMs);
+            if (index >= 0 && index < counts.length) {
+                counts[index] += parseCount(values.get(1));
+            }
+        }
+
+        if (minTime <= maxTime && dataRangeHandler != null) {
+            dataRangeHandler.accept(new long[]{minTime, maxTime});
+        }
+
+        notifyDataHandler(counts);
+        return counts;
+    }
+
+    /** Floors to a multiple of {@code width}, matching {@code floorTime}, which floors to the epoch. */
+    private static long floorTo(final long time, final long width) {
+        final long remainder = time % width;
+        return remainder >= 0
+                ? time - remainder
+                : time - remainder - width;
+    }
+
+    /** An ISO-8601 instant as epoch millis, or null where it will not parse. */
+    private static Long parseTime(final String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            final UTCDate date = UTCDate.create(value);
+            return date == null
+                    ? null
+                    : (long) date.getTime();
+        } catch (final Exception e) {
+            return null;
+        }
+    }
+
+    /** A count column as an int; anything unreadable counts as zero rather than failing the bar. */
+    private static int parseCount(final String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return 0;
+        }
+        try {
+            return (int) Double.parseDouble(value.trim());
+        } catch (final NumberFormatException e) {
+            return 0;
+        }
+    }
+
     private void notifyDataHandler(final int[] bins) {
         if (dataHandler != null) {
             dataHandler.accept(bins);

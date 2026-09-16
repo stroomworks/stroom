@@ -24,6 +24,7 @@ import stroom.query.api.OffsetRange;
 import stroom.query.api.Param;
 import stroom.query.api.Result;
 import stroom.query.api.TableResult;
+import stroom.query.api.TimeRange;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
@@ -162,17 +163,16 @@ public class HistogramQueryHelper {
     }
 
     /**
-     * Starts a new histogram search with the given StroomQL query text.
-     * <p>
-     * <b>Important:</b> The {@code timeRange} parameter is deliberately set to
-     * {@code null}.  When a TimeRange is present, the temporal store's DAO
-     * activates temporal-lookup semantics — it returns only <em>one</em> row
-     * per key (the latest entry at or before the range's end time).  This is
-     * correct for point-in-time map display but completely wrong for a
-     * histogram that needs <em>all</em> entries across a time window.  Passing
-     * {@code null} makes the DAO use the "standard path", returning every
-     * historical entry.  Client-side filtering in {@link HistogramDataModel}
-     * then restricts entries to the visible range.
+     * Starts a histogram search with no time bound at all.
+     *
+     * <p>Reads whatever the query matches across the store's whole history. Prefer
+     * {@link #run(String, List, Long)}, which bounds the read below at the visible range; this
+     * overload exists for a caller that genuinely wants everything.</p>
+     *
+     * <p><b>No bound is not an oversight, and an upper bound is not the fix.</b> A {@code TimeRange}
+     * carrying an upper bound switches the temporal store into its point-in-time mode, which returns
+     * one row per key rather than the rows a histogram counts — and discards the caller's lower bound
+     * on the way. A lower bound alone is safe, which is what the other overload passes.</p>
      *
      * @param query  the StroomQL query text to execute
      * @param params the query parameters, or {@code null} when the query uses none. The
@@ -180,6 +180,26 @@ public class HistogramQueryHelper {
      *               naming its data source that way will not resolve without them
      */
     public void run(final String query, final List<Param> params) {
+        run(query, params, null);
+    }
+
+    /**
+     * Starts a histogram search bounded below at {@code fromMs}.
+     *
+     * <p><b>A lower bound only, and that is deliberate.</b> It narrows the read to the visible range
+     * and later, which is what keeps the row count down, without switching the store into its
+     * point-in-time mode: {@code getQueryTime} triggers on {@code EQUALS}, {@code <} and {@code <=}
+     * and never on {@code >=}, so a lone lower bound stays a row filter. Adding an upper bound would
+     * return one row per key instead of the counts this needs — and would silently discard the lower
+     * bound with it.</p>
+     *
+     * <p>The consequence, which is not yet closed: a store holding data well beyond the visible range
+     * still returns a bucket for all of it. That is far better than the unbounded read this replaced,
+     * because buckets are orders of magnitude fewer than events, but it is not a bound.</p>
+     *
+     * @param fromMs the start of the visible range, or null for no lower bound
+     */
+    public void run(final String query, final List<Param> params, final Long fromMs) {
         if (query == null || query.trim().isEmpty()) {
             return;
         }
@@ -188,7 +208,9 @@ public class HistogramQueryHelper {
                 "histogramTable",
                 query,
                 params,
-                null,   // timeRange — deliberately null, see Javadoc above
+                fromMs == null
+                        ? null
+                        : new TimeRange("CUSTOM", String.valueOf(fromMs), null),
                 false,  // incremental
                 false,  // storeHistory
                 "Histogram Query",  // queryInfo

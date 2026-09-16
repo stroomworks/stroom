@@ -43,6 +43,7 @@ import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapGroup;
 import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapGroupSnapshot;
+import stroom.floormap.shared.FloorMapHistogramBuckets;
 import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapStageReporter;
@@ -306,6 +307,15 @@ public class FloorMapMapPresenter
     private final HistogramDataModel histogramDataModel;
 
     /**
+     * The bucket width the last histogram query grouped by.
+     *
+     * <p>Set when the query is issued and read when its result lands, so a result is always placed
+     * at the width it was counted at. A range change between the two would otherwise put counts in
+     * the wrong bars; the next query corrects it.</p>
+     */
+    private long histogramBucketWidthMs = FloorMapHistogramBuckets.widthFor(0L);
+
+    /**
      * Toolbar toggle controlling the canvas grid overlay. Shown next to the
      * document save buttons via {@link HasToolbar} whenever the Map tab is
      * active. Off by default — the Map tab is view-focused, so the grid is
@@ -472,7 +482,9 @@ public class FloorMapMapPresenter
         // the events store is the only store this tab reads them from.
         this.histogramQueryHelper = new HistogramQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
-                histogramDataModel::process);
+                // The width the in-flight query grouped by, not a constant: it is chosen from the
+                // visible range, so a result has to be placed at the width it was counted at.
+                result -> histogramDataModel.processBuckets(result, histogramBucketWidthMs));
 
         this.eventsQueryHelper = new FloorMapFullReadQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
@@ -1626,10 +1638,12 @@ public class FloorMapMapPresenter
     private void runHistogramQuery(final long start, final long end) {
         histogramDataModel.setRange(start, end);
 
-        final String query = getEventsQueryToUse();
-        if (query != null && !query.trim().isEmpty()) {
-            histogramQueryHelper.run(query, queryParams());
-        }
+        // Counted server-side, one row per bucket. The read this replaced returned every event the
+        // store held and bucketed them here, which is the one read whose size grows without bound.
+        histogramBucketWidthMs = FloorMapHistogramBuckets.widthFor(end - start);
+        final String query = FloorMapQueryBuilder.buildHistogramQuery(
+                FloorMapHistogramBuckets.durationFor(end - start));
+        histogramQueryHelper.run(query, queryParams(), start);
     }
 
     /**
