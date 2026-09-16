@@ -99,6 +99,7 @@ class TestPathwaysShardStore {
                         BYTE_BUFFER_FACTORY,
                         new PlanBPaths(tempDir.resolve("local_state")),
                         Map.<StateType, MergeCompletionStrategy>of()),
+                BYTE_BUFFERS,
                 pathCreator);
     }
 

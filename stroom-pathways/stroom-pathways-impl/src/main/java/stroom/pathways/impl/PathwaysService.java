@@ -49,6 +49,7 @@ import java.util.Collections;
 public class PathwaysService {
 
     private final PathwaysStore pathwaysStore;
+    private final ShardedPathwayReader shardedPathwayReader;
     private final PathwaysProcessor pathwaysProcessor;
     private final Provider<NodeService> nodeServiceProvider;
     private final Provider<NodeInfo> nodeInfoProvider;
@@ -56,11 +57,13 @@ public class PathwaysService {
 
     @Inject
     public PathwaysService(final PathwaysProcessor pathwaysProcessor,
+                           final ShardedPathwayReader shardedPathwayReader,
                            final PathwaysStore pathwaysStore,
                            final Provider<NodeService> nodeServiceProvider,
                            final Provider<NodeInfo> nodeInfoProvider,
                            final Provider<WebTargetFactory> webTargetFactoryProvider) {
         this.pathwaysProcessor = pathwaysProcessor;
+        this.shardedPathwayReader = shardedPathwayReader;
         this.pathwaysStore = pathwaysStore;
         this.nodeServiceProvider = nodeServiceProvider;
         this.nodeInfoProvider = nodeInfoProvider;
@@ -73,15 +76,9 @@ public class PathwaysService {
             throw new DocumentNotFoundException(criteria.getDataSourceRef());
         }
 
-        // Find out which node has the pathways database.
-        if (pathwaysDoc.getProcessingNode() == null) {
-            return new PathwayResultPage(Collections.emptyList(), PageResponse.empty());
-        }
-
-        if (pathwaysDoc.getProcessingNode().equals(nodeInfoProvider.get().getThisNodeName())) {
-            return pathwaysProcessor.findPathways(criteria);
-        }
-        return getRemote(pathwaysDoc.getProcessingNode(), criteria);
+        // The model lives on the shared file store, split by operation name, so any node can answer
+        // from it. Nothing has to work out which node holds it, and nothing has to be asked.
+        return shardedPathwayReader.findPathways(pathwaysDoc, criteria);
     }
 
     public Boolean addPathway(final AddPathway addPathway) {

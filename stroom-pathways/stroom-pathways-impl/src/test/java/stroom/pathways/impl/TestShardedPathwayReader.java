@@ -1,0 +1,224 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.pathways.impl;
+
+import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
+import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.node.api.NodeInfo;
+import stroom.pathways.shared.FindPathwayCriteria;
+import stroom.pathways.shared.PathwayResultPage;
+import stroom.pathways.shared.PathwaysDoc;
+import stroom.pathways.shared.pathway.NamePathKey;
+import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.Pathway;
+import stroom.planb.impl.PlanBPaths;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.ShardKeyRouter;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.PathwaysDb;
+import stroom.planb.impl.fs.MergeCompletionStrategy;
+import stroom.planb.impl.fs.SharedFileStorePublisher;
+import stroom.planb.shared.SharedFileStoreSettings;
+import stroom.planb.shared.StateType;
+import stroom.util.io.PathCreator;
+import stroom.util.shared.PageRequest;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mock;
+import org.mockito.Mockito;
+import org.mockito.MockitoAnnotations;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Whether a search sees the whole model when it is split across shards.
+ *
+ * <p>Pathways are written through the same shard store the consumer writes through, so what is read
+ * back has really been pushed to the shared filesystem and copied down again — not handed over in
+ * memory. The names are chosen so they do not all hash to one shard, which is the only way this says
+ * anything about gathering.
+ */
+class TestShardedPathwayReader {
+
+    private static final ByteBufferFactoryImpl BYTE_BUFFER_FACTORY = new ByteBufferFactoryImpl();
+    private static final ByteBuffers BYTE_BUFFERS = new ByteBuffers(BYTE_BUFFER_FACTORY);
+
+    private static final int SHARD_COUNT = 8;
+
+    @TempDir
+    Path tempDir;
+
+    @Mock
+    private PathCreator pathCreator;
+    @Mock
+    private NodeInfo nodeInfo;
+
+    private PathwaysDoc doc;
+    private PathwaysShardStore shardStore;
+    private ShardedPathwayReader reader;
+
+    @BeforeEach
+    void setUp() throws IOException {
+        MockitoAnnotations.openMocks(this);
+        final Path shared = Files.createDirectories(tempDir.resolve("pathways_shared"));
+        doc = PathwaysDoc.builder()
+                .uuid(UUID.randomUUID().toString())
+                .name("Test Pathways")
+                .sharedFileStore(new SharedFileStoreSettings(SHARD_COUNT, shared.toString()))
+                .build();
+
+        Mockito.when(pathCreator.toAppPath(Mockito.anyString())).thenReturn(tempDir.resolve("local"));
+        Mockito.when(nodeInfo.getThisNodeName()).thenReturn("test-node");
+        shardStore = new PathwaysShardStore(
+                new SharedFileStorePublisher(
+                        nodeInfo,
+                        BYTE_BUFFERS,
+                        BYTE_BUFFER_FACTORY,
+                        new PlanBPaths(tempDir.resolve("local_state")),
+                        Map.<StateType, MergeCompletionStrategy>of()),
+                BYTE_BUFFERS,
+                pathCreator);
+        reader = new ShardedPathwayReader(shardStore, new PathwaySerde(BYTE_BUFFER_FACTORY));
+    }
+
+    @Test
+    void aSearchGathersPathwaysFromEveryShard() throws IOException {
+        final List<String> names = List.of("GET /orders", "FetchNewTasks.run", "POST /payments");
+        assertThat(names.stream().map(this::shardOf).distinct().count())
+                .as("the fixture only says something if the names hash apart")
+                .isGreaterThan(1);
+        for (final String name : names) {
+            writePathway(name);
+        }
+
+        final PathwayResultPage page = reader.findPathways(doc, criteria(null, 0, 100));
+
+        assertThat(page.getValues().stream().map(Pathway::getName))
+                .as("every shard contributed, in name order")
+                .containsExactly("FetchNewTasks.run", "GET /orders", "POST /payments");
+        assertThat(page.getPageResponse().getTotal()).isEqualTo(3L);
+    }
+
+    @Test
+    void theFilterMatchesTheName() throws IOException {
+        writePathway("GET /orders");
+        writePathway("POST /payments");
+
+        final PathwayResultPage page = reader.findPathways(doc, criteria("orders", 0, 100));
+
+        assertThat(page.getValues().stream().map(Pathway::getName)).containsExactly("GET /orders");
+        assertThat(page.getPageResponse().getTotal()).isEqualTo(1L);
+    }
+
+    @Test
+    void pagingRunsAcrossShardsInOneOrder() throws IOException {
+        for (int i = 0; i < 6; i++) {
+            writePathway("op-" + i);
+        }
+
+        final List<String> first = reader.findPathways(doc, criteria(null, 0, 2))
+                .getValues().stream().map(Pathway::getName).toList();
+        final List<String> second = reader.findPathways(doc, criteria(null, 2, 2))
+                .getValues().stream().map(Pathway::getName).toList();
+
+        assertThat(first).containsExactly("op-0", "op-1");
+        assertThat(second).as("the second page continues where the first stopped")
+                .containsExactly("op-2", "op-3");
+        assertThat(reader.findPathways(doc, criteria(null, 0, 2)).getPageResponse().getTotal())
+                .as("the total counts what matched, not what the page holds")
+                .isEqualTo(6L);
+    }
+
+    @Test
+    void anEmptyModelIsNotAnError() {
+        final PathwayResultPage page = reader.findPathways(doc, criteria(null, 0, 100));
+
+        assertThat(page.getValues()).isEmpty();
+        assertThat(page.getPageResponse().getTotal()).isZero();
+    }
+
+    @Test
+    void aChangePushedSinceTheLastSearchIsSeen() throws IOException {
+        writePathway("GET /orders");
+        assertThat(reader.findPathways(doc, criteria(null, 0, 100)).getValues()).hasSize(1);
+
+        // The cached local copy is only refreshed when the shard's version moves on, so a second
+        // search has to notice that it did.
+        writePathway("POST /payments");
+
+        assertThat(reader.findPathways(doc, criteria(null, 0, 100)).getValues())
+                .as("a search after a push sees what the push added")
+                .hasSize(2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fixture
+    // -----------------------------------------------------------------------
+
+    private int shardOf(final String name) {
+        return ShardKeyRouter.computeShardIndex(name, SHARD_COUNT);
+    }
+
+    // Writes one pathway through the shard store, so it goes to the shared filesystem the way the
+    // consumer puts it there.
+    private void writePathway(final String name) throws IOException {
+        shardStore.withShard(doc, shardOf(name), localDir -> {
+            try (final PathwaysDb db = PathwaysDb.create(localDir, BYTE_BUFFERS, false);
+                    final LmdbWriter writer = db.createWriter()) {
+                final Instant now = Instant.now();
+                // Every field the serde writes has to be set; it reads them back positionally and
+                // does not tolerate a gap. Mirrors what TraceProcessor builds for a new pathway.
+                final Pathway pathway = Pathway.builder()
+                        .name(name)
+                        .createTime(NanoTimeUtil.fromInstant(now))
+                        .updateTime(NanoTimeUtil.fromInstant(now))
+                        .lastUsedTime(NanoTimeUtil.fromInstant(now))
+                        .pathKey(new NamePathKey(name))
+                        .root(new PathNode(name))
+                        .build();
+                final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
+                final ByteBuffer key = ByteBuffer.allocateDirect(keyBytes.length);
+                key.put(keyBytes).flip();
+                new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, value ->
+                        db.getPathways().insert(writer, key, value));
+                writer.commit();
+            }
+            return true;
+        });
+    }
+
+    private FindPathwayCriteria criteria(final String filter, final int offset, final int length) {
+        return new FindPathwayCriteria(
+                new PageRequest(offset, length),
+                FindPathwayCriteria.DEFAULT_SORT_LIST,
+                doc.asDocRef(),
+                filter,
+                null);
+    }
+}

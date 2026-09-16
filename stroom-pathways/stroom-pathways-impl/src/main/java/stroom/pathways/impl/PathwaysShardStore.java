@@ -16,8 +16,10 @@
 
 package stroom.pathways.impl;
 
+import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
+import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.util.io.FileUtil;
@@ -34,6 +36,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -63,13 +69,25 @@ public class PathwaysShardStore {
     public static final String SHARDS_DIR_NAME = "shards";
 
     private final SharedFileStorePublisher publisher;
+    private final ByteBuffers byteBuffers;
     private final Path localRoot;
+    private final Path readCacheRoot;
+
+    /**
+     * One per shard, so two queries do not replace a cached copy from under each other, and a query
+     * does not read a copy half way through being refreshed.
+     */
+    private final Map<String, Object> readLocks = new ConcurrentHashMap<>();
 
     @Inject
     public PathwaysShardStore(final SharedFileStorePublisher publisher,
+                              final ByteBuffers byteBuffers,
                               final PathCreator pathCreator) {
         this.publisher = publisher;
-        this.localRoot = pathCreator.toAppPath("${stroom.home}/pathways").resolve("shards");
+        this.byteBuffers = byteBuffers;
+        final Path pathwaysHome = pathCreator.toAppPath("${stroom.home}/pathways");
+        this.localRoot = pathwaysHome.resolve("shards");
+        this.readCacheRoot = pathwaysHome.resolve("read");
     }
 
     /**
@@ -122,6 +140,83 @@ public class PathwaysShardStore {
                 // copying down again.
                 LOGGER.warn(() -> "Could not clean up " + localDir + ": " + e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Reads one shard's model, without holding its cluster lock.
+     *
+     * <p>Queries cannot open the shared copy either, so a local one is kept and refreshed only when
+     * the shard's {@code .version} says it has moved on. That makes a repeat query cost an open
+     * rather than a copy, which matters because a screen reads every shard to answer once.
+     *
+     * <p>The environment is opened and closed inside this call rather than held. A cached copy can
+     * therefore be replaced between queries without any reader having it mapped — which is what
+     * {@code ArchiveStoreShard} needs its per-generation directories to arrange, and what this avoids
+     * needing by not keeping one open.
+     *
+     * @return empty where the shard has no model yet, which is not an error — nothing has been
+     * applied to it.
+     */
+    public <R> Optional<R> readShard(final PathwaysDoc doc,
+                                     final int shardIndex,
+                                     final Function<PathwaysDb, R> work) throws IOException {
+        final SharedFileStoreSettings settings = doc.getSharedFileStore();
+        if (settings == null) {
+            return Optional.empty();
+        }
+        final Path sharedShardDir = Path.of(settings.getSharedPath())
+                .resolve(SHARDS_DIR_NAME)
+                .resolve(PathSegmentUtil.requireSafeSegment(doc.getUuid()))
+                .resolve(PlanBConstants.formatShardIndex(shardIndex));
+        final String shardKey = doc.getUuid() + "_" + PlanBConstants.formatShardIndex(shardIndex);
+
+        synchronized (readLocks.computeIfAbsent(shardKey, k -> new Object())) {
+            final Path localDir = readCacheRoot.resolve(shardKey);
+            if (!refreshReadCopy(sharedShardDir, localDir)) {
+                return Optional.empty();
+            }
+            try (final PathwaysDb db = PathwaysDb.create(localDir, byteBuffers, true)) {
+                return Optional.ofNullable(work.apply(db));
+            }
+        }
+    }
+
+    // Brings the local copy up to the shared shard's current version, and says whether there is
+    // anything to read. The version marker is written into the temp directory the push swaps in, so it
+    // moves with the data rather than after it: re-reading it once the copy is done tells us whether
+    // a push landed mid-copy, and one retry is enough for a push that takes far less time than a
+    // cycle.
+    private boolean refreshReadCopy(final Path sharedShardDir, final Path localDir) throws IOException {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            final String sharedVersion = readVersion(sharedShardDir);
+            if (sharedVersion == null) {
+                return false;
+            }
+            if (sharedVersion.equals(readVersion(localDir))) {
+                return true;
+            }
+            Files.createDirectories(localDir);
+            Files.deleteIfExists(localDir.resolve(PlanBConstants.VERSION_FILE_NAME));
+            copyDown(sharedShardDir, localDir);
+            if (sharedVersion.equals(readVersion(sharedShardDir))) {
+                Files.writeString(localDir.resolve(PlanBConstants.VERSION_FILE_NAME), sharedVersion);
+                return true;
+            }
+        }
+        LOGGER.warn(() -> "Gave up refreshing " + localDir + "; it is being pushed to repeatedly");
+        return false;
+    }
+
+    private static String readVersion(final Path dir) {
+        try {
+            final Path versionFile = dir.resolve(PlanBConstants.VERSION_FILE_NAME);
+            return Files.exists(versionFile)
+                    ? Files.readString(versionFile)
+                    : null;
+        } catch (final IOException e) {
+            LOGGER.debug(() -> "Could not read the version of " + dir + ": " + e.getMessage());
+            return null;
         }
     }
 
