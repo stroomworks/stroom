@@ -305,6 +305,13 @@ public class FloorMapMapPresenter
     private final Provider<FloorMapClusterPresenter> floorMapClusterPresenter;
 
     private final HistogramQueryHelper histogramQueryHelper;
+    /**
+     * The unbounded read behind "Show All". Separate from {@link #histogramQueryHelper} because
+     * {@code QueryModel} state is single-valued, so two concurrent reads need two models — and
+     * because the two want opposite ranges: the bars are bounded below at the visible range, the
+     * extent must not be bounded at all.
+     */
+    private final HistogramQueryHelper extentQueryHelper;
     private final HistogramDataModel histogramDataModel;
 
     /**
@@ -476,8 +483,6 @@ public class FloorMapMapPresenter
         this.histogramDataModel = new HistogramDataModel(HISTOGRAM_BINS);
         this.histogramDataModel.setDataHandler(
                 floorMapTimelinePresenter::setHistogramData);
-        this.histogramDataModel.setDataRangeHandler(
-                range -> floorMapTimelinePresenter.setDataRange(range[0], range[1]));
 
         // Histogram query helper. One, for events: the density bars count event activity, and
         // the events store is the only store this tab reads them from.
@@ -486,6 +491,10 @@ public class FloorMapMapPresenter
                 // The width the in-flight query grouped by, not a constant: it is chosen from the
                 // visible range, so a result has to be placed at the width it was counted at.
                 result -> histogramDataModel.processBuckets(result, histogramBucketWidthMs));
+
+        this.extentQueryHelper = new HistogramQueryHelper(
+                eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
+                this::applyDataExtent);
 
         this.eventsQueryHelper = new FloorMapFullReadQueryHelper(
                 eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
@@ -685,6 +694,8 @@ public class FloorMapMapPresenter
         eventsQueryHelper.reset();
         histogramQueryHelper.init(docRef);
         histogramQueryHelper.reset();
+        extentQueryHelper.init(docRef);
+        extentQueryHelper.reset();
 
         // A (re-)opened document starts with a fresh entity roster and no
         // inherited area containment.
@@ -737,6 +748,11 @@ public class FloorMapMapPresenter
         // re-read, keep the user's range and current position but still
         // re-run the histogram query in case the settings change altered
         // the underlying queries or stores.
+        // Ask what the data's own extent is. Once per read, not per range change: it is unbounded,
+        // so the answer does not depend on what is currently shown — which is exactly why "Show All"
+        // cannot be served from the bars.
+        runExtentQuery();
+
         if (!timelineInitialised) {
             timelineInitialised = true;
             updateTimelineRange();
@@ -1638,14 +1654,16 @@ public class FloorMapMapPresenter
      * error listener reports it, so it reads as a failure rather than as a store with nothing in
      * it.</p>
      *
-     * <p>The events query's own {@code select} must include a timestamp column that
-     * {@link HistogramDataModel#findTimeColumnIndex} recognises — {@code EffectiveTime} or
-     * {@code EventTime}, either spelling. Without one every row is skipped and the bars are empty
-     * while the query itself succeeds.</p>
+     * <p>The query is generated here rather than being the user's own events query, so there is no
+     * longer a requirement on what that query selects: it groups {@code EffectiveTime}, the field
+     * the store defines. The old requirement — that the user's {@code select} include a recognised
+     * timestamp column, on pain of silently empty bars — is gone with the column sniffing that
+     * needed it.</p>
      *
-     * <p>{@link HistogramQueryHelper} also passes {@code null} for the TimeRange, which is what
-     * keeps this read on the all-history path rather than the one-row-per-key snapshot the map
-     * overlay wants — see its javadoc.</p>
+     * <p>The TimeRange carries a lower bound and <b>no upper bound</b>, which is what keeps this
+     * read on the all-history path rather than the one-row-per-key snapshot the map overlay wants —
+     * see {@link HistogramQueryHelper#run(String, java.util.List, Long)}. "Show All" needs a range
+     * this one cannot give, so it has its own query — {@link #runExtentQuery()}.</p>
      */
     private void runHistogramQuery(final long start, final long end) {
         histogramDataModel.setRange(start, end);
@@ -1656,6 +1674,39 @@ public class FloorMapMapPresenter
         final String query = FloorMapQueryBuilder.buildHistogramQuery(
                 FloorMapHistogramBuckets.durationFor(end - start));
         histogramQueryHelper.run(query, queryParams(), start);
+    }
+
+    /**
+     * Runs the unbounded read behind "Show All".
+     *
+     * <p>Deliberately not folded into {@link #runHistogramQuery}: that one is bounded below at the
+     * visible range, so the buckets it returns can never start earlier than what is already shown.
+     * An extent taken from them could only grow forwards, and "Show All" exists precisely to reach
+     * backwards. This is the regression the lower bound introduced.</p>
+     *
+     * <p>Grouping is what makes an unbounded read affordable. The answer is one row per
+     * {@link FloorMapQueryBuilder#EXTENT_BUCKET} the store spans rather than one per event, so its
+     * size tracks how long the store has been running, not how busy it is.</p>
+     *
+     * <p>It does <em>not</em> make the read cheap on the server. Plan B iterates the whole store
+     * whatever range is asked for, so this costs a full scan — the same scan the bars already pay.
+     * What grouping bounds is what crosses the wire.</p>
+     */
+    private void runExtentQuery() {
+        extentQueryHelper.run(FloorMapQueryBuilder.buildExtentQuery(), queryParams());
+    }
+
+    /**
+     * Hands the timeline the data's own extent, so "Show All" can reach beyond the visible range.
+     *
+     * <p>A null extent — an empty store, or a read that failed — leaves the previous range alone
+     * rather than collapsing the timeline to nothing.</p>
+     */
+    private void applyDataExtent(final TableResult result) {
+        final long[] extent = HistogramDataModel.extentOf(result, FloorMapQueryBuilder.EXTENT_BUCKET_MS);
+        if (extent != null) {
+            floorMapTimelinePresenter.setDataRange(extent[0], extent[1]);
+        }
     }
 
     /**
@@ -1688,6 +1739,7 @@ public class FloorMapMapPresenter
         factsHistoryQueryHelper.reset();
         eventsQueryHelper.reset();
         histogramQueryHelper.reset();
+        extentQueryHelper.reset();
     }
 
     /**

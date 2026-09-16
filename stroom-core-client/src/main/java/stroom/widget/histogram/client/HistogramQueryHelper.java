@@ -197,6 +197,11 @@ public class HistogramQueryHelper {
      * still returns a bucket for all of it. That is far better than the unbounded read this replaced,
      * because buckets are orders of magnitude fewer than events, but it is not a bound.</p>
      *
+     * <p><b>Do not derive a data extent from a result of this call.</b> The lower bound means the
+     * buckets returned can never start earlier than {@code fromMs}, so an extent taken from them
+     * could only ever grow forwards — useless for "Show All", which exists to reach backwards. Pass
+     * {@code null} (or use the two-argument overload) for a read whose range is the answer.</p>
+     *
      * @param fromMs the start of the visible range, or null for no lower bound
      */
     public void run(final String query, final List<Param> params, final Long fromMs) {

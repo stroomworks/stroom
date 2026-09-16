@@ -117,6 +117,40 @@ public final class FloorMapQueryBuilder {
     }
 
     /**
+     * The bucket width the extent query groups by.
+     *
+     * <p>Coarser than the hour first suggested, and deliberately. An hour gives 8 760 rows a year,
+     * which clears the row cap only until the store holds about a year — and a truncated extent is
+     * not a rough answer but a wrong one, silently naming an end earlier than the data's. A day
+     * gives 365 a year and stays safe for a decade. The cost is that "Show All" starts the timeline
+     * on the right day rather than the right hour, which a user corrects by scrubbing.</p>
+     */
+    public static final String EXTENT_BUCKET = "P1D";
+
+    /** {@link #EXTENT_BUCKET} in milliseconds, for placing the end of the last bucket. */
+    public static final long EXTENT_BUCKET_MS = 24L * 60 * 60 * 1000;
+
+    /**
+     * Builds the query behind the timeline's "Show All" extent.
+     *
+     * <p>Deliberately unbounded, which is what separates it from
+     * {@link #buildHistogramQuery(String)}: the bars are bounded below at the visible range, so the
+     * extent cannot be taken from them — it could never reach data earlier than what is already
+     * shown, which is the one thing "Show All" exists to do.</p>
+     *
+     * <p>It groups rather than selecting rows so that the answer is bounded by the store's span
+     * rather than by how many events it holds: the first bucket's start and the last bucket's start
+     * plus a width bracket the data.</p>
+     */
+    public static String buildExtentQuery() {
+        return "from param('EventStore')\n"
+               + "eval bucket = floorTime(EffectiveTime, '" + EXTENT_BUCKET + "')\n"
+               + "group by bucket\n"
+               + "sort by bucket\n"
+               + "select bucket, count()";
+    }
+
+    /**
      * Builds the StroomQL extraction expression for a single path.
      *
      * <p>For JSON, wraps in {@code jq(Value, ...)}. Keys containing
