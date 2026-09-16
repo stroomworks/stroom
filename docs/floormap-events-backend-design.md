@@ -654,7 +654,7 @@ Ordered by how much else depends on them.
 | ~~**D1**~~ | ~~Which store backs block A~~ | | **DECIDED: Plan B, not MySQL.** And Plan B rather than a bespoke LMDB store — see §11.12 for why, and for how D4's concern is met without owning the storage engine |
 | ~~**D2**~~ | ~~Boundary interval for checkpoints~~ | | **DECIDED: hourly.** 24 builds a day; worst-case fold `interval + grace` ≈ 15 600 events (§11.3). Recent times are the ordinary case, not an edge case — see §11.12.1 |
 | ~~**D3**~~ | ~~Late-event policy~~ | | **DECIDED: grace period, option 1 — see §11.11.** Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
-| ~~**D4**~~ | ~~How the store is presented~~ | | **DECIDED: start at (c)** — a floor-map-created Plan B document that the map validates and complains about (§11.12). Designs towards (b), a `FloorMapEventStore` type, without committing to it. The separate *module* question for block E is unchanged and still open |
+| **D4** | **How the store is presented** | | **Decided (c), now recommended for revision to (b) — see §11.14.** (c) was chosen because (b) was believed to need changes inside `stroom-planb-impl`. It does not: `PlanBDocument` is an interface, the doc types Plan B recognises are a Guice multibinder, and `stroom-pathways-impl` already does exactly this from outside. The module question is answered by the same finding |
 | ~~**D5**~~ | ~~Keep the user-authored events query?~~ | | **DECIDED: keep it** — the flexibility is worth the machinery. This fixes E as a `Searchable` taking StroomQL, and rules out the typed `FloorMapResource` endpoint |
 | ~~**D6**~~ | ~~Retention period, and how AA7 is enforced~~ | | **DECIDED: default expiry and retention to 1 day.** A user who raises it too far owns the consequence. AA7 (`expiry ≤ retention`) still needs validating where expiry is set, so the failure is an error rather than silent under-reporting |
 | **D7** | **How block B is stored** | The key *order* is fixed (§11.2) and the key *layout* is settled (§11.12); only the container is open | **Explained in §11.13, and it follows D4.** (c) now implies a second floor-map-created document; (b) later would allow a DBI inside the events store's own environment. The migration between them is a copy, not a rewrite |
@@ -891,3 +891,77 @@ container changes, so the move is a copy. Nothing written for (i) is wasted.
 checkpoint proves §11.3's read path and the §11.11 grace logic without committing to a persistent
 container at all — and if the fold turns out to be fast enough on its own, (iii) may be sufficient for
 longer than expected. Persist to (i) when restart cost or cluster behaviour makes it necessary.
+
+### 11.14 Correction: option (b) is a supported extension point
+
+**§11.12 recommended (c) on a false premise, and D4 was decided on that recommendation.** The premise
+was that a `FloorMapEventStore` document type would need changes inside `stroom-planb-impl`. It does
+not. The question *"can't the floor map open and own its own Plan B document?"* has a better answer
+than (c): **it can define its own type of Plan B document**, and the machinery for that already
+exists and is already used by a module outside Plan B.
+
+#### What the tree actually provides
+
+`PlanBDocument` is an **interface** in `stroom-core-shared`:
+
+```java
+public interface PlanBDocument extends Document {
+    String getDescription();
+    StateType getStateType();
+    AbstractPlanBSettings getSettings();
+}
+```
+
+and `AbstractPlanBDoc extends AbstractDoc implements PlanBDocument` sits beside it. Plan B's own
+machinery — `PlanBDocCacheImpl`, `StateSearchProvider`, `ShardManager`, `ArchiveShardLocator` — is
+written against the **interface**, not against `PlanBDoc`.
+
+Which document types count as Plan B stores is a **Guice extension point**:
+
+```java
+Multibinder.newSetBinder(binder(), String.class, PlanBDocumentTypes.class)
+```
+
+consumed by `PlanBDocCacheImpl` as `@PlanBDocumentTypes Set<String>`.
+
+**And there is a working precedent from outside Plan B.** `TracesDoc` lives in
+`stroom-core-shared/stroom/pathways/shared/`, extends `AbstractPlanBDoc`, and `PathwaysModule` — in
+`stroom-pathways-impl` — adds its type to that multibinder and registers a `DocumentActionHandler`
+for it. Plan B then treats it as a store with no knowledge of Pathways.
+
+#### What this means for D4
+
+A `FloorMapEventStoreDoc` needs:
+
+| | |
+|---|---|
+| A class extending `AbstractPlanBDoc` in `stroom-core-shared` | **Additive** — a new file, so effectively no merge exposure |
+| Its type added to the `@PlanBDocumentTypes` multibinder from `FloorMapModule` | One line |
+| A `DocumentActionHandler` and store, registered the same way | The Pathways shape |
+| `stroom-floormap-impl` → `stroom-planb-impl` | The impl-on-impl dependency §11.12 called "against the grain" — **which `stroom-pathways-impl` already declares** |
+
+So the impl-on-impl dependency is not a compromise invented here; it is what upstream itself does for
+Pathways. **That was the objection (c) existed to avoid, and it does not hold.**
+
+#### The revised recommendation
+
+**Go to (b).** It delivers what D4 actually asked for — a store type that is configured *for* the
+floor map and exposes only settings that suit it, rather than a general-purpose Plan B document a
+user can edit into an unusable state. `stateType`, key schema, value schema and `condense` become
+properties of the type rather than fields on a form.
+
+**The validation work from (c) is not wasted and should still be done**, because a store can still be
+wrong for reasons the type cannot prevent — a `maxStoreSize` too small for the retention, or an
+expiry exceeding retention (AA7). It moves from "detect a document someone broke" to "validate the
+settings we do expose", which is a smaller job with the same value.
+
+#### And for D7
+
+One `PlanBDocument` carries one `stateType` and one settings object, so **A and B remain two
+documents** — but both are now floor-map-owned types, created and configured by the floor map, which
+was the point. Option (ii), a checkpoint DBI inside the events store's own environment, still needs a
+custom `Db` implementation and those live in `stroom-planb-impl`, so it remains the one shape that
+does touch upstream code.
+
+> **D7 is therefore unchanged: option (i), two documents** — but both of them ours by type, not just
+> by convention.
