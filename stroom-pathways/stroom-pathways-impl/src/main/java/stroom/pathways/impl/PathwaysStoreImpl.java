@@ -78,7 +78,7 @@ public class PathwaysStoreImpl
         if (docRef != null && docRef.getUuid() != null) {
             try {
                 final ClusterLockService clusterLockService = clusterLockServiceProvider.get();
-                clusterLockService.deleteLocks(PathwaysQueueProcessor.lockPrefix(docRef.getUuid()));
+                clusterLockService.deleteLocks(PathwaysProcessor.lockPrefix(docRef.getUuid()));
             } catch (final Exception e) {
                 // Ignore lock deletion failures to avoid failing the document delete itself.
             }

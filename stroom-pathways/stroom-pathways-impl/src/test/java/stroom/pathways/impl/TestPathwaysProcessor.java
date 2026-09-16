@@ -78,7 +78,7 @@ import static org.mockito.Mockito.verify;
  * <p>The applying itself is a counter here, which is the point — everything that can go wrong
  * operationally can be settled before a model exists to go wrong with it.
  */
-class TestPathwaysQueueProcessor {
+class TestPathwaysProcessor {
 
     private static final ByteBufferFactoryImpl BYTE_BUFFER_FACTORY = new ByteBufferFactoryImpl();
     private static final ByteBuffers BYTE_BUFFERS = new ByteBuffers(BYTE_BUFFER_FACTORY);
@@ -105,7 +105,7 @@ class TestPathwaysQueueProcessor {
     private Path bucketDir;
     private PlanBDoc tracesDoc;
     private PathwaysDoc pathwaysDoc;
-    private PathwaysQueueProcessor processor;
+    private PathwaysProcessor processor;
     private int nextTraceId;
     private Path lastLocalDir;
     private boolean lastChanged;
@@ -160,7 +160,7 @@ class TestPathwaysQueueProcessor {
                 .build();
         bucketDir = Files.createDirectories(tempDir.resolve("bucket"));
 
-        processor = new PathwaysQueueProcessor(
+        processor = new PathwaysProcessor(
                 pathwaysStore, shardStore, messageReceiverFactory,
                 new PathwaySerde(BYTE_BUFFER_FACTORY),
                 clusterLockService, securityContext,
@@ -182,9 +182,9 @@ class TestPathwaysQueueProcessor {
         processor.exec();
 
         verify(clusterLockService).tryLock(
-                eq(PathwaysQueueProcessor.lockName(pathwaysDoc.getUuid(), shard)), any(Runnable.class));
+                eq(PathwaysProcessor.lockName(pathwaysDoc.getUuid(), shard)), any(Runnable.class));
         verify(clusterLockService, never()).tryLock(
-                eq(PathwaysQueueProcessor.lockName(pathwaysDoc.getUuid(), 0)), any(Runnable.class));
+                eq(PathwaysProcessor.lockName(pathwaysDoc.getUuid(), 0)), any(Runnable.class));
     }
 
     @Test
@@ -200,7 +200,7 @@ class TestPathwaysQueueProcessor {
 
     @Test
     void theCountBoundLeavesTheRestForNextTime() throws IOException {
-        for (int i = 0; i <= PathwaysQueueProcessor.MAX_ITEMS_PER_HOLD; i++) {
+        for (int i = 0; i <= PathwaysProcessor.MAX_ITEMS_PER_HOLD; i++) {
             writeItem(1, 1_000L + i, 1);
         }
         final int before = itemsIn(1).size();
@@ -209,14 +209,14 @@ class TestPathwaysQueueProcessor {
 
         assertThat(itemsIn(1))
                 .as("one hold takes at most the bound, and the rest stay queued")
-                .hasSize(before - PathwaysQueueProcessor.MAX_ITEMS_PER_HOLD);
+                .hasSize(before - PathwaysProcessor.MAX_ITEMS_PER_HOLD);
     }
 
     @Test
     void itemsAreTakenOldestFirst() throws IOException {
         // One over the bound, so exactly the newest is left behind.
         final List<Long> orderKeys = new ArrayList<>();
-        for (int i = 0; i <= PathwaysQueueProcessor.MAX_ITEMS_PER_HOLD; i++) {
+        for (int i = 0; i <= PathwaysProcessor.MAX_ITEMS_PER_HOLD; i++) {
             orderKeys.add(1_000L + i);
             writeItem(1, 1_000L + i, 1);
         }
@@ -266,7 +266,7 @@ class TestPathwaysQueueProcessor {
         processor.exec();
 
         assertThat(itemsIn(1)).as("the readable items were applied and removed").isEmpty();
-        final Path quarantine = shardDir(1).resolve(PathwaysQueueProcessor.QUARANTINE_DIR_NAME);
+        final Path quarantine = shardDir(1).resolve(PathwaysProcessor.QUARANTINE_DIR_NAME);
         assertThat(quarantine).isDirectory();
         try (final Stream<Path> stream = Files.list(quarantine)) {
             assertThat(stream.toList()).as("the bad item is kept, not destroyed").hasSize(1);
@@ -276,7 +276,7 @@ class TestPathwaysQueueProcessor {
     @Test
     void shardsAreWorkedAtTheSameTime() throws IOException, InterruptedException {
         final int busyShards = 3;
-        assertThat(PathwaysQueueProcessor.SHARD_THREADS)
+        assertThat(PathwaysProcessor.SHARD_THREADS)
                 .as("the pool has to be able to hold every busy shard for this to mean anything")
                 .isGreaterThanOrEqualTo(busyShards);
         for (int shard = 0; shard < busyShards; shard++) {

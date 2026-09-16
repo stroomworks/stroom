@@ -60,16 +60,16 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
- * Applies the traces a trace store has handed over, one shard at a time.
+ * Applies the traces a trace store has handed over, several shards at a time.
  *
  * <p>Every node runs this. A shard is claimed by taking its cluster lock, so only one node works a
  * given shard at a time and which node that is does not matter — the queue and the state it builds
  * both live on the shared filesystem.
  */
 @Singleton
-public class PathwaysQueueProcessor {
+public class PathwaysProcessor {
 
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysQueueProcessor.class);
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysProcessor.class);
 
     /** Where a shard's unreadable items are set aside, under its own queue folder. */
     static final String QUARANTINE_DIR_NAME = "quarantine";
@@ -123,7 +123,7 @@ public class PathwaysQueueProcessor {
     private volatile long lastOldestItemAgeMs;
 
     @Inject
-    public PathwaysQueueProcessor(final PathwaysStore pathwaysStore,
+    public PathwaysProcessor(final PathwaysStore pathwaysStore,
                                   final PathwaysShardStore shardStore,
                                   final MessageReceiverFactory messageReceiverFactory,
                                   final PathwaySerde pathwaySerde,
