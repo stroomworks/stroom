@@ -62,12 +62,22 @@ ArchiveShardLocator.findRelevantShards(doc, shardIndex, fromMs, toMs)
 ShardManager.getArchive(doc, shardIndex, ref, fn)   cached read-only local copy per bucket
 ```
 
-A query is handed only the buckets overlapping its range. **This is the answer to O4 and much of
-O2** — cost scales with the range examined, not with the store.
+A query is handed only the buckets overlapping its range: cost scales with the range examined, not
+with the store.
 
 **Status, honestly:** the write side is live for Traces. The read side is built and tested but **not
 wired into any query path** — `getArchive` has no caller in main source and `findRelevantShards` is
 called only from `TestSharedFileStoreTraceRoundTrip`. Proven machinery awaiting a consumer.
+
+**And we probably do not need it, which is worth saying plainly.** An earlier revision called this
+"the answer to O4". It is not, because `maxStoreSize` is an uncapped `Long` passed straight to LMDB's
+`setMapSize`, and an LMDB map on a 64-bit system is virtual address space. A year of *unique* event
+data measures at ~79 GB (§6); set the map to 150 GiB and one ordinary store holds it.
+
+So archives earn their place for **genuinely unbounded** retention, and for tiering cold data onto
+shared storage — not for "at least a year", which needs only a larger number in a document setting.
+**That makes the only Traces dependency in this design optional and deferrable**, which matters given
+its read path has no consumer yet. Everything in §11 works without it.
 
 ### 3.2 A pre-aggregating HISTOGRAM state type
 
@@ -209,8 +219,9 @@ A year at 3 000 entities × 100 events/day = **109.5 M events**. At the rates me
 | Low (values repeat; `VARIABLE` dedupes them) | 162 | **~18 GB** |
 | Unique per event | 725–1350 | **~79–148 GB** |
 
-Both exceed the 10 GiB default `maxStoreSize`, so **archive buckets are not an optimisation, they
-are the only way to meet O4.** Day buckets put each at roughly 50–400 MB.
+Both exceed the 10 GiB **default** `maxStoreSize` — but that is a default, not a ceiling (§3.1). One
+store with its map set to 150 GiB holds a year of unique data. Archives become necessary only beyond
+that, for unbounded retention or cold-data tiering; day buckets would put each at roughly 50–400 MB.
 
 Note that O4 says *unique* event data, which points at the upper rows. Keeping values
 low-cardinality is worth about 5× and is free; see §5 of the feasibility note.
@@ -482,7 +493,8 @@ predicate (§5.1).
 
 **D — Checkpoint builder.** A periodic job running the expensive snapshot query **once per boundary**
 and writing the result to B. This is the whole trick: at hourly boundaries that is **24 expensive
-queries a day instead of three per second of playback**.
+queries a day instead of three per second of playback**. It runs at **boundary + grace**, not at the
+boundary — see §11.11. Scheduled on the same footing as Plan B's existing condense and retention jobs.
 
 **E — Query surface.** A `Searchable` in `stroom-floormap-impl` (§4 of
 `docs/floormap-single-read-feasibility.md`) exposing exactly three reads. Because we write
@@ -506,9 +518,11 @@ time extent     →  C: first and last bucket    2 values
 **Both halves of the snapshot are bounded and independent of total history.** That is the O2 win and
 the property the current design lacks.
 
-At 300 k events/day an hourly boundary means ≤ 12 500 events to fold — a pruned range scan over a
-single partition. **The boundary interval is the tuning knob**: shorter means more checkpoints and
-less folding.
+**The fold window is `interval + grace`, not `interval`** (§11.11), because the newest checkpoint is
+always one grace period old. At 300 k events/day with hourly boundaries and a 15-minute grace, the
+worst case is 75 minutes ≈ **15 600 events** to fold — still a pruned range scan over a single
+partition. **The boundary interval is the tuning knob**: shorter means more checkpoints and less
+folding.
 
 ### 11.4 Deliberately excluded
 
@@ -569,7 +583,8 @@ is comparable and, without B, inadequate on both.
 1. **Seek-based snapshot (§4)** — the biggest immediate win, no new stores, and it becomes D's
    implementation.
 2. **Bounded histogram (§3)** — `GROUP BY` plus a time index. Removes the last all-history read.
-3. **Checkpoints (B + D)** — the bounded snapshot. §5 and §5.1 are its design.
+3. **Checkpoints (B + D)** — the bounded snapshot. §5 and §5.1 are its design; §11.11 is its build
+   policy, including the grace period D must wait out before building each one.
 4. **Query surface (E)** — may come earlier if convenient; nothing depends on its ordering.
 5. **Count store (C)** — only when §11.5's wide-range case bites.
 
@@ -625,7 +640,7 @@ false, changes a block.
 | **AA2** | **Entity count stays in the low thousands and grows far more slowly than event count.** Block B is sized entities × boundaries. | B stops being small. At 100 k entities an hourly boundary is 876 M checkpoint rows a year, and B needs its own retention. |
 | **AA3** | **A boundary interval exists that keeps folding cheap** — ≤ one boundary's events, pruned to one partition. | Either checkpoints get expensive (short interval) or folding does (long). The interval becomes a per-store tuning parameter rather than a constant. |
 | **AA4** | **Computing a checkpoint is the same query as serving a snapshot** (§5.1). | D needs its own implementation and the §4 work stops being reusable. |
-| **AA5** | **Late-arriving events are rare or tolerable.** A checkpoint at boundary B is only correct if every event with `effective_time < B` has already arrived. | See D3 — this is the one with no obvious answer, and Traces already had to solve it. |
+| **AA5** | **A stale position for at most one boundary interval is tolerable.** A checkpoint at boundary B is only correct if every event with `effective_time < B` arrived before it was built; §11.11 decides how to handle those that do not. | The self-healing property (§11.11) stops being enough, and D3's option 4 or a rebuild is needed. |
 | **AA6** | **One events store may back several floor map documents, with different expiry settings.** | §5.1's whole argument weakens; a filtered checkpoint would become possible, though still fragile. |
 | **AA7** | **Retention ≥ display expiry** is enforceable where expiry is set. | The map silently under-reports (§5.1). |
 | **AA8** | **The client tolerates ~230 ms per tick.** It already drops ticks while a read is in flight, so latency degrades smoothness rather than correctness. | The tick budget becomes a hard constraint and B's boundary interval has to shrink. |
@@ -638,7 +653,7 @@ Ordered by how much else depends on them.
 |---|---|---|---|
 | **D1** | **Which store backs block A** — Plan B or the SQL store | Everything else is store-agnostic, so this can be taken late, but it decides who owns the code | §7.1: not a query-speed decision. Storage (~5×), ingest bursts, and fork-local ownership are the grounds |
 | **D2** | **Boundary interval for checkpoints** | Trades checkpoint volume against fold cost (AA3) | Hourly is the obvious start: 24 checkpoint builds a day, ≤12 500 events to fold |
-| **D3** | **Late-event policy** | AA5. A checkpoint built before all its events arrived is simply wrong, silently | Three options: a **grace period** before building (what `TraceDb.publish`'s `publishBefore` cut-off does — *"the operator's answer to how long until all of a trace's spans have arrived"*); **rebuild** affected checkpoints on late arrival; or **accept** staleness and document it. Traces chose the grace period |
+| ~~**D3**~~ | ~~Late-event policy~~ | | **DECIDED: grace period, option 1 — see §11.11.** Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
 | **D4** | **Where block E lives** | Plan B has no `-api` module and `stroom-floormap-impl` does not depend on it | Three options, costed in `floormap-single-read-feasibility.md` §4: impl-on-impl dependency, a new `stroom-planb-api`, or inside `stroom-planb-impl` (which reintroduces merge exposure and should be refused) |
 | **D5** | **Keep the user-authored events query?** | Decides E's shape, and whether a typed `FloorMapResource` endpoint is possible at all | Keeping it preserves the Events Query tab. Dropping it would delete `parseEventRows`, `latestPerEntity`, `FloorMapEventsQueryOrder` and the arrival-order logic, and shrink the wire format |
 | **D6** | **Retention period, and how AA7 is enforced** | Bounds checkpoint size and store growth; a wrong pairing under-reports silently | Validate where expiry is set, and say why it is capped |
@@ -646,5 +661,60 @@ Ordered by how much else depends on them.
 | **D8** | **Build the count store (C), or stay with `GROUP BY`?** | §11.5 | Deferred by §11.7 step 5. Decide when wide-range histograms become a complaint, not before |
 | **D9** | **Does the Events Query tab read through E or stay on the raw store?** | It is a separate execution today and must keep showing what the user wrote | Leaving it alone is the safe default; routing it through E would make its results match the map's |
 
-**D3 is the one to settle first**, because it is the only one with no obvious answer and it changes
-what block D does. The others can be deferred without blocking a prototype.
+**D3 is settled (§11.11), so nothing now blocks a prototype.** Of what remains, D5 has the widest
+blast radius and D1 can be taken latest, since the architecture is store-agnostic.
+
+### 11.11 Late events: when the checkpoint is built, and what it costs
+
+**Decision: option 1, a grace period.** The same choice Traces made, for the same reason.
+
+#### The problem
+
+`checkpoint(B)` claims to be the state of every entity as at B. It is only correct if **every event
+with `effective_time < B` has already arrived.** Floor map events are pipeline-ingested, so an event
+arriving after its own effective time is normal rather than exceptional, and nothing about the
+checkpoint's contents reveals that one was missed.
+
+#### The framing that makes this tractable
+
+> **The checkpoint is a performance optimisation, not a source of truth.** Correctness lives in the
+> event log; the checkpoint is only a starting point for the fold.
+
+That is what makes a cheap answer acceptable here, and it is what gives option 4 below its power.
+
+#### The decision
+
+Build `checkpoint(B)` at **B + grace**, not at B. This is what `TraceDb.publish`'s `publishBefore`
+cut-off does — its javadoc calls the cut-off *"the operator's answer to 'how long until all of a
+trace's spans have arrived'"* ([TraceDb.java:1004](../stroom-planb/stroom-planb-impl/src/main/java/stroom/planb/impl/dao/trace/TraceDb.java:1004)).
+
+**Its important property is that it is self-healing.** An event that misses `checkpoint(B)` is still
+in the log, so `checkpoint(B+1)` — built from the log — includes it:
+
+| | |
+|---|---|
+| Damage window | **one boundary interval** |
+| Who is affected | only entities whose latest state the late event would have changed |
+| Symptom | a stale position (or a missing entity), for scrub positions in `(B, B+interval)` only |
+| Afterwards | corrects itself permanently, with no intervention |
+
+**Why that is acceptable here.** This is a monitoring view. One entity showing a stale position, for
+a bounded window, at scrub positions in the past, repairing itself — that is a very different
+severity from the same defect in an audit report or a billing run. Weigh it against the alternatives
+below, all of which cost real machinery.
+
+#### Consequences to design around
+
+1. **The newest checkpoint is always one grace period old.** The fold window is therefore
+   `interval + grace` (§11.3), not `interval`.
+2. **Grace is a per-store setting**, because it is a property of the ingest path, not of the map.
+3. Grace trades exposure against freshness: longer grace means fewer missed events but an older
+   newest checkpoint and a larger fold.
+
+#### The options not taken
+
+| | | Why not |
+|---|---|---|
+| **2. Rebuild affected checkpoints** | Detect events with `effective_time` before the newest boundary and rebuild | Correct, but needs change detection and one expensive query per affected boundary. Worth revisiting only if the self-healing window proves too long |
+| **3. Accept, with no grace** | Build at B | Option 1 with `grace = 0` — strictly more exposure for no saving |
+| **4. Fold from an older checkpoint** | Fold from `checkpoint(B−n)` and apply `(B−n, T]` | **Kept as the escape hatch.** A *read-time* knob: because the fold reads the log, it picks up any late event in the window regardless of when it arrived. No rebuild, no extra storage, tunable per query, composes with option 1. Costs n× the fold, so it buys correctness with latency — add it if a deployment turns out to have long lateness |
