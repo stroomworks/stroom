@@ -426,7 +426,7 @@ public class PathwaysProcessor {
         for (int i = 0; i < SharedFileStore.shardCountOf(tracesDoc); i++) {
             final int shardIdx = i;
             // Per-shard lock: nodes in a cluster can process different shards in parallel.
-            final String lockName = "pathways-write-" + doc.getUuid() + "-" + shardIdx;
+            final String lockName = lockName(doc.getUuid(), shardIdx);
             clusterLockService.tryLock(lockName, () -> {
                 for (final ArchiveShardRef ref :
                         archiveShardLocator.findRelevantShards(tracesDoc, shardIdx, fromMs, toMs)) {
@@ -435,6 +435,20 @@ public class PathwaysProcessor {
                 }
             });
         }
+    }
+
+    /** One shard's write lock, so that nodes can work different shards of a document at once. */
+    static String lockName(final String pathwaysDocUuid, final int shardIndex) {
+        return lockPrefix(pathwaysDocUuid) + shardIndex;
+    }
+
+    /**
+     * Every shard lock this document will ever take. Lock rows are created on demand and removed only
+     * by name, so deleting the document has to delete these too or they stay in {@code cluster_lock}
+     * for good — see {@code PathwaysStoreImpl.deleteDocument}.
+     */
+    public static String lockPrefix(final String pathwaysDocUuid) {
+        return "pathways-write-" + pathwaysDocUuid + "-";
     }
 
     /**
@@ -455,8 +469,8 @@ public class PathwaysProcessor {
 
     /**
      * Processes eligible completed traces from a single TracesDoc shard into the
-     * PathwaysDb. Must be called while the caller holds the appropriate
-     * {@code pathways-write-*} cluster lock for this shard.
+     * PathwaysDb. Must be called while the caller holds this shard's cluster lock — see
+     * {@link #lockName}.
      */
     private Void processShardTraces(final Db<?, ?> db,
                                     final PathwaysDb pathwaysDb,

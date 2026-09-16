@@ -77,8 +77,9 @@ public class PathwaysModule extends AbstractModule {
     private static class ProcessPathways extends RunnableWrapper {
 
         @Inject
-        ProcessPathways(final PathwaysProcessor pathwaysProcessor) {
-            super(pathwaysProcessor::exec);
+        ProcessPathways(final PathwaysQueueProcessor pathwaysQueueProcessor) {
+            super(pathwaysQueueProcessor::exec);
         }
     }
+
 }

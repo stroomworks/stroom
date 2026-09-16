@@ -78,12 +78,14 @@ public class PathwaysStoreImpl
     public void deleteDocument(final DocRef docRef) {
         super.deleteDocument(docRef);
 
-        // Clean up cluster write locks created by PathwaysProcessor for this document.
-        // Lock rows accumulate in cluster_lock as shards are written to and are never
-        // removed automatically — they must be explicitly deleted on document removal.
+        // Clean up the per-shard cluster locks this document's processing takes — one set per
+        // processor. Lock rows accumulate in cluster_lock as shards are worked and are never removed
+        // automatically, so they have to go with the document or they stay for good.
         if (docRef != null && docRef.getUuid() != null) {
             try {
-                clusterLockServiceProvider.get().deleteLocks("pathways-write-" + docRef.getUuid());
+                final ClusterLockService clusterLockService = clusterLockServiceProvider.get();
+                clusterLockService.deleteLocks(PathwaysProcessor.lockPrefix(docRef.getUuid()));
+                clusterLockService.deleteLocks(PathwaysQueueProcessor.lockPrefix(docRef.getUuid()));
             } catch (final Exception e) {
                 // Ignore lock deletion failures to avoid failing the document delete itself.
             }
