@@ -57,8 +57,7 @@ public class PathwaysStoreImpl
      * <p>This does nothing for a rename. {@link stroom.docref.DocRef} equality is on uuid alone, so a
      * renamed target is the same reference and nothing here is rewritten; the Dependencies screen gets
      * the new name from {@code DocDependencyService.propagateName}, and the name stored inside this
-     * document stays as it was. That matters because {@link PathwaysProcessor} resolves the trace store
-     * by the name held in {@code tracesDocRef}, so renaming a trace store still stops it finding one.
+     * document stays as it was.
      */
     @Override
     protected DependencyRemapFunction<PathwaysDoc> getDependencyRemapFunction() {
@@ -78,13 +77,12 @@ public class PathwaysStoreImpl
     public void deleteDocument(final DocRef docRef) {
         super.deleteDocument(docRef);
 
-        // Clean up the per-shard cluster locks this document's processing takes — one set per
-        // processor. Lock rows accumulate in cluster_lock as shards are worked and are never removed
-        // automatically, so they have to go with the document or they stay for good.
+        // Clean up the per-shard cluster locks this document's processing takes. Lock rows accumulate
+        // in cluster_lock as shards are worked and are never removed automatically, so they have to go
+        // with the document or they stay for good.
         if (docRef != null && docRef.getUuid() != null) {
             try {
                 final ClusterLockService clusterLockService = clusterLockServiceProvider.get();
-                clusterLockService.deleteLocks(PathwaysProcessor.lockPrefix(docRef.getUuid()));
                 clusterLockService.deleteLocks(PathwaysQueueProcessor.lockPrefix(docRef.getUuid()));
             } catch (final Exception e) {
                 // Ignore lock deletion failures to avoid failing the document delete itself.

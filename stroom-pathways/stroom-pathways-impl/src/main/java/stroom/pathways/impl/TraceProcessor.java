@@ -44,7 +44,7 @@ import java.util.function.Function;
 
 public class TraceProcessor {
 
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysProcessor.class);
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TraceProcessor.class);
     private static final ByteBuffer PROCESSED = ByteBuffer.allocateDirect(0);
 
     private final ByteBuffers byteBuffers;

@@ -126,9 +126,7 @@ import java.util.stream.Stream;
  *   <li>{@code trace-roots} — the {@link TraceRoot} each list row is built from, derived from the stats
  *       by {@link #buildRootFromStats};</li>
  *   <li>one DBI per {@link TraceSecondaryIndex}, so a sorted page is a range scan rather than a
- *       full scan and sort;</li>
- *   <li>{@code trace-roots-merge-time}, which starts the grace-period clock the pathways processor
- *       waits out.</li>
+ *       full scan and sort.</li>
  * </ul>
  *
  * <p>Spans land in a holding-area shard, and every merge cycle {@link #publish} moves them into the
@@ -207,16 +205,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
     private final UsedLookupsRecorder keyRecorder;
     private final UsedLookupsRecorder valueRecorder;
     private final Dbi<ByteBuffer> traceRootsDbi;
-    /**
-     * Traces whose root span has been received, in the order this node received them.
-     * Key: {@code mergeTimeMs[8] big-endian ∥ traceId[16]}, value empty.
-     *
-     * <p>Stamped with the receiving node's clock rather than the span's claimed end time, so the
-     * grace period {@code PathwaysProcessor} waits out is measured from arrival and is unaffected by
-     * out-of-order delivery. Written by {@link #insert} and {@link #merge}; cleared by
-     * {@link #runRetention} past the cut-off and when publishing retires the trace.
-     */
-    private final Dbi<ByteBuffer> traceRootsMergeTimeDbi;
 
     // -----------------------------------------------------------------------
     // Secondary sort indexes  (key = sortField ∥ traceId[16], value = empty)
@@ -303,7 +291,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
         traceRootValueSerde = new TraceRootValueSerde(byteBufferFactory);
         traceStatsSerde = new TraceStatsSerde(byteBufferFactory);
         traceRootsDbi = env.openDbi("trace-roots", DbiFlags.MDB_CREATE);
-        traceRootsMergeTimeDbi = env.openDbi("trace-roots-merge-time", DbiFlags.MDB_CREATE);
         traceStatsDbi = env.openDbi("trace-stats", DbiFlags.MDB_CREATE);
         traceServiceNamesDbi = env.openDbi("trace-service-names", DbiFlags.MDB_CREATE);
 
@@ -396,16 +383,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
 
     // MDB_NOOVERWRITE throughout: an identical key (same sort value AND same traceId) is already the
     // entry we would write, so ignoring it keeps the index free of duplicates.
-    // Records when this store took on a trace, which is what PathwaysProcessor measures its grace
-    // period from. MDB_NOOVERWRITE so a repeat within the same millisecond cannot double up.
-    private void stampMergeTime(final Txn<ByteBuffer> writeTxn, final byte[] traceIdBytes) {
-        final byte[] mergeKeyBytes = new byte[Long.BYTES + traceIdBytes.length];
-        ByteBuffer.wrap(mergeKeyBytes).putLong(System.currentTimeMillis()).put(traceIdBytes);
-        byteBuffers.useBytes(mergeKeyBytes, mergeTimeKey -> {
-            traceRootsMergeTimeDbi.put(writeTxn, mergeTimeKey, emptyValue(), PutFlags.MDB_NOOVERWRITE);
-        });
-    }
-
     private void writeSecondaryIndexes(final Txn<ByteBuffer> writeTxn,
                                        final byte[] traceIdBytes,
                                        final TraceRoot root) {
@@ -555,8 +532,7 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
             // Root span: rebuild the stored root from the root span plus the per-trace stats
             // counters, so services and totalSpans cost no per-span rescan however large the
             // trace grows. Only depth walks the span index, and only when buildRootFromStats
-            // decides it is due. Also writes the trace-roots-merge-time entry that drives the
-            // PathwaysProcessor grace-period clock.
+            // decides it is due.
             try {
                 // The root span is in the store — either just written, or already there and the
                 // write rejected as a duplicate. Empty means no live span at all; skip defensively.
@@ -577,9 +553,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                                 traceRootsDbi.put(writeTxn, keyBuffer, valueBuffer)));
 
                 writeSecondaryIndexes(writeTxn, traceIdBytes, newRoot);
-
-                // Initialise the merge-time clock for the PathwaysProcessor.
-                stampMergeTime(writeTxn, traceIdBytes);
             } catch (final LmdbNativeException e) {
                 throw e;
             } catch (final RuntimeException e) {
@@ -683,33 +656,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
         });
     }
 
-    /**
-     * Yields the traceId of every {@link #traceRootsMergeTimeDbi} entry merged at or before
-     * {@code cutoffMs}. The DBI is merge-time ordered, so iteration stops at the first entry past the
-     * cutoff — O(eligible) rather than a full scan.
-     */
-    public void iterateRootsMergedBefore(final long cutoffMs, final Consumer<byte[]> consumer) {
-        env.read(txn -> {
-            try (final Stream<LmdbEntry> stream = LmdbStream.stream(txn, traceRootsMergeTimeDbi)) {
-                stream.takeWhile(entry -> entry.getKey().duplicate().getLong() <= cutoffMs)
-                        .forEach(entry -> {
-                            final ByteBuffer keyBuf = entry.getKey().duplicate();
-                            keyBuf.getLong(); // skip the 8-byte mergeTimeMs prefix
-                            final int remaining = keyBuf.remaining();
-                            if (remaining != 16) {
-                                LOGGER.warn("Corrupt trace-roots-merge-time key: expected 16 " +
-                                        "traceId bytes, got {}", remaining);
-                                return;
-                            }
-                            final byte[] traceIdBytes = new byte[16];
-                            keyBuf.get(traceIdBytes);
-                            consumer.accept(traceIdBytes);
-                        });
-            }
-            return null;
-        });
-    }
-
     @Override
     public void merge(final Path source) {
         env.write(writer -> {
@@ -791,27 +737,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                         pendingRootRebuilds.add(HexStringUtil.encode(traceIdBytes));
                     });
 
-                    // Write trace-roots-merge-time entries using the TARGET node's
-                    // wall-clock merge time, derived from the source's trace-roots index.
-                    // Copying source timestamps verbatim would preserve the SOURCE node's
-                    // wall-clock time, which may already exceed the grace-period cutoff —
-                    // defeating the intent of measuring receipt time at the TARGET node.
-                    // Iterating traceRootsDbi covers both the quick-merge path (which
-                    // bypasses insert()) and the full-read path (MDB_NOOVERWRITE silently
-                    // rejects duplicates already written by insert() at the same ms).
-                    final long targetMergeTimeMs = System.currentTimeMillis();
-                    LmdbIterable.iterate(readTxn, sourceDb.traceRootsDbi, (key, val) -> {
-                        final byte[] traceIdBytes = new byte[key.remaining()];
-                        key.duplicate().get(traceIdBytes);
-                        final byte[] mergeKeyBytes = new byte[Long.BYTES + traceIdBytes.length];
-                        ByteBuffer.wrap(mergeKeyBytes).putLong(targetMergeTimeMs).put(traceIdBytes);
-                        byteBuffers.useBytes(mergeKeyBytes, mergeTimeKey -> {
-                            traceRootsMergeTimeDbi.put(writer.getWriteTxn(), mergeTimeKey,
-                                    emptyValue(), PutFlags.MDB_NOOVERWRITE);
-                        });
-                        writer.tryCommit();
-                    });
-
                     return null;
                 });
             }
@@ -835,9 +760,9 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
 
     /**
      * @param handedOver told the raw id of every trace that became newly complete in this store — one
-     *                   that has just gained a real root it did not have before, which is the same
-     *                   condition {@code stampMergeTime} fires on. Called inside the write transaction,
-     *                   so it must not touch another environment; collect and act afterwards.
+     *                   that has just gained a real root it did not have before. Called inside the
+     *                   write transaction, so it must not touch another environment; collect and act
+     *                   afterwards.
      */
     public void mergeComplete(final Consumer<byte[]> handedOver) {
         if (pendingRootRebuilds.isEmpty()) {
@@ -877,23 +802,11 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                                     traceRootsDbi.put(writeTxn, keyBuf, valBuf)));
                     writeSecondaryIndexes(writeTxn, traceIdBytes, rebuilt);
 
-                    // A rooted trace this store did not already hold needs its merge time here,
-                    // because only some spans reach it through insert: a span whose stored bytes
-                    // reference no lookup table is merged by a direct put, which stamps nothing.
-                    // Keying on the absent root keeps it to one entry per trace per store, and the
-                    // read it needs has already happened above. An orphan root is left unstamped,
-                    // so a trace with no root span still waits rather than being handed on.
-                    if (optOldRoot.isEmpty() && !rebuilt.isOrphan()) {
-                        stampMergeTime(writeTxn, traceIdBytes);
-                    }
-
-                    // Handing over is NOT keyed on the absent root. That condition means "insert did
-                    // not already deal with this trace", and insert deals with exactly those whose
-                    // stored bytes reference a lookup table — which is every trace whose name or
-                    // attributes run past the inline limit. Keying on it there silently excluded every
-                    // long-named operation. So report every rooted trace the cycle rebuilt, and let a
-                    // consumer that sees one twice say so: re-applying a trace is something this design
-                    // already has to tolerate, whereas never offering one cannot be recovered from.
+                    // Every rooted trace the cycle rebuilt is reported, whether or not this store
+                    // already held a root for it, and a consumer that sees one twice can say so:
+                    // re-applying a trace is something this design has to tolerate, whereas never
+                    // offering one cannot be recovered from. An orphan is not reported — a trace
+                    // with no root span has nothing to key a pathway on, so it waits.
                     if (!rebuilt.isOrphan()) {
                         handedOver.accept(traceIdBytes);
                     }
@@ -1228,23 +1141,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
             count.increment();
             writer.tryCommit();
         }
-
-        // Merge-time entries for retired roots.
-        if (!selection.retiring().isEmpty()) {
-            LmdbIterable.iterate(readTxn, traceRootsMergeTimeDbi, (key, val) -> {
-                final ByteBuffer keyBuf = key.duplicate();
-                if (keyBuf.remaining() != Long.BYTES + TRACE_ID_BYTES) {
-                    return;
-                }
-                keyBuf.getLong(); // skip the mergeTimeMs prefix
-                final byte[] traceIdBytes = new byte[TRACE_ID_BYTES];
-                keyBuf.get(traceIdBytes);
-                if (selection.isRetiring(HexStringUtil.encode(traceIdBytes))) {
-                    traceRootsMergeTimeDbi.delete(writer.getWriteTxn(), key);
-                    writer.tryCommit();
-                }
-            });
-        }
     }
 
     // Fail loudly rather than with an NPE if a sorted/indexed read is ever attempted against a store
@@ -1533,15 +1429,6 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                         deleteStatsOf(readTxn, writer, traceIdBytes);
                         changeCount.increment();
                     }
-                }
-                writer.tryCommit();
-            });
-
-            // Delete stale trace-roots-merge-time entries.
-            LmdbIterable.iterate(readTxn, traceRootsMergeTimeDbi, (key, val) -> {
-                final long mergeTimeMs = key.duplicate().getLong();
-                if (mergeTimeMs < deleteBeforeMs) {
-                    traceRootsMergeTimeDbi.delete(writer.getWriteTxn(), key);
                 }
                 writer.tryCommit();
             });
