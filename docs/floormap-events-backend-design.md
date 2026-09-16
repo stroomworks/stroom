@@ -651,18 +651,22 @@ Ordered by how much else depends on them.
 
 | | Decision | Why it matters | Notes |
 |---|---|---|---|
-| **D1** | **Which store backs block A** — Plan B or the SQL store | Everything else is store-agnostic, so this can be taken late, but it decides who owns the code | §7.1: not a query-speed decision. Storage (~5×), ingest bursts, and fork-local ownership are the grounds |
-| **D2** | **Boundary interval for checkpoints** | Trades checkpoint volume against fold cost (AA3) | Hourly is the obvious start: 24 checkpoint builds a day, ≤12 500 events to fold |
+| ~~**D1**~~ | ~~Which store backs block A~~ | | **DECIDED: Plan B, not MySQL.** And Plan B rather than a bespoke LMDB store — see §11.12 for why, and for how D4's concern is met without owning the storage engine |
+| ~~**D2**~~ | ~~Boundary interval for checkpoints~~ | | **DECIDED: hourly.** 24 builds a day; worst-case fold `interval + grace` ≈ 15 600 events (§11.3). Recent times are the ordinary case, not an edge case — see §11.12.1 |
 | ~~**D3**~~ | ~~Late-event policy~~ | | **DECIDED: grace period, option 1 — see §11.11.** Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
-| **D4** | **Where block E lives** | Plan B has no `-api` module and `stroom-floormap-impl` does not depend on it | Three options, costed in `floormap-single-read-feasibility.md` §4: impl-on-impl dependency, a new `stroom-planb-api`, or inside `stroom-planb-impl` (which reintroduces merge exposure and should be refused) |
-| **D5** | **Keep the user-authored events query?** | Decides E's shape, and whether a typed `FloorMapResource` endpoint is possible at all | Keeping it preserves the Events Query tab. Dropping it would delete `parseEventRows`, `latestPerEntity`, `FloorMapEventsQueryOrder` and the arrival-order logic, and shrink the wire format |
-| **D6** | **Retention period, and how AA7 is enforced** | Bounds checkpoint size and store growth; a wrong pairing under-reports silently | Validate where expiry is set, and say why it is capped |
+| **D4** | **Where block E lives, and how the store is presented** | Plan B has no `-api` module and `stroom-floormap-impl` does not depend on it. Separately: a raw Plan B document can be configured in ways that break the map | **Open, explored in §11.12.** The module question is unchanged; the presentation question — a `FloorMapEventStore` exposing only settings that suit the map — is the part still to decide |
+| ~~**D5**~~ | ~~Keep the user-authored events query?~~ | | **DECIDED: keep it** — the flexibility is worth the machinery. This fixes E as a `Searchable` taking StroomQL, and rules out the typed `FloorMapResource` endpoint |
+| ~~**D6**~~ | ~~Retention period, and how AA7 is enforced~~ | | **DECIDED: default expiry and retention to 1 day.** A user who raises it too far owns the consequence. AA7 (`expiry ≤ retention`) still needs validating where expiry is set, so the failure is an error rather than silent under-reporting |
 | **D7** | **How block B is stored** | A Plan B store of its own, a table, or a DBI alongside the event log | Key order is fixed by §11.2 (boundary, entity); the container is open |
-| **D8** | **Build the count store (C), or stay with `GROUP BY`?** | §11.5 | Deferred by §11.7 step 5. Decide when wide-range histograms become a complaint, not before |
-| **D9** | **Does the Events Query tab read through E or stay on the raw store?** | It is a separate execution today and must keep showing what the user wrote | Leaving it alone is the safe default; routing it through E would make its results match the map's |
+| ~~**D8**~~ | ~~Build the count store (C), or stay with `GROUP BY`?~~ | | **DECIDED: `GROUP BY`, whichever is simpler.** Revisit only if wide-range histograms become an actual complaint |
+| ~~**D9**~~ | ~~Does the Events Query tab read through E?~~ | | **DECIDED: route through E.** Not required for accessibility, but it fixes an accessibility-visible inconsistency — see §11.12.2 |
 
-**D3 is settled (§11.11), so nothing now blocks a prototype.** Of what remains, D5 has the widest
-blast radius and D1 can be taken latest, since the architecture is store-agnostic.
+**Only D4 and D7 remain open**, and neither blocks a prototype. D4 is explored in §11.12; D7 (how
+block B is physically stored) is narrowed there too, since §11.12 establishes that the key layout
+§11.2 needs *is* expressible as a Plan B store.
+
+> **A numbering note.** The retention decision above was given against "D7"; it answers **D6**.
+> D7 — how block B is stored — is a different question and remains open.
 
 ### 11.11 Late events: when the checkpoint is built, and what it costs
 
@@ -718,3 +722,108 @@ below, all of which cost real machinery.
 | **2. Rebuild affected checkpoints** | Detect events with `effective_time` before the newest boundary and rebuild | Correct, but needs change detection and one expensive query per affected boundary. Worth revisiting only if the self-healing window proves too long |
 | **3. Accept, with no grace** | Build at B | Option 1 with `grace = 0` — strictly more exposure for no saving |
 | **4. Fold from an older checkpoint** | Fold from `checkpoint(B−n)` and apply `(B−n, T]` | **Kept as the escape hatch.** A *read-time* knob: because the fold reads the log, it picks up any late event in the window regardless of when it arrived. No rebuild, no extra storage, tunable per query, composes with option 1. Costs n× the fold, so it buys correctness with latency — add it if a deployment turns out to have long lateness |
+
+### 11.12 D1 and D4: which store, and how it is presented
+
+These arrived as two questions and are really one. D1 asked Plan B or MySQL, then Plan B or a bespoke
+LMDB store. D4 asked for a `FloorMapEventStore` that cannot be misconfigured. The second is the
+reason to consider the first.
+
+#### The concern is real
+
+A floor map today points at an ordinary Plan B document, and the user can change `stateType`, the key
+and value schemas, `condense`, `retention`, snapshot settings and `maxStoreSize`. Several of those
+break the map, and most break it **silently**:
+
+| Setting | What it does to the map |
+|---|---|
+| `condense` | collapses runs of identical positions — the survivor can fall outside a read, so a stationary entity vanishes |
+| key type ≠ the default shape | breaks the arrival-order guarantee `FloorMapEventsQueryOrder` depends on, and the reduction falls back to comparing rendered times |
+| value type | ~5× on storage (§6), invisibly |
+| `retention` off (the default) | the store grows until the 95% merge stop, at which point ingest silently stops being queryable (§11.11) |
+| `maxStoreSize` at 10 GiB default | ~7 months, or ~4 weeks with unique values (§6) |
+| `stateType` ≠ `TEMPORAL_STATE` | nothing works at all |
+
+**None of these produce an error.** They produce a map that is subtly wrong, and the cause is a
+document a user was entitled to edit.
+
+#### But owning the storage engine is not the answer
+
+The tempting conclusion is to own our own LMDB and expose only what suits the map. Against that:
+
+- **Plan B gives a great deal for free** — merge, shard management, snapshots, retention,
+  compaction, the document lifecycle, and a search provider. `ShardManager` alone is 600+ lines we
+  would be reimplementing.
+- **And the key layouts §11.2 needs are expressible in it.** This was the real question. Block A is a
+  `TEMPORAL_STATE` store, which is `<entity><time>` — exactly right. Block B needs *boundary*-first
+  ordering, which looks impossible for a temporal store keyed by entity — but a plain `STATE` store
+  with a composite `KeyPrefix` of `"<boundary>|<entity>"` sorts lexicographically boundary-first, so
+  a prefix scan on `"<boundary>|"` returns every entity at that boundary in one contiguous range.
+  **That is the access pattern §11.3 is built on, and Plan B can serve it today.**
+
+> **Decision (D1): Plan B.** Not MySQL (§7.1), and not a bespoke LMDB store — the configuration
+> problem is not a storage-engine problem, and solving it that way costs far more than it saves.
+
+#### So the answer to D4 is about presentation, not storage
+
+What is wanted is a store that is *created and owned by the floor map*, exposing only the settings
+that make sense for it — expiry/retention, size, and nothing else — with `stateType`, key schema,
+value schema and `condense` fixed at values the map requires.
+
+Three shapes, and the constraint that rules one out:
+
+| | Shape | Verdict |
+|---|---|---|
+| **a** | **Hidden entirely inside `FloorMapDoc`** — no separate store document | **Ruled out by ingest.** Plan B resolves a store by *document name* (`docFinder.findByName(type, name)`), and a pipeline's `PlanBFilter` names it in the `<map>` element. A store with no document has no name to write to. It would also kill AA6 — one store backing several maps — which is a capability, not an accident |
+| **b** | **A `FloorMapEventStore` document type** that is a Plan B store with locked-down settings | **The shape wanted.** The open question is whether it can be registered with Plan B's machinery without editing `stroom-planb-impl`, since `StateSearchProvider.getDataSourceType()` keys on `PlanBDoc.TYPE` |
+| **c** | **A normal Plan B document, created and configured by the floor map**, with the map validating it and warning loudly when it is edited into an unusable state | **The pragmatic fallback.** No new document type, no upstream changes. It does not *prevent* misconfiguration, it detects it — which is most of the value, since today's failures are silent |
+
+**Recommendation: start at (c), design towards (b).** (c) is achievable now, needs nothing from
+upstream, and converts every silent failure in the table above into a visible one. (b) is the better
+end state and (c) does not block it — the validation logic written for (c) is exactly the constraint
+set (b) would enforce.
+
+**Still to establish for (b):** whether a non-`PlanBDoc` type can participate in Plan B's doc cache,
+search provider and merge processor without changes inside `stroom-planb-impl`. If it cannot, (b)
+carries the same merge exposure §11.12 is trying to avoid, and (c) becomes the answer rather than the
+step towards it.
+
+#### 11.12.1 D2: what about looking at the last hour?
+
+Hourly boundaries do not make recent times a special case — **they make them the ordinary case**,
+which is the one the fold window was sized for.
+
+A snapshot at T folds from the newest checkpoint at or before T. Because a checkpoint is built at
+`boundary + grace` (§11.11), the newest one available may be the *previous* boundary's:
+
+```
+interval = 1h, grace = 15m
+
+now = 10:30, T = 10:25   →  checkpoint(10:00) exists (built 10:15), fold 25 minutes
+now = 10:10, T = 10:05   →  checkpoint(10:00) not built yet, fold from checkpoint(09:00) = 65 minutes
+```
+
+The worst case is `interval + grace` = 75 minutes ≈ 15 600 events at 300 k/day — a pruned range scan
+over a single partition, and exactly the figure §11.3 quotes. **Looking at the last hour, or at
+"now", costs the same as looking at any other time.** There is no cliff.
+
+If that fold ever proves too slow, the knob is the interval, not the architecture: halving it halves
+the worst-case fold and doubles the number of checkpoint builds.
+
+#### 11.12.2 D9: routing the Events Query tab through E, and accessibility
+
+**It is not required for accessibility — but it fixes something accessibility-visible.**
+
+The canvas keeps a standing accessible summary, exposed as the map image's accessible name, whose
+entity counts come from `lastEventObjects` — *"the event objects last handed to `setEventObjects`"*.
+That field is written by whichever producer pushed last, and the Events Query tab is a second
+producer: it publishes over its own time range **without** the per-entity reduction the map applies.
+
+So while that tab is open, the accessible summary can report a count that matches neither the map's
+state nor what a sighted user would count on the canvas — and a screen-reader user has no way to see
+the discrepancy. Routing both producers through E makes them agree.
+
+To be clear about the severity: the accessible summary is deliberately kept out of `redraw()` and is
+refreshed only where content changes, so this is a wrong number rather than a flood of announcements.
+It is a correctness bug that happens to surface in an accessibility feature, not an accessibility
+barrier.
