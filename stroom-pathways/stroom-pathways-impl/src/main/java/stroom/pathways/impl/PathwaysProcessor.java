@@ -371,7 +371,9 @@ public class PathwaysProcessor {
         pathwaysDb.getPathways().iterate((key, val) -> {
             boolean match = false;
             if (NullSafe.isNonEmptyString(criteria.getFilter())) {
-                final String string = ByteBufferUtils.byteBufferToString(key);
+                // toString decodes UTF-8; byteBufferToString renders the byte values, which no
+                // filter a user types could ever match.
+                final String string = ByteBufferUtils.toString(key);
                 if (string.contains(criteria.getFilter())) {
                     match = true;
                 }

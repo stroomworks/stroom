@@ -16,6 +16,7 @@
 
 package stroom.pathways.impl;
 
+import stroom.bytebuffer.ByteBufferUtils;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.cluster.lock.api.ClusterLockService;
@@ -23,6 +24,7 @@ import stroom.docref.DocRef;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemWriter;
 import stroom.planb.impl.dao.trace.TraceDb;
@@ -49,7 +51,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -81,6 +85,7 @@ class TestPathwaysQueueProcessor {
 
     private static final int SHARD_COUNT = 4;
     private static final String ROOT_SPAN = "1111111111111111";
+    private static final String SPAN_NAME = "GET /orders";
 
     @TempDir
     Path tempDir;
@@ -93,6 +98,8 @@ class TestPathwaysQueueProcessor {
     private SecurityContext securityContext;
     @Mock
     private PathwaysShardStore shardStore;
+    @Mock
+    private MessageReceiverFactory messageReceiverFactory;
 
     private Path pathwaysShared;
     private Path bucketDir;
@@ -100,6 +107,9 @@ class TestPathwaysQueueProcessor {
     private PathwaysDoc pathwaysDoc;
     private PathwaysQueueProcessor processor;
     private int nextTraceId;
+    private Path lastLocalDir;
+    private boolean lastChanged;
+    private final Map<Integer, Path> localDirs = new HashMap<>();
 
     @BeforeEach
     void setUp() throws IOException {
@@ -128,11 +138,18 @@ class TestPathwaysQueueProcessor {
             return null;
         }).when(clusterLockService).tryLock(anyString(), any(Runnable.class));
 
-        // Hand the work a local directory and run it, which is all these tests need of the model
-        // store. TestPathwaysShardStore covers the copying itself.
+        // Hand the work a local directory and run it, keeping one per shard so a model accumulates
+        // across holds the way the real store makes it. TestPathwaysShardStore covers the copying.
         doAnswer(invocation -> {
-            final Path localDir = Files.createTempDirectory(tempDir, "localShard");
-            return invocation.getArgument(2, Predicate.class).test(localDir);
+            final int shardIndex = invocation.getArgument(1, Integer.class);
+            Path localDir = localDirs.get(shardIndex);
+            if (localDir == null) {
+                localDir = Files.createTempDirectory(tempDir, "localShard" + shardIndex);
+                localDirs.put(shardIndex, localDir);
+            }
+            lastLocalDir = localDir;
+            lastChanged = invocation.getArgument(2, Predicate.class).test(localDir);
+            return lastChanged;
         }).when(shardStore).withShard(any(), anyInt(), any());
 
         tracesDoc = PlanBDoc.builder()
@@ -144,7 +161,9 @@ class TestPathwaysQueueProcessor {
         bucketDir = Files.createDirectories(tempDir.resolve("bucket"));
 
         processor = new PathwaysQueueProcessor(
-                pathwaysStore, shardStore, clusterLockService, securityContext,
+                pathwaysStore, shardStore, messageReceiverFactory,
+                new PathwaySerde(BYTE_BUFFER_FACTORY),
+                clusterLockService, securityContext,
                 BYTE_BUFFERS, BYTE_BUFFER_FACTORY, () -> new MetricRegistry());
     }
 
@@ -286,6 +305,39 @@ class TestPathwaysQueueProcessor {
     }
 
     @Test
+    void aTraceBecomesAPathwayInTheShardsModel() throws IOException {
+        writeItem(1, 1_000L, 1);
+
+        processor.exec();
+
+        try (final PathwaysDb db = PathwaysDb.create(lastLocalDir, BYTE_BUFFERS, true)) {
+            final List<String> names = new ArrayList<>();
+            db.getPathways().iterate((key, val) ->
+                    names.add(ByteBufferUtils.toString(key)));
+            assertThat(names)
+                    .as("the root span's operation name keys the pathway it built")
+                    .containsExactly(SPAN_NAME);
+        }
+    }
+
+    @Test
+    void aTraceAlreadyAppliedDoesNotMakeTheModelWorthPushing() throws IOException {
+        final String traceId = "d".repeat(32);
+        writeItem(1, 1_000L, traceId);
+        processor.exec();
+        assertThat(lastChanged).as("the first sighting builds a pathway").isTrue();
+
+        // The same trace again, into the model that already holds it — which is what at-least-once
+        // delivery makes routine. Nothing changes, so there is nothing worth copying back up.
+        writeItem(1, 2_000L, traceId);
+        processor.exec();
+
+        assertThat(lastChanged)
+                .as("re-applying a trace this shard has seen is not worth a push")
+                .isFalse();
+    }
+
+    @Test
     void aContendedShardIsSkipped() throws IOException {
         writeItem(1, 1_000L, 1);
         // tryLock returning without running is how a lock held by another node presents.
@@ -312,16 +364,31 @@ class TestPathwaysQueueProcessor {
     // Fixture
     // -----------------------------------------------------------------------
 
-    // A real queue item, written by the real writer out of a real bucket, so that reading it back
-    // exercises the span and lookup decoding rather than a stand-in.
+    private void writeItem(final int shard, final long orderKey, final String traceIdHex)
+            throws IOException {
+        writeItem(shard, orderKey, 1, traceIdHex);
+    }
+
     private void writeItem(final int shard, final long orderKey, final int traceCount)
             throws IOException {
+        writeItem(shard, orderKey, traceCount, null);
+    }
+
+    // A real queue item, written by the real writer out of a real bucket, so that reading it back
+    // exercises the span and lookup decoding rather than a stand-in. Naming the trace lets a test
+    // deliver the same one twice, which is what at-least-once delivery does.
+    private void writeItem(final int shard,
+                           final long orderKey,
+                           final int traceCount,
+                           final String traceIdHex) throws IOException {
         final List<byte[]> traceIds = new ArrayList<>();
         try (final TraceDb bucket = TraceDb.create(
                 bucketDir, BYTE_BUFFERS, BYTE_BUFFER_FACTORY, tracesDoc, false)) {
             bucket.write(writer -> {
                 for (int i = 0; i < traceCount; i++) {
-                    final String traceId = String.format("%032x", ++nextTraceId);
+                    final String traceId = traceIdHex != null
+                            ? traceIdHex
+                            : String.format("%032x", ++nextTraceId);
                     traceIds.add(HexStringUtil.decode(traceId));
                     bucket.insert(writer, new SpanKV(
                             SpanKey.builder()
@@ -330,7 +397,7 @@ class TestPathwaysQueueProcessor {
                                     .parentSpanId("")
                                     .build(),
                             SpanValue.builder()
-                                    .name("GET /orders")
+                                    .name(SPAN_NAME)
                                     .startTimeUnixNano(NanoTimeUtil.fromInstant(Instant.now()))
                                     .endTimeUnixNano(NanoTimeUtil.fromInstant(Instant.now()))
                                     .insertTime(NanoTimeUtil.fromInstant(Instant.now()))

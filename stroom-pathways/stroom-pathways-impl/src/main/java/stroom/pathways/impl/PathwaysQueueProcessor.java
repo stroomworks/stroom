@@ -22,8 +22,11 @@ import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemReader;
+import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.security.api.SecurityContext;
 import stroom.util.logging.LambdaLogger;
@@ -46,12 +49,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
@@ -98,6 +103,8 @@ public class PathwaysQueueProcessor {
 
     private final PathwaysStore pathwaysStore;
     private final PathwaysShardStore shardStore;
+    private final MessageReceiverFactory messageReceiverFactory;
+    private final PathwaySerde pathwaySerde;
     private final ClusterLockService clusterLockService;
     private final SecurityContext securityContext;
     private final ByteBuffers byteBuffers;
@@ -118,6 +125,8 @@ public class PathwaysQueueProcessor {
     @Inject
     public PathwaysQueueProcessor(final PathwaysStore pathwaysStore,
                                   final PathwaysShardStore shardStore,
+                                  final MessageReceiverFactory messageReceiverFactory,
+                                  final PathwaySerde pathwaySerde,
                                   final ClusterLockService clusterLockService,
                                   final SecurityContext securityContext,
                                   final ByteBuffers byteBuffers,
@@ -125,6 +134,8 @@ public class PathwaysQueueProcessor {
                                   final Metrics metrics) {
         this.pathwaysStore = pathwaysStore;
         this.shardStore = shardStore;
+        this.messageReceiverFactory = messageReceiverFactory;
+        this.pathwaySerde = pathwaySerde;
         this.clusterLockService = clusterLockService;
         this.securityContext = securityContext;
         this.byteBuffers = byteBuffers;
@@ -245,7 +256,8 @@ public class PathwaysQueueProcessor {
     private void drain(final PathwaysDoc doc, final int shardIndex, final Path shardDir) {
         final List<Path> applied = new ArrayList<>();
         try {
-            shardStore.withShard(doc, shardIndex, localDir -> applyBatch(shardDir, localDir, applied));
+            shardStore.withShard(doc, shardIndex,
+                    localDir -> applyBatch(doc, shardDir, localDir, applied));
         } catch (final IOException e) {
             // The model could not be taken down or put back, so nothing here was committed. Leaving
             // the items queued is the whole point: they are applied again by whoever gets the shard
@@ -260,50 +272,98 @@ public class PathwaysQueueProcessor {
     // Fills `applied` with the items that went in, so the caller can delete exactly those once the
     // model is safely back on the shared store. Returns whether the local model changed, which is what
     // decides whether it is worth pushing.
-    private boolean applyBatch(final Path shardDir, final Path localDir, final List<Path> applied) {
+    private boolean applyBatch(final PathwaysDoc doc,
+                               final Path shardDir,
+                               final Path localDir,
+                               final List<Path> applied) {
         final Instant deadline = Instant.now().plus(MAX_TIME_PER_HOLD);
-        long traces = 0;
+        final Counts counts = new Counts();
 
-        for (final Path item : itemsIn(shardDir)) {
-            if (Thread.currentThread().isInterrupted()) {
-                // The lock's heartbeat interrupts us when it cannot renew. Carrying on regardless is
-                // how two nodes end up working one shard, so stop and leave the rest queued.
-                LOGGER.warn(() -> "Interrupted part way through " + shardDir + ", leaving the rest queued");
-                break;
-            }
-            if (applied.size() >= MAX_ITEMS_PER_HOLD || Instant.now().isAfter(deadline)) {
-                break;
-            }
-            try {
-                traces += apply(item);
-                applied.add(item);
-            } catch (final Exception e) {
-                quarantine(item, e);
-            }
+        try (final PathwaysDb pathwaysDb = PathwaysDb.create(localDir, byteBuffers, false)) {
+            withMessageReceiver(doc, messageReceiver -> {
+                try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                    final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde);
+                    for (final Path item : itemsIn(shardDir)) {
+                        if (Thread.currentThread().isInterrupted()) {
+                            // The lock's heartbeat interrupts us when it cannot renew. Carrying on
+                            // regardless is how two nodes end up working one shard, so stop and leave
+                            // the rest queued.
+                            LOGGER.warn(() -> "Interrupted part way through " + shardDir
+                                              + ", leaving the rest queued");
+                            break;
+                        }
+                        if (applied.size() >= MAX_ITEMS_PER_HOLD || Instant.now().isAfter(deadline)) {
+                            break;
+                        }
+                        try {
+                            apply(item, pathwaysDb, writer, traceProcessor, doc, messageReceiver, counts);
+                            applied.add(item);
+                        } catch (final Exception e) {
+                            quarantine(item, e);
+                        }
+                    }
+                    writer.commit();
+                }
+            });
         }
 
-        tracesApplied.mark(traces);
+        tracesApplied.mark(counts.traces);
 
         final int itemCount = applied.size();
-        final long traceCount = traces;
+        final long traceCount = counts.traces;
         LOGGER.debug(() -> LogUtil.message("Applied {} item(s) holding {} trace(s) from {}",
                 itemCount, traceCount, shardDir));
 
-        // Nothing is written into localDir while applying only counts, so there is nothing to push
-        // and the model is left alone. Returning true here once a trace really changes the model is
-        // what makes the push happen — and it happens before the caller deletes these items, because
-        // deleting first and then dying loses them with nothing left to say they were never applied.
-        return false;
+        // Only worth copying the model back up if a trace actually landed in it. A batch of traces
+        // this shard had already seen changes nothing, and pushing then would move the whole file to
+        // say so.
+        return counts.changed;
     }
 
-    private long apply(final Path item) {
-        // Assembling each trace is what the real apply will do, so the counting consumer does it too:
-        // an item that cannot be read has to fail here rather than at the point a model depends on it.
-        final long[] traces = {0L};
+    private void apply(final Path item,
+                       final PathwaysDb pathwaysDb,
+                       final LmdbWriter writer,
+                       final TraceProcessor traceProcessor,
+                       final PathwaysDoc doc,
+                       final MessageReceiver messageReceiver,
+                       final Counts counts) {
         try (final QueueItemReader reader = new QueueItemReader(item, byteBuffers, byteBufferFactory)) {
-            reader.forEachTrace((root, trace) -> traces[0]++);
+            reader.forEachTrace((root, trace) -> {
+                counts.traces++;
+                // The trace is already in hand, so what the old path fetched from an archive bucket is
+                // supplied directly. One applying path, whichever side the trace came from.
+                counts.changed |= traceProcessor.processTrace(
+                        writer,
+                        pathwaysDb,
+                        HexStringUtil.decode(root.getTraceId()),
+                        traceId -> Optional.of(trace),
+                        doc,
+                        messageReceiver);
+            });
         }
-        return traces[0];
+    }
+
+    // Findings go to the document's info feed, as one stream per shard per hold. A document with no
+    // feed still learns; it just has nowhere to report what it found, which beats not learning at all.
+    private void withMessageReceiver(final PathwaysDoc doc, final Consumer<MessageReceiver> work) {
+        final DocRef infoFeed = doc.getInfoFeed();
+        if (infoFeed == null || infoFeed.getName() == null) {
+            work.accept((severity, message) -> {
+            });
+        } else {
+            messageReceiverFactory.create(infoFeed.getName(), work::accept);
+        }
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    /** Mutable across the lambdas that walk a batch. */
+    private static final class Counts {
+
+        private long traces;
+        private boolean changed;
     }
 
     // Sets an unreadable item aside rather than deleting or retrying it: retrying stalls the shard

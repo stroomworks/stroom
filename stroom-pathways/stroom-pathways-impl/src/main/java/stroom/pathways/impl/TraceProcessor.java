@@ -56,14 +56,19 @@ public class TraceProcessor {
         this.pathwaySerde = pathwaySerde;
     }
 
-    public void processTrace(final LmdbWriter writer,
-                             final PathwaysDb pathwaysDb,
-                             final byte[] traceId,
-                             final Function<byte[], Optional<Trace>> traceFunction,
-                             final PathwaysDoc doc,
-                             final MessageReceiver messageReceiver) {
+    /**
+     * @return whether anything was written. False where the trace had already been applied, or had no
+     * root span to key a pathway on — a caller that copies its store back to shared storage uses this
+     * to decide whether it is worth copying.
+     */
+    public boolean processTrace(final LmdbWriter writer,
+                                final PathwaysDb pathwaysDb,
+                                final byte[] traceId,
+                                final Function<byte[], Optional<Trace>> traceFunction,
+                                final PathwaysDoc doc,
+                                final MessageReceiver messageReceiver) {
         try {
-            byteBuffers.useBytes(traceId, keyByteBuffer -> {
+            return byteBuffers.useBytes(traceId, keyByteBuffer -> {
                 final SimpleDb processingStatus = pathwaysDb.getProcessingStatus();
                 final boolean processed = processingStatus
                         .get(writer.getWriteTxn(), keyByteBuffer.duplicate(), Objects::nonNull);
@@ -78,6 +83,7 @@ public class TraceProcessor {
                                 HexStringUtil.encode(traceId));
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();
+                        return true;
                     } else {
                         final Trace trace = optTrace.get();
                         LOGGER.debug(() -> "\n" + trace.toString());
@@ -92,13 +98,15 @@ public class TraceProcessor {
                             buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
                             processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                             writer.tryCommit();
+                            return true;
                         }
                     }
                 }
-                return null;
+                return false;
             });
         } catch (final RuntimeException e) {
             LOGGER.error("Error processing trace {}", HexStringUtil.encode(traceId), e);
+            return false;
         }
     }
 

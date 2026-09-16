@@ -202,9 +202,9 @@ public class NodeMutatorImpl {
         // Set or expand kind.
         setOrExpand(constraints, pathNode, "kind", span.getKind().name(), false, messageReceiver, pathwaysDoc);
 
-        // Create attribute sets.
-        final Map<String, KeyValue> attributes = span
-                .getAttributes()
+        // Create attribute sets. A span can legitimately carry no attributes at all, and then arrives
+        // with a null list rather than an empty one.
+        final Map<String, KeyValue> attributes = NullSafe.list(span.getAttributes())
                 .stream()
                 .collect(Collectors.toMap(kv -> "attribute." + kv.getKey(), Function.identity()));
 
