@@ -654,16 +654,16 @@ Ordered by how much else depends on them.
 | ~~**D1**~~ | ~~Which store backs block A~~ | | **DECIDED: Plan B, not MySQL.** And Plan B rather than a bespoke LMDB store — see §11.12 for why, and for how D4's concern is met without owning the storage engine |
 | ~~**D2**~~ | ~~Boundary interval for checkpoints~~ | | **DECIDED: hourly.** 24 builds a day; worst-case fold `interval + grace` ≈ 15 600 events (§11.3). Recent times are the ordinary case, not an edge case — see §11.12.1 |
 | ~~**D3**~~ | ~~Late-event policy~~ | | **DECIDED: grace period, option 1 — see §11.11.** Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
-| **D4** | **Where block E lives, and how the store is presented** | Plan B has no `-api` module and `stroom-floormap-impl` does not depend on it. Separately: a raw Plan B document can be configured in ways that break the map | **Open, explored in §11.12.** The module question is unchanged; the presentation question — a `FloorMapEventStore` exposing only settings that suit the map — is the part still to decide |
+| ~~**D4**~~ | ~~How the store is presented~~ | | **DECIDED: start at (c)** — a floor-map-created Plan B document that the map validates and complains about (§11.12). Designs towards (b), a `FloorMapEventStore` type, without committing to it. The separate *module* question for block E is unchanged and still open |
 | ~~**D5**~~ | ~~Keep the user-authored events query?~~ | | **DECIDED: keep it** — the flexibility is worth the machinery. This fixes E as a `Searchable` taking StroomQL, and rules out the typed `FloorMapResource` endpoint |
 | ~~**D6**~~ | ~~Retention period, and how AA7 is enforced~~ | | **DECIDED: default expiry and retention to 1 day.** A user who raises it too far owns the consequence. AA7 (`expiry ≤ retention`) still needs validating where expiry is set, so the failure is an error rather than silent under-reporting |
-| **D7** | **How block B is stored** | A Plan B store of its own, a table, or a DBI alongside the event log | Key order is fixed by §11.2 (boundary, entity); the container is open |
+| **D7** | **How block B is stored** | The key *order* is fixed (§11.2) and the key *layout* is settled (§11.12); only the container is open | **Explained in §11.13, and it follows D4.** (c) now implies a second floor-map-created document; (b) later would allow a DBI inside the events store's own environment. The migration between them is a copy, not a rewrite |
 | ~~**D8**~~ | ~~Build the count store (C), or stay with `GROUP BY`?~~ | | **DECIDED: `GROUP BY`, whichever is simpler.** Revisit only if wide-range histograms become an actual complaint |
 | ~~**D9**~~ | ~~Does the Events Query tab read through E?~~ | | **DECIDED: route through E.** Not required for accessibility, but it fixes an accessibility-visible inconsistency — see §11.12.2 |
 
-**Only D4 and D7 remain open**, and neither blocks a prototype. D4 is explored in §11.12; D7 (how
-block B is physically stored) is narrowed there too, since §11.12 establishes that the key layout
-§11.2 needs *is* expressible as a Plan B store.
+**Nothing now blocks a prototype.** D7 is the only decision still genuinely open, and §11.13 shows it
+follows from D4 rather than standing alone. The one remaining loose end is the *module* question
+within D4 — where block E's code lives — which is a packaging problem, not a design one.
 
 > **A numbering note.** The retention decision above was given against "D7"; it answers **D6**.
 > D7 — how block B is stored — is a different question and remains open.
@@ -827,3 +827,67 @@ To be clear about the severity: the accessible summary is deliberately kept out 
 refreshed only where content changes, so this is a wrong number rather than a flood of announcements.
 It is a correctness bug that happens to surface in an accessibility feature, not an accessibility
 barrier.
+
+### 11.13 D7: where the checkpoint rows physically live
+
+**This decision follows D4 rather than standing alone**, which is the main thing to understand about
+it. Two things are already settled and only the third is open:
+
+| | |
+|---|---|
+| Key **order** | boundary first, entity second (§11.2) — the whole point of block B |
+| Key **layout** | a composite `KeyPrefix` of `"<boundary>|<entity>"` in a plain Plan B `STATE` store, so a prefix scan on `"<boundary>|"` returns every entity at that boundary (§11.12) |
+| **Container** | open — this decision |
+
+#### The options
+
+**(i) A second Plan B document**, type `STATE`, created and owned by the floor map alongside the
+events store.
+
+- Works today with no upstream changes, and inherits merge, retention, snapshots and the search
+  provider, so block E can read it like anything else.
+- Costs a **second document per floor map** to create, name, hide and keep in step with the first —
+  and it is subject to D4's misconfiguration problem twice over.
+- **Writes to A and B are not atomic.** The checkpoint builder reads A and writes B in separate
+  transactions, so a crash between them leaves B behind A. That is survivable for the same reason
+  §11.11's grace period is: the next build reads the log and repairs it. Worth knowing rather than
+  worth fixing.
+
+**(ii) A second DBI inside the events store's own LMDB environment.**
+
+- **Verified feasible.** A Plan B store type opens named databases freely —
+  `env.openDbi(name, MDB_CREATE)`, with `maxDbs` a constructor parameter. `TraceDb` opens five plus
+  seven secondary-index DBIs in one environment.
+- One document, one retention, one lifecycle, and **nothing extra for a user to see or break** —
+  which is exactly what D4 is trying to achieve.
+- Writes to A and B can **share a transaction**, so B is never inconsistent with A.
+- Costs a Plan B store type that knows about the extra DBI — a change inside `stroom-planb-impl`.
+  That is D4 option (b) territory and carries the merge exposure (c) was chosen to avoid.
+
+**(iii) Derived on demand and cached in memory.** No persistence: compute a checkpoint when first
+needed and keep it. Nothing to manage, self-correcting by construction, and it makes block D optional.
+But a cold start pays the expensive query (§7.1: ~2.4 s), nothing survives a restart, and each node
+caches separately — so it amortises only within one node's uptime, which is most of what block D
+exists to do.
+
+**(iv) A reserved key space inside the events store itself.** Checkpoint rows under a reserved
+prefix, in the same store. Tempting because it needs no new container at all — and **rejected**,
+because it pollutes the event key space: the histogram's `GROUP BY` would count checkpoint rows as
+events, `latestPerEntity` would see them, and the Events Query tab would show them to the user.
+
+#### How it follows D4
+
+| D4 | D7 |
+|---|---|
+| **(c)** — floor-map-created Plan B document *(decided)* | **(i)** — a second floor-map-created document |
+| **(b)** — a `FloorMapEventStore` type *(the end state)* | **(ii)** — fold the checkpoint DBI into the store type |
+
+**And (i) → (ii) is a migration, not a rewrite.** The key layout is identical in both; only the
+container changes, so the move is a copy. Nothing written for (i) is wasted.
+
+#### Recommendation
+
+**Take (i), and consider (iii) as a stepping stone.** Building the fold path against an in-memory
+checkpoint proves §11.3's read path and the §11.11 grace logic without committing to a persistent
+container at all — and if the fold turns out to be fast enough on its own, (iii) may be sufficient for
+longer than expected. Persist to (i) when restart cost or cluster behaviour makes it necessary.
