@@ -74,14 +74,41 @@ import java.util.function.Consumer;
 class FloorMapFullReadQueryHelper {
 
     /**
-     * The row cap for an events baseline.
+     * The row cap for a read, as an {@code OffsetRange} length.
      *
-     * <p>Server-side {@code DataStoreSettings.maxResults} defaults far above this, so this is the
-     * binding limit, and it <b>is</b> reached in practice — see {@link Outcome#truncated()}.
-     * 20 000 rows over a six-hour horizon is 0.93 events per second sustained, which a hundred
-     * entities emitting once a minute already exceeds. The remedy is {@code condense} on the Plan B
-     * store, which collapses the repeated identical positions that make up most of that volume;
-     * raising this number just moves the threshold.</p>
+     * <p><b>This is a fetch cap, not a store cap</b> — how many rows come back in one response,
+     * not how many the server holds. It is nonetheless the binding limit here, because the
+     * server-side limits are far above it:</p>
+     *
+     * <table border="1">
+     *   <caption>Where each limit applies</caption>
+     *   <tr><th>Limit</th><th>Value</th><th>Governs</th></tr>
+     *   <tr><td>this constant</td><td>20 000</td><td>rows returned per fetch</td></tr>
+     *   <tr><td>{@code LmdbPutFilterFactory}</td><td>1 000 000</td>
+     *       <td>rows admitted to the store — <b>only</b> when the query neither groups nor
+     *           sorts, which is this one. It is a put filter: on reaching the cap it stops
+     *           accepting and signals completion, ending the search early.</td></tr>
+     *   <tr><td>{@code DataStoreSettings.maxResults}</td><td>1 000 000 / 100 / 10 / 1</td>
+     *       <td>rows returned per depth at fetch time</td></tr>
+     *   <tr><td>{@code ResultStoreLmdbConfig}</td><td>10 GiB</td><td>the store's LMDB env</td></tr>
+     * </table>
+     *
+     * <p><b>What hitting this cap means has changed.</b> The read is a snapshot at the selected
+     * time, so it returns <em>one row per entity</em>. Reaching 20 000 therefore says the store
+     * holds more distinct entities than the cap allows — not that it holds more history.
+     * Narrowing the time range would not help, and neither would {@code condense}: both reduce
+     * versions per entity, and there is already only one. Only a higher cap helps. An earlier
+     * version of this javadoc recommended {@code condense}, which was correct for the windowed
+     * read this replaced.</p>
+     *
+     * <p><b>That is a statement about this cap only.</b> {@code condense} remains important for
+     * Plan B <em>store capacity</em>, where collapsing runs of identical positions keeps event
+     * values low-cardinality — which is worth roughly a factor of five in bytes per row, because
+     * the default {@code VARIABLE} value type deduplicates repeated values through a lookup table.
+     * See {@code docs/floormap-single-read-feasibility.md} §5. The two limits are unrelated and
+     * both statements hold.</p>
+     *
+     * @see Outcome#truncated()
      */
     static final int MAX_ROWS = 20_000;
 
