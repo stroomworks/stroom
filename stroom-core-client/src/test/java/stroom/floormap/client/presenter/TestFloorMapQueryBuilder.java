@@ -426,4 +426,43 @@ class TestFloorMapQueryBuilder {
                 .isEqualTo(expected);
     }
 
+
+    @Test
+    void theHistogramQueryGroupsServerSide() {
+        final String query = FloorMapQueryBuilder.buildHistogramQuery("PT10M");
+
+        // One row per bucket rather than one per event is the whole point.
+        assertThat(query).contains("group by bucket");
+        assertThat(query).contains("select bucket, count()");
+        assertThat(query).contains("floorTime(EffectiveTime, 'PT10M')");
+
+        // Ordered, so the client can place counts without sorting them itself.
+        assertThat(query).contains("sort by bucket");
+
+        // Named by the document's store reference, so no user-authored SQL is parsed or rewritten.
+        assertThat(query).startsWith("from param('EventStore')");
+    }
+
+    @Test
+    void theHistogramQueryClausesAreInStroomQlOrder() {
+        // from [where] [eval] [group by] [having] [sort by] [limit] select - select comes last,
+        // which is the ordering mistake that is easiest to make and produces a parse error.
+        final String query = FloorMapQueryBuilder.buildHistogramQuery("PT5M");
+        assertThat(query.indexOf("from ")).isLessThan(query.indexOf("eval "));
+        assertThat(query.indexOf("eval ")).isLessThan(query.indexOf("group by "));
+        assertThat(query.indexOf("group by ")).isLessThan(query.indexOf("sort by "));
+        assertThat(query.indexOf("sort by ")).isLessThan(query.indexOf("select "));
+    }
+
+    @Test
+    void everyWidthOnTheLadderProducesTheSameShapeOfQuery() {
+        final long[] ranges = {0L, 3600_000L, 86_400_000L, 30L * 86_400_000L, 400L * 86_400_000L};
+        for (final long range : ranges) {
+            final String iso = stroom.floormap.shared.FloorMapHistogramBuckets.durationFor(range);
+            final String query = FloorMapQueryBuilder.buildHistogramQuery(iso);
+            assertThat(query)
+                    .as("range %d gives duration %s", range, iso)
+                    .contains("floorTime(EffectiveTime, '" + iso + "')");
+        }
+    }
 }

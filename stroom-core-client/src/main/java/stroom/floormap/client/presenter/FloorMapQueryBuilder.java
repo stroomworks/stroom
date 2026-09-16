@@ -90,6 +90,33 @@ public final class FloorMapQueryBuilder {
     }
 
     /**
+     * Builds the StroomQL query behind the timeline's density histogram.
+     *
+     * <p>The bars want counts per bucket, not events, so this groups server-side and returns one row
+     * per bucket. The read it replaces returned every event the store held and bucketed them on the
+     * client, which is the one read whose size grows without bound.</p>
+     *
+     * <p><b>It reads the store directly rather than wrapping the user's events query.</b> The store
+     * is named by the document, so nothing here has to parse or rewrite user-authored StroomQL —
+     * which {@code FloorMapEventsQueryOrder} shows is fiddly to do safely. The consequence worth
+     * knowing: a {@code where} clause in the events query does <em>not</em> narrow these bars, so
+     * they count activity in the store rather than activity the map draws.</p>
+     *
+     * @param isoDuration the bucket width, from
+     *                    {@link stroom.floormap.shared.FloorMapHistogramBuckets#durationFor(long)}
+     * @return the StroomQL query text; never null
+     */
+    public static String buildHistogramQuery(final String isoDuration) {
+        // Not escaped, and safe not to be: the only source is the ladder in
+        // FloorMapHistogramBuckets, which emits ISO-8601 durations of digits and unit letters.
+        return "from param('EventStore')\n"
+               + "eval bucket = floorTime(EffectiveTime, '" + isoDuration + "')\n"
+               + "group by bucket\n"
+               + "sort by bucket\n"
+               + "select bucket, count()";
+    }
+
+    /**
      * Builds the StroomQL extraction expression for a single path.
      *
      * <p>For JSON, wraps in {@code jq(Value, ...)}. Keys containing
