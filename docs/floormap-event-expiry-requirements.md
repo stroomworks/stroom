@@ -2,12 +2,12 @@
 
 **Component:** Floor Map — the Map tab's events read and the entity overlay it draws
 **Branch:** `enterprise-floor-mapping-events-last-forever`
-**Status:** requirements, revision 4. The mechanism is **decided — M3** (§5, D1); one behaviour
-question is narrowed but open (**D3**). Everything else is decided — see §0. Implementation plan:
-`docs/floormap-event-expiry-plan.md`. Revision 3 records a
-server-side parameter change built and verified on 2026-09-11 (**§9.7**), which supersedes parts of
-§9.3, §9.5 and §9.6. Revision 4 settles **D1 in favour of M3** (§5) and points at the
-implementation plan.
+**Status:** requirements, revision 5. The mechanism is **decided and built — M2, not M3** (§5, D1,
+and §0.1 for why the decision moved). One behaviour question is narrowed but open (**D3**).
+Everything else is decided — see §0. Revision 3 records a server-side parameter change built and
+verified on 2026-09-11 (**§9.7**), which supersedes parts of §9.3, §9.5 and §9.6. Revision 4 settled
+D1 in favour of M3. **Revision 5 records that D1 was reopened during implementation and settled the
+other way**; `docs/floormap-event-expiry-plan.md` planned M3 and is therefore superseded.
 **Raised by:** "events now stay around forever — the last event for a particular ID should
 disappear after a time. Ideally the time should be configurable somehow."
 
@@ -26,7 +26,45 @@ disappear after a time. Ideally the time should be configurable somehow."
 | `condense` (D6) | **Impractical; specify that it must be turned off.** | **R12** becomes a stated constraint rather than an open question. |
 | Where configured (D7) | **Settings tab or, probably better, the timeline settings dialog.** | Explored — §9.2. The timeline dialog is affordable; the plumbing it needs is named. |
 | Roster behaviour (A15/D3) | **Needs more exploration.** | Explored — §9.1. Findings and a recommendation; the call is still yours. |
-| Mechanism (D1) — *2026-09-11* | **M3**, the `having` clause with the floor as a query parameter. | §5 has the reasoning, including why the objection that had favoured M2 does not hold. |
+| Mechanism (D1) — *2026-09-11* | **M3**, the `having` clause with the floor as a query parameter. | Superseded — see the row below. |
+| Mechanism (D1) — *reopened, 2026-09-15* | **M2**, the store-side lower bound. **Built** — commit `60f80885d5`. | §0.1. M3's deciding argument turned out to have the sign wrong, and M3's own objection has been overtaken by the histogram work. |
+
+---
+
+## 0.1 Why D1 moved from M3 back to M2
+
+Revision 4 chose M3 on two grounds. Both have since failed, for different reasons.
+
+**The deciding argument had the sign wrong.** §5 counted *blast radius* against M2: that it "changes
+what a lower time bound means for **every** consumer of both stores", against M3 changing one
+document's query. That is true and it is the point. The behaviour M2 changes is one the parity
+report had *already recorded as a defect*, in its own words **"indefensible under any reading of any
+question"** (`docs/temporal-store-parity-report.md`, *What parity cost* §2): a snapshot read strips
+every time term, so a lower bound the caller explicitly wrote was silently discarded and rows
+*earlier than the caller asked for* came back. So M2 does not impose a new rule on those consumers —
+it stops both stores breaking the rule they already document. Weighing that as a cost, and letting
+it decide the question, was the error. §5's table is left as written; this note supersedes its
+recommendation rather than rewriting the history of how it was reached.
+
+**M3's own objection has been overtaken.** §5 gave M3 one concrete objection: the histogram shares
+the query text, must read all history, and a `having` floor bound to the scrubber would empty the
+density bars with nothing said. That objection was correct when written. It no longer describes the
+code: the histogram now runs its **own** aggregate query (`buildHistogramQuery`, commit `8c9fe06683`)
+and, for the "Show All" extent, its own unbounded one (`buildExtentQuery`) — so it no longer shares
+a read with the map at all. M3 became implementable at about the same moment it stopped being
+necessary.
+
+**What M2 cost in practice**, against §5's estimate of "two separate store changes":
+
+| | §5's estimate | Built |
+|---|---|---|
+| Plan B | a store change | `TemporalStateDb.searchAsAt` honours a `notBefore` cutoff |
+| SQL store | a second store change | `UpdatableTemporalStoreDaoImpl.search` applies the same cutoff in its correlated subquery |
+| R6 (both stores behave alike) | "comes free" only under M3 | Holds under M2 too — but by two changes kept deliberately parallel, plus `TestTemporalStoreParity` to hold them there. §5 was right that this is M2's real cost; it was wrong that the cost decided the question. |
+
+One correction §5 did not anticipate: a zero-width `TimeRange` (`>= T AND < T`) is the framework's
+own idiom for "as at T", so an unguarded lower bound made every such read return nothing. Both
+stores guard it by ignoring a candidate floor that is not strictly before the query time.
 
 ---
 

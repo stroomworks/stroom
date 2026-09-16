@@ -64,15 +64,27 @@ all-history path. That is a deliberate choice documented in `HistogramQueryHelpe
 but it is also why that read is unbounded, which is
 `docs/task-histogram-reads-whole-store-and-truncates-silently.md`.
 
-### 2. The caller's lower bound is now discarded on *both* stores
+### 2. The caller's lower bound was discarded on *both* stores — fixed, commit `60f80885d5`
 
 Query 3 below was revision 1's clearest bug: the SQL store returning a row from before the caller's
 own lower bound. `searchAsAt` calls `PlanBSearchHelper.removeTimeTerms`, which strips every time term
 exactly as `getFilteredExpression` does — so Plan B copied the bug along with the feature.
 
 Revision 1 recommended fixing this *first and separately*, because "returning a row outside the
-caller's requested range is indefensible under any reading". That recommendation stands and now
-applies in two places instead of one.
+caller's requested range is indefensible under any reading". **That has now been done, in both
+places.** `TemporalStateDb.searchAsAt` and `UpdatableTemporalStoreDaoImpl.search` each take the
+caller's lower bound as a cutoff on the snapshot rather than discarding it; Query 3 below now
+returns `alice` alone, and the parity test that asserted the old behaviour was rewritten rather than
+deleted, as `theLowerBoundNarrowsTheSnapshotRatherThanBeingDiscarded`.
+
+Two things the fix turned up that revision 1 did not anticipate:
+
+- **A zero-width range must be exempt.** `>= T AND < T` is the framework's own "as at T" idiom, so
+  an unguarded cutoff made every such read return nothing. Both stores ignore a floor that is not
+  strictly before the query time.
+- **It is also the mechanism for Floor Map event expiry**, which had been planned as a `having`
+  clause instead — see `docs/floormap-event-expiry-requirements.md` §0.1. Fixing the defect removed
+  the need for the feature-specific workaround.
 
 ### 3. Read mode depends on whether a date literal parses — silently
 
@@ -421,11 +433,9 @@ between snapshot and filter semantics, selected by how a caller happened to spel
 
 Option A is built, so the open items are what it left behind rather than which option to pick.
 
-**1. Stop stripping the caller's lower bound — now in two places.** Revision 1 recommended this
-first and separately, and it is more urgent now, not less: `PlanBSearchHelper.removeTimeTerms` and
-`UpdatableTemporalStoreDaoImpl.getFilteredExpression` both do it. Returning a row from before the
-caller's own lower bound is indefensible under any reading of any question. Neither change depends
-on anything else in this report.
+**1. ~~Stop stripping the caller's lower bound — now in two places.~~ DONE — commit `60f80885d5`.**
+Both stores now honour it. See *What parity cost* §2 for what the fix actually involved, including
+the zero-width-range guard it needed and the Floor Map feature it subsumed.
 
 **2. Decide what a date literal means before something depends on the accident.** *What parity cost*
 §3 is the sharpest remaining defect: a `Z` on the end of a timestamp silently changes the shape of

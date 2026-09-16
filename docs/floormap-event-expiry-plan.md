@@ -2,8 +2,14 @@
 
 **Implements:** `docs/floormap-event-expiry-requirements.md` — the mechanism decided at D1.
 **Branch:** `enterprise-floor-mapping-events-last-forever`
-**Status:** plan. Nothing here is built. One behaviour question (**D3**, the tracking roster) is
-still open and is called out where it lands.
+**Status: SUPERSEDED — this plan was not built, and will not be.** D1 was reopened during
+implementation and settled in favour of **M2**, the store-side lower bound, which is what shipped
+(commit `60f80885d5`). See `docs/floormap-event-expiry-requirements.md` §0.1 for why the decision
+moved. Kept because the work items below still describe the parts M2 shares — the document field
+(W1) and where it is configured — and because the reasoning is worth being able to retrace.
+
+One behaviour question (**D3**, the tracking roster) is still open and is called out where it lands;
+it is open under M2 too.
 
 ---
 

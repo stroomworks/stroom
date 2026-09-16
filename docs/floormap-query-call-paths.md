@@ -231,23 +231,47 @@ Draws the density bars under the timeline: when entities were active.
 | `setTimeRangeChangeHandler` → [:542](../stroom-core-client/src/main/java/stroom/floormap/client/presenter/FloorMapMapPresenter.java:542) | user changes the visible range in the timeline settings popup |
 | `onRead` re-read branch → [:731](../stroom-core-client/src/main/java/stroom/floormap/client/presenter/FloorMapMapPresenter.java:731) | save-triggered re-read, keeping the user's range |
 
+> **Changed.** This was one query returning every event, bucketed in the browser. It is now **two**,
+> both counted server-side, because the bars and "Show All" want opposite ranges: the bars want the
+> visible window, the extent must not be bounded at all. The row cap, the timeout and the bin count
+> below are unchanged.
+
 ```
-runHistogramQuery(start, end)                    FloorMapMapPresenter.java:1626
-  ├─ histogramDataModel.setRange(start, end)     client-side filter bounds
-  ├─ query = getEventsQueryToUse()               ← the SAME text as query 1
-  └─ histogramQueryHelper.run(query, queryParams())
+runHistogramQuery(start, end)                    the bars — bounded below
+  ├─ histogramDataModel.setRange(start, end)
+  ├─ width = FloorMapHistogramBuckets.widthFor(end - start)     5min .. 30d ladder
+  ├─ query = FloorMapQueryBuilder.buildHistogramQuery(width)    ← its OWN text, not query 1's
+  │            eval bucket = floorTime(EffectiveTime, width)
+  │            group by bucket / select bucket, count()
+  └─ histogramQueryHelper.run(query, queryParams(), start)      TimeRange("CUSTOM", start, null)
        ▼
-HistogramQueryHelper.run                         HistogramQueryHelper.java:182
-  └─ queryModel.startNewSearch(..., timeRange = null, false, false, "Histogram Query", null)
+setData → HistogramDataModel.processBuckets(result, width) → int[] counts
+       └─ dataHandler → floorMapTimelinePresenter.setHistogramData
+          (no dataRangeHandler — see below)
+
+runExtentQuery()                                 "Show All" — deliberately unbounded
+  ├─ query = FloorMapQueryBuilder.buildExtentQuery()            grouped at P1D
+  └─ extentQueryHelper.run(query, queryParams())                timeRange = null
        ▼
-setData → HistogramDataModel.process(tableResult) → int[] bins
-       └─ dataHandler  → floorMapTimelinePresenter.setHistogramData
-          dataRangeHandler → floorMapTimelinePresenter.setDataRange   (arms "Show All")
+setData → HistogramDataModel.extentOf(result, EXTENT_BUCKET_MS)
+       └─ floorMapTimelinePresenter.setDataRange   (arms "Show All")
 ```
+
+**Why the extent is a separate read, and not taken from the bars.** The bars are bounded below at
+the visible range, so the buckets they return can never *start* earlier than what is already shown.
+An extent derived from them could only ever grow forwards — which is the one direction "Show All"
+does not need. Deriving it from the bars was a real regression for exactly one release of this code,
+introduced when the lower bound was added and caught by review.
+
+**Why both group rather than select rows.** Grouping is what makes an unbounded read affordable:
+the extent costs one row per day the store spans, not one per event. It does **not** make the read
+cheap on the *server* — Plan B iterates the whole store whatever range is asked for (§7), so both of
+these still pay a full scan. Grouping bounds what crosses the wire, not what is scanned.
+
 
 | | |
 |---|---|
-| `timeRange` | **`null`** — deliberately, see §7 |
+| `timeRange` | bars: `CUSTOM [start, ∞)`. Extent: **`null`** — deliberately, see §7. Neither sends an *upper* bound, which is what keeps both on the all-history path rather than the one-row-per-key snapshot |
 | row cap | **10 000** ([HistogramQueryHelper.java:81](../stroom-core-client/src/main/java/stroom/widget/histogram/client/HistogramQueryHelper.java:81)) |
 | timeout | **default (1 s)** — no `setTimeout` call |
 | bins | `HISTOGRAM_BINS` = 100 |
@@ -328,10 +352,16 @@ TemporalStateDb.search           :257      UpdatableTemporalStoreDaoImpl.search 
 
 Three consequences worth stating plainly:
 
-1. **A lower bound is not honoured on the snapshot path.** Both stores *remove every time term*
-   before applying the rest of the expression, so query 1's `>= 0` is discarded. Narrowing it
-   changes nothing. This is why event expiry cannot be done by narrowing the read — see
-   `docs/floormap-event-expiry-requirements.md`.
+1. **A lower bound is now honoured on the snapshot path — *changed*, commit `60f80885d5`.**
+   It previously was not: both stores removed every time term before applying the rest of the
+   expression, so query 1's `>= 0` was discarded and narrowing it changed nothing. That was the
+   defect `docs/temporal-store-parity-report.md` *What parity cost* §2 called "indefensible under
+   any reading". Both stores now keep a lower bound as a cutoff on the snapshot they return, which
+   is how **event expiry** is implemented: query 1 sends `T − D` instead of `0`. An upper bound
+   still selects the snapshot; the lower bound narrows it rather than being discarded.
+
+   One guard goes with it: a *zero-width* range (`>= T AND < T`) is the framework's own idiom for
+   "as at T", so a floor equal to the query time is ignored rather than emptying the result.
 2. **One channel carries two intents.** "Filter rows" and "snapshot boundary" are the same wire, and
    which one you get is inferred from the *shape* of the term. `docs/planb-explicit-read-mode-proposal.md`
    is the proposal to separate them.
@@ -429,6 +459,6 @@ tick destroy the facts read every time.
 
 - `docs/temporal-store-parity-report.md` — where the two stores differ, with a live head-to-head test
 - `docs/planb-explicit-read-mode-proposal.md` — the proposal to stop inferring read mode from term shape
-- `docs/floormap-event-expiry-requirements.md` — why a lower bound cannot expire events
+- `docs/floormap-event-expiry-requirements.md` — how a lower bound expires events (§0.1 for why that is the mechanism)
 - `docs/task-histogram-reads-whole-store-and-truncates-silently.md`
 - `docs/task-histogram-failures-are-console-only.md`

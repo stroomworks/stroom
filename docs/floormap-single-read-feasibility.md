@@ -177,6 +177,16 @@ Then take the time of the first bucket as the starting time and the time of the 
 1 hour resolution is ok for a first guess at the time range.
 If this becomes irritating to users then we can change it later.
 
+> **As built — 1 **day**, not 1 hour.** `FloorMapQueryBuilder.EXTENT_BUCKET`. An hour gives 8 760
+> rows a year, which clears the 10 000-row cap only until the store holds about a year's data — and
+> a truncated extent is not a rough answer but a *wrong* one, silently naming an end earlier than
+> the data's and so hiding the most recent events behind a "Show All" that claims to show
+> everything. A day gives 365 a year and stays under the cap for a decade. The cost is that "Show
+> All" starts the timeline on the right day rather than the right hour, which the user corrects by
+> scrubbing — the failure the coarser bucket avoids is not correctable at all, because nothing tells
+> the user it happened. Raise it if a day proves irritating; the constant is one line, and the cap
+> is the only thing that bounds how far it can go.
+
 ---
 
 

@@ -1033,8 +1033,17 @@ kind — and it is the figure the whole checkpoint design was built to avoid.
 | **§11.11** — grace periods, self-healing, late events | **A checkpoint can be stale; a live read cannot.** With no derived copy there is no staleness to manage |
 | D2 boundary interval, D3 late-event policy, D7 checkpoint storage | All about machinery that no longer exists |
 
-**The architecture reduces to: read the store, seek per entity, apply expiry client-side.** A and C
-remain; E remains as the place the semantics live.
+**The architecture reduces to: read the store, seek per entity, apply expiry as the read's lower
+bound.** A and C remain; E remains as the place the semantics live.
+
+> **Corrected 2026-09-15.** This sentence previously read *"apply expiry client-side"*, and that was
+> wrong on the merits as well as out of date. Expiry is a property of the answer the store is being
+> asked for — "where was each entity as at `T`, ignoring anything older than `T − D`" — so it belongs
+> in the read. Doing it on the client meant shipping rows in order to discard them, and it forced a
+> date comparison in the browser against timestamps *already rendered to the viewing user's
+> date-time preference*, which is a parsing problem that should never have existed. Both stores now
+> take the caller's lower bound as a cutoff on the snapshot (commit `60f80885d5`), so the floor is
+> simply `T − D`. See `docs/floormap-event-expiry-requirements.md` §0.1.
 
 ### 12.3 The review points
 
