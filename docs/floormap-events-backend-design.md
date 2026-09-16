@@ -431,6 +431,10 @@ Revised order, whichever store wins:
 
 ## 11. The architecture
 
+> **Revised by §12.** Blocks B and D — the checkpoint store and its builder — were removed once §4
+> was built and measured: the read they existed to bound now costs about 6 ms. Everything below
+> stands as the reasoning that led there, and §12.4 records the conditions under which they return.
+
 ### 11.1 The one fact everything follows from
 
 The events store is asked **two questions with incompatible access patterns**:
@@ -654,12 +658,12 @@ Ordered by how much else depends on them.
 | | Decision | Why it matters | Notes |
 |---|---|---|---|
 | ~~**D1**~~ | ~~Which store backs block A~~ | | **DECIDED: Plan B, not MySQL.** And Plan B rather than a bespoke LMDB store — see §11.12 for why, and for how D4's concern is met without owning the storage engine |
-| ~~**D2**~~ | ~~Boundary interval for checkpoints~~ | | **DECIDED: hourly.** 24 builds a day; worst-case fold `interval + grace` ≈ 15 600 events (§11.3). Recent times are the ordinary case, not an edge case — see §11.12.1 |
-| ~~**D3**~~ | ~~Late-event policy~~ | | **DECIDED: grace period, option 1 — see §11.11.** Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
+| ~~**D2**~~ | ~~Boundary interval for checkpoints~~ | | **MOOT — §12.2**, no checkpoints to build. Was: hourly. 24 builds a day; worst-case fold `interval + grace` ≈ 15 600 events (§11.3). Recent times are the ordinary case, not an edge case — see §11.12.1 |
+| ~~**D3**~~ | ~~Late-event policy~~ | | **MOOT — §12.2**: a live read sees a late event when it lands. Superseded twice — by review feedback preferring a periodic rebuild (§12.3), then by there being nothing to rebuild. Was: grace period, §11.11. Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
 | ~~**D4**~~ | ~~How the store is presented~~ | | **DECIDED: (b), a `FloorMapEventStoreDoc` type — §11.14.** Briefly decided as (c), on the false premise that (b) needed changes inside `stroom-planb-impl`. It does not. **This also settles the module question and makes block E mandatory** (§11.14) |
 | ~~**D5**~~ | ~~Keep the user-authored events query?~~ | | **DECIDED: keep it** — the flexibility is worth the machinery. This fixes E as a `Searchable` taking StroomQL, and rules out the typed `FloorMapResource` endpoint |
 | ~~**D6**~~ | ~~Retention period, and how AA7 is enforced~~ | | **DECIDED: default expiry and retention to 1 day.** A user who raises it too far owns the consequence. AA7 (`expiry ≤ retention`) still needs validating where expiry is set, so the failure is an error rather than silent under-reporting |
-| **D7** | **How block B is stored** | The key *order* is fixed (§11.2) and the key *layout* is settled (§11.12); only the container is open | **Explained in §11.13, and it follows D4.** (c) now implies a second floor-map-created document; (b) later would allow a DBI inside the events store's own environment. The migration between them is a copy, not a rewrite |
+| ~~**D7**~~ | ~~How block B is stored~~ — **MOOT, §12.2** | The key *order* is fixed (§11.2) and the key *layout* is settled (§11.12); only the container is open | **Explained in §11.13, and it follows D4.** (c) now implies a second floor-map-created document; (b) later would allow a DBI inside the events store's own environment. The migration between them is a copy, not a rewrite |
 | ~~**D8**~~ | ~~Build the count store (C), or stay with `GROUP BY`?~~ | | **DECIDED: `GROUP BY`, whichever is simpler.** Revisit only if wide-range histograms become an actual complaint |
 | ~~**D9**~~ | ~~Does the Events Query tab read through E?~~ | | **DECIDED: route through E.** Not required for accessibility, but it fixes an accessibility-visible inconsistency — see §11.12.2 |
 
@@ -990,3 +994,119 @@ being the optional convenience §11.7 treated it as:
 **What is still free:** merge strategy is a map binder keyed by `StateType`
 (`GuiceUtil.buildMapBinder(binder(), StateType.class, MergeStrategy.class)`), so reusing
 `TEMPORAL_STATE` for block A inherits its merge behaviour with no new strategy to write.
+
+---
+
+## 12. Revision after implementing §4: blocks B and D are not needed
+
+**The seek-based snapshot is built and measured (§4, §11.7 step 1), and it removes the reason
+checkpoints existed.** This section records that, answers the three review points raised against the
+architecture, and revises the decisions the measurement makes moot.
+
+### 12.1 The measurement
+
+`TemporalStateDb.searchAsAt` now seeks to each key's answer instead of scanning. At floor-map scale —
+3 000 entities, snapshot taken at the very end so the whole history precedes it:
+
+| Store | Rows returned | Cold | Warm |
+|---|---|---|---|
+| 300 000 rows | 3 000 | 29.0 ms | 8.2 ms |
+| **6 000 000 rows** (20× deeper) | 3 000 | **6.7 ms** | **5.0 ms** |
+
+**Flat in history depth, as designed** — the deeper store is no slower, because the rows in between
+are never read. Cost is O(entities × log n), so a year at ~109.5 M rows adds about four B-tree levels
+over the 6 M measured here: call it **6 ms against a 300 ms playback tick**.
+
+Against the earlier figure of ~230 ms (§7.1) this is not a marginal improvement but a change of
+kind — and it is the figure the whole checkpoint design was built to avoid.
+
+### 12.2 What that deletes
+
+> **Blocks B and D are unnecessary at the stated scale, and with them go most of §5, §11.11 and four
+> of the nine decisions.**
+
+| Goes | Why |
+|---|---|
+| **B — checkpoint store** | It existed to bound a read that is now 6 ms |
+| **D — checkpoint builder** | Nothing to build |
+| **§5 / §5.1** — checkpoints, and expiry's interaction with them | No checkpoint to encode expiry into. Expiry returns to a plain read-time predicate over the snapshot |
+| **§11.11** — grace periods, self-healing, late events | **A checkpoint can be stale; a live read cannot.** With no derived copy there is no staleness to manage |
+| D2 boundary interval, D3 late-event policy, D7 checkpoint storage | All about machinery that no longer exists |
+
+**The architecture reduces to: read the store, seek per entity, apply expiry client-side.** A and C
+remain; E remains as the place the semantics live.
+
+### 12.3 The review points
+
+Three were raised against `docs/floormap-events-architecture.html`. Two are answered by §12.2.
+
+**"Clarity on the B and C store schemas — key and value byte structures, as they are critical to
+performance and storage."** Right to ask, and more pointed than it looks: a Plan B key or value
+schema is **immutable once data is written**, so it is not a detail to settle later.
+
+- **B no longer exists**, so its schema question falls away. Had it been built, the answer would have
+  been a composite `boundary‖entity` key, and the awkward part — that Plan B has no native composite
+  key type, so it would have been a zero-padded string — is itself an argument against it.
+- **C** is still deferred (D8, §11.5) and its schema is the small part: key is the bucket start as an
+  8-byte big-endian epoch, value a count. It is only worth specifying if and when the `GROUP BY` it
+  replaces becomes a complaint.
+- **A is unchanged**: `TEMPORAL_STATE`, key `prefix‖big-endian time`, `VARIABLE` value. Its value
+  schema is the one that matters and §6 measures the consequence — repeated values cost 162 bytes a
+  row and unique ones 1 350.
+
+**"Late data latency should be dealt with by allowing a rebuild of the last X days… periodically
+rebuild the last X hours."** A better answer than §11.11's grace period, and it would have been
+adopted: it keeps checkpoints current instead of delaying them, and repairs on a schedule rather than
+hoping. **It is moot only because there is nothing to rebuild** — a live read of the log sees a late
+event the moment it lands. Worth recording as the design to take if checkpoints ever return (§12.4).
+
+**"No real clarification of how the data drives the UI."** Correct, and the least well covered part
+of the document. §12.5 sets it out.
+
+### 12.4 When checkpoints come back
+
+Not "never", but "not now". The trigger is entity count, not history:
+
+| | |
+|---|---|
+| Cost model | O(entities × log n). 3 000 entities ≈ 6 ms; 100 000 would be ≈ 200 ms |
+| **Adopt checkpoints when** | entity count reaches the tens of thousands, or a cold-cache snapshot on a large store proves too slow in practice |
+| What to build then | §5, §5.1 and §11.11 as written — plus the **periodic rebuild** of the last X hours in place of §11.11's grace period |
+
+§5's reasoning is kept rather than deleted for exactly this reason: the design is sound, it is simply
+not needed yet.
+
+### 12.5 How the data drives the UI
+
+**Playback samples; it does not stream.** No query delivers "X minutes of data" that the client then
+plays through, and nothing is carried between ticks.
+
+```
+every 300 ms while playing, and on every scrub, step or loop:
+    T = the scrubber's position
+    one query: snapshot at T          ~3 000 rows, ~6 ms
+    → draw. Nothing retained.
+
+on a visible-range change only:
+    one query: bucket counts          ~100 rows
+    → the density bars
+```
+
+**Why sampling rather than a window.** The timeline advances by *wall clock × speed*, not by event
+count, so at ×10000 a single 300 ms tick covers **35 days** of timeline. A prefetched window would
+have to hold 35 days of events to serve one tick, and the amount it must hold grows without bound
+with speed. Sampling costs the same at every speed, which is why speed is currently free and must
+stay so.
+
+**What that means concretely:**
+
+| | |
+|---|---|
+| Each tick is independent | The answer at T does not depend on the answer at T−1, so a dropped or late tick costs nothing |
+| A read in flight blocks the next | One query at a time; a tick arriving while one is running is skipped, and the following tick asks about a position at most 300 ms later |
+| A scrub is not a special case | It is the same query at a different T. There is no window to refill and no events to replay to reach the new position |
+| Nothing accumulates client-side | The client holds one row per entity — the last answer — and replaces it wholesale |
+
+**The one thing the client does keep** is the animation state: where each entity was drawn last, so
+movement between two samples is interpolated rather than teleporting. That is presentation, not data,
+and is discarded on any discontinuity.

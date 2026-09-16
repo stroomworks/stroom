@@ -145,26 +145,25 @@
 <header class="masthead">
   <p class="eyebrow">Stroom Floor Map &middot; events backend</p>
   <h1>Two questions,<br>one store</h1>
-  <p class="lede">A proposal for how the Floor Map should read its events. One event stream, two
-  derived structures, and the expensive query moved off the read path — so that drawing the map costs
-  the same whether the store holds a day of history or a year.</p>
+  <p class="lede">The Floor Map needs two things from its events store, and their access patterns
+  conflict. Resolving that turned out to need far less machinery than first proposed — one change to
+  how the store is read, and one to how the histogram is counted.</p>
   <div class="meta">
-    <div>Status <b>Proposal &middot; all decisions taken</b></div>
-    <div>Evidence <b>measured at 100M rows</b></div>
+    <div>Status <b>Revised &middot; both changes built</b></div>
+    <div>Evidence <b>measured, 3&thinsp;000 entities</b></div>
     <div>Source <b>docs/floormap-events-backend-design.md</b></div>
   </div>
 </header>
 
 <section class="col">
   <div class="sec-head"><span class="n">01</span><h2>The architecture</h2></div>
-  <p>Events arrive as they do today. A periodic builder folds them into a <strong>checkpoint</strong> —
-  the state of every entity at an hourly boundary — and aggregates them into bucket counts. A query
-  surface we own serves the client from those two, falling back to the log only for the minutes since
-  the last boundary.</p>
+  <p>Events arrive as they do today. The map reads the store directly, seeking to each entity's
+  position rather than scanning for it. The histogram counts server-side. A query surface we own sits
+  in front so the semantics are ours to define.</p>
 </section>
 
 <figure>
-  <svg viewBox="0 0 880 470" role="img" aria-label="Ingest appends to the event log. A periodic builder folds the log into a checkpoint store keyed boundary-first, and aggregates it into bucket counts. A query surface reads both and serves the unchanged client.">
+  <svg viewBox="0 0 880 380" role="img" aria-label="Ingest appends to the event log. A query surface reads it two ways - a per-entity seek for the map, and a grouped count for the histogram - and serves the unchanged client.">
     <defs>
       <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -174,142 +173,147 @@
       </marker>
     </defs>
 
-    <!-- ingest -->
-    <text x="440" y="18" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">pipeline ingest — unchanged</text>
+    <text x="440" y="18" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">pipeline ingest &mdash; unchanged</text>
     <line x1="440" y1="26" x2="440" y2="54" stroke="currentColor" stroke-width="1.4" marker-end="url(#a2)"/>
 
-    <!-- A -->
-    <rect x="200" y="58" width="480" height="66" fill="none" stroke="currentColor" stroke-width="1.6"/>
-    <text x="216" y="82" font-family="IBM Plex Serif, serif" font-size="15" font-weight="600" fill="currentColor">A · Event log</text>
-    <text x="216" y="102" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">key (entity, time) · append-only · partitioned · retention 1 day</text>
-    <text x="664" y="82" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.55">exists today</text>
+    <rect x="180" y="58" width="520" height="70" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <text x="198" y="84" font-family="IBM Plex Serif, serif" font-size="15" font-weight="600" fill="currentColor">A &middot; Event log</text>
+    <text x="198" y="105" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.75">key (entity, time) &middot; append-only &middot; retention 1 day</text>
+    <text x="682" y="84" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.55">exists today</text>
 
-    <!-- D builder -->
-    <line x1="330" y1="124" x2="330" y2="176" stroke="#0f6f62" stroke-width="1.5" marker-end="url(#a3)"/>
-    <text x="322" y="154" text-anchor="end" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#0f6f62">D · builds once per hour,</text>
-    <text x="322" y="167" text-anchor="end" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#0f6f62">at boundary + grace</text>
-    <line x1="592" y1="124" x2="592" y2="176" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
-    <text x="602" y="154" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.75">aggregates</text>
+    <line x1="300" y1="128" x2="300" y2="196" stroke="#0f6f62" stroke-width="1.6" marker-end="url(#a3)"/>
+    <text x="290" y="152" text-anchor="end" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#0f6f62">seek per entity</text>
+    <text x="290" y="167" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#0f6f62">~6 ms</text>
 
-    <!-- B -->
-    <rect x="152" y="180" width="356" height="72" fill="#0f6f62" fill-opacity="0.09" stroke="#0f6f62" stroke-width="1.6"/>
-    <text x="168" y="204" font-family="IBM Plex Serif, serif" font-size="15" font-weight="600" fill="#0f6f62">B · Checkpoint store</text>
-    <text x="168" y="224" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">key ("boundary|entity") — boundary first</text>
-    <text x="168" y="241" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">state + effective time, ~3,000 rows per boundary</text>
+    <line x1="600" y1="128" x2="600" y2="196" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+    <text x="612" y="152" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="currentColor" opacity="0.8">group by bucket</text>
+    <text x="612" y="167" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.6">~100 rows</text>
 
-    <!-- C -->
-    <rect x="536" y="180" width="192" height="72" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 3"/>
-    <text x="552" y="204" font-family="IBM Plex Serif, serif" font-size="15" font-weight="600" fill="currentColor">C · Counts</text>
-    <text x="552" y="224" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">one row per bucket</text>
-    <text x="552" y="241" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.55">deferred — GROUP BY first</text>
+    <rect x="700" y="58" width="150" height="70" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="4 3"/>
+    <text x="716" y="84" font-family="IBM Plex Serif, serif" font-size="14" font-weight="600" fill="currentColor" opacity="0.75">C &middot; Counts</text>
+    <text x="716" y="105" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.55">deferred</text>
+    <line x1="775" y1="128" x2="775" y2="196" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#a2)"/>
 
-    <!-- arrows into E -->
-    <line x1="330" y1="252" x2="330" y2="300" stroke="#0f6f62" stroke-width="1.5" marker-end="url(#a3)"/>
-    <text x="340" y="278" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#0f6f62">prefix scan, one seek</text>
-    <line x1="632" y1="252" x2="632" y2="300" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
-    <path d="M 680 91 L 812 91 L 812 337 L 736 337" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
-    <text x="820" y="206" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.75">events</text>
-    <text x="820" y="220" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.75">to fold</text>
+    <rect x="180" y="200" width="670" height="70" fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="198" y="226" font-family="IBM Plex Serif, serif" font-size="15" font-weight="600" fill="currentColor">E &middot; Query surface</text>
+    <text x="198" y="247" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.75">semantics defined by us, not inferred from the shape of a time term</text>
 
-    <!-- E -->
-    <rect x="152" y="304" width="576" height="66" fill="none" stroke="currentColor" stroke-width="2"/>
-    <text x="168" y="328" font-family="IBM Plex Serif, serif" font-size="15" font-weight="600" fill="currentColor">E · Query surface</text>
-    <text x="168" y="348" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">a Searchable we own — semantics defined by us, not inferred from term shape</text>
+    <line x1="440" y1="270" x2="440" y2="304" stroke="currentColor" stroke-width="1.4" marker-end="url(#a2)"/>
+    <text x="452" y="291" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">StroomQL</text>
 
-    <line x1="440" y1="370" x2="440" y2="404" stroke="currentColor" stroke-width="1.4" marker-end="url(#a2)"/>
-    <text x="450" y="391" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">StroomQL</text>
-
-    <!-- F -->
-    <rect x="200" y="408" width="480" height="48" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="1.2"/>
-    <text x="440" y="437" text-anchor="middle" font-family="IBM Plex Serif, serif" font-size="14.5" font-weight="600" fill="currentColor">F · Client — unchanged. Scrubber, variable speed.</text>
+    <rect x="180" y="308" width="520" height="48" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="1.2"/>
+    <text x="440" y="337" text-anchor="middle" font-family="IBM Plex Serif, serif" font-size="14.5" font-weight="600" fill="currentColor">F &middot; Client &mdash; unchanged. Scrubber, variable speed.</text>
   </svg>
-  <figcaption><strong>Block B is the whole idea, and its key order is the point.</strong> Keying
-  boundary-first — the inverse of the event log — turns "every entity as at this boundary" into one
-  contiguous prefix scan instead of thousands of lookups with unbounded lookback. Block D runs the
-  expensive query <strong>24 times a day instead of three times a second</strong>.</figcaption>
+  <figcaption><strong>An earlier revision of this design had two more blocks</strong> — a checkpoint
+  store holding the state of every entity at hourly boundaries, and a job to build it. Both existed to
+  bound a read that was unbounded. Once that read was made to seek rather than scan, it stopped being
+  unbounded, and both were removed before either was written.</figcaption>
 </figure>
-
-<section class="col">
-  <div class="scroll"><table class="legend">
-    <tr><th>Block</th><th>What it is</th><th>Status</th></tr>
-    <tr><td>A</td><td>The event log, keyed by entity then time — append-only, partitioned, retained for a day</td><td>exists</td></tr>
-    <tr><td>B</td><td>Checkpoints: every entity's state at an hourly boundary, keyed <em>boundary first</em></td><td>new</td></tr>
-    <tr><td>C</td><td>Counts per histogram bucket</td><td>deferred</td></tr>
-    <tr><td>D</td><td>The builder — runs the expensive query once an hour instead of 3&times; a second</td><td>new</td></tr>
-    <tr><td>E</td><td>The query surface, with semantics we define rather than infer</td><td>new</td></tr>
-    <tr><td>F</td><td>The client — scrubber, variable-speed playback, unchanged</td><td>unchanged</td></tr>
-  </table></div>
-  <p class="claim">Three new pieces in total — the checkpoint store, the job that fills it, and the
-  query surface in front. The event log and the client are what exist today.</p>
-</section>
 
 <section class="col">
   <div class="sec-head"><span class="n">02</span><h2>How the map gets drawn</h2></div>
-  <p>A snapshot at the scrubber position is a checkpoint read plus a short <strong>fold</strong>
-  forward.</p>
-  <p><em>Folding</em> here means overlaying. The checkpoint is a complete answer as at the boundary —
-  every entity, with its position. The events since that boundary are laid on top of it: an entity
-  that moved takes its newest position, and one that did not keeps the checkpoint's. It is the same
-  reduction the client already performs on every result set, except that it starts from a known-good
-  baseline instead of from nothing.</p>
-  <p>That is exactly why the cost is bounded. Nothing ever <em>searches</em> for an entity's latest
-  row — the unbounded-lookback problem in &sect;03 — because the checkpoint already holds it. Both
-  halves are bounded, and neither grows with how much history the store holds.</p>
+  <p>Entries are stored under <span class="mono">prefix&thinsp;+&thinsp;time</span>, so one entity's
+  history is already contiguous and in time order. That means its position at any instant can be found
+  by seeking to that instant and stepping back one — rather than by reading the entity's whole
+  history and keeping the newest row that qualifies.</p>
 </section>
 
 <figure>
-  <svg viewBox="0 0 880 200" role="img" aria-label="A snapshot at T reads the checkpoint at the preceding boundary, then folds forward over the events between that boundary and T.">
-    <line x1="40" y1="120" x2="840" y2="120" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
-    <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
-      <line x1="180" y1="112" x2="180" y2="128" stroke="currentColor" stroke-width="1.5"/>
-      <line x1="470" y1="112" x2="470" y2="128" stroke="currentColor" stroke-width="1.5"/>
-      <text x="180" y="146" text-anchor="middle" opacity="0.7">09:00</text>
-      <text x="470" y="146" text-anchor="middle" opacity="0.7">10:00</text>
-      <text x="740" y="146" text-anchor="middle" fill="#0f6f62">T = 10:25</text>
-    </g>
+  <svg viewBox="0 0 880 250" role="img" aria-label="Scanning reads every entry for a key before the chosen time. Seeking jumps straight to that time and steps back one entry, reading nothing in between.">
+    <defs>
+      <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f6f62"/>
+      </marker>
+    </defs>
 
-    <!-- checkpoint marker -->
-    <circle cx="470" cy="120" r="7" fill="#0f6f62"/>
-    <line x1="470" y1="113" x2="470" y2="62" stroke="#0f6f62" stroke-width="1.4"/>
-    <text x="470" y="52" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="11.5" fill="#0f6f62">checkpoint(10:00)</text>
-    <text x="470" y="36" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.75">~3,000 rows · one prefix scan</text>
-
-    <!-- fold window -->
-    <rect x="470" y="100" width="270" height="40" fill="currentColor" opacity="0.08"/>
-    <line x1="740" y1="100" x2="740" y2="140" stroke="#0f6f62" stroke-width="1.6" stroke-dasharray="3 3"/>
-    <text x="605" y="174" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="11.5" fill="currentColor">fold forward over events in (10:00, 10:25]</text>
-    <text x="605" y="190" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">≤ 15,600 rows worst case · prunes to one partition</text>
-
-    <!-- events in window -->
-    <g fill="currentColor" opacity="0.45">
-      <circle cx="512" cy="120" r="2.6"/><circle cx="548" cy="120" r="2.6"/><circle cx="583" cy="120" r="2.6"/>
-      <circle cx="626" cy="120" r="2.6"/><circle cx="668" cy="120" r="2.6"/><circle cx="706" cy="120" r="2.6"/>
+    <text x="0" y="16" font-family="IBM Plex Mono, monospace" font-size="11" fill="#9c4a2f" letter-spacing="1">SCAN &mdash; EVERY ENTRY READ AND DESERIALISED</text>
+    <line x1="40" y1="58" x2="800" y2="58" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+    <g fill="#9c4a2f">
+      <circle cx="80" cy="58" r="4"/><circle cx="140" cy="58" r="4"/><circle cx="200" cy="58" r="4"/>
+      <circle cx="260" cy="58" r="4"/><circle cx="320" cy="58" r="4"/><circle cx="380" cy="58" r="4"/>
+      <circle cx="440" cy="58" r="4"/><circle cx="500" cy="58" r="4"/><circle cx="560" cy="58" r="4"/>
+      <circle cx="620" cy="58" r="4"/>
     </g>
-    <g fill="currentColor" opacity="0.2">
-      <circle cx="222" cy="120" r="2.6"/><circle cx="268" cy="120" r="2.6"/><circle cx="330" cy="120" r="2.6"/>
-      <circle cx="392" cy="120" r="2.6"/><circle cx="430" cy="120" r="2.6"/>
+    <circle cx="680" cy="58" r="6" fill="#9c4a2f"/>
+    <g fill="currentColor" opacity="0.25">
+      <circle cx="740" cy="58" r="4"/><circle cx="790" cy="58" r="4"/>
     </g>
-    <text x="300" y="100" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.5">already folded into the checkpoint — never read</text>
+    <text x="360" y="86" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#9c4a2f">all of these are read, and all are discarded</text>
+
+    <line x1="0" y1="112" x2="880" y2="112" stroke="currentColor" stroke-width="1" opacity="0.18"/>
+
+    <text x="0" y="142" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0f6f62" letter-spacing="1">SEEK &mdash; ONE JUMP, ONE STEP BACK</text>
+    <line x1="40" y1="186" x2="800" y2="186" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+    <g fill="currentColor" opacity="0.22">
+      <circle cx="80" cy="186" r="4"/><circle cx="140" cy="186" r="4"/><circle cx="200" cy="186" r="4"/>
+      <circle cx="260" cy="186" r="4"/><circle cx="320" cy="186" r="4"/><circle cx="380" cy="186" r="4"/>
+      <circle cx="440" cy="186" r="4"/><circle cx="500" cy="186" r="4"/><circle cx="560" cy="186" r="4"/>
+      <circle cx="620" cy="186" r="4"/><circle cx="740" cy="186" r="4"/><circle cx="790" cy="186" r="4"/>
+    </g>
+    <circle cx="680" cy="186" r="6" fill="#0f6f62"/>
+    <line x1="700" y1="150" x2="700" y2="178" stroke="#0f6f62" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="700" y="145" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0f6f62">T</text>
+    <path d="M 700 178 L 690 186" fill="none" stroke="#0f6f62" stroke-width="1.6" marker-end="url(#a4)"/>
+    <text x="360" y="214" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="currentColor" opacity="0.55">never touched</text>
+    <text x="680" y="232" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#0f6f62">the answer</text>
   </svg>
-  <figcaption>The checkpoint is built at <strong>boundary + grace</strong>, never at the boundary
-  itself, because a pipeline delivers events after their own effective time. So the newest checkpoint
-  is always one grace period old and the fold window is <span class="mono">interval&nbsp;+&nbsp;grace</span>
-  — 75 minutes with hourly boundaries and 15 minutes' grace. Looking at the last hour costs the same
-  as looking at any other time.</figcaption>
+  <figcaption>Repeated once per entity. Cost becomes proportional to the <strong>number of
+  entities</strong> rather than the number of events, which is why it no longer grows as the store
+  fills. The same jump then steps past the whole key to reach the next one.</figcaption>
 </figure>
 
 <section class="col">
-  <p>The histogram is served the same way in spirit: counts per bucket rather than events, so the
-  bars cost roughly a hundred rows regardless of how many events they summarise. Until the count
-  store earns its place, a <span class="mono">GROUP&nbsp;BY</span> over the log with a time index does
-  it in <span class="mono num">147&nbsp;ms</span> for a day.</p>
-  <p class="kicker">Playback needs nothing further. It is sampling, not replay — the timeline advances
-  with wall clock, and at &times;10000 a single tick covers 35 days — so speed costs nothing as long as
-  each sample is independently cheap. That is exactly what the checkpoint buys.</p>
+  <p class="claim">Measured at floor-map scale: 3&thinsp;000 entities, snapshot taken with the whole
+  history behind it. <strong>5&ndash;8&nbsp;ms, and unchanged when the store grows twentyfold.</strong></p>
+  <div class="scroll"><table>
+    <tr><th>Store</th><th>Rows returned</th><th>Cold</th><th>Warm</th></tr>
+    <tr><td class="v">300,000 rows</td><td class="v">3,000</td><td class="v">29.0 ms</td><td class="v">8.2 ms</td></tr>
+    <tr class="lead"><td class="v">6,000,000 rows</td><td class="v">3,000</td><td class="v">6.7 ms</td><td class="v">5.0 ms</td></tr>
+  </table></div>
+  <p>A year of events adds about four more B-tree levels over the six million measured here, so call
+  it six milliseconds — against a 300&nbsp;ms playback tick.</p>
 </section>
 
 <section class="col">
-  <div class="sec-head"><span class="n">03</span><h2>Why it has to be this shape</h2></div>
+  <div class="sec-head"><span class="n">03</span><h2>How the data drives the UI</h2></div>
+  <p><strong>Playback samples; it does not stream.</strong> No query delivers a window of time that
+  the client then plays through, and nothing is carried between ticks.</p>
+  <div class="scroll"><table>
+    <tr><th>When</th><th>Query</th><th>Size</th></tr>
+    <tr class="lead"><td>every 300 ms while playing, and on every scrub, step or loop</td><td>snapshot at the scrubber's position</td><td class="v">~3,000 rows &middot; ~6 ms</td></tr>
+    <tr class="lead"><td>when the visible range changes</td><td>bucket counts for the density bars</td><td class="v">~100 rows</td></tr>
+  </table></div>
+  <p><strong>Why sampling rather than a window.</strong> The timeline advances by wall clock &times;
+  speed, not by event count — so at &times;10000 a single 300&nbsp;ms tick covers <strong>35 days</strong>
+  of timeline. A prefetched window would need to hold 35 days of events to serve one tick, and what it
+  must hold grows without bound with speed. Sampling costs the same at every speed, which is why speed
+  is free today and must stay so.</p>
+  <div class="grid2" style="margin-top:1.3rem">
+    <div class="panel">
+      <h3>Each tick is independent</h3>
+      <p>The answer at T does not depend on the answer before it, so a dropped or late tick costs
+      nothing and needs no catching up.</p>
+    </div>
+    <div class="panel">
+      <h3>One read at a time</h3>
+      <p>A tick arriving while a read is in flight is skipped. The next one asks about a position at
+      most 300&nbsp;ms further on.</p>
+    </div>
+    <div class="panel">
+      <h3>A scrub is not a special case</h3>
+      <p>The same query at a different position. No window to refill, and no events to replay in order
+      to arrive there.</p>
+    </div>
+    <div class="panel">
+      <h3>Nothing accumulates</h3>
+      <p>The client holds one row per entity — the last answer — and replaces it wholesale. The only
+      thing kept is where each entity was drawn, so movement interpolates instead of teleporting.</p>
+    </div>
+  </div>
+</section>
+
+<section class="col">
+  <div class="sec-head"><span class="n">04</span><h2>Why it has to be this shape</h2></div>
   <p>The client needs two things from the events store and nothing else: where every entity was at the
   scrubber's position, and how much happened across the visible range. They are plainly different
   questions. What is not plain is that their <em>access patterns</em> are in direct conflict.</p>
@@ -322,9 +326,9 @@
         <td>a bounded range scan</td>
         <td><span class="pill">Yes</span></td></tr>
   </table></div>
-  <p>An entity that has not moved for three months still has to appear on the map. Its most recent row
-  may sit in any earlier partition, so a query bounded at T cannot rule any partition out — while a
-  range query rules out nearly all of them.</p>
+  <p>An entity that has not moved for three months still has to appear on the map, and its most recent
+  row may sit anywhere in the store. So the map is served by seeking per entity, and the histogram by
+  a grouped count — two different reads, because they are two different questions.</p>
 </section>
 
 <figure>
@@ -409,139 +413,86 @@
     <line x1="676" y1="247" x2="500" y2="247" stroke="currentColor" stroke-width="1" opacity="0.3"/>
     <text x="744" y="316" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#0f6f62">147 ms measured</text>
   </svg>
-  <figcaption><strong>The same partitioning helps one question and not the other.</strong> A range
-  query opens the partitions its range overlaps. A snapshot cannot, because any earlier partition may
-  hold an entity's most recent row — so the cost of drawing the map grows with how much history
-  precedes the scrubber, not with what is on screen. Measured on a 100M-row temporal store: a snapshot
-  costs 172&nbsp;ms in January and 366&nbsp;ms in December, on identical data.</figcaption>
+  <figcaption><strong>Narrowing the read cannot help a snapshot.</strong> A range query opens only
+  the partitions its range overlaps. A snapshot cannot, because any earlier partition may hold an
+  entity's most recent row. That rules out the obvious optimisation — and points at the one that
+  works, below: stop narrowing, and seek straight to each entity's answer.</figcaption>
 </figure>
 
 <section class="col">
-  <p style="margin-top:1.6rem">This is not a property of any particular storage engine. It follows
-  from the key layout, and every temporal store worth considering shares it.</p>
-  <p class="claim">A snapshot cannot be made cheap by narrowing the read. So it has to be made cheap
-  by not doing the work at read time at all — which is what the checkpoint is.</p>
-</section>
-
-<section class="col">
-  <div class="sec-head"><span class="n">04</span><h2>What the measurements settled</h2></div>
-  <p>Four facts, measured on 99,999,000 rows — 3,000 entities emitting 100 events a day for a year —
-  rather than reasoned about.</p>
-</section>
-
-<div class="grid2" style="margin-top:1.4rem">
-  <div class="panel no">
-    <p class="eyebrow">The decisive one</p>
-    <h3>Pruning cannot help a snapshot</h3>
-    <p>Cost rises with how much history precedes the scrubber — <span class="mono num">172&nbsp;ms</span>
-    at the start of the year, <span class="mono num">366&nbsp;ms</span> at the end, on the same data.
-    So <strong>the common case, scrubbing near now, is the slowest</strong>.</p>
-  </div>
-  <div class="panel no">
-    <p class="eyebrow">And seeking is not enough on its own</p>
-    <h3>Hundreds of milliseconds, against a 300&nbsp;ms tick</h3>
-    <p>Even seeking once per entity rather than scanning, a snapshot over a year of events costs
-    <span class="mono num">232&nbsp;ms</span> warm and <span class="mono num">2,408&nbsp;ms</span>
-    cold. Viable; nowhere near comfortable.</p>
-  </div>
-  <div class="panel">
-    <p class="eyebrow">Structural</p>
-    <h3>The key order cuts both ways</h3>
-    <p>Events keyed <span class="mono">(entity,&nbsp;time)</span> are exactly right for one entity's
-    history and useless for a time range. Adding one time index took the histogram from
-    <span class="mono num">6,780&nbsp;ms</span> to <span class="mono num">147&nbsp;ms</span>.</p>
-  </div>
-  <div class="panel">
-    <p class="eyebrow">Storage</p>
-    <h3>Cardinality beats volume</h3>
-    <p>Repeated event values cost <span class="mono num">162</span> bytes a row; unique ones
-    <span class="mono num">1,350</span>. A 10&nbsp;GiB store lasts seven months or four weeks at the
-    same event rate — the difference is whether payloads repeat, not how many arrive.</p>
-  </div>
-</div>
-
-<section class="col">
-  <div class="sec-head"><span class="n">05</span><h2>The one subtlety: late events</h2></div>
-  <p>A checkpoint is only correct if every event before its boundary has already arrived. Events are
-  pipeline-ingested, so late arrival is ordinary rather than exceptional — and nothing in the
-  checkpoint reveals that one was missed. Hence the grace period: a checkpoint is built at
-  <strong>boundary&nbsp;+&nbsp;grace</strong>, never at the boundary.</p>
-  <p class="claim">The checkpoint is a performance optimisation, not a source of truth. Correctness
-  lives in the event log.</p>
-  <p>That is what makes a cheap answer defensible. A grace period is <strong>self-healing</strong>: an
-  event that misses one checkpoint is still in the log, so the next one picks it up.</p>
+  <div class="sec-head"><span class="n">05</span><h2>Storage</h2></div>
+  <p>Only one schema matters, because only one store holds the data.</p>
   <div class="scroll"><table>
-    <tr><th>Exposure</th><th>What a viewer sees</th></tr>
-    <tr><td class="v">one boundary interval</td><td>a single entity at a stale position, for scrubber positions inside that window</td></tr>
-    <tr><td class="v">afterwards</td><td>corrects itself permanently, with no intervention</td></tr>
+    <tr><th>Part</th><th>Structure</th><th>Why</th></tr>
+    <tr class="lead"><td>Key</td><td class="v">prefix &#8214; big-endian time</td><td>Puts one entity's history together and in order, which is what makes the seek possible at all</td></tr>
+    <tr class="lead"><td>Value</td><td class="v">VARIABLE</td><td>Deduplicates repeated values through a lookup table — worth about five times on storage</td></tr>
   </table></div>
-  <p>A very different severity on a monitoring view than in an audit report. If a deployment turns out
-  to have genuinely long lateness, the escape hatch is to fold from an <em>older</em> checkpoint — a
-  read-time knob, with no rebuild and nothing to migrate.</p>
+  <p class="claim">Repeated event values cost <strong>162 bytes a row</strong>; unique ones
+  <strong>1,350</strong>. A 10&nbsp;GiB store lasts seven months or four weeks at the same event rate.</p>
+  <p>That is the decision to get right early, because a Plan B key or value schema is
+  <strong>immutable once data is written</strong>. Anything per-event and unique in the payload — an
+  embedded timestamp, a sequence number — defeats deduplication and costs roughly five times the
+  store. It is a larger lever than event rate, and it is fixed a long way from where the symptom
+  appears.</p>
 </section>
 
 <section class="col">
   <div class="sec-head"><span class="n">06</span><h2>What this replaces</h2></div>
-  <p>Each of these was tried or costed first. None was rejected on taste.</p>
 </section>
 
 <div class="grid2" style="margin-top:1.4rem">
   <div class="panel no">
-    <h3>Re-reading the store every tick</h3>
-    <p>What happens today: a whole-store scan three times a second, and a histogram that reads every
-    event and truncates silently at ten thousand rows.</p>
+    <h3>Scanning the store every tick</h3>
+    <p>What happened before: every row read and discarded to find one per entity, three times a
+    second, with cost growing as the store filled.</p>
+  </div>
+  <div class="panel no">
+    <h3>A histogram that read every event</h3>
+    <p>Counted on the client, and truncated in silence at ten thousand rows — hours of coverage at the
+    finest bucket width.</p>
+  </div>
+  <div class="panel no">
+    <h3>Checkpoints, and the machinery around them</h3>
+    <p>A store of hourly keyframes, a job to build it, a grace period for late data and a rebuild to
+    repair it. All of it existed to bound a read that is now six milliseconds.</p>
   </div>
   <div class="panel no">
     <h3>Holding the history in the browser</h3>
-    <p>A year is 18&ndash;79&nbsp;GB depending on payload cardinality. The transfer constraint rules it
-    out before the memory one does.</p>
-  </div>
-  <div class="panel no">
-    <h3>Replaying events forward during playback</h3>
-    <p>At &times;10000 a 300&nbsp;ms tick covers 35 days of timeline. Replay makes speed expensive;
-    sampling keeps it free.</p>
-  </div>
-  <div class="panel no">
-    <h3>Delta reads between ticks</h3>
-    <p>A bounded time range is not expressible on either store: an upper bound switches both to
-    snapshot mode, and the caller's lower bound is then discarded.</p>
+    <p>A year is 18&ndash;79&nbsp;GB depending on payload cardinality. Ruled out by transfer before
+    memory even comes into it.</p>
   </div>
 </div>
 
 <section class="col">
-  <div class="sec-head"><span class="n">07</span><h2>Decisions</h2></div>
-  <p>All nine are taken. None of them blocks starting.</p>
-  <div class="scroll"><table class="ledger">
-    <tr><th>#</th><th>Decision</th><th>Reason in one line</th></tr>
-    <tr><td>D1</td><td>Plan B for the event log</td><td>Value deduplication is worth ~5&times; on storage, ingest is built for bursts, and merge, retention and snapshots come already written.</td></tr>
-    <tr><td>D2</td><td>Hourly boundaries</td><td>24 builds a day; worst-case fold 15,600 events. Recent times are the ordinary case, not an edge case.</td></tr>
-    <tr><td>D3</td><td>Grace period for late events</td><td>Self-healing, bounded to one interval. What Traces already chose for the same problem.</td></tr>
-    <tr><td>D4</td><td>A dedicated store document type</td><td>Key and value schema, state type and condense become properties of the type, not fields a user can break.</td></tr>
-    <tr><td>D5</td><td>Keep the user-authored events query</td><td>The flexibility is worth the machinery, and it keeps the Events Query tab.</td></tr>
-    <tr><td>D6</td><td>Expiry and retention default to 1 day</td><td>A user who raises it too far owns the consequence — but expiry above retention must be rejected, not silently under-reported.</td></tr>
-    <tr><td>D7</td><td>Checkpoints in their own document</td><td>One document carries one state type, so A and B are two — both ours by type rather than by convention.</td></tr>
-    <tr><td>D8</td><td>GROUP BY before a counts store</td><td>147&nbsp;ms measured for a day. Build C when wide ranges become an actual complaint.</td></tr>
-    <tr><td>D9</td><td>Route the query tab through E</td><td>Fixes a real bug: the accessible summary counts whichever producer pushed last, and that tab publishes unreduced rows.</td></tr>
+  <div class="sec-head"><span class="n">07</span><h2>When checkpoints come back</h2></div>
+  <p>Not never — just not yet. The trigger is <strong>entity count</strong>, not history, because that
+  is what the cost is proportional to.</p>
+  <div class="scroll"><table>
+    <tr><th>Entities</th><th>Snapshot</th></tr>
+    <tr><td class="v">3,000</td><td class="v">~6 ms &nbsp;<span class="pill">measured</span></td></tr>
+    <tr><td class="v">100,000</td><td class="v">~200 ms &nbsp;<span class="pill cost">projected</span></td></tr>
   </table></div>
+  <p>At tens of thousands of entities, or if a cold-cache snapshot on a large store proves slow in
+  practice, the checkpoint design is the answer and is written up in full. It would return with one
+  change from the version proposed here: late data handled by <strong>periodically rebuilding the last
+  few hours</strong> rather than by delaying each keyframe behind a grace period — repair on a
+  schedule beats waiting and hoping.</p>
 </section>
 
 <section class="col">
-  <div class="sec-head"><span class="n">08</span><h2>Order of work</h2></div>
+  <div class="sec-head"><span class="n">08</span><h2>State of the work</h2></div>
   <ol class="steps">
-    <li><b>Seek-based snapshot</b><span>The biggest single win, no new stores and no format change — and it becomes the checkpoint builder's implementation.</span></li>
-    <li><b>Bounded histogram</b><span>A <span class="mono">GROUP&nbsp;BY</span> plus a time index. Removes the last read that touches all history.</span></li>
-    <li><b>Store type and query surface</b><span>One piece of work: a floor-map-owned document type is not served by the generic search provider, so E is its prerequisite.</span></li>
-    <li><b>Checkpoints</b><span>The bounded snapshot. Worth deriving in memory first, to prove the fold and the grace logic before committing to storage.</span></li>
-    <li><b>Counts store</b><span>Only if wide-range histograms become a complaint.</span></li>
+    <li><b>Seek-based snapshot &mdash; built</b><span>47&times; faster at 200,000 rows and flat in history depth. Verified against 4,071 store tests and a nine-case parity suite running both temporal stores live.</span></li>
+    <li><b>Server-side histogram &mdash; built</b><span>Counts per bucket instead of events. Bucket width follows the visible range, from five minutes up to thirty days.</span></li>
+    <li><b>Query surface &mdash; next</b><span>A dedicated store type, so key schema, value schema and condense become properties of the type rather than fields anyone can edit into an unusable state.</span></li>
+    <li><b>Counts store &mdash; only if needed</b><span>The grouped query is bounded below but not above; a store of counts closes that if wide ranges become a complaint.</span></li>
   </ol>
-  <p style="margin-top:1.4rem"><strong>Steps 1 and 2 are independently shippable</strong> and each
-  fixes a defect that exists in the code today.</p>
 </section>
 
 <footer class="col">
-  <p>Every figure here is measured — a 99,999,000-row query benchmark and a store-capacity probe — not
-  estimated. Full reasoning, the assumptions it rests on, and the alternatives considered and rejected
-  are in <span class="mono">docs/floormap-events-backend-design.md</span>.</p>
+  <p>Every figure here is measured rather than estimated. Full reasoning, the assumptions it rests on,
+  and the alternatives considered and rejected are in
+  <span class="mono">docs/floormap-events-backend-design.md</span>.</p>
 </footer>
 
 </div>
