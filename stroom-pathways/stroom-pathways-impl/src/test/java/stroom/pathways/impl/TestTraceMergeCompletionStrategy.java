@@ -85,6 +85,12 @@ class TestTraceMergeCompletionStrategy {
     private static final String TRACE_B = "b".repeat(32);
     private static final String NAME_A = "GET /orders/{id}";
     private static final String NAME_B = "FetchNewTasks.run";
+    /**
+     * Over the 32 byte threshold, so its span value references the lookup table instead of holding
+     * the name inline. That sends it through {@code insert} when the bucket merges, rather than a
+     * direct put — a different route with different side effects.
+     */
+    private static final String NAME_LONG = "PlanBSharedFileStoreMergeRunnable.run";
 
     @TempDir
     Path tempDir;
@@ -141,6 +147,15 @@ class TestTraceMergeCompletionStrategy {
     }
 
     @Test
+    void aTraceWhoseNameNeedsTheLookupTableIsStillHandedOver() throws IOException {
+        publisher.pushArchive(linkedDoc, 0, stagedBatch("batch1", TRACE_A, NAME_LONG));
+
+        assertThat(rootNamesIn(ShardKeyRouter.computeShardIndex(NAME_LONG, SHARD_COUNT)))
+                .as("a long operation name must not exclude a trace from pathways")
+                .containsExactly(NAME_LONG);
+    }
+
+    @Test
     void anItemCarriesTheSpansAndTheRoot() throws IOException {
         publisher.pushArchive(linkedDoc, 0, stagedBatch("batch1", TRACE_A, NAME_A));
 
@@ -157,20 +172,27 @@ class TestTraceMergeCompletionStrategy {
         }
     }
 
+    /**
+     * Hand-over is at-least-once, not exactly-once. More spans arriving for a trace re-stages it, and
+     * it is then offered again rather than being checked against a record of what has gone before.
+     *
+     * <p>That is the deliberate trade. The alternative is a persistent per-trace marker on the
+     * producer — the growing table this design set out to remove — and the consumer already discards a
+     * trace it has applied, so a repeat costs some queue traffic and changes no model.
+     */
     @Test
-    void aTraceIsHandedOverOnceHoweverOftenItsBucketIsPushed() throws IOException {
+    void moreSpansForATraceOfferItAgain() throws IOException {
         publisher.pushArchive(linkedDoc, 0, stagedBatch("batch1", TRACE_A, NAME_A));
         final int shard = ShardKeyRouter.computeShardIndex(NAME_A, SHARD_COUNT);
         assertThat(itemsIn(shard)).hasSize(1);
 
-        // A second batch for the same day merges into the bucket the first one published. The trace
-        // already has a root there, so the hand-over condition must not fire for it again.
         publisher.pushArchive(linkedDoc, 0, stagedBatch("batch2", TRACE_A, NAME_A));
 
         assertThat(itemsIn(shard))
-                .as("re-pushing a bucket must not hand the same trace over twice")
-                .hasSize(1);
+                .as("offered again rather than silently dropped")
+                .hasSize(2);
     }
+
 
     @Test
     void aFailedHandOverLeavesTheBucketUnpublished() throws IOException {

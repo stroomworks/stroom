@@ -885,6 +885,16 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
                     // so a trace with no root span still waits rather than being handed on.
                     if (optOldRoot.isEmpty() && !rebuilt.isOrphan()) {
                         stampMergeTime(writeTxn, traceIdBytes);
+                    }
+
+                    // Handing over is NOT keyed on the absent root. That condition means "insert did
+                    // not already deal with this trace", and insert deals with exactly those whose
+                    // stored bytes reference a lookup table — which is every trace whose name or
+                    // attributes run past the inline limit. Keying on it there silently excluded every
+                    // long-named operation. So report every rooted trace the cycle rebuilt, and let a
+                    // consumer that sees one twice say so: re-applying a trace is something this design
+                    // already has to tolerate, whereas never offering one cannot be recovered from.
+                    if (!rebuilt.isOrphan()) {
                         handedOver.accept(traceIdBytes);
                     }
                     writer.tryCommit();
