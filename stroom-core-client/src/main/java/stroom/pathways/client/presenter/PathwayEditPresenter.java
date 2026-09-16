@@ -255,7 +255,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 //        this.selected = null;
 //
 //        getView().setDetails(SafeHtmlUtils.EMPTY_SAFE_HTML);
-        pathwayTreePresenter.read(pathwaysDoc, pathway, readOnly);
+        pathwayTreePresenter.read(pathway, readOnly);
         constraintListPresenter.setData(null, readOnly);
 //        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
 //        getView().setSpans(SafeHtmlUtils.EMPTY_SAFE_HTML);

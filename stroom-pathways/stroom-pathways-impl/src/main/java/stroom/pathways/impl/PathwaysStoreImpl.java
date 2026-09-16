@@ -50,9 +50,9 @@ public class PathwaysStoreImpl
     }
 
     /**
-     * Registers this document's references to the feed it writes findings to and to the trace store it
-     * reads, so both appear on the Dependencies screen, both are reported when the target is deleted,
-     * and both are rewritten when a copy or an import lands the target under a different uuid.
+     * Registers this document's reference to the feed it writes findings to, so it appears on the
+     * Dependencies screen, is reported when the feed is deleted, and is rewritten when a copy or an
+     * import lands the feed under a different uuid.
      *
      * <p>This does nothing for a rename. {@link stroom.docref.DocRef} equality is on uuid alone, so a
      * renamed target is the same reference and nothing here is rewritten; the Dependencies screen gets
@@ -61,16 +61,11 @@ public class PathwaysStoreImpl
      */
     @Override
     protected DependencyRemapFunction<PathwaysDoc> getDependencyRemapFunction() {
-        return (doc, remapper) -> {
-            final PathwaysDoc.Builder builder = doc.copy();
-            if (doc.getTracesDocRef() != null) {
-                builder.tracesDocRef(remapper.remap(doc.getTracesDocRef()));
-            }
-            if (doc.getInfoFeed() != null) {
-                builder.infoFeed(remapper.remap(doc.getInfoFeed()));
-            }
-            return builder.build();
-        };
+        return (doc, remapper) -> doc.getInfoFeed() == null
+                ? doc
+                : doc.copy()
+                        .infoFeed(remapper.remap(doc.getInfoFeed()))
+                        .build();
     }
 
     @Override

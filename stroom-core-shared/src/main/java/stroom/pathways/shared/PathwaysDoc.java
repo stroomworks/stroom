@@ -87,11 +87,7 @@ public class PathwaysDoc extends AbstractDoc {
     @JsonProperty
     private final boolean allowConstraintMutation;
     @JsonProperty
-    private final DocRef tracesDocRef;
-    @JsonProperty
     private final DocRef infoFeed;
-    @JsonProperty
-    private final String processingNode;
     /**
      * Where this document's learnt model lives on the shared filesystem, and how many ways it is
      * split, or {@code null} while it has not been configured.
@@ -118,9 +114,7 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("allowPathwayMutation") final Boolean allowPathwayMutation,
                        @JsonProperty("allowConstraintCreation") final Boolean allowConstraintCreation,
                        @JsonProperty("allowConstraintMutation") final Boolean allowConstraintMutation,
-                       @JsonProperty("tracesDocRef") final DocRef tracesDocRef,
                        @JsonProperty("infoFeed") final DocRef infoFeed,
-                       @JsonProperty("processingNode") final String processingNode,
                        @JsonProperty("sharedFileStore") final SharedFileStoreSettings sharedFileStore) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
@@ -134,9 +128,7 @@ public class PathwaysDoc extends AbstractDoc {
                 Objects.requireNonNullElse(allowConstraintCreation, DEFAULT_ALLOW_CONSTRAINT_CREATION);
         this.allowConstraintMutation =
                 Objects.requireNonNullElse(allowConstraintMutation, DEFAULT_ALLOW_CONSTRAINT_MUTATION);
-        this.tracesDocRef = tracesDocRef;
         this.infoFeed = infoFeed;
-        this.processingNode = processingNode;
         this.sharedFileStore = sharedFileStore;
     }
 
@@ -184,16 +176,8 @@ public class PathwaysDoc extends AbstractDoc {
         return allowConstraintMutation;
     }
 
-    public DocRef getTracesDocRef() {
-        return tracesDocRef;
-    }
-
     public DocRef getInfoFeed() {
         return infoFeed;
-    }
-
-    public String getProcessingNode() {
-        return processingNode;
     }
 
     public SharedFileStoreSettings getSharedFileStore() {
@@ -219,9 +203,7 @@ public class PathwaysDoc extends AbstractDoc {
                Objects.equals(description, that.description) &&
                Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance) &&
                Objects.equals(pathways, that.pathways) &&
-               Objects.equals(tracesDocRef, that.tracesDocRef) &&
                Objects.equals(infoFeed, that.infoFeed) &&
-               Objects.equals(processingNode, that.processingNode) &&
                Objects.equals(sharedFileStore, that.sharedFileStore);
     }
 
@@ -235,9 +217,7 @@ public class PathwaysDoc extends AbstractDoc {
                 allowPathwayMutation,
                 allowConstraintCreation,
                 allowConstraintMutation,
-                tracesDocRef,
                 infoFeed,
-                processingNode,
                 sharedFileStore);
     }
 
@@ -251,9 +231,7 @@ public class PathwaysDoc extends AbstractDoc {
                ", allowPathwayMutation=" + allowPathwayMutation +
                ", allowConstraintCreation=" + allowConstraintCreation +
                ", allowConstraintMutation=" + allowConstraintMutation +
-               ", tracesDocRef=" + tracesDocRef +
                ", infoFeed=" + infoFeed +
-               ", processingNode=" + processingNode +
                ", sharedFileStore=" + sharedFileStore +
                '}';
     }
@@ -276,9 +254,7 @@ public class PathwaysDoc extends AbstractDoc {
         private boolean allowPathwayMutation = true;
         private boolean allowConstraintCreation = true;
         private boolean allowConstraintMutation = true;
-        private DocRef tracesDocRef;
         private DocRef infoFeed;
-        private String processingNode;
         private SharedFileStoreSettings sharedFileStore;
 
         private Builder() {
@@ -293,9 +269,7 @@ public class PathwaysDoc extends AbstractDoc {
             this.allowPathwayMutation = pathwaysDoc.allowPathwayMutation;
             this.allowConstraintCreation = pathwaysDoc.allowConstraintCreation;
             this.allowConstraintMutation = pathwaysDoc.allowConstraintMutation;
-            this.tracesDocRef = pathwaysDoc.tracesDocRef;
             this.infoFeed = pathwaysDoc.infoFeed;
-            this.processingNode = pathwaysDoc.processingNode;
             this.sharedFileStore = pathwaysDoc.sharedFileStore;
         }
 
@@ -334,18 +308,8 @@ public class PathwaysDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder tracesDocRef(final DocRef tracesDocRef) {
-            this.tracesDocRef = tracesDocRef;
-            return self();
-        }
-
         public Builder infoFeed(final DocRef infoFeed) {
             this.infoFeed = infoFeed;
-            return self();
-        }
-
-        public Builder processingNode(final String processingNode) {
-            this.processingNode = processingNode;
             return self();
         }
 
@@ -375,9 +339,7 @@ public class PathwaysDoc extends AbstractDoc {
                     allowPathwayMutation,
                     allowConstraintCreation,
                     allowConstraintMutation,
-                    tracesDocRef,
                     infoFeed,
-                    processingNode,
                     sharedFileStore);
         }
     }

@@ -17,7 +17,6 @@
 package stroom.pathways.client.presenter;
 
 import stroom.pathways.client.presenter.PathwayTreePresenter.PathwayTreeView;
-import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
@@ -26,7 +25,6 @@ import stroom.svg.client.SvgPresets;
 import stroom.svg.shared.SvgImage;
 import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ButtonView;
-import stroom.widget.button.client.InlineSvgButton;
 import stroom.widget.htree.client.treelayout.Point;
 import stroom.widget.util.client.ElementUtil;
 import stroom.widget.util.client.HtmlBuilder;
@@ -42,7 +40,6 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,12 +55,10 @@ public class PathwayTreePresenter
     private final ButtonView newButton;
     private final ButtonView editButton;
     private final ButtonView removeButton;
-    private final InlineSvgButton viewTracesButton;
 
     private final HTML html;
     private final MySingleSelectionModel<PathNode> selectionModel = new MySingleSelectionModel<PathNode>();
 
-    private PathwaysDoc pathwaysDoc;
     private Pathway pathway;
     private Element selected;
     private boolean readOnly = true;
@@ -76,11 +71,6 @@ public class PathwayTreePresenter
         newButton = view.addButton(SvgPresets.NEW_ITEM);
         editButton = view.addButton(SvgPresets.EDIT);
         removeButton = view.addButton(SvgPresets.DELETE);
-
-        viewTracesButton = new InlineSvgButton();
-        viewTracesButton.setSvg(SvgImage.EYE);
-        viewTracesButton.setTitle("View Matching Traces");
-        view.addButton(viewTracesButton);
         enableButtons();
 
         html = new HTML();
@@ -110,63 +100,10 @@ public class PathwayTreePresenter
                 }
             }
         }));
-        registerHandler(viewTracesButton.addClickHandler(e -> {
-            final Map<String, String> parentMap = new HashMap<>();
-            final Map<String, PathNodeSequence> pathNodeSequenceMap = new HashMap<>();
-            final Map<String, PathNode> pathNodeMap = new HashMap<>();
-            addToMap(pathway.getRoot(), parentMap, pathNodeSequenceMap, pathNodeMap);
-
-            PathNode pathNode = selectionModel.getSelectedObject();
-            PathNode root = pathNode;
-            while (pathNode != null) {
-                // Get parent sequence.
-                final String parentSequenceUuid = parentMap.get(pathNode.getUuid());
-                if (parentSequenceUuid != null) {
-                    final PathNodeSequence pathNodeSequence = pathNodeSequenceMap.get(parentSequenceUuid);
-                    // Get parent node.
-                    final String parentNodeUuid = parentMap.get(pathNodeSequence.getUuid());
-                    pathNode = pathNodeMap.get(parentNodeUuid);
-
-                    root = pathNode.copy().targets(Collections.singletonList(pathNodeSequence)).build();
-                } else {
-                    pathNode = null;
-                }
-            }
-
-            final Pathway pathway;
-            if (root != null) {
-                pathway = this.pathway.copy().root(root).build();
-            } else {
-                pathway = this.pathway;
-            }
-
-            ShowTracesEvent.fire(
-                    this,
-                    pathwaysDoc.getTracesDocRef(),
-                    null,
-                    pathway);
-        }));
     }
 
-    private void addToMap(final PathNode pathNode,
-                          final Map<String, String> parentMap,
-                          final Map<String, PathNodeSequence> pathNodeSequenceMap,
-                          final Map<String, PathNode> pathNodeMap) {
-        pathNodeMap.put(pathNode.getUuid(), pathNode);
-        NullSafe.list(pathNode.getTargets()).forEach(target -> {
-            pathNodeSequenceMap.put(target.getUuid(), target);
-            parentMap.put(target.getUuid(), pathNode.getUuid());
-            NullSafe.list(target.getNodes()).forEach(node -> {
-                parentMap.put(node.getUuid(), target.getUuid());
-                addToMap(node, parentMap, pathNodeSequenceMap, pathNodeMap);
-            });
-        });
-    }
-
-    public void read(final PathwaysDoc pathwaysDoc,
-                     final Pathway pathway,
+    public void read(final Pathway pathway,
                      final boolean readOnly) {
-        this.pathwaysDoc = pathwaysDoc;
         this.pathway = pathway;
         this.readOnly = readOnly;
         this.selected = null;
@@ -362,8 +299,6 @@ public class PathwayTreePresenter
             editButton.setEnabled(false);
             removeButton.setEnabled(false);
         }
-        viewTracesButton.setEnabled(pathNode != null);
-
         if (readOnly) {
             newButton.setTitle("New path disabled as read only");
             editButton.setTitle("Edit path disabled as read only");

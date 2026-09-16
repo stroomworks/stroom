@@ -23,7 +23,6 @@ import stroom.entity.client.presenter.LinkTabPanelView;
 import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.pathways.shared.TracesDoc;
-import stroom.pathways.shared.pathway.Pathway;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
@@ -94,21 +93,5 @@ public class TracesPresenter extends DocTabPresenter<LinkTabPanelView, TracesDoc
     @Override
     public void refresh() {
         // Do nothing to prevent auto-refreshing from the global tab refresh event.
-    }
-
-    public void forceRefresh() {
-        tracesListTabPresenter.refresh();
-    }
-
-    public void setDataSourceRef(final DocRef dataSourceRef) {
-        tracesListTabPresenter.setDataSourceRef(dataSourceRef);
-    }
-
-    public void setFilter(final String filter) {
-        tracesListTabPresenter.setFilter(filter);
-    }
-
-    public void setPathway(final Pathway pathway) {
-        tracesListTabPresenter.setPathway(pathway);
     }
 }
