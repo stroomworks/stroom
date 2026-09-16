@@ -654,6 +654,43 @@ class TestTemporalStateDb {
         return results;
     }
 
+    /**
+     * Keys whose encoded bytes extend another key's must still appear.
+     *
+     * <p>Under the default {@code VARIABLE} key type a short string is stored inline with no length,
+     * so the bytes of {@code door1} are a prefix of those of {@code door10} and their entries
+     * interleave. A read that steps past a key by jumping beyond {@code prefix‖0xFF…} jumps over
+     * every {@code door10} and {@code door11} entry as well, because {@code '0'} and {@code '1'}
+     * sort below {@code 0xFF} — so those entities silently vanish from the map.</p>
+     *
+     * <p>Every earlier as-at test uses {@code KEY_A}/{@code KEY_B}, which cannot extend one another,
+     * so none of them catches this.</p>
+     */
+    @Test
+    void keysWhoseBytesExtendAnotherAreNotSkipped(@TempDir final Path tempDir) {
+        final Instant effectiveTime = T0.plusSeconds(3600L);
+        try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
+            db.write(writer -> {
+                for (final String name : new String[]{"door1", "door10", "door11", "door2"}) {
+                    db.insert(writer, new TemporalState(
+                            TemporalKey.builder()
+                                    .prefix(KeyPrefix.create(name))
+                                    .time(effectiveTime)
+                                    .build(),
+                            ValString.create(name + "@1")));
+                }
+            });
+
+            final List<Val[]> results = search(
+                    db,
+                    zeroWidthRange(effectiveTime.plusSeconds(60L)),
+                    asAtFieldIndex());
+
+            assertThat(results.stream().map(row -> row[0].toString()).toList())
+                    .containsExactlyInAnyOrder("door1", "door10", "door11", "door2");
+        }
+    }
+
     @Test
     void testSearchAsAtReturnsLatestEntryPerKey(@TempDir final Path tempDir) {
         try (final TemporalStateDb db = TemporalStateDb.create(tempDir, BYTE_BUFFERS, DOC, false)) {
