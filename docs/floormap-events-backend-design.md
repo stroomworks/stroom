@@ -585,7 +585,9 @@ is comparable and, without B, inadequate on both.
 2. **Bounded histogram (§3)** — `GROUP BY` plus a time index. Removes the last all-history read.
 3. **Checkpoints (B + D)** — the bounded snapshot. §5 and §5.1 are its design; §11.11 is its build
    policy, including the grace period D must wait out before building each one.
-4. **Query surface (E)** — may come earlier if convenient; nothing depends on its ordering.
+4. **Query surface (E) + the `FloorMapEventStoreDoc` type** — one piece of work, and **no longer
+   optional**: a floor-map-owned document type is not served by Plan B's search provider, so E is its
+   prerequisite (§11.14). Can be done before 3 if convenient.
 5. **Count store (C)** — only when §11.5's wide-range case bites.
 
 **Steps 1 and 2 are independently shippable and each fixes a defect that exists today.**
@@ -654,16 +656,20 @@ Ordered by how much else depends on them.
 | ~~**D1**~~ | ~~Which store backs block A~~ | | **DECIDED: Plan B, not MySQL.** And Plan B rather than a bespoke LMDB store — see §11.12 for why, and for how D4's concern is met without owning the storage engine |
 | ~~**D2**~~ | ~~Boundary interval for checkpoints~~ | | **DECIDED: hourly.** 24 builds a day; worst-case fold `interval + grace` ≈ 15 600 events (§11.3). Recent times are the ordinary case, not an edge case — see §11.12.1 |
 | ~~**D3**~~ | ~~Late-event policy~~ | | **DECIDED: grace period, option 1 — see §11.11.** Option 4 (fold from an older checkpoint) is the escape hatch and can be added later without changing anything built for option 1 |
-| **D4** | **How the store is presented** | | **Decided (c), now recommended for revision to (b) — see §11.14.** (c) was chosen because (b) was believed to need changes inside `stroom-planb-impl`. It does not: `PlanBDocument` is an interface, the doc types Plan B recognises are a Guice multibinder, and `stroom-pathways-impl` already does exactly this from outside. The module question is answered by the same finding |
+| ~~**D4**~~ | ~~How the store is presented~~ | | **DECIDED: (b), a `FloorMapEventStoreDoc` type — §11.14.** Briefly decided as (c), on the false premise that (b) needed changes inside `stroom-planb-impl`. It does not. **This also settles the module question and makes block E mandatory** (§11.14) |
 | ~~**D5**~~ | ~~Keep the user-authored events query?~~ | | **DECIDED: keep it** — the flexibility is worth the machinery. This fixes E as a `Searchable` taking StroomQL, and rules out the typed `FloorMapResource` endpoint |
 | ~~**D6**~~ | ~~Retention period, and how AA7 is enforced~~ | | **DECIDED: default expiry and retention to 1 day.** A user who raises it too far owns the consequence. AA7 (`expiry ≤ retention`) still needs validating where expiry is set, so the failure is an error rather than silent under-reporting |
 | **D7** | **How block B is stored** | The key *order* is fixed (§11.2) and the key *layout* is settled (§11.12); only the container is open | **Explained in §11.13, and it follows D4.** (c) now implies a second floor-map-created document; (b) later would allow a DBI inside the events store's own environment. The migration between them is a copy, not a rewrite |
 | ~~**D8**~~ | ~~Build the count store (C), or stay with `GROUP BY`?~~ | | **DECIDED: `GROUP BY`, whichever is simpler.** Revisit only if wide-range histograms become an actual complaint |
 | ~~**D9**~~ | ~~Does the Events Query tab read through E?~~ | | **DECIDED: route through E.** Not required for accessibility, but it fixes an accessibility-visible inconsistency — see §11.12.2 |
 
-**Nothing now blocks a prototype.** D7 is the only decision still genuinely open, and §11.13 shows it
-follows from D4 rather than standing alone. The one remaining loose end is the *module* question
-within D4 — where block E's code lives — which is a packaging problem, not a design one.
+**All nine decisions are taken.** D7 resolves to option (i), two documents (§11.13), and the module
+question inside D4 is answered by §11.14 — `stroom-floormap-impl` depends on `stroom-planb-impl`,
+which is what `stroom-pathways-impl` already does.
+
+The one thing to carry forward is a **consequence** rather than an open question: choosing a
+floor-map-owned document type means Plan B's search provider will not serve it, so **block E is a
+prerequisite rather than a follow-on** (§11.14). §11.7 is updated accordingly.
 
 > **A numbering note.** The retention decision above was given against "D7"; it answers **D6**.
 > D7 — how block B is stored — is a different question and remains open.
@@ -775,18 +781,16 @@ Three shapes, and the constraint that rules one out:
 | | Shape | Verdict |
 |---|---|---|
 | **a** | **Hidden entirely inside `FloorMapDoc`** — no separate store document | **Ruled out by ingest.** Plan B resolves a store by *document name* (`docFinder.findByName(type, name)`), and a pipeline's `PlanBFilter` names it in the `<map>` element. A store with no document has no name to write to. It would also kill AA6 — one store backing several maps — which is a capability, not an accident |
-| **b** | **A `FloorMapEventStore` document type** that is a Plan B store with locked-down settings | **The shape wanted.** The open question is whether it can be registered with Plan B's machinery without editing `stroom-planb-impl`, since `StateSearchProvider.getDataSourceType()` keys on `PlanBDoc.TYPE` |
+| **b** | **A `FloorMapEventStore` document type** that is a Plan B store with locked-down settings | **Chosen — see §11.14.** The doubt recorded here, about registering with Plan B's machinery without editing `stroom-planb-impl`, was unfounded |
 | **c** | **A normal Plan B document, created and configured by the floor map**, with the map validating it and warning loudly when it is edited into an unusable state | **The pragmatic fallback.** No new document type, no upstream changes. It does not *prevent* misconfiguration, it detects it — which is most of the value, since today's failures are silent |
 
-**Recommendation: start at (c), design towards (b).** (c) is achievable now, needs nothing from
-upstream, and converts every silent failure in the table above into a visible one. (b) is the better
-end state and (c) does not block it — the validation logic written for (c) is exactly the constraint
-set (b) would enforce.
+> **Superseded by §11.14, which is the decision.** This section recommended starting at (c) because
+> (b) was believed to require changes inside `stroom-planb-impl`. It does not, so **(b) is chosen**.
+> The catalogue of footguns above is why the decision matters and remains accurate; the
+> recommendation below it does not.
 
-**Still to establish for (b):** whether a non-`PlanBDoc` type can participate in Plan B's doc cache,
-search provider and merge processor without changes inside `stroom-planb-impl`. If it cannot, (b)
-carries the same merge exposure §11.12 is trying to avoid, and (c) becomes the answer rather than the
-step towards it.
+The validation work (c) implied is still worth doing, because a store can be wrong for reasons a type
+cannot prevent — see §11.14.
 
 #### 11.12.1 D2: what about looking at the last hour?
 
@@ -892,7 +896,7 @@ checkpoint proves §11.3's read path and the §11.11 grace logic without committ
 container at all — and if the fold turns out to be fast enough on its own, (iii) may be sufficient for
 longer than expected. Persist to (i) when restart cost or cluster behaviour makes it necessary.
 
-### 11.14 Correction: option (b) is a supported extension point
+### 11.14 D4 decided: a `FloorMapEventStoreDoc` type
 
 **§11.12 recommended (c) on a false premise, and D4 was decided on that recommendation.** The premise
 was that a `FloorMapEventStore` document type would need changes inside `stroom-planb-impl`. It does
@@ -943,9 +947,9 @@ A `FloorMapEventStoreDoc` needs:
 So the impl-on-impl dependency is not a compromise invented here; it is what upstream itself does for
 Pathways. **That was the objection (c) existed to avoid, and it does not hold.**
 
-#### The revised recommendation
+#### The decision
 
-**Go to (b).** It delivers what D4 actually asked for — a store type that is configured *for* the
+**(b).** It delivers what D4 actually asked for — a store type that is configured *for* the
 floor map and exposes only settings that suit it, rather than a general-purpose Plan B document a
 user can edit into an unusable state. `stateType`, key schema, value schema and `condense` become
 properties of the type rather than fields on a form.
@@ -965,3 +969,24 @@ does touch upstream code.
 
 > **D7 is therefore unchanged: option (i), two documents** — but both of them ours by type, not just
 > by convention.
+
+#### The consequence that changes the plan: block E becomes mandatory
+
+`StateSearchProvider.getDataSourceType()` returns `PlanBDoc.TYPE`, and
+`SearchProviderRegistryImpl` resolves a provider by the data source's **document type**. So a
+`FloorMapEventStoreDoc` is *not* served by Plan B's own search provider — and `PathwaysModule`
+registers none for `TracesDoc` either, which is why traces are read through their own REST resource
+rather than StroomQL.
+
+**So choosing (b) means we must supply the query surface ourselves.** That is block E, and it stops
+being the optional convenience §11.7 treated it as:
+
+- E moves **earlier** in the sequencing — it is a prerequisite for the store type, not a follow-on.
+- The store type and the query surface become one piece of work: `FloorMapEventStoreDoc.TYPE` is both
+  what Plan B recognises as a store and what E registers against.
+- Everything §11.12 wanted from E — semantics we define, no inference from term shape, no stripped
+  lower bounds — arrives as part of the same change rather than needing separate justification.
+
+**What is still free:** merge strategy is a map binder keyed by `StateType`
+(`GuiceUtil.buildMapBinder(binder(), StateType.class, MergeStrategy.class)`), so reusing
+`TEMPORAL_STATE` for block A inherits its merge behaviour with no new strategy to write.
