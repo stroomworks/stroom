@@ -19,9 +19,12 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
+import stroom.planb.impl.dao.HashClashCommitRunnable;
+import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.shared.SharedFileStoreSettings;
+import stroom.planb.shared.StateSettings;
 import stroom.util.io.FileUtil;
 import stroom.util.io.PathCreator;
 import stroom.util.io.PathSegmentUtil;
@@ -31,6 +34,7 @@ import stroom.util.logging.LogUtil;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.lmdbjava.CopyFlags;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -68,6 +72,13 @@ public class PathwaysShardStore {
     /** Where a Pathways document's model lives, beside the {@code queue} its traces arrive in. */
     public static final String SHARDS_DIR_NAME = "shards";
 
+    // Holds the copy that is pushed. Sits inside the working copy so it is cleaned up along with it.
+    private static final String COMPACTED_DIR_NAME = "compacted";
+
+    // Matches what PathwaysDb.create opens the model with. A compacting copy opens no named database,
+    // but the environment still has to be opened the way it was written.
+    private static final int MAX_DBS = 20;
+
     private final SharedFileStorePublisher publisher;
     private final ByteBuffers byteBuffers;
     private final Path localRoot;
@@ -96,6 +107,9 @@ public class PathwaysShardStore {
      *
      * <p>Nothing is pushed for a shard that was only read, which matters because the push moves the
      * whole file: a cycle that applied nothing would otherwise rewrite the model to say so.
+     *
+     * <p>What goes up is a compacted copy of the working file rather than the working file itself, so
+     * the shared store holds the model and not the free pages left behind by rewriting it.
      *
      * @param work given the local directory, returns whether it changed what is in it. Anything it
      *             throws propagates, and the shard is left as it was on the shared store.
@@ -129,7 +143,7 @@ public class PathwaysShardStore {
                         shardIndex, doc.getName()));
                 return false;
             }
-            publisher.push(localDir, sharedDocDir, shardIndex);
+            publisher.push(compact(localDir), sharedDocDir, shardIndex);
             return true;
 
         } finally {
@@ -217,6 +231,54 @@ public class PathwaysShardStore {
         } catch (final IOException e) {
             LOGGER.debug(() -> "Could not read the version of " + dir + ": " + e.getMessage());
             return null;
+        }
+    }
+
+    // LMDB never shrinks a file. Rewriting a pathway takes fresh pages and leaves the old ones on the
+    // free list, so a shard that is rewritten every cycle settles at several times the size of what it
+    // actually holds. Compacting writes only the live pages into a new file, and it is that file which
+    // is pushed, so the shared store keeps, sends and returns the smaller one. What it costs is a read
+    // pass over the local copy; what it saves is on the shared mount, both on the way up and on every
+    // query that copies back down.
+    private static Path compact(final Path localDir) throws IOException {
+        final Path dataFile = localDir.resolve(PlanBConstants.DATA_FILE_NAME);
+        if (!Files.exists(dataFile)) {
+            // Work claimed a change but wrote no environment, so there is nothing to compact and the
+            // push has nothing to copy either. Hand back the directory it already expects.
+            return localDir;
+        }
+
+        final long start = System.currentTimeMillis();
+        // Read-only, which for PlanBEnv means MDB_NOLOCK, so no lock.mdb is left beside the data. No
+        // named database is opened: a compacting copy takes the whole environment and needs to know
+        // nothing about what is in it, which is why this works whatever the model looks like.
+        final PlanBEnv env = new PlanBEnv(
+                localDir,
+                new StateSettings.Builder().build().getMaxStoreSize(),
+                MAX_DBS,
+                true,
+                new HashClashCommitRunnable());
+        try {
+            final Path compactedDir = localDir.resolve(COMPACTED_DIR_NAME);
+            FileUtil.deleteDir(compactedDir);
+            Files.createDirectories(compactedDir);
+            env.copy(compactedDir.toFile(), CopyFlags.MDB_CP_COMPACT);
+            LOGGER.debug(() -> LogUtil.message("Compacted {} from {} to {} bytes in {}ms",
+                    localDir,
+                    sizeOf(dataFile),
+                    sizeOf(compactedDir.resolve(PlanBConstants.DATA_FILE_NAME)),
+                    System.currentTimeMillis() - start));
+            return compactedDir;
+        } finally {
+            env.close();
+        }
+    }
+
+    private static long sizeOf(final Path file) {
+        try {
+            return Files.size(file);
+        } catch (final IOException e) {
+            return -1;
         }
     }
 

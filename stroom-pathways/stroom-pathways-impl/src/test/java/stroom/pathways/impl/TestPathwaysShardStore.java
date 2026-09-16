@@ -31,6 +31,8 @@ import stroom.util.io.PathCreator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lmdbjava.CursorIterable;
+import org.lmdbjava.CursorIterable.KeyVal;
 import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
 import org.lmdbjava.Env;
@@ -45,8 +47,11 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -208,6 +213,47 @@ class TestPathwaysShardStore {
         assertThat(used[0]).doesNotExist();
     }
 
+    @Test
+    void aBloatedShardIsPushedCompacted() throws IOException {
+        final long[] localSize = {0};
+        store.withShard(doc, SHARD, localDir -> {
+            fill(localDir, 0, 300);
+            deleteRange(localDir, 0, 290);
+            localSize[0] = fileSize(localDir.resolve(PlanBConstants.DATA_FILE_NAME));
+            return true;
+        });
+
+        assertThat(localSize[0])
+                .as("the fixture has to leave a bloated file behind or this proves nothing")
+                .isGreaterThan(8L * 1024 * 1024);
+        assertThat(fileSize(sharedShardDir().resolve(PlanBConstants.DATA_FILE_NAME)))
+                .as("what was pushed holds the ten surviving entries, not the pages the other 290 used")
+                .isLessThan(localSize[0] / 4);
+    }
+
+    @Test
+    void compactingDoesNotChangeWhatIsStored() throws IOException {
+        store.withShard(doc, SHARD, localDir -> {
+            fill(localDir, 0, 50);
+            deleteRange(localDir, 0, 40);
+            setCounter(localDir, 11);
+            return true;
+        });
+
+        final List<String> keys = new ArrayList<>();
+        final long[] counter = {-1};
+        store.withShard(doc, SHARD, localDir -> {
+            keys.addAll(keysIn(localDir));
+            counter[0] = readCounter(localDir);
+            return false;
+        });
+
+        assertThat(keys).as("compacting drops free pages, not entries")
+                .containsExactly("c", "k040", "k041", "k042", "k043", "k044",
+                        "k045", "k046", "k047", "k048", "k049");
+        assertThat(counter[0]).isEqualTo(11);
+    }
+
     // -----------------------------------------------------------------------
     // Fixture — a counter in an LMDB env, standing in for the model
     // -----------------------------------------------------------------------
@@ -219,32 +265,74 @@ class TestPathwaysShardStore {
     }
 
     private static void setCounter(final Path dir, final long value) {
-        withEnv(dir, (env, dbi) -> env.txnWrite(), (dbi, txn) -> {
-            dbi.put(txn, key(), value(value));
+        inEnv(dir, true, (dbi, txn) -> {
+            dbi.put(txn, key("c"), value(value));
             return null;
         });
     }
 
     private static long readCounter(final Path dir) {
-        return withEnv(dir, (env, dbi) -> env.txnRead(), (dbi, txn) -> {
-            final ByteBuffer found = dbi.get(txn, key());
+        return inEnv(dir, false, (dbi, txn) -> {
+            final ByteBuffer found = dbi.get(txn, key("c"));
             return found == null
                     ? 0L
                     : found.getLong();
         });
     }
 
-    private static <R> R withEnv(final Path dir,
-                                 final java.util.function.BiFunction<Env<ByteBuffer>,
-                                         Dbi<ByteBuffer>, Txn<ByteBuffer>> txnFactory,
-                                 final java.util.function.BiFunction<Dbi<ByteBuffer>,
-                                         Txn<ByteBuffer>, R> work) {
+    // Entries big enough that the environment has to grow real pages for them, so deleting them again
+    // leaves a file far larger than what it holds. That is the state a shard rewritten every cycle ends
+    // up in, and the one compaction is there to undo.
+    private static void fill(final Path dir, final int from, final int to) {
+        inEnv(dir, true, (dbi, txn) -> {
+            final ByteBuffer big = ByteBuffer.allocateDirect(64 * 1024);
+            while (big.hasRemaining()) {
+                big.put((byte) 'x');
+            }
+            big.flip();
+            for (int i = from; i < to; i++) {
+                dbi.put(txn, key(entryKey(i)), big.duplicate());
+            }
+            return null;
+        });
+    }
+
+    private static void deleteRange(final Path dir, final int from, final int to) {
+        inEnv(dir, true, (dbi, txn) -> {
+            for (int i = from; i < to; i++) {
+                dbi.delete(txn, key(entryKey(i)));
+            }
+            return null;
+        });
+    }
+
+    private static List<String> keysIn(final Path dir) {
+        return inEnv(dir, false, (dbi, txn) -> {
+            final List<String> keys = new ArrayList<>();
+            try (final CursorIterable<ByteBuffer> cursor = dbi.iterate(txn)) {
+                for (final KeyVal<ByteBuffer> keyVal : cursor) {
+                    keys.add(StandardCharsets.UTF_8.decode(keyVal.key()).toString());
+                }
+            }
+            return keys;
+        });
+    }
+
+    private static String entryKey(final int i) {
+        return String.format("k%03d", i);
+    }
+
+    private static <R> R inEnv(final Path dir,
+                               final boolean write,
+                               final BiFunction<Dbi<ByteBuffer>, Txn<ByteBuffer>, R> work) {
         try (final Env<ByteBuffer> env = Env.create()
-                .setMapSize(1024L * 1024L)
+                .setMapSize(256L * 1024L * 1024L)
                 .setMaxDbs(1)
                 .open(dir.toFile())) {
             final Dbi<ByteBuffer> dbi = env.openDbi("counter", DbiFlags.MDB_CREATE);
-            try (final Txn<ByteBuffer> txn = txnFactory.apply(env, dbi)) {
+            try (final Txn<ByteBuffer> txn = write
+                    ? env.txnWrite()
+                    : env.txnRead()) {
                 final R result = work.apply(dbi, txn);
                 if (!txn.isReadOnly()) {
                     txn.commit();
@@ -254,9 +342,10 @@ class TestPathwaysShardStore {
         }
     }
 
-    private static ByteBuffer key() {
-        final ByteBuffer buf = ByteBuffer.allocateDirect(1);
-        buf.put("c".getBytes(StandardCharsets.UTF_8)).flip();
+    private static ByteBuffer key(final String name) {
+        final byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
+        final ByteBuffer buf = ByteBuffer.allocateDirect(bytes.length);
+        buf.put(bytes).flip();
         return buf;
     }
 
@@ -264,6 +353,14 @@ class TestPathwaysShardStore {
         final ByteBuffer buf = ByteBuffer.allocateDirect(Long.BYTES);
         buf.putLong(value).flip();
         return buf;
+    }
+
+    private static long fileSize(final Path path) {
+        try {
+            return Files.size(path);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static long lastModified(final Path path) {
