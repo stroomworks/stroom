@@ -76,23 +76,42 @@ import static org.assertj.core.api.Assertions.assertThat;
  * each key's latest version at or before it, while Plan B treated every time term as a row filter.
  * A key whose only version predated the bound was returned by one store and not the other.</p>
  *
- * <p>Plan B gained a latest-per-key read on 2026-09-09, arriving with upstream's Traces work:
- * {@code TemporalStateDb.search} now lifts a time term via {@code PlanBSearchHelper.getQueryTime}
- * and, when it finds one, takes a {@code searchAsAt} path instead. So the three are enabled, and
- * the test that pinned the old behaviour is deleted, exactly as this javadoc used to say it should
- * be.</p>
+ * <p>Plan B gained a latest-per-key read in <b>{@code b1c8cb2870}, 2026-08-27, "Fix map to handle
+ * events plan b store"</b>: {@code TemporalStateDb.search} lifts a time term via
+ * {@code PlanBSearchHelper.getQueryTime} and, when it finds one, takes a {@code searchAsAt} path
+ * instead. So the three are enabled, and the test that pinned the old behaviour is deleted.</p>
+ *
+ * <p><b>That commit is this fork's, not upstream's, and the distinction is load-bearing.</b>
+ * {@code origin/master} contains no occurrence of {@code getQueryTime} or {@code searchAsAt};
+ * the change predates upstream's Traces work ({@code 17371533de}, 2026-09-07) by eleven days and
+ * touches two files this fork does not own. An earlier version of this javadoc credited it to
+ * upstream, which is worth correcting rather than merely tidying: if the behaviour is believed to
+ * be upstream's then nobody marks it {@code STROOMWORKS-LOCAL}, and the next merge from master
+ * silently reverts the floor map's read semantics. Neither file carries a marker today.</p>
  *
  * <p><b>Note how parity was reached, because it is not the direction anyone would have chosen.</b>
  * Plan B adopted the SQL store's semantics rather than the SQL store being fixed — and that
  * includes the surprising half: {@code searchAsAt} calls
  * {@code PlanBSearchHelper.removeTimeTerms}, which like {@code getFilteredExpression} strips
  * <em>every</em> time term, so a caller's lower bound is now discarded on both stores whenever an
- * upper bound is present. {@link #testWorkedExampleInTheParityReport} pins that, and
- * {@code docs/temporal-store-parity-report.md} predates it and needs revising.</p>
+ * upper bound is present. {@link #testWorkedExampleInTheParityReport} pins that.</p>
  *
  * <p>The consequence to watch for is anything that needs <em>every</em> version in a range rather
  * than a snapshot — a density histogram, for instance. Plan B used to answer that correctly and no
  * longer does.</p>
+ *
+ * <h3>Every time literal here is zone-qualified, and that is not incidental</h3>
+ * <p>Both stores decide between snapshot and filter semantics by trying
+ * {@code DateUtil.parseUnknownString} on the term's value and <b>silently ignoring the term if it
+ * throws</b>. That parser needs a zone offset or epoch millis: {@code "2020-01-01T00:00:00.000Z"}
+ * parses, {@code "2020-01-01T00:00:00.0"} does not, and neither does {@code now()}. The row filter
+ * uses a different and far more permissive parser ({@code DateExpressionParser}), so a term can be
+ * honoured as a filter while being invisible to the mode selection.</p>
+ *
+ * <p>So {@code T1_ISO}/{@code T2_ISO}/{@code T3_ISO} below carry their {@code Z} deliberately. A
+ * case written with an unqualified literal would exercise the <em>filter</em> path on both stores,
+ * pass, and be taken as evidence of a parity it never tested. If you add a case, keep the
+ * {@code Z}; if you want to test the filter path, say so in the test name.</p>
  *
  * <h3>What this does not cover</h3>
  * <p>The SQL store's extra CRUD ({@code create}, {@code update}, {@code fetch}, {@code delete},

@@ -3,30 +3,125 @@
 **Requirement:** the two must behave identically as temporal state stores, differing only in the
 SQL store's extra CRUD operations and in performance.
 
-**Verdict:** they do not. Three differences, all in the handling of time terms, demonstrated by a
-head-to-head test running both stores live. Four other behaviours match.
+**Verdict — revision 2: they now do.** Parity was reached by implementing **Option A** below: Plan B
+adopted the SQL store's snapshot semantics. Revision 1 reported three differences and recommended
+choosing between four options. That choice has been made and built, so the option analysis is
+retained as **the record of how it was decided**, not as a live question.
 
-**Test:** `TestTemporalStoreParity` in `stroom-sqlstore-impl-db`.
+**Test:** `TestTemporalStoreParity` in `stroom-sqlstore-impl-db`. The three cases revision 1
+recorded as failures are enabled and no longer `@Disabled`.
+
+> **Verified for revision 2.** The parity suite was re-run against a live MySQL and both live
+> stores: **9 tests, 0 failures, 0 skipped**. The date-parsing behaviour in *What parity cost* §3
+> was verified separately by running `DateUtil.parseUnknownString` against the literals in question.
+>
+> Note that `stroom-sqlstore-impl-db` needs a database: without one all 9 fail to provision with
+> `Communications link failure`, which looks like a behavioural failure and is not.
+
+**Read this first if you are acting on the report:** §*What parity cost* — Option A was adopted
+complete with the three behaviours revision 1 warned about, and all three are now live on both
+stores.
 
 ---
 
-## Result — the test has now run
+## Revision 2 — what changed, when, and who changed it
 
-**8 tests, 3 failures.** Head-to-head, both stores live, same data, same criteria.
+**The change is ours, not upstream's.** This matters more than it sounds.
 
-| Case | Result |
-|---|---|
-| No time term | **Parity** |
-| `Key` filter | **Parity** |
-| Same key and instant written twice | **Parity** |
-| Lower bound alone (`>= T2`) | **Parity** |
-| **Upper bound (`<= T`)** | **Differ** |
-| **Exact time (`= T`)** | **Differ** |
-| **Both bounds (`>= T2 AND <= T3`)** | **Differ** |
+```
+b1c8cb2870  2026-08-27  stroomworks  "Fix map to handle events plan b store"
+            PlanBSearchHelper.java   +73    ← getQueryTime, removeTimeTerms
+            TemporalStateDb.java     +113   ← searchAsAt
+            TestTemporalStateDb.java +209
+17371533de  2026-09-07  upstream     "Traces processing (#5772)"
+```
 
-T1, T2 and T3 are defined below.
+`origin/master` contains **zero** occurrences of `getQueryTime` or `searchAsAt`. The latest-per-key
+read was added **here**, eleven days *before* upstream's Traces work, to two files this fork does not
+own.
 
-### The three differences, as the test reports them
+`TestTemporalStoreParity`'s javadoc previously said it "arrived with upstream's Traces work on
+2026-09-09". It did not, and the mistake is dangerous rather than merely untidy: if the behaviour is
+believed to be upstream's, nobody marks it `STROOMWORKS-LOCAL` and the next merge from master
+silently reverts the map's read semantics. Neither changed file carries a marker today — see
+`docs/temporal-store-read-mode-plan.md` Phase 0.
+
+---
+
+## What parity cost
+
+Revision 1 set out what Option A would break. It was adopted anyway, so those costs are now live.
+All three are **shared by both stores**, which is what parity means here.
+
+### 1. History queries on Plan B now return a snapshot
+
+Predicted under *Option A — who loses, concretely*, and it happened. Any query carrying an upper time
+bound gets one row per key instead of every version in the range. A density histogram is the obvious
+casualty: it asks for all events in a window and now gets one per key.
+
+The Floor Map's histogram escapes only because it sends **no `TimeRange` at all**, taking the
+all-history path. That is a deliberate choice documented in `HistogramQueryHelper.run`, not luck —
+but it is also why that read is unbounded, which is
+`docs/task-histogram-reads-whole-store-and-truncates-silently.md`.
+
+### 2. The caller's lower bound is now discarded on *both* stores
+
+Query 3 below was revision 1's clearest bug: the SQL store returning a row from before the caller's
+own lower bound. `searchAsAt` calls `PlanBSearchHelper.removeTimeTerms`, which strips every time term
+exactly as `getFilteredExpression` does — so Plan B copied the bug along with the feature.
+
+Revision 1 recommended fixing this *first and separately*, because "returning a row outside the
+caller's requested range is indefensible under any reading". That recommendation stands and now
+applies in two places instead of one.
+
+### 3. Read mode depends on whether a date literal parses — silently
+
+Revision 1 called this "the parser decision" and said it "matters more than the implicit-versus-explicit one".
+It was decided by default: Plan B copied `DateUtil.parseUnknownString`, the first row of that table.
+
+Both stores select snapshot mode like this:
+
+```java
+try {
+    return DateUtil.parseUnknownString(term.getValue());
+} catch (final RuntimeException e) {
+    // Ignore and keep checking
+}
+```
+
+The **row filter** uses a different and far more permissive parser —
+`DateExpressionParser.parse(value, dateTimeSettings)` in `ExpressionPredicateFactory` — which is
+timezone-aware and understands relative expressions. So the two paths disagree about what a date is,
+and the disagreement chooses the semantics:
+
+| Literal | `getQueryTime` | Row filter | Resulting semantics |
+|---|---|---|---|
+| `"2026-09-09T08:48:02.000Z"` | parses → `1788943682000` | parses | **Snapshot** — one row per key |
+| `"2026-09-09T08:48:02.0"` | **throws**, term ignored | parses | **Filter** — every version in range |
+| `now()`, `day()` | **throws**, term ignored | parses | **Filter** |
+
+Verified by running `DateUtil.parseUnknownString` directly on those literals: the zone-qualified form
+returns epoch millis, the unqualified form throws `IllegalArgumentException` — `looksLikeISODate`
+accepts it, the strict ISO parse rejects it for want of a zone offset, and the epoch-millis fallback
+then fails too.
+
+**Consequences worth stating plainly.**
+
+- Two queries that differ only in whether the date carries a `Z` return **different shapes of
+  answer**, with no error and nothing in the response to say which happened.
+- Every query using a relative date (`now()`, `day()`) silently gets filter semantics. Revision 1
+  noted this made the change "nearly invisible and nearly useless outside the floor map"; that is
+  exactly how it has turned out.
+- It is, accidentally, the only way to get a **bounded range read** out of these stores today. That
+  is not a design and must not be relied on — but it explains any experiment that appears to
+  contradict the snapshot behaviour described here.
+
+---
+
+## The three cases that revision 1 recorded as failures
+
+All three are now enabled and **passing**. Kept because they are the sharpest statement of what the
+two semantics are, and because the fixture is the one the tests still use.
 
 **Times used throughout.** Three effective times a year apart, plus a query time that falls between
 two of them so a snapshot has to resolve backwards rather than land on a stored row:
@@ -42,51 +137,34 @@ two of them so a snapshot has to resolve backwards rather than land on a stored 
 straddling the query times, and `door` has a single version at T1 only. `door` is the discriminator
 — it is the key whose presence or absence separates "the state as at T" from "the rows at T".
 
-**1. Upper bound** — `EffectiveTime <= 2021-06-01` (between T2 and T3)
+| Case | Revision 1 — SQL | Revision 1 — Plan B | Now, both |
+|---|---|---|---|
+| **1. Upper bound** `<= 2021-06-01` | `door@T1, gate@T2` | `door@T1, gate@T1, gate@T2` | `door@T1, gate@T2` |
+| **2. Exact time** `= T2` | `door@T1, gate@T2` | `gate@T2` | `door@T1, gate@T2` |
+| **3. Both bounds** `>= T2 AND <= T3` | `door@T1, gate@T2` | `gate@T2` | `door@T1, gate@T2` |
 
-```
-SQL   : door@T1, gate@T2
-PlanB : door@T1, gate@T1, gate@T2
-```
+Case 3 is still wrong on both stores: **`door@T1` is before the caller's own lower bound of T2.** The
+upper bound switches the query to the snapshot path, and every time term is then stripped — the
+caller's lower bound with them. See *What parity cost* §2.
 
-The SQL store returns the state *as at* that time — one row per key. Plan B returns every version
-at or before it.
+Note the three conditions are not equivalent even now: `getQueryTime` accepts `EQUALS`, `<` and `<=`
+and treats all three as `<= T`, so case 2's "exact time" is an at-or-before snapshot, not an equality
+match.
 
-**2. Exact time** — `EffectiveTime = 2021-01-01` (T2)
+### What revision 1 got wrong
 
-```
-SQL   : door@T1, gate@T2
-PlanB : gate@T2
-```
-
-The SQL store resolves a *snapshot at* T2, so it includes `door@T1` — door's latest version at or
-before T2. Plan B matches the instant exactly, so door is absent.
-
-**3. Both bounds** — `EffectiveTime >= T2 AND <= T3`
-
-```
-SQL   : door@T1, gate@T2
-PlanB : gate@T2
-```
-
-**The SQL store returns a row outside the range the caller asked for.** `door@T1` is before the
-requested lower bound of T2. The upper bound switches the query to the snapshot path, and
-`getFilteredExpression` then strips *every* time term from the SQL condition — including the
-caller's lower bound. This is the sharpest of the three: the other two are defensible as different
-questions, but this one answers a question nobody asked.
-
-### A correction to this report's earlier predictions
-
-Two cases were predicted wrongly, and two first-draft tests passed for the wrong reason:
+Two predictions were wrong and two first-draft tests passed for the wrong reason. Kept because both
+mistakes are the kind that recur:
 
 - **The exact-time case initially passed.** Its fixture had a single key, whose latest version at or
   before T2 *is* the row at T2, so both semantics coincide. Adding `door@T1` — a key existing only
-  before the query time — made it discriminate. A test that cannot distinguish the two behaviours is
-  not evidence of parity.
-- **The lower-bound case passes, but not for the predicted reason.** A lone `>=` never reaches the
-  snapshot path: `getQueryTime` accepts only `EQUALS`, `<` and `<=`. The lower-bound stripping only
-  bites when an upper bound is present too — which is why the both-bounds case was added, and it
-  fails.
+  before the query time — made it discriminate. A test that cannot distinguish two behaviours is not
+  evidence of parity.
+- **The lower-bound case passed, but not for the predicted reason.** A lone `>=` never reaches the
+  snapshot path: `getQueryTime` accepts only `EQUALS`, `<` and `<=`. The stripping only bites when an
+  upper bound is present too — which is why the both-bounds case was added, and why it failed.
+
+---
 
 ## A worked example to judge the options against
 
@@ -133,7 +211,11 @@ questions and the current design guesses which".
 
 ---
 
-## Option A — Plan B adopts snapshot semantics
+## Option A — Plan B adopts snapshot semantics  ✅ **ADOPTED**
+
+> **This is what was built**, in `b1c8cb2870` on 2026-08-27. Everything below was written as a
+> prediction; see *What parity cost* for which parts came true. The section is unedited so the
+> prediction can be judged against the outcome.
 
 **What changes:** Plan B's column above becomes the snapshot column. Both stores answer Query 1
 correctly.
@@ -297,8 +379,8 @@ at least every 20 seconds; and Query 3's bug stays.
 
 | | Query 1 (where now) | Query 2 (history) | Query 3 (bug) | Cost | Upstream needed |
 |---|---|---|---|---|---|
-| **Today** | client works around it | correct | broken | none | no |
-| **A** — Plan B snapshots | correct | **breaks** on Plan B | still broken | medium | **yes** |
+| ~~**Today**~~ *(pre-2026-08-27)* | client works around it | correct | broken | none | no |
+| **A** — Plan B snapshots **← today** | correct | **breaks** on Plan B | still broken | medium | no — done locally |
 | **B** — SQL filters | **breaks** everywhere | correct | fixed | medium | no |
 | **C** — explicit, pushdown-able | correct | correct | fixed | large | **yes** |
 | **D** — nothing | works around it | correct | broken | none | no |
@@ -315,8 +397,8 @@ Two things fall out of that table:
 
 ## `getQueryTime`'s three edges
 
-Whatever is decided, these are properties of the current SQL behaviour that any "make them the same"
-work has to either reproduce or deliberately fix:
+These were properties of the SQL store alone when revision 1 was written. Plan B copied
+`getQueryTime` verbatim, so **all three now apply to both stores**:
 
 - **Only absolute times count.** Relative bounds throw and are swallowed, silently selecting full
   history.
@@ -326,29 +408,44 @@ work has to either reproduce or deliberately fix:
   condition, including an explicit lower bound the caller wrote, which the snapshot may violate.
 
 The third is why `testLowerTimeBoundSelectsTheSameRowsInBothStores` is in the parity test: a
-`>=` term alone should behave identically in both stores, and if the SQL store strips it, it does
-not.
+`>=` term alone should behave identically in both stores. It does — because a lone `>=` never
+reaches the snapshot path at all. `testWorkedExampleInTheParityReport` is the one that pins the
+stripping, and it asserts the wrong-but-matching behaviour of both.
+
+The first edge is no longer a footnote. *What parity cost* §3 shows it is now the de-facto switch
+between snapshot and filter semantics, selected by how a caller happened to spell a date.
 
 ---
 
-## Recommended next step
+## Recommended next steps — revision 2
 
-**Do the Query 3 fix now, on its own.** It needs no decision between the options, it is local to
-`getFilteredExpression`, and returning a row outside the caller's requested range is indefensible
-under any reading. It is the only part of this report that is unambiguously a bug rather than a
-design choice.
+Option A is built, so the open items are what it left behind rather than which option to pick.
 
-**Then choose between A, C and D** — knowing that only C gets all three queries right, that A buys
-the floor map's correctness by breaking history queries on Plan B, and that D is the status quo with
-its costs written down. A and C both need Plan B's owners; D needs nobody.
+**1. Stop stripping the caller's lower bound — now in two places.** Revision 1 recommended this
+first and separately, and it is more urgent now, not less: `PlanBSearchHelper.removeTimeTerms` and
+`UpdatableTemporalStoreDaoImpl.getFilteredExpression` both do it. Returning a row from before the
+caller's own lower bound is indefensible under any reading of any question. Neither change depends
+on anything else in this report.
 
-The floor map does not need this decision to keep working. It needs one before the events store can
-be relied on to behave like the facts store.
+**2. Decide what a date literal means before something depends on the accident.** *What parity cost*
+§3 is the sharpest remaining defect: a `Z` on the end of a timestamp silently changes the shape of
+the answer, and relative dates always take the filter path. Three options, none of them large:
 
-Independently of that, **the both-bounds case is a bug in the SQL store on its own terms.** Returning
-a row outside the caller's requested range is not a defensible reading of any question; it is
-`getFilteredExpression` stripping more than it should. Worth fixing whether or not the two stores are
-ever aligned, and it is a small local change.
+| | Effect |
+|---|---|
+| Use `DateExpressionParser` in `getQueryTime` too | Consistent — but every relative-dated query on any temporal store switches to snapshot semantics. Wide blast radius, and it removes today's only bounded-range read. |
+| Reject an unparseable time term instead of ignoring it | Turns a silent semantic switch into an error. Smallest change, and it stops the accident being load-bearing. |
+| Leave it, and document it | Cheapest, but §3 shows people are already relying on it without knowing they are. |
+
+**3. Mark the local change.** `PlanBSearchHelper` and `TemporalStateDb` carry 186 lines of this
+fork's code with no `STROOMWORKS-LOCAL` marker. Until they do, a merge from master can revert the
+Floor Map's read semantics without anyone noticing.
+
+**4. Option C is still the only design that answers both questions.** Parity did not make the
+underlying problem go away — it made both stores answer the snapshot question and neither answer the
+history one. `docs/planb-explicit-read-mode-proposal.md` is Option C written up for the Plan B
+maintainer. Nothing in the Floor Map is blocked on it; see
+`docs/floormap-single-read-feasibility.md`.
 
 To re-run:
 
