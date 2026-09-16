@@ -23,6 +23,7 @@ import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
 import stroom.query.api.TimeRange;
 import stroom.query.shared.QueryTablePreferences;
+import stroom.util.shared.time.SimpleDuration;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -238,6 +239,16 @@ public class FloorMapDoc extends AbstractDoc {
     private final ValueFormat valueFormat;
 
     /**
+     * How long an entity stays on the map after its last event.
+     *
+     * <p>Null means the default rather than "off" — see {@link FloorMapEventExpiry}. Every document
+     * written before this field existed has none, and those are the documents whose entities last
+     * forever, which is the behaviour it removes.</p>
+     */
+    @JsonProperty
+    private final SimpleDuration eventExpiry;
+
+    /**
      * Ordered list of field mappings that describe the structure of a
      * temporal entry's {@code Value} column. Each entry maps a
      * {@link FloorMapFieldMapping.Role Role} to a path within the
@@ -341,6 +352,8 @@ public class FloorMapDoc extends AbstractDoc {
      * @param eventsQuery                 StroomQL for the events store; may be {@code null}
      * @param eventsQueryTimeRange        time range for the events query; may be {@code null}
      * @param eventsQueryTablePreferences table prefs for events query results; may be {@code null}
+     * @param eventExpiry                 how long an entity stays after its last event; may be
+     *                                    {@code null}, which means the default rather than off
      * @param valueFormat                 value serialisation format; may be {@code null}
      *                                    (defaults to {@link ValueFormat#JSON} via getter)
      * @param valueSchema                 value field mappings; may be {@code null}
@@ -373,6 +386,7 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
                        @JsonProperty("eventsQueryTablePreferences")
                            final QueryTablePreferences eventsQueryTablePreferences,
+                       @JsonProperty("eventExpiry") final SimpleDuration eventExpiry,
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
                        @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema,
                        @JsonProperty("typeStyles") final List<TypeStyle> typeStyles,
@@ -401,6 +415,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.eventsQueryTimeRange = eventsQueryTimeRange;
         this.eventsQueryTablePreferences = eventsQueryTablePreferences;
 
+        this.eventExpiry = eventExpiry;
         this.valueFormat = valueFormat;
         this.valueSchema = copyOrNull(valueSchema);
         this.typeStyles = copyOrNull(typeStyles);
@@ -504,6 +519,20 @@ public class FloorMapDoc extends AbstractDoc {
     public FloorMapTransformationMatrix getMatrix() {
         return matrix;
     }
+
+    /**
+     * How long an entity stays on the map after its last event.
+     *
+     * <p>Returned raw, so a caller can tell "unset" from "set to twenty-four hours" — the two are
+     * equal in effect but not in meaning, and the editor needs the difference. Use
+     * {@link FloorMapEventExpiry#millis(SimpleDuration)} to resolve it for a read.</p>
+     *
+     * @return the configured duration, or {@code null} where the document sets none
+     */
+    public SimpleDuration getEventExpiry() {
+        return eventExpiry;
+    }
+
 
     /**
      * Returns the serialisation format used for the temporal entry's
@@ -628,6 +657,7 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(eventsQuery, that.eventsQuery) &&
                Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
+               Objects.equals(eventExpiry, that.eventExpiry) &&
                Objects.equals(valueFormat, that.valueFormat) &&
                Objects.equals(valueSchema, that.valueSchema) &&
                Objects.equals(typeStyles, that.typeStyles) &&
@@ -653,6 +683,7 @@ public class FloorMapDoc extends AbstractDoc {
                 eventsQuery,
                 eventsQueryTimeRange,
                 eventsQueryTablePreferences,
+                eventExpiry,
                 valueFormat,
                 valueSchema,
                 typeStyles,
@@ -731,6 +762,7 @@ public class FloorMapDoc extends AbstractDoc {
         private String eventsQuery;
         private TimeRange eventsQueryTimeRange;
         private QueryTablePreferences eventsQueryTablePreferences;
+        private SimpleDuration eventExpiry;
         private ValueFormat valueFormat;
         private List<FloorMapFieldMapping> valueSchema;
         private List<TypeStyle> typeStyles;
@@ -760,6 +792,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.eventsQuery = doc.eventsQuery;
             this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
+            this.eventExpiry = doc.eventExpiry;
             this.valueFormat = doc.valueFormat;
             this.valueSchema = copyOrNull(doc.valueSchema);
             this.typeStyles = copyOrNull(doc.typeStyles);
@@ -886,6 +919,11 @@ public class FloorMapDoc extends AbstractDoc {
          *                    to use the default ({@link ValueFormat#JSON})
          * @return this builder
          */
+        public Builder eventExpiry(final SimpleDuration eventExpiry) {
+            this.eventExpiry = eventExpiry;
+            return this;
+        }
+
         public Builder valueFormat(final ValueFormat valueFormat) {
             this.valueFormat = valueFormat;
             return self();
@@ -973,6 +1011,7 @@ public class FloorMapDoc extends AbstractDoc {
                     eventsQuery,
                     eventsQueryTimeRange,
                     eventsQueryTablePreferences,
+                    eventExpiry,
                     valueFormat,
                     valueSchema,
                     typeStyles,

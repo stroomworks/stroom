@@ -476,12 +476,22 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         validateDocUuid(docUuid);
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
+            // A bound at or after queryTime is not a window but the zero-width TimeRange the
+            // framework builds for "as at T" - `>= T AND < T` - which no row satisfies if read
+            // literally. Mirrors the guard in TemporalStateDb.searchAsAt.
+            final Long candidate = getNotBefore(criteria);
+            final Long notBefore = candidate != null && candidate < queryTime
+                    ? candidate
+                    : null;
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
                     UPDATABLE_TEMPORAL_STORE.as("t1");
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
                     UPDATABLE_TEMPORAL_STORE.as("t2");
 
             final Condition condition = aliasedCondition(t2, criteria);
+            // Narrowing the aggregate rather than filtering its result is the same answer and a
+            // cheaper one: the latest row in [notBefore, queryTime] is the latest row at or before
+            // queryTime whenever that row is in scope, and no row at all when it is not.
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.DOC_UUID.as("sub_uuid"),
                             t2.KEY_.as("sub_key"),
@@ -490,6 +500,9 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .where(t2.DOC_UUID.eq(docUuid))
                     .and(condition)
                     .and(t2.EFFECTIVE_TIME.le(queryTime))
+                    .and(notBefore == null
+                            ? DSL.noCondition()
+                            : t2.EFFECTIVE_TIME.ge(notBefore))
                     .groupBy(t2.DOC_UUID, t2.KEY_);
 
             final Table<Record3<String, String, Long>> subTable = subquery.asTable("sub");
@@ -575,6 +588,40 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         return expression == null
                 ? DSL.noCondition()
                 : localExpressionMapper.apply(expression);
+    }
+
+    /**
+     * The "not before" instant, where the caller has bounded the snapshot below as well as above.
+     *
+     * <p>Narrows "the state of each key at T" to "the state of each key at T, considering only what
+     * happened since". Without it the bound is not ignored but stripped by
+     * {@link #getFilteredExpression}, so a caller asking for {@code >= X AND <= Y} could be handed a
+     * row from before X — the defect {@code docs/temporal-store-parity-report.md} records.</p>
+     *
+     * <p>Mirrors {@code PlanBSearchHelper.getNotBefore} so the two stores stay interchangeable:
+     * {@code >} is treated as {@code >=}, the first parseable term wins, and its position in the
+     * expression tree is not considered.</p>
+     */
+    private Long getNotBefore(final ExpressionCriteria criteria) {
+        if (criteria == null || criteria.getExpression() == null) {
+            return null;
+        }
+        final List<ExpressionTerm> timeTerms = ExpressionUtil.terms(
+                criteria.getExpression(),
+                List.of(UpdatableTemporalStore.TIME_FIELD.getFldName()));
+
+        for (final ExpressionTerm term : timeTerms) {
+            if (UpdatableTemporalStore.TIME_FIELD.getFldName().equals(term.getField()) &&
+                    (term.getCondition() == ExpressionTerm.Condition.GREATER_THAN ||
+                    term.getCondition() == ExpressionTerm.Condition.GREATER_THAN_OR_EQUAL_TO)) {
+                try {
+                    return DateUtil.parseUnknownString(term.getValue());
+                } catch (final RuntimeException e) {
+                    // Ignore and keep checking
+                }
+            }
+        }
+        return null;
     }
 
     private Long getQueryTime(final ExpressionCriteria criteria) {

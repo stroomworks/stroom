@@ -307,7 +307,7 @@ class TestTemporalStoreParity {
      * a store honouring the lower bound would omit it. Both return it.</p>
      */
     @Test
-    void testALowerBoundAddsNothingOnceAnUpperBoundIsPresent(@TempDir final Path tempDir) {
+    void theLowerBoundNarrowsTheSnapshotRatherThanBeingDiscarded(@TempDir final Path tempDir) {
         final Fixture fixture = writeToBoth(tempDir, List.of(
                 row("gate", T1, "gate@T1"),
                 row("gate", T2, "gate@T2"),
@@ -328,18 +328,21 @@ class TestTemporalStoreParity {
                 new Triple("door", T1, "door@T1"),
                 new Triple("gate", T2, "gate@T2"));
 
+        final List<Triple> narrowed = List.of(new Triple("gate", T2, "gate@T2"));
+
         assertThat(searchPlanB(fixture, windowed))
-                .as("Plan B, windowed: the lower bound is discarded, so door@T1 is returned"
-                    + " despite falling outside the window")
-                .containsExactlyElementsOf(expected);
-        assertThat(searchPlanB(fixture, upperOnly))
-                .as("Plan B, upper bound only: identical, which is why a delta query buys nothing")
-                .containsExactlyElementsOf(expected);
+                .as("Plan B, windowed: door's only entry is at T1, before the lower bound, so door "
+                    + "has nothing in scope and is omitted rather than returned stale")
+                .containsExactlyElementsOf(narrowed);
         assertThat(searchSql(fixture, windowed))
-                .as("SQL store, windowed: the same, via getFilteredExpression")
+                .as("SQL store, windowed: agrees")
+                .containsExactlyElementsOf(narrowed);
+
+        assertThat(searchPlanB(fixture, upperOnly))
+                .as("Plan B, upper bound only: no lower bound, so door is in scope however old it is")
                 .containsExactlyElementsOf(expected);
         assertThat(searchSql(fixture, upperOnly))
-                .as("SQL store, upper bound only: identical")
+                .as("SQL store, upper bound only: agrees")
                 .containsExactlyElementsOf(expected);
     }
 
@@ -400,7 +403,7 @@ class TestTemporalStoreParity {
                     + " can answer a density question - this is what the snapshot path cost")
                 .containsExactly(alice0930, bob0900);
 
-        // Query 3 - "what changed after 09:15?" The bug.
+        // Query 3 - "what changed after 09:15?" Once the bug; now the lower bound is honoured.
         final ExpressionOperator changedAfter0915 = ExpressionOperator.builder()
                 .addTerm(UpdatableTemporalStore.TIME_FIELD.getFldName(),
                         ExpressionTerm.Condition.GREATER_THAN_OR_EQUAL_TO, at0915)
@@ -408,13 +411,13 @@ class TestTemporalStoreParity {
                         ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO, at1200)
                 .build();
         assertThat(searchSql(fixture, changedAfter0915))
-                .as("Query 3, SQL: bob@09:00 is returned despite being before the requested "
-                    + "lower bound of 09:15 - getFilteredExpression strips it")
-                .containsExactly(alice0930, bob0900);
+                .as("Query 3, SQL: bob@09:00 is before the requested lower bound of 09:15, so bob "
+                    + "has nothing in scope and is omitted rather than returned stale")
+                .containsExactly(alice0930);
         assertThat(searchPlanB(fixture, changedAfter0915))
-                .as("Query 3, Plan B: it strips the lower bound the same way now, via"
-                    + " removeTimeTerms - so the quirk is shared rather than fixed")
-                .containsExactly(alice0930, bob0900);
+                .as("Query 3, Plan B: agrees - the lower bound is honoured on the snapshot path in "
+                    + "both stores")
+                .containsExactly(alice0930);
     }
 
     // -----------------------------------------------------------------------

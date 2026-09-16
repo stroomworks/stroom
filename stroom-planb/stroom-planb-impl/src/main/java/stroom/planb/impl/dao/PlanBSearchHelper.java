@@ -86,6 +86,53 @@ public class PlanBSearchHelper {
     }
 
     /**
+     * Extracts the "not before" instant from a search expression, if the caller has bounded the
+     * point-in-time view below as well as above.
+     *
+     * <p>A snapshot read answers "the state of each key at T", and until now it answered that
+     * however long ago the key was last seen. A lower bound narrows it to "the state of each key at
+     * T, considering only what happened since" — so a key whose most recent entry predates the bound
+     * is omitted rather than returned stale.</p>
+     *
+     * <p>Without this the bound is not merely ignored, it is <b>stripped</b>: {@code searchAsAt}
+     * removes every time term before applying the rest of the expression, so a caller asking for
+     * {@code >= X AND <= Y} was silently answered for {@code <= Y} alone, and could be handed a row
+     * from before X. That is the defect {@code docs/temporal-store-parity-report.md} records as
+     * indefensible under any reading.</p>
+     *
+     * <p>{@code GREATER_THAN} is treated as {@code GREATER_THAN_OR_EQUAL_TO}, mirroring
+     * {@link #getQueryTime} which treats {@code <} as {@code <=}; and as there, the first parseable
+     * term wins and its position in the expression tree is not considered.</p>
+     *
+     * @param criteria      the search criteria; may be {@code null}
+     * @param timeFieldName the name of the store's time field
+     * @return the earliest instant still in scope, or {@code null} where the caller set no lower
+     *         bound
+     */
+    public static Instant getNotBefore(final ExpressionCriteria criteria,
+                                       final String timeFieldName) {
+        if (criteria == null || criteria.getExpression() == null) {
+            return null;
+        }
+        final List<ExpressionTerm> timeTerms = ExpressionUtil.terms(
+                criteria.getExpression(),
+                List.of(timeFieldName));
+
+        for (final ExpressionTerm term : timeTerms) {
+            if (timeFieldName.equals(term.getField()) &&
+                    (term.getCondition() == ExpressionTerm.Condition.GREATER_THAN ||
+                     term.getCondition() == ExpressionTerm.Condition.GREATER_THAN_OR_EQUAL_TO)) {
+                try {
+                    return Instant.ofEpochMilli(DateUtil.parseUnknownString(term.getValue()));
+                } catch (final RuntimeException e) {
+                    // Unparseable value — ignore this term and keep checking.
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Returns a copy of the expression with every term on the given time field
      * removed.
      *

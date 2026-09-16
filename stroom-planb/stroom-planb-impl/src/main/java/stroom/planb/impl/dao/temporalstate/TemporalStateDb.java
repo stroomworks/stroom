@@ -348,6 +348,20 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                             dateTimeSettings)
                     .orElse(vals -> true);
 
+            // A lower bound narrows the snapshot to keys seen since it - see
+            // PlanBSearchHelper.getNotBefore. Null means every key, however long ago it was seen.
+            //
+            // A bound at or after asAt is not a window, it is the zero-width TimeRange the framework
+            // builds for "as at T": that arrives as `time >= T AND time < T`, which no row can
+            // satisfy if read literally. Treating it as no lower bound is what makes an as-at read
+            // mean what its caller intended, and is why every time term used to be stripped.
+            final Instant candidate = PlanBSearchHelper.getNotBefore(
+                    criteria,
+                    TemporalStateFields.EFFECTIVE_TIME);
+            final Instant notBefore = candidate != null && candidate.isBefore(asAt)
+                    ? candidate
+                    : null;
+
             // Walk the distinct key prefixes, seeking each one's answer.
             ByteBuffer prefix = null;
             while (true) {
@@ -355,7 +369,7 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                 if (next == null) {
                     break;
                 }
-                emitLatestAsAt(readTxn, next, asAt, valuesExtractor, predicate, consumer);
+                emitLatestAsAt(readTxn, next, asAt, notBefore, valuesExtractor, predicate, consumer);
                 prefix = next;
             }
 
@@ -415,6 +429,7 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
     private void emitLatestAsAt(final Txn<ByteBuffer> readTxn,
                                 final ByteBuffer prefix,
                                 final Instant asAt,
+                                final Instant notBefore,
                                 final ValuesExtractor valuesExtractor,
                                 final Predicate<Values> predicate,
                                 final ValuesConsumer consumer) {
@@ -431,6 +446,12 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
             try (final LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, keyRange)) {
                 for (final LmdbEntry entry : iterable) {
                     if (!ByteBufferUtils.containsPrefix(entry.getKey(), prefix)) {
+                        return;
+                    }
+                    // Below the caller's lower bound, and entries only get older from here, so this
+                    // key has nothing in scope at all.
+                    if (notBefore != null
+                        && keySerde.read(readTxn, entry.getKey().duplicate()).getTime().isBefore(notBefore)) {
                         return;
                     }
                     final Values values = valuesExtractor.apply(readTxn, entry.getKey(), entry.getVal());

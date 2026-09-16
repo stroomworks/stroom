@@ -33,6 +33,7 @@ import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapEventColumns;
+import stroom.floormap.shared.FloorMapEventExpiry;
 import stroom.floormap.shared.FloorMapEventRole;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapEventsQueryOrder;
@@ -855,10 +856,12 @@ public class FloorMapMapPresenter
      * anyone who had not moved lately), and the client kept accumulated positions to work around
      * the absence. It does not any more — see the class javadoc.</p>
      *
-     * <p><b>The lower bound is 0 rather than a window, deliberately.</b> Both stores lift the
-     * upper bound out as a snapshot boundary and then discard every time term, so a narrower lower
-     * bound would be ignored rather than honoured — {@code TestTemporalStoreParity} pins that. Zero
-     * says what is meant, and stays correct if a store ever stops discarding it.</p>
+     * <p><b>The lower bound is the expiry cutoff, and it is honoured.</b> It did not used to be:
+     * both stores lifted the upper bound out as a snapshot boundary and then discarded every time
+     * term, so a caller could be handed a row from before the bound it asked for. Both now narrow
+     * the snapshot to keys seen since it, which is what makes expiry a property of the read rather
+     * than a filter over its result — and so decided against real timestamps rather than against the
+     * date text a result carries. {@code TestTemporalStoreParity} pins the corrected behaviour.</p>
      *
      * <p>A read already in flight is normally left alone: it answers the same question about a
      * position at most a tick old, and abandoning it per tick would destroy searches faster than
@@ -873,7 +876,16 @@ public class FloorMapMapPresenter
             return;
         }
         if (!eventsQueryHelper.isRunning() || pendingDiscontinuity) {
-            eventsQueryHelper.run(query, queryParams(), 0L, t);
+            // The lower bound is the expiry cutoff, and the store honours it: an entity whose latest
+            // event predates it has nothing in scope and is not returned. Expiry is therefore the
+            // store's own semantics rather than a filter applied to what it sends back - which also
+            // means it is decided against real timestamps instead of the rendered text a result
+            // carries.
+            eventsQueryHelper.run(
+                    query,
+                    queryParams(),
+                    FloorMapEventExpiry.cutoff(t, getEntity().getEventExpiry()),
+                    t);
         }
     }
 
