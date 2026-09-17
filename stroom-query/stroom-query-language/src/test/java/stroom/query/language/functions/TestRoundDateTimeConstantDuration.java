@@ -77,14 +77,20 @@ class TestRoundDateTimeConstantDuration {
 
     @Test
     void ceilingTimeTreatsAParameterAsItTreatsALiteral() throws Exception {
+        // The expected value is pinned, not just compared to the literal's: two identical errors
+        // would satisfy an equality check and prove nothing.
+        assertThat(evaluate("ceilingTime(${time}, 'PT10M')", Map.of()))
+                .isEqualTo("2026-01-01T10:50:00.000Z");
         assertThat(evaluate("ceilingTime(${time}, param('w'))", Map.of("w", "PT10M")))
-                .isEqualTo(evaluate("ceilingTime(${time}, 'PT10M')", Map.of()));
+                .isEqualTo("2026-01-01T10:50:00.000Z");
     }
 
     @Test
     void roundTimeTreatsAParameterAsItTreatsALiteral() throws Exception {
+        assertThat(evaluate("roundTime(${time}, 'PT10M')", Map.of()))
+                .isEqualTo("2026-01-01T10:40:00.000Z");
         assertThat(evaluate("roundTime(${time}, param('w'))", Map.of("w", "PT10M")))
-                .isEqualTo(evaluate("roundTime(${time}, 'PT10M')", Map.of()));
+                .isEqualTo("2026-01-01T10:40:00.000Z");
     }
 
     /**
@@ -96,12 +102,18 @@ class TestRoundDateTimeConstantDuration {
     @Test
     void perRowDurationIsStillRejected() throws Exception {
         assertThat(evaluate("floorTime(${time}, ${time})", Map.of()))
-                .contains("Invalid duration format");
+                .contains("not something computed per row");
     }
 
+    /**
+     * An unmapped parameter and a per-row argument are different mistakes.
+     *
+     * <p>Both reach the same branch, and telling someone whose parameter has no value that their
+     * argument "must be a constant" sends them to fix the wrong thing.</p>
+     */
     @Test
-    void anUnmappedParameterIsReportedRatherThanGuessed() throws Exception {
+    void anUnmappedParameterSaysSoRatherThanBlamingTheExpression() throws Exception {
         assertThat(evaluate("floorTime(${time}, param('missing'))", Map.of()))
-                .contains("Invalid duration format");
+                .contains("no value was supplied");
     }
 }

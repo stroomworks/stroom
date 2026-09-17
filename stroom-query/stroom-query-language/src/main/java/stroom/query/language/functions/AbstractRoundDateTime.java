@@ -86,13 +86,29 @@ abstract class AbstractRoundDateTime extends AbstractDateTimeFunction {
         if (param instanceof final Function function) {
             if (function.createGenerator() instanceof final StaticValueGen staticValueGen) {
                 final Val val = staticValueGen.eval(null, null);
-                if (val.type().isValue()) {
-                    return val.toString();
-                }
+                return val.type().isValue()
+                        ? val.toString()
+                        : null;
             }
             return null;
         }
         return param.toString();
+    }
+
+    /**
+     * Why {@link #constantString} could not read a parameter, phrased for whoever wrote the query.
+     *
+     * <p>Two failures look identical from the call site and need different answers: a
+     * {@code param('key')} that nobody supplied a value for, and an argument that genuinely varies
+     * per row. Telling a user with an unmapped parameter that their argument "must be a constant"
+     * sends them to fix the wrong thing.</p>
+     */
+    protected String whyNotConstant(final Param param) {
+        if (param instanceof final Function function
+            && function.createGenerator() instanceof StaticValueGen) {
+            return "no value was supplied for it";
+        }
+        return "it must be a literal or a query parameter, not something computed per row";
     }
 
     @Override

@@ -34,6 +34,7 @@ import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapEventColumns;
 import stroom.floormap.shared.FloorMapEventRole;
+import stroom.floormap.shared.FloorMapEventStoreDoc;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapEventsQueryOrder;
 import stroom.floormap.shared.FloorMapFactHistory;
@@ -321,6 +322,9 @@ public class FloorMapMapPresenter
      * the wrong bars; the next query corrects it.</p>
      */
     private long histogramBucketWidthMs = FloorMapHistogramBuckets.widthFor(0L);
+
+    /** Set once the wrong events store type has been reported, so it is said once. */
+    private boolean wrongEventsStoreTypeReported;
 
     /**
      * Toolbar toggle controlling the canvas grid overlay. Shown next to the
@@ -890,6 +894,9 @@ public class FloorMapMapPresenter
         if (query == null || query.trim().isEmpty()) {
             return;
         }
+        if (!eventsStoreIsReadable()) {
+            return;
+        }
         if (!eventsQueryHelper.isRunning() || pendingDiscontinuity) {
             // A snapshot at t, asked for rather than inferred. Expiry is not sent: it belongs to the
             // event store document, so the server derives the floor from there - which is what makes
@@ -897,6 +904,37 @@ public class FloorMapMapPresenter
             // its own retention.
             eventsQueryHelper.runSnapshot(query, queryParams(), t);
         }
+    }
+
+    /**
+     * Whether the events store is one this tab can read, reporting once if it is not.
+     *
+     * <p><b>A floor map written before the FloorMap Event Store existed points at a plain
+     * {@code PlanBDoc}</b>, and nothing migrates it. Left alone that fails in the worst way
+     * available: the snapshot parameters this tab sends are meaningless to Plan B's own search
+     * provider, which ignores them and answers with every row in the store instead of one per
+     * entity. The map would draw, slowly and wrongly, with no error anywhere — so it is refused
+     * here, where the reason can be said.</p>
+     *
+     * <p>Reported once rather than per tick, because this condition does not change while the
+     * document is open.</p>
+     */
+    private boolean eventsStoreIsReadable() {
+        final DocRef storeRef = getEntity() == null
+                ? null
+                : getEntity().getEventsStoreRef();
+        if (storeRef == null || FloorMapEventStoreDoc.TYPE.equals(storeRef.getType())) {
+            return true;
+        }
+        if (!wrongEventsStoreTypeReported) {
+            wrongEventsStoreTypeReported = true;
+            Console.error("Floor map: the events store '" + storeRef.getName() + "' is a "
+                          + storeRef.getType() + ", not a " + FloorMapEventStoreDoc.TYPE
+                          + ". This map predates the dedicated store type. Create a "
+                          + FloorMapEventStoreDoc.TYPE + ", point the pipeline at it, and select it"
+                          + " on the Settings tab. Reported once per document.");
+        }
+        return false;
     }
 
     /**
@@ -1654,10 +1692,10 @@ public class FloorMapMapPresenter
      * timestamp column, on pain of silently empty bars — is gone with the column sniffing that
      * needed it.</p>
      *
-     * <p>The TimeRange carries a lower bound and <b>no upper bound</b>, which is what keeps this
-     * read on the all-history path rather than the one-row-per-key snapshot the map overlay wants —
-     * see {@link HistogramQueryHelper#run(String, java.util.List, Long)}. "Show All" needs a range
-     * this one cannot give, so it has its own query — {@link #runExtentQuery()}.</p>
+     * <p>Bounded to the visible range at both ends. That used to be unsafe — an upper bound switched
+     * the store into a point-in-time read — but the mode is now named rather than inferred, so the
+     * bound simply bounds. "Show All" still needs a range this one cannot give, because a bounded
+     * read can never reach data outside it, so it has its own query: {@link #runExtentQuery()}.</p>
      */
     private void runHistogramQuery(final long start, final long end) {
         histogramDataModel.setRange(start, end);
@@ -1677,7 +1715,7 @@ public class FloorMapMapPresenter
                 FloorMapQueryBuilder.PARAM_BUCKET_WIDTH,
                 FloorMapHistogramBuckets.durationFor(end - start)));
 
-        histogramQueryHelper.run(histogramQuery(), params, start);
+        histogramQueryHelper.run(histogramQuery(), params, start, end);
     }
 
     /**

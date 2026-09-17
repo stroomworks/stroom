@@ -70,7 +70,7 @@ class FloorTime extends AbstractRoundDateTime {
         final String value = constantString(param);
         if (value == null) {
             throw new IllegalArgumentException(
-                    "Invalid " + paramName + " format: " + param + " (must be a constant)");
+                    "Invalid " + paramName + ": " + param + " - " + whyNotConstant(param));
         }
         try {
             return Duration.parse(value);

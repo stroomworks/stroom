@@ -17,6 +17,12 @@ one has to be a SQL Temporal Store. The events store is only ever read.
 
 ---
 
+> **Upgrading an existing floor map.** A map created before this document type existed points at a
+> plain Plan B store. It will not read: the Map tab refuses and says so in the console, rather than
+> quietly returning every row in the store. Create a FloorMap Event Store, point the ingest pipeline
+> at its name, and select it on the map's Settings tab. There is no automatic migration, and the old
+> store's data does not move.
+
 ## 1. Create the document
 
 **Explorer → New → FloorMap Event Store**
@@ -35,6 +41,13 @@ never resolve.
 It matters beyond validation: the Floor Map substitutes the store's **name** into the
 `param('EventStore')` placeholder of its events query, so the name ends up in a `from` clause.
 
+> **Do not give it the same name as a Plan B store.** Names are shared across every Plan B document
+> type, and nothing prevents a clash — the check each store makes only looks at its own type. If two
+> documents of different types share a name, `PlanBDocCache` refuses to resolve either of them, and
+> **both** stores stop working for ingest *and* for queries, with "Unexpectedly found more than one
+> state doc with key: &lt;name&gt;" as the only clue. This is a known Stroom limitation rather than
+> something this store introduces, but it is worth a moment's care when naming.
+
 ### The state type is not a choice
 
 The document fixes it. A FloorMap Event Store is always a temporal state store, because that is the
@@ -42,14 +55,14 @@ only kind that records an effective time per entry — which is what the timelin
 dropdown to get wrong and nothing for the Settings tab to check, which is the point of it being a
 document type of its own rather than a general-purpose Plan B store.
 
----|---|
+| Field | Used for |
+|---|---|
 | `Key` | the entity identity — who or what moved |
 | `EffectiveTime` | when — drives the timeline and playback |
 | `Value` | the event payload as JSON — where, what type, status, message |
 
-Pick anything else and the events query fails with an unknown-field error. The Floor Map's
-initialisation dialog now checks this when you create the document and refuses to save a mismatch,
-but the **Settings tab does not yet check**, so a store swapped there can still be wrong.
+Pick anything else and the events query fails with an unknown-field error. Both places that can
+select a store offer only FloorMap Event Stores, so the fields are always these three.
 
 ---
 
@@ -66,7 +79,7 @@ map are **Condense** and **Retention**.
 | **Overwrite** | `true` | `true` | Two events for the same entity at the same instant: the later write wins. With `false` the first is kept. Either is defensible; `true` matches re-ingesting corrected data. |
 | ~~Key type, temporal precision, value type~~ | — | **not shown** | Fixed by the document type. The key encoding is what makes the map's per-key seek valid, and a Plan B schema is immutable once data is written, so it is not a choice to get wrong. |
 | **Max store size** | 10 GiB | raise if you expect more | Per store. |
-| **Snapshot settings** | all off | leave off | With `useSnapshotsForQuery` on, queries read a snapshot that may lag behind ingest, so the map shows stale positions. |
+| **Snapshot settings** | all off | leave off | With `useSnapshotsForQuery` on, queries read a snapshot that may lag behind ingest, so the map shows stale positions. Not shown on the event store's Settings tab, but preserved across a save and honoured by the query router. |
 | **Synchronise merge** | *(unset)* | leave alone | Ingest-side concern, unrelated to the Floor Map. |
 
 ### Condense: what it costs, and why it is still offered

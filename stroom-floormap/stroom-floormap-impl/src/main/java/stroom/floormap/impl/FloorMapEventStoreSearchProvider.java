@@ -173,14 +173,33 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
      * behaviour from every other Plan B store — a store of ours answering differently would be its
      * own kind of disclosure, and if that distinction is wrong it is wrong for Plan B as a whole.</p>
      */
-    private PlanBDocument getDoc(final DocRef docRef) {
+    private FloorMapEventStoreDoc getDoc(final DocRef docRef) {
         return securityContext.useAsReadResult(() -> {
             Objects.requireNonNull(docRef, "Null doc reference");
             Objects.requireNonNull(docRef.getName(), "Null doc key");
             final PlanBDocument doc = planBDocCache.get(docRef.getName());
             Objects.requireNonNull(doc, "Null event store doc");
-            return doc;
+            return requireEventStore(doc);
         });
+    }
+
+    /**
+     * The document as this provider's own type, or a refusal.
+     *
+     * <p>{@code PlanBDocCache} resolves by <b>name across every registered Plan B type</b>, so a
+     * name that belongs to some other type resolves to that other type's document — and then every
+     * read here would run against its shard. Checked once, here, rather than on the snapshot path
+     * alone: the range read would otherwise serve another store's rows quite happily, and the
+     * snapshot read would seek over an encoding that is not prefix-free, dropping keys in silence.</p>
+     */
+    static FloorMapEventStoreDoc requireEventStore(final PlanBDocument doc) {
+        if (doc instanceof final FloorMapEventStoreDoc eventStore) {
+            return eventStore;
+        }
+        throw new IllegalStateException(
+                "'" + doc.getName() + "' is a " + doc.getType() + ", not a "
+                + FloorMapEventStoreDoc.TYPE + ". A name shared with another Plan B store resolves "
+                + "to whichever document holds it.");
     }
 
     @Override
@@ -245,7 +264,7 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
         final DocRef docRef = query.getDataSource();
 
         // Checks permission as a side effect.
-        final PlanBDocument doc = getDoc(docRef);
+        final FloorMapEventStoreDoc doc = getDoc(docRef);
         Objects.requireNonNull(doc, "Unable to find event store with key: " + docRef.getName());
 
         final Instant asAt = readAsAt(query.getParams());
@@ -423,19 +442,9 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
      * <p>Taken from the store, not from the request. An entity whose newest event predates this is
      * omitted rather than drawn at a position it left long ago.</p>
      */
-    static Instant expiryFloor(final PlanBDocument doc, final Instant asAt) {
-        if (doc instanceof final FloorMapEventStoreDoc eventStore) {
-            return Instant.ofEpochMilli(
-                    FloorMapEventExpiry.cutoff(asAt.toEpochMilli(), eventStore.getEventExpiry()));
-        }
-
-        // Resolved by name to a Plan B store of some other type. Refused rather than read without a
-        // floor: searchSnapshot requires a prefix-free key encoding, which only this document type
-        // guarantees, and over any other encoding it silently drops keys rather than failing. A
-        // missing expiry would be the least of it.
-        throw new IllegalStateException(
-                "A snapshot read needs a " + FloorMapEventStoreDoc.TYPE + ", but '"
-                + doc.getName() + "' is a " + doc.getType() + " store");
+    static Instant expiryFloor(final FloorMapEventStoreDoc doc, final Instant asAt) {
+        return Instant.ofEpochMilli(
+                FloorMapEventExpiry.cutoff(asAt.toEpochMilli(), doc.getEventExpiry()));
     }
 
     /**

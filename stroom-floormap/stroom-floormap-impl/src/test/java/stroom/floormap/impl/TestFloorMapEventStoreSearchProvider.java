@@ -16,7 +16,6 @@
 
 package stroom.floormap.impl;
 
-import stroom.floormap.shared.FloorMapEventExpiry;
 import stroom.floormap.shared.FloorMapEventStoreDoc;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.StateType;
@@ -155,6 +154,12 @@ class TestFloorMapEventStoreSearchProvider {
     // ------------------------------------------------------------------
 
     @Test
+    void anEventStoreIsAccepted() {
+        final FloorMapEventStoreDoc doc = docWithExpiry(null);
+        assertThat(FloorMapEventStoreSearchProvider.requireEventStore(doc)).isSameAs(doc);
+    }
+
+    @Test
     void theFloorIsAsAtMinusTheStoresExpiry() {
         final SimpleDuration twoHours = SimpleDuration.builder()
                 .time(2)
@@ -168,16 +173,18 @@ class TestFloorMapEventStoreSearchProvider {
     @Test
     void anUnsetExpiryUsesTheStoresDefault() {
         assertThat(FloorMapEventStoreSearchProvider.expiryFloor(docWithExpiry(null), AS_AT))
-                .isEqualTo(Instant.ofEpochMilli(
-                        FloorMapEventExpiry.cutoff(AS_AT.toEpochMilli(), null)));
+                .as("the documented default is 24 hours")
+                .isEqualTo(AS_AT.minusSeconds(24 * 3600L));
     }
 
     /**
-     * A store of another type is refused rather than read.
+     * A store of another type is refused where the document is resolved.
      *
-     * <p>{@code searchSnapshot} requires a prefix-free key encoding, which only this document type
-     * guarantees; over any other encoding it drops keys silently rather than failing. Proceeding
-     * without a floor would be the least of the problems.</p>
+     * <p>{@code PlanBDocCache} resolves by name across every registered Plan B type, so a name
+     * belonging to another type resolves to that type's document. Checked once, at resolution,
+     * rather than on the snapshot path alone — the range read would otherwise serve another store's
+     * rows quite happily, and the snapshot read would seek over an encoding that is not prefix-free
+     * and drop keys in silence.</p>
      */
     @Test
     void storeOfAnotherTypeIsRefused() {
@@ -187,7 +194,7 @@ class TestFloorMapEventStoreSearchProvider {
                 .stateType(StateType.TEMPORAL_STATE)
                 .build();
 
-        assertThatThrownBy(() -> FloorMapEventStoreSearchProvider.expiryFloor(otherType, AS_AT))
+        assertThatThrownBy(() -> FloorMapEventStoreSearchProvider.requireEventStore(otherType))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(FloorMapEventStoreDoc.TYPE);
     }

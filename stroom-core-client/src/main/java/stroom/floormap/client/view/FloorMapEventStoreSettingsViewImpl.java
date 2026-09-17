@@ -64,6 +64,16 @@ public class FloorMapEventStoreSettingsViewImpl
 
     private final Widget widget;
     private final GeneralSettingsWidget generalSettingsWidget;
+
+    /**
+     * The settings as read, so that writing back preserves what this tab does not show.
+     *
+     * <p>A {@code TemporalStateSettings} carries more than the five fields edited here —
+     * {@code snapshotSettings} among them, which decides whether a query reads live data or a
+     * periodically refreshed copy. Building a fresh object from the widgets would reset every one of
+     * them on every save, silently.</p>
+     */
+    private TemporalStateSettings readSettings = new TemporalStateSettings.Builder().build();
     private final CondenseSettingsWidget condenseSettingsWidget;
     private final RetentionSettingsWidget retentionSettingsWidget;
 
@@ -130,9 +140,9 @@ public class FloorMapEventStoreSettingsViewImpl
 
     @Override
     public AbstractPlanBSettings getSettings() {
-        // The schemas are deliberately absent: the document applies its own on construction, so
-        // anything sent from here would be discarded.
-        return new TemporalStateSettings.Builder()
+        // Built from what was read, so unedited fields survive; the schemas are deliberately absent
+        // because the document applies its own on construction and would discard anything sent here.
+        return new TemporalStateSettings.Builder(readSettings)
                 .maxStoreSize(generalSettingsWidget.getMaxStoreSize())
                 .synchroniseMerge(generalSettingsWidget.getSynchroniseMerge())
                 .overwrite(generalSettingsWidget.getOverwrite())
@@ -147,6 +157,7 @@ public class FloorMapEventStoreSettingsViewImpl
                 settings instanceof final TemporalStateSettings existing
                         ? existing
                         : new TemporalStateSettings.Builder().build();
+        readSettings = temporalStateSettings;
         generalSettingsWidget.setMaxStoreSize(temporalStateSettings.getMaxStoreSize());
         generalSettingsWidget.setSynchroniseMerge(temporalStateSettings.getSynchroniseMerge());
         generalSettingsWidget.setOverwrite(temporalStateSettings.getOverwrite());

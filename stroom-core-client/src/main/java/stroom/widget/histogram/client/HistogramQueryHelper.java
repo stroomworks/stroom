@@ -180,31 +180,33 @@ public class HistogramQueryHelper {
      *               naming its data source that way will not resolve without them
      */
     public void run(final String query, final List<Param> params) {
-        run(query, params, null);
+        run(query, params, null, null);
     }
 
     /**
-     * Starts a histogram search bounded below at {@code fromMs}.
+     * Starts a histogram search bounded to {@code [fromMs, toMs]}.
      *
-     * <p><b>A lower bound only, and that is deliberate.</b> It narrows the read to the visible range
-     * and later, which is what keeps the row count down, without switching the store into its
-     * point-in-time mode: {@code getQueryTime} triggers on {@code EQUALS}, {@code <} and {@code <=}
-     * and never on {@code >=}, so a lone lower bound stays a row filter. Adding an upper bound would
-     * return one row per key instead of the counts this needs — and would silently discard the lower
-     * bound with it.</p>
+     * <p><b>Both bounds, which was not always safe.</b> An upper bound used to switch the temporal
+     * store into a point-in-time mode that returned one row per key rather than the rows a histogram
+     * counts — the store inferred its read from whether a time term was {@code <} or {@code >}. That
+     * inference is gone: the mode is now named by the caller, so a range is just a range and the
+     * bound costs nothing.</p>
      *
-     * <p>The consequence, which is not yet closed: a store holding data well beyond the visible range
-     * still returns a bucket for all of it. That is far better than the unbounded read this replaced,
-     * because buckets are orders of magnitude fewer than events, but it is not a bound.</p>
+     * <p>It matters because without it the read returned every bucket from {@code fromMs} to the end
+     * of the store. Zoomed to an hour a year into a store, that is tens of thousands of grouped rows
+     * crossing the wire for the dozen bars actually drawn.</p>
      *
-     * <p><b>Do not derive a data extent from a result of this call.</b> The lower bound means the
-     * buckets returned can never start earlier than {@code fromMs}, so an extent taken from them
-     * could only ever grow forwards — useless for "Show All", which exists to reach backwards. Pass
-     * {@code null} (or use the two-argument overload) for a read whose range is the answer.</p>
+     * <p><b>Do not derive a data extent from a result of this call.</b> It is bounded, so the buckets
+     * returned say nothing about data outside the range — useless for "Show All", which exists to
+     * reach beyond it. Use the two-argument overload for a read whose range is the answer.</p>
      *
      * @param fromMs the start of the visible range, or null for no lower bound
+     * @param toMs   the end of the visible range, or null for no upper bound
      */
-    public void run(final String query, final List<Param> params, final Long fromMs) {
+    public void run(final String query,
+                    final List<Param> params,
+                    final Long fromMs,
+                    final Long toMs) {
         if (query == null || query.trim().isEmpty()) {
             return;
         }
@@ -213,9 +215,12 @@ public class HistogramQueryHelper {
                 "histogramTable",
                 query,
                 params,
-                fromMs == null
+                fromMs == null && toMs == null
                         ? null
-                        : new TimeRange("CUSTOM", String.valueOf(fromMs), null),
+                        // The end is inclusive to the caller and exclusive in the generated term.
+                        : new TimeRange("CUSTOM",
+                                fromMs == null ? null : String.valueOf(fromMs),
+                                toMs == null ? null : String.valueOf(toMs + 1)),
                 false,  // incremental
                 false,  // storeHistory
                 "Histogram Query",  // queryInfo

@@ -25,9 +25,11 @@ import stroom.query.api.token.QuotedStringUtil;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * Tests for {@link FloorMapQueryBuilder} — verifying that the generated
@@ -478,9 +480,11 @@ class TestFloorMapQueryBuilder {
         final long[] ranges = {0L, 3600_000L, 86_400_000L, 30L * 86_400_000L, 400L * 86_400_000L};
         for (final long range : ranges) {
             final String iso = FloorMapHistogramBuckets.durationFor(range);
-            assertThat(iso)
-                    .as("range %d", range)
-                    .matches("P(T)?\\d+[A-Z]");
+            // Parsed rather than pattern-matched: a regex admits P1W and P1M, which floorTime's
+            // Duration.parse rejects, so matching one would prove nothing about what the store sees.
+            assertThatCode(() -> Duration.parse(iso))
+                    .as("range %d gives %s", range, iso)
+                    .doesNotThrowAnyException();
         }
     }
 
