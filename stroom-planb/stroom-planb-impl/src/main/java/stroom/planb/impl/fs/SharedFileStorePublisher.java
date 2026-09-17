@@ -33,7 +33,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -267,7 +266,7 @@ public class SharedFileStorePublisher {
         final Path tmpData = archiveShardDir.resolve(PlanBConstants.DATA_TMP_FILE_NAME + "_" + version);
         try {
             Files.copy(localData, tmpData, StandardCopyOption.REPLACE_EXISTING);
-            moveWithAtomicFallback(tmpData, archiveShardDir.resolve(PlanBConstants.DATA_FILE_NAME));
+            SharedFileStore.moveWithAtomicFallback(tmpData, archiveShardDir.resolve(PlanBConstants.DATA_FILE_NAME));
             Files.writeString(archiveShardDir.resolve(PlanBConstants.VERSION_FILE_NAME), version);
         } finally {
             // A failed copy/rename must not leave a partial temp file behind.
@@ -303,9 +302,9 @@ public class SharedFileStorePublisher {
         final Path oldDir = sharedTargetDir.resolveSibling(
                 PlanBConstants.OLD_DIR_PREFIX + sharedTargetDir.getFileName() + "_" + uid);
         if (Files.exists(sharedTargetDir)) {
-            moveWithAtomicFallback(sharedTargetDir, oldDir);
+            SharedFileStore.moveWithAtomicFallback(sharedTargetDir, oldDir);
         }
-        moveWithAtomicFallback(localDir, sharedTargetDir);
+        SharedFileStore.moveWithAtomicFallback(localDir, sharedTargetDir);
         if (Files.exists(oldDir)) {
             FileUtil.deleteDir(oldDir);
         }
@@ -350,7 +349,7 @@ public class SharedFileStorePublisher {
                         LOGGER.warn("Restoring shard from orphaned push old dir: {} -> {}",
                                 sibling, canonicalShardDir);
                         try {
-                            moveWithAtomicFallback(sibling, canonicalShardDir);
+                            SharedFileStore.moveWithAtomicFallback(sibling, canonicalShardDir);
                         } catch (final IOException e) {
                             LOGGER.error("Failed to restore shard from orphaned old dir: {}", sibling, e);
                         }
@@ -368,14 +367,6 @@ public class SharedFileStorePublisher {
         }
     }
 
-    private static void moveWithAtomicFallback(final Path src, final Path dst) throws IOException {
-        try {
-            Files.move(src, dst, StandardCopyOption.ATOMIC_MOVE);
-        } catch (final AtomicMoveNotSupportedException e) {
-            LOGGER.warn("Atomic move not supported, falling back to REPLACE_EXISTING: {} -> {}", src, dst);
-            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
 
     /**
      * Returns {@code true} for files that are always regenerated during a push

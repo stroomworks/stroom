@@ -240,7 +240,8 @@ class TestTraceMergeCompletionStrategy {
                 BYTE_BUFFER_FACTORY,
                 new PlanBPaths(tempDir.resolve("local_state")),
                 Map.of(StateType.TRACE, new TraceMergeCompletionStrategy(
-                        () -> documentStoreRegistry, BYTE_BUFFERS, BYTE_BUFFER_FACTORY)));
+                        () -> documentStoreRegistry, BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
+                        new PlanBPaths(tempDir.resolve("local_state")))));
     }
 
     private TracesDoc tracesDoc(final DocRef pathwaysDocRef) {

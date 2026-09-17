@@ -23,6 +23,7 @@ import stroom.pathways.shared.otel.trace.KeyValue;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.otel.trace.TraceRoot;
+import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.dao.Db;
 import stroom.planb.impl.data.value.SpanKV;
 import stroom.planb.impl.serde.trace.HexStringUtil;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -107,8 +109,33 @@ class TestQueueItemRoundTrip {
                 .build();
         bucketDir = Files.createDirectories(tempDir.resolve("bucket"));
         queueDir = Files.createDirectories(tempDir.resolve("queue"));
-        writer = new QueueItemWriter(BYTE_BUFFERS, BYTE_BUFFER_FACTORY);
+        writer = new QueueItemWriter(BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
+                Files.createDirectories(tempDir.resolve("local_build")));
         buildBucket();
+    }
+
+    @Test
+    void noLmdbEnvironmentIsOpenedWhereTheItemIsPublished() throws IOException {
+        // The item is built locally and only its data file is copied up, because no LMDB environment
+        // is ever opened on the shared mount. A lock.mdb anywhere under the queue means one was.
+        writeItem(allTraceIds()).orElseThrow();
+
+        try (final Stream<Path> files = Files.walk(queueDir)) {
+            assertThat(files
+                    .filter(f -> PlanBConstants.LOCK_FILE_NAME.equals(f.getFileName().toString()))
+                    .toList())
+                    .as("no lock file may reach the queue")
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    void theLocalBuildDirectoryIsNotLeftBehind() throws IOException {
+        writeItem(allTraceIds()).orElseThrow();
+
+        try (final Stream<Path> left = Files.list(tempDir.resolve("local_build"))) {
+            assertThat(left.toList()).as("each item is removed once it has been copied up").isEmpty();
+        }
     }
 
     @Test

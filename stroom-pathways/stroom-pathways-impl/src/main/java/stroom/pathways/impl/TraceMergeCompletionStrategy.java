@@ -22,6 +22,7 @@ import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentStoreRegistry;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.TracesDoc;
+import stroom.planb.impl.PlanBPaths;
 import stroom.planb.impl.dao.Db;
 import stroom.planb.impl.dao.ShardKeyRouter;
 import stroom.planb.impl.dao.trace.QueueItemWriter;
@@ -78,14 +79,17 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
     private final Provider<DocumentStoreRegistry> documentStoreRegistryProvider;
     private final ByteBuffers byteBuffers;
     private final ByteBufferFactory byteBufferFactory;
+    private final PlanBPaths planBPaths;
 
     @Inject
     public TraceMergeCompletionStrategy(final Provider<DocumentStoreRegistry> documentStoreRegistryProvider,
-                         final ByteBuffers byteBuffers,
-                         final ByteBufferFactory byteBufferFactory) {
+                                        final ByteBuffers byteBuffers,
+                                        final ByteBufferFactory byteBufferFactory,
+                                        final PlanBPaths planBPaths) {
         this.documentStoreRegistryProvider = documentStoreRegistryProvider;
         this.byteBuffers = byteBuffers;
         this.byteBufferFactory = byteBufferFactory;
+        this.planBPaths = planBPaths;
     }
 
     /**
@@ -144,7 +148,7 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
         final Map<Integer, List<byte[]>> byShard = groupByShard(traceDb, handedOver, shardCount);
 
         final long orderKey = System.currentTimeMillis();
-        final QueueItemWriter writer = new QueueItemWriter(byteBuffers, byteBufferFactory);
+        final QueueItemWriter writer = new QueueItemWriter(byteBuffers, byteBufferFactory, planBPaths);
         int itemsWritten = 0;
         int tracesWritten = 0;
         int tracesShed = 0;

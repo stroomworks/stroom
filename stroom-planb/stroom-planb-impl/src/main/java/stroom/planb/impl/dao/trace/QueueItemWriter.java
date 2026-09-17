@@ -18,13 +18,15 @@ package stroom.planb.impl.dao.trace;
 
 import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.planb.impl.PlanBConstants;
+import stroom.planb.impl.PlanBPaths;
+import stroom.planb.impl.fs.SharedFileStore;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -32,8 +34,14 @@ import java.util.Optional;
  * Writes a {@link QueueItem} — the spans, roots and lookup tables of a set of traces, copied out of a
  * trace store into an environment of their own.
  *
- * <p>The item is built under a temporary name and renamed into place as the last thing that happens,
- * so a consumer never sees a part-written one and a producer that dies mid-write leaves only a
+ * <p>The environment is built on local disk and only its finished {@code data.mdb} is copied to the
+ * shared store, because no LMDB environment is ever opened on the shared mount — an invariant of the
+ * whole shared file store, and the reason every other path here copies down, works locally and pushes
+ * back. Opening one there would put LMDB's memory-mapped writes and its {@code lock.mdb} on a mount
+ * that may not support either.
+ *
+ * <p>The copy lands under a temporary name and is renamed into place as the last thing that happens,
+ * so a consumer never sees a part-written item and a producer that dies mid-write leaves only a
  * temporary directory behind.
  */
 public class QueueItemWriter {
@@ -42,11 +50,25 @@ public class QueueItemWriter {
 
     private final ByteBuffers byteBuffers;
     private final ByteBufferFactory byteBufferFactory;
+    private final Path localBuildDir;
 
+    /**
+     * @param localBuildDir a directory on local disk to build items in. Each is built under a name of
+     *                      its own and removed once copied, so this holds at most one item per writer
+     *                      in flight.
+     */
     public QueueItemWriter(final ByteBuffers byteBuffers,
-                           final ByteBufferFactory byteBufferFactory) {
+                           final ByteBufferFactory byteBufferFactory,
+                           final Path localBuildDir) {
         this.byteBuffers = byteBuffers;
         this.byteBufferFactory = byteBufferFactory;
+        this.localBuildDir = localBuildDir;
+    }
+
+    public QueueItemWriter(final ByteBuffers byteBuffers,
+                           final ByteBufferFactory byteBufferFactory,
+                           final PlanBPaths planBPaths) {
+        this(byteBuffers, byteBufferFactory, planBPaths.getArchiveLocalDir().resolve("queue_build"));
     }
 
     /**
@@ -73,13 +95,15 @@ public class QueueItemWriter {
         }
 
         final String name = QueueItem.newName(orderKey);
+        // The name carries a uuid, so no two writers can pick the same local directory.
+        final Path localDir = localBuildDir.resolve(name);
         final Path tmpDir = targetDir.resolve(QueueItem.tmpName(name));
         final Path itemDir = targetDir.resolve(name);
         try {
-            Files.createDirectories(tmpDir);
+            Files.createDirectories(localDir);
 
             try (final TraceDb item = TraceDb.create(
-                    tmpDir,
+                    localDir,
                     byteBuffers,
                     byteBufferFactory,
                     QueueItem.doc(),
@@ -89,14 +113,24 @@ public class QueueItemWriter {
                 QueueItem.writeInfo(item.getEnv(), orderKey);
             }
 
+            // An artefact of having had the environment open, and never valid anywhere else: a stale
+            // one mapped by another process is what makes a shared lock.mdb dangerous.
+            Files.deleteIfExists(localDir.resolve(PlanBConstants.LOCK_FILE_NAME));
+
+            Files.createDirectories(tmpDir);
+            Files.copy(localDir.resolve(PlanBConstants.DATA_FILE_NAME),
+                    tmpDir.resolve(PlanBConstants.DATA_FILE_NAME));
+
             // Last, and atomic: until this succeeds nothing matches QueueItem.isItem, so a failure
             // above leaves a temporary directory to be tidied rather than a batch half handed over.
-            Files.move(tmpDir, itemDir, StandardCopyOption.ATOMIC_MOVE);
+            SharedFileStore.moveWithAtomicFallback(tmpDir, itemDir);
             return Optional.of(itemDir);
 
         } catch (final IOException | RuntimeException e) {
             deleteQuietly(tmpDir);
             throw e;
+        } finally {
+            deleteQuietly(localDir);
         }
     }
 
