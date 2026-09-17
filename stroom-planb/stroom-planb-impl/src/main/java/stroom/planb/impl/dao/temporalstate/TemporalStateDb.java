@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@ import stroom.planb.impl.dao.PlanBSearchHelper.ValuesExtractor;
 import stroom.planb.impl.dao.SchemaInfo;
 import stroom.planb.impl.dao.UsedLookupsRecorder;
 import stroom.planb.impl.data.value.TemporalState;
-import stroom.planb.impl.serde.keyprefix.KeyPrefix;
 import stroom.planb.impl.serde.temporalkey.TemporalKey;
 import stroom.planb.impl.serde.temporalkey.TemporalKeySerde;
 import stroom.planb.impl.serde.temporalkey.TemporalKeySerdeFactory;
@@ -50,12 +49,10 @@ import stroom.planb.impl.serde.time.TimeSerde;
 import stroom.planb.impl.serde.valtime.ValTime;
 import stroom.planb.impl.serde.valtime.ValTimeSerde;
 import stroom.planb.impl.serde.valtime.ValTimeSerdeFactory;
-import stroom.planb.shared.KeyType;
 import stroom.planb.shared.PlanBDocument;
 import stroom.planb.shared.TemporalPrecision;
 import stroom.planb.shared.TemporalStateSettings;
 import stroom.query.api.DateTimeSettings;
-import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.language.functions.FieldIndex;
@@ -89,14 +86,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
     private final UsedLookupsRecorder keyRecorder;
     private final UsedLookupsRecorder valueRecorder;
 
-    /**
-     * Whether a key's encoded bytes can never be a prefix of another key's.
-     *
-     * <p>Decides whether {@link #searchAsAt} may seek per key or must scan, and the distinction is a
-     * correctness one rather than a tuning knob — see {@link #searchAsAtBySeeking}.</p>
-     */
-    private final boolean prefixFreeKeys;
-
     private TemporalStateDb(final PlanBEnv env,
                             final ByteBuffers byteBuffers,
                             final PlanBDocument doc,
@@ -104,7 +93,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                             final TimeSerde timeSerde,
                             final TemporalKeySerde keySerde,
                             final ValTimeSerde valueSerde,
-                            final boolean prefixFreeKeys,
                             final HashClashCommitRunnable hashClashCommitRunnable) {
         super(env,
                 byteBuffers,
@@ -115,7 +103,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                         CURRENT_SCHEMA_VERSION,
                         JsonUtil.writeValueAsString(settings.getKeySchema()),
                         JsonUtil.writeValueAsString(settings.getValueSchema())));
-        this.prefixFreeKeys = prefixFreeKeys;
         this.timeSerde = timeSerde;
         this.keySerde = keySerde;
         this.valueSerde = valueSerde;
@@ -165,7 +152,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                     timeSerde,
                     keySerde,
                     valueSerde,
-                    isPrefixFree(settings.getKeySchema().getKeyType()),
                     hashClashCommitRunnable);
         } catch (final RuntimeException e) {
             // Close the env if we get any exceptions to prevent them staying open.
@@ -176,41 +162,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
             }
             throw e;
         }
-    }
-
-    /**
-     * Whether keys of this type encode so that no key's bytes can be a prefix of another's.
-     *
-     * <p>This is what decides whether {@link #searchAsAt} may seek. Note the test is
-     * <b>prefix-freeness, not fixed width</b> — they are not the same property, and two of the
-     * types here separate them.</p>
-     *
-     * <p>A fixed-width encoding qualifies trivially: two different keys differ within the same
-     * number of bytes, so neither can be a proper prefix of the other. That covers the numeric
-     * types.</p>
-     *
-     * <p>{@code TAGS} qualifies without being fixed width. A tags key is
-     * {@code [4-byte tagSetUid][4-byte valueUid] × n}, so its length varies with the tag count — but
-     * {@code tagSetUid} identifies the set of tag <em>names</em>, which fixes {@code n}. Two keys
-     * sharing a leading {@code tagSetUid} are therefore the same length, and neither can be a prefix
-     * of the other. A self-describing leading field buys prefix-freeness just as fixed width
-     * does.</p>
-     *
-     * <p>The variable types fail for the opposite reason: nothing in the leading bytes says how many
-     * follow. {@code VARIABLE} stores a short string inline with no length, so the bytes of
-     * {@code door1} are a prefix of those of {@code door10} and no byte bound separates the two
-     * keys' entries. {@code UID_LOOKUP} sizes its uid by magnitude
-     * ({@code UnsignedBytesInstances.forValue}), so uids of different values differ in width.</p>
-     *
-     * <p><b>Anything uncertain is treated as not prefix-free</b>, because the cost of being wrong is
-     * silently dropping a key rather than being slow. {@code HASH_LOOKUP} is fixed width until a
-     * hash clash appends a variable-width sequence number, so it does not qualify.</p>
-     */
-    private static boolean isPrefixFree(final KeyType keyType) {
-        return switch (keyType) {
-            case BOOLEAN, BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, TAGS -> true;
-            case STRING, UID_LOOKUP, HASH_LOOKUP, VARIABLE -> false;
-        };
     }
 
     private static TimeSerde createTimeSerde(final TemporalPrecision temporalPrecision) {
@@ -276,44 +227,12 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                 }).orElse(null)));
     }
 
-    /**
-     * Searches the store, in one of two modes.
-     *
-     * <p><b>Point-in-time ("as at") path.</b> When the expression carries an
-     * {@code EffectiveTime} {@code =} / {@code <} / {@code <=} term, the caller
-     * is asking what the state <em>was</em> at that instant, so this returns at
-     * most one row per key: the latest entry at or before it. This mirrors the
-     * SQL Temporal Store, whose DAO detects the same conditions and swaps the
-     * caller's time terms for a {@code max(effective_time) <= t} sub-select.</p>
-     *
-     * <p>The mirroring is load-bearing rather than cosmetic. A UI asking for a
-     * single instant sends {@code TimeRange(t, t)}, and
-     * {@code ResultStoreManager.addTimeRangeExpression} turns that into
-     * {@code EffectiveTime >= t AND EffectiveTime < t} — an empty interval that
-     * <em>no</em> row can satisfy. Applied literally, as this method used to,
-     * such a query always returns nothing. The SQL store only appeared to work
-     * because its query-time path discards those terms before they are ever
-     * evaluated; a temporal store reached through the same framework has to do
-     * the same or it silently answers every point-in-time query with zero
-     * rows.</p>
-     *
-     * <p><b>Standard path.</b> With no such term, the expression is applied
-     * verbatim and all matching history is returned.</p>
-     */
     @Override
     public void search(final ExpressionCriteria criteria,
                        final FieldIndex fieldIndex,
                        final DateTimeSettings dateTimeSettings,
                        final ExpressionPredicateFactory expressionPredicateFactory,
                        final ValuesConsumer consumer) {
-        final Instant asAt = PlanBSearchHelper.getQueryTime(
-                criteria,
-                TemporalStateFields.EFFECTIVE_TIME);
-        if (asAt != null) {
-            searchAsAt(criteria, fieldIndex, dateTimeSettings, expressionPredicateFactory, consumer, asAt);
-            return;
-        }
-
         env.read(readTxn -> {
             final ValuesExtractor valuesExtractor = createValuesExtractor(
                     fieldIndex,
@@ -332,91 +251,66 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
         });
     }
 
-    // STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master. This whole "as at" read path is this
-    // fork's, added in b1c8cb2870 to make the floor map's events store answer the same question the
-    // SQL temporal store answers. origin/master has no equivalent, so an incoming version of this
-    // file will not contain it and must not be allowed to remove it.
-    /**
-     * Routes an "as at" read to the seek or the scan, on whether the key encoding allows the seek.
-     *
-     * <p>Not a tuning choice. The seek steps past a key by jumping beyond {@code prefix‖0xFF…},
-     * which is greater than every same-length key with that prefix but <b>also greater than every
-     * longer key beginning with those bytes</b>. Where keys can extend one another — {@code door1}
-     * and {@code door10} under the default {@code VARIABLE} type, which stores short strings inline
-     * with no length — that jump skips the longer key entirely and it is never emitted. The scan
-     * groups by decoded prefix and cannot make that mistake.</p>
-     */
-    private void searchAsAt(final ExpressionCriteria criteria,
-                            final FieldIndex fieldIndex,
-                            final DateTimeSettings dateTimeSettings,
-                            final ExpressionPredicateFactory expressionPredicateFactory,
-                            final ValuesConsumer consumer,
-                            final Instant asAt) {
-        if (prefixFreeKeys) {
-            searchAsAtBySeeking(criteria, fieldIndex, dateTimeSettings, expressionPredicateFactory,
-                    consumer, asAt);
-        } else {
-            searchAsAtByScanning(criteria, fieldIndex, dateTimeSettings, expressionPredicateFactory,
-                    consumer, asAt);
-        }
-    }
+    // STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master. Everything from here to
+    // getKeyExtractionFunction is this fork's, added for the FloorMap Event Store. origin/master has
+    // no equivalent, so an incoming version of this file will not contain it and must not be allowed
+    // to remove it. Nothing upstream calls it: search() above is untouched.
 
     /**
-     * Emits the latest entry at or before {@code asAt} for each key, subject to the non-time part of
-     * the expression — by seeking to each key's answer rather than scanning to it.
+     * Emits the newest entry at or before {@code asAt} for each key, ignoring keys whose newest
+     * entry in scope predates {@code notBefore}.
      *
-     * <p><b>Only correct where no key's bytes can be a prefix of another's</b> — see
-     * {@link #isPrefixFree} for why, and {@link #searchAsAt} for the dispatch that enforces it.
-     * {@link #searchAsAtByScanning} is the general-case counterpart.</p>
+     * <p><b>The caller states the read it wants.</b> Nothing here is inferred from the shape of the
+     * expression: {@link #search} decides nothing, and this method is reached only by a caller that
+     * asked for a snapshot and supplied the instant to take it at. That is the whole point of it
+     * being separate — a read mode guessed from whether a time term happens to be {@code <} rather
+     * than {@code >} is a guess that silently changes what a query means.</p>
      *
-     * <p><b>Why seeking works here.</b> Entries are stored under {@code prefix + time}, so LMDB's
-     * ordering groups every entry for one key together in ascending time order. A key's answer can
-     * therefore be found by seeking straight to {@code prefix‖asAt} and stepping back one, rather
-     * than by reading the key's whole history and keeping the newest eligible row. The scan costs
-     * O(rows in the store); this costs O(keys &times; log n), and the rows in between are never
-     * deserialised.</p>
+     * <p><b>Precondition: the store's key encoding must be prefix-free.</b> Advancing past a key
+     * jumps beyond {@code prefix + 0xFF...}, which is greater than every key sharing that prefix —
+     * but <b>also greater than every longer key beginning with those bytes</b>. Where keys can
+     * extend one another, as they can under {@code VARIABLE} or {@code STRING}, the longer key is
+     * skipped and silently never emitted. {@code KeyType.TERMINATED_STRING} exists to satisfy this;
+     * see {@code TerminatedStringKeySerde}. This class also serves stores with other encodings
+     * through {@link #search}, so the precondition belongs to the caller, not to the store.</p>
      *
-     * <p>It matters because a caller asking "where is everything now" over a store holding a year of
-     * history pays for the year under a scan and for the key count under a seek. Cost stops growing
-     * with retention.</p>
+     * <p><b>Why seek rather than scan.</b> Entries are stored under {@code prefix + time}, so LMDB's
+     * ordering groups every entry for one key together in ascending time order. A key's answer is
+     * found by seeking straight to {@code prefix + asAt} and stepping back, rather than by reading
+     * the key's whole history. The scan costs O(rows in the store); this costs O(keys &times; log n),
+     * and the rows in between are never deserialised — so cost stops growing with retention.</p>
      *
-     * <p>Three details worth knowing:</p>
-     * <ul>
-     *   <li><b>A predicate makes it a short backward walk, not a single seek.</b> The contract is
-     *       the newest row that <em>satisfies</em> the expression, so where the newest row fails,
-     *       earlier ones are tried in turn. With no predicate — the common case — it is one step.</li>
-     *   <li><b>Key contiguity is required, and it is a precondition rather than a property of the
-     *       store.</b> An earlier version of this comment said the assumption was inherited from the
-     *       scan it replaced. That was wrong, and the error was not only historical: the scan groups
-     *       by <em>decoded</em> prefix and skips nothing, so the assumption arrived with the seek.
-     *       Advancing past a key jumps beyond {@code prefix‖0xFF…}, which clears every longer key
-     *       starting with those bytes as well — so where keys can extend one another, the longer one
-     *       is silently never emitted. {@link #isPrefixFree} is what decides whether that can
-     *       happen.</li>
-     *   <li><b>A coarse {@code TemporalPrecision} changes nothing</b>, because stored keys are
-     *       truncated by the same serde that encodes {@code asAt} here. A row the old comparison
-     *       admitted by its decoded time is admitted by this seek too.</li>
-     * </ul>
+     * <p>Two details worth knowing. <b>A predicate makes it a short backward walk, not a single
+     * seek</b>, because the contract is the newest row that <em>satisfies</em> the expression; with
+     * no predicate, the common case, it is one step. And <b>a coarse {@code TemporalPrecision} does
+     * not affect the seek</b>, because stored times are truncated by the same serde that encodes
+     * {@code asAt} here — though note {@code notBefore} is compared against those truncated stored
+     * times without being truncated itself, so at a coarse precision a key can fall on the wrong
+     * side of the floor by up to one tick. Moot at {@code MILLISECOND}.</p>
      *
-     * <p>A key whose every entry postdates {@code asAt} is omitted: it had no state yet at that
-     * instant.</p>
+     * <p>Unlike the inferred path this replaces, the expression is applied <b>whole</b>. Time terms
+     * are not stripped: with the mode explicit there is no framework-injected range to remove, so
+     * stripping could only discard a filter the user wrote themselves.</p>
+     *
+     * @param asAt      the instant to take the snapshot at; required
+     * @param notBefore the floor below which a key is considered to have nothing in scope, or
+     *                  {@code null} for no floor. A key whose newest entry at or before {@code asAt}
+     *                  predates this is omitted rather than returned stale, which is what makes
+     *                  expiry a property of the read rather than a filter over its result
      */
-    private void searchAsAtBySeeking(final ExpressionCriteria criteria,
-                                     final FieldIndex fieldIndex,
-                                     final DateTimeSettings dateTimeSettings,
-                                     final ExpressionPredicateFactory expressionPredicateFactory,
-                                     final ValuesConsumer consumer,
-                                     final Instant asAt) {
+    public void searchSnapshot(final ExpressionCriteria criteria,
+                               final FieldIndex fieldIndex,
+                               final DateTimeSettings dateTimeSettings,
+                               final ExpressionPredicateFactory expressionPredicateFactory,
+                               final ValuesConsumer consumer,
+                               final Instant asAt,
+                               final Instant notBefore) {
+        Objects.requireNonNull(asAt, "asAt is required for a snapshot read");
+
         env.read(readTxn -> {
-            // The time terms are replaced by the at-or-before rule below, so
-            // drop them before building the predicate.
-            final ExpressionOperator expression = PlanBSearchHelper.removeTimeTerms(
-                    criteria.getExpression(),
-                    TemporalStateFields.EFFECTIVE_TIME);
-
-            // Ensure we have fields for all remaining expression criteria, and
-            // do so before the extractor snapshots the field list.
-            ExpressionUtil.fields(expression).forEach(fieldIndex::create);
+            // Ensure we have fields for all expression criteria, and do so before the extractor
+            // snapshots the field list.
+            ExpressionUtil.fields(criteria.getExpression()).forEach(fieldIndex::create);
 
             final ValuesExtractor valuesExtractor = createValuesExtractor(
                     fieldIndex,
@@ -424,12 +318,10 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                     getValExtractionFunction(readTxn));
             final Predicate<Values> predicate = expressionPredicateFactory
                     .createOptional(
-                            expression,
+                            criteria.getExpression(),
                             PlanBSearchHelper.createValueFunctionFactories(fieldIndex),
                             dateTimeSettings)
                     .orElse(vals -> true);
-
-            final Instant notBefore = notBefore(criteria, asAt);
 
             // Walk the distinct key prefixes, seeking each one's answer.
             ByteBuffer prefix = null;
@@ -447,100 +339,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
     }
 
     /**
-     * The "as at" read for keys that can extend one another: groups a full scan by decoded prefix.
-     *
-     * <p>Costs a pass over the store, which is what {@link #searchAsAtBySeeking} exists to avoid —
-     * but it compares <em>decoded</em> prefixes, so a key whose bytes extend another's is grouped
-     * correctly instead of being jumped over. Correctness first; the seek is an optimisation this
-     * encoding does not admit.</p>
-     */
-    private void searchAsAtByScanning(final ExpressionCriteria criteria,
-                                      final FieldIndex fieldIndex,
-                                      final DateTimeSettings dateTimeSettings,
-                                      final ExpressionPredicateFactory expressionPredicateFactory,
-                                      final ValuesConsumer consumer,
-                                      final Instant asAt) {
-        env.read(readTxn -> {
-            final ExpressionOperator expression = PlanBSearchHelper.removeTimeTerms(
-                    criteria.getExpression(),
-                    TemporalStateFields.EFFECTIVE_TIME);
-            ExpressionUtil.fields(expression).forEach(fieldIndex::create);
-
-            final ValuesExtractor valuesExtractor = createValuesExtractor(
-                    fieldIndex,
-                    getKeyExtractionFunction(readTxn),
-                    getValExtractionFunction(readTxn));
-            final Predicate<Values> predicate = expressionPredicateFactory
-                    .createOptional(
-                            expression,
-                            PlanBSearchHelper.createValueFunctionFactories(fieldIndex),
-                            dateTimeSettings)
-                    .orElse(vals -> true);
-
-            final Instant notBefore = notBefore(criteria, asAt);
-
-            // Every Val the extractor produces is fully materialised, so a retained Values stays
-            // valid after the cursor has moved on.
-            final KeyPrefix[] currentPrefix = new KeyPrefix[1];
-            final Values[] latest = new Values[1];
-            final Instant[] latestTime = new Instant[1];
-            final boolean[] started = new boolean[1];
-
-            LmdbIterable.iterate(readTxn, dbi, (key, val) -> {
-                final TemporalKey temporalKey = keySerde.read(readTxn, key.duplicate());
-                final KeyPrefix prefix = temporalKey.getPrefix();
-
-                if (!started[0] || !Objects.equals(prefix, currentPrefix[0])) {
-                    emitIfInScope(latest[0], latestTime[0], notBefore, consumer);
-                    currentPrefix[0] = prefix;
-                    latest[0] = null;
-                    latestTime[0] = null;
-                    started[0] = true;
-                }
-
-                if (!temporalKey.getTime().isAfter(asAt)) {
-                    final Values values = valuesExtractor.apply(readTxn, key, val);
-                    if (predicate.test(values)) {
-                        latest[0] = values;
-                        latestTime[0] = temporalKey.getTime();
-                    }
-                }
-            });
-
-            // Emit the final key's entry — nothing follows it to trigger the key-change flush above.
-            emitIfInScope(latest[0], latestTime[0], notBefore, consumer);
-            return null;
-        });
-    }
-
-    /**
-     * The caller's lower bound, or null where there is none that means anything.
-     *
-     * <p>A bound at or after {@code asAt} is not a window but the zero-width {@code TimeRange} the
-     * framework builds for "as at T" — {@code time >= T AND time < T}, which no row satisfies if
-     * read literally. Treating that as no lower bound is what makes an as-at read mean what its
-     * caller intended, and is why every time term used to be stripped.</p>
-     */
-    private static Instant notBefore(final ExpressionCriteria criteria, final Instant asAt) {
-        final Instant candidate = PlanBSearchHelper.getNotBefore(
-                criteria,
-                TemporalStateFields.EFFECTIVE_TIME);
-        return candidate != null && candidate.isBefore(asAt)
-                ? candidate
-                : null;
-    }
-
-    /** Emits a key's answer unless it predates the caller's lower bound, or there is none. */
-    private static void emitIfInScope(final Values values,
-                                      final Instant time,
-                                      final Instant notBefore,
-                                      final ValuesConsumer consumer) {
-        if (values != null && (notBefore == null || time == null || !time.isBefore(notBefore))) {
-            consumer.accept(values.toArray());
-        }
-    }
-
-    /**
      * The key prefix of the first entry belonging to a key after {@code afterPrefix}, or
      * {@code null} when none remains.
      *
@@ -550,7 +348,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
      *
      * @param afterPrefix the prefix just handled, or {@code null} to start at the first entry
      */
-    // STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master. Supports searchAsAt.
     private ByteBuffer nextPrefix(final Txn<ByteBuffer> readTxn, final ByteBuffer afterPrefix) {
         if (afterPrefix == null) {
             return firstPrefix(readTxn, LmdbKeyRange.all());
@@ -570,7 +367,6 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
      * The key prefix of the first entry in {@code keyRange}, copied to the heap so it outlives the
      * cursor, or {@code null} where the range is empty.
      */
-    // STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master. Supports searchAsAt.
     private ByteBuffer firstPrefix(final Txn<ByteBuffer> readTxn, final LmdbKeyRange keyRange) {
         try (final LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, keyRange)) {
             for (final LmdbEntry entry : iterable) {
@@ -585,10 +381,21 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
     }
 
     /**
-     * Emits the newest entry for {@code prefix} at or before {@code asAt} that satisfies
-     * {@code predicate}, if there is one.
+     * The effective time of a stored key, read from its trailing time field.
+     *
+     * <p>Keys are {@code prefix + time} with the time last and of fixed width, which is what makes
+     * this a slice rather than a decode.</p>
      */
-    // STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master. Supports searchAsAt.
+    private Instant timeAt(final ByteBuffer key) {
+        return timeSerde.read(key.slice(
+                key.position() + key.remaining() - timeSerde.getSize(),
+                timeSerde.getSize()));
+    }
+
+    /**
+     * Emits the newest entry for {@code prefix} at or before {@code asAt} that satisfies
+     * {@code predicate}, if there is one in scope.
+     */
     private void emitLatestAsAt(final Txn<ByteBuffer> readTxn,
                                 final ByteBuffer prefix,
                                 final Instant asAt,
@@ -611,10 +418,11 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
                     if (!ByteBufferUtils.containsPrefix(entry.getKey(), prefix)) {
                         return;
                     }
-                    // Below the caller's lower bound, and entries only get older from here, so this
-                    // key has nothing in scope at all.
-                    if (notBefore != null
-                        && keySerde.read(readTxn, entry.getKey().duplicate()).getTime().isBefore(notBefore)) {
+                    // Below the caller's floor, and entries only get older from here, so this key
+                    // has nothing in scope at all. The time is sliced off the end of the key rather
+                    // than decoded through keySerde, which would allocate the key's value to read a
+                    // field that is already in hand - and this runs once per key per read.
+                    if (notBefore != null && timeAt(entry.getKey()).isBefore(notBefore)) {
                         return;
                     }
                     final Values values = valuesExtractor.apply(readTxn, entry.getKey(), entry.getVal());
