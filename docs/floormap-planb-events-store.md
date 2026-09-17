@@ -1,6 +1,14 @@
-# Creating a Plan B events store for a Floor Map
+# Creating an events store for a Floor Map
 
-A Floor Map reads its events from a **Plan B** document and its facts from a **SQL Temporal
+> **Revised 2026-09-17.** The events store is now its own document type — **FloorMap Event
+> Store** — rather than a general-purpose Plan B document. It is still a Plan B store underneath,
+> and everything below about names, ingest and retention still applies. What has changed is that the
+> settings which must never be wrong are no longer settings: the **key type**, **temporal
+> precision** and **value type** are fixed by the type, so §2's table no longer lists them. The
+> reason is in `docs/floormap-events-backend-design.md` §13 — the map's read seeks to each entity's
+> answer, which is only correct over one particular key encoding.
+
+A Floor Map reads its events from a **FloorMap Event Store** and its facts from a **SQL Temporal
 Store**. This covers the events half: what the Floor Map requires of the store, which settings
 matter, and how to get data in.
 
@@ -11,28 +19,30 @@ one has to be a SQL Temporal Store. The events store is only ever read.
 
 ## 1. Create the document
 
-**Explorer → New → Plan B**
+**Explorer → New → FloorMap Event Store**
 
 ### The name has a hard constraint
 
 Plan B names must match `^[a-z_0-9]+$` — lowercase letters, digits and underscores only. No
 spaces, no capitals, no hyphens. `floor_map_events` is fine; `Floor Map Events` is rejected.
 
-This is enforced twice, at creation (`PlanBDocStoreImpl`) and again at ingest
-(`ShardWriters`), so a bad name fails immediately rather than silently.
+This is enforced at creation and rename (`FloorMapEventStoreStoreImpl`, using Plan B's own
+`PlanBNameValidator`) and again at ingest (`ShardWriters`), so a bad name fails immediately rather
+than silently. Note that **import does not go through that check** — it writes the document
+directly, exactly as Plan B's own store does — so an imported store can carry a name ingest will
+never resolve.
 
 It matters beyond validation: the Floor Map substitutes the store's **name** into the
 `param('EventStore')` placeholder of its events query, so the name ends up in a `from` clause.
 
-### State type must be Temporal State
+### The state type is not a choice
 
-Set **State Type** to `Temporal State`. Not negotiable, and the reason is worth understanding.
+The document fixes it. A FloorMap Event Store is always a temporal state store, because that is the
+only kind that records an effective time per entry — which is what the timeline reads. There is no
+dropdown to get wrong and nothing for the Settings tab to check, which is the point of it being a
+document type of its own rather than a general-purpose Plan B store.
 
-Of the eight Plan B state types, only `TEMPORAL_STATE` records an effective time per entry and
-exposes the three fields the Floor Map's query selects:
-
-| Field | Used for |
-|---|---|
+---|---|
 | `Key` | the entity identity — who or what moved |
 | `EffectiveTime` | when — drives the timeline and playback |
 | `Value` | the event payload as JSON — where, what type, status, message |
@@ -50,17 +60,16 @@ map are **Condense** and **Retention**.
 
 | Setting | Default | Use | Why |
 |---|---|---|---|
-| **Condense** | *off* | **safe to enable; it makes no difference to what the map reads** | It was unsafe before — see below. The map now reads one row per entity regardless of how many versions the store holds, so condensing changes storage only. |
-| **Retention** | *off* (1 year if enabled) | off, or longer than you need to scrub back | Retention deletes old entries. The timeline can only scrub back as far as the data still exists. |
-| **Temporal precision** | `Millisecond` | `Millisecond`, or `Second` | Part of the key. Coarser than your event rate merges distinct events into one key. Only coarsen if events are genuinely no denser than that. |
+| **Event expiry** | 24 hours | as long as an entity may go quiet and still count as present | How long an entity stays on the map after its last event, measured from the scrubber rather than from now. Cannot be turned off. Must not exceed retention, which is checked on save. |
+| **Condense** | *off* | enable only if you accept the warning | **It makes repeating events disappear from the map** — see below. It is offered because collapsing repeats is how a store of stationary entities stays small, but the cost is real and the editor says so. |
+| **Retention** | *off* (1 year if enabled) | off, or longer than you need to scrub back | Retention deletes old entries. The timeline can only scrub back as far as the data still exists. Must not be shorter than the event expiry, which is checked on save. |
 | **Overwrite** | `true` | `true` | Two events for the same entity at the same instant: the later write wins. With `false` the first is kept. Either is defensible; `true` matches re-ingesting corrected data. |
-| **Value type** | `Variable` | `Variable` | The payload is a JSON string of unbounded length. Fixed numeric types cannot hold it. |
-| **Key type** | *(schema default)* | leave alone unless keys exceed 511 bytes | `String` caps at 511 bytes; `Hash lookup table` is unbounded and deduplicated. Entity ids are normally short. |
+| ~~Key type, temporal precision, value type~~ | — | **not shown** | Fixed by the document type. The key encoding is what makes the map's per-key seek valid, and a Plan B schema is immutable once data is written, so it is not a choice to get wrong. |
 | **Max store size** | 10 GiB | raise if you expect more | Per store. |
 | **Snapshot settings** | all off | leave off | With `useSnapshotsForQuery` on, queries read a snapshot that may lag behind ingest, so the map shows stale positions. |
 | **Synchronise merge** | *(unset)* | leave alone | Ingest-side concern, unrelated to the Floor Map. |
 
-### Condense is now safe — it was not before
+### Condense: what it costs, and why it is still offered
 
 Condense removes **consecutive entries with identical values** for the same key, older than its
 threshold, keeping the earliest of each run.
@@ -77,20 +86,22 @@ playback tick reads only what changed since the last one and updates what it hol
 re-read of the last six hours corrects it. An entity that stops emitting keeps its position instead
 of vanishing, so condensing its repeats away costs nothing.
 
-**But it does not make the map's read cheaper either.** Condense collapses runs **older than its
-threshold** (`TemporalStateDb.condense` skips anything at or after it), and the shortest threshold
-the Plan B settings offer is **1 day** — the unit dropdown starts at days. So nothing the map reads
-at a live timeline position is ever condensed. It changes what the store costs to keep, not what a
-query returns.
+**And it now costs something the map can see.** Condense collapses a run of identical values to the
+run's **earliest** entry, so a stationary entity's "last seen" time stops advancing while it is still
+emitting. Under event expiry that entity ages out and disappears from the map. This is why the store's
+settings tab warns *"This will cause repeating events to disappear from the map"* next to the setting.
 
-Where condense can still hurt is playback further back than its threshold: a stationary entity's
-run is collapsed to its earliest entry, so its reported position is that entry's rather than the
-run's. The entity is still drawn, because the read takes its latest row at or before the selected
-time whatever that row happens to be.
+Condense only touches runs **older than its threshold** (`TemporalStateDb.condense` skips anything at
+or after it) and the shortest threshold the settings offer is **1 day**, so a live timeline position
+is unaffected. The damage is to playback further back than the threshold — which, with expiry
+measured from the scrubber, is exactly where it shows.
 
 ### How far back the map can see
 
-**All the way.** The read asks for every entity's latest row at or before the selected time, with no
+**As far as the data goes, subject to expiry.** The read asks for every entity's latest row at or
+before the selected time — but an entity whose latest row is older than the store's **event expiry**
+is omitted, because it is no longer considered present. Retention then bounds how far back any data
+exists at all. Within those two limits the read has no further horizon, and it asks with no
 lower bound, and Plan B answers that in one pass — so an entity that last emitted a year ago is
 still drawn, at the position it last reported.
 
@@ -210,7 +221,11 @@ there is nowhere to draw it.
 
 In order, because each step depends on the one before:
 
-1. **Plan B document → Data tab.** Rows present? If not, the problem is ingest, not the Floor Map.
+1. **Is anything in the store?** A FloorMap Event Store has no Data tab — that belongs to the
+   general-purpose Plan B document. Query it instead: open the Floor Map's Events Query tab, or run
+   `from <store name> select Key, EffectiveTime, Value` in a new Query. No rows means the problem is
+   ingest, not the Floor Map. (The store's shards are also absent from the Plan B shard-info screen,
+   which only lists `PlanBDoc` stores.)
    Check the pipeline's processing errors for `Temporal state 'time' is null` or an unexpected
    store type.
 2. **Floor Map → Events Query tab → run.** Rows, and are `Entity ID` and `Location ID` populated
@@ -235,11 +250,13 @@ That is a known reporting gap, not a sign that everything is fine.
 ## Quick checklist
 
 - [ ] Name matches `^[a-z_0-9]+$`
-- [ ] State Type is **Temporal State**
-- [ ] Condense — **off or on, both fine**; it makes no difference to what the map reads
-- [ ] Retention off, or longer than your timeline needs
+- [ ] Event expiry is long enough that a quiet entity still counts as present
+- [ ] Retention is **not shorter than the expiry**, and is longer than your timeline needs
+- [ ] Condense off — or on, having read what it costs above
 - [ ] Snapshot settings off
-- [ ] Value type `Variable`
 - [ ] Ingest uses `<temporal-state>` with an explicit `<time>`
 - [ ] `Value` is JSON carrying at least `location`
-- [ ] Entities that should stay visible emit at least once every six hours
+- [ ] Entities that should stay visible emit at least once per expiry period
+
+State type, key type, temporal precision and value type are no longer on this list: the document type
+fixes all four.

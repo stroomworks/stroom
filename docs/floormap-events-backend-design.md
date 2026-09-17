@@ -778,7 +778,7 @@ The tempting conclusion is to own our own LMDB and expose only what suits the ma
 
 What is wanted is a store that is *created and owned by the floor map*, exposing only the settings
 that make sense for it — expiry/retention, size, and nothing else — with `stateType`, key schema,
-value schema and `condense` fixed at values the map requires.
+value schema fixed at values the map requires, and `condense` offered with a warning.
 
 Three shapes, and the constraint that rules one out:
 
@@ -955,8 +955,13 @@ Pathways. **That was the objection (c) existed to avoid, and it does not hold.**
 
 **(b).** It delivers what D4 actually asked for — a store type that is configured *for* the
 floor map and exposes only settings that suit it, rather than a general-purpose Plan B document a
-user can edit into an unusable state. `stateType`, key schema, value schema and `condense` become
-properties of the type rather than fields on a form.
+user can edit into an unusable state. `stateType`, key schema and value schema become properties of
+the type rather than fields on a form.
+
+> **Revised 2026-09-17.** This originally listed `condense` among them. It is not fixed by the type —
+> collapsing repeats is how a store of stationary entities stays small, and that trade belongs to
+> whoever runs the store. It is offered with a warning instead; see §13 and the expiry requirements
+> R12.
 
 **The validation work from (c) is not wasted and should still be done**, because a store can still be
 wrong for reasons the type cannot prevent — a `maxStoreSize` too small for the retention, or an
@@ -999,6 +1004,12 @@ being the optional convenience §11.7 treated it as:
 
 ## 12. Revision after implementing §4: blocks B and D are not needed
 
+> **Revised again, 2026-09-17 — see §13.** The seek described below was built inside shared Plan B
+> code and inferred its read mode from the shape of the expression. Both have been undone: the read
+> now belongs to a document type of our own, and the caller states the mode. §13 records what
+> changed and corrects two measurements this section overstates.
+
+
 **The seek-based snapshot is built and measured (§4, §11.7 step 1), and it removes the reason
 checkpoints existed.** This section records that, answers the three review points raised against the
 architecture, and revises the decisions the measurement makes moot.
@@ -1013,8 +1024,10 @@ architecture, and revises the decisions the measurement makes moot.
 | 300 000 rows | 3 000 | 29.0 ms | 8.2 ms |
 | **6 000 000 rows** (20× deeper) | 3 000 | **6.7 ms** | **5.0 ms** |
 
-**Flat in history depth, as designed** — the deeper store is no slower, because the rows in between
-are never read. Cost is O(entities × log n), so a year at ~109.5 M rows adds about four B-tree levels
+**Flat in history depth** — the deeper store is no slower, because the rows in between are never
+read. **But only for a prefix-free key encoding**, which the store measured here had and the default
+`VARIABLE` encoding does not; see §13. No test exercised the seek at the time these numbers were
+taken, and the benchmark that produced them is not in the tree. Cost is O(entities × log n), so a year at ~109.5 M rows adds about four B-tree levels
 over the 6 M measured here: call it **6 ms against a 300 ms playback tick**.
 
 Against the earlier figure of ~230 ms (§7.1) this is not a marginal improvement but a change of
@@ -1119,3 +1132,72 @@ stay so.
 **The one thing the client does keep** is the animation state: where each entity was drawn last, so
 movement between two samples is interpolated rather than teleporting. That is presentation, not data,
 and is discarded on any discontinuity.
+
+---
+
+## 13. Revision after building the store: the read moved out of Plan B
+
+**What §12 recorded as built was built in the wrong place.** The seek lived in
+`TemporalStateDb.search`, and the mode that reached it was inferred from whether a time term happened
+to be `<` rather than `>`. Three things followed, and all three were objected to:
+
+1. **The mode was guessed.** Avoiding that guess was the point of the exercise.
+2. **Every Plan B temporal state store was affected**, not just the floor map's.
+   `ResultStoreManager.addTimeRangeExpression` turns any dashboard time range into
+   `>= from AND < to`, so any such query over any temporal state store silently became one row per
+   key.
+3. **Dates were parsed from presentation-shaped literals**, by two different parsers, one of which
+   takes the viewing user's time zone.
+
+### 13.1 What was built instead
+
+| | |
+|---|---|
+| **Plan B restored** | `PlanBSearchHelper` is byte-identical to `origin/master` again, and `TemporalStateDb` differs from it only by the additive `searchSnapshot` block below. Note the baseline: the inferred path arrived in `b1c8cb2870`, which predates this branch, so reverting to the branch point would not have removed it |
+| **`FloorMapEventStoreDoc`** | A document type of ours, registered through `PlanBDocumentTypes` as `TracesDoc` is. Still a Plan B store — `stateType` is always `TEMPORAL_STATE` — so ingest, merge, condense, retention and shard deletion are unchanged. Only the read is ours |
+| **`TemporalStateDb.searchSnapshot`** | One additive method. `search()` is untouched and no existing caller can reach it. `asAt` and `notBefore` are arguments, not inferences |
+| **`FloorMapEventStoreSearchProvider`** | Block E, at last. A snapshot needs `readMode=snapshot` **and** `asAt` together; either alone is rejected by name, and `asAt` is epoch millis parsed with `Long.parseLong` — so no date heuristic takes part in deciding what a query means |
+| **Expiry is read from the store, not sent** | A late change to the plan, which had the client sending the floor. The caller says *when*; the store says *how long an entity lasts*. That is what makes two maps sharing a store agree, and what makes the `expiry <= retention` check on the document mean anything. The cost: varying expiry for an investigation now means editing the store, which affects every map that reads it |
+| **`KeyType.TERMINATED_STRING`** | The encoding that makes the seek valid: `bytes + 0x00 + time`, so no key's bytes can extend another's. Prefix-free *and* order-preserving, unlike a length prefix. Fixed by the document type, so a store needing a scan cannot be expressed |
+
+### 13.2 What that corrects in §12
+
+- **§12.1's measurement assumed a prefix-free encoding.** The seek it describes was dispatched at
+  runtime on key type, and the default `VARIABLE` type took a full scan instead. Every as-at test at
+  the time ran on that default, so the seek path itself was never executed by a test. It is now the
+  only path the store type can produce, and `TestTemporalStateDbSnapshot` exercises it — including
+  the `door1`/`door10` case that the dispatch existed to work around.
+- **§12.2's "E remains as the place the semantics live" is now true rather than aspirational.**
+
+### 13.3 What is still deferred
+
+- **Block C**, and with it a bounded histogram (D8, §11.5). The key is `prefix + time`, so time is
+  the key *suffix* and no key-range scan can prune by it: bounding the bars needs a counts store or
+  a secondary index, not a smaller change. Every range change and document open therefore still
+  scans the store. The bars and the extent are bounded on the wire, not on the server.
+- **Archives** (§3.1, §11.6).
+*(Cluster query routing was on this list and is now done — see §13.4.)*
+
+### 13.4 Cluster query routing
+
+`QueryNodeResolverImpl` pinned a search to the storage node for `PlanBDoc.TYPE` only, so a query for
+any other Plan B type fell through to the "do not pin" branch. That is not a failure — the query is
+then answered from the node's own snapshot, which is fetched by UUID and works for any type — but it
+meant **the store's `useSnapshotsForQuery` setting was silently inert**, and a floor map asking
+"where is everything now" read a periodically refreshed copy rather than the live store.
+
+The method now applies to any type registered through `PlanBDocumentTypes` whose data is node-local.
+Two details make that safe:
+
+- **A shared file store is excluded**, because every node can already reach it and there is no node
+  to pin to. That is what keeps traces out — and it excludes them *for the reason* rather than by
+  naming the type, so any future shared-storage type is excluded too. A raw `contains` over the
+  registered types would have started pinning trace queries, which the method's own javadoc says it
+  must not.
+- **`PlanBDoc` is named explicitly as well as looked up**, and the shared-file-store test is guarded
+  so it cannot apply to it. Upstream's behaviour is therefore unchanged even if the multibinding were
+  ever missing, and `TestQueryNodeResolverImpl` pins that.
+
+The change is marked `STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master`: an incoming version
+reverts to the `PlanBDoc`-only test, which would not fail — it would quietly go back to reading
+snapshots.

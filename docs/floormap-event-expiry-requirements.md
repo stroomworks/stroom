@@ -20,11 +20,11 @@ disappear after a time. Ideally the time should be configurable somehow."
 | Back-compatibility | **Not required.** This is unreleased code; existing documents need not keep working. | **R7 and R8 withdrawn**, **A6 withdrawn**. Unblocks M3. |
 | Expiry anchor | **Relative to the scrubber's position on the timeline.** | **A5 confirmed**; R2 is settled, not assumed. |
 | Query-text edits (M3) | **Acceptable** — "if the users edit the query to remove that parameter that is their problem." | M3 is a live option. Its remaining objection is different and concrete — see §5. |
-| Configuration scope (D2) | **Per document. New documents default to 24 hours.** | R3/R4 settled; **R8′** replaces R8. No system-wide config needed. |
+| Configuration scope (D2) | **Per events store, not per floor map.** Superseded 2026-09-17: the setting moved onto the `FloorMapEventStoreDoc` so that `expiry <= retention` is checkable in one document. Two maps sharing a store share its expiry, visibly. Still 24 hours by default. | R3/R4 settled; **R8′** replaces R8. No system-wide config needed. |
 | Number of durations (D4) | **One**, applied to all entity types. | A4 confirmed. |
 | Presentation (D5) | **Hidden**, not shown as stale. | R1 settled. |
-| `condense` (D6) | **Impractical; specify that it must be turned off.** | **R12** becomes a stated constraint rather than an open question. |
-| Where configured (D7) | **Settings tab or, probably better, the timeline settings dialog.** | Explored — §9.2. The timeline dialog is affordable; the plumbing it needs is named. |
+| `condense` (D6) | **Available, with a warning.** Superseded 2026-09-17 — see R12. | **R12** becomes a warning shown where condense is set, not a prohibition. |
+| Where configured (D7) | **The event store's own Settings tab.** Superseded 2026-09-17: it follows D2 onto the store document, beside retention and condense. The timeline dialog explored in §9.2 was not built. | §9.2 is retained as the exploration, not the outcome. |
 | Roster behaviour (A15/D3) | **Needs more exploration.** | Explored — §9.1. Findings and a recommendation; the call is still yours. |
 | Mechanism (D1) — *2026-09-11* | **M3**, the `having` clause with the floor as a query parameter. | Superseded — see the row below. |
 | Mechanism (D1) — *reopened, 2026-09-15* | **M2**, the store-side lower bound. **Built** — commit `60f80885d5`. | §0.1. M3's deciding argument turned out to have the sign wrong, and M3's own objection has been overtaken by the histogram work. |
@@ -32,6 +32,14 @@ disappear after a time. Ideally the time should be configurable somehow."
 ---
 
 ## 0.1 Why D1 moved from M3 back to M2
+
+> **Revised 2026-09-17.** M2 was built inside shared Plan B code, which changed the read for every
+> temporal state store in the system. That has been reverted. The *semantics* below still describe
+> what the floor map does — a lower bound narrows the snapshot — but they now live in
+> `TemporalStateDb.searchSnapshot`, reached only through the floor map's own search provider, with
+> the bound passed as an argument rather than lifted out of the expression. References below to
+> `searchAsAt`, `getNotBefore` in `PlanBSearchHelper`, and `TestTemporalStoreParity` describe code
+> that no longer exists. See `docs/floormap-events-backend-design.md` §13.
 
 Revision 4 chose M3 on two grounds. Both have since failed, for different reasons.
 
@@ -211,27 +219,28 @@ Expiry, "the query is broken" and "the store is empty" must be distinguishable. 
 duration is visible where it is configured; the existing empty-state status line already covers the
 all-expired case (A17).
 
-**R12 — `condense` must be off, and that must be stated where it can be acted on.**
-`TemporalStateDb.condense` (`:472`) collapses a run of identical values to its **earliest** entry.
-For a stationary entity that keeps re-emitting the same location, that rewrites "last seen" from
-*now* back to *when it arrived* — so condense makes a live entity expire. Decided (D6): condense is
-impractical alongside expiry and must be turned off. Consequences:
+**R12 — `condense` may be enabled, and its consequence must be stated where it is set.**
+`TemporalStateDb.condense` collapses a run of identical values to its **earliest** entry. For a
+stationary entity that keeps re-emitting the same location, that rewrites "last seen" from *now* back
+to *when it arrived* — so condense makes a live entity expire.
 
-- `docs/floormap-planb-events-store.md` currently says condense is *"safe to enable; it makes no
-  difference to what the map reads"*. That becomes false and must be rewritten.
-- **Detect it, don't just document it** — decided. The Floor Map must read the selected events
-  store's condense setting and say so when it is enabled, rather than leaving the operator to find
-  out by watching live entities vanish. Feasible: both the initialisation dialog and the Settings tab
-  already fetch the Plan B document through `PlanBDocResource` to validate its `stateType`
-  (`FloorMapInitPresenter.java:95`, `FloorMapSettingsPresenter.java:98`), so the settings are already
-  in hand at the point the store is chosen — the check is a condition on data already fetched, not a
-  new round trip.
-- Where to surface it is an implementation choice, not a requirement: at store selection (both
-  places that can set the ref), at document read, or both. Selection is the more useful moment
-  because that is when the choice can be changed; document read catches a store whose condense
-  setting was turned on afterwards, which selection cannot. Both is cheap.
-- The detection must fail **safe, not silent**: if the Plan B document cannot be fetched, say
-  nothing rather than implying condense is off.
+> **Revised 2026-09-17.** D6 originally read "impractical; must be turned off". It is now a supported
+> choice with a warning, because the trade is a real one: condense is how a store of repeating
+> positions stays small, and an operator who wants that should be able to have it with their eyes
+> open. Prohibiting it would also have needed enforcing somewhere, and the enforcement would have
+> been worth more code than the warning.
+
+Consequences:
+
+- The FloorMap Event Store's settings tab shows condense alongside the warning *"This will cause
+  repeating events to disappear from the map."* — sited there rather than on the floor map, because
+  that is where the setting is changed. `FloorMapEventStoreSettingsViewImpl` carries the text.
+- **No detection is needed any more.** The earlier plan was for the floor map to fetch the chosen
+  Plan B document and report a condense setting it disagreed with. Expiry and condense now live on
+  the same document, so there is nothing to cross-check and no round trip to make: the person turning
+  condense on is looking at the expiry setting at the time.
+- `docs/floormap-planb-events-store.md` said condense was *"safe to enable; it makes no difference to
+  what the map reads"*. Rewritten 2026-09-17 in the same change as the warning.
 
 **R13 — A tracked entity that expires must not leave the map and the Tracking panel disagreeing.**
 The canvas twice goes out of its way to refuse the state where `trackedObjectId` is set with nothing

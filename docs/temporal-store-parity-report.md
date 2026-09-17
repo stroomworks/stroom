@@ -3,13 +3,30 @@
 **Requirement:** the two must behave identically as temporal state stores, differing only in the
 SQL store's extra CRUD operations and in performance.
 
-**Verdict — revision 2: they now do.** Parity was reached by implementing **Option A** below: Plan B
-adopted the SQL store's snapshot semantics. Revision 1 reported three differences and recommended
-choosing between four options. That choice has been made and built, so the option analysis is
-retained as **the record of how it was decided**, not as a live question.
+**Verdict — revision 3: the question no longer applies, and Option A has been undone.**
 
-**Test:** `TestTemporalStoreParity` in `stroom-sqlstore-impl-db`. The three cases revision 1
-recorded as failures are enabled and no longer `@Disabled`.
+Revision 2 reported parity, reached by implementing **Option A**: Plan B adopted the SQL store's
+snapshot semantics, inside shared Plan B code, for every temporal state store in the system. That has
+since been **reverted** — `TemporalStateDb` and `PlanBSearchHelper` are back to `origin/master`, with
+one additive method that nothing upstream calls.
+
+Two things follow:
+
+- **The requirement above lapsed.** Parity mattered because a floor map's events store could have
+  been either store. It now has a document type of its own, which is Plan B by construction, while
+  facts remain SQL by construction — nothing is interchangeable, so there is nothing to keep in step.
+- **`TestTemporalStoreParity` is deleted.** Keeping it would have compared an explicit contract
+  against an inferred one across a translation layer, which tests neither.
+
+What survives revision 2 is the *defect analysis*: a snapshot read that strips the caller's lower
+bound, described below as "indefensible under any reading of any question". That was true, it was
+the reason for all of this, and it is now addressed — not by changing Plan B for everyone, but by
+`TemporalStateDb.searchSnapshot`, which takes the bound as an argument and is reached only through
+the floor map's own search provider. See `docs/floormap-events-backend-design.md` §13.
+
+The SQL store keeps its own `getNotBefore`, added at the same time and unexercised by the floor map.
+
+**Everything below is retained as the record of how revision 2 decided, not as a live position.**
 
 > **Verified for revision 2.** The parity suite was re-run against a live MySQL and both live
 > stores: **9 tests, 0 failures, 0 skipped**. The date-parsing behaviour in *What parity cost* §3
@@ -223,9 +240,10 @@ questions and the current design guesses which".
 
 ---
 
-## Option A — Plan B adopts snapshot semantics  ✅ **ADOPTED**
+## Option A — Plan B adopts snapshot semantics  ⛔ **ADOPTED, THEN REVERTED**
 
-> **This is what was built**, in `b1c8cb2870` on 2026-08-27. Everything below was written as a
+> **This is what was built**, in `b1c8cb2870` on 2026-08-27, **and undone on 2026-09-17** — see the
+> verdict at the top. Everything below was written as a
 > prediction; see *What parity cost* for which parts came true. The section is unedited so the
 > prediction can be judged against the outcome.
 

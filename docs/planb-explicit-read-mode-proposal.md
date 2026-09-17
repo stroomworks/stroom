@@ -3,8 +3,8 @@
 **To:** the Plan B maintainer
 **From:** Stroomworks — Enterprise Floor Mapping
 **Date:** 2026-09-14
-**What this is:** a design proposal for `TemporalStateDb`, and a disclosure of a local change we
-have already made to it that we would like your view on.
+**What this is:** a design proposal for `TemporalStateDb`. It was also a disclosure of a local change
+to that file — that change has since been reverted; see the note below.
 **What we are asking for:** your comments, and a decision on whether any of this belongs upstream.
 Nothing here is urgent and nothing depends on a quick answer.
 
@@ -12,6 +12,37 @@ Nothing here is urgent and nothing depends on a quick answer.
 > read it. The substance is unchanged; what has changed is that we have since implemented something
 > ourselves, by a route that note explicitly argued against, and we would rather tell you than let
 > you find it in a merge.
+
+---
+
+> ## Withdrawn as a disclosure, 2026-09-17 — please read this first
+>
+> **The local change this note discloses has been reverted.** `PlanBSearchHelper` is byte-identical
+> to `origin/master` again, and `TemporalStateDb` differs only by one additive method nothing of
+> yours calls. There is no longer an inferred read mode in Plan B, and nothing in your code behaves
+> differently because of us.
+>
+> What we built instead is a document type of our own — a `FloorMapEventStoreDoc`, registered
+> through `PlanBDocumentTypes` as `TracesDoc` is — with its own `SearchProvider`. The read mode is a
+> parameter on the request rather than something guessed from the shape of the expression, and the
+> only thing we added to `TemporalStateDb` is one public method, `searchSnapshot`, that nothing
+> upstream calls.
+>
+> Two other local changes to shared code are worth mentioning in the same breath, both marked
+> `STROOMWORKS-LOCAL` in place:
+>
+> - `QueryNodeResolverImpl.getNode` now pins any registered Plan B document type whose data is
+>   node-local, rather than `PlanBDoc` alone. Behaviour for `PlanBDoc` is unchanged.
+> - `AbstractRoundDateTime.constantString`, so that `floorTime(t, param('w'))` resolves the parameter
+>   instead of parsing the literal text `param('w')` as a duration. **That one looks like a plain
+>   bug**: it yields `ValErr` for every row, and because a `ValErr` cell is not a search error it
+>   fails silently. `ceilingTime` and `roundTime` share it. We would be glad to see it fixed upstream
+>   and to drop our copy.
+>
+> **So there is nothing here you need to act on.** The design argument below still stands on its own
+> merits, and we would still rather `TEMPORAL_STATE` had an explicit way to ask "the state of every
+> key at T" than have each caller build one. Read it as a suggestion if it is useful, not as a
+> disclosure of something live in a shared file.
 
 ---
 

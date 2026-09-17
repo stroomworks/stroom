@@ -482,15 +482,16 @@
 <section class="col">
   <div class="sec-head"><span class="n">08</span><h2>State of the work</h2></div>
   <ol class="steps">
-    <li><b>Seek-based snapshot &mdash; built</b><span>47&times; faster at 200,000 rows and flat in history depth. Verified against 4,071 store tests and a nine-case parity suite running both temporal stores live.</span></li>
+    <li><b>Seek-based snapshot &mdash; built</b><span>Flat in history depth, because the rows between one entity's answers are never read. Valid only over a prefix-free key encoding, which the store type now fixes rather than leaving to a dropdown.</span></li>
     <li><b>Server-side histogram &mdash; built</b><span>Counts per bucket instead of events. Bucket width follows the visible range, from five minutes up to thirty days.</span></li>
-    <li><b>Query surface &mdash; next</b><span>A dedicated store type, so key schema, value schema and condense become properties of the type rather than fields anyone can edit into an unusable state.</span></li>
-    <li><b>Counts store &mdash; only if needed</b><span>The grouped query is bounded below but not above; a store of counts closes that if wide ranges become a complaint.</span></li>
+    <li><b>Query surface &mdash; built</b><span>A dedicated store type, so the key and value schemas are properties of the type rather than fields anyone can edit into an unusable state &mdash; and a read the caller asks for, rather than one inferred from the shape of a query's time terms.</span></li>
+    <li><b>Counts store &mdash; only if needed</b><span>The histogram is bounded on the wire but not on the server: the key is entity-then-time, so no key range can prune by time. Closing that needs a store of counts or a secondary index.</span></li>
   </ol>
 </section>
 
 <footer class="col">
-  <p>Every figure here is measured rather than estimated. Full reasoning, the assumptions it rests on,
+  <p>Figures here are measured rather than estimated, but the seek was measured before it had a test;
+  treat its numbers as indicative. Full reasoning, the assumptions it rests on,
   and the alternatives considered and rejected are in
   <span class="mono">docs/floormap-events-backend-design.md</span>.</p>
 </footer>
