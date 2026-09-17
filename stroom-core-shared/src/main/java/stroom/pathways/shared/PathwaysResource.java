@@ -16,6 +16,7 @@
 
 package stroom.pathways.shared;
 
+import stroom.pathways.shared.pathway.Pathway;
 import stroom.util.shared.FetchWithUuid;
 import stroom.util.shared.ResourcePaths;
 import stroom.util.shared.RestResource;
@@ -42,6 +43,7 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
 
     String BASE_PATH = "/pathways" + ResourcePaths.V2;
     String FIND_PATHWAYS_SUB_PATH = "/findPathways";
+    String FETCH_PATHWAY_SUB_PATH = "/fetchPathway";
 
     @GET
     @Path("/{uuid}")
@@ -65,6 +67,14 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
             operationId = "findPathways")
     PathwayResultPage findPathways(
             @Parameter(description = "criteria", required = true) FindPathwayCriteria criteria);
+
+    @POST
+    @Path(FETCH_PATHWAY_SUB_PATH)
+    @Operation(
+            summary = "Fetch one learnt pathway in full",
+            operationId = "fetchPathway")
+    Pathway fetchPathway(
+            @Parameter(description = "request", required = true) FetchPathwayRequest request);
 
     @POST
     @Path("/addPathway")

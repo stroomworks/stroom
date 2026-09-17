@@ -30,7 +30,9 @@ import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeletePathway;
+import stroom.pathways.shared.FetchPathwayRequest;
 import stroom.pathways.shared.FindPathwayCriteria;
+import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
@@ -39,6 +41,7 @@ import stroom.pathways.shared.pathway.Pathway;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.DataGridUtil;
+import stroom.util.shared.ModelStringUtil;
 import stroom.util.shared.ResultPage;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.dropdowntree.client.view.QuickFilterPageView;
@@ -65,13 +68,13 @@ public class PathwayListPresenter
     private final DateTimeFormatter dateTimeFormatter;
     private final PagerView pagerView;
     private final RestFactory restFactory;
-    private final MyDataGrid<Pathway> dataGrid;
-    private final MultiSelectionModelImpl<Pathway> selectionModel;
+    private final MyDataGrid<PathwaySummary> dataGrid;
+    private final MultiSelectionModelImpl<PathwaySummary> selectionModel;
     private final PathwayEditPresenter pathwayEditPresenter;
     private final ButtonView newButton;
     private final ButtonView editButton;
     private final ButtonView removeButton;
-    private RestDataProvider<Pathway, ResultPage<Pathway>> dataProvider;
+    private RestDataProvider<PathwaySummary, ResultPage<PathwaySummary>> dataProvider;
 
     private String filter;
     private DocRef docRef;
@@ -143,7 +146,7 @@ public class PathwayListPresenter
         registerHandler(dataGrid.addColumnSortHandler(event -> refresh()));
     }
 
-    public MultiSelectionModelImpl<Pathway> getSelectionModel() {
+    public MultiSelectionModelImpl<PathwaySummary> getSelectionModel() {
         return selectionModel;
     }
 
@@ -156,7 +159,7 @@ public class PathwayListPresenter
     private void enableButtons() {
         newButton.setEnabled(!readOnly);
         if (!readOnly) {
-            final Pathway selectedElement = selectionModel.getSelected();
+            final PathwaySummary selectedElement = selectionModel.getSelected();
             final boolean enabled = selectedElement != null;
             editButton.setEnabled(enabled);
             removeButton.setEnabled(enabled);
@@ -181,10 +184,22 @@ public class PathwayListPresenter
         addCreateTimeColumn();
         addUpdateTimeColumn();
         addLastUsedColumn();
+        addSizeColumn();
+    }
+
+    // A pathway keeps every path it has seen, so they differ by orders of magnitude and the large ones
+    // are slow to open. Free to show: it is the stored length of the value the row was read from.
+    private void addSizeColumn() {
+        final Column<PathwaySummary, String> column = DataGridUtil
+                .textColumnBuilder((PathwaySummary summary) ->
+                        ModelStringUtil.formatIECByteSizeString(summary.getSizeBytes()))
+                .withSorting("Size")
+                .build();
+        dataGrid.addResizableColumn(column, "Size", ColumnSizeConstants.SMALL_COL);
     }
 
     private void addNameColumn() {
-        final Column<Pathway, String> column = DataGridUtil.textColumnBuilder(Pathway::getName)
+        final Column<PathwaySummary, String> column = DataGridUtil.textColumnBuilder(PathwaySummary::getName)
                 .withSorting("Root")
                 .build();
         dataGrid.addResizableColumn(column,
@@ -194,25 +209,25 @@ public class PathwayListPresenter
     }
 
     private void addCreateTimeColumn() {
-        addTimeColumn("Create Time", Pathway::getCreateTime);
+        addTimeColumn("Create Time", PathwaySummary::getCreateTime);
     }
 
     private void addUpdateTimeColumn() {
-        addTimeColumn("Update Time", Pathway::getUpdateTime);
+        addTimeColumn("Update Time", PathwaySummary::getUpdateTime);
     }
 
     private void addLastUsedColumn() {
-        addTimeColumn("Last Used", Pathway::getLastUsedTime);
+        addTimeColumn("Last Used", PathwaySummary::getLastUsedTime);
     }
 
-    private void addTimeColumn(final String name, final Function<Pathway, NanoTime> function) {
-        final Function<Pathway, String> valueExtractor = pathway -> {
-            final NanoTime nanoTime = function.apply(pathway);
+    private void addTimeColumn(final String name, final Function<PathwaySummary, NanoTime> function) {
+        final Function<PathwaySummary, String> valueExtractor = summary -> {
+            final NanoTime nanoTime = function.apply(summary);
             return nanoTime == null
                     ? ""
                     : dateTimeFormatter.format(nanoTime.toEpochMillis());
         };
-        final Column<Pathway, String> column = DataGridUtil
+        final Column<PathwaySummary, String> column = DataGridUtil
                 .textColumnBuilder(valueExtractor)
                 .withSorting(name)
                 .build();
@@ -232,7 +247,6 @@ public class PathwayListPresenter
                         .create(PATHWAYS_RESOURCE)
                         .method(res -> res.addPathway(new AddPathway(docRef, pathway)))
                         .onSuccess(response -> {
-                            selectionModel.setSelected(pathway);
                             refresh();
                             e.hide();
                         })
@@ -246,7 +260,20 @@ public class PathwayListPresenter
     }
 
     private void onEdit() {
-        final Pathway existingPathway = selectionModel.getSelected();
+        final PathwaySummary selected = selectionModel.getSelected();
+        if (selected != null) {
+            // The row carries no model — see PathwaySummary — so fetch the one being edited.
+            restFactory
+                    .create(PATHWAYS_RESOURCE)
+                    .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, selected.getName())))
+                    .onSuccess(existingPathway -> editFetched(selected, existingPathway))
+                    .onFailure(new DefaultErrorHandler(this, null))
+                    .taskMonitorFactory(pagerView)
+                    .exec();
+        }
+    }
+
+    private void editFetched(final PathwaySummary selected, final Pathway existingPathway) {
         if (existingPathway != null) {
             pathwayEditPresenter.read(pathwaysDoc, existingPathway, readOnly);
             pathwayEditPresenter.show("Edit Pathway", e -> {
@@ -257,10 +284,9 @@ public class PathwayListPresenter
                                 .create(PATHWAYS_RESOURCE)
                                 .method(res -> res.updatePathway(new UpdatePathway(
                                         docRef,
-                                        existingPathway.getName(),
+                                        selected.getName(),
                                         pathway)))
                                 .onSuccess(response -> {
-                                    selectionModel.setSelected(pathway);
                                     refresh();
                                     e.hide();
                                 })
@@ -278,7 +304,7 @@ public class PathwayListPresenter
     }
 
     private void onRemove() {
-        final List<Pathway> list = selectionModel.getSelectedItems();
+        final List<PathwaySummary> list = selectionModel.getSelectedItems();
         if (list != null && !list.isEmpty()) {
             String message = "Are you sure you want to delete the selected pathway?";
             if (list.size() > 1) {
@@ -287,7 +313,7 @@ public class PathwayListPresenter
 
             ConfirmEvent.fire(this, message, result -> {
                 if (result) {
-                    for (final Pathway pathway : list) {
+                    for (final PathwaySummary pathway : list) {
                         restFactory
                                 .create(PATHWAYS_RESOURCE)
                                 .method(res -> res.deletePathway(new DeletePathway(docRef, pathway.getName())))
@@ -319,10 +345,10 @@ public class PathwayListPresenter
 
     private void refresh() {
         if (dataProvider == null) {
-            dataProvider = new RestDataProvider<Pathway, ResultPage<Pathway>>(getEventBus()) {
+            dataProvider = new RestDataProvider<PathwaySummary, ResultPage<PathwaySummary>>(getEventBus()) {
                 @Override
                 protected void exec(final Range range,
-                                    final Consumer<ResultPage<Pathway>> dataConsumer,
+                                    final Consumer<ResultPage<PathwaySummary>> dataConsumer,
                                     final RestErrorHandler errorHandler) {
                     final FindPathwayCriteria criteria = new FindPathwayCriteria(
                             CriteriaUtil.createPageRequest(range),
@@ -334,8 +360,8 @@ public class PathwayListPresenter
                     restFactory
                             .create(PATHWAYS_RESOURCE)
                             .method(res -> res.findPathways(criteria))
-                            .onSuccess(result ->
-                                    dataConsumer.accept(new ResultPage<>(result.getValues(), result.getPageResponse())))
+                            .onSuccess(result -> dataConsumer.accept(
+                                    new ResultPage<>(result.getValues(), result.getPageResponse())))
                             .onFailure(errorHandler)
                             .taskMonitorFactory(pagerView)
                             .exec();

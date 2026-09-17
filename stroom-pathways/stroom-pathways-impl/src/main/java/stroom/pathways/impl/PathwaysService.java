@@ -19,10 +19,12 @@ package stroom.pathways.impl;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeletePathway;
+import stroom.pathways.shared.FetchPathwayRequest;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.UpdatePathway;
+import stroom.pathways.shared.pathway.Pathway;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -49,6 +51,18 @@ public class PathwaysService {
         // The model lives on the shared file store, split by operation name, so any node can answer
         // from it. Nothing has to work out which node holds it, and nothing has to be asked.
         return shardedPathwayReader.findPathways(pathwaysDoc, criteria);
+    }
+
+    /**
+     * One learnt pathway in full, for the tree. The list is served summaries instead, because a
+     * pathway carries the whole model it has learnt and a page of them will not fit in memory.
+     */
+    public Pathway fetchPathway(final FetchPathwayRequest request) {
+        final PathwaysDoc pathwaysDoc = pathwaysStore.readDocument(request.getPathwaysDocRef());
+        if (pathwaysDoc == null) {
+            throw new DocumentNotFoundException(request.getPathwaysDocRef());
+        }
+        return shardedPathwayReader.fetchPathway(pathwaysDoc, request.getName()).orElse(null);
     }
 
     public Boolean addPathway(final AddPathway addPathway) {

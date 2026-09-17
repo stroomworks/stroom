@@ -19,6 +19,7 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.ByteBufferUtils;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
+import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.planb.impl.dao.ShardKeyRouter;
@@ -41,8 +42,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -77,7 +80,7 @@ public class ShardedPathwayReader {
             // Nothing configured, so nothing was ever written for it.
             return new PathwayResultPage(List.of(), PageResponse.empty());
         }
-        final int shardCount = Math.max(1, settings.getShardCount());
+        final int shardCount = shardCountOf(settings);
         final PageRequest pageRequest = criteria.getPageRequest();
 
         // Sorted and de-duplicated, though a duplicate would mean two shards claimed one name, which
@@ -99,7 +102,7 @@ public class ShardedPathwayReader {
                 .total((long) names.size())
                 .exact(true)
                 .build();
-        return new PathwayResultPage(fetch(doc, shardCount, page), pageResponse);
+        return new PathwayResultPage(fetchSummaries(doc, shardCount, page), pageResponse);
     }
 
     // The names one shard holds that the filter accepts, read from the keys alone.
@@ -117,27 +120,53 @@ public class ShardedPathwayReader {
         return names;
     }
 
+    /**
+     * One learnt pathway in full, or empty where the document holds none by that name.
+     *
+     * <p>Separate from the list because the list does not want this: a pathway keeps every path it has
+     * seen an operation take, so reading one to render a row is what a page of rows could not afford.
+     */
+    public Optional<Pathway> fetchPathway(final PathwaysDoc doc, final String name) {
+        final SharedFileStoreSettings settings = doc.getSharedFileStore();
+        if (settings == null || NullSafe.isBlankString(settings.getSharedPath())
+            || NullSafe.isBlankString(name)) {
+            return Optional.empty();
+        }
+        final int shard = ShardKeyRouter.computeShardIndex(name, shardCountOf(settings));
+        final Pathway[] found = {null};
+        readShard(doc, shard, db -> {
+            withKey(name, keyBuffer -> db.getPathways().get(keyBuffer, valueBuffer -> {
+                if (valueBuffer != null) {
+                    found[0] = pathwaySerde.readPathway(valueBuffer);
+                }
+                return null;
+            }));
+            return null;
+        });
+        return Optional.ofNullable(found[0]);
+    }
+
     // Fetches the page by key, grouped so each shard is opened once however many names fall to it.
-    // Order is restored at the end because grouping loses it.
-    private List<Pathway> fetch(final PathwaysDoc doc, final int shardCount, final List<String> page) {
+    // Order is restored at the end because grouping loses it. Only the header of each is read — see
+    // PathwaySerde.readSummary.
+    private List<PathwaySummary> fetchSummaries(final PathwaysDoc doc,
+                                                final int shardCount,
+                                                final List<String> page) {
         final Map<Integer, List<String>> byShard = new LinkedHashMap<>();
         for (final String name : page) {
             byShard.computeIfAbsent(ShardKeyRouter.computeShardIndex(name, shardCount),
                     k -> new ArrayList<>()).add(name);
         }
 
-        final Map<String, Pathway> found = new LinkedHashMap<>();
+        final Map<String, PathwaySummary> found = new LinkedHashMap<>();
         byShard.forEach((shard, names) -> readShard(doc, shard, db -> {
             for (final String name : names) {
-                final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
-                final ByteBuffer keyBuffer = ByteBuffer.allocateDirect(keyBytes.length);
-                keyBuffer.put(keyBytes).flip();
-                db.getPathways().get(keyBuffer, valueBuffer -> {
+                withKey(name, keyBuffer -> db.getPathways().get(keyBuffer, valueBuffer -> {
                     if (valueBuffer != null) {
-                        found.put(name, pathwaySerde.readPathway(valueBuffer));
+                        found.put(name, pathwaySerde.readSummary(valueBuffer));
                     }
                     return null;
-                });
+                }));
             }
             return null;
         }));
@@ -146,8 +175,19 @@ public class ShardedPathwayReader {
         return page.stream().map(found::get).filter(Objects::nonNull).toList();
     }
 
+    private static void withKey(final String name, final Consumer<ByteBuffer> consumer) {
+        final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
+        final ByteBuffer keyBuffer = ByteBuffer.allocateDirect(keyBytes.length);
+        keyBuffer.put(keyBytes).flip();
+        consumer.accept(keyBuffer);
+    }
+
     // A shard that cannot be read must not fail the whole search: the rest of the model is still worth
     // showing, and a shard nothing has applied to yet has no model at all, which is normal.
+    private static int shardCountOf(final SharedFileStoreSettings settings) {
+        return Math.max(1, settings.getShardCount());
+    }
+
     private <R> void readShard(final PathwaysDoc doc,
                                final int shard,
                                final Function<PathwaysDb, R> work) {

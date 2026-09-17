@@ -21,9 +21,11 @@ import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.node.api.NodeInfo;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
+import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.planb.impl.PlanBPaths;
 import stroom.planb.impl.dao.LmdbWriter;
@@ -50,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -119,7 +122,7 @@ class TestShardedPathwayReader {
 
         final PathwayResultPage page = reader.findPathways(doc, criteria(null, 0, 100));
 
-        assertThat(page.getValues().stream().map(Pathway::getName))
+        assertThat(page.getValues().stream().map(PathwaySummary::getName))
                 .as("every shard contributed, in name order")
                 .containsExactly("FetchNewTasks.run", "GET /orders", "POST /payments");
         assertThat(page.getPageResponse().getTotal()).isEqualTo(3L);
@@ -132,7 +135,7 @@ class TestShardedPathwayReader {
 
         final PathwayResultPage page = reader.findPathways(doc, criteria("orders", 0, 100));
 
-        assertThat(page.getValues().stream().map(Pathway::getName)).containsExactly("GET /orders");
+        assertThat(page.getValues().stream().map(PathwaySummary::getName)).containsExactly("GET /orders");
         assertThat(page.getPageResponse().getTotal()).isEqualTo(1L);
     }
 
@@ -143,9 +146,9 @@ class TestShardedPathwayReader {
         }
 
         final List<String> first = reader.findPathways(doc, criteria(null, 0, 2))
-                .getValues().stream().map(Pathway::getName).toList();
+                .getValues().stream().map(PathwaySummary::getName).toList();
         final List<String> second = reader.findPathways(doc, criteria(null, 2, 2))
-                .getValues().stream().map(Pathway::getName).toList();
+                .getValues().stream().map(PathwaySummary::getName).toList();
 
         assertThat(first).containsExactly("op-0", "op-1");
         assertThat(second).as("the second page continues where the first stopped")
@@ -153,6 +156,43 @@ class TestShardedPathwayReader {
         assertThat(reader.findPathways(doc, criteria(null, 0, 2)).getPageResponse().getTotal())
                 .as("the total counts what matched, not what the page holds")
                 .isEqualTo(6L);
+    }
+
+    @Test
+    void aRowCostsNothingOfTheModelItStandsFor() throws IOException {
+        // The grid shows four fields. A pathway holds every path it has seen, so reading one to render
+        // a row is what made a page of them unopenable — the row must carry the size, not the model.
+        writePathwayWithNodes("GET /orders", 500);
+
+        final PathwaySummary summary = reader.findPathways(doc, criteria(null, 0, 100))
+                .getValues().getFirst();
+
+        assertThat(summary.getName()).isEqualTo("GET /orders");
+        assertThat(summary.getCreateTime()).isNotNull();
+        assertThat(summary.getUpdateTime()).isNotNull();
+        assertThat(summary.getLastUsedTime()).isNotNull();
+        assertThat(summary.getSizeBytes())
+                .as("the row says how large the pathway it stands for is")
+                .isGreaterThan(500L);
+    }
+
+    @Test
+    void theWholePathwayComesBackOnlyWhenAskedForByName() throws IOException {
+        writePathwayWithNodes("GET /orders", 20);
+        writePathway("POST /payments");
+
+        final Pathway fetched = reader.fetchPathway(doc, "GET /orders").orElseThrow();
+
+        assertThat(fetched.getName()).isEqualTo("GET /orders");
+        assertThat(fetched.getRoot()).as("this is the call that brings the model").isNotNull();
+        assertThat(fetched.getRoot().getTargets()).isNotEmpty();
+    }
+
+    @Test
+    void askingForAPathwayThatIsNotThereIsNotAnError() throws IOException {
+        writePathway("GET /orders");
+
+        assertThat(reader.fetchPathway(doc, "never heard of it")).isEmpty();
     }
 
     @Test
@@ -201,6 +241,44 @@ class TestShardedPathwayReader {
                         .lastUsedTime(NanoTimeUtil.fromInstant(now))
                         .pathKey(new NamePathKey(name))
                         .root(new PathNode(name))
+                        .build();
+                final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
+                final ByteBuffer key = ByteBuffer.allocateDirect(keyBytes.length);
+                key.put(keyBytes).flip();
+                new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, value ->
+                        db.getPathways().insert(writer, key, value));
+                writer.commit();
+            }
+            return true;
+        });
+    }
+
+    // A root with `childCount` children, so the stored value is comfortably larger than its header.
+    private void writePathwayWithNodes(final String name, final int childCount) throws IOException {
+        shardStore.withShard(doc, shardOf(name), localDir -> {
+            try (final PathwaysDb db = PathwaysDb.create(localDir, BYTE_BUFFERS, false);
+                    final LmdbWriter writer = db.createWriter()) {
+                final Instant now = Instant.now();
+                final List<PathNode> children = new ArrayList<>();
+                for (int i = 0; i < childCount; i++) {
+                    children.add(new PathNode("child-" + i, List.of(name, "child-" + i)));
+                }
+                final PathNode root = PathNode.builder()
+                        .uuid(UUID.randomUUID().toString())
+                        .name(name)
+                        .path(List.of(name))
+                        .targets(List.of(new PathNodeSequence(
+                                UUID.randomUUID().toString(),
+                                new NamePathKey(name),
+                                children)))
+                        .build();
+                final Pathway pathway = Pathway.builder()
+                        .name(name)
+                        .createTime(NanoTimeUtil.fromInstant(now))
+                        .updateTime(NanoTimeUtil.fromInstant(now))
+                        .lastUsedTime(NanoTimeUtil.fromInstant(now))
+                        .pathKey(new NamePathKey(name))
+                        .root(root)
                         .build();
                 final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
                 final ByteBuffer key = ByteBuffer.allocateDirect(keyBytes.length);

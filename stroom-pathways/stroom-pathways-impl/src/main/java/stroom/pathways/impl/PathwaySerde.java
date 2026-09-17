@@ -18,6 +18,7 @@ package stroom.pathways.impl;
 
 import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferPoolOutput;
+import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.AnyBoolean;
 import stroom.pathways.shared.pathway.AnyTypeValue;
@@ -77,6 +78,28 @@ public class PathwaySerde {
 
     public Pathway readPathway(final ByteBuffer byteBuffer) {
         return readPathway(new UnsafeByteBufferInput(byteBuffer));
+    }
+
+    /**
+     * Reads only what the pathway list shows, leaving the model where it is.
+     *
+     * <p>The four fields a row needs are written before {@code pathKey} and {@code root}, so this is a
+     * matter of stopping rather than of skipping — nothing is decoded that is not displayed. That is
+     * the whole point: a pathway keeps every path it has seen, so deserialising one to read its name
+     * is what made a page of them unopenable.
+     *
+     * @param byteBuffer the stored value, whose {@code remaining()} is taken as the pathway's size
+     *                   before anything is read from it.
+     */
+    public PathwaySummary readSummary(final ByteBuffer byteBuffer) {
+        final long sizeBytes = byteBuffer.remaining();
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        return new PathwaySummary(
+                input.readString(),
+                readNanoTime(input),
+                readNanoTime(input),
+                readNanoTime(input),
+                sizeBytes);
     }
 
     private Pathway readPathway(final Input input) {

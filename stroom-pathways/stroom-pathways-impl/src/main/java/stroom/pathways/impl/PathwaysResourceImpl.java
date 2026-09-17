@@ -21,11 +21,13 @@ import stroom.event.logging.rs.api.AutoLogged;
 import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeletePathway;
+import stroom.pathways.shared.FetchPathwayRequest;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
+import stroom.pathways.shared.pathway.Pathway;
 import stroom.util.shared.EntityServiceException;
 
 import jakarta.inject.Inject;
@@ -84,6 +86,12 @@ class PathwaysResourceImpl implements PathwaysResource {
     @Override
     public PathwayResultPage findPathways(final FindPathwayCriteria criteria) {
         return pathwaysServiceProvider.get().findPathways(criteria);
+    }
+
+    @AutoLogged(OperationType.UNLOGGED)
+    @Override
+    public Pathway fetchPathway(final FetchPathwayRequest request) {
+        return pathwaysServiceProvider.get().fetchPathway(request);
     }
 
     @AutoLogged(OperationType.UNLOGGED)
