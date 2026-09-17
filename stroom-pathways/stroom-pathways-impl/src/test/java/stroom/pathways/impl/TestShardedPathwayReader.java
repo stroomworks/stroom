@@ -27,6 +27,7 @@ import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.PlanBPaths;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.ShardKeyRouter;
@@ -217,9 +218,64 @@ class TestShardedPathwayReader {
                 .hasSize(2);
     }
 
+    /**
+     * A publish writes the data file and then its version marker, so a crash between the two leaves a
+     * shard holding a model no version describes. Reading it beats reporting the shard empty.
+     */
+    @Test
+    void aShardWhoseDataHasNoVersionYetIsStillRead() throws IOException {
+        writePathway("GET /orders");
+        Files.delete(sharedShardDir("GET /orders").resolve(PlanBConstants.VERSION_FILE_NAME));
+
+        assertThat(reader.findPathways(doc, criteria(null, 0, 100)).getValues())
+                .as("data with no version marker is still the shard's model")
+                .hasSize(1);
+    }
+
+    /**
+     * And once a marker does appear it has to read as a change, or the copy taken while there was none
+     * would be served for good. Both names go to one shard, so the second write is only visible if
+     * that shard's copy is taken again.
+     */
+    @Test
+    void theVersionAppearingAfterwardsRefreshesTheCopy() throws IOException {
+        final String first = "GET /orders";
+        final String second = sameShardAs(first);
+        writePathway(first);
+        Files.delete(sharedShardDir(first).resolve(PlanBConstants.VERSION_FILE_NAME));
+        assertThat(reader.findPathways(doc, criteria(null, 0, 100)).getValues())
+                .as("the copy is taken while the shard has no version marker")
+                .hasSize(1);
+
+        writePathway(second);
+
+        assertThat(reader.findPathways(doc, criteria(null, 0, 100)).getValues())
+                .as("the version the next publish writes reads as a change")
+                .hasSize(2);
+    }
+
     // -----------------------------------------------------------------------
     // Fixture
     // -----------------------------------------------------------------------
+
+    // A different name that the router sends to the same shard, so a test can put two pathways in one
+    // shard without depending on what the hash happens to do with any given pair.
+    private String sameShardAs(final String name) {
+        for (int i = 0; i < 10_000; i++) {
+            final String candidate = "GET /other-" + i;
+            if (shardOf(candidate) == shardOf(name)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("No second name found for the shard holding " + name);
+    }
+
+    private Path sharedShardDir(final String name) {
+        return Path.of(doc.getSharedFileStore().getSharedPath())
+                .resolve(PathwaysShardStore.SHARDS_DIR_NAME)
+                .resolve(doc.getUuid())
+                .resolve(PlanBConstants.formatShardIndex(shardOf(name)));
+    }
 
     private int shardOf(final String name) {
         return ShardKeyRouter.computeShardIndex(name, SHARD_COUNT);

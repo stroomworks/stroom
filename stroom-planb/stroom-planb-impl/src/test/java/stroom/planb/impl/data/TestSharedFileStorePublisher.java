@@ -37,6 +37,7 @@ import org.mockito.MockitoAnnotations;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Map;
 import java.util.UUID;
 
@@ -305,6 +306,92 @@ class TestSharedFileStorePublisher {
 
         // Should be left alone — belongs to shard 1.
         assertThat(otherShardTmp).exists();
+    }
+
+    // -----------------------------------------------------------------------
+    // publishShard — in place, for a tree read without the writer's lock
+    // -----------------------------------------------------------------------
+
+    @Test
+    void publishShard_writesDataAndVersion() throws IOException {
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(canonicalShardDir().resolve(PlanBConstants.DATA_FILE_NAME)).exists();
+        assertThat(canonicalShardDir().resolve(PlanBConstants.VERSION_FILE_NAME)).exists();
+    }
+
+    @Test
+    void publishShard_neverCopiesLockMdbToSharedStore() throws IOException {
+        publisher.publishShard(createLocalShardDir(true, true), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(canonicalShardDir().resolve(PlanBConstants.LOCK_FILE_NAME))
+                .as("lock.mdb must never be published to the shared store")
+                .doesNotExist();
+    }
+
+    @Test
+    void publishShard_noLocalDataMdb_stillWritesVersion() throws IOException {
+        publisher.publishShard(createLocalShardDir(false, false), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(canonicalShardDir().resolve(PlanBConstants.VERSION_FILE_NAME)).exists();
+    }
+
+    @Test
+    void publishShard_keepsOperationalFile() throws IOException {
+        Files.createDirectories(canonicalShardDir());
+        Files.writeString(canonicalShardDir().resolve(PlanBConstants.RETENTION_LAST_FILE_NAME),
+                "2026-01-01T00:00:00Z");
+
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(canonicalShardDir().resolve(PlanBConstants.RETENTION_LAST_FILE_NAME)).exists();
+    }
+
+    @Test
+    void publishShard_replacesStaleVersion() throws IOException {
+        Files.createDirectories(canonicalShardDir());
+        Files.writeString(canonicalShardDir().resolve(PlanBConstants.VERSION_FILE_NAME), "stale-version");
+
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(Files.readString(canonicalShardDir().resolve(PlanBConstants.VERSION_FILE_NAME)))
+                .contains("test-node")
+                .doesNotContain("stale-version");
+    }
+
+    /**
+     * The reason this protocol exists: a reader holding no lock must never find the shard absent, so
+     * the directory has to be the same directory before and after, not a replacement swapped into its
+     * name.
+     */
+    @Test
+    void publishShard_neverReplacesTheShardDir() throws IOException {
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+        final Object firstKey = Files.readAttributes(
+                canonicalShardDir(), BasicFileAttributes.class).fileKey();
+
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(Files.readAttributes(canonicalShardDir(), BasicFileAttributes.class).fileKey())
+                .as("the shard directory must survive a publish, not be swapped for a new one")
+                .isEqualTo(firstKey);
+    }
+
+    /**
+     * A JVM kill between the copy up and the rename leaves a data-sized temp file in the shard dir,
+     * and the next publish is the only thing that removes it.
+     */
+    @Test
+    void publishShard_sweepsOrphanedTempData() throws IOException {
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+        final Path orphan = canonicalShardDir()
+                .resolve(PlanBConstants.DATA_TMP_FILE_NAME + "_stale_uid");
+        Files.writeString(orphan, "half a data file");
+
+        publisher.publishShard(createLocalShardDir(true, false), sharedHoldingDocDir(), SHARD_INDEX);
+
+        assertThat(orphan).doesNotExist();
+        assertThat(canonicalShardDir().resolve(PlanBConstants.DATA_FILE_NAME)).exists();
     }
 
     // -----------------------------------------------------------------------

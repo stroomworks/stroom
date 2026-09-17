@@ -35,6 +35,7 @@ import jakarta.inject.Singleton;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
@@ -104,6 +105,9 @@ public class PathwaysShardStore {
      * <p>What goes up is a compacted copy of the working file rather than the working file itself, so
      * the shared store holds the model and not the free pages left behind by rewriting it.
      *
+     * <p>It is published in place rather than by swapping the shard directory, because
+     * {@link #readShard} reads that directory holding no lock and a swap makes it briefly absent.
+     *
      * @param work given the local directory, returns whether it changed what is in it. Anything it
      *             throws propagates, and the shard is left as it was on the shared store.
      * @return whether the model was pushed back.
@@ -119,10 +123,6 @@ public class PathwaysShardStore {
                 .resolve(SHARDS_DIR_NAME)
                 .resolve(PathSegmentUtil.requireSafeSegment(doc.getUuid()));
 
-        // Undo the half-finished state an interrupted push leaves behind, before anything reads the
-        // shard — otherwise the copy down below could take a directory mid-swap.
-        publisher.recoverOrphaned(sharedDocDir, shardIndex);
-
         final Path localDir = localRoot
                 .resolve(PathSegmentUtil.requireSafeSegment(doc.getUuid())
                          + "_" + PlanBConstants.formatShardIndex(shardIndex));
@@ -136,7 +136,7 @@ public class PathwaysShardStore {
                         shardIndex, doc.getName()));
                 return false;
             }
-            publisher.push(compact(localDir), sharedDocDir, shardIndex);
+            publisher.publishShard(compact(localDir), sharedDocDir, shardIndex);
             return true;
 
         } finally {
@@ -183,20 +183,31 @@ public class PathwaysShardStore {
             if (!refreshReadCopy(sharedShardDir, localDir)) {
                 return Optional.empty();
             }
-            try (final PathwaysDb db = PathwaysDb.create(localDir, byteBuffers, true)) {
+            final PathwaysDb db;
+            try {
+                db = PathwaysDb.create(localDir, byteBuffers, true);
+            } catch (final RuntimeException e) {
+                // The copy would not open, so it is a copy of nothing — a data file caught part way
+                // through being replaced, on a mount with no atomic rename. Discard it rather than
+                // serve the same failure every time: it is stamped with the shard's current version,
+                // which would otherwise stop it being taken again until the shard is next published.
+                discard(localDir);
+                throw e;
+            }
+            try (db) {
                 return Optional.ofNullable(work.apply(db));
             }
         }
     }
 
     // Brings the local copy up to the shared shard's current version, and says whether there is
-    // anything to read. The version marker is written into the temp directory the push swaps in, so it
-    // moves with the data rather than after it: re-reading it once the copy is done tells us whether
-    // a push landed mid-copy, and one retry is enough for a push that takes far less time than a
-    // cycle.
+    // anything to read. The marker is written after the data it describes, so re-reading it once the
+    // copy is done tells us whether a publish landed mid-copy; one retry is enough for a publish that
+    // takes far less time than a cycle. A copy taken between the data and its marker is kept, labelled
+    // with the version it had: the marker that follows then reads as a change and it is taken again.
     private boolean refreshReadCopy(final Path sharedShardDir, final Path localDir) throws IOException {
         for (int attempt = 0; attempt < 2; attempt++) {
-            final String sharedVersion = readVersion(sharedShardDir);
+            final String sharedVersion = sharedVersion(sharedShardDir);
             if (sharedVersion == null) {
                 return false;
             }
@@ -205,14 +216,44 @@ public class PathwaysShardStore {
             }
             Files.createDirectories(localDir);
             Files.deleteIfExists(localDir.resolve(PlanBConstants.VERSION_FILE_NAME));
-            copyDown(sharedShardDir, localDir);
-            if (sharedVersion.equals(readVersion(sharedShardDir))) {
+            try {
+                copyDown(sharedShardDir, localDir);
+            } catch (final NoSuchFileException e) {
+                // Where the shared mount has no atomic rename, publishing replaces data.mdb by a plain
+                // move, so it can go between being found and being read. The next attempt takes the
+                // one that replaced it.
+                LOGGER.debug(() -> "Shard data went while copying " + sharedShardDir + ", retrying");
+                continue;
+            }
+            if (sharedVersion.equals(sharedVersion(sharedShardDir))) {
                 Files.writeString(localDir.resolve(PlanBConstants.VERSION_FILE_NAME), sharedVersion);
                 return true;
             }
         }
-        LOGGER.warn(() -> "Gave up refreshing " + localDir + "; it is being pushed to repeatedly");
+        LOGGER.warn(() -> "Gave up refreshing " + localDir + "; it is being published to repeatedly");
         return false;
+    }
+
+    // The shard's published version, or "" where it holds data that has no version yet — what a crash
+    // between publishing the data and writing the marker leaves on a shard's first publish. Reading that
+    // data beats reporting the shard empty, and recording "" means the first real version to appear
+    // reads as a change. Null where there is nothing there to read at all.
+    private static String sharedVersion(final Path sharedShardDir) {
+        final String version = readVersion(sharedShardDir);
+        if (version != null) {
+            return version;
+        }
+        return Files.exists(sharedShardDir.resolve(PlanBConstants.DATA_FILE_NAME))
+                ? ""
+                : null;
+    }
+
+    private static void discard(final Path localDir) {
+        try {
+            FileUtil.deleteDir(localDir);
+        } catch (final RuntimeException e) {
+            LOGGER.warn(() -> "Could not discard the unreadable copy at " + localDir + ": " + e.getMessage());
+        }
     }
 
     private static String readVersion(final Path dir) {

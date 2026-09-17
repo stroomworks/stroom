@@ -47,6 +47,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -95,7 +96,7 @@ class TestPathwaysShardStore {
 
         Mockito.when(pathCreator.toAppPath(Mockito.anyString()))
                 .thenReturn(tempDir.resolve("local"));
-        // push stamps .version with the pushing node's name, unlike pushArchive which needs no node.
+        // publishShard stamps .version with the publishing node's name.
         Mockito.when(nodeInfo.getThisNodeName()).thenReturn("test-node");
         store = new PathwaysShardStore(
                 new SharedFileStorePublisher(
@@ -252,6 +253,53 @@ class TestPathwaysShardStore {
                 .containsExactly("c", "k040", "k041", "k042", "k043", "k044",
                         "k045", "k046", "k047", "k048", "k049");
         assertThat(counter[0]).isEqualTo(11);
+    }
+
+    /**
+     * Queries read this directory holding no lock, so a publish must replace what is inside it rather
+     * than swap the directory itself — a shard that is briefly absent reads as a shard with no model.
+     */
+    @Test
+    void theSharedShardDirIsNeverReplaced() throws IOException {
+        store.withShard(doc, SHARD, localDir -> {
+            setCounter(localDir, 1);
+            return true;
+        });
+        final Object firstKey = Files.readAttributes(
+                sharedShardDir(), BasicFileAttributes.class).fileKey();
+
+        store.withShard(doc, SHARD, localDir -> {
+            setCounter(localDir, 2);
+            return true;
+        });
+
+        assertThat(Files.readAttributes(sharedShardDir(), BasicFileAttributes.class).fileKey())
+                .as("the shard directory must survive a push, not be swapped for a new one")
+                .isEqualTo(firstKey);
+    }
+
+    @Test
+    void aTempFileLeftByAnInterruptedPushIsSweptByTheNext() throws IOException {
+        store.withShard(doc, SHARD, localDir -> {
+            setCounter(localDir, 1);
+            return true;
+        });
+        final Path orphan = sharedShardDir().resolve(PlanBConstants.DATA_TMP_FILE_NAME + "_stale");
+        Files.writeString(orphan, "half a data file");
+
+        store.withShard(doc, SHARD, localDir -> {
+            setCounter(localDir, 2);
+            return true;
+        });
+
+        assertThat(orphan).doesNotExist();
+
+        final long[] seen = {-1};
+        store.withShard(doc, SHARD, localDir -> {
+            seen[0] = readCounter(localDir);
+            return false;
+        });
+        assertThat(seen[0]).isEqualTo(2);
     }
 
     // -----------------------------------------------------------------------
