@@ -132,51 +132,42 @@ public class HistogramDataModel {
     }
 
     /**
-     * The extent of a bucketed result: the first bucket's start, and the last bucket's start plus a
-     * width.
+     * The data's time extent, from a result of one row holding a minimum and a maximum.
      *
-     * <p>Separate from {@link #processBuckets} because the two answer different queries. The bars
-     * are bounded below at the visible range and so can never see data earlier than what is already
-     * shown; the extent has to come from an unbounded read, which is the whole point of "Show All".</p>
+     * <p>Separate from {@link #processBuckets} because the two answer different queries. The bars are
+     * bounded below at the visible range and so can never see data earlier than what is already
+     * shown; the extent has to come from an unbounded read, which is the whole point of "Show
+     * All".</p>
      *
-     * <p>Returns the bracket rather than the exact first and last event times: a bucket stands for
-     * everything within its width, so the last event lies somewhere inside the final bucket and the
-     * honest answer is its end. Widening rather than narrowing is the safe direction — "Show All"
-     * showing a little dead air beats it cutting data off.</p>
+     * <p>Columns are taken by position — the caller generated the query, or defaulted it, so it knows
+     * the first column is the minimum and the second the maximum. An aggregate's default column name
+     * is not something to depend on.</p>
      *
-     * <p>Assumes rows sorted by bucket ascending, which the extent query asks for, but does not rely
-     * on it: it takes the min and max rather than the first and last row.</p>
+     * <p>An earlier version of this took the first and last of a set of day buckets, which could only
+     * place "Show All" on the right day and cost a row per day the store spanned. Two aggregates give
+     * the exact instants in one row.</p>
      *
-     * @return {@code {startInclusive, endExclusive}}, or {@code null} if the result holds no
-     *         parseable bucket — an empty store, or a failed read
+     * @return {@code {min, max}}, or {@code null} if the result holds no parseable pair — an empty
+     *         store, or a failed read
      */
-    public static long[] extentOf(final TableResult tableResult, final long bucketWidthMs) {
-        if (tableResult == null || tableResult.getRows() == null || bucketWidthMs <= 0) {
+    public static long[] extentOf(final TableResult tableResult) {
+        if (tableResult == null || tableResult.getRows() == null) {
             return null;
         }
 
-        long min = Long.MAX_VALUE;
-        long max = Long.MIN_VALUE;
         for (final Row row : tableResult.getRows()) {
             final List<String> values = row.getValues();
-            if (values == null || values.isEmpty()) {
+            if (values == null || values.size() < 2) {
                 continue;
             }
-            final Long bucketStart = parseTime(values.get(0));
-            if (bucketStart == null) {
-                continue;
-            }
-            if (bucketStart < min) {
-                min = bucketStart;
-            }
-            if (bucketStart > max) {
-                max = bucketStart;
+            final Long min = parseTime(values.get(0));
+            final Long max = parseTime(values.get(1));
+            if (min != null && max != null && min <= max) {
+                return new long[]{min, max};
             }
         }
 
-        return min <= max
-                ? new long[]{min, max + bucketWidthMs}
-                : null;
+        return null;
     }
 
     /** Floors to a multiple of {@code width}, matching {@code floorTime}, which floors to the epoch. */

@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.floormap.shared.FloorMapFactHistory;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapHistogramBuckets;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.token.QuotedStringUtil;
 
@@ -428,13 +429,17 @@ class TestFloorMapQueryBuilder {
 
 
     @Test
-    void theHistogramQueryGroupsServerSide() {
-        final String query = FloorMapQueryBuilder.buildHistogramQuery("PT10M");
+    void theDefaultHistogramQueryGroupsServerSide() {
+        final String query = FloorMapQueryBuilder.defaultHistogramQuery();
 
-        // One row per bucket rather than one per event is the whole point.
+        // One row per bucket rather than one per event is the whole point, and it is the part that
+        // must survive a user editing this query.
         assertThat(query).contains("group by bucket");
         assertThat(query).contains("select bucket, count()");
-        assertThat(query).contains("floorTime(EffectiveTime, 'PT10M')");
+
+        // The width is a parameter, not substituted text: it changes on every zoom, and rewriting a
+        // query the user may have edited on every range change is what that would cost.
+        assertThat(query).contains("floorTime(EffectiveTime, param('bucketWidth'))");
 
         // Ordered, so the client can place counts without sorting them itself.
         assertThat(query).contains("sort by bucket");
@@ -444,10 +449,10 @@ class TestFloorMapQueryBuilder {
     }
 
     @Test
-    void theHistogramQueryClausesAreInStroomQlOrder() {
+    void theDefaultHistogramQueryClausesAreInStroomQlOrder() {
         // from [where] [eval] [group by] [having] [sort by] [limit] select - select comes last,
         // which is the ordering mistake that is easiest to make and produces a parse error.
-        final String query = FloorMapQueryBuilder.buildHistogramQuery("PT5M");
+        final String query = FloorMapQueryBuilder.defaultHistogramQuery();
         assertThat(query.indexOf("from ")).isLessThan(query.indexOf("eval "));
         assertThat(query.indexOf("eval ")).isLessThan(query.indexOf("group by "));
         assertThat(query.indexOf("group by ")).isLessThan(query.indexOf("sort by "));
@@ -455,14 +460,41 @@ class TestFloorMapQueryBuilder {
     }
 
     @Test
-    void everyWidthOnTheLadderProducesTheSameShapeOfQuery() {
+    void theBucketWidthParameterNameMatchesTheOneThePresenterSends() {
+        // The query and the parameter are set in two places; this is what keeps them the same one.
+        assertThat(FloorMapQueryBuilder.defaultHistogramQuery())
+                .contains("param('" + FloorMapQueryBuilder.PARAM_BUCKET_WIDTH + "')");
+    }
+
+    /**
+     * Every width the ladder can produce must be a duration {@code floorTime} accepts.
+     *
+     * <p>The query no longer embeds the width, so this checks the ladder itself rather than the
+     * query text: an ISO-8601 duration of digits and unit letters, which is what
+     * {@code Duration.parse} takes.</p>
+     */
+    @Test
+    void everyWidthOnTheLadderIsAnIsoDuration() {
         final long[] ranges = {0L, 3600_000L, 86_400_000L, 30L * 86_400_000L, 400L * 86_400_000L};
         for (final long range : ranges) {
-            final String iso = stroom.floormap.shared.FloorMapHistogramBuckets.durationFor(range);
-            final String query = FloorMapQueryBuilder.buildHistogramQuery(iso);
-            assertThat(query)
-                    .as("range %d gives duration %s", range, iso)
-                    .contains("floorTime(EffectiveTime, '" + iso + "')");
+            final String iso = FloorMapHistogramBuckets.durationFor(range);
+            assertThat(iso)
+                    .as("range %d", range)
+                    .matches("P(T)?\\d+[A-Z]");
         }
+    }
+
+    @Test
+    void theDefaultExtentQueryAsksForTwoValuesAndNoBound() {
+        final String query = FloorMapQueryBuilder.defaultExtentQuery();
+
+        // One row of two aggregates, not a set of buckets: the extent is the exact first and last
+        // event times, and its size does not depend on how long the store has been running.
+        assertThat(query).contains("select min(EffectiveTime), max(EffectiveTime)");
+        assertThat(query).startsWith("from param('EventStore')");
+
+        // Unbounded, which is what separates it from the histogram. A bound here could never reach
+        // data earlier than what is already shown - the one thing "Show All" exists to do.
+        assertThat(query).doesNotContain("where");
     }
 }

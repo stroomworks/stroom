@@ -1,0 +1,465 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.floormap.impl;
+
+import stroom.docref.DocRef;
+import stroom.docstore.api.DocFinder;
+import stroom.entity.shared.ExpressionCriteria;
+import stroom.floormap.shared.FloorMapEventExpiry;
+import stroom.floormap.shared.FloorMapEventStoreDoc;
+import stroom.index.shared.IndexFieldImpl;
+import stroom.planb.impl.PlanBDocCache;
+import stroom.planb.impl.StateFieldUtil;
+import stroom.planb.impl.dao.temporalstate.TemporalStateDb;
+import stroom.planb.impl.data.shard.ShardManager;
+import stroom.planb.shared.PlanBDocument;
+import stroom.query.api.ExpressionUtil;
+import stroom.query.api.Param;
+import stroom.query.api.Query;
+import stroom.query.api.SearchRequest;
+import stroom.query.api.SearchTaskProgress;
+import stroom.query.api.datasource.FindFieldCriteria;
+import stroom.query.api.datasource.IndexField;
+import stroom.query.api.datasource.QueryField;
+import stroom.query.common.v2.CoprocessorSettings;
+import stroom.query.common.v2.CoprocessorsFactory;
+import stroom.query.common.v2.CoprocessorsImpl;
+import stroom.query.common.v2.DataStoreSettings;
+import stroom.query.common.v2.ExpressionPredicateFactory;
+import stroom.query.common.v2.FieldInfoResultPageFactory;
+import stroom.query.common.v2.IndexFieldProvider;
+import stroom.query.common.v2.ResultStore;
+import stroom.query.common.v2.ResultStoreFactory;
+import stroom.query.common.v2.SearchProcess;
+import stroom.query.common.v2.SearchProvider;
+import stroom.security.api.SecurityContext;
+import stroom.task.api.TaskContextFactory;
+import stroom.task.api.TaskManager;
+import stroom.task.shared.TaskProgress;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.logging.LogUtil;
+import stroom.util.shared.NullSafe;
+import stroom.util.shared.ResultPage;
+
+import jakarta.inject.Inject;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * Serves queries against a {@link FloorMapEventStoreDoc}.
+ *
+ * <p>Plan B's own {@code StateSearchProvider} answers for {@code PlanBDoc.TYPE} only, and
+ * {@code SearchProviderRegistryImpl} resolves a provider by the data source's document type, so a
+ * type of ours needs a provider of ours. That is not merely a consequence of choosing a separate
+ * document type — it is the reason to have one, because it is what lets the read mode be
+ * <b>stated</b> rather than inferred.</p>
+ *
+ * <h2>The read mode is opt-in</h2>
+ *
+ * <p>The default is an ordinary range read, exactly as any other data source gives: a query with a
+ * time range gets the rows in that range. A snapshot — one row per entity, as the map wants —
+ * happens only when the caller says so, by sending <b>both</b> {@code readMode=snapshot} and
+ * {@code asAt}. Either alone is rejected by name.</p>
+ *
+ * <p><b>Why not default to a snapshot</b>, given that is what this store mostly serves? Because the
+ * store serves three reads and only one of them is a snapshot: the density histogram and the
+ * timeline extent both need every row. And because defaulting would be inference from absence — the
+ * Events Query tab and any dashboard send a time range and cannot set a param from query text, so
+ * they would silently get a read nobody asked for. The map is presenter code and opts in with one
+ * line; a human writing a query gets what they wrote.</p>
+ *
+ * <p>This replaces a mechanism that inferred the mode from whether a time term happened to be
+ * {@code <} rather than {@code >}, inside shared Plan B code, for every temporal state store in the
+ * system. See {@code docs/temporal-store-parity-report.md}.</p>
+ *
+ * <h2>Expiry comes from the store, not from the caller</h2>
+ *
+ * <p>The caller says <em>when</em>; the store says <em>how long an entity lasts</em>. So the floor
+ * passed to {@code searchSnapshot} is derived here from the document's own expiry rather than sent
+ * with the request — which is what makes two floor maps reading one store agree, and what makes the
+ * {@code expiry <= retention} check on the document meaningful.</p>
+ */
+public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFieldProvider {
+
+    private static final LambdaLogger LOGGER =
+            LambdaLoggerFactory.getLogger(FloorMapEventStoreSearchProvider.class);
+
+    /** Names the read the caller wants. Absent means an ordinary range read. */
+    public static final String PARAM_READ_MODE = "readMode";
+    /** The instant to take a snapshot at, as epoch milliseconds. */
+    public static final String PARAM_AS_AT = "asAt";
+    /** The only value of {@link #PARAM_READ_MODE} that changes anything. */
+    public static final String READ_MODE_SNAPSHOT = "snapshot";
+
+    /**
+     * The largest instant the key encoding can hold — six unsigned bytes of milliseconds.
+     *
+     * <p>Beyond this the store's own encoding refuses the value from several frames deeper, with a
+     * message about negative unsigned bytes that says nothing about what the caller sent.</p>
+     */
+    private static final long MAX_AS_AT_MILLIS = (1L << 48) - 1;
+
+    private final Executor executor;
+    private final FloorMapEventStoreStore eventStoreStore;
+    private final PlanBDocCache planBDocCache;
+    private final CoprocessorsFactory coprocessorsFactory;
+    private final ResultStoreFactory resultStoreFactory;
+    private final TaskManager taskManager;
+    private final TaskContextFactory taskContextFactory;
+    private final ShardManager shardManager;
+    private final ExpressionPredicateFactory expressionPredicateFactory;
+    private final SecurityContext securityContext;
+    private final FieldInfoResultPageFactory fieldInfoResultPageFactory;
+    private final DocFinder docFinder;
+
+    @Inject
+    public FloorMapEventStoreSearchProvider(final Executor executor,
+                                            final FloorMapEventStoreStore eventStoreStore,
+                                            final PlanBDocCache planBDocCache,
+                                            final CoprocessorsFactory coprocessorsFactory,
+                                            final ResultStoreFactory resultStoreFactory,
+                                            final TaskManager taskManager,
+                                            final TaskContextFactory taskContextFactory,
+                                            final ShardManager shardManager,
+                                            final ExpressionPredicateFactory expressionPredicateFactory,
+                                            final SecurityContext securityContext,
+                                            final FieldInfoResultPageFactory fieldInfoResultPageFactory,
+                                            final DocFinder docFinder) {
+        this.executor = executor;
+        this.eventStoreStore = eventStoreStore;
+        this.planBDocCache = planBDocCache;
+        this.coprocessorsFactory = coprocessorsFactory;
+        this.resultStoreFactory = resultStoreFactory;
+        this.taskManager = taskManager;
+        this.taskContextFactory = taskContextFactory;
+        this.shardManager = shardManager;
+        this.expressionPredicateFactory = expressionPredicateFactory;
+        this.securityContext = securityContext;
+        this.fieldInfoResultPageFactory = fieldInfoResultPageFactory;
+        this.docFinder = docFinder;
+    }
+
+    /**
+     * Resolves the store by name through Plan B's cache, as ingest does.
+     *
+     * <p>Whatever {@code PlanBDocCache} does about permissions is what happens here: it throws a
+     * {@code PermissionException} for a document the user may not read and a
+     * {@code PlanBDocNotFoundException} for one that is absent. Deliberately not given different
+     * behaviour from every other Plan B store — a store of ours answering differently would be its
+     * own kind of disclosure, and if that distinction is wrong it is wrong for Plan B as a whole.</p>
+     */
+    private PlanBDocument getDoc(final DocRef docRef) {
+        return securityContext.useAsReadResult(() -> {
+            Objects.requireNonNull(docRef, "Null doc reference");
+            Objects.requireNonNull(docRef.getName(), "Null doc key");
+            final PlanBDocument doc = planBDocCache.get(docRef.getName());
+            Objects.requireNonNull(doc, "Null event store doc");
+            return doc;
+        });
+    }
+
+    @Override
+    public String getDataSourceType() {
+        return FloorMapEventStoreDoc.TYPE;
+    }
+
+    @Override
+    public List<DocRef> getDataSourceDocRefs() {
+        return eventStoreStore.list();
+    }
+
+    @Override
+    public List<DocRef> findDataSourceByName(final String name) {
+        return docFinder.findByName(getDataSourceType(), name);
+    }
+
+    @Override
+    public Optional<QueryField> getTimeField(final DocRef docRef) {
+        return Optional.ofNullable(StateFieldUtil.getTimeField(getDoc(docRef)));
+    }
+
+    @Override
+    public ResultPage<QueryField> getFieldInfo(final FindFieldCriteria criteria) {
+        return fieldInfoResultPageFactory.create(
+                criteria,
+                StateFieldUtil.getQueryableFields(getDoc(criteria.getDataSourceRef())));
+    }
+
+    @Override
+    public int getFieldCount(final DocRef docRef) {
+        return NullSafe.getOrElse(
+                getDoc(docRef),
+                StateFieldUtil::getQueryableFields,
+                List::size,
+                0);
+    }
+
+    @Override
+    public IndexField getIndexField(final DocRef docRef, final String fieldName) {
+        final Map<String, QueryField> fieldMap = StateFieldUtil.getFieldMap(getDoc(docRef));
+        final QueryField queryField = fieldMap.get(fieldName);
+        if (queryField == null) {
+            return null;
+        }
+        return IndexFieldImpl.builder()
+                .fldName(queryField.getFldName())
+                .fldType(queryField.getFldType())
+                .build();
+    }
+
+    @Override
+    public Optional<String> fetchDocumentation(final DocRef docRef) {
+        return Optional.ofNullable(getDoc(docRef)).map(PlanBDocument::getDescription);
+    }
+
+    @Override
+    public ResultStore createResultStore(final SearchRequest searchRequest) {
+        final SearchRequest modifiedSearchRequest =
+                ExpressionUtil.replaceExpressionParameters(searchRequest);
+        final Query query = modifiedSearchRequest.getQuery();
+        final DocRef docRef = query.getDataSource();
+
+        // Checks permission as a side effect.
+        final PlanBDocument doc = getDoc(docRef);
+        Objects.requireNonNull(doc, "Unable to find event store with key: " + docRef.getName());
+
+        final Instant asAt = readAsAt(query.getParams());
+        final Instant notBefore = asAt == null
+                ? null
+                : expiryFloor(doc, asAt);
+
+        final Set<String> highlights = Collections.emptySet();
+        final List<CoprocessorSettings> coprocessorSettingsList =
+                coprocessorsFactory.createSettings(modifiedSearchRequest);
+        final DataStoreSettings dataStoreSettings = DataStoreSettings
+                .createBasicSearchResultStoreSettings();
+        final CoprocessorsImpl coprocessors = coprocessorsFactory.create(
+                modifiedSearchRequest.getSearchRequestSource(),
+                modifiedSearchRequest.getDateTimeSettings(),
+                modifiedSearchRequest.getKey(),
+                coprocessorSettingsList,
+                query.getParams(),
+                dataStoreSettings);
+
+        final String searchName = "Search '" + modifiedSearchRequest.getKey().toString() + "'";
+        final ResultStore resultStore = resultStoreFactory.create(
+                modifiedSearchRequest.getSearchRequestSource(),
+                coprocessors);
+        resultStore.addHighlights(highlights);
+
+        final String infoPrefix = LogUtil.message(
+                "Querying {} {} - ",
+                getStoreName(docRef),
+                modifiedSearchRequest.getKey().toString());
+        final String taskName = getTaskName(docRef);
+        final ExpressionCriteria criteria = new ExpressionCriteria(query.getExpression());
+
+        final Runnable runnable = taskContextFactory.context(searchName, taskContext -> {
+            final AtomicBoolean destroyed = new AtomicBoolean();
+
+            final SearchProcess searchProcess = new SearchProcess() {
+                @Override
+                public SearchTaskProgress getSearchTaskProgress() {
+                    final TaskProgress taskProgress = taskManager.getTaskProgress(taskContext);
+                    if (taskProgress != null) {
+                        return new SearchTaskProgress(
+                                taskProgress.getTaskName(),
+                                taskProgress.getTaskInfo(),
+                                taskProgress.getUserRef(),
+                                taskProgress.getThreadName(),
+                                taskProgress.getNodeName(),
+                                taskProgress.getSubmitTimeMs(),
+                                taskProgress.getTimeNowMs());
+                    }
+                    return null;
+                }
+
+                @Override
+                public void onTerminate() {
+                    destroyed.set(true);
+                    taskManager.terminate(taskContext.getTaskId());
+                }
+            };
+
+            resultStore.setSearchProcess(searchProcess);
+
+            if (!destroyed.get()) {
+                taskContext.info(() -> infoPrefix + "running query");
+
+                final Instant queryStart = Instant.now();
+                try {
+                    shardManager.get(doc.getName(), reader -> {
+                        if (asAt == null) {
+                            reader.search(
+                                    criteria,
+                                    coprocessors.getFieldIndex(),
+                                    modifiedSearchRequest.getDateTimeSettings(),
+                                    expressionPredicateFactory,
+                                    coprocessors);
+                        } else {
+                            snapshotReader(reader).searchSnapshot(
+                                    criteria,
+                                    coprocessors.getFieldIndex(),
+                                    modifiedSearchRequest.getDateTimeSettings(),
+                                    expressionPredicateFactory,
+                                    coprocessors,
+                                    asAt,
+                                    notBefore);
+                        }
+                        return null;
+                    });
+                } catch (final RuntimeException e) {
+                    LOGGER.debug(e::getMessage, e);
+                    resultStore.addError(e);
+                }
+
+                LOGGER.debug(() -> String.format("%s complete called, counter: %s",
+                        taskName,
+                        coprocessors.getValueCount()));
+                taskContext.info(() -> infoPrefix + "complete");
+                resultStore.signalComplete();
+                LOGGER.debug(() -> taskName + " Query finished in "
+                                   + Duration.between(queryStart, Instant.now()));
+            }
+        });
+        CompletableFuture.runAsync(runnable, executor);
+
+        return resultStore;
+    }
+
+    /**
+     * The instant to snapshot at, or {@code null} for an ordinary range read.
+     *
+     * <p>Rejects each half without the other rather than guessing. A {@code readMode} with no
+     * {@code asAt} has no instant to read at, and an {@code asAt} with no {@code readMode} is a
+     * caller who believes they asked for a snapshot and would otherwise silently get every row.</p>
+     */
+    private static Instant readAsAt(final List<Param> params) {
+        final String readMode = paramValue(params, PARAM_READ_MODE);
+        final String asAt = paramValue(params, PARAM_AS_AT);
+
+        if (readMode == null && asAt == null) {
+            return null;
+        }
+        if (readMode != null && !READ_MODE_SNAPSHOT.equalsIgnoreCase(readMode)) {
+            throw new IllegalArgumentException(
+                    "Unknown '" + PARAM_READ_MODE + "': '" + readMode + "'. The only supported value is '"
+                    + READ_MODE_SNAPSHOT + "'; omit it for an ordinary range read.");
+        }
+        if (readMode == null) {
+            // Strictly, asAt alone could be taken to mean a snapshot - it is unambiguous. It is
+            // refused so that the mode is always written down, which is what leaves room for a
+            // second one later without changing what an existing query means.
+            throw new IllegalArgumentException(
+                    "'" + PARAM_AS_AT + "' was supplied without '" + PARAM_READ_MODE + "="
+                    + READ_MODE_SNAPSHOT + "'. Supply both or neither.");
+        }
+        if (asAt == null) {
+            throw new IllegalArgumentException(
+                    "'" + PARAM_READ_MODE + "=" + READ_MODE_SNAPSHOT + "' requires '" + PARAM_AS_AT
+                    + "', the instant to take the snapshot at.");
+        }
+
+        // Epoch milliseconds only, deliberately: a snapshot's instant must not depend on how a date
+        // literal happens to be spelled, nor on the viewing user's time zone.
+        final long millis;
+        try {
+            millis = Long.parseLong(asAt.trim());
+        } catch (final NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "'" + PARAM_AS_AT + "' must be epoch milliseconds, but was: '" + asAt + "'");
+        }
+        // Range-checked here so an out-of-range instant is named, rather than surfacing from deep
+        // inside the key encoding as "Negative values are not permitted".
+        if (millis < 0 || millis > MAX_AS_AT_MILLIS) {
+            throw new IllegalArgumentException(
+                    "'" + PARAM_AS_AT + "' is outside the range this store can represent: " + millis);
+        }
+        return Instant.ofEpochMilli(millis);
+    }
+
+    /** The value of a named query parameter, or {@code null} where it was not supplied. */
+    private static String paramValue(final List<Param> params, final String key) {
+        if (params == null) {
+            return null;
+        }
+        for (final Param param : params) {
+            if (param != null && key.equals(param.getKey())) {
+                return param.getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The instant before which an entity is considered to have nothing in scope.
+     *
+     * <p>Taken from the store, not from the request. An entity whose newest event predates this is
+     * omitted rather than drawn at a position it left long ago.</p>
+     */
+    private static Instant expiryFloor(final PlanBDocument doc, final Instant asAt) {
+        if (doc instanceof final FloorMapEventStoreDoc eventStore) {
+            return Instant.ofEpochMilli(
+                    FloorMapEventExpiry.cutoff(asAt.toEpochMilli(), eventStore.getEventExpiry()));
+        }
+
+        // Resolved by name to a Plan B store of some other type. Refused rather than read without a
+        // floor: searchSnapshot requires a prefix-free key encoding, which only this document type
+        // guarantees, and over any other encoding it silently drops keys rather than failing. A
+        // missing expiry would be the least of it.
+        throw new IllegalStateException(
+                "A snapshot read needs a " + FloorMapEventStoreDoc.TYPE + ", but '"
+                + doc.getName() + "' is a " + doc.getType() + " store");
+    }
+
+    /**
+     * The reader as a {@link TemporalStateDb}, which is the only shape that can serve a snapshot.
+     *
+     * <p>A {@link FloorMapEventStoreDoc} always carries {@code stateType = TEMPORAL_STATE}, so this
+     * holds by construction; the check exists so that a store whose type was somehow changed fails
+     * with something a person can act on.</p>
+     */
+    private static TemporalStateDb snapshotReader(final Object reader) {
+        if (reader instanceof final TemporalStateDb temporalStateDb) {
+            return temporalStateDb;
+        }
+        throw new IllegalStateException(
+                "A snapshot read needs a temporal state store, but this store is a "
+                + (reader == null
+                        ? "null"
+                        : reader.getClass().getSimpleName()));
+    }
+
+    private String getStoreName(final DocRef docRef) {
+        return NullSafe.toStringOrElse(docRef, DocRef::getName, "Unknown Store");
+    }
+
+    private String getTaskName(final DocRef docRef) {
+        return getStoreName(docRef) + " Search";
+    }
+}

@@ -21,11 +21,17 @@ import stroom.docstore.api.DocumentActionHandlerBinder;
 import stroom.event.logging.api.ObjectInfoProviderBinder;
 import stroom.explorer.api.ExplorerActionHandler;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEventStoreDoc;
 import stroom.importexport.api.ImportExportActionHandler;
+import stroom.planb.impl.PlanBDocumentTypes;
+import stroom.query.api.datasource.DataSourceProvider;
+import stroom.query.common.v2.IndexFieldProvider;
+import stroom.query.common.v2.SearchProvider;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.multibindings.Multibinder;
 
 /**
  * Guice dependency injection module for the floor map feature.
@@ -57,6 +63,45 @@ public class FloorMapModule extends AbstractModule {
                 .bind(FloorMapDoc.class, FloorMapDocObjectInfoProvider.class);
 
         RestResourcesBinder.create(binder())
-                .bind(FloorMapResourceImpl.class);
+                .bind(FloorMapResourceImpl.class)
+                .bind(FloorMapEventStoreResourceImpl.class);
+
+        bindEventStore();
+    }
+
+    /**
+     * The FloorMap Event Store: a document of ours describing a Plan B store.
+     *
+     * <p>The {@link PlanBDocumentTypes} multibinding is the load-bearing line. It is what tells
+     * {@code PlanBDocCache} that documents of this type are Plan B stores, so a pipeline writing to
+     * a map name resolves one exactly as it resolves a {@code PlanBDoc}, and {@code ShardManager}
+     * finds it when deciding whether a shard is still live. Without it the document would persist
+     * and display but nothing could ever write to it, and its shard would be swept as an orphan.
+     * {@code PathwaysModule} registers {@code TracesDoc} the same way.</p>
+     */
+    private void bindEventStore() {
+        bind(FloorMapEventStoreStore.class).to(FloorMapEventStoreStoreImpl.class);
+
+        Multibinder.newSetBinder(binder(), String.class, PlanBDocumentTypes.class)
+                .addBinding()
+                .toInstance(FloorMapEventStoreDoc.TYPE);
+
+        GuiceUtil.buildMultiBinder(binder(), ExplorerActionHandler.class)
+                .addBinding(FloorMapEventStoreStoreImpl.class);
+        GuiceUtil.buildMultiBinder(binder(), ImportExportActionHandler.class)
+                .addBinding(FloorMapEventStoreStoreImpl.class);
+
+        DocumentActionHandlerBinder.create(binder())
+                .bind(FloorMapEventStoreDoc.TYPE, FloorMapEventStoreStoreImpl.class);
+
+        // The read. Plan B's StateSearchProvider answers for PlanBDoc.TYPE only, and providers are
+        // resolved by document type, so our type needs ours - which is what lets the read mode be
+        // stated by the caller rather than inferred from the shape of the expression.
+        GuiceUtil.buildMultiBinder(binder(), DataSourceProvider.class)
+                .addBinding(FloorMapEventStoreSearchProvider.class);
+        GuiceUtil.buildMultiBinder(binder(), SearchProvider.class)
+                .addBinding(FloorMapEventStoreSearchProvider.class);
+        GuiceUtil.buildMultiBinder(binder(), IndexFieldProvider.class)
+                .addBinding(FloorMapEventStoreSearchProvider.class);
     }
 }

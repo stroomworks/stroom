@@ -212,6 +212,12 @@ public class DocumentTypeRegistry {
             "Traces",
             SvgImage.DOCUMENT_TRACES);
 
+    public static final DocumentType FLOOR_MAP_EVENT_STORE_DOCUMENT_TYPE = new DocumentType(
+            DocumentTypeGroup.INDEXING,
+            "FloorMapEventStore",
+            "FloorMap Event Store",
+            SvgImage.DOCUMENT_FLOOR_MAP_EVENT_STORE);
+
 
     public static final DocumentType DUAL_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.SEARCH,
@@ -302,6 +308,7 @@ public class DocumentTypeRegistry {
         put(XSLT_DOCUMENT_TYPE);
         put(PATHWAYS_DOCUMENT_TYPE);
         put(TRACES_DOCUMENT_TYPE);
+        put(FLOOR_MAP_EVENT_STORE_DOCUMENT_TYPE);
         put(SQL_TEMPORAL_STORE_DOCUMENT_TYPE);
 
         // Searchables

@@ -35,6 +35,7 @@ import stroom.util.shared.Severity;
 
 import com.google.web.bindery.event.shared.EventBus;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -111,6 +112,16 @@ class FloorMapFullReadQueryHelper {
      * @see Outcome#truncated()
      */
     static final int MAX_ROWS = 20_000;
+
+    /**
+     * The read-mode contract, as {@code FloorMapEventStoreSearchProvider} defines it.
+     *
+     * <p>Both are required together; either alone is rejected server side by name, deliberately, so
+     * that a caller who believes they asked for a snapshot cannot silently get every row.</p>
+     */
+    private static final String PARAM_READ_MODE = "readMode";
+    private static final String PARAM_AS_AT = "asAt";
+    private static final String READ_MODE_SNAPSHOT = "snapshot";
 
     /**
      * How long the server may spend on a baseline before responding.
@@ -300,16 +311,34 @@ class FloorMapFullReadQueryHelper {
     }
 
     /**
-     * Starts a read bounded to {@code [from, to]} — the events baseline's horizon.
+     * Starts a point-in-time read: one row per entity, as the entity was at {@code asAt}.
      *
-     * @param query  the resolved query text; a blank one is a no-op
-     * @param params the store references, matching the substitutions already made in {@code query}
-     * @param from   inclusive lower bound of the horizon
-     * @param to     inclusive upper bound — 1 ms is added here because the generated term is
-     *               {@code LESS_THAN}
+     * <p><b>Sends no {@code TimeRange}, and says what it wants instead.</b> A {@code TimeRange} is
+     * folded into {@code >= from AND < to} expression terms by {@code ResultStoreManager} before the
+     * store ever sees it, which is how the read mode used to be inferred — from whether a time term
+     * happened to be {@code <} rather than {@code >}. The store now takes the mode as a parameter,
+     * so the request carries {@code readMode=snapshot} and {@code asAt} and leaves the expression
+     * alone.</p>
+     *
+     * <p><b>Expiry is not sent.</b> How long an entity stays on the map is a property of the store,
+     * not of this request, so the server derives the floor from the store document. That is what
+     * makes two floor maps reading one store agree with each other.</p>
+     *
+     * <p>{@code asAt} is epoch milliseconds, which is the only form the server accepts: a snapshot's
+     * instant must not depend on how a date is spelled or on the viewer's time zone.</p>
+     *
+     * @param query  the query text; a blank one is a no-op
+     * @param params the store references
+     * @param asAt   the instant to read the store as at
      */
-    void run(final String query, final List<Param> params, final long from, final long to) {
-        start(query, params, new TimeRange("CUSTOM", String.valueOf(from), String.valueOf(to + 1)), to);
+    void runSnapshot(final String query, final List<Param> params, final long asAt) {
+        final List<Param> withReadMode = new ArrayList<>();
+        if (params != null) {
+            withReadMode.addAll(params);
+        }
+        withReadMode.add(new Param(PARAM_READ_MODE, READ_MODE_SNAPSHOT));
+        withReadMode.add(new Param(PARAM_AS_AT, String.valueOf(asAt)));
+        start(query, withReadMode, null, asAt);
     }
 
     /**

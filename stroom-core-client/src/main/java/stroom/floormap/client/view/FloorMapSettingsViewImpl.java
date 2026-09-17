@@ -21,9 +21,12 @@ import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 
+import com.google.gwt.event.logical.shared.ValueChangeEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.uibinder.client.UiHandler;
 import com.google.gwt.user.client.ui.SimplePanel;
+import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
@@ -57,6 +60,12 @@ public class FloorMapSettingsViewImpl
 
     @UiField
     SimplePanel schemaToolbarContainer;
+
+    @UiField
+    TextArea histogramQuery;
+
+    @UiField
+    TextArea extentQuery;
 
     @UiField
     SimplePanel schemaGridContainer;
@@ -142,7 +151,44 @@ public class FloorMapSettingsViewImpl
      */
     @Override
     public void onReadOnly(final boolean readOnly) {
-        // No code
+        histogramQuery.setEnabled(!readOnly);
+        extentQuery.setEnabled(!readOnly);
+    }
+
+    @Override
+    public String getHistogramQuery() {
+        return histogramQuery.getValue();
+    }
+
+    @Override
+    public void setHistogramQuery(final String query) {
+        histogramQuery.setValue(query);
+    }
+
+    @Override
+    public String getExtentQuery() {
+        return extentQuery.getValue();
+    }
+
+    @Override
+    public void setExtentQuery(final String query) {
+        extentQuery.setValue(query);
+    }
+
+    @UiHandler("histogramQuery")
+    public void onHistogramQuery(final ValueChangeEvent<String> event) {
+        fireDirty();
+    }
+
+    @UiHandler("extentQuery")
+    public void onExtentQuery(final ValueChangeEvent<String> event) {
+        fireDirty();
+    }
+
+    private void fireDirty() {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onDirty();
+        }
     }
 
     // --------------------------------------------------------------------------------

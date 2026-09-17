@@ -29,15 +29,14 @@ import stroom.floormap.client.cell.AccessibleSelectionCell;
 import stroom.floormap.client.cell.AccessibleTextInputCell;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEventStoreDoc;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.ValueFormat;
-import stroom.planb.shared.PlanBDoc;
-import stroom.planb.shared.PlanBDocResource;
-import stroom.planb.shared.StateType;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.svg.client.SvgPresets;
+import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 
@@ -69,7 +68,7 @@ import java.util.stream.Collectors;
  *
  * <p>This presenter lets users configure:</p>
  * <ul>
- *   <li>The <strong>Events Store</strong> reference – a {@link PlanBDoc} read for
+ *   <li>The <strong>Events Store</strong> reference – a {@link FloorMapEventStoreDoc} read for
  *       floor-map event data. Nothing writes to it from here.</li>
  *   <li>The <strong>Facts Store</strong> reference – a {@link SqlTemporalStoreDoc} used to
  *       persist floor-map fact data.</li>
@@ -95,8 +94,6 @@ public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc>
         implements DirtyUiHandlers {
 
-    private static final PlanBDocResource PLAN_B_DOC_RESOURCE =
-            GWT.create(PlanBDocResource.class);
 
     private final RestFactory restFactory;
 
@@ -107,7 +104,6 @@ public class FloorMapSettingsPresenter
      * a mis-click while one that works is already configured — and clearing would turn that into a
      * second problem to notice and fix.</p>
      */
-    private DocRef lastValidEventsStoreRef;
 
     private final DocSelectionBoxPresenter eventsStoreRefPresenter;
     private final DocSelectionBoxPresenter factsStoreRefPresenter;
@@ -150,7 +146,7 @@ public class FloorMapSettingsPresenter
 
         this.eventsStoreRefPresenter = docSelectionBoxPresenterProvider.get();
         this.eventsStoreRefPresenter.setCaption("Choose Events Store");
-        this.eventsStoreRefPresenter.setIncludedTypes(PlanBDoc.TYPE);
+        this.eventsStoreRefPresenter.setIncludedTypes(FloorMapEventStoreDoc.TYPE);
         this.eventsStoreRefPresenter.setRequiredPermissions(DocumentPermission.USE);
         view.setEventsStoreRefView(this.eventsStoreRefPresenter.getView());
 
@@ -446,76 +442,14 @@ public class FloorMapSettingsPresenter
         return doc.activeElement;
     }-*/;
 
-    /**
-     * Checks a newly-chosen events store is a Temporal State store, and puts the previous choice
-     * back if it is not.
-     *
-     * <p>Of the eight Plan B state types only {@code TEMPORAL_STATE} records an effective time per
-     * entry, and only it exposes the {@code EffectiveTime} field the events query selects. The
-     * picker filters by document <em>type</em> and cannot filter by state type, so every Plan B
-     * document in the tree is offered here — including the seven that cannot work.</p>
-     *
-     * <p>The initialisation dialog has checked this since {@code db0cd682ee}, but only for newly
-     * created documents; a store swapped on this tab was unchecked, and the failure it produces is
-     * an unknown-field error at query time on another tab, which reads as nothing being drawn
-     * rather than as a bad choice made here.</p>
-     *
-     * <p>Validated on selection rather than on save because {@code onWrite} is synchronous and this
-     * needs a fetch — and because telling someone at the moment they choose is better than telling
-     * them when they try to leave.</p>
-     */
-    private void validateEventsStore() {
-        final DocRef selected = eventsStoreRefPresenter.getSelectedEntityReference();
-        if (selected == null || !PlanBDoc.TYPE.equals(selected.getType())) {
-            lastValidEventsStoreRef = selected;
-            return;
-        }
-        if (Objects.equals(selected, lastValidEventsStoreRef)) {
-            return;
-        }
-
-        //noinspection unused error
-        restFactory
-                .create(PLAN_B_DOC_RESOURCE)
-                .method(res -> res.fetch(selected.getUuid()))
-                .onSuccess(planBDoc -> {
-                    if (StateType.TEMPORAL_STATE == planBDoc.getStateType()) {
-                        lastValidEventsStoreRef = selected;
-                    } else {
-                        AlertEvent.fireWarn(FloorMapSettingsPresenter.this,
-                                "The events store '" + selected.getName() + "' is a "
-                                + describe(planBDoc.getStateType()) + " store. A floor map's events "
-                                + "store must be a Temporal State store, as that is the only kind "
-                                + "that records an effective time per entry.",
-                                () -> {
-                                    eventsStoreRefPresenter.setSelectedEntityReference(
-                                            lastValidEventsStoreRef, true);
-                                    onChange();
-                                });
-                    }
-                })
-                // A failed fetch says nothing about the store's type, so it must not reject the
-                // choice. Left as selected; the events query will report its own failure.
-                .onFailure(error -> lastValidEventsStoreRef = selected)
-                .taskMonitorFactory(this)
-                .exec();
-    }
-
-    /** Renders a {@link StateType} for a message, tolerating a {@code null}. */
-    private static String describe(final StateType stateType) {
-        return stateType == null
-                ? "store with no state type set"
-                : stateType.getDisplayValue();
-    }
 
     @Override
     protected void onBind() {
         super.onBind();
         //noinspection unused e
-        registerHandler(eventsStoreRefPresenter.addDataSelectionHandler(e -> {
-            validateEventsStore();
-            onChange();
-        }));
+        // No validation on selection: the picker only offers FloorMapEventStoreDoc, and that
+        // type fixes its own state type, so there is no longer a wrong store to choose.
+        registerHandler(eventsStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
         //noinspection unused e
         registerHandler(factsStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
         //noinspection unused e
@@ -614,6 +548,14 @@ public class FloorMapSettingsPresenter
         factsStoreRefPresenter.setSelectedEntityReference(floorMapDoc.getFactsStoreRef(), true);
         factsStoreRefPresenter.setEnabled(!readOnly);
 
+        // Shown with their defaults rather than blank, so the shape a user is editing is visible.
+        getView().setHistogramQuery(NullSafe.isBlankString(floorMapDoc.getHistogramQuery())
+                ? FloorMapQueryBuilder.defaultHistogramQuery()
+                : floorMapDoc.getHistogramQuery());
+        getView().setExtentQuery(NullSafe.isBlankString(floorMapDoc.getExtentQuery())
+                ? FloorMapQueryBuilder.defaultExtentQuery()
+                : floorMapDoc.getExtentQuery());
+
         // Value Format
         final ValueFormat vf = floorMapDoc.getValueFormat();
         for (int i = 0; i < valueFormatListBox.getItemCount(); i++) {
@@ -698,6 +640,8 @@ public class FloorMapSettingsPresenter
                 .factsStoreRef(factsStoreRefPresenter.getSelectedEntityReference())
                 .valueFormat(vf)
                 .valueSchema(new ArrayList<>(schemaDataProvider.getList()))
+                .histogramQuery(getView().getHistogramQuery())
+                .extentQuery(getView().getExtentQuery())
                 .build();
     }
 
@@ -734,6 +678,16 @@ public class FloorMapSettingsPresenter
          * @param view the {@link DocSelectionBoxPresenter} view
          */
         void setFactsStoreRefView(View view);
+
+        /** The timeline histogram query, as edited. */
+        String getHistogramQuery();
+
+        void setHistogramQuery(String query);
+
+        /** The "Show All" extent query, as edited. */
+        String getExtentQuery();
+
+        void setExtentQuery(String query);
 
         /**
          * Sets the widget used for the Value Format dropdown.

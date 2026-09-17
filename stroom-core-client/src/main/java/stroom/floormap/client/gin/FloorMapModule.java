@@ -17,6 +17,7 @@
 package stroom.floormap.client.gin;
 
 import stroom.core.client.gin.PluginModule;
+import stroom.floormap.client.FloorMapEventStorePlugin;
 import stroom.floormap.client.FloorMapPlugin;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
@@ -26,6 +27,9 @@ import stroom.floormap.client.presenter.FloorMapDockPresenter;
 import stroom.floormap.client.presenter.FloorMapDockPresenter.FloorMapDockView;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
+import stroom.floormap.client.presenter.FloorMapEventStorePresenter;
+import stroom.floormap.client.presenter.FloorMapEventStoreSettingsPresenter;
+import stroom.floormap.client.presenter.FloorMapEventStoreSettingsPresenter.FloorMapEventStoreSettingsView;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 import stroom.floormap.client.presenter.FloorMapGroupEditPresenter;
@@ -61,6 +65,7 @@ import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapClusterViewImpl;
 import stroom.floormap.client.view.FloorMapDockViewImpl;
 import stroom.floormap.client.view.FloorMapEditorViewImpl;
+import stroom.floormap.client.view.FloorMapEventStoreSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapFactListViewImpl;
 import stroom.floormap.client.view.FloorMapGroupEditViewImpl;
 import stroom.floormap.client.view.FloorMapGroupsViewImpl;
@@ -86,8 +91,15 @@ public class FloorMapModule extends PluginModule {
     @Override
     protected void configure() {
         bindPlugin(FloorMapPlugin.class);
+        // The events store is a document of its own, creatable from the explorer, so it needs its
+        // own plugin and editor rather than appearing inside the floor map's own editor.
+        bindPlugin(FloorMapEventStorePlugin.class);
 
         bind(FloorMapPresenter.class);
+        bind(FloorMapEventStorePresenter.class);
+        bindPresenterWidget(FloorMapEventStoreSettingsPresenter.class,
+                FloorMapEventStoreSettingsView.class,
+                FloorMapEventStoreSettingsViewImpl.class);
 
         // Lists a cluster's members, with a search box and filters over the
         // app-wide PagerView that holds the grid.

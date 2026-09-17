@@ -11,8 +11,9 @@
                     for example people or vehicles whose position changes over time. Events are
                     drawn as the overlay that moves (and leaves a fading trail) as the timeline
                     plays.</p>
-                <p>Must be an <strong>SQL Temporal Store</strong>. Leave blank if the map
-                    has no moving events.</p>
+                <p>Must be a <strong>FloorMap Event Store</strong>, which is the document type
+                    that fixes the key encoding the map's point-in-time read needs, and that carries
+                    the event expiry. Leave blank if the map has no moving events.</p>
             </form:HelpHTML>
             <g:SimplePanel ui:field="eventsStoreRefContainer" />
         </form:FormGroup>
@@ -72,6 +73,33 @@
                 <g:SimplePanel ui:field="schemaToolbarContainer" />
                 <g:SimplePanel ui:field="schemaGridContainer" height="250px" />
             </g:FlowPanel>
+        </form:FormGroup>
+        <!-- The two generated reads, editable. Everything fragile about them - the store, the
+             bucket width, the time bounds and the read mode - is passed as a parameter or on the
+             request, so what is left here is filtering and field selection. -->
+        <form:FormGroup label="Histogram Query">
+            <form:HelpHTML>
+                <p>Counts the events behind the timeline's <strong>density bars</strong>. Returns one
+                    row per bucket, which is what keeps its size bounded by the visible range rather
+                    than by how many events the store holds.</p>
+                <p>The bucket width arrives as <code>param('bucketWidth')</code> and changes as you
+                    zoom, so leave that alone. Add a <code>where</code> clause to count only some
+                    events.</p>
+            </form:HelpHTML>
+            <g:TextArea ui:field="histogramQuery" addStyleNames="allow-focus w-100"
+                        visibleLines="5"/>
+        </form:FormGroup>
+        <form:FormGroup label="Show All Query">
+            <form:HelpHTML>
+                <p>Finds the first and last event times, which is what the timeline's
+                    <strong>Show All</strong> button fits to.</p>
+                <p>Deliberately unbounded: a time bound here could never reach data earlier than
+                    what is already shown, which is the one thing Show All exists to do. Note that a
+                    <code>where</code> clause narrows the extent, so Show All would fit to the
+                    filtered subset rather than to the store.</p>
+            </form:HelpHTML>
+            <g:TextArea ui:field="extentQuery" addStyleNames="allow-focus w-100"
+                        visibleLines="3"/>
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

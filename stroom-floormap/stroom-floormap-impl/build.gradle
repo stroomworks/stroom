@@ -25,7 +25,17 @@ dependencies {
     implementation project(':stroom-event-logging:stroom-event-logging-api')
     implementation project(':stroom-explorer:stroom-explorer-api')
     implementation project(':stroom-importexport:stroom-importexport-api')
+    // The FloorMap Event Store is a Plan B store: its document registers with PlanBDocumentTypes and
+    // its read calls TemporalStateDb.searchSnapshot. stroom-pathways-impl depends on Plan B the same
+    // way for TracesDoc.
+    implementation project(':stroom-planb:stroom-planb-impl')
+    implementation project(':stroom-cluster:stroom-cluster-lock-api')
     implementation project(':stroom-query:stroom-query-api')
+    implementation project(':stroom-query:stroom-query-common')
+    // Not imported directly, but needed to resolve FieldIndex/ValuesConsumer in the
+    // TemporalStateDb.searchSnapshot signature the provider calls.
+    implementation project(':stroom-query:stroom-query-language')
+    implementation project(':stroom-task:stroom-task-api')
     implementation project(':stroom-security:stroom-security-api')
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
@@ -33,6 +43,7 @@ dependencies {
     implementation libs.eventLogging
     implementation libs.guice
     implementation libs.restygwt
+    implementation libs.slf4j.api
 
     testImplementation libs.bundles.common.test.implementation
     testRuntimeOnly libs.bundles.common.test.runtime

@@ -23,7 +23,6 @@ import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
 import stroom.query.api.TimeRange;
 import stroom.query.shared.QueryTablePreferences;
-import stroom.util.shared.time.SimpleDuration;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -42,7 +41,7 @@ import java.util.Objects;
  *
  * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> (a
  * {@code SqlTemporalStoreDoc}, which the Editor tab writes to) and an
- * <em>events store</em> (a {@code PlanBDoc}, which is read-only here), along
+ * <em>events store</em> (a {@code FloorMapEventStoreDoc}, which is read-only here), along
  * with the queries, display preferences, and value-schema metadata the floor
  * map UI needs to parse and render temporal entries on a 2-D canvas.</p>
  *
@@ -73,7 +72,7 @@ import java.util.Objects;
  * <ul>
  *   <li><strong>Facts store</strong> ({@link #factsStoreRef}) — a SQL Temporal Store
  *       containing the spatial data (objects, positions, background image, matrices).</li>
- *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a Plan B store of
+ *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a FloorMap Event Store of
  *       state type {@code TEMPORAL_STATE}, containing status / event records keyed by
  *       entity ID. Queried via {@link #eventsQuery}; never written to by the floor map.</li>
  * </ul>
@@ -213,6 +212,20 @@ public class FloorMapDoc extends AbstractDoc {
     private final String eventsQuery;
 
     /**
+     * StroomQL behind the timeline's density histogram, and behind "Show All".
+     *
+     * <p>Editable like {@link #eventsQuery}, and defaulted on creation from
+     * {@code FloorMapQueryBuilder}. Both read the events store directly rather than wrapping the
+     * events query, so a {@code where} clause here narrows the bars or the extent independently of
+     * what the map draws.</p>
+     */
+    @JsonProperty
+    private final String histogramQuery;
+
+    @JsonProperty
+    private final String extentQuery;
+
+    /**
      * Time range filter applied to the events query.
      * May be {@code null} if no time range restriction is configured.
      */
@@ -237,16 +250,6 @@ public class FloorMapDoc extends AbstractDoc {
      */
     @JsonProperty
     private final ValueFormat valueFormat;
-
-    /**
-     * How long an entity stays on the map after its last event.
-     *
-     * <p>Null means the default rather than "off" — see {@link FloorMapEventExpiry}. Every document
-     * written before this field existed has none, and those are the documents whose entities last
-     * forever, which is the behaviour it removes.</p>
-     */
-    @JsonProperty
-    private final SimpleDuration eventExpiry;
 
     /**
      * Ordered list of field mappings that describe the structure of a
@@ -352,8 +355,6 @@ public class FloorMapDoc extends AbstractDoc {
      * @param eventsQuery                 StroomQL for the events store; may be {@code null}
      * @param eventsQueryTimeRange        time range for the events query; may be {@code null}
      * @param eventsQueryTablePreferences table prefs for events query results; may be {@code null}
-     * @param eventExpiry                 how long an entity stays after its last event; may be
-     *                                    {@code null}, which means the default rather than off
      * @param valueFormat                 value serialisation format; may be {@code null}
      *                                    (defaults to {@link ValueFormat#JSON} via getter)
      * @param valueSchema                 value field mappings; may be {@code null}
@@ -383,10 +384,11 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("eventsStoreRef")
                        final DocRef eventsStoreRef,
                        @JsonProperty("eventsQuery") final String eventsQuery,
+                       @JsonProperty("histogramQuery") final String histogramQuery,
+                       @JsonProperty("extentQuery") final String extentQuery,
                        @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
                        @JsonProperty("eventsQueryTablePreferences")
                            final QueryTablePreferences eventsQueryTablePreferences,
-                       @JsonProperty("eventExpiry") final SimpleDuration eventExpiry,
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
                        @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema,
                        @JsonProperty("typeStyles") final List<TypeStyle> typeStyles,
@@ -412,10 +414,11 @@ public class FloorMapDoc extends AbstractDoc {
         this.eventsStoreRef = eventsStoreRef;
 
         this.eventsQuery = eventsQuery;
+        this.histogramQuery = histogramQuery;
+        this.extentQuery = extentQuery;
         this.eventsQueryTimeRange = eventsQueryTimeRange;
         this.eventsQueryTablePreferences = eventsQueryTablePreferences;
 
-        this.eventExpiry = eventExpiry;
         this.valueFormat = valueFormat;
         this.valueSchema = copyOrNull(valueSchema);
         this.typeStyles = copyOrNull(typeStyles);
@@ -465,7 +468,7 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
-     * Returns the reference to the events store (a Plan B store).
+     * Returns the reference to the events store (a FloorMap Event Store).
      *
      * <p>The events store contains status / event records keyed by
      * entity ID, and is only ever read.</p>
@@ -484,6 +487,21 @@ public class FloorMapDoc extends AbstractDoc {
      */
     public String getEventsQuery() {
         return eventsQuery;
+    }
+
+    /**
+     * StroomQL for the timeline's density histogram.
+     *
+     * @return the query, or {@code null} where the document sets none, in which case the caller
+     *         falls back to the generated default
+     */
+    public String getHistogramQuery() {
+        return histogramQuery;
+    }
+
+    /** StroomQL for the timeline's "Show All" extent; may be {@code null}, as above. */
+    public String getExtentQuery() {
+        return extentQuery;
     }
 
     /**
@@ -519,20 +537,6 @@ public class FloorMapDoc extends AbstractDoc {
     public FloorMapTransformationMatrix getMatrix() {
         return matrix;
     }
-
-    /**
-     * How long an entity stays on the map after its last event.
-     *
-     * <p>Returned raw, so a caller can tell "unset" from "set to twenty-four hours" — the two are
-     * equal in effect but not in meaning, and the editor needs the difference. Use
-     * {@link FloorMapEventExpiry#millis(SimpleDuration)} to resolve it for a read.</p>
-     *
-     * @return the configured duration, or {@code null} where the document sets none
-     */
-    public SimpleDuration getEventExpiry() {
-        return eventExpiry;
-    }
-
 
     /**
      * Returns the serialisation format used for the temporal entry's
@@ -655,9 +659,10 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(factsStoreRef, that.factsStoreRef) &&
                Objects.equals(eventsStoreRef, that.eventsStoreRef) &&
                Objects.equals(eventsQuery, that.eventsQuery) &&
+               Objects.equals(histogramQuery, that.histogramQuery) &&
+               Objects.equals(extentQuery, that.extentQuery) &&
                Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
-               Objects.equals(eventExpiry, that.eventExpiry) &&
                Objects.equals(valueFormat, that.valueFormat) &&
                Objects.equals(valueSchema, that.valueSchema) &&
                Objects.equals(typeStyles, that.typeStyles) &&
@@ -681,9 +686,10 @@ public class FloorMapDoc extends AbstractDoc {
                 factsStoreRef,
                 eventsStoreRef,
                 eventsQuery,
+                histogramQuery,
+                extentQuery,
                 eventsQueryTimeRange,
                 eventsQueryTablePreferences,
-                eventExpiry,
                 valueFormat,
                 valueSchema,
                 typeStyles,
@@ -760,9 +766,10 @@ public class FloorMapDoc extends AbstractDoc {
         private DocRef factsStoreRef;
         private DocRef eventsStoreRef;
         private String eventsQuery;
+        private String histogramQuery;
+        private String extentQuery;
         private TimeRange eventsQueryTimeRange;
         private QueryTablePreferences eventsQueryTablePreferences;
-        private SimpleDuration eventExpiry;
         private ValueFormat valueFormat;
         private List<FloorMapFieldMapping> valueSchema;
         private List<TypeStyle> typeStyles;
@@ -790,9 +797,10 @@ public class FloorMapDoc extends AbstractDoc {
             this.factsStoreRef = doc.factsStoreRef;
             this.eventsStoreRef = doc.eventsStoreRef;
             this.eventsQuery = doc.eventsQuery;
+            this.histogramQuery = doc.histogramQuery;
+            this.extentQuery = doc.extentQuery;
             this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
-            this.eventExpiry = doc.eventExpiry;
             this.valueFormat = doc.valueFormat;
             this.valueSchema = copyOrNull(doc.valueSchema);
             this.typeStyles = copyOrNull(doc.typeStyles);
@@ -885,6 +893,16 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder histogramQuery(final String histogramQuery) {
+            this.histogramQuery = histogramQuery;
+            return self();
+        }
+
+        public Builder extentQuery(final String extentQuery) {
+            this.extentQuery = extentQuery;
+            return self();
+        }
+
         /**
          * Sets the time range filter for the events query.
          *
@@ -919,11 +937,6 @@ public class FloorMapDoc extends AbstractDoc {
          *                    to use the default ({@link ValueFormat#JSON})
          * @return this builder
          */
-        public Builder eventExpiry(final SimpleDuration eventExpiry) {
-            this.eventExpiry = eventExpiry;
-            return this;
-        }
-
         public Builder valueFormat(final ValueFormat valueFormat) {
             this.valueFormat = valueFormat;
             return self();
@@ -1009,9 +1022,10 @@ public class FloorMapDoc extends AbstractDoc {
                     factsStoreRef,
                     eventsStoreRef,
                     eventsQuery,
+                    histogramQuery,
+                    extentQuery,
                     eventsQueryTimeRange,
                     eventsQueryTablePreferences,
-                    eventExpiry,
                     valueFormat,
                     valueSchema,
                     typeStyles,

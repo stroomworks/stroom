@@ -33,7 +33,6 @@ import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapEventColumns;
-import stroom.floormap.shared.FloorMapEventExpiry;
 import stroom.floormap.shared.FloorMapEventRole;
 import stroom.floormap.shared.FloorMapEventsQuery;
 import stroom.floormap.shared.FloorMapEventsQueryOrder;
@@ -892,16 +891,11 @@ public class FloorMapMapPresenter
             return;
         }
         if (!eventsQueryHelper.isRunning() || pendingDiscontinuity) {
-            // The lower bound is the expiry cutoff, and the store honours it: an entity whose latest
-            // event predates it has nothing in scope and is not returned. Expiry is therefore the
-            // store's own semantics rather than a filter applied to what it sends back - which also
-            // means it is decided against real timestamps instead of the rendered text a result
-            // carries.
-            eventsQueryHelper.run(
-                    query,
-                    queryParams(),
-                    FloorMapEventExpiry.cutoff(t, getEntity().getEventExpiry()),
-                    t);
+            // A snapshot at t, asked for rather than inferred. Expiry is not sent: it belongs to the
+            // event store document, so the server derives the floor from there - which is what makes
+            // two floor maps reading one store agree, and what lets the store check expiry against
+            // its own retention.
+            eventsQueryHelper.runSnapshot(query, queryParams(), t);
         }
     }
 
@@ -1641,7 +1635,7 @@ public class FloorMapMapPresenter
      * "when both events and facts are sourced from the same data store". <b>That cannot happen.</b>
      * The two store references are type-disjoint and enforced as such wherever they can be set:
      * the facts store is a {@code SqlTemporalStoreDoc} because the Editor tab writes spatial data
-     * back to it, and the events store is a {@code PlanBDoc} that is only ever read — see
+     * back to it, and the events store is a {@code FloorMapEventStoreDoc} that is only ever read — see
      * {@link FloorMapInitPresenter}. So the fallback answered a different question (when was the
      * floor plan last edited) in the place reserved for this one, and its second helper could only
      * ever run a query with an unresolvable {@code from} clause. Both are gone.</p>
@@ -1671,29 +1665,55 @@ public class FloorMapMapPresenter
         // Counted server-side, one row per bucket. The read this replaced returned every event the
         // store held and bucketed them here, which is the one read whose size grows without bound.
         histogramBucketWidthMs = FloorMapHistogramBuckets.widthFor(end - start);
-        final String query = FloorMapQueryBuilder.buildHistogramQuery(
-                FloorMapHistogramBuckets.durationFor(end - start));
-        histogramQueryHelper.run(query, queryParams(), start);
+
+        // The width is a parameter rather than text: it changes on every zoom, and substituting it
+        // would mean rewriting a query the user may have edited.
+        final List<Param> params = new ArrayList<>();
+        final List<Param> storeParams = queryParams();
+        if (storeParams != null) {
+            params.addAll(storeParams);
+        }
+        params.add(new Param(
+                FloorMapQueryBuilder.PARAM_BUCKET_WIDTH,
+                FloorMapHistogramBuckets.durationFor(end - start)));
+
+        histogramQueryHelper.run(histogramQuery(), params, start);
     }
 
     /**
      * Runs the unbounded read behind "Show All".
      *
      * <p>Deliberately not folded into {@link #runHistogramQuery}: that one is bounded below at the
-     * visible range, so the buckets it returns can never start earlier than what is already shown.
-     * An extent taken from them could only grow forwards, and "Show All" exists precisely to reach
-     * backwards. This is the regression the lower bound introduced.</p>
+     * visible range, so what it returns can never start earlier than what is already shown. An
+     * extent taken from it could only grow forwards, and "Show All" exists precisely to reach
+     * backwards.</p>
      *
-     * <p>Grouping is what makes an unbounded read affordable. The answer is one row per
-     * {@link FloorMapQueryBuilder#EXTENT_BUCKET} the store spans rather than one per event, so its
-     * size tracks how long the store has been running, not how busy it is.</p>
-     *
-     * <p>It does <em>not</em> make the read cheap on the server. Plan B iterates the whole store
-     * whatever range is asked for, so this costs a full scan — the same scan the bars already pay.
-     * What grouping bounds is what crosses the wire.</p>
+     * <p>The answer is one row of two values, so nothing about its size depends on how busy the
+     * store is. It is not cheap on the server, though: Plan B iterates the whole store whatever
+     * range is asked for, so this costs a full scan — the same scan the bars already pay.</p>
      */
     private void runExtentQuery() {
-        extentQueryHelper.run(FloorMapQueryBuilder.buildExtentQuery(), queryParams());
+        extentQueryHelper.run(extentQuery(), queryParams());
+    }
+
+    /** The document's histogram query, or the generated default where it sets none. */
+    private String histogramQuery() {
+        final String configured = getEntity() == null
+                ? null
+                : getEntity().getHistogramQuery();
+        return configured == null || configured.trim().isEmpty()
+                ? FloorMapQueryBuilder.defaultHistogramQuery()
+                : configured;
+    }
+
+    /** The document's extent query, or the generated default where it sets none. */
+    private String extentQuery() {
+        final String configured = getEntity() == null
+                ? null
+                : getEntity().getExtentQuery();
+        return configured == null || configured.trim().isEmpty()
+                ? FloorMapQueryBuilder.defaultExtentQuery()
+                : configured;
     }
 
     /**
@@ -1703,7 +1723,7 @@ public class FloorMapMapPresenter
      * rather than collapsing the timeline to nothing.</p>
      */
     private void applyDataExtent(final TableResult result) {
-        final long[] extent = HistogramDataModel.extentOf(result, FloorMapQueryBuilder.EXTENT_BUCKET_MS);
+        final long[] extent = HistogramDataModel.extentOf(result);
         if (extent != null) {
             floorMapTimelinePresenter.setDataRange(extent[0], extent[1]);
         }
