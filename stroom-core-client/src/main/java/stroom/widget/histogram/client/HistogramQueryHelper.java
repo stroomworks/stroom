@@ -166,13 +166,9 @@ public class HistogramQueryHelper {
      * Starts a histogram search with no time bound at all.
      *
      * <p>Reads whatever the query matches across the store's whole history. Prefer
-     * {@link #run(String, List, Long)}, which bounds the read below at the visible range; this
-     * overload exists for a caller that genuinely wants everything.</p>
-     *
-     * <p><b>No bound is not an oversight, and an upper bound is not the fix.</b> A {@code TimeRange}
-     * carrying an upper bound switches the temporal store into its point-in-time mode, which returns
-     * one row per key rather than the rows a histogram counts — and discards the caller's lower bound
-     * on the way. A lower bound alone is safe, which is what the other overload passes.</p>
+     * {@link #run(String, List, Long, Long)}, which bounds the read to the visible range; this
+     * overload exists for the one caller that genuinely wants everything — the timeline's "Show All"
+     * extent, which cannot be answered by a bounded read.</p>
      *
      * @param query  the StroomQL query text to execute
      * @param params the query parameters, or {@code null} when the query uses none. The

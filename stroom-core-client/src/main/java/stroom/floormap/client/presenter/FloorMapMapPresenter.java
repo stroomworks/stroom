@@ -323,7 +323,7 @@ public class FloorMapMapPresenter
      */
     private long histogramBucketWidthMs = FloorMapHistogramBuckets.widthFor(0L);
 
-    /** Set once the wrong events store type has been reported, so it is said once. */
+    /** Set once the wrong events store type has been reported, so it is said once per read. */
     private boolean wrongEventsStoreTypeReported;
 
     /**
@@ -717,6 +717,7 @@ public class FloorMapMapPresenter
         factsHistoryErrorReported = false;
         factsHistoryTruncationReported = false;
         eventDataFaultReported = false;
+        wrongEventsStoreTypeReported = false;
         stageReporter.reset();
         floorMapCanvasPresenter.setEmptyStatus(null, false);
         eventsErrorReported = false;
@@ -875,12 +876,11 @@ public class FloorMapMapPresenter
      * anyone who had not moved lately), and the client kept accumulated positions to work around
      * the absence. It does not any more — see the class javadoc.</p>
      *
-     * <p><b>The lower bound is the expiry cutoff, and it is honoured.</b> It did not used to be:
-     * both stores lifted the upper bound out as a snapshot boundary and then discarded every time
-     * term, so a caller could be handed a row from before the bound it asked for. Both now narrow
-     * the snapshot to keys seen since it, which is what makes expiry a property of the read rather
-     * than a filter over its result — and so decided against real timestamps rather than against the
-     * date text a result carries. {@code TestTemporalStoreParity} pins the corrected behaviour.</p>
+     * <p><b>Expiry is the store's, not this request's.</b> The request says which instant to read
+     * at; the store says how long an entity lasts, and the server derives the floor from its own
+     * document. That is what makes two maps reading one store agree, and it means expiry is decided
+     * against real timestamps rather than the date text a result happens to carry. Pinned by
+     * {@code TestTemporalStateDbSnapshot} and {@code TestFloorMapEventStoreSearchProvider}.</p>
      *
      * <p>A read already in flight is normally left alone: it answers the same question about a
      * position at most a tick old, and abandoning it per tick would destroy searches faster than
@@ -916,8 +916,14 @@ public class FloorMapMapPresenter
      * entity. The map would draw, slowly and wrongly, with no error anywhere — so it is refused
      * here, where the reason can be said.</p>
      *
-     * <p>Reported once rather than per tick, because this condition does not change while the
-     * document is open.</p>
+     * <p><b>Said on the canvas as well as in the console.</b> The density bars and the floor plan
+     * still draw — a range read over the old store is perfectly valid, and only the per-entity
+     * snapshot is refused — so what the user sees is a map with bars and no entities. That is
+     * exactly the situation the status line exists for; leaving it to the console would mean the
+     * only explanation is somewhere they are not looking.</p>
+     *
+     * <p>Reported once per read rather than per tick. The flag is cleared in {@link #onRead}, so
+     * saving a corrected store reference says it again if it is still wrong.</p>
      */
     private boolean eventsStoreIsReadable() {
         final DocRef storeRef = getEntity() == null
@@ -932,7 +938,12 @@ public class FloorMapMapPresenter
                           + storeRef.getType() + ", not a " + FloorMapEventStoreDoc.TYPE
                           + ". This map predates the dedicated store type. Create a "
                           + FloorMapEventStoreDoc.TYPE + ", point the pipeline at it, and select it"
-                          + " on the Settings tab. Reported once per document.");
+                          + " on the Settings tab. Reported once per read.");
+            floorMapCanvasPresenter.setEmptyStatus(
+                    "This map's events store is a " + storeRef.getType() + ", not a "
+                    + FloorMapEventStoreDoc.TYPE + ". Entities cannot be read until it is changed on"
+                    + " the Settings tab.",
+                    true);
         }
         return false;
     }
@@ -1181,10 +1192,13 @@ public class FloorMapMapPresenter
         switch (stage) {
             case NO_EVENT_ROWS -> Console.error("Floor map: the events query returned no rows at"
                                                 + " this time. The read is a snapshot at the"
-                                                + " selected time with no lower bound, so this"
-                                                + " means the store holds nothing at or before it"
-                                                + " — check it holds data, and that the timeline"
-                                                + " is not before the data starts.");
+                                                + " selected time, bounded below by the event"
+                                                + " store's expiry, so either the store holds"
+                                                + " nothing at or before that time or every"
+                                                + " entity's last event is older than the expiry"
+                                                + " — check it holds data, that the timeline is not"
+                                                + " before the data starts, and that the expiry on"
+                                                + " the store is long enough.");
             // The detailed column-mismatch message is emitted by reportUnparsedEvents, which has
             // the result's columns to name. Saying it twice would be worse than saying it once.
             case NO_ENTITIES_PARSED -> {
@@ -1678,13 +1692,10 @@ public class FloorMapMapPresenter
      * floor plan last edited) in the place reserved for this one, and its second helper could only
      * ever run a query with an unresolvable {@code from} clause. Both are gone.</p>
      *
-     * <p>{@code param('EventStore')} is resolved into the text here rather than passed as a
-     * {@link stroom.query.api.Param}: {@link HistogramQueryHelper#run} passes no params at all, so
-     * an unresolved {@code from} clause would fail the query and leave the bars empty. The same
-     * applies to any other {@code param()} anyone adds to the events query later — only the store
-     * names are substituted here. The bars are still empty when that happens, but the helper's
-     * error listener reports it, so it reads as a failure rather than as a store with nothing in
-     * it.</p>
+     * <p>The store reference travels as a {@link stroom.query.api.Param} like every other read's,
+     * so {@code from param('EventStore')} resolves server-side and the query text is sent exactly as
+     * written. The bucket width travels the same way. Nothing is substituted into the text, which is
+     * what lets a user edit this query without their edits being rewritten under them.</p>
      *
      * <p>The query is generated here rather than being the user's own events query, so there is no
      * longer a requirement on what that query selects: it groups {@code EffectiveTime}, the field

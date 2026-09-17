@@ -27,6 +27,9 @@ the floor map's own search provider. See `docs/floormap-events-backend-design.md
 The SQL store keeps its own `getNotBefore`, added at the same time and unexercised by the floor map.
 
 **Everything below is retained as the record of how revision 2 decided, not as a live position.**
+Where it speaks of `TestTemporalStoreParity` in the present tense — what it runs, what it would catch,
+how to invoke it — read that as what was true at revision 2. The test is deleted; the gradle command
+below will not find it.
 
 > **Verified for revision 2.** The parity suite was re-run against a live MySQL and both live
 > stores: **9 tests, 0 failures, 0 skipped**. The date-parsing behaviour in *What parity cost* §3

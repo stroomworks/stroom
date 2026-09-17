@@ -187,9 +187,9 @@ class TestTerminatedStringKeySerde {
      *
      * <p>Exercised through a real store rather than a mock: {@code SessionDb.create} builds the key
      * serde from the document's own key schema, so the document <em>is</em> the input, and mocking
-     * anything here would only have tested the mock. It also confirms the failure arrives at open
-     * time — {@code create} closes the environment on the way out, so a store that cannot be served
-     * does not leave one behind.</p>
+     * anything here would only have tested the mock. It also shows the refusal arrives at open time
+     * rather than at first use. (It does not assert that the environment was closed behind it;
+     * {@code create} does close it, but nothing here observes that.)</p>
      */
     @Test
     void sessionStoreRefusesTheEncodingWhenItOpens(@TempDir final Path tempDir) {

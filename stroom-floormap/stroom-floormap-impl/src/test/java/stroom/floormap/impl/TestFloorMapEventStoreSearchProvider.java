@@ -211,10 +211,10 @@ class TestFloorMapEventStoreSearchProvider {
     /**
      * A shard manager that hands out one reader and remembers nothing else.
      *
-     * <p>Hand-written rather than mocked because {@code get} takes a {@code Function} and runs it —
-     * the behaviour under test is which method that function calls, so the double has to actually
-     * invoke it. A stubbed {@code get} would return without running anything and the test would pass
-     * against a provider that did nothing at all.</p>
+     * <p>A Mockito mock with a custom answer rather than a plain stub, because {@code get} takes a
+     * {@code Function} and runs it — the behaviour under test is which method that function calls,
+     * so the double has to actually invoke it. A stubbed {@code get} would return without running
+     * anything, and the test would pass against a provider that did nothing at all.</p>
      */
     private static ShardManager shardManagerServing(final Db<?, ?> reader) {
         final ShardManager shardManager = Mockito.mock(ShardManager.class);

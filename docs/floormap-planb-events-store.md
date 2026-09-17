@@ -18,8 +18,9 @@ one has to be a SQL Temporal Store. The events store is only ever read.
 ---
 
 > **Upgrading an existing floor map.** A map created before this document type existed points at a
-> plain Plan B store. It will not read: the Map tab refuses and says so in the console, rather than
-> quietly returning every row in the store. Create a FloorMap Event Store, point the ingest pipeline
+> plain Plan B store. Entities will not be read: the Map tab refuses, and says so on the canvas and
+> in the console, rather than quietly returning every row in the store. The floor plan and the
+> density bars still draw, so the symptom is a map with bars and nothing on it. Create a FloorMap Event Store, point the ingest pipeline
 > at its name, and select it on the map's Settings tab. There is no automatic migration, and the old
 > store's data does not move.
 
@@ -111,26 +112,27 @@ measured from the scrubber, is exactly where it shows.
 
 ### How far back the map can see
 
-**As far as the data goes, subject to expiry.** The read asks for every entity's latest row at or
-before the selected time — but an entity whose latest row is older than the store's **event expiry**
-is omitted, because it is no longer considered present. Retention then bounds how far back any data
-exists at all. Within those two limits the read has no further horizon, and it asks with no
-lower bound, and Plan B answers that in one pass — so an entity that last emitted a year ago is
-still drawn, at the position it last reported.
+**As far as the data goes, and no further back than the expiry.** The read asks for every entity's
+latest row at or before the selected time, then drops any entity whose latest row is older than the
+store's **event expiry**. Retention bounds how far back data exists at all. Between those two the
+read has no other horizon: Plan B answers it in one pass, whatever the depth of history.
 
-That is a change. Until 2026-09-09 Plan B had no latest-per-key read, so the map held positions as
-client-side state and corrected them with a bounded re-read reaching six hours back; the failure
-mode then was *"an entity with no events in the last six hours is not shown."* Plan B gained the
-read — see `planb-snapshot-read-proposal.md`, which proposed it — and the horizon, the periodic
-re-baseline and the per-tick delta went with it.
+Two consequences follow, and they pull in opposite directions.
 
-One consequence is worth stating, because it is the counterpart of that bound disappearing: the
-positioned count is **not** a head-count of who is on site, and is less so now than before. An
-entity that stopped emitting a year ago still counts. Nothing prunes on absence, because absence is
-no longer distinguishable from stillness.
+**An entity that has stopped emitting disappears**, once its last event falls outside the expiry
+measured from the scrubber. That is the point of expiry — before it existed, an entity that last
+reported a year ago was still drawn at the position it last gave. So the positioned count is much
+closer to a head-count of who is present than it used to be, though it is still a count of who has
+reported recently rather than of who is there.
 
-**What this means for your data:** nothing. Emit at whatever rate suits the source. There is no
-20-second obligation, and no horizon to stay inside.
+**So an entity must keep emitting to stay on the map.** Emit at least once per expiry period. This
+is a real obligation on the source, and it is the one the expiry setting exists to let you tune: set
+it longer than the longest quiet period you expect from a source you still consider present.
+
+> **Historical note.** Until 2026-08-27 Plan B had no latest-per-key read, so the map held positions
+> as client-side state and corrected them with a bounded re-read reaching six hours back. That
+> machinery, and its own six-hour obligation, is gone. Expiry replaces it with a rule you set rather
+> than one the implementation imposed.
 
 ---
 
@@ -269,7 +271,7 @@ That is a known reporting gap, not a sign that everything is fine.
 - [ ] Snapshot settings off
 - [ ] Ingest uses `<temporal-state>` with an explicit `<time>`
 - [ ] `Value` is JSON carrying at least `location`
-- [ ] Entities that should stay visible emit at least once per expiry period
+- [ ] Entities that should stay visible emit at least once per expiry period — this is a real obligation on the source
 
 State type, key type, temporal precision and value type are no longer on this list: the document type
 fixes all four.
