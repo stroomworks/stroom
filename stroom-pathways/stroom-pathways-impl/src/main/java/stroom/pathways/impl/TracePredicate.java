@@ -94,7 +94,10 @@ public class TracePredicate implements Predicate<Trace> {
         sortedSpans.sort(spanComparator);
         final PathKey pathKey = pathKeyFactory.create(sortedSpans);
 
-        // Load inner map.
+        // Load inner map. No merge function, unlike the attribute map below: a node's targets are
+        // built from a map keyed on PathKey, so two of them sharing a key would mean the stored model
+        // disagrees with the only code that writes it. Tolerating that here would answer the query
+        // from one of two contradictory sequences without saying which.
         final Map<PathKey, PathNodeSequence> subMap = parentNode
                 .getTargets()
                 .stream()
@@ -153,9 +156,13 @@ public class TracePredicate implements Predicate<Trace> {
 
         // Create attribute sets. A span can legitimately carry no attributes at all, and then arrives
         // with a null list rather than an empty one.
+        // A span may carry the same key twice: the wire format allows it and nothing on the way in
+        // deduplicates. Last one wins, as it does in the OTel SDKs — the alternative, which is what
+        // Collectors.toMap does without a merge function, is to throw and lose the whole trace.
         final Map<String, KeyValue> attributes = NullSafe.list(span.getAttributes())
                 .stream()
-                .collect(Collectors.toMap(kv -> "attribute." + kv.getKey(), Function.identity()));
+                .collect(Collectors.toMap(kv -> "attribute." + kv.getKey(), Function.identity(),
+                        (first, second) -> second));
 
         final boolean allRequiredAttributesExist = constraints.entrySet().stream().allMatch(entry -> {
             final String key = entry.getKey();
