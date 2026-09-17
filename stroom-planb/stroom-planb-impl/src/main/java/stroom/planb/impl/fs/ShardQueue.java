@@ -145,13 +145,25 @@ public final class ShardQueue {
      * matching {@link QueueItem#isItem} and so is not offered again.
      */
     public void quarantine(final Path item, final Exception cause) {
+        quarantine(item, cause.getMessage(), cause);
+    }
+
+    /**
+     * As {@link #quarantine(Path, Exception)}, for an item nothing threw over — one holding something
+     * this consumer can make no sense of.
+     */
+    public void quarantine(final Path item, final String reason) {
+        quarantine(item, reason, null);
+    }
+
+    private void quarantine(final Path item, final String reason, final Exception cause) {
         try {
             final Path quarantineDir = shardDir.resolve(QUARANTINE_DIR_NAME);
             Files.createDirectories(quarantineDir);
             Files.move(item, quarantineDir.resolve(item.getFileName().toString()),
                     StandardCopyOption.ATOMIC_MOVE);
             LOGGER.error(() -> LogUtil.message("Could not apply queue item {}, moved to {}: {}",
-                    item.getFileName(), quarantineDir, cause.getMessage()), cause);
+                    item.getFileName(), quarantineDir, reason), cause);
         } catch (final IOException e) {
             LOGGER.error(() -> LogUtil.message(
                     "Could not apply queue item {} and could not set it aside either: {}",

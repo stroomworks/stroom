@@ -57,57 +57,72 @@ public class TraceProcessor {
     }
 
     /**
-     * @return whether anything was written. False where the trace had already been applied, or had no
-     * root span to key a pathway on — a caller that copies its store back to shared storage uses this
-     * to decide whether it is worth copying.
+     * What became of one trace.
+     *
+     * <p>Three answers rather than two, because a caller that deletes the only copy of a trace once
+     * this returns has to tell "there was nothing left to do" from "this could not be done".
      */
-    public boolean processTrace(final LmdbWriter writer,
-                                final PathwaysDb pathwaysDb,
-                                final byte[] traceId,
-                                final Function<byte[], Optional<Trace>> traceFunction,
-                                final PathwaysDoc doc,
-                                final MessageReceiver messageReceiver) {
-        try {
-            return byteBuffers.useBytes(traceId, keyByteBuffer -> {
-                final SimpleDb processingStatus = pathwaysDb.getProcessingStatus();
-                final boolean processed = processingStatus
-                        .get(writer.getWriteTxn(), keyByteBuffer.duplicate(), Objects::nonNull);
-                if (!processed) {
-                    final Optional<Trace> optTrace = traceFunction.apply(traceId);
-                    if (optTrace.isEmpty()) {
-                        // findTrace returns empty only when the bucket holds no span at all for this
-                        // trace — a trace with spans but no root span still comes back. Mark as
-                        // processed so it is skipped on future ticks.
-                        LOGGER.warn("Skipping trace root {} as the bucket holds no spans for it; " +
-                                        "marking as processed to suppress future re-scans",
-                                HexStringUtil.encode(traceId));
+    public enum ApplyOutcome {
+        /** Folded into the model, or marked so it is not offered again. The store was written to. */
+        APPLIED,
+        /** This store had already applied it. Nothing was written and there is nothing left to do. */
+        ALREADY_APPLIED,
+        /** Nothing could be done with it — it has no root span to key a pathway on. Not marked. */
+        NOT_APPLICABLE
+    }
+
+    /**
+     * Folds one trace into the model.
+     *
+     * @return what became of it. {@link ApplyOutcome#APPLIED} means the store was written to and needs
+     * copying back.
+     * @throws RuntimeException where the trace could not be applied. Deliberately not absorbed: the
+     * caller holds the only copy and decides whether to delete it, so a failure it cannot see is a
+     * trace lost.
+     */
+    public ApplyOutcome processTrace(final LmdbWriter writer,
+                                     final PathwaysDb pathwaysDb,
+                                     final byte[] traceId,
+                                     final Function<byte[], Optional<Trace>> traceFunction,
+                                     final PathwaysDoc doc,
+                                     final MessageReceiver messageReceiver) {
+        return byteBuffers.useBytes(traceId, keyByteBuffer -> {
+            final SimpleDb processingStatus = pathwaysDb.getProcessingStatus();
+            final boolean processed = processingStatus
+                    .get(writer.getWriteTxn(), keyByteBuffer.duplicate(), Objects::nonNull);
+            if (!processed) {
+                final Optional<Trace> optTrace = traceFunction.apply(traceId);
+                if (optTrace.isEmpty()) {
+                    // findTrace returns empty only when the bucket holds no span at all for this
+                    // trace — a trace with spans but no root span still comes back. Mark as
+                    // processed so it is skipped on future ticks.
+                    LOGGER.warn("Skipping trace root {} as the bucket holds no spans for it; " +
+                                    "marking as processed to suppress future re-scans",
+                            HexStringUtil.encode(traceId));
+                    processingStatus.insert(writer, keyByteBuffer, PROCESSED);
+                    writer.tryCommit();
+                    return ApplyOutcome.APPLIED;
+                } else {
+                    final Trace trace = optTrace.get();
+                    LOGGER.debug(() -> "\n" + trace.toString());
+                    if (trace.root() == null) {
+                        // A pathway is keyed on the root span's name, and this trace has no root
+                        // span. Left unmarked rather than marked processed, because the root may
+                        // still arrive: nothing offers a trace for processing until it has one, so
+                        // leaving the marker off costs nothing and keeps the trace eligible.
+                        messageReceiver.log(Severity.WARNING, () -> "Skipping trace "
+                                + HexStringUtil.encode(traceId) + " as it has no root span");
+                        return ApplyOutcome.NOT_APPLICABLE;
+                    } else {
+                        buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();
-                        return true;
-                    } else {
-                        final Trace trace = optTrace.get();
-                        LOGGER.debug(() -> "\n" + trace.toString());
-                        if (trace.root() == null) {
-                            // A pathway is keyed on the root span's name, and this trace has no root
-                            // span. Left unmarked rather than marked processed, because the root may
-                            // still arrive: nothing offers a trace for processing until it has one, so
-                            // leaving the marker off costs nothing and keeps the trace eligible.
-                            messageReceiver.log(Severity.WARNING, () -> "Skipping trace "
-                                    + HexStringUtil.encode(traceId) + " as it has no root span");
-                        } else {
-                            buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
-                            processingStatus.insert(writer, keyByteBuffer, PROCESSED);
-                            writer.tryCommit();
-                            return true;
-                        }
+                        return ApplyOutcome.APPLIED;
                     }
                 }
-                return false;
-            });
-        } catch (final RuntimeException e) {
-            LOGGER.error("Error processing trace {}", HexStringUtil.encode(traceId), e);
-            return false;
-        }
+            }
+            return ApplyOutcome.ALREADY_APPLIED;
+        });
     }
 
     private void buildPathways(final LmdbWriter writer,

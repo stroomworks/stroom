@@ -20,6 +20,7 @@ import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
+import stroom.pathways.impl.TraceProcessor.ApplyOutcome;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.dao.LmdbWriter;
@@ -290,8 +291,15 @@ public class PathwaysProcessor {
                             break;
                         }
                         try {
-                            apply(item, pathwaysDb, writer, traceProcessor, doc, messageReceiver, counts);
-                            applied.add(item);
+                            if (apply(item, pathwaysDb, writer, traceProcessor, doc,
+                                    messageReceiver, counts)) {
+                                applied.add(item);
+                            } else {
+                                // Deleting is irreversible and nothing here applied, so the item is
+                                // set aside where it can still be looked at.
+                                itemsQuarantined.inc();
+                                queue.quarantine(item, "it holds a trace with no root span");
+                            }
                         } catch (final Exception e) {
                             itemsQuarantined.inc();
                             queue.quarantine(item, e);
@@ -315,27 +323,36 @@ public class PathwaysProcessor {
         return counts.changed;
     }
 
-    private void apply(final Path item,
-                       final PathwaysDb pathwaysDb,
-                       final LmdbWriter writer,
-                       final TraceProcessor traceProcessor,
-                       final PathwaysDoc doc,
-                       final MessageReceiver messageReceiver,
-                       final Counts counts) {
+    /**
+     * @return whether every trace in the item was dealt with, so the item can be deleted once the
+     * model is back on the shared store. False where one could not be, which is the caller's signal to
+     * keep it rather than destroy it.
+     */
+    private boolean apply(final Path item,
+                          final PathwaysDb pathwaysDb,
+                          final LmdbWriter writer,
+                          final TraceProcessor traceProcessor,
+                          final PathwaysDoc doc,
+                          final MessageReceiver messageReceiver,
+                          final Counts counts) {
+        final boolean[] allDealtWith = {true};
         try (final QueueItemReader reader = new QueueItemReader(item, byteBuffers, byteBufferFactory)) {
             reader.forEachTrace((root, trace) -> {
                 counts.traces++;
                 // The trace is already in hand, so what the old path fetched from an archive bucket is
                 // supplied directly. One applying path, whichever side the trace came from.
-                counts.changed |= traceProcessor.processTrace(
+                final ApplyOutcome outcome = traceProcessor.processTrace(
                         writer,
                         pathwaysDb,
                         HexStringUtil.decode(root.getTraceId()),
                         traceId -> Optional.of(trace),
                         doc,
                         messageReceiver);
+                counts.changed |= outcome == ApplyOutcome.APPLIED;
+                allDealtWith[0] &= outcome != ApplyOutcome.NOT_APPLICABLE;
             });
         }
+        return allDealtWith[0];
     }
 
     // Findings go to the document's info feed, as one stream per shard per hold. A document with no

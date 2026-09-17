@@ -19,6 +19,7 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.pathways.impl.TraceProcessor.ApplyOutcome;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
@@ -95,10 +96,44 @@ class TestTraceProcessorOrphan {
         assertThat(orphanTrace().root()).isNull();
     }
 
-    private static void processOrphan(final PathwaysDb pathwaysDb,
-                                      final LmdbWriter writer,
-                                      final List<String> warnings) {
-        new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY))
+    @Test
+    void anOrphanIsReportedAsNotApplicable(@TempDir final Path pathwaysDir) {
+        // The caller deletes the only copy of a trace once this returns, so "nothing was written" and
+        // "nothing could be done with it" have to be different answers.
+        try (final PathwaysDb pathwaysDb = PathwaysDb.create(pathwaysDir, BYTE_BUFFERS, false);
+                final LmdbWriter writer = pathwaysDb.createWriter()) {
+            assertThat(processOrphan(pathwaysDb, writer, new ArrayList<>()))
+                    .isEqualTo(ApplyOutcome.NOT_APPLICABLE);
+            writer.commit();
+        }
+    }
+
+    @Test
+    void aFailureToApplyReachesTheCaller(@TempDir final Path pathwaysDir) {
+        // Absorbing this is how a trace gets deleted without ever being applied: the caller reads a
+        // quiet return as "done" and removes the queue item that held it.
+        try (final PathwaysDb pathwaysDb = PathwaysDb.create(pathwaysDir, BYTE_BUFFERS, false);
+                final LmdbWriter writer = pathwaysDb.createWriter()) {
+            assertThatThrownBy(() -> new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY))
+                    .processTrace(writer,
+                            pathwaysDb,
+                            TRACE_ID,
+                            traceId -> {
+                                throw new IllegalStateException("the trace could not be read");
+                            },
+                            PathwaysDoc.builder().uuid(UUID.randomUUID().toString()).build(),
+                            (severity, message) -> {
+                            }))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("the trace could not be read");
+            writer.commit();
+        }
+    }
+
+    private static ApplyOutcome processOrphan(final PathwaysDb pathwaysDb,
+                                              final LmdbWriter writer,
+                                              final List<String> warnings) {
+        return new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY))
                 .processTrace(writer,
                         pathwaysDb,
                         TRACE_ID,
