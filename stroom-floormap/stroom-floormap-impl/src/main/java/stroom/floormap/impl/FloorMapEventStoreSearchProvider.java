@@ -359,7 +359,8 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
      * {@code asAt} has no instant to read at, and an {@code asAt} with no {@code readMode} is a
      * caller who believes they asked for a snapshot and would otherwise silently get every row.</p>
      */
-    private static Instant readAsAt(final List<Param> params) {
+    // Package-private so the parameter contract can be tested without standing up a search.
+    static Instant readAsAt(final List<Param> params) {
         final String readMode = paramValue(params, PARAM_READ_MODE);
         final String asAt = paramValue(params, PARAM_AS_AT);
 
@@ -422,7 +423,7 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
      * <p>Taken from the store, not from the request. An entity whose newest event predates this is
      * omitted rather than drawn at a position it left long ago.</p>
      */
-    private static Instant expiryFloor(final PlanBDocument doc, final Instant asAt) {
+    static Instant expiryFloor(final PlanBDocument doc, final Instant asAt) {
         if (doc instanceof final FloorMapEventStoreDoc eventStore) {
             return Instant.ofEpochMilli(
                     FloorMapEventExpiry.cutoff(asAt.toEpochMilli(), eventStore.getEventExpiry()));

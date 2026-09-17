@@ -100,8 +100,7 @@ public class HistogramDataModel {
         }
 
         final long firstBucket = floorTo(rangeStart, bucketWidthMs);
-        final int bins = (int) (((floorTo(rangeEnd, bucketWidthMs) - firstBucket) / bucketWidthMs) + 1L);
-        final int[] counts = new int[Math.max(1, bins)];
+        final int[] counts = new int[binCountFor(rangeStart, rangeEnd, bucketWidthMs)];
 
         if (tableResult == null || tableResult.getRows() == null) {
             notifyDataHandler(counts);
@@ -118,17 +117,49 @@ public class HistogramDataModel {
                 continue;
             }
 
-            if (bucketStart < firstBucket || bucketStart > rangeEnd) {
-                continue;
-            }
-            final int index = (int) ((bucketStart - firstBucket) / bucketWidthMs);
-            if (index >= 0 && index < counts.length) {
+            final int index = binIndexFor(bucketStart, firstBucket, rangeEnd, bucketWidthMs, counts.length);
+            if (index >= 0) {
                 counts[index] += parseCount(values.get(1));
             }
         }
 
         notifyDataHandler(counts);
         return counts;
+    }
+
+    /**
+     * How many bars a range needs at a given bucket width.
+     *
+     * <p>Package-private, and separated from {@link #processBuckets} for one reason: the timestamp
+     * parsing there goes through {@code UTCDate}, which is a native browser object and cannot run
+     * outside a browser. The arithmetic is where the edge cases live, so it is kept where a test can
+     * reach it.</p>
+     */
+    static int binCountFor(final long rangeStart, final long rangeEnd, final long bucketWidthMs) {
+        final long firstBucket = floorTo(rangeStart, bucketWidthMs);
+        final long lastBucket = floorTo(rangeEnd, bucketWidthMs);
+        return Math.max(1, (int) (((lastBucket - firstBucket) / bucketWidthMs) + 1L));
+    }
+
+    /**
+     * The bar a bucket belongs in, or {@code -1} where it belongs in none.
+     *
+     * <p>A bucket outside the visible range is skipped rather than clamped to an edge bar: clamping
+     * would pile activity from outside the range onto the first and last bars, which reads as a spike
+     * that is not there.</p>
+     */
+    static int binIndexFor(final long bucketStart,
+                           final long firstBucket,
+                           final long rangeEnd,
+                           final long bucketWidthMs,
+                           final int binCount) {
+        if (bucketStart < firstBucket || bucketStart > rangeEnd) {
+            return -1;
+        }
+        final int index = (int) ((bucketStart - firstBucket) / bucketWidthMs);
+        return index >= 0 && index < binCount
+                ? index
+                : -1;
     }
 
     /**
@@ -171,7 +202,7 @@ public class HistogramDataModel {
     }
 
     /** Floors to a multiple of {@code width}, matching {@code floorTime}, which floors to the epoch. */
-    private static long floorTo(final long time, final long width) {
+    static long floorTo(final long time, final long width) {
         final long remainder = time % width;
         return remainder >= 0
                 ? time - remainder

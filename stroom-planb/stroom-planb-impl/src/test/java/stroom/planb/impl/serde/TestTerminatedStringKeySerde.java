@@ -19,9 +19,11 @@ package stroom.planb.impl.serde;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.planb.impl.serde.keyprefix.KeyPrefix;
+import stroom.planb.impl.serde.keyprefix.KeyPrefixSerdeFactory;
 import stroom.planb.impl.serde.temporalkey.TemporalKey;
 import stroom.planb.impl.serde.temporalkey.TerminatedStringKeySerde;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
+import stroom.planb.shared.KeyType;
 
 import org.junit.jupiter.api.Test;
 
@@ -153,6 +155,29 @@ class TestTerminatedStringKeySerde {
 
         assertThat(encoded).hasSize(2 + 1 + timeSize);
         assertThat(encoded[2]).isEqualTo((byte) 0x00);
+    }
+
+    /**
+     * The encoding is offered only where it buys something.
+     *
+     * <p>Prefix-freeness matters to a reader that seeks per key, which is the temporal state store's
+     * snapshot read. A store that scans gains nothing from it, so rather than implement the encoding
+     * three more times the other factories refuse it — and it is absent from
+     * {@link KeyType#ORDERED_LIST}, so no user can select it there in the first place.</p>
+     */
+    @Test
+    void theEncodingIsRefusedWhereNothingWouldSeek() {
+        assertThatThrownBy(() -> KeyPrefixSerdeFactory.createKeySerde(
+                KeyType.TERMINATED_STRING, null, null, BYTE_BUFFERS, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("temporal state");
+    }
+
+    @Test
+    void theEncodingIsNotOfferedInTheSettingsDropdown() {
+        assertThat(KeyType.ORDERED_LIST)
+                .as("ORDERED_LIST feeds every Plan B key-type dropdown")
+                .doesNotContain(KeyType.TERMINATED_STRING);
     }
 
     @Test

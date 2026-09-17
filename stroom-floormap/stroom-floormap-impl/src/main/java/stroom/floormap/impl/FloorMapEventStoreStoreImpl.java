@@ -238,22 +238,34 @@ public class FloorMapEventStoreStoreImpl
      * one. The two settings live on this one document precisely so this can be checked.</p>
      */
     private void validateExpiryWithinRetention(final FloorMapEventStoreDoc document) {
-        final RetentionSettings retention = NullSafe.get(
-                document.getSettings(),
-                AbstractPlanBSettings::getRetention);
-        if (retention == null || !retention.isEnabled() || retention.getDuration() == null) {
-            return;
-        }
-
-        final long expiryMs = FloorMapEventExpiry.millis(document.getEventExpiry());
-        final long retentionMs = retention.getDuration().getApproxMillis();
-        if (retentionMs > 0 && expiryMs > retentionMs) {
+        if (expiryExceedsRetention(document)) {
+            final RetentionSettings retention = NullSafe.get(
+                    document.getSettings(),
+                    AbstractPlanBSettings::getRetention);
             throw new EntityServiceException(
                     "Event expiry (" + document.getEventExpiryOrDefault() +
                     ") is longer than the retention period (" + retention.getDuration() +
                     "). Entities would be dropped from the map before they expire, because the data " +
                     "needed to show them has already been deleted.");
         }
+    }
+
+    /**
+     * Whether the document asks to show entities for longer than it keeps the data.
+     *
+     * <p>Package-private and free of the store's collaborators so the rule can be tested directly —
+     * it is the one piece of judgement in this class, and the failure it prevents is silent.</p>
+     */
+    static boolean expiryExceedsRetention(final FloorMapEventStoreDoc document) {
+        final RetentionSettings retention = NullSafe.get(
+                document.getSettings(),
+                AbstractPlanBSettings::getRetention);
+        if (retention == null || !retention.isEnabled() || retention.getDuration() == null) {
+            return false;
+        }
+
+        final long retentionMs = retention.getDuration().getApproxMillis();
+        return retentionMs > 0 && FloorMapEventExpiry.millis(document.getEventExpiry()) > retentionMs;
     }
 
     @Override
