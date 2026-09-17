@@ -181,11 +181,26 @@ public class TemporalStateDb extends AbstractDb<TemporalKey, Val> {
     /**
      * Whether keys of this type encode so that no key's bytes can be a prefix of another's.
      *
-     * <p>This is what decides whether {@link #searchAsAt} may seek. A fixed-width encoding is
-     * prefix-free by construction: two different keys differ within the same number of bytes. A
-     * variable-width one is not — {@code VARIABLE} stores a short string inline with no length, so
-     * the bytes of {@code door1} are a prefix of those of {@code door10}, and the two keys' entries
-     * interleave in a way no byte bound can separate.</p>
+     * <p>This is what decides whether {@link #searchAsAt} may seek. Note the test is
+     * <b>prefix-freeness, not fixed width</b> — they are not the same property, and two of the
+     * types here separate them.</p>
+     *
+     * <p>A fixed-width encoding qualifies trivially: two different keys differ within the same
+     * number of bytes, so neither can be a proper prefix of the other. That covers the numeric
+     * types.</p>
+     *
+     * <p>{@code TAGS} qualifies without being fixed width. A tags key is
+     * {@code [4-byte tagSetUid][4-byte valueUid] × n}, so its length varies with the tag count — but
+     * {@code tagSetUid} identifies the set of tag <em>names</em>, which fixes {@code n}. Two keys
+     * sharing a leading {@code tagSetUid} are therefore the same length, and neither can be a prefix
+     * of the other. A self-describing leading field buys prefix-freeness just as fixed width
+     * does.</p>
+     *
+     * <p>The variable types fail for the opposite reason: nothing in the leading bytes says how many
+     * follow. {@code VARIABLE} stores a short string inline with no length, so the bytes of
+     * {@code door1} are a prefix of those of {@code door10} and no byte bound separates the two
+     * keys' entries. {@code UID_LOOKUP} sizes its uid by magnitude
+     * ({@code UnsignedBytesInstances.forValue}), so uids of different values differ in width.</p>
      *
      * <p><b>Anything uncertain is treated as not prefix-free</b>, because the cost of being wrong is
      * silently dropping a key rather than being slow. {@code HASH_LOOKUP} is fixed width until a
