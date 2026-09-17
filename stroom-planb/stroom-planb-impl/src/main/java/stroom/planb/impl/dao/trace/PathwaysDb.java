@@ -19,7 +19,6 @@ package stroom.planb.impl.dao.trace;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbIterable.EntryConsumer;
-import stroom.planb.impl.dao.AbstractDb;
 import stroom.planb.impl.dao.HashClashCommitRunnable;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
@@ -37,9 +36,16 @@ import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.function.Function;
 
+/**
+ * The learnt pathway model for one shard, plus the record of which traces have been folded into it.
+ *
+ * <p>Two plain tables and no serde, so this is not a {@link stroom.planb.impl.dao.Db}. Anything that
+ * needs to size or copy the environment without knowing what is in it goes through
+ * {@link PlanBEnv#openForMaintenance}.
+ */
 public class PathwaysDb implements AutoCloseable {
 
-    protected static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(AbstractDb.class);
+    protected static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysDb.class);
 
     protected final PlanBEnv env;
     protected final ByteBuffers byteBuffers;

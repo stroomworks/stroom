@@ -19,12 +19,10 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
-import stroom.planb.impl.dao.HashClashCommitRunnable;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.shared.SharedFileStoreSettings;
-import stroom.planb.shared.StateSettings;
 import stroom.util.io.FileUtil;
 import stroom.util.io.PathCreator;
 import stroom.util.io.PathSegmentUtil;
@@ -34,7 +32,6 @@ import stroom.util.logging.LogUtil;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import org.lmdbjava.CopyFlags;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -74,10 +71,6 @@ public class PathwaysShardStore {
 
     // Holds the copy that is pushed. Sits inside the working copy so it is cleaned up along with it.
     private static final String COMPACTED_DIR_NAME = "compacted";
-
-    // Matches what PathwaysDb.create opens the model with. A compacting copy opens no named database,
-    // but the environment still has to be opened the way it was written.
-    private static final int MAX_DBS = 20;
 
     private final SharedFileStorePublisher publisher;
     private final ByteBuffers byteBuffers;
@@ -249,28 +242,17 @@ public class PathwaysShardStore {
         }
 
         final long start = System.currentTimeMillis();
-        // Read-only, which for PlanBEnv means MDB_NOLOCK, so no lock.mdb is left beside the data. No
-        // named database is opened: a compacting copy takes the whole environment and needs to know
-        // nothing about what is in it, which is why this works whatever the model looks like.
-        final PlanBEnv env = new PlanBEnv(
-                localDir,
-                new StateSettings.Builder().build().getMaxStoreSize(),
-                MAX_DBS,
-                true,
-                new HashClashCommitRunnable());
-        try {
+        try (final PlanBEnv env = PlanBEnv.openForMaintenance(localDir)) {
             final Path compactedDir = localDir.resolve(COMPACTED_DIR_NAME);
             FileUtil.deleteDir(compactedDir);
             Files.createDirectories(compactedDir);
-            env.copy(compactedDir.toFile(), CopyFlags.MDB_CP_COMPACT);
+            env.compactTo(compactedDir);
             LOGGER.debug(() -> LogUtil.message("Compacted {} from {} to {} bytes in {}ms",
                     localDir,
                     sizeOf(dataFile),
                     sizeOf(compactedDir.resolve(PlanBConstants.DATA_FILE_NAME)),
                     System.currentTimeMillis() - start));
             return compactedDir;
-        } finally {
-            env.close();
         }
     }
 
