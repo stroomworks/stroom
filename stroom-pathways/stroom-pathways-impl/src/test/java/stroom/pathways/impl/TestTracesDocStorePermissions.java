@@ -35,22 +35,28 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * A trace store is written and deleted through {@link TracesDocStoreImpl}, which wraps {@link Store}
- * directly rather than extending {@code AbstractDocumentStore}, so it carries its own permission
- * checks for those two. Without them the persistence layer would do as it was asked and any
- * authenticated user reaching the REST resource could write or delete a trace store.
+ * Who may do what to a trace store.
  *
- * <p>Reading is not covered, here or in the store: {@code readDocument} goes straight through, so any
- * authenticated user can still fetch a trace store document.
+ * <p>{@link TracesDocStoreImpl} extends {@code AbstractDocumentStore}, which is where the
+ * authorisation contract for a document type lives — the {@link Store} beneath is a persistence layer
+ * that does as it is asked. These check that every way into the document goes through that contract,
+ * including the two the base class deliberately leaves open and the one place that bypasses it on
+ * purpose.
  */
 class TestTracesDocStorePermissions {
 
@@ -76,8 +82,10 @@ class TestTracesDocStorePermissions {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         doReturn(store).when(storeFactory).createStore(any(), any(), any(), any(), any());
+        // AbstractDocumentStore asks the store for the type when authorising a write.
+        when(store.getType()).thenReturn(TracesDoc.TYPE);
         final Provider<ClusterLockService> lockServiceProvider = () -> clusterLockService;
-        storeImpl = new TracesDocStoreImpl(storeFactory, serialiser, lockServiceProvider, securityContext);
+        storeImpl = new TracesDocStoreImpl(storeFactory, securityContext, serialiser, lockServiceProvider);
     }
 
     @Test
@@ -118,6 +126,85 @@ class TestTracesDocStorePermissions {
         assertThatThrownBy(() -> storeImpl.deleteDocument(docRef()))
                 .isInstanceOf(PermissionException.class);
         verify(store, never()).deleteDocument(any());
+    }
+
+    @Test
+    void readIsRefusedWithoutView() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+        when(store.readDocument(any())).thenReturn(doc());
+
+        assertThatThrownBy(() -> storeImpl.readDocument(docRef()))
+                .isInstanceOf(PermissionException.class);
+    }
+
+    @Test
+    void readIsAllowedWithView() {
+        when(securityContext.hasDocumentPermission(any(), eq(DocumentPermission.VIEW))).thenReturn(true);
+        when(store.readDocument(any())).thenReturn(doc());
+
+        assertThat(storeImpl.readDocument(docRef())).isNotNull();
+    }
+
+    @Test
+    void renameIsRefusedWithoutEdit() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> storeImpl.renameDocument(docRef(), "new_name"))
+                .isInstanceOf(PermissionException.class);
+        verify(store, never()).renameDocument(any(), any());
+    }
+
+    @Test
+    void copyIsRefusedWithoutView() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> storeImpl.copyDocument(docRef(), "copy", true, Set.of()))
+                .isInstanceOf(PermissionException.class);
+        verify(store, never()).copyDocument(any(), any());
+    }
+
+    @Test
+    void moveIsRefusedWithoutView() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> storeImpl.moveDocument(docRef()))
+                .isInstanceOf(PermissionException.class);
+        verify(store, never()).moveDocument(any());
+    }
+
+    @Test
+    void remapIsRefusedWithoutEdit() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> storeImpl.remapDependencies(docRef(), Map.of()))
+                .isInstanceOf(PermissionException.class);
+        verify(store, never()).remapDependencies(any(), any());
+    }
+
+    @Test
+    void exportIsRefusedWithoutView() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> storeImpl.exportDocument(docRef(), true, new ArrayList<>()))
+                .isInstanceOf(PermissionException.class);
+    }
+
+    /**
+     * The housekeeping sweep must see every trace store, whoever is asking.
+     *
+     * <p>{@code SharedFileStoreCleaner} trashes any shared path missing from this answer, so filtering
+     * it by what the caller may view would delete live data. This is the one place that reaches past
+     * the contract on purpose, so it is the one that most needs a test saying so.
+     */
+    @Test
+    void housekeepingSeesEveryStoreEvenWithNoPermissions() {
+        when(securityContext.hasDocumentPermission(any(), any())).thenReturn(false);
+        when(store.list()).thenReturn(List.of(docRef()));
+        when(store.readDocument(any())).thenReturn(doc());
+
+        assertThat(storeImpl.getLiveSharedPathData().values())
+                .as("a caller who may see nothing still gets the whole live set")
+                .containsExactly(Set.of(UUID));
     }
 
     private static DocRef docRef() {

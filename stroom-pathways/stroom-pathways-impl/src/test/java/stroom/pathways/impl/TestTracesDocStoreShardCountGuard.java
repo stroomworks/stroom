@@ -81,11 +81,13 @@ class TestTracesDocStoreShardCountGuard {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         doReturn(store).when(storeFactory).createStore(any(), any(), any(), any(), any());
+        // AbstractDocumentStore asks the store for the type when authorising a write.
+        when(store.getType()).thenReturn(TracesDoc.TYPE);
         // These tests are about the shard count guard, so the user always holds the permission.
         // TestTracesDocStorePermissions covers the refusal.
         when(securityContext.hasDocumentPermission(any(), any())).thenReturn(true);
         final Provider<ClusterLockService> lockServiceProvider = () -> clusterLockService;
-        storeImpl = new TracesDocStoreImpl(storeFactory, serialiser, lockServiceProvider, securityContext);
+        storeImpl = new TracesDocStoreImpl(storeFactory, securityContext, serialiser, lockServiceProvider);
     }
 
     private static TracesDoc doc(final int shardCount, final Path sharedPath) {

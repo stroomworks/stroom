@@ -67,6 +67,8 @@ class TestTracesDocStore {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         doReturn(store).when(storeFactory).createStore(any(), any(), any(), any(), any());
+        // AbstractDocumentStore asks the store for the type when authorising a write.
+        when(store.getType()).thenReturn(TracesDoc.TYPE);
         // These tests are about validation and shared data, so the user always holds the permission.
         // TestTracesDocStorePermissions covers the refusal.
         when(securityContext.hasDocumentPermission(any(), any())).thenReturn(true);
@@ -77,9 +79,9 @@ class TestTracesDocStore {
 
         storeImpl = new TracesDocStoreImpl(
                 storeFactory,
+                securityContext,
                 serialiser,
-                lockServiceProvider,
-                securityContext);
+                lockServiceProvider);
     }
 
     @Test

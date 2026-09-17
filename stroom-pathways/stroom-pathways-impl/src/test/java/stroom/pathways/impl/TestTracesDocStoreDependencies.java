@@ -80,7 +80,7 @@ class TestTracesDocStoreDependencies {
         MockitoAnnotations.openMocks(this);
         doReturn(store).when(storeFactory).createStore(any(), any(), any(), any(), any());
         final Provider<ClusterLockService> lockServiceProvider = () -> clusterLockService;
-        new TracesDocStoreImpl(storeFactory, serialiser, lockServiceProvider, securityContext);
+        new TracesDocStoreImpl(storeFactory, securityContext, serialiser, lockServiceProvider);
 
         final ArgumentCaptor<Supplier<DependencyRemapFunction<TracesDoc>>> captor =
                 ArgumentCaptor.forClass(Supplier.class);
