@@ -26,6 +26,7 @@ import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemReader;
+import stroom.planb.impl.fs.ShardQueue;
 import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.security.api.SecurityContext;
@@ -70,9 +71,6 @@ import java.util.stream.Stream;
 public class PathwaysProcessor {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysProcessor.class);
-
-    /** Where a shard's unreadable items are set aside, under its own queue folder. */
-    static final String QUARANTINE_DIR_NAME = "quarantine";
 
     /**
      * How much one lock hold takes on.
@@ -191,21 +189,17 @@ public class PathwaysProcessor {
             // Nothing has been configured, so nothing was ever written for it.
             return Backlog.NONE;
         }
-        final Path queueRoot = Path.of(settings.getSharedPath())
-                .resolve(TraceMergeCompletionStrategy.QUEUE_DIR_NAME)
-                .resolve(doc.getUuid());
-
         long items = 0;
         long oldestAgeMs = 0;
         final Instant now = Instant.now();
         final List<CompletableFuture<Void>> inFlight = new ArrayList<>();
-        for (final int shard : shardsInRandomOrder(Math.max(1, settings.getShardCount()))) {
+        for (final int shard : shardsInRandomOrder(ShardQueue.shardCount(settings))) {
             if (Thread.currentThread().isInterrupted()) {
                 LOGGER.debug("Interrupted, starting no more shards this pass");
                 break;
             }
-            final Path shardDir = queueRoot.resolve(PlanBConstants.formatShardIndex(shard));
-            final List<Path> waiting = itemsIn(shardDir);
+            final ShardQueue queue = ShardQueue.of(settings, doc.getUuid(), shard);
+            final List<Path> waiting = queue.itemsOldestFirst();
             if (waiting.isEmpty()) {
                 // Look before locking. A contended tryLock costs a warning and a query against
                 // cluster_lock to report who holds it, and most shards have nothing most cycles, so
@@ -223,11 +217,11 @@ public class PathwaysProcessor {
                     // so it does not travel to a pool thread on its own.
                     .runAsync(() -> securityContext.asProcessingUser(
                             () -> clusterLockService.tryLock(
-                                    lockName, () -> drain(doc, shard, shardDir))),
+                                    lockName, () -> drain(doc, shard, queue))),
                             shardExecutor)
                     .exceptionally(t -> {
                         LOGGER.error(() -> LogUtil.message("Error draining {}: {}",
-                                shardDir, t.getMessage()), t);
+                                queue, t.getMessage()), t);
                         return null;
                     }));
         }
@@ -253,11 +247,11 @@ public class PathwaysProcessor {
 
     // Applies what this hold has time for into a local copy of the shard's model, pushes the model
     // back, then deletes exactly what went into it.
-    private void drain(final PathwaysDoc doc, final int shardIndex, final Path shardDir) {
+    private void drain(final PathwaysDoc doc, final int shardIndex, final ShardQueue queue) {
         final List<Path> applied = new ArrayList<>();
         try {
             shardStore.withShard(doc, shardIndex,
-                    localDir -> applyBatch(doc, shardDir, localDir, applied));
+                    localDir -> applyBatch(doc, queue, localDir, applied));
         } catch (final IOException e) {
             // The model could not be taken down or put back, so nothing here was committed. Leaving
             // the items queued is the whole point: they are applied again by whoever gets the shard
@@ -266,14 +260,14 @@ public class PathwaysProcessor {
                     shardIndex, doc.getName(), applied.size(), e.getMessage()), e);
             return;
         }
-        deleteAll(applied);
+        queue.delete(applied);
     }
 
     // Fills `applied` with the items that went in, so the caller can delete exactly those once the
     // model is safely back on the shared store. Returns whether the local model changed, which is what
     // decides whether it is worth pushing.
     private boolean applyBatch(final PathwaysDoc doc,
-                               final Path shardDir,
+                               final ShardQueue queue,
                                final Path localDir,
                                final List<Path> applied) {
         final Instant deadline = Instant.now().plus(MAX_TIME_PER_HOLD);
@@ -283,12 +277,12 @@ public class PathwaysProcessor {
             withMessageReceiver(doc, messageReceiver -> {
                 try (final LmdbWriter writer = pathwaysDb.createWriter()) {
                     final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde);
-                    for (final Path item : itemsIn(shardDir)) {
+                    for (final Path item : queue.itemsOldestFirst()) {
                         if (Thread.currentThread().isInterrupted()) {
                             // The lock's heartbeat interrupts us when it cannot renew. Carrying on
                             // regardless is how two nodes end up working one shard, so stop and leave
                             // the rest queued.
-                            LOGGER.warn(() -> "Interrupted part way through " + shardDir
+                            LOGGER.warn(() -> "Interrupted part way through " + queue
                                               + ", leaving the rest queued");
                             break;
                         }
@@ -299,7 +293,8 @@ public class PathwaysProcessor {
                             apply(item, pathwaysDb, writer, traceProcessor, doc, messageReceiver, counts);
                             applied.add(item);
                         } catch (final Exception e) {
-                            quarantine(item, e);
+                            itemsQuarantined.inc();
+                            queue.quarantine(item, e);
                         }
                     }
                     writer.commit();
@@ -312,7 +307,7 @@ public class PathwaysProcessor {
         final int itemCount = applied.size();
         final long traceCount = counts.traces;
         LOGGER.debug(() -> LogUtil.message("Applied {} item(s) holding {} trace(s) from {}",
-                itemCount, traceCount, shardDir));
+                itemCount, traceCount, queue));
 
         // Only worth copying the model back up if a trace actually landed in it. A batch of traces
         // this shard had already seen changes nothing, and pushing then would move the whole file to
@@ -368,51 +363,6 @@ public class PathwaysProcessor {
 
     // Sets an unreadable item aside rather than deleting or retrying it: retrying stalls the shard
     // forever on the same item, and deleting destroys the only copy of whatever went wrong.
-    private void quarantine(final Path item, final Exception cause) {
-        itemsQuarantined.inc();
-        try {
-            final Path quarantineDir = item.getParent().resolve(QUARANTINE_DIR_NAME);
-            Files.createDirectories(quarantineDir);
-            Files.move(item, quarantineDir.resolve(item.getFileName().toString()),
-                    StandardCopyOption.ATOMIC_MOVE);
-            LOGGER.error(() -> LogUtil.message("Could not apply queue item {}, moved to {}: {}",
-                    item.getFileName(), quarantineDir, cause.getMessage()), cause);
-        } catch (final IOException e) {
-            LOGGER.error(() -> LogUtil.message(
-                    "Could not apply queue item {} and could not set it aside either: {}",
-                    item, e.getMessage()), e);
-        }
-    }
-
-    private void deleteAll(final List<Path> items) {
-        for (final Path item : items) {
-            try (final Stream<Path> paths = Files.walk(item)) {
-                paths.sorted(Collections.reverseOrder()).forEach(path -> {
-                    try {
-                        Files.deleteIfExists(path);
-                    } catch (final IOException e) {
-                        LOGGER.warn(() -> "Could not delete " + path + ": " + e.getMessage());
-                    }
-                });
-            } catch (final IOException e) {
-                // A leftover item is applied again next cycle, which the design already tolerates.
-                LOGGER.warn(() -> "Could not delete applied queue item " + item + ": " + e.getMessage());
-            }
-        }
-    }
-
-    // Oldest first, so a mutation is attributed to the trace that really caused it.
-    private List<Path> itemsIn(final Path shardDir) {
-        if (!Files.isDirectory(shardDir)) {
-            return List.of();
-        }
-        try (final Stream<Path> stream = Files.list(shardDir)) {
-            return stream.filter(QueueItem::isItem).sorted(QueueItem.BY_ORDER_KEY).toList();
-        } catch (final IOException e) {
-            LOGGER.error(() -> "Could not list queue items in " + shardDir + ": " + e.getMessage(), e);
-            return List.of();
-        }
-    }
 
     private static ExecutorService createShardExecutor() {
         final AtomicInteger threadNo = new AtomicInteger();

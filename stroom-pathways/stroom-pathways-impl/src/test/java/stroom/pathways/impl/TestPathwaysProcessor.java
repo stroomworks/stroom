@@ -29,6 +29,7 @@ import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemWriter;
 import stroom.planb.impl.dao.trace.TraceDb;
 import stroom.planb.impl.data.value.SpanKV;
+import stroom.planb.impl.fs.ShardQueue;
 import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.planb.impl.serde.trace.SpanKey;
 import stroom.planb.impl.serde.trace.SpanValue;
@@ -266,7 +267,7 @@ class TestPathwaysProcessor {
         processor.exec();
 
         assertThat(itemsIn(1)).as("the readable items were applied and removed").isEmpty();
-        final Path quarantine = shardDir(1).resolve(PathwaysProcessor.QUARANTINE_DIR_NAME);
+        final Path quarantine = shardDir(1).resolve(ShardQueue.QUARANTINE_DIR_NAME);
         assertThat(quarantine).isDirectory();
         try (final Stream<Path> stream = Files.list(quarantine)) {
             assertThat(stream.toList()).as("the bad item is kept, not destroyed").hasSize(1);
@@ -417,11 +418,9 @@ class TestPathwaysProcessor {
         Files.writeString(dir.resolve(PlanBConstants.DATA_FILE_NAME), "not an lmdb file");
     }
 
+    // Through ShardQueue, so this cannot drift from where the code under test reads.
     private Path shardDir(final int shard) {
-        return pathwaysShared
-                .resolve(TraceMergeCompletionStrategy.QUEUE_DIR_NAME)
-                .resolve(pathwaysDoc.getUuid())
-                .resolve(PlanBConstants.formatShardIndex(shard));
+        return ShardQueue.of(pathwaysDoc.getSharedFileStore(), pathwaysDoc.getUuid(), shard).dir();
     }
 
     private List<Path> itemsIn(final int shard) throws IOException {

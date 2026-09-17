@@ -32,6 +32,7 @@ import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemReader;
 import stroom.planb.impl.dao.trace.TraceDb;
 import stroom.planb.impl.data.value.SpanKV;
+import stroom.planb.impl.fs.ShardQueue;
 import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.impl.fs.StagedArchive;
 import stroom.planb.impl.serde.trace.SpanKey;
@@ -197,7 +198,7 @@ class TestTraceMergeCompletionStrategy {
     @Test
     void aFailedHandOverLeavesTheBucketUnpublished() throws IOException {
         // A file where the queue directory needs to be, so creating it fails.
-        Files.createFile(pathwaysShared.resolve(TraceMergeCompletionStrategy.QUEUE_DIR_NAME));
+        Files.createFile(pathwaysShared.resolve(PlanBConstants.QUEUE_DIR_NAME));
 
         assertThatThrownBy(() ->
                 publisher.pushArchive(linkedDoc, 0, stagedBatch("batch1", TRACE_A, NAME_A)))
@@ -294,12 +295,13 @@ class TestTraceMergeCompletionStrategy {
 
     private Path queueRoot() {
         return pathwaysShared
-                .resolve(TraceMergeCompletionStrategy.QUEUE_DIR_NAME)
+                .resolve(PlanBConstants.QUEUE_DIR_NAME)
                 .resolve(pathwaysDoc.getUuid());
     }
 
+    // Through ShardQueue, so this cannot drift from where the code under test writes.
     private Path shardDir(final int shardIndex) {
-        return queueRoot().resolve(PlanBConstants.formatShardIndex(shardIndex));
+        return ShardQueue.of(pathwaysDoc.getSharedFileStore(), pathwaysDoc.getUuid(), shardIndex).dir();
     }
 
     private List<Path> itemsIn(final int shardIndex) throws IOException {

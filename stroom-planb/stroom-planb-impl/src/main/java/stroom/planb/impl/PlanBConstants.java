@@ -34,6 +34,14 @@ public final class PlanBConstants {
     public static final String TRASH_DIR_NAME = "trash";
     public static final String ARCHIVE_DIR_NAME = "archive";
 
+    /**
+     * Where one document's hand-over queue lives on the shared store, beside its {@code shards}.
+     *
+     * <p>Deliberately not in {@link #STAGE_DIR_NAMES}: those are the trees the cleaner sweeps for
+     * orphans, and an item waiting here is not an orphan.
+     */
+    public static final String QUEUE_DIR_NAME = "queue";
+
     public static final List<String> STAGE_DIR_NAMES = List.of(
             HOLDING_DIR_NAME, PROCESSING_DIR_NAME, ARCHIVE_DIR_NAME);
 

@@ -22,13 +22,12 @@ import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentStoreRegistry;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.TracesDoc;
-import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.dao.Db;
 import stroom.planb.impl.dao.ShardKeyRouter;
-import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemWriter;
 import stroom.planb.impl.dao.trace.TraceDb;
 import stroom.planb.impl.fs.MergeCompletionStrategy;
+import stroom.planb.impl.fs.ShardQueue;
 import stroom.planb.shared.PlanBDocument;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.util.logging.LambdaLogger;
@@ -41,14 +40,11 @@ import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 /**
  * Hands finished traces from a trace store to the Pathways document it is linked to, as queue items.
@@ -65,13 +61,6 @@ import java.util.stream.Stream;
 public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TraceMergeCompletionStrategy.class);
-
-    /**
-     * Where finished traces are handed over, under the shared path of the <b>Pathways</b> document
-     * rather than the trace store's: a consumer then reads its own document and looks in its own
-     * folder, instead of searching every trace store to find who writes to it.
-     */
-    public static final String QUEUE_DIR_NAME = "queue";
 
     /**
      * Items allowed to be waiting in one shard folder before hand-over shedding starts.
@@ -150,10 +139,7 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
             return;
         }
         final SharedFileStoreSettings settings = optSettings.get();
-        final int shardCount = Math.max(1, settings.getShardCount());
-        final Path queueRoot = Path.of(settings.getSharedPath())
-                .resolve(QUEUE_DIR_NAME)
-                .resolve(pathwaysDocRef.getUuid());
+        final int shardCount = ShardQueue.shardCount(settings);
 
         final Map<Integer, List<byte[]>> byShard = groupByShard(traceDb, handedOver, shardCount);
 
@@ -163,17 +149,16 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
         int tracesWritten = 0;
         int tracesShed = 0;
         for (final Map.Entry<Integer, List<byte[]>> entry : byShard.entrySet()) {
-            final Path shardDir = queueRoot.resolve(PlanBConstants.formatShardIndex(entry.getKey()));
-            Files.createDirectories(shardDir);
-            if (isFull(shardDir)) {
+            final ShardQueue queue = ShardQueue.of(settings, pathwaysDocRef.getUuid(), entry.getKey());
+            if (queue.isDeeperThan(MAX_QUEUE_DEPTH_PER_SHARD)) {
                 tracesShed += entry.getValue().size();
                 LOGGER.warn(() -> LogUtil.message(
                         "Shedding {} trace(s) for shard {}: more than {} unread items are waiting in {}. "
                         + "Those traces will never reach pathways.",
-                        entry.getValue().size(), entry.getKey(), MAX_QUEUE_DEPTH_PER_SHARD, shardDir));
+                        entry.getValue().size(), entry.getKey(), MAX_QUEUE_DEPTH_PER_SHARD, queue));
                 continue;
             }
-            if (writer.write(traceDb, entry.getValue(), shardDir, orderKey).isPresent()) {
+            if (writer.write(traceDb, entry.getValue(), queue.dir(), orderKey).isPresent()) {
                 itemsWritten++;
                 tracesWritten += entry.getValue().size();
             }
@@ -211,13 +196,6 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
                     .add(traceIdBytes);
         });
         return byShard;
-    }
-
-    private boolean isFull(final Path shardDir) throws IOException {
-        try (final Stream<Path> stream = Files.list(shardDir)) {
-            return stream.filter(QueueItem::isItem).limit(MAX_QUEUE_DEPTH_PER_SHARD + 1L).count()
-                   > MAX_QUEUE_DEPTH_PER_SHARD;
-        }
     }
 
     // Where the Pathways document keeps its queue, or empty where it has not been configured. Read
