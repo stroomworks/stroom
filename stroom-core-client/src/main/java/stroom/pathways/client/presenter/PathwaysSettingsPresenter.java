@@ -66,6 +66,10 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         getView().setAllowConstraintMutation(doc.isAllowConstraintMutation());
         feedPresenter.setSelectedEntityReference(doc.getInfoFeed(), true);
         getView().setSharedFileStore(doc.getSharedFileStore());
+        // Where a pathway already lives is decided by these two, so once anything has been written
+        // under them they stop being editable. The store refuses the change anyway; this is what stops
+        // the user making it.
+        getView().setSharedFileStoreLocked(doc.hasSharedFileStoreData());
     }
 
     @Override
@@ -120,5 +124,7 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         SharedFileStoreSettings getSharedFileStore();
 
         void setSharedFileStore(SharedFileStoreSettings sharedFileStore);
+
+        void setSharedFileStoreLocked(boolean locked);
     }
 }

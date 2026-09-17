@@ -99,6 +99,17 @@ public class PathwaysDoc extends AbstractDoc {
     @JsonProperty
     private final SharedFileStoreSettings sharedFileStore;
 
+    /**
+     * Whether a model or a queue already exists under {@link #sharedFileStore}, so the editor can stop
+     * the path and shard count being changed out from under them.
+     *
+     * <p>Stamped onto the document as it is fetched and never stored: where the data is decides this,
+     * not what the document says about itself.
+     */
+    @JsonProperty("hasSharedFileStoreData")
+    @JsonInclude(Include.NON_NULL)
+    private final Boolean hasSharedFileStoreData;
+
     @JsonCreator
     public PathwaysDoc(@JsonProperty("uuid") final String uuid,
                        @JsonProperty("name") final String name,
@@ -115,7 +126,8 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("allowConstraintCreation") final Boolean allowConstraintCreation,
                        @JsonProperty("allowConstraintMutation") final Boolean allowConstraintMutation,
                        @JsonProperty("infoFeed") final DocRef infoFeed,
-                       @JsonProperty("sharedFileStore") final SharedFileStoreSettings sharedFileStore) {
+                       @JsonProperty("sharedFileStore") final SharedFileStoreSettings sharedFileStore,
+                       @JsonProperty("hasSharedFileStoreData") final Boolean hasSharedFileStoreData) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.temporalOrderingTolerance = temporalOrderingTolerance;
@@ -130,6 +142,7 @@ public class PathwaysDoc extends AbstractDoc {
                 Objects.requireNonNullElse(allowConstraintMutation, DEFAULT_ALLOW_CONSTRAINT_MUTATION);
         this.infoFeed = infoFeed;
         this.sharedFileStore = sharedFileStore;
+        this.hasSharedFileStoreData = hasSharedFileStoreData;
     }
 
     /**
@@ -180,6 +193,10 @@ public class PathwaysDoc extends AbstractDoc {
         return infoFeed;
     }
 
+    public boolean hasSharedFileStoreData() {
+        return Boolean.TRUE.equals(hasSharedFileStoreData);
+    }
+
     public SharedFileStoreSettings getSharedFileStore() {
         return sharedFileStore;
     }
@@ -204,6 +221,9 @@ public class PathwaysDoc extends AbstractDoc {
                Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance) &&
                Objects.equals(pathways, that.pathways) &&
                Objects.equals(infoFeed, that.infoFeed) &&
+               // hasSharedFileStoreData is left out on purpose: it is stamped onto the document as it
+               // is fetched and never stored, so comparing it would make the editor think an untouched
+               // document had changed.
                Objects.equals(sharedFileStore, that.sharedFileStore);
     }
 
@@ -256,6 +276,9 @@ public class PathwaysDoc extends AbstractDoc {
         private boolean allowConstraintMutation = true;
         private DocRef infoFeed;
         private SharedFileStoreSettings sharedFileStore;
+
+        // Intentionally not copied — it is always recomputed server-side.
+        private Boolean hasSharedFileStoreData;
 
         private Builder() {
         }
@@ -318,6 +341,11 @@ public class PathwaysDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder hasSharedFileStoreData(final Boolean hasSharedFileStoreData) {
+            this.hasSharedFileStoreData = hasSharedFileStoreData;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -340,7 +368,8 @@ public class PathwaysDoc extends AbstractDoc {
                     allowConstraintCreation,
                     allowConstraintMutation,
                     infoFeed,
-                    sharedFileStore);
+                    sharedFileStore,
+                    hasSharedFileStoreData);
         }
     }
 }

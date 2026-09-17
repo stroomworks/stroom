@@ -139,6 +139,11 @@ public class PathwaysSettingsViewImpl
     }
 
     @Override
+    public void setSharedFileStoreLocked(final boolean locked) {
+        sharedFileStoreWidget.setSharedFileStoreLocked(locked);
+    }
+
+    @Override
     public void setSharedFileStore(final SharedFileStoreSettings settings) {
         sharedFileStoreWidget.setSharedFileStore(settings);
     }

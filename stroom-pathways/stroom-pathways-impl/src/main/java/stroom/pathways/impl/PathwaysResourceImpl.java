@@ -46,7 +46,15 @@ class PathwaysResourceImpl implements PathwaysResource {
 
     @Override
     public PathwaysDoc fetch(final String uuid) {
-        return pathwaysStoreProvider.get().readDocument(getDocRef(uuid));
+        final PathwaysDoc doc = pathwaysStoreProvider.get().readDocument(getDocRef(uuid));
+        if (doc == null) {
+            return null;
+        }
+        // Stamp the transient flag so the editor can lock the shared path and shard count once
+        // pathways have been written under them.
+        return doc.copy()
+                .hasSharedFileStoreData(pathwaysStoreProvider.get().hasSharedFileStoreData(uuid))
+                .build();
     }
 
     @Override
@@ -54,7 +62,15 @@ class PathwaysResourceImpl implements PathwaysResource {
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
-        return pathwaysStoreProvider.get().writeDocument(doc);
+        // Strip the transient flag before persisting — it is always recomputed server-side and must
+        // never be written to the document store.
+        final PathwaysDoc updated = pathwaysStoreProvider.get().writeDocument(doc.copy().build());
+        if (updated == null) {
+            return null;
+        }
+        return updated.copy()
+                .hasSharedFileStoreData(pathwaysStoreProvider.get().hasSharedFileStoreData(uuid))
+                .build();
     }
 
     private DocRef getDocRef(final String uuid) {

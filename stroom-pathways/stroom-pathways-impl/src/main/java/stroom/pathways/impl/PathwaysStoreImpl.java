@@ -20,18 +20,36 @@ import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
+import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.api.StoreFactory;
 import stroom.pathways.shared.PathwaysDoc;
+import stroom.planb.impl.PlanBConstants;
+import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.security.api.SecurityContext;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.EntityServiceException;
+import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Objects;
+
 @Singleton
 public class PathwaysStoreImpl
         extends AbstractDocumentStore<PathwaysDoc>
         implements PathwaysStore {
+
+    private static final LambdaLogger LOGGER =
+            LambdaLoggerFactory.getLogger(PathwaysStoreImpl.class);
 
     private final Provider<ClusterLockService> clusterLockServiceProvider;
 
@@ -66,6 +84,95 @@ public class PathwaysStoreImpl
                 : doc.copy()
                         .infoFeed(remapper.remap(doc.getInfoFeed()))
                         .build();
+    }
+
+    /**
+     * Refuses a change to the shared path or the shard count once either has data under it.
+     *
+     * <p>Both decide where a pathway lives: the path is the root of the model and the queue, and the
+     * count is what the operation name is hashed against. Changing either leaves everything already
+     * written where nothing will look for it again — silently, because a search still finds the names
+     * and then asks the wrong shard for them.
+     *
+     * <p>The editor locks both fields for the same reason. This is the check behind that, for an
+     * import or a direct API call that never saw the screen.
+     */
+    @Override
+    public PathwaysDoc writeDocument(final PathwaysDoc document) {
+        checkSharedFileStoreUnchanged(document);
+        return super.writeDocument(document);
+    }
+
+    private void checkSharedFileStoreUnchanged(final PathwaysDoc document) {
+        final PathwaysDoc oldDoc;
+        try {
+            oldDoc = getStore().readDocument(document.asDocRef());
+        } catch (final DocumentNotFoundException e) {
+            // Nothing is being written over, so there is nothing to preserve. Reached whenever this
+            // node has not held the document before — the ordinary case for an import.
+            return;
+        }
+        if (oldDoc == null || !hasSharedFileStoreData(oldDoc)) {
+            return;
+        }
+        final SharedFileStoreSettings oldSettings = oldDoc.getSharedFileStore();
+        final SharedFileStoreSettings newSettings = document.getSharedFileStore();
+        if (newSettings == null
+            || !Objects.equals(oldSettings.getSharedPath(), newSettings.getSharedPath())) {
+            throw new EntityServiceException(
+                    "Cannot change the shared path: pathways have already been written under it.");
+        }
+        if (oldSettings.getShardCount() != newSettings.getShardCount()) {
+            throw new EntityServiceException(
+                    "Cannot change the shard count: pathways have already been written to this store.");
+        }
+    }
+
+    @Override
+    public boolean hasSharedFileStoreData(final String uuid) {
+        return hasSharedFileStoreData(readDocument(
+                DocRef.builder().uuid(uuid).type(PathwaysDoc.TYPE).build()));
+    }
+
+    // A model or a queue under this document's shared path. Both are enough to pin the settings: the
+    // queue holds traces already routed by the current shard count, and the model holds pathways
+    // already placed by it.
+    private boolean hasSharedFileStoreData(final PathwaysDoc doc) {
+        final SharedFileStoreSettings settings = doc == null
+                ? null
+                : doc.getSharedFileStore();
+        if (settings == null || NullSafe.isBlankString(settings.getSharedPath())) {
+            return false;
+        }
+        final Path sharedRoot;
+        try {
+            sharedRoot = Path.of(settings.getSharedPath());
+        } catch (final InvalidPathException e) {
+            // Not a path at all, so it names nowhere data could be.
+            LOGGER.warn(() -> "Not a usable shared file store path: " + settings.getSharedPath());
+            return false;
+        }
+        return directoryExists(sharedRoot.resolve(PathwaysShardStore.SHARDS_DIR_NAME)
+                       .resolve(doc.getUuid()))
+               || directoryExists(sharedRoot.resolve(PlanBConstants.QUEUE_DIR_NAME)
+                       .resolve(doc.getUuid()));
+    }
+
+    // Fails closed, which Files.isDirectory would not: it answers "not there" and "could not tell"
+    // identically, and taking "could not tell" for "no data" would unlock settings that orphan a model.
+    // A change refused because the mount was unreachable is recoverable; one allowed on a false
+    // negative is not.
+    private static boolean directoryExists(final Path path) {
+        try {
+            Files.readAttributes(path, BasicFileAttributes.class);
+            return true;
+        } catch (final NoSuchFileException e) {
+            return false;
+        } catch (final IOException | RuntimeException e) {
+            LOGGER.warn(() -> "Could not check " + path + ", so treating it as holding data: "
+                              + e.getMessage());
+            return true;
+        }
     }
 
     @Override
