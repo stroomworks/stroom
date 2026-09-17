@@ -17,6 +17,9 @@
 package stroom.floormap.impl;
 
 import stroom.floormap.shared.FloorMapEventStoreDoc;
+import stroom.planb.impl.dao.Db;
+import stroom.planb.impl.dao.temporalstate.TemporalStateDb;
+import stroom.planb.impl.data.shard.ShardManager;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.StateType;
 import stroom.query.api.Param;
@@ -24,9 +27,11 @@ import stroom.util.shared.time.SimpleDuration;
 import stroom.util.shared.time.TimeUnit;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -197,5 +202,73 @@ class TestFloorMapEventStoreSearchProvider {
         assertThatThrownBy(() -> FloorMapEventStoreSearchProvider.requireEventStore(otherType))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(FloorMapEventStoreDoc.TYPE);
+    }
+
+    // ------------------------------------------------------------------
+    // The dispatch: which read actually runs.
+    // ------------------------------------------------------------------
+
+    /**
+     * A shard manager that hands out one reader and remembers nothing else.
+     *
+     * <p>Hand-written rather than mocked because {@code get} takes a {@code Function} and runs it —
+     * the behaviour under test is which method that function calls, so the double has to actually
+     * invoke it. A stubbed {@code get} would return without running anything and the test would pass
+     * against a provider that did nothing at all.</p>
+     */
+    private static ShardManager shardManagerServing(final Db<?, ?> reader) {
+        final ShardManager shardManager = Mockito.mock(ShardManager.class);
+        Mockito.when(shardManager.get(Mockito.anyString(), Mockito.any()))
+                .thenAnswer(invocation -> {
+                    final Function<Db<?, ?>, Object> function = invocation.getArgument(1);
+                    return function.apply(reader);
+                });
+        return shardManager;
+    }
+
+    @Test
+    void withoutAnAsAtTheOrdinaryReadRuns() {
+        final TemporalStateDb reader = Mockito.mock(TemporalStateDb.class);
+
+        FloorMapEventStoreSearchProvider.readThrough(
+                shardManagerServing(reader), "events", null, null, null, null, null, null, null);
+
+        Mockito.verify(reader).search(Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any());
+        Mockito.verify(reader, Mockito.never()).searchSnapshot(
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void withAnAsAtTheSnapshotRunsAndCarriesTheFloor() {
+        final TemporalStateDb reader = Mockito.mock(TemporalStateDb.class);
+        final Instant floor = AS_AT.minusSeconds(3600L);
+
+        FloorMapEventStoreSearchProvider.readThrough(
+                shardManagerServing(reader), "events", null, null, null, null, null, AS_AT, floor);
+
+        Mockito.verify(reader).searchSnapshot(
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.eq(AS_AT), Mockito.eq(floor));
+        Mockito.verify(reader, Mockito.never()).search(
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    /**
+     * A store that is not a temporal state store cannot serve a snapshot.
+     *
+     * <p>Holds by construction — the document type fixes {@code stateType} — so this is here for the
+     * case where it somehow does not, to fail with something a person can act on rather than by
+     * reading an encoding that is not prefix-free.</p>
+     */
+    @Test
+    void snapshotOverTheWrongKindOfStoreIsRefused() {
+        final Db<?, ?> notTemporal = Mockito.mock(Db.class);
+
+        assertThatThrownBy(() -> FloorMapEventStoreSearchProvider.readThrough(
+                shardManagerServing(notTemporal), "events", null, null, null, null, null, AS_AT, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("temporal state store");
     }
 }

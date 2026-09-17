@@ -18,16 +18,25 @@ package stroom.planb.impl.serde;
 
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.planb.impl.dao.session.SessionDb;
 import stroom.planb.impl.serde.keyprefix.KeyPrefix;
 import stroom.planb.impl.serde.keyprefix.KeyPrefixSerdeFactory;
 import stroom.planb.impl.serde.temporalkey.TemporalKey;
 import stroom.planb.impl.serde.temporalkey.TerminatedStringKeySerde;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
 import stroom.planb.shared.KeyType;
+import stroom.planb.shared.PlanBDoc;
+import stroom.planb.shared.SessionKeySchema;
+import stroom.planb.shared.SessionSettings;
+import stroom.planb.shared.StateType;
+import stroom.util.io.ByteSize;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -169,6 +178,34 @@ class TestTerminatedStringKeySerde {
     void theEncodingIsRefusedWhereNothingWouldSeek() {
         assertThatThrownBy(() -> KeyPrefixSerdeFactory.createKeySerde(
                 KeyType.TERMINATED_STRING, null, null, BYTE_BUFFERS, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("temporal state");
+    }
+
+    /**
+     * A session store refuses the encoding too, and refuses it while opening rather than later.
+     *
+     * <p>Exercised through a real store rather than a mock: {@code SessionDb.create} builds the key
+     * serde from the document's own key schema, so the document <em>is</em> the input, and mocking
+     * anything here would only have tested the mock. It also confirms the failure arrives at open
+     * time — {@code create} closes the environment on the way out, so a store that cannot be served
+     * does not leave one behind.</p>
+     */
+    @Test
+    void sessionStoreRefusesTheEncodingWhenItOpens(@TempDir final Path tempDir) {
+        final PlanBDoc sessionDoc = PlanBDoc.builder()
+                .uuid(UUID.randomUUID().toString())
+                .name("sessions")
+                .stateType(StateType.SESSION)
+                .settings(new SessionSettings.Builder()
+                        .maxStoreSize(ByteSize.ofGibibytes(1).getBytes())
+                        .keySchema(new SessionKeySchema.Builder()
+                                .keyType(KeyType.TERMINATED_STRING)
+                                .build())
+                        .build())
+                .build();
+
+        assertThatThrownBy(() -> SessionDb.create(tempDir, BYTE_BUFFERS, sessionDoc, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("temporal state");
     }

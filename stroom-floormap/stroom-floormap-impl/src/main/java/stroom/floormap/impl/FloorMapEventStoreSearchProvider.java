@@ -27,6 +27,7 @@ import stroom.planb.impl.StateFieldUtil;
 import stroom.planb.impl.dao.temporalstate.TemporalStateDb;
 import stroom.planb.impl.data.shard.ShardManager;
 import stroom.planb.shared.PlanBDocument;
+import stroom.query.api.DateTimeSettings;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.Param;
 import stroom.query.api.Query;
@@ -46,6 +47,8 @@ import stroom.query.common.v2.ResultStore;
 import stroom.query.common.v2.ResultStoreFactory;
 import stroom.query.common.v2.SearchProcess;
 import stroom.query.common.v2.SearchProvider;
+import stroom.query.language.functions.FieldIndex;
+import stroom.query.language.functions.ValuesConsumer;
 import stroom.security.api.SecurityContext;
 import stroom.task.api.TaskContextFactory;
 import stroom.task.api.TaskManager;
@@ -332,26 +335,16 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
 
                 final Instant queryStart = Instant.now();
                 try {
-                    shardManager.get(doc.getName(), reader -> {
-                        if (asAt == null) {
-                            reader.search(
-                                    criteria,
-                                    coprocessors.getFieldIndex(),
-                                    modifiedSearchRequest.getDateTimeSettings(),
-                                    expressionPredicateFactory,
-                                    coprocessors);
-                        } else {
-                            snapshotReader(reader).searchSnapshot(
-                                    criteria,
-                                    coprocessors.getFieldIndex(),
-                                    modifiedSearchRequest.getDateTimeSettings(),
-                                    expressionPredicateFactory,
-                                    coprocessors,
-                                    asAt,
-                                    notBefore);
-                        }
-                        return null;
-                    });
+                    readThrough(
+                            shardManager,
+                            doc.getName(),
+                            criteria,
+                            coprocessors.getFieldIndex(),
+                            modifiedSearchRequest.getDateTimeSettings(),
+                            expressionPredicateFactory,
+                            coprocessors,
+                            asAt,
+                            notBefore);
                 } catch (final RuntimeException e) {
                     LOGGER.debug(e::getMessage, e);
                     resultStore.addError(e);
@@ -369,6 +362,45 @@ public class FloorMapEventStoreSearchProvider implements SearchProvider, IndexFi
         CompletableFuture.runAsync(runnable, executor);
 
         return resultStore;
+    }
+
+    /**
+     * Opens the store and runs whichever read the caller asked for.
+     *
+     * <p>The one decision this provider exists to make, and therefore the one worth being able to
+     * test: {@code asAt} present means the snapshot, absent means the ordinary range read that any
+     * data source gives. Package-private, and taking its collaborators as arguments, so that
+     * decision can be exercised without standing up a coprocessor stack and an async task.</p>
+     */
+    static void readThrough(final ShardManager shardManager,
+                            final String storeName,
+                            final ExpressionCriteria criteria,
+                            final FieldIndex fieldIndex,
+                            final DateTimeSettings dateTimeSettings,
+                            final ExpressionPredicateFactory expressionPredicateFactory,
+                            final ValuesConsumer consumer,
+                            final Instant asAt,
+                            final Instant notBefore) {
+        shardManager.get(storeName, reader -> {
+            if (asAt == null) {
+                reader.search(
+                        criteria,
+                        fieldIndex,
+                        dateTimeSettings,
+                        expressionPredicateFactory,
+                        consumer);
+            } else {
+                snapshotReader(reader).searchSnapshot(
+                        criteria,
+                        fieldIndex,
+                        dateTimeSettings,
+                        expressionPredicateFactory,
+                        consumer,
+                        asAt,
+                        notBefore);
+            }
+            return null;
+        });
     }
 
     /**

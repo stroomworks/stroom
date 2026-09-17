@@ -43,10 +43,18 @@
        exists so these are not silently restyled by a future button redesign: if the
        button family moves to white-on-blue, point this at a value of its own instead. */
     --floormap-accent__color: var(--button-default-primary__color);
+
+    /* Warning text on the FloorMap Event Store's settings tab, where enabling condense is
+       offered. It is body text explaining a consequence, not a status badge, so it is held to
+       the 4.5:1 text threshold rather than the 3:1 non-text one. Material Orange is nowhere
+       near that on white at any usable weight, so this is a red-brown that reads as a caution
+       without shouting. */
+    --floormap-warning__color: #b3261e; /* 6.4:1 on white */
 }
 
 .stroom-theme-dark {
     --floormap-out-of-range__color: #ffa726; /* 7.9:1 on the dark page background */
+    --floormap-warning__color:      #f2b8b5; /* 8.9:1 on the dark page background */
 }
 
 /* ============================================================
@@ -456,6 +464,18 @@
     margin-top: 1em;
     padding-top: 1em;
     border-top: 1px solid var(--border-color);
+}
+
+/* The consequence of enabling condense, stated beside the setting that causes it: a
+   stationary entity's repeats are collapsed to the earliest, so its last-seen time stops
+   advancing and expiry removes it from the map while it is still emitting. Sited with the
+   control rather than in the help text because it is the kind of thing a reader needs at
+   the moment of the decision. */
+.floorMapEventStoreCondenseWarning {
+    display: block;
+    margin-bottom: 0.5em;
+    color: var(--floormap-warning__color);
+    font-weight: 500;
 }
 
 /* ============================================================
