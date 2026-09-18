@@ -50,6 +50,7 @@ class TestNameBasedChildMatching {
     private static final String OPERATION = "ProcessorTaskCreatorJob.run";
     private static final String PREPARE = "Prepare statement";
     private static final String PING = "Ping";
+    private static final String COMMIT = "Commit";
     private static final String OCCURRENCES = "occurrences";
     private static final String CHILD_ORDER = "childOrder";
     private static final long BASE = 1_700_000_000_000_000_000L;
@@ -115,6 +116,17 @@ class TestNameBasedChildMatching {
         assertThat(root.getChildren())
                 .as("no name is new, so nothing is added")
                 .hasSize(2);
+    }
+
+    @Test
+    void childrenKeepTheOrderTheyWereFirstReachedIn() {
+        PathNode root = learn(null, trace(PING));
+        // Alphabetically Commit sorts first, but it was reached second.
+        root = learn(root, trace(PING, COMMIT));
+
+        assertThat(root.getChildren().stream().map(PathNode::getName))
+                .as("the model holds the order the steps were first reached, not their names sorted")
+                .containsExactly(PING, COMMIT);
     }
 
     @Test

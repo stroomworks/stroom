@@ -47,11 +47,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -123,12 +123,13 @@ public class NodeMutatorImpl {
         final PathNode.Builder pathNodeBuilder =
                 addConstraints(parentNode, parentSpan, childOrder, messages, pathwaysDoc);
 
-        final Map<String, PathNode> existing = new HashMap<>();
+        final Map<String, PathNode> existing = new LinkedHashMap<>();
         NullSafe.list(parentNode.getChildren()).forEach(child -> existing.put(child.getName(), child));
 
-        // Every name the model knows plus every name this trace carried, in a fixed order so the
-        // stored children do not shuffle between writes.
-        final Set<String> names = new TreeSet<>(existing.keySet());
+        // Every name the model knows, in the order it already holds them, then any this trace brought
+        // that it did not. A name keeps the place it was first given, so the stored order is the order
+        // the steps were first reached and it does not shuffle between writes.
+        final Set<String> names = new LinkedHashSet<>(existing.keySet());
         names.addAll(spansByName.keySet());
 
         final List<PathNode> children = new ArrayList<>(names.size());
