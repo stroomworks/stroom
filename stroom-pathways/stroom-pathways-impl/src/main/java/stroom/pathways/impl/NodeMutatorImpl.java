@@ -107,10 +107,9 @@ public class NodeMutatorImpl {
         // The child names in the order they were first reached, kept on the parent as a constraint.
         // A route that starts doing the same work in a different order widens that constraint rather
         // than becoming a route of its own. How many times each one ran is counted on the child, so
-        // repeats are left out here.
-        final boolean hasOrder = parentNode.getConstraints() != null &&
-                                 parentNode.getConstraints().containsKey(CHILD_ORDER);
-        final String childOrder = spansByName.isEmpty() && !hasOrder
+        // repeats are left out here, and so is a trace that reached no children at all — that is
+        // already recorded as a count of zero on each child the model knows.
+        final String childOrder = spansByName.isEmpty()
                 ? null
                 : String.join(" > ", spansByName.keySet());
 

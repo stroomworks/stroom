@@ -1,8 +1,133 @@
+/* A row holding the pathway tree and, when a node is selected, the Node Info panel on the right. */
+.pathway-body {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
 .pathway {
     position: relative;
     overflow: auto;
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
     height: 100%;
+}
+
+/* Node Info side panel — shown when a node in the tree is clicked. */
+.pathway-info-panel {
+    position: relative;
+    flex: 0 0 auto;
+    width: 340px;             /* base; overridden by an inline width when resized */
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-left: 1px solid var(--border-color);
+}
+
+/* Left-edge drag handle to resize the panel. */
+.pathway-info-resize {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: ew-resize;
+    z-index: 1;
+}
+
+.pathway-info-resize:hover {
+    background-color: var(--border-color);
+}
+
+.pathway-info-header {
+    flex: 0 0 auto;
+    position: relative;       /* anchors the absolutely-positioned close button */
+    padding: 8px 20px;
+    border-bottom: 1px solid #404040;
+    font-size: 13px;
+    line-height: 15px;
+    font-weight: 500;
+    background-color: #2d2d2d;
+}
+
+.pathway-info-title {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.pathway-info-close {
+    position: absolute;
+    top: 8px;
+    right: 20px;
+    cursor: pointer;
+}
+
+.pathway-info-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.pathway-info-name {
+    font-weight: 500;
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+/* Where the node sits in the pathway, root first. */
+.pathway-info-path {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+    color: #9aa0a6;
+    word-break: break-word;
+}
+
+.pathway-info-row {
+    margin: 3px 0;
+    word-break: break-all;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.pathway-info-row .docRefLinkContainer {
+    min-width: 0;
+    flex: 1;
+}
+
+.pathway-info-row .docRefLinkText {
+    white-space: pre-wrap;
+    word-break: normal;
+    overflow-wrap: anywhere;
+}
+
+.pathway-info-key {
+    color: #9aa0a6;
+    flex-shrink: 0;
+}
+
+/* A constraint the model has seen traces without. */
+.pathway-info-optional {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #9aa0a6;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 0 4px;
+}
+
+.pathway-info-section {
+    font-weight: 500;
+    margin: 12px 0 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
 }
 
 .pathway-curves {

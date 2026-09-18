@@ -16,7 +16,11 @@
 
 package stroom.pathways.client.presenter;
 
+import stroom.data.client.presenter.CopyTextUtil;
+import stroom.data.grid.client.DefaultResources;
+import stroom.data.grid.client.Glass;
 import stroom.pathways.client.presenter.PathwayTreePresenter.PathwayTreeView;
+import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.svg.client.Preset;
@@ -32,6 +36,8 @@ import stroom.widget.util.client.MySingleSelectionModel;
 import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.user.client.Event;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -39,38 +45,53 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.ToIntFunction;
+import java.util.stream.Collectors;
 
 public class PathwayTreePresenter
         extends MyPresenterWidget<PathwayTreeView> {
 
     private static final int ROW_HEIGHT = 22;
     private static final int INDENT = 20;
+    private static final int INFO_MIN_WIDTH = 240;
+    private static final int TREE_MIN_WIDTH = 240;
+    private static final String ATTRIBUTE_PREFIX = "attribute.";
 
     private final ButtonView newButton;
     private final ButtonView editButton;
     private final ButtonView removeButton;
 
     private final HTML html;
+    private final Glass glass;
     private final MySingleSelectionModel<PathNode> selectionModel = new MySingleSelectionModel<PathNode>();
 
     private Pathway pathway;
-    private Element selected;
+    private PathNode selectedNode;
     private boolean readOnly = true;
     private final Map<String, PathNode> nodeMap = new HashMap<>();
 
+    private int infoWidth = 340;
+    private boolean resizingPanel;
+    private int startX;
+
     @Inject
     public PathwayTreePresenter(final EventBus eventBus,
-                                final PathwayTreeView view) {
+                                final PathwayTreeView view,
+                                final DefaultResources resources) {
         super(eventBus, view);
         newButton = view.addButton(SvgPresets.NEW_ITEM);
         editButton = view.addButton(SvgPresets.EDIT);
         removeButton = view.addButton(SvgPresets.DELETE);
         enableButtons();
+
+        glass = new Glass(resources.dataGridStyle().resizeGlass());
 
         html = new HTML();
         html.addStyleName("max");
@@ -82,64 +103,233 @@ public class PathwayTreePresenter
         super.onBind();
         registerHandler(html.addClickHandler(e -> {
             final Element target = e.getNativeEvent().getEventTarget().cast();
-            if (target != null) {
-                final Element node = ElementUtil.findParent(target, element ->
-                        NullSafe.isNonBlankString(element.getAttribute("uuid")), 3);
-                if (node != null) {
-                    final String uuid = node.getAttribute("uuid");
-                    if (!Objects.equals(selected, node)) {
-                        if (selected != null) {
-                            selected.removeClassName("pathway-nodeName--selected");
-                        }
-                        selected = node;
-                        selected.addClassName("pathway-nodeName--selected");
-                        selectionModel.setSelected(nodeMap.get(uuid), true);
-                        enableButtons();
-                    }
+            if (target == null) {
+                return;
+            }
+
+            if (ElementUtil.findParent(target, element ->
+                    "closePathwayInfo".equals(element.getId()), 3) != null) {
+                select(null);
+                return;
+            }
+
+            final Element node = ElementUtil.findParent(target, element ->
+                    NullSafe.isNonBlankString(element.getAttribute("uuid")), 3);
+            if (node != null) {
+                select(nodeMap.get(node.getAttribute("uuid")));
+            }
+        }));
+
+        registerHandler(html.addMouseDownHandler(e -> {
+            final Element target = e.getNativeEvent().getEventTarget().cast();
+            if (target == null) {
+                return;
+            }
+
+            // Copying a value is handled here rather than on click: CopyTextUtil.onClick acts only on
+            // a mousedown, and it also raises the right-click menu.
+            if (ElementUtil.findParent(target, "docRefLinkContainer", 5) != null) {
+                CopyTextUtil.onClick(e.getNativeEvent(), this);
+                return;
+            }
+
+            // Drag the panel's left edge to resize it.
+            if ("pathwayInfoResize".equals(target.getId())) {
+                startX = e.getClientX();
+                glass.show();
+                Event.setCapture(html.getElement());
+                resizingPanel = true;
+            }
+        }));
+        registerHandler(html.addMouseMoveHandler(e -> {
+            if (resizingPanel) {
+                // Moving left widens the panel, right narrows it.
+                final int delta = startX - e.getClientX();
+                startX = e.getClientX();
+                final int max = Math.max(INFO_MIN_WIDTH,
+                        html.getElement().getClientWidth() - TREE_MIN_WIDTH);
+                infoWidth = Math.max(INFO_MIN_WIDTH, Math.min(max, infoWidth + delta));
+
+                final Element panel = ElementUtil.findChild(html.getElement(), "pathway-info-panel");
+                if (panel != null) {
+                    panel.getStyle().setWidth(infoWidth, Unit.PX);
                 }
             }
         }));
+        registerHandler(html.addMouseUpHandler(e -> {
+            if (resizingPanel) {
+                glass.hide();
+                Event.releaseCapture(html.getElement());
+                resizingPanel = false;
+            }
+        }));
+    }
+
+    private void select(final PathNode pathNode) {
+        if (Objects.equals(uuid(selectedNode), uuid(pathNode))) {
+            return;
+        }
+
+        selectedNode = pathNode;
+        if (pathNode == null) {
+            selectionModel.clear();
+        } else {
+            selectionModel.setSelected(pathNode, true);
+        }
+        enableButtons();
+        refresh();
     }
 
     public void read(final Pathway pathway,
                      final boolean readOnly) {
         this.pathway = pathway;
         this.readOnly = readOnly;
-        this.selected = null;
+        this.selectedNode = null;
+        selectionModel.clear();
+        enableButtons();
+        refresh();
+    }
 
+    private static String uuid(final PathNode pathNode) {
+        return pathNode == null
+                ? null
+                : pathNode.getUuid();
+    }
+
+    private void refresh() {
         nodeMap.clear();
 
+        // The whole widget is re-rendered on every selection, so the tree's scroll position has to be
+        // put back or it jumps to the top each time a node is clicked.
+        final int scrollTop = treeScroll(Element::getScrollTop);
+        final int scrollLeft = treeScroll(Element::getScrollLeft);
+
         final HtmlBuilder hb = new HtmlBuilder();
-        hb.div(div -> {
-            if (pathway != null) {
-                addNode(pathway.getRoot());
+        hb.div(body -> {
+            body.div(div -> {
+                if (pathway != null) {
+                    addNode(pathway.getRoot());
 
-                // Draw bezier curves.
-                final HtmlBuilder svgBuilder = new HtmlBuilder();
-                final HtmlBuilder nodeBuilder = new HtmlBuilder();
-                final AtomicInteger rowNum = new AtomicInteger();
-                final AtomicInteger width = new AtomicInteger();
-                final AtomicInteger height = new AtomicInteger();
+                    // Draw bezier curves.
+                    final HtmlBuilder svgBuilder = new HtmlBuilder();
+                    final HtmlBuilder nodeBuilder = new HtmlBuilder();
+                    final AtomicInteger rowNum = new AtomicInteger();
+                    final AtomicInteger width = new AtomicInteger();
+                    final AtomicInteger height = new AtomicInteger();
 
-                append(nodeBuilder,
-                        pathway.getRoot(),
-                        svgBuilder,
-                        0,
-                        rowNum,
-                        width,
-                        height);
+                    append(nodeBuilder,
+                            pathway.getRoot(),
+                            svgBuilder,
+                            0,
+                            rowNum,
+                            width,
+                            height);
 
-                div.div(d -> {
-                    d.elem(rootSvgElement -> rootSvgElement.append(svgBuilder.toSafeHtml()),
-                            SafeHtmlUtil.from("svg"),
-                            new Attribute("width", String.valueOf(width.get() + 10)),
-                            new Attribute("height", String.valueOf(height.get() + 10)),
-                            new Attribute("xmlns", "http://www.w3.org/2000/svg"));
-                }, Attribute.className("pathway-curves"));
-                div.div(d -> d.append(nodeBuilder.toSafeHtml()), Attribute.className("pathway-nodes"));
+                    div.div(d -> {
+                        d.elem(rootSvgElement -> rootSvgElement.append(svgBuilder.toSafeHtml()),
+                                SafeHtmlUtil.from("svg"),
+                                new Attribute("width", String.valueOf(width.get() + 10)),
+                                new Attribute("height", String.valueOf(height.get() + 10)),
+                                new Attribute("xmlns", "http://www.w3.org/2000/svg"));
+                    }, Attribute.className("pathway-curves"));
+                    div.div(d -> d.append(nodeBuilder.toSafeHtml()), Attribute.className("pathway-nodes"));
+                }
+            }, Attribute.className("pathway"));
+
+            if (selectedNode != null) {
+                appendInfo(body, selectedNode);
             }
-        }, Attribute.className("pathway"));
+        }, Attribute.className("pathway-body"));
         html.setHTML(hb.toSafeHtml());
+
+        setTreeScroll(scrollTop, scrollLeft);
+    }
+
+    private int treeScroll(final ToIntFunction<Element> get) {
+        final Element tree = ElementUtil.findChild(html.getElement(), "pathway");
+        return tree == null
+                ? 0
+                : get.applyAsInt(tree);
+    }
+
+    private void setTreeScroll(final int scrollTop, final int scrollLeft) {
+        final Element tree = ElementUtil.findChild(html.getElement(), "pathway");
+        if (tree != null) {
+            tree.setScrollTop(scrollTop);
+            tree.setScrollLeft(scrollLeft);
+        }
+    }
+
+    // The Node Info side panel: the selected node's name, where it sits in the pathway, and everything
+    // the model has learnt about it. Closed by the header button (id closePathwayInfo), resized by
+    // dragging the left edge (id pathwayInfoResize).
+    private void appendInfo(final HtmlBuilder hb, final PathNode node) {
+        hb.div(panel -> {
+            panel.div("", Attribute.className("pathway-info-resize"), Attribute.id("pathwayInfoResize"));
+            panel.div(header -> {
+                header.span("Node Info", Attribute.className("pathway-info-title"));
+                header.div("×",
+                        Attribute.className("pathway-info-close"),
+                        Attribute.id("closePathwayInfo"),
+                        Attribute.title("Close"));
+            }, Attribute.className("pathway-info-header"));
+
+            panel.div(body -> {
+                body.div(node.getName(), Attribute.className("pathway-info-name"));
+                body.div(String.join(" › ", NullSafe.list(node.getPath())),
+                        Attribute.className("pathway-info-path"));
+
+                final List<Constraint> constraints = new ArrayList<>(
+                        NullSafe.map(node.getConstraints()).values());
+                constraints.sort(Comparator.comparing(Constraint::getName));
+
+                appendSection(body, "Constraints", constraints, false);
+                appendSection(body, "Attributes", constraints, true);
+            }, Attribute.className("pathway-info-body"));
+        }, Attribute.className("pathway-info-panel"),
+                Attribute.id("pathwayInfo"),
+                Attribute.style("width: " + infoWidth + "px;"));
+    }
+
+    // The span's own OTel attributes are listed separately from what the model works out about the
+    // node itself, the way the Span Info panel splits them.
+    private void appendSection(final HtmlBuilder hb,
+                               final String title,
+                               final List<Constraint> constraints,
+                               final boolean attributes) {
+        final List<Constraint> section = constraints
+                .stream()
+                .filter(constraint -> constraint.getName().startsWith(ATTRIBUTE_PREFIX) == attributes)
+                .collect(Collectors.toList());
+        if (section.isEmpty()) {
+            return;
+        }
+
+        hb.div(title, Attribute.className("pathway-info-section"));
+        section.forEach(constraint -> {
+            final String name = attributes
+                    ? constraint.getName().substring(ATTRIBUTE_PREFIX.length())
+                    : constraint.getName();
+            hb.div(row -> {
+                row.span(name + ": ", Attribute.className("pathway-info-key"));
+                CopyTextUtil.render(constraintValue(constraint), row, false);
+                if (constraint.isOptional()) {
+                    row.span("optional", Attribute.className("pathway-info-optional"));
+                }
+            }, Attribute.className("pathway-info-row"), Attribute.title(constraintType(constraint)));
+        });
+    }
+
+    private static String constraintValue(final Constraint constraint) {
+        return constraint.getValue() == null
+                ? ""
+                : constraint.getValue().toString();
+    }
+
+    private static String constraintType(final Constraint constraint) {
+        return constraint.getValue() == null
+                ? ""
+                : constraint.getValue().valueType().getDisplayValue();
     }
 
     private void addNode(final PathNode node) {
@@ -162,8 +352,11 @@ public class PathwayTreePresenter
                             icon.appendTrustedString(SvgImage.PATHWAYS_NODE.getSvg()),
                     Attribute.className("pathway-nodeIcon svgIcon " +
                                         SvgImage.PATHWAYS_NODE.getClassName()));
+            final String nameCss = selectedNode != null && selectedNode.getUuid().equals(node.getUuid())
+                    ? "pathway-nodeName pathway-nodeName--selected"
+                    : "pathway-nodeName";
             nodeDiv.div(n -> n.append(node.getName()),
-                    Attribute.className("pathway-nodeName"), new Attribute("uuid", node.getUuid()));
+                    Attribute.className(nameCss), new Attribute("uuid", node.getUuid()));
         }, Attribute.className("pathway-node"));
 
         // Add the things seen beneath this node.

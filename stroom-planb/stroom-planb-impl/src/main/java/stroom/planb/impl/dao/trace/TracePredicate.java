@@ -100,7 +100,9 @@ public class TracePredicate implements Predicate<Trace> {
                 .computeIfAbsent(span.getName(), k -> new ArrayList<>())
                 .add(span));
 
-        if (!addConstraints(parentNode, parentSpan, String.join(" > ", spansByName.keySet()))) {
+        if (!addConstraints(parentNode, parentSpan, spansByName.isEmpty()
+                ? null
+                : String.join(" > ", spansByName.keySet()))) {
             return false;
         }
 
@@ -173,8 +175,10 @@ public class TracePredicate implements Predicate<Trace> {
             return false;
         }
 
-        // Check the order the children ran in, where the model records one for this node.
-        if (constraints.containsKey(CHILD_ORDER) && !checkConstraint(constraints, CHILD_ORDER, childOrder)) {
+        // Check the order the children ran in, where the model records one and this trace reached any.
+        if (childOrder != null
+            && constraints.containsKey(CHILD_ORDER)
+            && !checkConstraint(constraints, CHILD_ORDER, childOrder)) {
             return false;
         }
 

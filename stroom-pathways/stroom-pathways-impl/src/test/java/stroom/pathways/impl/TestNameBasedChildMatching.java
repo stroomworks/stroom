@@ -25,6 +25,7 @@ import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.IntegerValue;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.StringValue;
 
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +51,7 @@ class TestNameBasedChildMatching {
     private static final String PREPARE = "Prepare statement";
     private static final String PING = "Ping";
     private static final String OCCURRENCES = "occurrences";
+    private static final String CHILD_ORDER = "childOrder";
     private static final long BASE = 1_700_000_000_000_000_000L;
 
     @Test
@@ -113,6 +115,16 @@ class TestNameBasedChildMatching {
         assertThat(root.getChildren())
                 .as("no name is new, so nothing is added")
                 .hasSize(2);
+    }
+
+    @Test
+    void aTraceThatReachedNoChildrenDoesNotRecordABlankOrder() {
+        PathNode root = learn(null, trace(PING));
+        root = learn(root, trace());
+
+        assertThat(root.getConstraints().get(CHILD_ORDER).getValue())
+                .as("doing no work below is a count of zero on the child, not a blank order")
+                .isEqualTo(new StringValue(PING));
     }
 
     @Test
