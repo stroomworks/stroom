@@ -68,8 +68,13 @@ import java.util.function.Function;
 
 public class PathwaySerde {
 
+    /**
+     * Where a write starts from when the caller has nothing better to offer, which is a pathway that
+     * does not exist yet. Kryo grows the buffer from here as it writes.
+     */
+    private static final int MIN_BUFFER_SIZE = 128;
+
     private final ByteBufferFactory byteBufferFactory;
-    private int bufferSize = 128;
 
     @Inject
     public PathwaySerde(final ByteBufferFactory byteBufferFactory) {
@@ -207,13 +212,23 @@ public class PathwaySerde {
         };
     }
 
-    public void writePathway(final Pathway pathway, final Consumer<ByteBuffer> consumer) {
+    /**
+     * @param sizeHint what the pathway took when it was last stored, or 0 where it has not been stored
+     *                 yet. A rewrite is almost exactly the size of what it replaces, so this is the
+     *                 best estimate available and it costs nothing to obtain — the caller has just read
+     *                 the value it is replacing. Kryo still grows the buffer where the hint falls
+     *                 short, so a wrong hint costs a copy rather than a failure.
+     *                 <p>The size is not remembered between calls. One pathway is not a guide to the
+     *                 next: this serde is shared by every thread applying traces, so a remembered
+     *                 maximum would have every write of every pathway allocate whatever the largest
+     *                 one needed.
+     */
+    public void writePathway(final Pathway pathway, final int sizeHint, final Consumer<ByteBuffer> consumer) {
+        final int initialSize = Math.max(MIN_BUFFER_SIZE, sizeHint);
         try (final ByteBufferPoolOutput output =
-                new ByteBufferPoolOutput(byteBufferFactory, bufferSize, -1)) {
+                new ByteBufferPoolOutput(byteBufferFactory, initialSize, -1)) {
             writePathway(pathway, output);
-            final ByteBuffer byteBuffer = output.getByteBuffer().flip();
-            bufferSize = Math.max(bufferSize, byteBuffer.capacity());
-            consumer.accept(byteBuffer);
+            consumer.accept(output.getByteBuffer().flip());
         }
     }
 

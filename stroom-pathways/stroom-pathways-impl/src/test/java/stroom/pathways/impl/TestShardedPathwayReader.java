@@ -301,7 +301,8 @@ class TestShardedPathwayReader {
                 final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
                 final ByteBuffer key = ByteBuffer.allocateDirect(keyBytes.length);
                 key.put(keyBytes).flip();
-                new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, value ->
+                // 0: nothing is stored under this name yet, so there is no size to go on.
+                new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, 0, value ->
                         db.getPathways().insert(writer, key, value));
                 writer.commit();
             }
@@ -339,7 +340,8 @@ class TestShardedPathwayReader {
                 final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
                 final ByteBuffer key = ByteBuffer.allocateDirect(keyBytes.length);
                 key.put(keyBytes).flip();
-                new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, value ->
+                // 0: nothing is stored under this name yet, so there is no size to go on.
+                new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, 0, value ->
                         db.getPathways().insert(writer, key, value));
                 writer.commit();
             }

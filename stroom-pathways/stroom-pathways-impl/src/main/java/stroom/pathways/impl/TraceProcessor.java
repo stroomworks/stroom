@@ -140,6 +140,9 @@ public class TraceProcessor {
         // Load current path.
         final SimpleDb pathways = pathwaysDb.getPathways();
         final byte[] keyBytes = pathKey.toString().getBytes(StandardCharsets.UTF_8);
+        // What the pathway took last time, which is what it will take again give or take this trace.
+        // Read before the value is decoded, because decoding consumes the buffer's position.
+        final int[] storedSize = {0};
         byteBuffers.useBytes(keyBytes, keyByteBuffer -> {
             Pathway pathway = pathways.get(writer.getWriteTxn(), keyByteBuffer, valueByteBuffer -> {
                 if (valueByteBuffer == null) {
@@ -155,6 +158,7 @@ public class TraceProcessor {
                             .root(pathNode)
                             .build();
                 }
+                storedSize[0] = valueByteBuffer.remaining();
                 return pathwaySerde.readPathway(valueByteBuffer);
             });
 
@@ -171,7 +175,7 @@ public class TraceProcessor {
                     .build();
 
             // Write pathway.
-            pathwaySerde.writePathway(pathway, byteBuffer ->
+            pathwaySerde.writePathway(pathway, storedSize[0], byteBuffer ->
                     pathways.insert(writer, keyByteBuffer, byteBuffer));
         });
     }
