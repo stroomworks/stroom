@@ -152,9 +152,9 @@ public class TraceLoader {
 
     private Map<PathKey, PathNode> buildPathways(final Collection<Trace> traces,
                                                  final MessageReceiver messageReceiver) {
-        final Comparator<Span> spanComparator = new CloseSpanComparator(NanoDuration.ofMillis(10));
+        final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(NanoDuration.ofMillis(10));
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanComparator, pathKeyFactory);
+        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder, pathKeyFactory);
         final Map<PathKey, PathNode> pathRoots = new HashMap<>();
         for (final Trace trace : traces) {
             final Span root = trace.root();

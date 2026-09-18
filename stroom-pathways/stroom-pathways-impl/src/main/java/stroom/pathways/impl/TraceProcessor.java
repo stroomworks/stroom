@@ -37,7 +37,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
@@ -130,9 +129,9 @@ public class TraceProcessor {
                                final PathwaysDoc doc,
                                final MessageReceiver messageReceiver,
                                final PathwaysDb pathwaysDb) {
-        final Comparator<Span> spanComparator = new CloseSpanComparator(doc.getTemporalOrderingTolerance());
+        final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(doc.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanComparator, pathKeyFactory);
+        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder, pathKeyFactory);
 
         final Span root = trace.root();
         final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));

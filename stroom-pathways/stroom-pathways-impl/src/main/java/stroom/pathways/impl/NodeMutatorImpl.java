@@ -46,7 +46,6 @@ import stroom.util.shared.Severity;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -62,12 +61,12 @@ public class NodeMutatorImpl {
 
     private static final int MAX_SET_SIZE = 10;
 
-    private final Comparator<Span> spanComparator;
+    private final CanonicalSpanOrder spanOrder;
     private final PathKeyFactory pathKeyFactory;
 
-    public NodeMutatorImpl(final Comparator<Span> spanComparator,
+    public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
                            final PathKeyFactory pathKeyFactory) {
-        this.spanComparator = spanComparator;
+        this.spanOrder = spanOrder;
         this.pathKeyFactory = pathKeyFactory;
     }
 
@@ -113,8 +112,7 @@ public class NodeMutatorImpl {
         final PathNode.Builder pathNodeBuilder = addConstraints(parentNode, parentSpan, messageReceiver, pathwaysDoc);
 
         final List<Span> childSpans = trace.children(parentSpan);
-        final List<Span> sortedSpans = new ArrayList<>(childSpans);
-        sortedSpans.sort(spanComparator);
+        final List<Span> sortedSpans = spanOrder.sort(childSpans);
         final PathKey pathKey = pathKeyFactory.create(sortedSpans);
 
         // Load inner map.

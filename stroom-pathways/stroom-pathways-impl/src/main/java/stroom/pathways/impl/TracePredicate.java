@@ -44,7 +44,6 @@ import stroom.util.shared.NullSafe;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -56,14 +55,14 @@ import java.util.stream.Collectors;
 
 public class TracePredicate implements Predicate<Trace> {
 
-    private final Comparator<Span> spanComparator;
+    private final CanonicalSpanOrder spanOrder;
     private final PathKeyFactory pathKeyFactory;
     private final Map<PathKey, PathNode> roots;
 
-    public TracePredicate(final Comparator<Span> spanComparator,
+    public TracePredicate(final CanonicalSpanOrder spanOrder,
                           final PathKeyFactory pathKeyFactory,
                           final Map<PathKey, PathNode> roots) {
-        this.spanComparator = spanComparator;
+        this.spanOrder = spanOrder;
         this.pathKeyFactory = pathKeyFactory;
         this.roots = roots;
     }
@@ -90,8 +89,7 @@ public class TracePredicate implements Predicate<Trace> {
         }
 
         final List<Span> childSpans = trace.children(parentSpan);
-        final List<Span> sortedSpans = new ArrayList<>(childSpans);
-        sortedSpans.sort(spanComparator);
+        final List<Span> sortedSpans = spanOrder.sort(childSpans);
         final PathKey pathKey = pathKeyFactory.create(sortedSpans);
 
         // Load inner map. No merge function, unlike the attribute map below: a node's targets are

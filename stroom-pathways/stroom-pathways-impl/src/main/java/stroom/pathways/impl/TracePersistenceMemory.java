@@ -70,12 +70,12 @@ public class TracePersistenceMemory implements TracePersistence {
 
     @Override
     public ResultPage<TraceRoot> findTraces(final FindTraceCriteria criteria) {
-        final Comparator<Span> spanComparator = new CloseSpanComparator(criteria.getTemporalOrderingTolerance());
+        final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(criteria.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
         final Collection<Trace> traces = getTraces();
         if (criteria.getPathway() != null) {
             final TracePredicate tracePredicate = new TracePredicate(
-                    spanComparator,
+                    spanOrder,
                     pathKeyFactory,
                     Map.of(criteria.getPathway().getPathKey(), criteria.getPathway().getRoot()));
             final List<TraceRoot> filtered = traces
