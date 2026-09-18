@@ -48,6 +48,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 class TestRepeatedSpanAttributes {
 
+    /** Nothing ignored, which is the default. */
+    private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
+
     private static final String OPERATION = "GET /orders";
     private static final long BASE = 1_700_000_000_000_000_000L;
 
@@ -55,7 +58,7 @@ class TestRepeatedSpanAttributes {
     void theModelTakesTheLastValueRatherThanThrowing() {
         final PathwaysDoc doc = doc();
         final NodeMutatorImpl mutator = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()));
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED);
         final PathKey pathKey = new NamePathKey(OPERATION);
 
         final PathNode[] root = new PathNode[1];
@@ -74,7 +77,7 @@ class TestRepeatedSpanAttributes {
     void aPathwaySearchSurvivesIt() {
         final PathwaysDoc doc = doc();
         final PathNode root = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()))
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED)
                 .process(traceWithRepeatedAttribute(), new NamePathKey(OPERATION), null,
                         (severity, message) -> {
                         }, doc);

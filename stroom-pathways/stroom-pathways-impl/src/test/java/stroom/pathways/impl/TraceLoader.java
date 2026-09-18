@@ -63,6 +63,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class TraceLoader {
 
+    /** Nothing ignored, which is the default. */
+    private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
+
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TraceLoader.class);
     private static final JsonMapper MAPPER = createMapper(true);
 
@@ -154,7 +157,7 @@ public class TraceLoader {
                                                  final MessageReceiver messageReceiver) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(NanoDuration.ofMillis(10));
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder);
+        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder, NO_IGNORED);
         final Map<PathKey, PathNode> pathRoots = new HashMap<>();
         for (final Trace trace : traces) {
             final Span root = trace.root();

@@ -495,6 +495,15 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
+    stroom.pathways.impl.PathwaysConfig getPathwaysConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.pathways.impl.PathwaysConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
     stroom.pipeline.PipelineConfig getPipelineConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(

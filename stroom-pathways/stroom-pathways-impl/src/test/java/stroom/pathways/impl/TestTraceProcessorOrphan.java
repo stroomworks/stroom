@@ -51,6 +51,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class TestTraceProcessorOrphan {
 
+    /** Nothing ignored, which is the default. */
+    private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
+
     private static final ByteBufferFactory BYTE_BUFFER_FACTORY = new ByteBufferFactoryImpl();
     private static final ByteBuffers BYTE_BUFFERS = new ByteBuffers(BYTE_BUFFER_FACTORY);
 
@@ -114,7 +117,7 @@ class TestTraceProcessorOrphan {
         // quiet return as "done" and removes the queue item that held it.
         try (final PathwaysDb pathwaysDb = PathwaysDb.create(pathwaysDir, BYTE_BUFFERS, false);
                 final LmdbWriter writer = pathwaysDb.createWriter()) {
-            assertThatThrownBy(() -> new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY))
+            assertThatThrownBy(() -> new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED)
                     .processTrace(writer,
                             pathwaysDb,
                             TRACE_ID,
@@ -133,7 +136,7 @@ class TestTraceProcessorOrphan {
     private static ApplyOutcome processOrphan(final PathwaysDb pathwaysDb,
                                               final LmdbWriter writer,
                                               final List<String> warnings) {
-        return new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY))
+        return new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED)
                 .processTrace(writer,
                         pathwaysDb,
                         TRACE_ID,

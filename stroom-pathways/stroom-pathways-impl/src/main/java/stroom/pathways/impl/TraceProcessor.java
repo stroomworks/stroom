@@ -48,11 +48,14 @@ public class TraceProcessor {
 
     private final ByteBuffers byteBuffers;
     private final PathwaySerde pathwaySerde;
+    private final IgnoredAttributes ignoredAttributes;
 
     public TraceProcessor(final ByteBuffers byteBuffers,
-                          final PathwaySerde pathwaySerde) {
+                          final PathwaySerde pathwaySerde,
+                          final IgnoredAttributes ignoredAttributes) {
         this.byteBuffers = byteBuffers;
         this.pathwaySerde = pathwaySerde;
+        this.ignoredAttributes = ignoredAttributes;
     }
 
     /**
@@ -132,7 +135,7 @@ public class TraceProcessor {
                                final PathwaysDb pathwaysDb) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(doc.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder);
+        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder, ignoredAttributes);
 
         final Span root = trace.root();
         final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));

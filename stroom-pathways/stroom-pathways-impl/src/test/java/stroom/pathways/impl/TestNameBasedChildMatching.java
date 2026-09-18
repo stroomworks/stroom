@@ -47,6 +47,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TestNameBasedChildMatching {
 
+    /** Nothing ignored, which is the default. */
+    private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
+
     private static final String OPERATION = "ProcessorTaskCreatorJob.run";
     private static final String PREPARE = "Prepare statement";
     private static final String PING = "Ping";
@@ -170,7 +173,7 @@ class TestNameBasedChildMatching {
 
     private static PathNode learn(final PathNode current, final Trace trace) {
         final PathwaysDoc doc = doc();
-        return new NodeMutatorImpl(new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()))
+        return new NodeMutatorImpl(new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED)
                 .process(trace, new NamePathKey(OPERATION), current, (severity, message) -> {
                 }, doc);
     }

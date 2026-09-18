@@ -40,6 +40,7 @@ import stroom.util.shared.NullSafe;
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.Meter;
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.io.IOException;
@@ -105,6 +106,7 @@ public class PathwaysProcessor {
     private final SecurityContext securityContext;
     private final ByteBuffers byteBuffers;
     private final ByteBufferFactory byteBufferFactory;
+    private final Provider<PathwaysConfig> configProvider;
 
     private final ExecutorService shardExecutor;
     private final Meter tracesApplied;
@@ -127,6 +129,7 @@ public class PathwaysProcessor {
                                   final SecurityContext securityContext,
                                   final ByteBuffers byteBuffers,
                                   final ByteBufferFactory byteBufferFactory,
+                                  final Provider<PathwaysConfig> configProvider,
                                   final Metrics metrics) {
         this.pathwaysStore = pathwaysStore;
         this.shardStore = shardStore;
@@ -136,6 +139,7 @@ public class PathwaysProcessor {
         this.securityContext = securityContext;
         this.byteBuffers = byteBuffers;
         this.byteBufferFactory = byteBufferFactory;
+        this.configProvider = configProvider;
         this.shardExecutor = createShardExecutor();
 
         this.tracesApplied = metrics.registrationBuilder(getClass())
@@ -274,7 +278,8 @@ public class PathwaysProcessor {
         try (final PathwaysDb pathwaysDb = PathwaysDb.create(localDir, byteBuffers, false)) {
             withMessageReceiver(doc, messageReceiver -> {
                 try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-                    final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde);
+                    final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde,
+                            new IgnoredAttributes(configProvider.get().getIgnoredAttributes()));
                     for (final Path item : queue.itemsOldestFirst()) {
                         if (Thread.currentThread().isInterrupted()) {
                             // The lock's heartbeat interrupts us when it cannot renew. Carrying on

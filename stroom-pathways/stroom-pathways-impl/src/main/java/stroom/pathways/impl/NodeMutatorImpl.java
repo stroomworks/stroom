@@ -59,13 +59,17 @@ import java.util.stream.Collectors;
 public class NodeMutatorImpl {
 
     private static final int MAX_SET_SIZE = 10;
+    private static final String ATTRIBUTE_PREFIX = "attribute.";
     private static final String CHILD_ORDER = "childOrder";
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
+    private final IgnoredAttributes ignoredAttributes;
 
-    public NodeMutatorImpl(final CanonicalSpanOrder spanOrder) {
+    public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
+                           final IgnoredAttributes ignoredAttributes) {
         this.spanOrder = spanOrder;
+        this.ignoredAttributes = ignoredAttributes;
     }
 
 
@@ -234,13 +238,13 @@ public class NodeMutatorImpl {
         // Collectors.toMap does without a merge function, is to throw and lose the whole trace.
         final Map<String, KeyValue> attributes = NullSafe.list(span.getAttributes())
                 .stream()
-                .collect(Collectors.toMap(kv -> "attribute." + kv.getKey(), Function.identity(),
+                .collect(Collectors.toMap(kv -> ATTRIBUTE_PREFIX + kv.getKey(), Function.identity(),
                         (first, second) -> second));
 
         // Make required constraints optional if they don't exist in this set.
         final Map<String, Constraint> newConstraints = new HashMap<>(constraints.size());
         constraints.forEach((key, value) -> {
-            if (!attributes.containsKey(key) && !value.isOptional() && key.startsWith("attribute.")) {
+            if (!attributes.containsKey(key) && !value.isOptional() && key.startsWith(ATTRIBUTE_PREFIX)) {
                 if (!pathwaysDoc.isAllowConstraintMutation()) {
                     messageReceiver.log(Severity.ERROR, () ->
                             "Attribute required: " + pathNode.getPath() + " " + key);
@@ -255,9 +259,21 @@ public class NodeMutatorImpl {
             }
         });
 
-        // Set or expand attributes.
-        attributes.forEach((key, value) ->
-                setOrExpand(newConstraints, pathNode, key, value.getValue(), optional, messageReceiver, pathwaysDoc));
+        // Set or expand attributes. One the configuration says to ignore is recorded as accepting
+        // anything, once, and then left alone — it stays visible against the node without its value
+        // being learnt or widened every time a trace carries a different one.
+        attributes.forEach((key, value) -> {
+            if (!ignoredAttributes.isEmpty()
+                && ignoredAttributes.test(key.substring(ATTRIBUTE_PREFIX.length()))) {
+                if (!(NullSafe.get(newConstraints.get(key), Constraint::getValue)
+                      instanceof AnyTypeValue)) {
+                    newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional));
+                }
+            } else {
+                setOrExpand(newConstraints, pathNode, key, value.getValue(), optional,
+                        messageReceiver, pathwaysDoc);
+            }
+        });
 
         pathNodeBuilder.constraints(newConstraints);
         return pathNodeBuilder;
