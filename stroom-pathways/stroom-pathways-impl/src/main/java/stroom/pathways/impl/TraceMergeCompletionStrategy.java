@@ -173,7 +173,7 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
         final int items = itemsWritten;
         final int traces = tracesWritten;
         final int shed = tracesShed;
-        LOGGER.info(() -> LogUtil.message(
+        LOGGER.debug(() -> LogUtil.message(
                 "Handed over {} trace(s) in {} item(s) across {} shard(s) to {}{}",
                 traces, items, byShard.size(), pathwaysDocRef.getName(),
                 shed == 0
