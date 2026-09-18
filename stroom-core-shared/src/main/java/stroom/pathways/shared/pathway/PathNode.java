@@ -40,7 +40,7 @@ public class PathNode {
     @JsonProperty
     private final List<String> path;
     @JsonProperty
-    private final List<PathNodeSequence> targets;
+    private final List<PathNode> children;
     @JsonProperty
     private final Map<String, Constraint> constraints;
 
@@ -48,14 +48,14 @@ public class PathNode {
     public PathNode(@JsonProperty("uuid") final String uuid,
                     @JsonProperty("name") final String name,
                     @JsonProperty("path") final List<String> path,
-                    @JsonProperty("targets") final List<PathNodeSequence> targets,
+                    @JsonProperty("children") final List<PathNode> children,
                     @JsonProperty("constraints") final Map<String, Constraint> constraints) {
         this.uuid = uuid;
         this.name = name;
         this.path = path;
-        this.targets = targets == null
+        this.children = children == null
                 ? new ArrayList<>()
-                : new ArrayList<>(targets);
+                : new ArrayList<>(children);
         this.constraints = constraints;
     }
 
@@ -64,7 +64,7 @@ public class PathNode {
         this.uuid = UUID.randomUUID().toString();
         this.name = name;
         this.path = path;
-        this.targets = new ArrayList<>();
+        this.children = new ArrayList<>();
         this.constraints = null;
     }
 
@@ -72,7 +72,7 @@ public class PathNode {
         this.uuid = UUID.randomUUID().toString();
         this.name = name;
         this.path = Collections.singletonList(name);
-        this.targets = new ArrayList<>();
+        this.children = new ArrayList<>();
         this.constraints = null;
     }
 
@@ -88,8 +88,13 @@ public class PathNode {
         return path;
     }
 
-    public List<PathNodeSequence> getTargets() {
-        return targets;
+    /**
+     * The distinct things seen beneath this one, one for each name rather than one for each span. How
+     * many of a name a trace carried, and whether it carried any at all, are constraints on the child
+     * rather than a different set of children.
+     */
+    public List<PathNode> getChildren() {
+        return children;
     }
 
     public Map<String, Constraint> getConstraints() {
@@ -141,7 +146,7 @@ public class PathNode {
         private String uuid;
         private String name;
         private List<String> path;
-        private List<PathNodeSequence> targets;
+        private List<PathNode> children;
         private Map<String, Constraint> constraints;
 
         public Builder() {
@@ -151,7 +156,7 @@ public class PathNode {
             this.uuid = pathNode.uuid;
             this.name = pathNode.name;
             this.path = pathNode.path;
-            this.targets = pathNode.targets;
+            this.children = pathNode.children;
             this.constraints = pathNode.constraints;
         }
 
@@ -170,8 +175,8 @@ public class PathNode {
             return self();
         }
 
-        public Builder targets(final List<PathNodeSequence> targets) {
-            this.targets = targets;
+        public Builder children(final List<PathNode> children) {
+            this.children = children;
             return self();
         }
 
@@ -190,7 +195,7 @@ public class PathNode {
                     uuid,
                     name,
                     path,
-                    targets,
+                    children,
                     constraints);
         }
     }

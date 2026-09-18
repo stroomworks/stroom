@@ -36,7 +36,6 @@ import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -45,9 +44,12 @@ import stroom.util.shared.NullSafe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -55,6 +57,9 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class TracePredicate implements Predicate<Trace> {
+
+    private static final String CHILD_ORDER = "childOrder";
+    private static final String OCCURRENCES = "occurrences";
 
     private final Comparator<Span> spanComparator;
     private final PathKeyFactory pathKeyFactory;
@@ -85,46 +90,63 @@ public class TracePredicate implements Predicate<Trace> {
     private boolean walk(final Trace trace,
                          final Span parentSpan,
                          final PathNode parentNode) {
-        if (!addConstraints(parentNode, parentSpan)) {
-            return false;
-        }
-
-        final List<Span> childSpans = trace.children(parentSpan);
-        final List<Span> sortedSpans = new ArrayList<>(childSpans);
+        final List<Span> sortedSpans = new ArrayList<>(trace.children(parentSpan));
         sortedSpans.sort(spanComparator);
-        final PathKey pathKey = pathKeyFactory.create(sortedSpans);
 
-        // Load inner map.
-        final Map<PathKey, PathNodeSequence> subMap = parentNode
-                .getTargets()
-                .stream()
-                .collect(Collectors.toMap(PathNodeSequence::getPathKey, Function.identity()));
+        // Children are matched by name, the way the model is written. The same name twice is one
+        // child that happened twice, not two children.
+        final Map<String, List<Span>> spansByName = new LinkedHashMap<>();
+        sortedSpans.forEach(span -> spansByName
+                .computeIfAbsent(span.getName(), k -> new ArrayList<>())
+                .add(span));
 
-        // Get current path node list.
-        final PathNodeSequence pathNodeList = subMap.get(pathKey);
-        final List<PathNode> list = NullSafe
-                .getOrElse(pathNodeList, PathNodeSequence::getNodes, Collections.emptyList());
-
-        if (sortedSpans.size() != list.size()) {
+        if (!addConstraints(parentNode, parentSpan, String.join(" > ", spansByName.keySet()))) {
             return false;
         }
 
-        // Loop over all child spans.
-        for (int i = 0; i < sortedSpans.size(); i++) {
-            final Span span = sortedSpans.get(i);
-            final PathNode pathNode = list.get(i);
+        final Map<String, PathNode> children = new HashMap<>();
+        NullSafe.list(parentNode.getChildren()).forEach(child -> children.put(child.getName(), child));
 
-            // Follow the path deeper.
-            if (!walk(trace, span, pathNode)) {
+        // A child the model has never seen means this is not the same route.
+        if (!children.keySet().containsAll(spansByName.keySet())) {
+            return false;
+        }
+
+        for (final Entry<String, PathNode> entry : children.entrySet()) {
+            final PathNode child = entry.getValue();
+            final List<Span> spans = spansByName.get(entry.getKey());
+
+            // How many times this child ran. A child the model knows about that this trace did not
+            // carry ran no times, which the model accepts only if it has seen that too.
+            if (!checkCount(child, spans == null
+                    ? 0
+                    : spans.size())) {
                 return false;
+            }
+
+            if (spans != null) {
+                for (final Span span : spans) {
+                    if (!walk(trace, span, child)) {
+                        return false;
+                    }
+                }
             }
         }
 
         return true;
     }
 
+    private boolean checkCount(final PathNode pathNode, final int count) {
+        final Map<String, Constraint> constraints = pathNode.getConstraints();
+        if (constraints == null || !constraints.containsKey(OCCURRENCES)) {
+            return true;
+        }
+        return checkConstraint(constraints, OCCURRENCES, count);
+    }
+
     private boolean addConstraints(final PathNode pathNode,
-                                   final Span span) {
+                                   final Span span,
+                                   final String childOrder) {
 
 
         final Map<String, Constraint> constraints = pathNode.getConstraints();
@@ -148,6 +170,11 @@ public class TracePredicate implements Predicate<Trace> {
 
         // Check kind.
         if (!checkConstraint(constraints, "kind", span.getKind().name())) {
+            return false;
+        }
+
+        // Check the order the children ran in, where the model records one for this node.
+        if (constraints.containsKey(CHILD_ORDER) && !checkConstraint(constraints, CHILD_ORDER, childOrder)) {
             return false;
         }
 

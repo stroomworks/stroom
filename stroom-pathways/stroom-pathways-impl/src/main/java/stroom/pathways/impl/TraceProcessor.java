@@ -131,7 +131,7 @@ public class TraceProcessor {
                                final PathwaysDb pathwaysDb) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(doc.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder, pathKeyFactory);
+        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder);
 
         final Span root = trace.root();
         final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));

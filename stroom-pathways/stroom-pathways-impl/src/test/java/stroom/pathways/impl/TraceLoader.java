@@ -154,7 +154,7 @@ public class TraceLoader {
                                                  final MessageReceiver messageReceiver) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(NanoDuration.ofMillis(10));
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder, pathKeyFactory);
+        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder);
         final Map<PathKey, PathNode> pathRoots = new HashMap<>();
         for (final Trace trace : traces) {
             final Span root = trace.root();

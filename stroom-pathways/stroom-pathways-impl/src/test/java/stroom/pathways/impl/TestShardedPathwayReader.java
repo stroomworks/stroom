@@ -25,7 +25,6 @@ import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.PlanBPaths;
@@ -186,7 +185,7 @@ class TestShardedPathwayReader {
 
         assertThat(fetched.getName()).isEqualTo("GET /orders");
         assertThat(fetched.getRoot()).as("this is the call that brings the model").isNotNull();
-        assertThat(fetched.getRoot().getTargets()).isNotEmpty();
+        assertThat(fetched.getRoot().getChildren()).isNotEmpty();
     }
 
     @Test
@@ -324,10 +323,7 @@ class TestShardedPathwayReader {
                         .uuid(UUID.randomUUID().toString())
                         .name(name)
                         .path(List.of(name))
-                        .targets(List.of(new PathNodeSequence(
-                                UUID.randomUUID().toString(),
-                                new NamePathKey(name),
-                                children)))
+                        .children(children)
                         .build();
                 final Pathway pathway = Pathway.builder()
                         .name(name)

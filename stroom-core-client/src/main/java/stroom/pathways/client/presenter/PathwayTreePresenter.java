@@ -18,7 +18,6 @@ package stroom.pathways.client.presenter;
 
 import stroom.pathways.client.presenter.PathwayTreePresenter.PathwayTreeView;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.svg.client.Preset;
 import stroom.svg.client.SvgPresets;
@@ -145,9 +144,7 @@ public class PathwayTreePresenter
 
     private void addNode(final PathNode node) {
         nodeMap.put(node.getUuid(), node);
-        node.getTargets().forEach(target -> {
-            target.getNodes().forEach(this::addNode);
-        });
+        NullSafe.list(node.getChildren()).forEach(this::addNode);
     }
 
     private void append(final HtmlBuilder hb,
@@ -169,55 +166,27 @@ public class PathwayTreePresenter
                     Attribute.className("pathway-nodeName"), new Attribute("uuid", node.getUuid()));
         }, Attribute.className("pathway-node"));
 
-        // Add child node targets.
-        final List<PathNodeSequence> targets = NullSafe.list(node.getTargets());
-        if (targets.size() > 1) {
-            // Add bezier curve to target set.
+        // Add the things seen beneath this node.
+        final List<PathNode> children = NullSafe.list(node.getChildren());
+        if (!children.isEmpty()) {
+            // Add bezier curve to child set.
             appendBezier(svg, nodeDepth, sourceRowNum, rowNum.get(), width, height);
 
-            // Add target set.
-            final String choiceCss = "pathway-nodeIcon svgIcon " +
-                                     SvgImage.PATHWAYS_CHOICE.getClassName();
-
-            hb.div(targetsOuterDiv -> {
-                targetsOuterDiv.div(icon -> icon.appendTrustedString(SvgImage.PATHWAYS_CHOICE.getSvg()),
-                        Attribute.className(choiceCss));
-
-                targetsOuterDiv.div(inner -> {
-                    targets.forEach(target -> {
-
-                        // Add quadratic curve to this node.
-                        appendQuadratic(svg, nodeDepth + 2, sourceRowNum, rowNum.get(), width, height);
-
-                        addTargets(inner, target, svg, nodeDepth + 3, rowNum, width, height);
-                    });
-                }, Attribute.className("pathway-targets-inner"));
-
-
-            }, Attribute.className("pathway-targets-outer"));
-
-        } else if (!targets.isEmpty()) {
-            final PathNodeSequence target = targets.get(0);
-            if (!target.getNodes().isEmpty()) {
-                // Add bezier curve to target set.
-                appendBezier(svg, nodeDepth, sourceRowNum, rowNum.get(), width, height);
-
-                addTargets(hb, target, svg, nodeDepth + 1, rowNum, width, height);
-            }
+            addChildren(hb, children, svg, nodeDepth + 1, rowNum, width, height);
         }
     }
 
-    private void addTargets(final HtmlBuilder hb,
-                            final PathNodeSequence target,
-                            final HtmlBuilder svg,
-                            final int nodeDepth,
-                            final AtomicInteger rowNum,
-                            final AtomicInteger width,
-                            final AtomicInteger height) {
-        if (!target.getNodes().isEmpty()) {
+    private void addChildren(final HtmlBuilder hb,
+                             final List<PathNode> children,
+                             final HtmlBuilder svg,
+                             final int nodeDepth,
+                             final AtomicInteger rowNum,
+                             final AtomicInteger width,
+                             final AtomicInteger height) {
+        if (!children.isEmpty()) {
             final int sourceRowNum = rowNum.get();
 
-            // Add target set.
+            // Add child set.
             final String choiceCss = "pathway-nodeIcon svgIcon " +
                                      SvgImage.PATHWAYS_SEQUENCE.getClassName();
 
@@ -228,7 +197,7 @@ public class PathwayTreePresenter
                 targetDiv.div(o -> {
 
                     o.div(targetsDiv -> {
-                        target.getNodes().forEach(pathNode -> {
+                        children.forEach(pathNode -> {
                             // Add quadratic curve to this node.
                             appendQuadratic(svg, nodeDepth + 1, sourceRowNum, rowNum.get(), width, height);
 

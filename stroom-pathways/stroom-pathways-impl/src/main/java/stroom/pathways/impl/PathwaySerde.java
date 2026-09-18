@@ -41,7 +41,6 @@ import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
@@ -136,16 +135,8 @@ public class PathwaySerde {
                 .uuid(input.readString())
                 .name(input.readString())
                 .path(readStrings(input))
-                .targets(readList(input, this::readPathNodeSequence))
+                .children(readList(input, this::readPathNode))
                 .constraints(readConstraints(input))
-                .build();
-    }
-
-    private PathNodeSequence readPathNodeSequence(final Input input) {
-        return PathNodeSequence.builder()
-                .uuid(input.readString())
-                .pathKey(readPathKey(input))
-                .nodes(readList(input, this::readPathNode))
                 .build();
     }
 
@@ -264,15 +255,8 @@ public class PathwaySerde {
         output.writeString(pathNode.getUuid());
         output.writeString(pathNode.getName());
         writeStrings(pathNode.getPath(), output);
-        writeList(pathNode.getTargets(), output, this::writePathNodeSequence);
-//        writeList(pathNode.getSpans(), output, this::writeSpan);
+        writeList(pathNode.getChildren(), output, this::writePathNode);
         writeConstraints(pathNode.getConstraints(), output);
-    }
-
-    private void writePathNodeSequence(final PathNodeSequence pathNodeSequence, final Output output) {
-        output.writeString(pathNodeSequence.getUuid());
-        writePathKey(pathNodeSequence.getPathKey(), output);
-        writeList(pathNodeSequence.getNodes(), output, this::writePathNode);
     }
 
     private void writeString(final String string, final Output output) {

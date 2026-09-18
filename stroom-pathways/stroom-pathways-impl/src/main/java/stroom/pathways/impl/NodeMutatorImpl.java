@@ -37,7 +37,6 @@ import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.PathNodeSequence;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -45,14 +44,14 @@ import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -60,14 +59,13 @@ import java.util.stream.Collectors;
 public class NodeMutatorImpl {
 
     private static final int MAX_SET_SIZE = 10;
+    private static final String CHILD_ORDER = "childOrder";
+    private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
-    private final PathKeyFactory pathKeyFactory;
 
-    public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
-                           final PathKeyFactory pathKeyFactory) {
+    public NodeMutatorImpl(final CanonicalSpanOrder spanOrder) {
         this.spanOrder = spanOrder;
-        this.pathKeyFactory = pathKeyFactory;
     }
 
 
@@ -91,75 +89,92 @@ public class NodeMutatorImpl {
             node = pathNode;
         }
 
-        final Map<PathKey, Map<String, Map<PathKey, PathNodeSequence>>> maps = new HashMap<>();
-        final Map<String, Map<PathKey, PathNodeSequence>> map = maps.computeIfAbsent(pathKey, k -> new HashMap<>());
-        return walk(trace, root, node, map, messageReceiver, pathwaysDoc);
-
-
-//        final Map<PathKey, Map<String, Map<PathKey, PathNodeSequence>>> maps = new HashMap<>();
-//        final Span root = trace.root();
-//        final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));
-//
-//        PathNode node = roots.get(pathKey);
+        return walk(trace, root, node, messageReceiver, pathwaysDoc);
     }
 
     private PathNode walk(final Trace trace,
                           final Span parentSpan,
                           final PathNode parentNode,
-                          final Map<String, Map<PathKey, PathNodeSequence>> map,
                           final MessageReceiver messageReceiver,
                           final PathwaysDoc pathwaysDoc) {
-        final PathNode.Builder pathNodeBuilder = addConstraints(parentNode, parentSpan, messageReceiver, pathwaysDoc);
+        // This trace's children grouped by name, first appearance first. The same name twice is one
+        // child that happened twice, not two children.
+        final Map<String, List<Span>> spansByName = new LinkedHashMap<>();
+        spanOrder.sort(trace.children(parentSpan)).forEach(span -> spansByName
+                .computeIfAbsent(span.getName(), k -> new ArrayList<>())
+                .add(span));
 
-        final List<Span> childSpans = trace.children(parentSpan);
-        final List<Span> sortedSpans = spanOrder.sort(childSpans);
-        final PathKey pathKey = pathKeyFactory.create(sortedSpans);
+        // The child names in the order they were first reached, kept on the parent as a constraint.
+        // A route that starts doing the same work in a different order widens that constraint rather
+        // than becoming a route of its own. How many times each one ran is counted on the child, so
+        // repeats are left out here.
+        final boolean hasOrder = parentNode.getConstraints() != null &&
+                                 parentNode.getConstraints().containsKey(CHILD_ORDER);
+        final String childOrder = spansByName.isEmpty() && !hasOrder
+                ? null
+                : String.join(" > ", spansByName.keySet());
 
-        // Load inner map.
-        final Map<PathKey, PathNodeSequence> innerMap = map.computeIfAbsent(parentNode.getUuid(), k -> {
-            final Map<PathKey, PathNodeSequence> subMap = new HashMap<>();
-            parentNode.getTargets().forEach(target -> subMap.put(target.getPathKey(), target));
-            return subMap;
-        });
+        final PathNode.Builder pathNodeBuilder =
+                addConstraints(parentNode, parentSpan, childOrder, messageReceiver, pathwaysDoc);
 
-        // Get current path node list.
-        final PathNodeSequence pathNodeList = innerMap.get(pathKey);
-        if (pathNodeList == null && !pathwaysDoc.isAllowPathwayMutation()) {
-            messageReceiver.log(Severity.ERROR, () -> "Invalid path: " + parentNode + " " + pathKey);
+        final Map<String, PathNode> existing = new HashMap<>();
+        NullSafe.list(parentNode.getChildren()).forEach(child -> existing.put(child.getName(), child));
 
-        } else {
-            // Loop over all child spans.
-            final List<PathNode> childNodes = new ArrayList<>(sortedSpans.size());
-            for (int i = 0; i < sortedSpans.size(); i++) {
-                final Span span = sortedSpans.get(i);
+        // Every name the model knows plus every name this trace carried, in a fixed order so the
+        // stored children do not shuffle between writes.
+        final Set<String> names = new TreeSet<>(existing.keySet());
+        names.addAll(spansByName.keySet());
 
-                final PathNode pathNode;
-                if (pathNodeList != null) {
-                    pathNode = pathNodeList.getNodes().get(i);
-                } else {
-                    final List<String> path = new ArrayList<>(parentNode.getPath());
-                    path.add(span.getName());
-                    messageReceiver.log(Severity.INFO, () -> "Adding new path: " + path);
-                    pathNode = new PathNode(span.getName(), path);
+        final List<PathNode> children = new ArrayList<>(names.size());
+        for (final String name : names) {
+            final List<Span> spans = spansByName.get(name);
+            PathNode child = existing.get(name);
+
+            if (child == null) {
+                if (!pathwaysDoc.isAllowPathwayMutation()) {
+                    messageReceiver.log(Severity.ERROR, () ->
+                            "Invalid path: " + parentNode.getPath() + " " + name);
+                    continue;
                 }
-
-                // Follow the path deeper.
-                final PathNode updated = walk(trace, span, pathNode, map, messageReceiver, pathwaysDoc);
-                childNodes.add(updated);
+                final List<String> path = new ArrayList<>(parentNode.getPath());
+                path.add(name);
+                messageReceiver.log(Severity.INFO, () -> "Adding new path: " + path);
+                child = new PathNode(name, path);
             }
 
-            // Update the path node list.
-            innerMap.put(pathKey, new PathNodeSequence(UUID.randomUUID().toString(), pathKey, childNodes));
-
-            // Update the targets for this node.
-            pathNodeBuilder.targets(new ArrayList<>(innerMap.values()));
+            // Fold every span of this name into the one child, then record how many there were. A
+            // child the model knows about that this trace did not carry happened no times.
+            if (spans != null) {
+                for (final Span span : spans) {
+                    child = walk(trace, span, child, messageReceiver, pathwaysDoc);
+                }
+            }
+            children.add(withCount(child,
+                    spans == null
+                            ? 0
+                            : spans.size(),
+                    messageReceiver,
+                    pathwaysDoc));
         }
 
+        pathNodeBuilder.children(children);
         return pathNodeBuilder.build();
+    }
+
+    private PathNode withCount(final PathNode pathNode,
+                               final int count,
+                               final MessageReceiver messageReceiver,
+                               final PathwaysDoc pathwaysDoc) {
+        final Map<String, Constraint> constraints = pathNode.getConstraints() == null
+                ? new HashMap<>()
+                : new HashMap<>(pathNode.getConstraints());
+        setOrExpand(constraints, pathNode, OCCURRENCES, count, false, messageReceiver, pathwaysDoc);
+        return pathNode.copy().constraints(constraints).build();
     }
 
     private PathNode.Builder addConstraints(final PathNode pathNode,
                                             final Span span,
+                                            final String childOrder,
                                             final MessageReceiver messageReceiver,
                                             final PathwaysDoc pathwaysDoc) {
         final PathNode.Builder pathNodeBuilder = pathNode.copy();
@@ -199,6 +214,11 @@ public class NodeMutatorImpl {
 
         // Set or expand kind.
         setOrExpand(constraints, pathNode, "kind", span.getKind().name(), false, messageReceiver, pathwaysDoc);
+
+        // Set or expand the order the children ran in. Null for a node that has never had any.
+        if (childOrder != null) {
+            setOrExpand(constraints, pathNode, CHILD_ORDER, childOrder, false, messageReceiver, pathwaysDoc);
+        }
 
         // Create attribute sets. A span can legitimately carry no attributes at all, and then arrives
         // with a null list rather than an empty one.

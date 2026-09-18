@@ -55,7 +55,7 @@ class TestRepeatedSpanAttributes {
     void theModelTakesTheLastValueRatherThanThrowing() {
         final PathwaysDoc doc = doc();
         final NodeMutatorImpl mutator = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), new PathKeyFactoryImpl());
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()));
         final PathKey pathKey = new NamePathKey(OPERATION);
 
         final PathNode[] root = new PathNode[1];
@@ -74,7 +74,7 @@ class TestRepeatedSpanAttributes {
     void aPathwaySearchSurvivesIt() {
         final PathwaysDoc doc = doc();
         final PathNode root = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), new PathKeyFactoryImpl())
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()))
                 .process(traceWithRepeatedAttribute(), new NamePathKey(OPERATION), null,
                         (severity, message) -> {
                         }, doc);
