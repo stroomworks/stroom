@@ -19,6 +19,7 @@ package stroom.widget.histogram.client;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -129,6 +130,38 @@ class TestHistogramDataModel {
                 at("2026-01-01T12:00:00.000Z"), firstBucket, rangeEnd, 10 * MINUTE, 7))
                 .as("after the range")
                 .isEqualTo(-1);
+    }
+
+    // ------------------------------------------------------------------
+    // Which two columns hold the extent.
+    // ------------------------------------------------------------------
+
+    /**
+     * The pair is taken from the end of the row, not the start.
+     *
+     * <p>The extent query has to group by a constant - aggregates with no {@code group by} do not
+     * collapse in StroomQL, and the grouped column must be selected for grouping to happen at all -
+     * so the row is {@code group, min, max}. Reading the first two took the group key as the
+     * minimum and the minimum as the maximum, which passed every null and ordering check and left
+     * the timeline showing "No events in this time range".</p>
+     */
+    @Test
+    void extentPairIsTheLastTwoColumns() {
+        assertThat(HistogramDataModel.extentPair(List.of("1", "2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z")))
+                .containsExactly("2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z");
+    }
+
+    @Test
+    void extentPairStillWorksWithoutALeadingColumn() {
+        assertThat(HistogramDataModel.extentPair(List.of("2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z")))
+                .containsExactly("2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z");
+    }
+
+    @Test
+    void extentPairIsNullWhenTheRowCannotHoldOne() {
+        assertThat(HistogramDataModel.extentPair(null)).isNull();
+        assertThat(HistogramDataModel.extentPair(List.of())).isNull();
+        assertThat(HistogramDataModel.extentPair(List.of("2026-01-01T10:00:00.000Z"))).isNull();
     }
 
     @Test

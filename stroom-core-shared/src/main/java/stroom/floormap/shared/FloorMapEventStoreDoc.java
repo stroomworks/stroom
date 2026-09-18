@@ -31,6 +31,7 @@ import stroom.planb.shared.TemporalStateSettings;
 import stroom.util.shared.time.SimpleDuration;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -166,7 +167,17 @@ public class FloorMapEventStoreDoc extends AbstractPlanBDoc {
         return eventExpiry;
     }
 
-    /** The configured expiry, or {@link #DEFAULT_EVENT_EXPIRY} where none is set. */
+    /**
+     * The configured expiry, or {@link #DEFAULT_EVENT_EXPIRY} where none is set.
+     *
+     * <p>{@link JsonIgnore} because it is derived from {@link #eventExpiry} and has no field of its
+     * own. Without it Jackson writes an {@code eventExpiryOrDefault} property into every exported
+     * document - a value nothing reads back, which also erases the distinction between unset and
+     * set-to-the-default that {@link #getEventExpiry()} exists to preserve.</p>
+     *
+     * @return the configured duration, or the default where the document sets none
+     */
+    @JsonIgnore
     public SimpleDuration getEventExpiryOrDefault() {
         return eventExpiry == null
                 ? DEFAULT_EVENT_EXPIRY

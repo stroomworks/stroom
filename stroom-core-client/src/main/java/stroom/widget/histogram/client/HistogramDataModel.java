@@ -170,9 +170,11 @@ public class HistogramDataModel {
      * shown; the extent has to come from an unbounded read, which is the whole point of "Show
      * All".</p>
      *
-     * <p>Columns are taken by position — the caller generated the query, or defaulted it, so it knows
-     * the first column is the minimum and the second the maximum. An aggregate's default column name
-     * is not something to depend on.</p>
+     * <p>Columns are taken by position, as the <em>last two</em> of the row rather than the first
+     * two. The query has to group by a constant to make the whole store one group, and the grouped
+     * column must be selected for that to happen at all, so a leading column is always present and
+     * would otherwise shift the pair. Reading from the end also survives a user adding columns
+     * ahead of the aggregates. An aggregate's default column name is not something to depend on.</p>
      *
      * <p>An earlier version of this took the first and last of a set of day buckets, which could only
      * place "Show All" on the right day and cost a row per day the store spanned. Two aggregates give
@@ -187,18 +189,35 @@ public class HistogramDataModel {
         }
 
         for (final Row row : tableResult.getRows()) {
-            final List<String> values = row.getValues();
-            if (values == null || values.size() < 2) {
+            final List<String> pair = extentPair(row.getValues());
+            if (pair == null) {
                 continue;
             }
-            final Long min = parseTime(values.get(0));
-            final Long max = parseTime(values.get(1));
+            final Long min = parseTime(pair.get(0));
+            final Long max = parseTime(pair.get(1));
             if (min != null && max != null && min <= max) {
                 return new long[]{min, max};
             }
         }
 
         return null;
+    }
+
+    /**
+     * The two values holding the minimum and maximum - the last two of the row.
+     *
+     * <p>Split out because it is the part that can be tested: {@link #extentOf} parses times through
+     * {@code UTCDate}, which cannot run outside a browser, and picking the wrong two columns is what
+     * actually broke - the extent query grew a leading group column and the pair silently became
+     * the group key and the minimum.</p>
+     *
+     * @param values a result row's values; may be {@code null}
+     * @return the final two values, or {@code null} where there are fewer than two
+     */
+    static List<String> extentPair(final List<String> values) {
+        return values == null || values.size() < 2
+                ? null
+                : values.subList(values.size() - 2, values.size());
     }
 
     /** Floors to a multiple of {@code width}, matching {@code floorTime}, which floors to the epoch. */

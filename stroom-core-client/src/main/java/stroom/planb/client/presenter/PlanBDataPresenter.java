@@ -26,8 +26,14 @@ public class PlanBDataPresenter extends AbstractQueryDataPresenter<PlanBDataPres
     private final Column timeCol = Column.builder()
             .id("EffectiveTime").name("Effective Time").expression("EffectiveTime").build();
     private final Column keyCol = Column.builder().id("Key").name("Key").expression("Key").build();
+    // Plain Value, not substring(Value, 1, 100) as this was until 2026-09-18. That expression never
+    // reached the server and the column was never truncated: QueryTablePreferencesUtil matches
+    // preferences to query columns by id and copies presentation only - never an expression - and
+    // the ids StroomQL derives from a column alias ("value-1") never matched "Value" anyway. It read
+    // as a promise the code did not keep, so it is gone rather than repaired: substring truncates
+    // the data, which would leave hover showing 100 characters instead of the value.
     private final Column valueCol = Column.builder()
-            .id("Value").name("Value").expression("substring(Value, 1, 100)").build();
+            .id("Value").name("Value").expression("Value").build();
     private final Column keyStartCol = Column.builder().id("KeyStart").name("Key Start").expression("KeyStart").build();
     private final Column keyEndCol = Column.builder().id("KeyEnd").name("Key End").expression("KeyEnd").build();
     private final Column startCol = Column.builder().id("Start").name("Start").expression("Start").build();

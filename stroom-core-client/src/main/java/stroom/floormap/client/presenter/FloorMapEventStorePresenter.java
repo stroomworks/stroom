@@ -39,6 +39,7 @@ public class FloorMapEventStorePresenter
     public static final String TAB_TYPE = "FloorMapEventStore";
 
     private static final TabData SETTINGS = new TabDataImpl("Settings");
+    private static final TabData DATA = new TabDataImpl("Data");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
@@ -47,11 +48,13 @@ public class FloorMapEventStorePresenter
             final EventBus eventBus,
             final LinkTabPanelView view,
             final Provider<FloorMapEventStoreSettingsPresenter> settingsPresenterProvider,
+            final Provider<FloorMapEventStoreDataPresenter> dataPresenterProvider,
             final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
             final DocumentUserPermissionsTabProvider<FloorMapEventStoreDoc> permissionsTabProvider) {
         super(eventBus, view);
 
         addTab(SETTINGS, new DocTabProvider<>(settingsPresenterProvider::get));
+        addTab(DATA, new DocTabProvider<>(dataPresenterProvider::get));
         addTab(DOCUMENTATION,
                 new MarkdownTabProvider<FloorMapEventStoreDoc>(eventBus, markdownEditPresenterProvider) {
                     @Override

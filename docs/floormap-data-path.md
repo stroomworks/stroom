@@ -154,8 +154,17 @@ the cap allows; narrowing the time range would not help.
 
 ## 4. Why this is efficient
 
-**Seek, don't scan.** The map read seeks straight to each entity's answer and steps back, rather than
-reading its whole history. O(entities × log n) instead of O(all rows), and the rows in between are
+**There is no list of entities.** Nothing records which exist and nothing on the write path maintains
+an index. The read discovers them from the key order: take the first key, slice the fixed-width time
+off its end, and what remains is an entity id; jump past `entity‖0xFF…` — the greatest key that
+entity can have, the comparator being unsigned — and the cursor lands on the next entity's first key.
+Repeat until the store runs out. An entity therefore exists exactly when it has a row: nothing
+declares one, nothing needs deleting when retention removes its last row, and no index can fall out
+of step with the data. It is also where the `0x00` terminator earns its keep — the jump target is a
+*prefix*, so without it the jump swallows every entity whose id merely starts the same way.
+
+**Seek, don't scan.** For each entity the walk turns up, the read seeks straight to its answer and
+steps back, rather than reading its whole history. O(entities × log n) instead of O(all rows), and the rows in between are
 never deserialised.
 
 Measured at floor-map scale — 3 000 entities, snapshot taken with the whole history behind it:
@@ -219,6 +228,12 @@ done yet.
 O(entities × log n). Flat in history, **not** flat in entities. At 3 000 entities ≈ 6 ms; at 100 000
 it would be ≈ 200 ms, which is most of a tick. Design §12.4 sets the trigger for reintroducing
 checkpoints at "tens of thousands of entities", and that remains the right threshold to watch.
+
+**The count that matters is not the count on screen.** The walk visits every entity the store holds a
+row for and only then decides whether it has anything to emit, so an entity whose newest row is below
+the expiry floor still costs a seek and contributes nothing. The cost tracks *distinct ids within
+retention*, which — where ids are minted per session rather than per device — can be far larger than
+the number of things on the map, with nothing in the UI to suggest it.
 
 ### 5.3 Cold cache dominates document open
 

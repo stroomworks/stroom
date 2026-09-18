@@ -126,6 +126,14 @@ public final class FloorMapQueryBuilder {
      * {@code min} and {@code max} are aggregate functions whose calculator returns the input value,
      * so a date column stays a date.</p>
      *
+     * <p><b>The constant group is load-bearing.</b> Aggregates with no {@code group by} do not
+     * collapse to a single row in StroomQL — every row becomes its own group, so {@code min} and
+     * {@code max} each return that row's own time and the extent comes back as a zero-width range.
+     * Grouping by a constant makes the whole store one group. The grouped column must also be
+     * <em>selected</em>: {@code group by} alone, without the column in the {@code select} list, does
+     * not aggregate either. Both were found by running the query against a real store — the design
+     * note had recorded the single-row assumption as unverified, and it was wrong.</p>
+     *
      * <p><b>Deliberately unbounded</b>, which is what separates it from the histogram: the bars are
      * bounded below at the visible range, so an extent taken from them could never reach data
      * earlier than what is already shown — the one thing "Show All" exists to do.</p>
@@ -135,7 +143,9 @@ public final class FloorMapQueryBuilder {
      */
     public static String defaultExtentQuery() {
         return "from param('EventStore')\n"
-               + "select min(EffectiveTime), max(EffectiveTime)";
+               + "eval allRows = 1\n"
+               + "group by allRows\n"
+               + "select allRows, min(EffectiveTime), max(EffectiveTime)";
     }
 
     /**

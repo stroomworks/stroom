@@ -494,11 +494,39 @@ class TestFloorMapQueryBuilder {
 
         // One row of two aggregates, not a set of buckets: the extent is the exact first and last
         // event times, and its size does not depend on how long the store has been running.
-        assertThat(query).contains("select min(EffectiveTime), max(EffectiveTime)");
+        assertThat(query).contains("min(EffectiveTime), max(EffectiveTime)");
         assertThat(query).startsWith("from param('EventStore')");
 
         // Unbounded, which is what separates it from the histogram. A bound here could never reach
         // data earlier than what is already shown - the one thing "Show All" exists to do.
         assertThat(query).doesNotContain("where");
+    }
+
+    /**
+     * The extent must be grouped, and the grouped column must be selected.
+     *
+     * <p>This test previously asserted the opposite - a bare
+     * {@code select min(EffectiveTime), max(EffectiveTime)} - because the design note recorded
+     * "aggregates with no group by yield a single row" as an assumption to confirm at runtime, and
+     * nobody confirmed it. Run against a real store, that query returns one row <em>per event</em>
+     * with {@code min == max}: every row is its own group. The timeline then collapsed to a
+     * zero-width range and reported "No events in this time range", with Show All unable to fix it
+     * because it re-ran the same query.</p>
+     *
+     * <p>Grouping by a constant makes the whole store one group - but only if the grouped column is
+     * also selected. {@code group by allRows} without {@code allRows} in the {@code select} list
+     * does not aggregate either, which is the second half of the same trap.</p>
+     */
+    @Test
+    void theDefaultExtentQueryCollapsesToASingleRow() {
+        final String query = FloorMapQueryBuilder.defaultExtentQuery();
+
+        assertThat(query).contains("group by allRows");
+        assertThat(query)
+                .as("the grouped column has to be selected or no grouping happens")
+                .contains("select allRows,");
+        assertThat(query.indexOf("eval allRows"))
+                .as("the constant is evaluated before it is grouped on")
+                .isLessThan(query.indexOf("group by allRows"));
     }
 }

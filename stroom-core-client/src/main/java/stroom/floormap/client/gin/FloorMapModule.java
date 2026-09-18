@@ -27,6 +27,8 @@ import stroom.floormap.client.presenter.FloorMapDockPresenter;
 import stroom.floormap.client.presenter.FloorMapDockPresenter.FloorMapDockView;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
+import stroom.floormap.client.presenter.FloorMapEventStoreDataPresenter;
+import stroom.floormap.client.presenter.FloorMapEventStoreDataPresenter.FloorMapEventStoreDataView;
 import stroom.floormap.client.presenter.FloorMapEventStorePresenter;
 import stroom.floormap.client.presenter.FloorMapEventStoreSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapEventStoreSettingsPresenter.FloorMapEventStoreSettingsView;
@@ -65,6 +67,7 @@ import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapClusterViewImpl;
 import stroom.floormap.client.view.FloorMapDockViewImpl;
 import stroom.floormap.client.view.FloorMapEditorViewImpl;
+import stroom.floormap.client.view.FloorMapEventStoreDataViewImpl;
 import stroom.floormap.client.view.FloorMapEventStoreSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapFactListViewImpl;
 import stroom.floormap.client.view.FloorMapGroupEditViewImpl;
@@ -100,6 +103,9 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapEventStoreSettingsPresenter.class,
                 FloorMapEventStoreSettingsView.class,
                 FloorMapEventStoreSettingsViewImpl.class);
+        bindPresenterWidget(FloorMapEventStoreDataPresenter.class,
+                FloorMapEventStoreDataView.class,
+                FloorMapEventStoreDataViewImpl.class);
 
         // Lists a cluster's members, with a search box and filters over the
         // app-wide PagerView that holds the grid.
