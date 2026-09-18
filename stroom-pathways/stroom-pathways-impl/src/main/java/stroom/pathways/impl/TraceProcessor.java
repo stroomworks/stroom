@@ -85,7 +85,6 @@ public class TraceProcessor {
                                      final Function<byte[], Optional<Trace>> traceFunction,
                                      final PathwaysDoc doc,
                                      final MessageReceiver messageReceiver) {
-        final MessageReceiver messages = forTrace(messageReceiver, traceId);
         return byteBuffers.useBytes(traceId, keyByteBuffer -> {
             final SimpleDb processingStatus = pathwaysDb.getProcessingStatus();
             final boolean processed = processingStatus
@@ -110,10 +109,12 @@ public class TraceProcessor {
                         // span. Left unmarked rather than marked processed, because the root may
                         // still arrive: nothing offers a trace for processing until it has one, so
                         // leaving the marker off costs nothing and keeps the trace eligible.
-                        messages.log(Severity.WARNING, () -> "Skipping trace as it has no root span");
+                        // No root span, so nothing to name beyond the trace itself.
+                        messageReceiver.log(Severity.WARNING, () -> "Skipping trace "
+                                + HexStringUtil.encode(traceId) + " as it has no root span");
                         return ApplyOutcome.NOT_APPLICABLE;
                     } else {
-                        buildPathways(writer, trace, doc, messages, pathwaysDb);
+                        buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();
                         return ApplyOutcome.APPLIED;
@@ -122,13 +123,6 @@ public class TraceProcessor {
             }
             return ApplyOutcome.ALREADY_APPLIED;
         });
-    }
-
-    // Every message raised while folding one trace in names that trace. A report covers many traces, so
-    // without it there is no way to tell which one a line came from.
-    private static MessageReceiver forTrace(final MessageReceiver messageReceiver, final byte[] traceId) {
-        final String prefix = "[" + HexStringUtil.encode(traceId) + "] ";
-        return (severity, message) -> messageReceiver.log(severity, () -> prefix + message.get());
     }
 
     private void buildPathways(final LmdbWriter writer,
@@ -142,6 +136,8 @@ public class TraceProcessor {
 
         final Span root = trace.root();
         final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));
+        final MessageReceiver messages =
+                MessageReceiver.forSpan(messageReceiver, trace.getTraceId(), root.getSpanId());
 
         // Load current path.
         final SimpleDb pathways = pathwaysDb.getPathways();
@@ -152,7 +148,7 @@ public class TraceProcessor {
         byteBuffers.useBytes(keyBytes, keyByteBuffer -> {
             Pathway pathway = pathways.get(writer.getWriteTxn(), keyByteBuffer, valueByteBuffer -> {
                 if (valueByteBuffer == null) {
-                    messageReceiver.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
+                    messages.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
                     final PathNode pathNode = new PathNode(root.getName());
                     final Instant now = Instant.now();
                     final NanoTime nanoTime = NanoTimeUtil.fromInstant(now);

@@ -75,15 +75,16 @@ public class NodeMutatorImpl {
                             final MessageReceiver messageReceiver,
                             final PathwaysDoc pathwaysDoc) {
         final Span root = trace.root();
+        final MessageReceiver messages =
+                MessageReceiver.forSpan(messageReceiver, trace.getTraceId(), root.getSpanId());
         if (pathNode == null && !pathwaysDoc.isAllowPathwayCreation()) {
-            messageReceiver.log(Severity.ERROR, () -> "Invalid path: " + pathKey);
+            messages.log(Severity.ERROR, () -> "Invalid path: " + pathKey);
             return pathNode;
         }
 
-
         final PathNode node;
         if (pathNode == null) {
-            messageReceiver.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
+            messages.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
             node = new PathNode(root.getName());
         } else {
             node = pathNode;
@@ -97,6 +98,12 @@ public class NodeMutatorImpl {
                           final PathNode parentNode,
                           final MessageReceiver messageReceiver,
                           final PathwaysDoc pathwaysDoc) {
+        // Everything below names the span being folded in. The recursive call below is given the
+        // receiver this one was given, not this one's, so each level puts its own span on the front
+        // rather than stacking them up.
+        final MessageReceiver messages =
+                MessageReceiver.forSpan(messageReceiver, trace.getTraceId(), parentSpan.getSpanId());
+
         // This trace's children grouped by name, first appearance first. The same name twice is one
         // child that happened twice, not two children.
         final Map<String, List<Span>> spansByName = new LinkedHashMap<>();
@@ -114,7 +121,7 @@ public class NodeMutatorImpl {
                 : String.join(" > ", spansByName.keySet());
 
         final PathNode.Builder pathNodeBuilder =
-                addConstraints(parentNode, parentSpan, childOrder, messageReceiver, pathwaysDoc);
+                addConstraints(parentNode, parentSpan, childOrder, messages, pathwaysDoc);
 
         final Map<String, PathNode> existing = new HashMap<>();
         NullSafe.list(parentNode.getChildren()).forEach(child -> existing.put(child.getName(), child));
@@ -131,13 +138,13 @@ public class NodeMutatorImpl {
 
             if (child == null) {
                 if (!pathwaysDoc.isAllowPathwayMutation()) {
-                    messageReceiver.log(Severity.ERROR, () ->
+                    messages.log(Severity.ERROR, () ->
                             "Invalid path: " + parentNode.getPath() + " " + name);
                     continue;
                 }
                 final List<String> path = new ArrayList<>(parentNode.getPath());
                 path.add(name);
-                messageReceiver.log(Severity.INFO, () -> "Adding new path: " + path);
+                messages.log(Severity.INFO, () -> "Adding new path: " + path);
                 child = new PathNode(name, path);
             }
 
@@ -152,7 +159,7 @@ public class NodeMutatorImpl {
                     spans == null
                             ? 0
                             : spans.size(),
-                    messageReceiver,
+                    messages,
                     pathwaysDoc));
         }
 
