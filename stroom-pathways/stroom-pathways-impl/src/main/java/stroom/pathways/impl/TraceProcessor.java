@@ -85,6 +85,7 @@ public class TraceProcessor {
                                      final Function<byte[], Optional<Trace>> traceFunction,
                                      final PathwaysDoc doc,
                                      final MessageReceiver messageReceiver) {
+        final MessageReceiver messages = forTrace(messageReceiver, traceId);
         return byteBuffers.useBytes(traceId, keyByteBuffer -> {
             final SimpleDb processingStatus = pathwaysDb.getProcessingStatus();
             final boolean processed = processingStatus
@@ -109,11 +110,10 @@ public class TraceProcessor {
                         // span. Left unmarked rather than marked processed, because the root may
                         // still arrive: nothing offers a trace for processing until it has one, so
                         // leaving the marker off costs nothing and keeps the trace eligible.
-                        messageReceiver.log(Severity.WARNING, () -> "Skipping trace "
-                                + HexStringUtil.encode(traceId) + " as it has no root span");
+                        messages.log(Severity.WARNING, () -> "Skipping trace as it has no root span");
                         return ApplyOutcome.NOT_APPLICABLE;
                     } else {
-                        buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
+                        buildPathways(writer, trace, doc, messages, pathwaysDb);
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();
                         return ApplyOutcome.APPLIED;
@@ -122,6 +122,13 @@ public class TraceProcessor {
             }
             return ApplyOutcome.ALREADY_APPLIED;
         });
+    }
+
+    // Every message raised while folding one trace in names that trace. A report covers many traces, so
+    // without it there is no way to tell which one a line came from.
+    private static MessageReceiver forTrace(final MessageReceiver messageReceiver, final byte[] traceId) {
+        final String prefix = "[" + HexStringUtil.encode(traceId) + "] ";
+        return (severity, message) -> messageReceiver.log(severity, () -> prefix + message.get());
     }
 
     private void buildPathways(final LmdbWriter writer,
