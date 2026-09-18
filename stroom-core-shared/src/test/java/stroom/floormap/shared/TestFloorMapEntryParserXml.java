@@ -19,7 +19,6 @@ package stroom.floormap.shared;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.util.shared.TemporalEntry;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -183,7 +182,7 @@ class TestFloorMapEntryParserXml {
 
         assertThat(facts).hasSize(1);
         final Fact fact = facts.getFirst();
-        Assertions.assertNotNull(fact.getPosition());
+        assertThat(fact.getPosition()).isNotNull();
         assertThat(fact.getPosition()[0]).isCloseTo(10.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(20.0, within(0.001));
         final FloorMapTransformationMatrix m = fact.getWorldToMap();
@@ -225,7 +224,7 @@ class TestFloorMapEntryParserXml {
 
         final Fact fact = facts.getFirst();
         assertThat(fact.getWorldToMap()).isEqualTo(FloorMapTransformationMatrix.identity());
-        Assertions.assertNotNull(fact.getPosition());
+        assertThat(fact.getPosition()).isNotNull();
         assertThat(fact.getPosition()[0]).isCloseTo(50.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(75.0, within(0.001));
     }
@@ -522,7 +521,7 @@ class TestFloorMapEntryParserXml {
         assertThat(facts).hasSize(1);
         final Fact fact = facts.getFirst();
         assertThat(fact.getType()).isEqualTo("gate");
-        Assertions.assertNotNull(fact.getPosition());
+        assertThat(fact.getPosition()).isNotNull();
         assertThat(fact.getPosition()[0]).isCloseTo(100.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(200.0, within(0.001));
         assertThat(warnings).as("a default namespace should not affect parsing").isEmpty();
@@ -558,7 +557,7 @@ class TestFloorMapEntryParserXml {
         // World coords (10, 20) → map coords (2*10 + 50, 2*20 + 100) = (70, 140)
         final FloorMapTransformationMatrix m = fact.getWorldToMap();
         final double[] p = fact.getPosition();
-        Assertions.assertNotNull(p);
+        assertThat(p).isNotNull();
         final double mapX = m.getA() * p[0] + m.getC() * p[1] + m.getE();
         final double mapY = m.getB() * p[0] + m.getD() * p[1] + m.getF();
         assertThat(mapX).isCloseTo(70.0, within(0.001));

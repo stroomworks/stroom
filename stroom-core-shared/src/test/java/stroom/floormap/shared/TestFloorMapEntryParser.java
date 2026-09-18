@@ -19,7 +19,6 @@ package stroom.floormap.shared;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.util.shared.TemporalEntry;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -227,7 +226,7 @@ class TestFloorMapEntryParser {
         assertThat(facts).hasSize(1);
         final Fact fact = facts.getFirst();
         // Position is stored in world space.
-        Assertions.assertNotNull(fact.getPosition());
+        assertThat(fact.getPosition()).isNotNull();
         assertThat(fact.getPosition()[0]).isCloseTo(10.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(20.0, within(0.001));
         // Composing world→map places the point at (70, 140) in map space.
@@ -270,7 +269,7 @@ class TestFloorMapEntryParser {
 
         final Fact fact = facts.getFirst();
         assertThat(fact.getWorldToMap()).isEqualTo(FloorMapTransformationMatrix.identity());
-        Assertions.assertNotNull(fact.getPosition());
+        assertThat(fact.getPosition()).isNotNull();
         assertThat(fact.getPosition()[0]).isCloseTo(50.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(75.0, within(0.001));
     }
