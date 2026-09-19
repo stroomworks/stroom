@@ -37,6 +37,7 @@ import stroom.planb.impl.fs.SharedFileStorePublisher;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.planb.shared.StateType;
 import stroom.util.io.PathCreator;
+import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.PageRequest;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -126,6 +127,35 @@ class TestShardedPathwayReader {
                 .as("every shard contributed, in name order")
                 .containsExactly("FetchNewTasks.run", "GET /orders", "POST /payments");
         assertThat(page.getPageResponse().getTotal()).isEqualTo(3L);
+    }
+
+    @Test
+    void theGridsSortIsHonoured() throws IOException {
+        writePathwayWithNodes("small", 1);
+        writePathwayWithNodes("large", 60);
+        writePathwayWithNodes("medium", 20);
+
+        assertThat(names(reader.findPathways(doc, sortedBy(PathwaySummary.FIELD_SIZE, true, 0, 100))))
+                .as("biggest first, which is not the order the names give")
+                .containsExactly("large", "medium", "small");
+        assertThat(names(reader.findPathways(doc, sortedBy(PathwaySummary.FIELD_SIZE, false, 0, 100))))
+                .as("and the other way round")
+                .containsExactly("small", "medium", "large");
+    }
+
+    @Test
+    void theSortDecidesWhatGoesOnThePage() throws IOException {
+        // Names ascending would put a-tiny and b-small on the first page. By size they belong on the
+        // last one, so taking the page before sorting gives the wrong rows entirely rather than the
+        // right rows in the wrong order.
+        writePathwayWithNodes("a-tiny", 1);
+        writePathwayWithNodes("b-small", 10);
+        writePathwayWithNodes("c-big", 60);
+        writePathwayWithNodes("d-large", 40);
+
+        assertThat(names(reader.findPathways(doc, sortedBy(PathwaySummary.FIELD_SIZE, true, 0, 2))))
+                .as("the first page holds the two biggest of all of them")
+                .containsExactly("c-big", "d-large");
     }
 
     @Test
@@ -343,6 +373,22 @@ class TestShardedPathwayReader {
             }
             return true;
         });
+    }
+
+    private static List<String> names(final PathwayResultPage page) {
+        return page.getValues().stream().map(PathwaySummary::getName).toList();
+    }
+
+    private FindPathwayCriteria sortedBy(final String field,
+                                         final boolean desc,
+                                         final int offset,
+                                         final int length) {
+        return new FindPathwayCriteria(
+                new PageRequest(offset, length),
+                List.of(new CriteriaFieldSort(field, desc, true)),
+                doc.asDocRef(),
+                null,
+                null);
     }
 
     private FindPathwayCriteria criteria(final String filter, final int offset, final int length) {

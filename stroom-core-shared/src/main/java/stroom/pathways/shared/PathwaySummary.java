@@ -36,6 +36,14 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class PathwaySummary {
 
+    // The names the grid sorts by. Shared so the column the user clicks and the field the reader
+    // orders on cannot drift apart.
+    public static final String FIELD_NAME = "Root";
+    public static final String FIELD_CREATE_TIME = "Create Time";
+    public static final String FIELD_UPDATE_TIME = "Update Time";
+    public static final String FIELD_LAST_USED_TIME = "Last Used";
+    public static final String FIELD_SIZE = "Size";
+
     @JsonProperty
     private final String name;
     @JsonProperty

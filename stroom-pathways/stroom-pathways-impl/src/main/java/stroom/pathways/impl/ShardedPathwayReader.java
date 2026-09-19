@@ -21,12 +21,14 @@ import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.planb.impl.dao.ShardKeyRouter;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.util.shared.PageResponse;
@@ -38,13 +40,12 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.SortedSet;
-import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -61,6 +62,9 @@ import java.util.function.Function;
  */
 @Singleton
 public class ShardedPathwayReader {
+
+    private static final Comparator<PathwaySummary> BY_NAME =
+            Comparator.comparing(PathwaySummary::getName, Comparator.nullsFirst(Comparator.naturalOrder()));
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(ShardedPathwayReader.class);
 
@@ -83,14 +87,16 @@ public class ShardedPathwayReader {
         final int shardCount = shardCountOf(settings);
         final PageRequest pageRequest = criteria.getPageRequest();
 
-        // Sorted and de-duplicated, though a duplicate would mean two shards claimed one name, which
-        // the routing rules out. TreeSet because the whole point of this pass is the ordering.
-        final SortedSet<String> names = new TreeSet<>();
+        // Every matching pathway, not just the ones on the page: a sort on anything but the name has
+        // to see them all before it can say which belong on it. Only each one's header is read, and
+        // the scan of the keys has that in hand already.
+        final List<PathwaySummary> summaries = new ArrayList<>();
         for (int shard = 0; shard < shardCount; shard++) {
-            names.addAll(matchingNames(doc, shard, criteria.getFilter()));
+            summaries.addAll(matchingSummaries(doc, shard, criteria.getFilter()));
         }
+        summaries.sort(comparator(criteria.getSortList()));
 
-        final List<String> page = names.stream()
+        final List<PathwaySummary> page = summaries.stream()
                 .skip(pageRequest.getOffset())
                 .limit(pageRequest.getLength())
                 .toList();
@@ -99,25 +105,69 @@ public class ShardedPathwayReader {
                 .builder()
                 .offset(pageRequest.getOffset())
                 .length(page.size())
-                .total((long) names.size())
+                .total((long) summaries.size())
                 .exact(true)
                 .build();
-        return new PathwayResultPage(fetchSummaries(doc, shardCount, page), pageResponse);
+        return new PathwayResultPage(page, pageResponse);
     }
 
-    // The names one shard holds that the filter accepts, read from the keys alone.
-    private List<String> matchingNames(final PathwaysDoc doc, final int shard, final String filter) {
-        final List<String> names = new ArrayList<>();
+    // What one shard holds that the filter accepts. The name is taken from the key so a rejected
+    // pathway costs nothing beyond that; only an accepted one has its header decoded.
+    private List<PathwaySummary> matchingSummaries(final PathwaysDoc doc,
+                                                   final int shard,
+                                                   final String filter) {
+        final List<PathwaySummary> summaries = new ArrayList<>();
         readShard(doc, shard, db -> {
             db.getPathways().iterate((key, val) -> {
                 final String name = ByteBufferUtils.toString(key);
                 if (NullSafe.isBlankString(filter) || name.contains(filter)) {
-                    names.add(name);
+                    summaries.add(pathwaySerde.readSummary(val));
                 }
             });
-            return names;
+            return summaries;
         });
-        return names;
+        return summaries;
+    }
+
+    // Orders by the columns the grid was sorted on, in the order they were clicked. Falls back to the
+    // name where nothing was asked for, which is where the grid starts.
+    private static Comparator<PathwaySummary> comparator(final List<CriteriaFieldSort> sortList) {
+        Comparator<PathwaySummary> comparator = null;
+        for (final CriteriaFieldSort sort : NullSafe.list(sortList)) {
+            final Comparator<PathwaySummary> field = fieldComparator(sort);
+            if (field != null) {
+                comparator = comparator == null
+                        ? field
+                        : comparator.thenComparing(field);
+            }
+        }
+        return comparator == null
+                ? BY_NAME
+                : comparator;
+    }
+
+    private static Comparator<PathwaySummary> fieldComparator(final CriteriaFieldSort sort) {
+        final Comparator<PathwaySummary> comparator = switch (NullSafe.string(sort.getId())) {
+            case PathwaySummary.FIELD_NAME -> sort.isIgnoreCase()
+                    ? Comparator.comparing(PathwaySummary::getName,
+                            Comparator.nullsFirst(String.CASE_INSENSITIVE_ORDER))
+                    : BY_NAME;
+            case PathwaySummary.FIELD_CREATE_TIME -> byTime(PathwaySummary::getCreateTime);
+            case PathwaySummary.FIELD_UPDATE_TIME -> byTime(PathwaySummary::getUpdateTime);
+            case PathwaySummary.FIELD_LAST_USED_TIME -> byTime(PathwaySummary::getLastUsedTime);
+            case PathwaySummary.FIELD_SIZE -> Comparator.comparingLong(PathwaySummary::getSizeBytes);
+            // A column the reader knows nothing about orders on nothing, rather than throwing away a
+            // page of results.
+            default -> null;
+        };
+        return comparator == null || !sort.isDesc()
+                ? comparator
+                : comparator.reversed();
+    }
+
+    // A pathway that has never recorded the time sorts before one that has, rather than blowing up.
+    private static Comparator<PathwaySummary> byTime(final Function<PathwaySummary, NanoTime> time) {
+        return Comparator.comparing(time, Comparator.nullsFirst(Comparator.naturalOrder()));
     }
 
     /**
@@ -144,35 +194,6 @@ public class ShardedPathwayReader {
             return null;
         });
         return Optional.ofNullable(found[0]);
-    }
-
-    // Fetches the page by key, grouped so each shard is opened once however many names fall to it.
-    // Order is restored at the end because grouping loses it. Only the header of each is read — see
-    // PathwaySerde.readSummary.
-    private List<PathwaySummary> fetchSummaries(final PathwaysDoc doc,
-                                                final int shardCount,
-                                                final List<String> page) {
-        final Map<Integer, List<String>> byShard = new LinkedHashMap<>();
-        for (final String name : page) {
-            byShard.computeIfAbsent(ShardKeyRouter.computeShardIndex(name, shardCount),
-                    k -> new ArrayList<>()).add(name);
-        }
-
-        final Map<String, PathwaySummary> found = new LinkedHashMap<>();
-        byShard.forEach((shard, names) -> readShard(doc, shard, db -> {
-            for (final String name : names) {
-                withKey(name, keyBuffer -> db.getPathways().get(keyBuffer, valueBuffer -> {
-                    if (valueBuffer != null) {
-                        found.put(name, pathwaySerde.readSummary(valueBuffer));
-                    }
-                    return null;
-                }));
-            }
-            return null;
-        }));
-
-        // Back into the order the page was taken in; grouping by shard lost it.
-        return page.stream().map(found::get).filter(Objects::nonNull).toList();
     }
 
     private static void withKey(final String name, final Consumer<ByteBuffer> consumer) {

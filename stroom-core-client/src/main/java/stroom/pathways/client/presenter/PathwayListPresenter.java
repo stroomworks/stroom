@@ -193,31 +193,31 @@ public class PathwayListPresenter
         final Column<PathwaySummary, String> column = DataGridUtil
                 .textColumnBuilder((PathwaySummary summary) ->
                         ModelStringUtil.formatIECByteSizeString(summary.getSizeBytes()))
-                .withSorting("Size")
+                .withSorting(PathwaySummary.FIELD_SIZE)
                 .build();
-        dataGrid.addResizableColumn(column, "Size", ColumnSizeConstants.SMALL_COL);
+        dataGrid.addResizableColumn(column, PathwaySummary.FIELD_SIZE, ColumnSizeConstants.SMALL_COL);
     }
 
     private void addNameColumn() {
         final Column<PathwaySummary, String> column = DataGridUtil.textColumnBuilder(PathwaySummary::getName)
-                .withSorting("Root")
+                .withSorting(PathwaySummary.FIELD_NAME)
                 .build();
         dataGrid.addResizableColumn(column,
-                "Root",
+                PathwaySummary.FIELD_NAME,
                 500);
 //        dataGrid.sort(column);
     }
 
     private void addCreateTimeColumn() {
-        addTimeColumn("Create Time", PathwaySummary::getCreateTime);
+        addTimeColumn(PathwaySummary.FIELD_CREATE_TIME, PathwaySummary::getCreateTime);
     }
 
     private void addUpdateTimeColumn() {
-        addTimeColumn("Update Time", PathwaySummary::getUpdateTime);
+        addTimeColumn(PathwaySummary.FIELD_UPDATE_TIME, PathwaySummary::getUpdateTime);
     }
 
     private void addLastUsedColumn() {
-        addTimeColumn("Last Used", PathwaySummary::getLastUsedTime);
+        addTimeColumn(PathwaySummary.FIELD_LAST_USED_TIME, PathwaySummary::getLastUsedTime);
     }
 
     private void addTimeColumn(final String name, final Function<PathwaySummary, NanoTime> function) {
