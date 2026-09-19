@@ -170,14 +170,20 @@ public class TraceProcessor {
             PathNode pathNode = pathway.getRoot();
             pathNode = nodeMutator.process(trace, pathKey, pathNode, messageReceiver, doc);
 
-            // Update pathway in database.
+            // Last used is the last time a trace took this route, so it moves for every trace applied.
+            // Updated is the last time the model itself moved, so it only changes when the trace taught
+            // it something. Once a pathway has settled the two come apart, which is how a route that is
+            // still busy is told from one that has gone quiet.
             final Instant now = Instant.now();
             final NanoTime nanoTime = NanoTimeUtil.fromInstant(now);
-            pathway = pathway
+            final Pathway.Builder builder = pathway
                     .copy()
-                    .updateTime(nanoTime)
-                    .root(pathNode)
-                    .build();
+                    .lastUsedTime(nanoTime)
+                    .root(pathNode);
+            if (nodeMutator.isChanged()) {
+                builder.updateTime(nanoTime);
+            }
+            pathway = builder.build();
 
             // Write pathway.
             pathwaySerde.writePathway(pathway, storedSize[0], byteBuffer ->

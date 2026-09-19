@@ -66,10 +66,23 @@ public class NodeMutatorImpl {
     private final CanonicalSpanOrder spanOrder;
     private final IgnoredAttributes ignoredAttributes;
 
+    // Set where this trace taught the model something: a node it had not seen, or a constraint it had
+    // to add or widen. One of these is made per trace, so the flag covers that trace and no other.
+    private boolean changed;
+
     public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
                            final IgnoredAttributes ignoredAttributes) {
         this.spanOrder = spanOrder;
         this.ignoredAttributes = ignoredAttributes;
+    }
+
+    /**
+     * Whether the trace just folded in taught the model anything, as opposed to taking a route it
+     * already knew in a way it already allowed. A trace can be applied without this being true — that
+     * is the normal case once a pathway has settled.
+     */
+    public boolean isChanged() {
+        return changed;
     }
 
 
@@ -89,6 +102,7 @@ public class NodeMutatorImpl {
         final PathNode node;
         if (pathNode == null) {
             messages.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
+            changed = true;
             node = new PathNode(root.getName());
         } else {
             node = pathNode;
@@ -150,6 +164,7 @@ public class NodeMutatorImpl {
                 final List<String> path = new ArrayList<>(parentNode.getPath());
                 path.add(name);
                 messages.log(Severity.INFO, () -> "Adding new path: " + path);
+                changed = true;
                 child = new PathNode(name, path);
             }
 
@@ -252,6 +267,7 @@ public class NodeMutatorImpl {
                     messageReceiver.log(Severity.INFO, () -> "Making constraint optional: " +
                                                              pathNode.getPath() + " " +
                                                              key);
+                    changed = true;
                     newConstraints.put(key, new Constraint(value.getName(), value.getValue(), true));
                 }
             } else {
@@ -267,6 +283,9 @@ public class NodeMutatorImpl {
                 && ignoredAttributes.test(key.substring(ATTRIBUTE_PREFIX.length()))) {
                 if (!(NullSafe.get(newConstraints.get(key), Constraint::getValue)
                       instanceof AnyTypeValue)) {
+                    // Not through put(): AnyTypeValue defines no equals, so every trace would look
+                    // like a change. Recorded once, and thereafter this branch does nothing.
+                    changed = true;
                     newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional));
                 }
             } else {
@@ -302,41 +321,41 @@ public class NodeMutatorImpl {
             } else {
                 final boolean opt = NullSafe.getOrElse(constraint, Constraint::isOptional, optional);
                 switch (value) {
-                    case final Integer val -> constraints.put(name, new Constraint(name,
+                    case final Integer val -> put(constraints, name,
                             createIntConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
-                            opt));
-                    case final Long val -> constraints.put(name, new Constraint(name,
+                            opt);
+                    case final Long val -> put(constraints, name,
                             createLongConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
-                            opt));
-                    case final Boolean val -> constraints.put(name, new Constraint(name,
+                            opt);
+                    case final Boolean val -> put(constraints, name,
                             createBooleanConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
-                            opt));
-                    case final String val -> constraints.put(name, new Constraint(name,
+                            opt);
+                    case final String val -> put(constraints, name,
                             createStringConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
-                            opt));
-                    case final NanoTime val -> constraints.put(name, new Constraint(name,
+                            opt);
+                    case final NanoTime val -> put(constraints, name,
                             createNanoTimeConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
-                            opt));
+                            opt);
                     case final AnyValue val -> {
                         // Unwrap.
                         if (val.getStringValue() != null) {
@@ -372,6 +391,22 @@ public class NodeMutatorImpl {
                 }
             }
         }
+    }
+
+    // Records the constraint, noticing whether it is really different from the one already there.
+    // createXConstraint hands the value straight back when the trace is within what the model already
+    // allows, and that must not count as the model having moved.
+    private void put(final Map<String, Constraint> constraints,
+                     final String name,
+                     final ConstraintValue value,
+                     final boolean optional) {
+        final Constraint existing = constraints.get(name);
+        if (existing == null
+            || existing.isOptional() != optional
+            || !Objects.equals(existing.getValue(), value)) {
+            changed = true;
+        }
+        constraints.put(name, new Constraint(name, value, optional));
     }
 
     private ConstraintValue getConstraintValue(final Constraint constraint) {
