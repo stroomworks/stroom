@@ -39,18 +39,25 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     private Pathway pathway;
     private final PathwayTreePresenter pathwayTreePresenter;
     private final ConstraintListPresenter constraintListPresenter;
+    private final PathwayMutationListPresenter mutationListPresenter;
     private boolean readOnly = true;
 
     @Inject
     public PathwayEditPresenter(final EventBus eventBus,
                                 final PathwayEditView view,
                                 final PathwayTreePresenter pathwayTreePresenter,
-                                final ConstraintListPresenter constraintListPresenter) {
+                                final ConstraintListPresenter constraintListPresenter,
+                                final PathwayMutationListPresenter mutationListPresenter) {
         super(eventBus, view);
         this.pathwayTreePresenter = pathwayTreePresenter;
         this.constraintListPresenter = constraintListPresenter;
+        this.mutationListPresenter = mutationListPresenter;
+        // The Constraints panel beside the tree already shows what the selected node holds, so the
+        // tree's own Node Info panel would only repeat it.
+        pathwayTreePresenter.setShowNodeInfo(false);
         view.setTree(pathwayTreePresenter.getView());
         view.setConstraints(constraintListPresenter.getView());
+        view.setMutations(mutationListPresenter.getView());
     }
 
     @Override
@@ -257,6 +264,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 //        getView().setDetails(SafeHtmlUtils.EMPTY_SAFE_HTML);
         pathwayTreePresenter.read(pathway, readOnly);
         constraintListPresenter.setData(null, readOnly);
+        mutationListPresenter.read(pathwaysDoc.asDocRef(), pathway.getName());
 //        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
 //        getView().setSpans(SafeHtmlUtils.EMPTY_SAFE_HTML);
 
@@ -305,5 +313,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         void setTree(View view);
 
         void setConstraints(View view);
+
+        void setMutations(View view);
     }
 }

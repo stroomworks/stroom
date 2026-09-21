@@ -75,6 +75,7 @@ public class PathwayTreePresenter
     private final MySingleSelectionModel<PathNode> selectionModel = new MySingleSelectionModel<PathNode>();
 
     private Pathway pathway;
+    private boolean showNodeInfo = true;
     private Element selectedElement;
     private PathNode selectedNode;
     private boolean readOnly = true;
@@ -203,8 +204,17 @@ public class PathwayTreePresenter
         showInfo();
     }
 
+    /**
+     * Whether clicking a node opens the Node Info panel beside the tree. Off where the view around the
+     * tree already shows what the node holds, so the two do not say the same thing twice.
+     */
+    public void setShowNodeInfo(final boolean showNodeInfo) {
+        this.showNodeInfo = showNodeInfo;
+        showInfo();
+    }
+
     private void showInfo() {
-        if (selectedNode == null) {
+        if (selectedNode == null || !showNodeInfo) {
             side.setHTML(SafeHtmlUtils.EMPTY_SAFE_HTML);
         } else {
             final HtmlBuilder hb = new HtmlBuilder();

@@ -24,6 +24,7 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.planb.impl.dao.trace.PathwaysDb;
@@ -37,8 +38,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class TraceProcessor {
@@ -188,6 +191,42 @@ public class TraceProcessor {
             // Write pathway.
             pathwaySerde.writePathway(pathway, storedSize[0], byteBuffer ->
                     pathways.insert(writer, keyByteBuffer, byteBuffer));
+
+            // In the same transaction as the model change they describe, so the two cannot disagree
+            // and a batch that fails leaves neither.
+            writeMutations(writer, pathwaysDb, keyBytes, nodeMutator.getMutations());
         });
+    }
+
+    private void writeMutations(final LmdbWriter writer,
+                                final PathwaysDb pathwaysDb,
+                                final byte[] pathwayKey,
+                                final List<PathwayMutation> mutations) {
+        final SimpleDb db = pathwaysDb.getMutations();
+        int sequence = 0;
+        for (final PathwayMutation mutation : mutations) {
+            final byte[] key = mutationKey(pathwayKey, mutation.getTime(), sequence);
+            sequence++;
+            byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
+                    pathwaySerde.writeMutation(mutation, valueByteBuffer ->
+                            db.insert(writer, keyByteBuffer, valueByteBuffer)));
+        }
+    }
+
+    // Pathway first, so one model's changes are a single run of keys, then the time and a counter
+    // within it. Big endian throughout because LMDB orders keys by their bytes, and that is the order
+    // a replay wants to walk them in.
+    private static byte[] mutationKey(final byte[] pathwayKey,
+                                      final NanoTime time,
+                                      final int sequence) {
+        final ByteBuffer buffer = ByteBuffer
+                .allocate(pathwayKey.length + 1 + Long.BYTES + Integer.BYTES);
+        buffer.put(pathwayKey);
+        buffer.put((byte) 0);
+        buffer.putLong(time == null
+                ? 0L
+                : time.toEpochNanos());
+        buffer.putInt(sequence);
+        return buffer.array();
     }
 }

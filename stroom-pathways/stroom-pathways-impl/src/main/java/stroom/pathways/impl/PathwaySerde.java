@@ -35,6 +35,7 @@ import stroom.pathways.shared.pathway.IntegerValue;
 import stroom.pathways.shared.pathway.LongRange;
 import stroom.pathways.shared.pathway.LongSet;
 import stroom.pathways.shared.pathway.LongValue;
+import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.NamesPathKey;
 import stroom.pathways.shared.pathway.NanoTimeRange;
@@ -42,6 +43,7 @@ import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -214,6 +216,49 @@ public class PathwaySerde {
      *                 maximum would have every write of every pathway allocate whatever the largest
      *                 one needed.
      */
+    public void writeMutation(final PathwayMutation mutation, final Consumer<ByteBuffer> consumer) {
+        try (final ByteBufferPoolOutput output =
+                new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            writeNanoTime(mutation.getTime(), output);
+            output.writeString(mutation.getTraceId());
+            output.writeString(mutation.getSpanId());
+            writeStrings(mutation.getPath(), output);
+            output.writeString(mutation.getConstraint());
+            output.writeByte(mutation.getType().getPrimitiveValue());
+            writeNullableValue(mutation.getOldValue(), output);
+            writeNullableValue(mutation.getNewValue(), output);
+            consumer.accept(output.getByteBuffer().flip());
+        }
+    }
+
+    public PathwayMutation readMutation(final ByteBuffer byteBuffer) {
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        return new PathwayMutation(
+                readNanoTime(input),
+                input.readString(),
+                input.readString(),
+                readStrings(input),
+                input.readString(),
+                MutationType.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValue(input.readByte()),
+                readNullableValue(input),
+                readNullableValue(input));
+    }
+
+    // A mutation that added something has no old value, and one that added a node has neither, so both
+    // sides carry a presence flag rather than a type byte that would have nothing to describe.
+    private void writeNullableValue(final ConstraintValue value, final Output output) {
+        output.writeBoolean(value != null);
+        if (value != null) {
+            writeConstraintValue(value, output);
+        }
+    }
+
+    private ConstraintValue readNullableValue(final Input input) {
+        return input.readBoolean()
+                ? readConstraintValue(input)
+                : null;
+    }
+
     public void writePathway(final Pathway pathway, final int sizeHint, final Consumer<ByteBuffer> consumer) {
         final int initialSize = Math.max(MIN_BUFFER_SIZE, sizeHint);
         try (final ByteBufferPoolOutput output =

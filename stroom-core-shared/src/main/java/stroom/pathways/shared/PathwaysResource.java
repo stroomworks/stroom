@@ -44,6 +44,7 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
     String BASE_PATH = "/pathways" + ResourcePaths.V2;
     String FIND_PATHWAYS_SUB_PATH = "/findPathways";
     String FETCH_PATHWAY_SUB_PATH = "/fetchPathway";
+    String FIND_MUTATIONS_SUB_PATH = "/findMutations";
 
     @GET
     @Path("/{uuid}")
@@ -75,6 +76,14 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
             operationId = "fetchPathway")
     Pathway fetchPathway(
             @Parameter(description = "request", required = true) FetchPathwayRequest request);
+
+    @POST
+    @Path(FIND_MUTATIONS_SUB_PATH)
+    @Operation(
+            summary = "Find the changes made to one learnt pathway",
+            operationId = "findPathwayMutations")
+    PathwayMutationResultPage findMutations(
+            @Parameter(description = "criteria", required = true) FindPathwayMutationCriteria criteria);
 
     @POST
     @Path("/addPathway")

@@ -39,6 +39,8 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     SimplePanel tree;
     @UiField
     SimplePanel constraints;
+    @UiField
+    SimplePanel mutations;
 
     @Inject
     public PathwayEditViewImpl(final Binder binder) {
@@ -68,6 +70,11 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     @Override
     public void setTree(final View view) {
         tree.setWidget(view.asWidget());
+    }
+
+    @Override
+    public void setMutations(final View view) {
+        mutations.setWidget(view.asWidget());
     }
 
     @Override

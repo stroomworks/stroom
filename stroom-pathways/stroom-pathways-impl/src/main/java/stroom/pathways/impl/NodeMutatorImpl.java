@@ -22,6 +22,9 @@ import stroom.pathways.shared.otel.trace.KeyValue;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
+import stroom.pathways.shared.pathway.AbstractRange;
+import stroom.pathways.shared.pathway.AbstractSet;
+import stroom.pathways.shared.pathway.AbstractValue;
 import stroom.pathways.shared.pathway.AnyBoolean;
 import stroom.pathways.shared.pathway.AnyTypeValue;
 import stroom.pathways.shared.pathway.BooleanValue;
@@ -33,16 +36,20 @@ import stroom.pathways.shared.pathway.IntegerValue;
 import stroom.pathways.shared.pathway.LongRange;
 import stroom.pathways.shared.pathway.LongSet;
 import stroom.pathways.shared.pathway.LongValue;
+import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -66,9 +73,17 @@ public class NodeMutatorImpl {
     private final CanonicalSpanOrder spanOrder;
     private final IgnoredAttributes ignoredAttributes;
 
-    // Set where this trace taught the model something: a node it had not seen, or a constraint it had
-    // to add or widen. One of these is made per trace, so the flag covers that trace and no other.
-    private boolean changed;
+    // What this trace taught the model: a node it had not seen, or a constraint it had to add or
+    // widen. One of these is made per trace, so the list covers that trace and no other. Kept in the
+    // order the changes happened so a replay can follow them.
+    private final List<PathwayMutation> mutations = new ArrayList<>();
+
+    // Where the change being recorded is happening. Set as the walk descends, because the methods that
+    // notice a constraint moving are several calls below the one that knows which span it came from.
+    private NanoTime time;
+    private String traceId;
+    private String spanId;
+    private List<String> path;
 
     public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
                            final IgnoredAttributes ignoredAttributes) {
@@ -77,12 +92,27 @@ public class NodeMutatorImpl {
     }
 
     /**
-     * Whether the trace just folded in taught the model anything, as opposed to taking a route it
-     * already knew in a way it already allowed. A trace can be applied without this being true — that
-     * is the normal case once a pathway has settled.
+     * Every change the trace just folded in made to the model, in the order it made them. Empty where
+     * it took a route the model already knew in a way it already allowed, which is the normal case
+     * once a pathway has settled.
+     */
+    public List<PathwayMutation> getMutations() {
+        return mutations;
+    }
+
+    /**
+     * Whether the trace taught the model anything. The same question as whether it made any changes.
      */
     public boolean isChanged() {
-        return changed;
+        return !mutations.isEmpty();
+    }
+
+    private void record(final MutationType type,
+                        final String constraint,
+                        final ConstraintValue oldValue,
+                        final ConstraintValue newValue) {
+        mutations.add(new PathwayMutation(time, traceId, spanId, path, constraint, type, oldValue,
+                newValue));
     }
 
 
@@ -92,8 +122,12 @@ public class NodeMutatorImpl {
                             final MessageReceiver messageReceiver,
                             final PathwaysDoc pathwaysDoc) {
         final Span root = trace.root();
+        time = NanoTimeUtil.fromInstant(Instant.now());
+        traceId = trace.getTraceId();
+        spanId = root.getSpanId();
+        path = List.of();
         final MessageReceiver messages =
-                MessageReceiver.forSpan(messageReceiver, trace.getTraceId(), root.getSpanId());
+                MessageReceiver.forSpan(messageReceiver, traceId, spanId);
         if (pathNode == null && !pathwaysDoc.isAllowPathwayCreation()) {
             messages.log(Severity.ERROR, () -> "Invalid path: " + pathKey);
             return pathNode;
@@ -102,7 +136,7 @@ public class NodeMutatorImpl {
         final PathNode node;
         if (pathNode == null) {
             messages.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
-            changed = true;
+            record(MutationType.PATHWAY_ADDED, null, null, null);
             node = new PathNode(root.getName());
         } else {
             node = pathNode;
@@ -119,8 +153,10 @@ public class NodeMutatorImpl {
         // Everything below names the span being folded in. The recursive call below is given the
         // receiver this one was given, not this one's, so each level puts its own span on the front
         // rather than stacking them up.
+        spanId = parentSpan.getSpanId();
+        path = parentNode.getPath();
         final MessageReceiver messages =
-                MessageReceiver.forSpan(messageReceiver, trace.getTraceId(), parentSpan.getSpanId());
+                MessageReceiver.forSpan(messageReceiver, traceId, spanId);
 
         // This trace's children grouped by name, first appearance first. The same name twice is one
         // child that happened twice, not two children.
@@ -164,7 +200,10 @@ public class NodeMutatorImpl {
                 final List<String> path = new ArrayList<>(parentNode.getPath());
                 path.add(name);
                 messages.log(Severity.INFO, () -> "Adding new path: " + path);
-                changed = true;
+                final List<String> parentPath = this.path;
+                this.path = path;
+                record(MutationType.NODE_ADDED, null, null, null);
+                this.path = parentPath;
                 child = new PathNode(name, path);
             }
 
@@ -174,6 +213,8 @@ public class NodeMutatorImpl {
                 for (final Span span : spans) {
                     child = walk(trace, span, child, messageReceiver, pathwaysDoc);
                 }
+                spanId = parentSpan.getSpanId();
+                path = parentNode.getPath();
             }
             children.add(withCount(child,
                     spans == null
@@ -267,7 +308,7 @@ public class NodeMutatorImpl {
                     messageReceiver.log(Severity.INFO, () -> "Making constraint optional: " +
                                                              pathNode.getPath() + " " +
                                                              key);
-                    changed = true;
+                    record(MutationType.CONSTRAINT_OPTIONAL, key, value.getValue(), value.getValue());
                     newConstraints.put(key, new Constraint(value.getName(), value.getValue(), true));
                 }
             } else {
@@ -285,7 +326,9 @@ public class NodeMutatorImpl {
                       instanceof AnyTypeValue)) {
                     // Not through put(): AnyTypeValue defines no equals, so every trace would look
                     // like a change. Recorded once, and thereafter this branch does nothing.
-                    changed = true;
+                    final Constraint was = newConstraints.get(key);
+                    record(MutationType.CONSTRAINT_IGNORED, key,
+                            NullSafe.get(was, Constraint::getValue), new AnyTypeValue());
                     newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional));
                 }
             } else {
@@ -401,12 +444,52 @@ public class NodeMutatorImpl {
                      final ConstraintValue value,
                      final boolean optional) {
         final Constraint existing = constraints.get(name);
-        if (existing == null
-            || existing.isOptional() != optional
-            || !Objects.equals(existing.getValue(), value)) {
-            changed = true;
+        if (existing == null) {
+            record(MutationType.CONSTRAINT_ADDED, name, null, value);
+        } else if (existing.isOptional() != optional || !Objects.equals(existing.getValue(), value)) {
+            record(widening(existing.getValue(), value), name, existing.getValue(), value);
         }
         constraints.put(name, new Constraint(name, value, optional));
+    }
+
+    // How a constraint loosened, worked out from the pair of values rather than passed down from the
+    // place that loosened it, so the five constraint builders stay unaware of it. A trace carries one
+    // value, so a range can only push out one end at a time.
+    private static MutationType widening(final ConstraintValue was, final ConstraintValue now) {
+        // Anything reaching here already admits everything, so the constraint has stopped checking.
+        // The one configured to do so never comes through here, so this is a value whose type did not
+        // match the ones before it.
+        if (now instanceof AnyTypeValue) {
+            return MutationType.CONSTRAINT_TYPE_CONFLICT;
+        }
+        // Regex is a value, so this has to come before any test for one.
+        if (now instanceof Regex || now instanceof AnyBoolean) {
+            return MutationType.CONSTRAINT_GENERALISED;
+        }
+
+        if (now instanceof final AbstractRange<?> to) {
+            if (was instanceof AbstractSet<?>) {
+                return MutationType.CONSTRAINT_RANGED;
+            }
+            if (was instanceof final AbstractRange<?> from) {
+                if (!Objects.equals(from.getMin(), to.getMin())) {
+                    return MutationType.CONSTRAINT_MIN_EXPANDED;
+                }
+                if (!Objects.equals(from.getMax(), to.getMax())) {
+                    return MutationType.CONSTRAINT_MAX_EXPANDED;
+                }
+            } else if (was instanceof final AbstractValue<?> from) {
+                // The one value seen so far becomes one end of the range; the other end is the new one.
+                return Objects.equals(to.getMin(), from.getValue())
+                        ? MutationType.CONSTRAINT_MAX_EXPANDED
+                        : MutationType.CONSTRAINT_MIN_EXPANDED;
+            }
+        }
+
+        if (now instanceof AbstractSet<?>) {
+            return MutationType.CONSTRAINT_SET_EXPANDED;
+        }
+        return MutationType.CONSTRAINT_CHANGED;
     }
 
     private ConstraintValue getConstraintValue(final Constraint constraint) {
@@ -437,12 +520,13 @@ public class NodeMutatorImpl {
                             "Unexpected time: " + location.get() + " " + value);
                 } else {
                     if (nanoTimeValue.getValue().isGreaterThan(value)) {
+                        // Smaller than the one time seen so far, so it becomes the bottom of a range.
                         messageReceiver.log(Severity.INFO, () ->
-                                "Expanding max time constraint: " + location.get() + " " + value);
+                                "Expanding min time constraint: " + location.get() + " " + value);
                         return new NanoTimeRange(value, nanoTimeValue.getValue());
                     } else if (nanoTimeValue.getValue().isLessThan(value)) {
                         messageReceiver.log(Severity.INFO, () ->
-                                "Expanding min time constraint: " + location.get() + " " + value);
+                                "Expanding max time constraint: " + location.get() + " " + value);
                         return new NanoTimeRange(nanoTimeValue.getValue(), value);
                     }
                 }

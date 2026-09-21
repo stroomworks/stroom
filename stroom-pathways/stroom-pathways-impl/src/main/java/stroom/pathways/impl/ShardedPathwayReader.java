@@ -18,11 +18,15 @@ package stroom.pathways.impl;
 
 import stroom.bytebuffer.ByteBufferUtils;
 import stroom.pathways.shared.FindPathwayCriteria;
+import stroom.pathways.shared.FindPathwayMutationCriteria;
+import stroom.pathways.shared.PathwayMutationResultPage;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.planb.impl.dao.ShardKeyRouter;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.shared.SharedFileStoreSettings;
@@ -62,6 +66,13 @@ import java.util.function.Function;
  */
 @Singleton
 public class ShardedPathwayReader {
+
+    // Separates the pathway name from the rest of a mutation key. Must match TraceProcessor, which
+    // writes them.
+    static final char KEY_SEPARATOR = '\0';
+
+    private static final Comparator<PathwayMutation> BY_TIME =
+            Comparator.comparing(PathwayMutation::getTime, Comparator.nullsFirst(Comparator.naturalOrder()));
 
     private static final Comparator<PathwaySummary> BY_NAME =
             Comparator.comparing(PathwaySummary::getName, Comparator.nullsFirst(Comparator.naturalOrder()));
@@ -168,6 +179,82 @@ public class ShardedPathwayReader {
     // A pathway that has never recorded the time sorts before one that has, rather than blowing up.
     private static Comparator<PathwaySummary> byTime(final Function<PathwaySummary, NanoTime> time) {
         return Comparator.comparing(time, Comparator.nullsFirst(Comparator.naturalOrder()));
+    }
+
+    /**
+     * The changes made to one learnt pathway. Only that pathway's shard is opened, and only its own
+     * run of keys is walked, because the mutation key begins with the name it belongs to.
+     */
+    public PathwayMutationResultPage findMutations(final PathwaysDoc doc,
+                                                   final FindPathwayMutationCriteria criteria) {
+        final SharedFileStoreSettings settings = doc.getSharedFileStore();
+        final String name = criteria.getPathwayName();
+        if (settings == null || NullSafe.isBlankString(settings.getSharedPath())
+            || NullSafe.isBlankString(name)) {
+            return new PathwayMutationResultPage(List.of(), PageResponse.empty());
+        }
+
+        final int shard = ShardKeyRouter.computeShardIndex(name, shardCountOf(settings));
+        final List<PathwayMutation> mutations = new ArrayList<>();
+        readShard(doc, shard, db -> {
+            withKey(name + KEY_SEPARATOR, prefix ->
+                    db.getMutations().iteratePrefix(prefix, (key, val) ->
+                            mutations.add(pathwaySerde.readMutation(val))));
+            return null;
+        });
+
+        mutations.sort(mutationComparator(criteria.getSortList()));
+
+        final PageRequest pageRequest = criteria.getPageRequest();
+        final List<PathwayMutation> page = mutations.stream()
+                .skip(pageRequest.getOffset())
+                .limit(pageRequest.getLength())
+                .toList();
+        final PageResponse pageResponse = PageResponse
+                .builder()
+                .offset(pageRequest.getOffset())
+                .length(page.size())
+                .total((long) mutations.size())
+                .exact(true)
+                .build();
+        return new PathwayMutationResultPage(page, pageResponse);
+    }
+
+    // Newest first where nothing was asked for, which is what a list of recent changes wants.
+    private static Comparator<PathwayMutation> mutationComparator(final List<CriteriaFieldSort> sortList) {
+        Comparator<PathwayMutation> comparator = null;
+        for (final CriteriaFieldSort sort : NullSafe.list(sortList)) {
+            final Comparator<PathwayMutation> field = mutationField(sort);
+            if (field != null) {
+                comparator = comparator == null
+                        ? field
+                        : comparator.thenComparing(field);
+            }
+        }
+        return comparator == null
+                ? BY_TIME.reversed()
+                : comparator;
+    }
+
+    private static Comparator<PathwayMutation> mutationField(final CriteriaFieldSort sort) {
+        final Comparator<PathwayMutation> comparator = switch (NullSafe.string(sort.getId())) {
+            case PathwayMutation.FIELD_TIME -> BY_TIME;
+            case PathwayMutation.FIELD_TYPE -> text(m -> NullSafe.get(m.getType(), MutationType::getDisplayValue));
+            case PathwayMutation.FIELD_PATH -> text(m -> String.join(" / ", NullSafe.list(m.getPath())));
+            case PathwayMutation.FIELD_CONSTRAINT -> text(PathwayMutation::getConstraint);
+            case PathwayMutation.FIELD_OLD_VALUE -> text(m -> NullSafe.toString(m.getOldValue()));
+            case PathwayMutation.FIELD_NEW_VALUE -> text(m -> NullSafe.toString(m.getNewValue()));
+            case PathwayMutation.FIELD_TRACE_ID -> text(PathwayMutation::getTraceId);
+            case PathwayMutation.FIELD_SPAN_ID -> text(PathwayMutation::getSpanId);
+            default -> null;
+        };
+        return comparator == null || !sort.isDesc()
+                ? comparator
+                : comparator.reversed();
+    }
+
+    private static Comparator<PathwayMutation> text(final Function<PathwayMutation, String> value) {
+        return Comparator.comparing(value, Comparator.nullsFirst(String.CASE_INSENSITIVE_ORDER));
     }
 
     /**

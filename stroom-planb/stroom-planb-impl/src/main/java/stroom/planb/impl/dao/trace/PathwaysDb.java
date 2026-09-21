@@ -19,6 +19,7 @@ package stroom.planb.impl.dao.trace;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbIterable.EntryConsumer;
+import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.HashClashCommitRunnable;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
@@ -37,9 +38,10 @@ import java.nio.file.Path;
 import java.util.function.Function;
 
 /**
- * The learnt pathway model for one shard, plus the record of which traces have been folded into it.
+ * The learnt pathway model for one shard, the record of which traces have been folded into it, and
+ * the changes each of them made.
  *
- * <p>Two plain tables and no serde, so this is not a {@link stroom.planb.impl.dao.Db}. Anything that
+ * <p>Three plain tables and no serde, so this is not a {@link stroom.planb.impl.dao.Db}. Anything that
  * needs to size or copy the environment without knowing what is in it goes through
  * {@link PlanBEnv#openForMaintenance}.
  */
@@ -51,14 +53,16 @@ public class PathwaysDb implements AutoCloseable {
     protected final ByteBuffers byteBuffers;
     protected final SimpleDb processingStatus;
     protected final SimpleDb pathways;
+    protected final SimpleDb mutations;
 
     private PathwaysDb(final PlanBEnv env,
                        final ByteBuffers byteBuffers) {
         this.env = env;
         this.byteBuffers = byteBuffers;
 
-        // Two plain key/value DBIs, created on first open. Unlike AbstractDb there is no stored schema
-        // to read back and validate, because neither key nor value goes through a versioned serde.
+        // Three plain key/value DBIs, created on first open. Unlike AbstractDb there is no stored
+        // schema to read back and validate, because neither key nor value goes through a versioned
+        // serde.
         processingStatus = new SimpleDb(
                 env,
                 env.openDbi("processing-status", DbiFlags.MDB_CREATE),
@@ -66,6 +70,10 @@ public class PathwaysDb implements AutoCloseable {
         pathways = new SimpleDb(
                 env,
                 env.openDbi("pathways", DbiFlags.MDB_CREATE),
+                new PutFlags[]{});
+        mutations = new SimpleDb(
+                env,
+                env.openDbi("mutations", DbiFlags.MDB_CREATE),
                 new PutFlags[]{});
     }
 
@@ -75,6 +83,14 @@ public class PathwaysDb implements AutoCloseable {
 
     public SimpleDb getPathways() {
         return pathways;
+    }
+
+    /**
+     * Every change made to the models in this shard, so their growth can be replayed rather than only
+     * seen as it ended up. Append only, and nothing prunes it yet.
+     */
+    public SimpleDb getMutations() {
+        return mutations;
     }
 
     public LmdbWriter createWriter() {
@@ -146,6 +162,17 @@ public class PathwaysDb implements AutoCloseable {
         public void iterate(final Txn<ByteBuffer> txn,
                             final EntryConsumer consumer) {
             LmdbIterable.iterate(txn, dbi, consumer);
+        }
+
+        /**
+         * The entries whose keys begin with the given bytes, in key order. Used where one table holds
+         * rows for many owners and only one owner's are wanted.
+         */
+        public void iteratePrefix(final ByteBuffer prefix, final EntryConsumer consumer) {
+            env.read(txn -> {
+                LmdbIterable.iterate(txn, dbi, LmdbKeyRange.builder().prefix(prefix).build(), consumer);
+                return null;
+            });
         }
 
         public <R> R get(final Txn<ByteBuffer> txn,

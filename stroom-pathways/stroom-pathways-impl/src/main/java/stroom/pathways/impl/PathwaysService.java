@@ -21,6 +21,8 @@ import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeletePathway;
 import stroom.pathways.shared.FetchPathwayRequest;
 import stroom.pathways.shared.FindPathwayCriteria;
+import stroom.pathways.shared.FindPathwayMutationCriteria;
+import stroom.pathways.shared.PathwayMutationResultPage;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.UpdatePathway;
@@ -51,6 +53,14 @@ public class PathwaysService {
         // The model lives on the shared file store, split by operation name, so any node can answer
         // from it. Nothing has to work out which node holds it, and nothing has to be asked.
         return shardedPathwayReader.findPathways(pathwaysDoc, criteria);
+    }
+
+    public PathwayMutationResultPage findMutations(final FindPathwayMutationCriteria criteria) {
+        final PathwaysDoc pathwaysDoc = pathwaysStore.readDocument(criteria.getPathwaysDocRef());
+        if (pathwaysDoc == null) {
+            throw new DocumentNotFoundException(criteria.getPathwaysDocRef());
+        }
+        return shardedPathwayReader.findMutations(pathwaysDoc, criteria);
     }
 
     /**

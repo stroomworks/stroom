@@ -7,16 +7,28 @@
             <g:TextBox ui:field="name" addStyleNames="w-100"/>
         </form:FormGroup>
         <g:MySplitLayoutPanel styleName="dock-max">
-            <g:west size="400">
-                <form:FormGroup identity="pathwayDetails" label="Paths">
-                    <g:SimplePanel ui:field="tree" styleName="max form-control-background form-control-border"/>
+            <g:south size="220">
+                <form:FormGroup identity="pathwayMutations" label="Changes">
+                    <g:SimplePanel ui:field="mutations"
+                                   styleName="max form-control-background form-control-border"/>
                 </form:FormGroup>
-            </g:west>
+            </g:south>
             <g:center>
-                <form:FormGroup identity="pathwayConstraints" label="Constraints">
-                    <g:SimplePanel ui:field="constraints" styleName="max form-control-background form-control-border"/>
-                </form:FormGroup>
+                <g:MySplitLayoutPanel>
+                    <g:west size="400">
+                        <form:FormGroup identity="pathwayDetails" label="Paths">
+                            <g:SimplePanel ui:field="tree"
+                                           styleName="max form-control-background form-control-border"/>
+                        </form:FormGroup>
+                    </g:west>
+                    <g:center>
+                        <form:FormGroup identity="pathwayConstraints" label="Constraints">
+                            <g:SimplePanel ui:field="constraints"
+                                           styleName="max form-control-background form-control-border"/>
+                        </form:FormGroup>
+                    </g:center>
+                </g:MySplitLayoutPanel>
             </g:center>
         </g:MySplitLayoutPanel>
     </g:FlowPanel>
-</ui:UiBinder> 
+</ui:UiBinder>
