@@ -168,17 +168,21 @@ public class PathwaysDb implements AutoCloseable {
         /**
          * The last key beginning with the given bytes, or null where there is none. Seeks straight to
          * it rather than walking, so it costs the same whatever the owner's history holds.
+         *
+         * <p>Takes the caller's transaction rather than opening one. A reader sees only what has been
+         * committed, so a fresh one would not see what the caller has written and not yet committed —
+         * which for a caller numbering rows from the last key means it would number them all the same.
          */
-        public <R> R lastPrefixed(final ByteBuffer prefix, final Function<ByteBuffer, R> keyConsumer) {
-            return env.read(txn -> {
-                try (final LmdbIterable iterable = LmdbIterable.create(txn, dbi,
-                        LmdbKeyRange.builder().prefix(prefix).reverse().build())) {
-                    for (final LmdbEntry entry : iterable) {
-                        return keyConsumer.apply(entry.getKey());
-                    }
+        public <R> R lastPrefixed(final Txn<ByteBuffer> txn,
+                                  final ByteBuffer prefix,
+                                  final Function<ByteBuffer, R> keyConsumer) {
+            try (final LmdbIterable iterable = LmdbIterable.create(txn, dbi,
+                    LmdbKeyRange.builder().prefix(prefix).reverse().build())) {
+                for (final LmdbEntry entry : iterable) {
+                    return keyConsumer.apply(entry.getKey());
                 }
-                return keyConsumer.apply(null);
-            });
+            }
+            return keyConsumer.apply(null);
         }
 
         /**

@@ -1,0 +1,198 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.pathways.impl;
+
+import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
+import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.pathways.shared.PathwaysDoc;
+import stroom.pathways.shared.otel.trace.AnyValue;
+import stroom.pathways.shared.otel.trace.KeyValue;
+import stroom.pathways.shared.otel.trace.NanoDuration;
+import stroom.pathways.shared.otel.trace.Span;
+import stroom.pathways.shared.otel.trace.SpanKind;
+import stroom.pathways.shared.otel.trace.Trace;
+import stroom.pathways.shared.pathway.MutationType;
+import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.PathwayReplay;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.PathwaysDb;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Several traces applied the way the consumer applies them: through {@link TraceProcessor}, against a
+ * real store, sharing one transaction for the whole batch.
+ *
+ * <p>The other tests here build a history by calling {@link NodeMutatorImpl} straight and numbering
+ * the changes themselves, which is not what the application does and so cannot see what the
+ * application gets wrong. A batch commits once at the end, so a trace numbering its changes from what
+ * is already stored has to see what the traces before it in the same batch wrote.
+ */
+class TestMutationsInOneBatch {
+
+    private static final ByteBufferFactoryImpl BYTE_BUFFER_FACTORY = new ByteBufferFactoryImpl();
+    private static final ByteBuffers BYTE_BUFFERS = new ByteBuffers(BYTE_BUFFER_FACTORY);
+    private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
+
+    private static final String OPERATION = "GitRepoPush.run";
+    private static final String PING = "Ping";
+    private static final String COMMIT = "Commit";
+    private static final long BASE = 1_700_000_000_000_000_000L;
+
+    @Test
+    void everyChangeIsKeptAndNumberedInOrder(@TempDir final Path dir) {
+        final List<PathwayMutation> stored = applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "POST", 5, PING, COMMIT),
+                trace("t3", "PUT", 90, PING, COMMIT));
+
+        assertThat(stored)
+                .as("three traces that each taught the model something, none of them lost")
+                .hasSizeGreaterThan(10);
+
+        final List<Long> sequences = stored.stream().map(PathwayMutation::getSequence).toList();
+        final List<Long> expected = new ArrayList<>();
+        for (long i = 1; i <= stored.size(); i++) {
+            expected.add(i);
+        }
+        assertThat(sequences)
+                .as("counted on across the batch, not started again by every trace")
+                .isEqualTo(expected);
+    }
+
+    @Test
+    void thePathwayComingIntoBeingIsRecorded(@TempDir final Path dir) {
+        final List<PathwayMutation> stored = applyBatch(dir, trace("t1", "GET", 20, PING));
+
+        assertThat(stored.getFirst().getType())
+                .as("the first thing that happened to this model was the model appearing")
+                .isEqualTo(MutationType.PATHWAY_ADDED);
+        assertThat(stored.getFirst().getNodeUuid()).isNotBlank();
+    }
+
+    @Test
+    void theStoredHistoryWindsTheStoredModelBackToNothing(@TempDir final Path dir) {
+        final List<PathwayMutation> stored = applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "POST", 5, PING, COMMIT));
+
+        assertThat(PathwayReplay.rewind(readModel(dir), stored))
+                .as("what was stored is enough to take the model apart again")
+                .isNull();
+    }
+
+    // Applies each trace through TraceProcessor on one writer, as a batch does, then reads back what
+    // was stored rather than what was recorded in memory.
+    private static List<PathwayMutation> applyBatch(final Path dir, final Trace... traces) {
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+        try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, false);
+                final LmdbWriter writer = db.createWriter()) {
+            final TraceProcessor processor = new TraceProcessor(BYTE_BUFFERS, serde, NO_IGNORED);
+            for (final Trace trace : traces) {
+                processor.processTrace(writer,
+                        db,
+                        trace.getTraceId().getBytes(StandardCharsets.UTF_8),
+                        id -> Optional.of(trace),
+                        doc(),
+                        (severity, message) -> {
+                        });
+            }
+            writer.commit();
+        }
+
+        final List<PathwayMutation> stored = new ArrayList<>();
+        try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
+            db.getMutations().iterate((key, val) -> stored.add(serde.readMutation(val)));
+        }
+        return stored;
+    }
+
+    private static PathNode readModel(final Path dir) {
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+        final Pathway[] found = new Pathway[1];
+        try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
+            db.getPathways().iterate((key, val) -> found[0] = serde.readPathway(val));
+        }
+        return found[0].getRoot();
+    }
+
+    private static PathwaysDoc doc() {
+        return PathwaysDoc.builder()
+                .uuid(UUID.randomUUID().toString())
+                .name("Test Pathways")
+                .allowPathwayCreation(true)
+                .allowPathwayMutation(true)
+                .allowConstraintCreation(true)
+                .allowConstraintMutation(true)
+                .build();
+    }
+
+    private static Trace trace(final String id,
+                               final String method,
+                               final int rootMillis,
+                               final String... childNames) {
+        final Span root = span(OPERATION, "r0", "", 0, rootMillis, method);
+        final List<Span> children = new ArrayList<>(childNames.length);
+        for (int i = 0; i < childNames.length; i++) {
+            children.add(span(childNames[i], "c" + i, "r0", i + 1, 1, null));
+        }
+
+        final Map<String, List<Span>> byParent = new HashMap<>();
+        byParent.put("", List.of(root));
+        if (!children.isEmpty()) {
+            byParent.put("r0", children);
+        }
+        return new Trace(id, byParent);
+    }
+
+    private static Span span(final String name,
+                             final String spanId,
+                             final String parentSpanId,
+                             final int startMillis,
+                             final int durationMillis,
+                             final String method) {
+        final long start = BASE + NanoDuration.ofMillis(startMillis).getNanos();
+        final Span.Builder builder = Span.builder()
+                .name(name)
+                .spanId(spanId)
+                .parentSpanId(parentSpanId)
+                .kind(SpanKind.SPAN_KIND_INTERNAL)
+                .startTimeUnixNano(Long.toString(start))
+                .endTimeUnixNano(Long.toString(start + NanoDuration.ofMillis(durationMillis).getNanos()));
+        if (method != null) {
+            builder.attributes(List.of(KeyValue.builder()
+                    .key("http.method")
+                    .value(new AnyValue(method, null, null, null, null, null, null))
+                    .build()));
+        }
+        return builder.build();
+    }
+}

@@ -154,8 +154,8 @@ public class TraceProcessor {
         byteBuffers.useBytes(keyBytes, keyByteBuffer -> {
             Pathway pathway = pathways.get(writer.getWriteTxn(), keyByteBuffer, valueByteBuffer -> {
                 if (valueByteBuffer == null) {
-                    messages.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
-                    final PathNode pathNode = new PathNode(root.getName());
+                    // No root yet. The mutator makes it, so that a pathway coming into being is
+                    // recorded as a change like any other and a replay can rebuild it from nothing.
                     final Instant now = Instant.now();
                     final NanoTime nanoTime = NanoTimeUtil.fromInstant(now);
                     return Pathway.builder()
@@ -163,15 +163,19 @@ public class TraceProcessor {
                             .createTime(nanoTime)
                             .lastUsedTime(nanoTime)
                             .pathKey(pathKey)
-                            .root(pathNode)
                             .build();
                 }
                 storedSize[0] = valueByteBuffer.remaining();
                 return pathwaySerde.readPathway(valueByteBuffer);
             });
 
-            PathNode pathNode = pathway.getRoot();
-            pathNode = nodeMutator.process(trace, pathKey, pathNode, messageReceiver, doc);
+            final PathNode pathNode = nodeMutator.process(trace, pathKey, pathway.getRoot(),
+                    messageReceiver, doc);
+            if (pathNode == null) {
+                // The document does not allow a pathway to be created and there was none, so there is
+                // nothing to write. The mutator has already said so.
+                return;
+            }
 
             // Last used is the last time a trace took this route, so it moves for every trace applied.
             // Updated is the last time the model itself moved, so it only changes when the trace taught
@@ -207,7 +211,7 @@ public class TraceProcessor {
         }
 
         final SimpleDb db = pathwaysDb.getMutations();
-        long sequence = lastSequence(db, pathwayKey);
+        long sequence = lastSequence(writer, db, pathwayKey);
         for (final PathwayMutation mutation : mutations) {
             sequence++;
             final byte[] key = mutationKey(pathwayKey, sequence);
@@ -219,11 +223,15 @@ public class TraceProcessor {
     }
 
     // Where this pathway's history got to, taken from the last key rather than kept anywhere, so
-    // nothing has to stay in step with it.
-    private static long lastSequence(final SimpleDb db, final byte[] pathwayKey) {
+    // nothing has to stay in step with it. Read on the batch's own transaction, so it counts on from
+    // what earlier traces in the same batch wrote rather than starting them all again from what was
+    // last committed.
+    private static long lastSequence(final LmdbWriter writer,
+                                     final SimpleDb db,
+                                     final byte[] pathwayKey) {
         final ByteBuffer prefix = ByteBuffer.allocateDirect(pathwayKey.length + 1);
         prefix.put(pathwayKey).put((byte) 0).flip();
-        return db.lastPrefixed(prefix, key -> key == null
+        return db.lastPrefixed(writer.getWriteTxn(), prefix, key -> key == null
                 ? 0L
                 : key.getLong(key.limit() - Long.BYTES));
     }
