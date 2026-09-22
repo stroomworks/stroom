@@ -42,6 +42,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The record of what each trace did to the model.
@@ -214,6 +215,28 @@ class TestPathwayMutations {
                 .findFirst()
                 .orElseThrow()
                 .getType();
+    }
+
+    @Test
+    void aRowFromAnEarlierFormatIsRefusedRatherThanMisread() {
+        final NodeMutatorImpl mutator = mutator();
+        mutator.process(trace("GET", PING), key(), null, quiet(), doc());
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+
+        final ByteBuffer[] written = new ByteBuffer[1];
+        serde.writeMutation(mutator.getMutations().getFirst(), buffer -> {
+            final ByteBuffer copy = ByteBuffer.allocateDirect(buffer.remaining());
+            copy.put(buffer).flip();
+            written[0] = copy;
+        });
+
+        // The layout carries no field names, so a row laid out differently would otherwise be read as
+        // whatever its bytes happened to mean.
+        written[0].put(0, (byte) (written[0].get(0) + 1));
+
+        assertThatThrownBy(() -> serde.readMutation(written[0]))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("mutations table has to be cleared");
     }
 
     private static NodeMutatorImpl mutator() {

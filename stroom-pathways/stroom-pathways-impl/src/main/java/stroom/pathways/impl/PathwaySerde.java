@@ -75,6 +75,19 @@ public class PathwaySerde {
      */
     private static final int MIN_BUFFER_SIZE = 128;
 
+    /**
+     * Which shape a stored pathway has. Raise this whenever a field is added, removed or moved,
+     * anywhere in the pathway, its nodes, or their constraints.
+     */
+    private static final byte PATHWAY_VERSION = 1;
+
+    /**
+     * Which shape a stored mutation has. The layout is positional and carries no field names, so a row
+     * written by a build that laid the fields out differently cannot be told apart from a current one
+     * by its contents alone. Raise this whenever a field is added, removed or moved.
+     */
+    private static final byte MUTATION_VERSION = 1;
+
     private final ByteBufferFactory byteBufferFactory;
 
     @Inject
@@ -83,7 +96,9 @@ public class PathwaySerde {
     }
 
     public Pathway readPathway(final ByteBuffer byteBuffer) {
-        return readPathway(new UnsafeByteBufferInput(byteBuffer));
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), PATHWAY_VERSION, "pathway", "pathways");
+        return readPathway(input);
     }
 
     /**
@@ -100,6 +115,7 @@ public class PathwaySerde {
     public PathwaySummary readSummary(final ByteBuffer byteBuffer) {
         final long sizeBytes = byteBuffer.remaining();
         final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), PATHWAY_VERSION, "pathway", "pathways");
         return new PathwaySummary(
                 input.readString(),
                 readNanoTime(input),
@@ -219,6 +235,7 @@ public class PathwaySerde {
     public void writeMutation(final PathwayMutation mutation, final Consumer<ByteBuffer> consumer) {
         try (final ByteBufferPoolOutput output =
                 new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeByte(MUTATION_VERSION);
             output.writeLong(mutation.getSequence());
             writeNanoTime(mutation.getTime(), output);
             output.writeString(mutation.getTraceId());
@@ -236,6 +253,8 @@ public class PathwaySerde {
 
     public PathwayMutation readMutation(final ByteBuffer byteBuffer) {
         final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), MUTATION_VERSION, "pathway mutation", "mutations");
+
         return new PathwayMutation(
                 input.readLong(),
                 readNanoTime(input),
@@ -252,6 +271,17 @@ public class PathwaySerde {
 
     // A mutation that added something has no old value, and one that added a node has neither, so both
     // sides carry a presence flag rather than a type byte that would have nothing to describe.
+    // Read as though it were the current shape, a row laid out differently comes back as whatever its
+    // bytes happened to mean. Refusing says what is wrong and which table to clear.
+    private static void checkVersion(final byte found, final byte expected, final String what,
+                                     final String table) {
+        if (found != expected) {
+            throw new IllegalStateException(what + " written in format " + found + ", and this reads "
+                                            + "format " + expected + ". The " + table + " table has "
+                                            + "to be cleared before it can be read.");
+        }
+    }
+
     private void writeNullableValue(final ConstraintValue value, final Output output) {
         output.writeBoolean(value != null);
         if (value != null) {
@@ -275,6 +305,7 @@ public class PathwaySerde {
     }
 
     private void writePathway(final Pathway pathway, final Output output) {
+        output.writeByte(PATHWAY_VERSION);
         output.writeString(pathway.getName());
         writeNanoTime(pathway.getCreateTime(), output);
         writeNanoTime(pathway.getUpdateTime(), output);
