@@ -54,6 +54,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     private final MultiSelectionModelImpl<PathwayMutation> selectionModel;
 
     private final ListDataProvider<PathwayMutation> dataProvider;
+    private Column<PathwayMutation, String> timeColumn;
 
     @Inject
     public PathwayMutationListPresenter(final EventBus eventBus,
@@ -99,8 +100,20 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         // what is selected to decide which model to show.
         selectionModel.clear();
 
+        // This is reused for every pathway opened, so the way the last one was left sorted is not
+        // carried over to the next.
+        newestFirst();
         dataProvider.setCompleteList(new ArrayList<>(NullSafe.list(mutations)));
         order();
+    }
+
+    // Seeded rather than pushed, because pushing a column sorts it ascending and the list starts
+    // newest first. Also what the header reads from, so it shows which way it is ordered before
+    // anything has been clicked.
+    private void newestFirst() {
+        final ColumnSortList sortList = dataGrid.getColumnSortList();
+        sortList.clear();
+        sortList.push(new ColumnSortInfo(timeColumn, false));
     }
 
     // Newest first unless the grid has been told otherwise. Nothing but the order the changes were
@@ -119,16 +132,14 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         // The only column that sorts. Time stands in for the order the changes were made, which is
         // what the sort really runs on — every change a trace made shares one timestamp, so the times
         // alone would shuffle changes that happened in a definite order.
-        final Column<PathwayMutation, String> time = DataGridUtil
+        timeColumn = DataGridUtil
                 .textColumnBuilder((PathwayMutation mutation) -> NullSafe.get(mutation.getTime(),
                         value -> dateTimeFormatter.format(value.toEpochMillis())))
                 .withSorting(PathwayMutation.FIELD_TIME)
                 .build();
-        dataGrid.addResizableColumn(time, PathwayMutation.FIELD_TIME, ColumnSizeConstants.DATE_COL);
-        // Seeded rather than pushed, because pushing a column sorts it ascending and the list starts
-        // newest first. Done here so the header shows which way it is ordered before anything is
-        // clicked.
-        dataGrid.getColumnSortList().push(new ColumnSortInfo(time, false));
+        dataGrid.addResizableColumn(timeColumn, PathwayMutation.FIELD_TIME,
+                ColumnSizeConstants.DATE_COL);
+        newestFirst();
         addColumn(PathwayMutation.FIELD_TYPE,
                 mutation -> NullSafe.get(mutation.getType(), MutationType::getDisplayValue),
                 ColumnSizeConstants.MEDIUM_COL);
