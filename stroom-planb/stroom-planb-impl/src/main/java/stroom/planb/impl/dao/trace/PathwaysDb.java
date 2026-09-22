@@ -19,6 +19,7 @@ package stroom.planb.impl.dao.trace;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbIterable.EntryConsumer;
+import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.AbstractDb;
 import stroom.planb.impl.dao.HashClashCommitRunnable;
 import stroom.planb.impl.dao.LmdbWriter;
@@ -135,6 +136,11 @@ public class PathwaysDb implements AutoCloseable {
             writer.tryCommit();
         }
 
+        public void delete(final LmdbWriter writer, final ByteBuffer keyByteBuffer) {
+            dbi.delete(writer.getWriteTxn(), keyByteBuffer);
+            writer.tryCommit();
+        }
+
         public void iterate(final EntryConsumer consumer) {
             env.read(txn -> {
                 iterate(txn, consumer);
@@ -142,9 +148,23 @@ public class PathwaysDb implements AutoCloseable {
             });
         }
 
+        public void iterate(final LmdbKeyRange keyRange,
+                            final EntryConsumer consumer) {
+            env.read(txn -> {
+                iterate(txn, keyRange, consumer);
+                return null;
+            });
+        }
+
         public void iterate(final Txn<ByteBuffer> txn,
                             final EntryConsumer consumer) {
             LmdbIterable.iterate(txn, dbi, consumer);
+        }
+
+        public void iterate(final Txn<ByteBuffer> txn,
+                            final LmdbKeyRange keyRange,
+                            final EntryConsumer consumer) {
+            LmdbIterable.iterate(txn, dbi, keyRange, consumer);
         }
 
         public <R> R get(final Txn<ByteBuffer> txn,

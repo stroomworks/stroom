@@ -27,7 +27,7 @@ import stroom.pathways.impl.events.PathwayRootDiscoveryEvent;
 import stroom.pathways.impl.events.RequiredConstraintAbsentEvent;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
 
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;

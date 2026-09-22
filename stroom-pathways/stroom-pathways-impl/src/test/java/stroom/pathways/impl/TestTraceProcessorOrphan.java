@@ -19,6 +19,7 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -98,17 +100,31 @@ class TestTraceProcessorOrphan {
     private static void processOrphan(final PathwaysDb pathwaysDb,
                                       final LmdbWriter writer,
                                       final List<String> warnings) {
+        final MessageReceiver messageReceiver = new MessageReceiver() {
+            @Override
+            public void log(final Severity severity, final Supplier<String> message) {
+                if (severity == Severity.WARNING) {
+                    warnings.add(message.get());
+                }
+            }
+
+            @Override
+            public void beginTrace(final byte[] traceId) {
+
+            }
+
+            @Override
+            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event) {
+
+            }
+        };
         new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY))
                 .processTrace(writer,
                         pathwaysDb,
                         TRACE_ID,
                         traceId -> Optional.of(orphanTrace()),
                         PathwaysDoc.builder().uuid(UUID.randomUUID().toString()).build(),
-                        (severity, message) -> {
-                            if (severity == Severity.WARNING) {
-                                warnings.add(message.get());
-                            }
-                        });
+                        messageReceiver);
     }
 
     private static boolean isMarkedProcessed(final PathwaysDb pathwaysDb) {

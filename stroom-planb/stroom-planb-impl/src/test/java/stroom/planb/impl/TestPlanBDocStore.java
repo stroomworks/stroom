@@ -20,7 +20,7 @@ import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
-import stroom.planb.impl.db.StatePaths;
+import stroom.planb.impl.PlanBPaths;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.planb.shared.TraceSettings;
@@ -60,23 +60,21 @@ class TestPlanBDocStore {
     @Mock
     private ClusterLockService clusterLockService;
 
-    private StatePaths statePaths;
+    private PlanBPaths statePaths;
     private PlanBDocStoreImpl storeImpl;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        doReturn(store).when(storeFactory).createStore(any(), any(), any(), any());
+        doReturn(store).when(storeFactory).createStore(any(), any(), any(), any(), any());
 
-        statePaths = new StatePaths(tempDir.resolve("local_state"));
-        final Provider<StatePaths> statePathsProvider = () -> statePaths;
+        statePaths = new PlanBPaths(tempDir.resolve("local_state"));
         final Provider<ClusterLockService> lockServiceProvider = () -> clusterLockService;
 
         storeImpl = new PlanBDocStoreImpl(
                 storeFactory,
                 serialiser,
                 securityContext,
-                statePathsProvider,
                 lockServiceProvider);
     }
 

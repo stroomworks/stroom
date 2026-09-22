@@ -33,11 +33,11 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayLocks;
 import stroom.pathways.shared.pathway.StringValue;
-import stroom.planb.impl.db.HashClashCommitRunnable;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.PlanBEnv;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
-import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
+import stroom.planb.impl.dao.HashClashCommitRunnable;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.PlanBEnv;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.PathwaysDb.SimpleDb;
 import stroom.planb.impl.serde.time.NanoTimeSerde;
 import stroom.planb.shared.StateSettings;
 

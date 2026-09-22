@@ -155,6 +155,7 @@ class TestPathwaysProcessor {
                 Mockito.mock(ShardManager.class),
                 Mockito.mock(NodeInfo.class),
                 Mockito.mock(ClusterLockService.class),
-                Mockito.mock(ArchiveShardLocator.class));
+                Mockito.mock(ArchiveShardLocator.class),
+                Mockito.mock(PathwayEventsSerde.class));
     }
 }

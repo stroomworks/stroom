@@ -17,7 +17,7 @@
 package stroom.planb.impl.data;
 
 import stroom.planb.impl.PlanBConstants;
-import stroom.planb.impl.db.StatePaths;
+import stroom.planb.impl.PlanBPaths;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,9 +28,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Regression tests for the SIGSEGV (SEGV_MAPERR) crash caused by the merge
- * StoreShard and the long-lived query StoreShard sharing the same local LMDB
- * directory (and therefore the same {@code lock.mdb}).
+ * Regression tests for the SIGSEGV (SEGV_MAPERR) crash caused by a merge-side
+ * store shard and the long-lived query {@code AbstractStoreShard} sharing the same local
+ * LMDB directory (and therefore the same {@code lock.mdb}).
  *
  * <h2>Root cause</h2>
  * LMDB's {@code lock.mdb} contains {@code PTHREAD_MUTEX_ROBUST |
@@ -43,10 +43,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * entry and crashes with {@code SIGSEGV / SEGV_MAPERR}.
  *
  * <h2>Fix</h2>
- * {@link ShardManager#createStoreShard} now uses {@code statePaths.getMergingDir()}
- * as the base for the merge shard's working directory rather than
- * {@code statePaths.getShardDir()}. The two environments therefore never
- * share a directory and consequently never share {@code lock.mdb}.
+ * A query {@code AbstractStoreShard} resolves its working directory under
+ * {@link PlanBPaths#getShardDir()}, whereas the merge-side work runs under
+ * {@link PlanBPaths#getMergingDir()} (see {@code MergeProcessor} and {@code HoldingShard}).
+ * The two directories are therefore always distinct, so the environments never share a
+ * {@code lock.mdb}.
  */
 class TestMergeShardIsolation {
 
@@ -54,15 +55,13 @@ class TestMergeShardIsolation {
      * The core invariant: the merge base directory ({@code mergingDir}) must
      * be a different path from the long-lived query shard directory ({@code shardDir}).
      *
-     * <p>{@link ShardManager#createStoreShard} passes {@code statePaths.getMergingDir()}
-     * as {@code shardBaseDir} to the {@link StoreShard} 7-arg constructor. The resulting
-     * shard dir is {@code mergingDir/<uuid>_<shardIndex>}.  The query shard (created via
-     * the public 6-arg constructor) resolves to {@code shardDir/<uuid>_<shardIndex>}.
+     * <p>Merge-side shards are given a {@link PlanBPaths#getMergingDir()}-based directory,
+     * while a query {@code AbstractStoreShard} resolves under {@link PlanBPaths#getShardDir()}.
      * They must be distinct to prevent sharing {@code lock.mdb}.
      */
     @Test
     void mergingDir_and_shardDir_areDistinctPaths(@TempDir final Path tempDir) {
-        final StatePaths statePaths = new StatePaths(tempDir);
+        final PlanBPaths statePaths = new PlanBPaths(tempDir);
 
         assertThat(statePaths.getMergingDir())
                 .as("mergingDir must be a different path from shardDir")
@@ -70,14 +69,13 @@ class TestMergeShardIsolation {
     }
 
     /**
-     * For a given doc UUID and shard index, the path computed by
-     * {@link ShardManager#createStoreShard} (using {@code mergingDir}) must
-     * not equal the path that the query {@link StoreShard} (using {@code shardDir})
+     * For a given doc UUID and shard index, a merge-side path (under {@code mergingDir})
+     * must not equal the path that a query {@code AbstractStoreShard} (under {@code shardDir})
      * would compute — even though both use the same {@code <uuid>_<index>} suffix.
      */
     @Test
     void mergeShardPath_doesNotConflictWithQueryShardPath(@TempDir final Path tempDir) {
-        final StatePaths statePaths = new StatePaths(tempDir);
+        final PlanBPaths statePaths = new PlanBPaths(tempDir);
         final String docUuid = UUID.randomUUID().toString();
         final String suffix = docUuid + "_" + 0;
 
@@ -98,7 +96,7 @@ class TestMergeShardIsolation {
     }
 
     /**
-     * Verifies that {@link StatePaths} uses separate directory names for
+     * Verifies that {@link PlanBPaths} uses separate directory names for
      * {@code mergingDir} and {@code shardDir} as specified by
      * {@link PlanBConstants}.
      */

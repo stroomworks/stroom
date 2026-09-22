@@ -36,12 +36,14 @@ import stroom.pathways.shared.pathway.Pathway;
 import stroom.planb.impl.dao.Count;
 import stroom.planb.impl.dao.Db;
 import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.PathwayEventsDb;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.TraceDb;
 import stroom.planb.impl.data.archive.ArchiveShardLocator;
 import stroom.planb.impl.data.archive.ArchiveShardRef;
 import stroom.planb.impl.data.shard.ShardManager;
 import stroom.planb.impl.fs.SharedFileStore;
+import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.planb.shared.HasHoldingAreaSettings;
 import stroom.planb.shared.HoldingAreaSettings;
 import stroom.planb.shared.PlanBDocument;
@@ -63,12 +65,18 @@ import jakarta.inject.Singleton;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,6 +90,10 @@ import java.util.stream.Stream;
 public class PathwaysProcessor {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysProcessor.class);
+
+    // Interim memory safeguard: the number of events findPathwayEvents will buffer before it stops
+    // and reports the result as capped, rather than risk holding an unbounded recall in memory.
+    private static final int MAX_RECALL_EVENTS = 10_000;
 
     private final PathwaysStore pathwaysStore;
     private final MessageReceiverFactory messageReceiverFactory;
@@ -208,6 +220,16 @@ public class PathwaysProcessor {
         }
     }
 
+    /**
+     * Runs {@code function} against the pathways model store for a doc, holding the store's read lock
+     * for the whole call so the store cannot be closed and its files unlinked mid-operation (see
+     * {@link #useStore}). The store is passed as {@code null} when it does not exist (nothing has been
+     * processed for the doc yet); callers that only mutate existing data should treat that as a no-op.
+     */
+    public <R> R withPathwaysDb(final DocRef docRef, final Function<PathwaysDb, R> function) {
+        return useStore(docRef, false, function);
+    }
+
     private Store getStore(final DocRef docRef, final boolean createIfNotExists) {
         final String uuid = docRef.getUuid();
         final Store existing = pathwaysDbMap.get(uuid);
@@ -255,7 +277,7 @@ public class PathwaysProcessor {
         final int idx = Math.max(shardIndex, 0);
         return pathwayEventsDbMap.computeIfAbsent(docRef.getUuid() + "_" + idx, k -> {
             try {
-                final Path eventsPath = pathwaysRoot(docRef)
+                final Path eventsPath = getPathwaysPath(docRef)
                         .resolve("events")
                         .resolve(String.format("%04d", idx));
                 Files.createDirectories(eventsPath);
@@ -458,10 +480,11 @@ public class PathwaysProcessor {
             // Per-shard lock: nodes in a cluster can process different shards in parallel.
             final String lockName = "pathways-write-" + doc.getUuid() + "-" + shardIdx;
             clusterLockService.tryLock(lockName, () -> {
+                final PathwayEventsDb eventsDb = getPathwayEventsDb(doc.asDocRef(), shardIdx);
                 for (final ArchiveShardRef ref :
                         archiveShardLocator.findRelevantShards(tracesDoc, shardIdx, fromMs, toMs)) {
                     shardManager.getArchive(tracesDoc, shardIdx, ref, db ->
-                            processShardTraces(db, pathwaysDb, infoFeed, doc, cutoffMs));
+                            processShardTraces(db, pathwaysDb, eventsDb, infoFeed, doc, cutoffMs));
                 }
             });
         }
@@ -490,6 +513,7 @@ public class PathwaysProcessor {
      */
     private Void processShardTraces(final Db<?, ?> db,
                                     final PathwaysDb pathwaysDb,
+                                    final PathwayEventsDb pathwayEventsDb,
                                     final DocRef infoFeed,
                                     final PathwaysDoc doc,
                                     final long cutoffMs) {
@@ -517,22 +541,24 @@ public class PathwaysProcessor {
                 eligible.size(), doc.getName());
 
         if (infoFeed != null && infoFeed.getName() != null) {
-            messageReceiverFactory.create(infoFeed.getName(), messageReceiver -> {
-                try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-                    final TraceProcessor traceProcessor =
-                            new TraceProcessor(byteBuffers, pathwaySerde);
+            try (final LmdbWriter modelWriter = pathwaysDb.createWriter();
+                    final LmdbWriter eventWriter = pathwayEventsDb.createWriter()) {
+
+                messageReceiverFactory.create(pathwayEventsDb, eventWriter, infoFeed.getName(), messageReceiver -> {
+                    final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde);
                     for (final byte[] traceId : eligible) {
                         traceProcessor.processTrace(
-                                writer,
+                                modelWriter,
                                 pathwaysDb,
                                 traceId,
                                 traceDb::findTrace,
                                 doc,
                                 messageReceiver);
                     }
-                    writer.commit();
-                }
-            });
+                    eventWriter.commit();
+                    modelWriter.commit();
+                });
+            }
         }
         return null;
     }
@@ -552,16 +578,22 @@ public class PathwaysProcessor {
         // Build a uuid->name map from the model so events that only carry a node uuid can be labelled.
         final Map<String, String> uuidToName = new HashMap<>();
         if (hasName) {
-            final PathwaysDb modelDb = getPathwaysDb(docRef);
             final byte[] nameBytes = pathwayName.getBytes(StandardCharsets.UTF_8);
-            byteBuffers.useBytes(nameBytes, keyBuf -> {
-                final Pathway pathway = modelDb.getPathways()
-                        .get(keyBuf, vb -> vb == null
-                                ? null
-                                : pathwaySerde.readPathway(vb));
-                collectNodeNames(pathway == null
-                        ? null
-                        : pathway.getRoot(), uuidToName);
+            useStore(docRef, false, modelDb -> {
+                if (modelDb == null) {
+                    // No model store yet (deleted/never-created doc) → nothing to label.
+                    return null;
+                }
+                byteBuffers.useBytes(nameBytes, keyBuf -> {
+                    final Pathway pathway = modelDb.getPathways()
+                            .get(keyBuf, vb -> vb == null
+                                    ? null
+                                    : pathwaySerde.readPathway(vb));
+                    collectNodeNames(pathway == null
+                            ? null
+                            : pathway.getRoot(), uuidToName);
+                    return null;
+                });
                 return null;
             });
         }
@@ -572,7 +604,7 @@ public class PathwaysProcessor {
                 ? criteria.getFilter().toLowerCase(Locale.ROOT)
                 : null;
 
-        final Path eventsBase = pathwaysRoot(docRef).resolve("events");
+        final Path eventsBase = getPathwaysPath(docRef).resolve("events");
         final List<PathwayEventRow> rows = new ArrayList<>();
         for (int i = 0; i < shardCount; i++) {
             // Recall is read-only: skip (rather than create) event stores for shards that were
@@ -705,8 +737,11 @@ public class PathwaysProcessor {
     private int resolveShardCount(final PathwaysDoc doc) {
         if (doc != null && doc.getTracesDocRef() != null) {
             final PlanBDocument tracesDoc = shardManager.getDoc(doc.getTracesDocRef().getName());
-            if (tracesDoc != null && tracesDoc.getSharedPath() != null && tracesDoc.getShardCount() > 0) {
-                return tracesDoc.getShardCount();
+            if (tracesDoc != null) {
+                final int shardCount = SharedFileStore.shardCountOf(tracesDoc);
+                if (shardCount > 0) {
+                    return shardCount;
+                }
             }
         }
         return 1;
@@ -739,111 +774,4 @@ public class PathwaysProcessor {
         return value != null && value.toLowerCase(Locale.ROOT).contains(lowerNeedle);
     }
 
-    /**
-     * For a single PathwaysDoc, finds all eligible traces across every shard of
-     * the linked TracesDoc and runs pathways processing on each one.
-     *
-     * <p>Handles both sharded ({@code shardCount > 0}) and unsharded TracesDoc
-     * configurations. In the sharded case a per-shard lock is used so that in a
-     * multi-node cluster, different nodes can process different shards concurrently
-     * without blocking each other.
-     */
-    private void processCompletedTraces(final PathwaysDoc doc, final long cutoffMs) {
-        if (shardManager.isSnapshotNode()) {
-            // Trace completion runs only on merge (shard-owning) nodes.
-            return;
-        }
-
-        final PlanBDocument tracesDoc = shardManager.getDoc(doc.getTracesDocRef().getName());
-        if (tracesDoc == null) {
-            LOGGER.warn("No PlanB doc found for traces doc ref '{}' — skipping for pathways doc {}",
-                    doc.getTracesDocRef().getName(), doc.getName());
-            return;
-        }
-
-        final PathwaysDb pathwaysDb = getPathwaysDb(doc.asDocRef());
-        final DocRef infoFeed = doc.getInfoFeed();
-        final boolean isSharded = tracesDoc.getSharedPath() != null && tracesDoc.getShardCount() > 0;
-
-        if (isSharded) {
-            for (int i = 0; i < tracesDoc.getShardCount(); i++) {
-                final int shardIdx = i;
-                // Per-shard lock: nodes in a cluster can process different shards in parallel.
-                final String lockName = "pathways-write-" + doc.getUuid() + "-" + shardIdx;
-                clusterLockService.tryLock(lockName, () ->
-                        shardManager.get(doc.getTracesDocRef().getName(), shardIdx, db ->
-                                processShardTraces(db, pathwaysDb,
-                                        getPathwayEventsDb(doc.asDocRef(), shardIdx),
-                                        infoFeed, doc, cutoffMs)));
-            }
-        } else {
-            final String lockName = "pathways-write-" + doc.getUuid();
-            clusterLockService.tryLock(lockName, () ->
-                    shardManager.get(doc.getTracesDocRef().getName(), db ->
-                            processShardTraces(db, pathwaysDb,
-                                    getPathwayEventsDb(doc.asDocRef(), 0),
-                                    infoFeed, doc, cutoffMs)));
-        }
-    }
-
-    /**
-     * Processes eligible completed traces from a single TracesDoc shard into the
-     * PathwaysDb. Must be called while the caller holds the appropriate
-     * {@code pathways-write-*} cluster lock for this shard.
-     */
-    private Void processShardTraces(final Db<?, ?> db,
-                                    final PathwaysDb pathwaysDb,
-                                    final PathwayEventsDb eventsDb,
-                                    final DocRef infoFeed,
-                                    final PathwaysDoc doc,
-                                    final long cutoffMs) {
-        if (!(db instanceof final TraceDb traceDb)) {
-            return null;
-        }
-
-        // Collect traceIds past the grace period. iterateRootsMergedBefore stops
-        // early once the time-ordered key exceeds cutoffMs — O(eligible) scan.
-        // TODO: Replace the full scan from the beginning of trace-roots-merge-time with a
-        //  persistent cursor (watermark) stored in PathwaysDb. On each tick the scan would
-        //  start from the last-processed (mergeTimeMs, traceId) key rather than the
-        //  beginning of the index, making the cost O(new eligible) rather than
-        //  O(all eligible since the shard was created). The PathwaysDb processingStatus DBI
-        //  currently provides idempotency but not position tracking.
-        final List<byte[]> eligible = new ArrayList<>();
-        traceDb.iterateRootsMergedBefore(cutoffMs, eligible::add);
-
-        if (eligible.isEmpty()) {
-            LOGGER.debug("No traces ready for pathways completion for doc {}", doc.getName());
-            return null;
-        }
-
-        LOGGER.debug("Processing {} completed trace(s) for pathways doc {}",
-                eligible.size(), doc.getName());
-
-        if (infoFeed != null && infoFeed.getName() != null) {
-            // The model (+ processing-status replay guard) and the events live in separate
-            // environments so each has its own writer. Events are committed first so that, on a
-            // crash between the two commits, at worst a trace is reprocessed and its events
-            // re-appended (tolerable duplicates) rather than events being lost.
-            try (final LmdbWriter modelWriter = pathwaysDb.createWriter();
-                    final LmdbWriter eventWriter = eventsDb.createWriter()) {
-                messageReceiverFactory.create(eventsDb, eventWriter, infoFeed.getName(), messageReceiver -> {
-                    final TraceProcessor traceProcessor =
-                            new TraceProcessor(byteBuffers, pathwaySerde);
-                    for (final byte[] traceId : eligible) {
-                        traceProcessor.processTrace(
-                                modelWriter,
-                                pathwaysDb,
-                                traceId,
-                                traceDb::findTrace,
-                                doc,
-                                messageReceiver);
-                    }
-                });
-                eventWriter.commit();
-                modelWriter.commit();
-            }
-        }
-        return null;
-    }
 }

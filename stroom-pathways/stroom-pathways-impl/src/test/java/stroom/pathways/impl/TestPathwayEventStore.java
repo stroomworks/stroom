@@ -24,9 +24,9 @@ import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.impl.events.PathwayEventType;
 import stroom.pathways.impl.events.PathwayRootDiscoveryEvent;
 import stroom.pathways.shared.otel.trace.NanoTime;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.NanoTimeUtil;
-import stroom.planb.impl.db.trace.PathwayEventsDb;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.NanoTimeUtil;
+import stroom.planb.impl.dao.trace.PathwayEventsDb;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -202,9 +202,13 @@ class TestPathwaysDiscoversPublishedTraces {
         }).when(clusterLockService).tryLock(Mockito.anyString(), Mockito.any(Runnable.class));
 
         Mockito.doAnswer(invocation -> {
-            invocation.getArgument(1, Consumer.class).accept(messageReceiver);
+            invocation.getArgument(3, Consumer.class).accept(messageReceiver);
             return null;
-        }).when(messageReceiverFactory).create(Mockito.anyString(), Mockito.any());
+        }).when(messageReceiverFactory).create(
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyString(),
+                Mockito.any());
 
         return new PathwaysProcessor(
                 pathwaysStore,
@@ -215,7 +219,8 @@ class TestPathwaysDiscoversPublishedTraces {
                 shardManager,
                 nodeInfo,
                 clusterLockService,
-                new ArchiveShardLocator());
+                new ArchiveShardLocator(),
+                new PathwayEventsSerde(BYTE_BUFFER_FACTORY, new PathwaySerde(BYTE_BUFFER_FACTORY)));
     }
 
     private static List<String> pathwayNames(final PathwaysProcessor processor,

@@ -31,8 +31,8 @@ import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.PathwaysDb;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.util.jersey.WebTargetFactory;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -145,15 +145,22 @@ public class PathwaysService {
         }
 
         try {
-            final PathwaysDb pathwaysDb = pathwaysProcessor.getPathwaysDb(deletePathway.getDocRef());
             final byte[] keyBytes = deletePathway.getName().getBytes(StandardCharsets.UTF_8);
 
-            try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-                final ByteBuffer pathwayKeyBuf = ByteBuffer.allocateDirect(keyBytes.length);
-                pathwayKeyBuf.put(keyBytes).flip();
-                pathwaysDb.getPathways().delete(writer, pathwayKeyBuf);
-                writer.commit();
-            }
+            // Held under the store's read lock so it can't be closed/deleted while we write to it.
+            pathwaysProcessor.withPathwaysDb(deletePathway.getDocRef(), pathwaysDb -> {
+                if (pathwaysDb == null) {
+                    // No model store for this doc yet — nothing to delete.
+                    return null;
+                }
+                try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                    final ByteBuffer pathwayKeyBuf = ByteBuffer.allocateDirect(keyBytes.length);
+                    pathwayKeyBuf.put(keyBytes).flip();
+                    pathwaysDb.getPathways().delete(writer, pathwayKeyBuf);
+                    writer.commit();
+                }
+                return null;
+            });
 
             // Events live in separate, per-shard stores; delete them across all shards.
             pathwaysProcessor.deletePathwayEvents(deletePathway.getDocRef(), deletePathway.getName());
@@ -193,16 +200,22 @@ public class PathwaysService {
         }
 
         try {
-            final PathwaysDb pathwaysDb = pathwaysProcessor.getPathwaysDb(request.getDocRef());
-            final int cleared;
-            try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-                if (request.getName() != null) {
-                    final byte[] keyBytes = request.getName().getBytes(StandardCharsets.UTF_8);
-                    deletePathwayModelEntry(writer, pathwaysDb, keyBytes);
+            // Held under the store's read lock so it can't be closed/deleted while we write to it.
+            final int cleared = pathwaysProcessor.withPathwaysDb(request.getDocRef(), pathwaysDb -> {
+                if (pathwaysDb == null) {
+                    // No model store for this doc yet — nothing to clear.
+                    return 0;
                 }
-                cleared = clearProcessingStatus(writer, pathwaysDb);
-                writer.commit();
-            }
+                try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                    if (request.getName() != null) {
+                        final byte[] keyBytes = request.getName().getBytes(StandardCharsets.UTF_8);
+                        deletePathwayModelEntry(writer, pathwaysDb, keyBytes);
+                    }
+                    final int n = clearProcessingStatus(writer, pathwaysDb);
+                    writer.commit();
+                    return n;
+                }
+            });
             // Events live in separate, per-shard stores; delete them across all shards.
             if (request.getName() != null) {
                 pathwaysProcessor.deletePathwayEvents(request.getDocRef(), request.getName());
