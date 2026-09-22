@@ -67,3 +67,6 @@ gradle-app.setting
 
 # MCP server config - may contain credentials, keep local
 .mcp.json
+
+# Dev container config - local dev environment, keep local
+.devcontainer/
