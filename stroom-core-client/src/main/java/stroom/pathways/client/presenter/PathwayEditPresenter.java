@@ -93,10 +93,8 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(pathwayTreePresenter.getSelectionModel().addSelectionChangeHandler(e -> {
-            final PathNode selected = pathwayTreePresenter.getSelectionModel().getSelectedObject();
-            constraintListPresenter.setData(selected, readOnly);
-        }));
+        registerHandler(pathwayTreePresenter.getSelectionModel()
+                .addSelectionChangeHandler(e -> showConstraints()));
 
         registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
 
@@ -340,6 +338,15 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         pathwayTreePresenter.read(root == null
                 ? null
                 : pathway.copy().root(root).build(), readOnly);
+        showConstraints();
+    }
+
+    // The node the tree is holding, whichever model it came from. Winding the model back picks the same
+    // node out again, and the selection model treats that as no change and says nothing, so this has to
+    // be asked for rather than waited for.
+    private void showConstraints() {
+        constraintListPresenter.setData(pathwayTreePresenter.getSelectionModel().getSelectedObject(),
+                readOnly);
     }
 
     public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {
@@ -357,7 +364,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         pathwayTreePresenter.clearSelection();
 
         pathwayTreePresenter.read(pathway, readOnly);
-        constraintListPresenter.setData(null, readOnly);
+        showConstraints();
         mutationListPresenter.setData(Collections.emptyList());
         fetchHistory(pathwaysDoc.asDocRef(), pathway.getName());
 //        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
