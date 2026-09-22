@@ -23,8 +23,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * One change a trace made to a learnt model, kept so the model's growth can be replayed rather than
@@ -47,6 +49,12 @@ public class PathwayMutation {
     public static final String FIELD_TRACE_ID = "Trace";
     public static final String FIELD_SPAN_ID = "Span";
 
+    /**
+     * Where this sits in its pathway's history, counting from one. Ordering and addressing both use
+     * this rather than the time, which can tie within a batch and can step backwards with the clock.
+     */
+    @JsonProperty
+    private final long sequence;
     @JsonProperty
     private final NanoTime time;
     @JsonProperty
@@ -56,6 +64,12 @@ public class PathwayMutation {
     /** The node this happened to, named from the root down. Empty for the pathway itself. */
     @JsonProperty
     private final List<String> path;
+    /**
+     * The node this happened to. Kept so a replay puts a node back with the identity it had, rather
+     * than a fresh one that makes every frame look like the whole tree was replaced.
+     */
+    @JsonProperty
+    private final String nodeUuid;
     /** Which constraint changed, or null where the change was to the node rather than a constraint. */
     @JsonProperty
     private final String constraint;
@@ -69,14 +83,18 @@ public class PathwayMutation {
     private final ConstraintValue newValue;
 
     @JsonCreator
-    public PathwayMutation(@JsonProperty("time") final NanoTime time,
+    public PathwayMutation(@JsonProperty("sequence") final long sequence,
+                           @JsonProperty("time") final NanoTime time,
                            @JsonProperty("traceId") final String traceId,
                            @JsonProperty("spanId") final String spanId,
                            @JsonProperty("path") final List<String> path,
+                           @JsonProperty("nodeUuid") final String nodeUuid,
                            @JsonProperty("constraint") final String constraint,
                            @JsonProperty("type") final MutationType type,
                            @JsonProperty("oldValue") final ConstraintValue oldValue,
                            @JsonProperty("newValue") final ConstraintValue newValue) {
+        this.sequence = sequence;
+        this.nodeUuid = nodeUuid;
         this.time = time;
         this.traceId = traceId;
         this.spanId = spanId;
@@ -87,8 +105,62 @@ public class PathwayMutation {
         this.newValue = newValue;
     }
 
+    /**
+     * Orders changes by one of the columns a grid offers, or by sequence where the name is not one of
+     * them. Here rather than beside either caller because both the reader and the view sort by the
+     * same names and must agree on what they mean.
+     */
+    public static Comparator<PathwayMutation> comparator(final String field, final boolean descending) {
+        final Comparator<PathwayMutation> comparator = switch (field == null
+                ? ""
+                : field) {
+            case FIELD_TIME -> Comparator.comparingLong(PathwayMutation::getSequence);
+            case FIELD_TYPE -> text(m -> m.getType() == null
+                    ? null
+                    : m.getType().getDisplayValue());
+            case FIELD_PATH -> text(m -> m.getPath() == null
+                    ? null
+                    : String.join(" / ", m.getPath()));
+            case FIELD_CONSTRAINT -> text(PathwayMutation::getConstraint);
+            case FIELD_OLD_VALUE -> text(m -> asText(m.getOldValue()));
+            case FIELD_NEW_VALUE -> text(m -> asText(m.getNewValue()));
+            case FIELD_TRACE_ID -> text(PathwayMutation::getTraceId);
+            case FIELD_SPAN_ID -> text(PathwayMutation::getSpanId);
+            default -> Comparator.comparingLong(PathwayMutation::getSequence);
+        };
+        return descending
+                ? comparator.reversed()
+                : comparator;
+    }
+
+    private static Comparator<PathwayMutation> text(final Function<PathwayMutation, String> value) {
+        return Comparator.comparing(value, Comparator.nullsFirst(String.CASE_INSENSITIVE_ORDER));
+    }
+
+    private static String asText(final ConstraintValue value) {
+        return value == null
+                ? null
+                : value.toString();
+    }
+
+    /**
+     * The same change, numbered. Used when writing, where its place in the pathway's history is known.
+     */
+    public PathwayMutation withSequence(final long sequence) {
+        return new PathwayMutation(sequence, time, traceId, spanId, path, nodeUuid, constraint, type,
+                oldValue, newValue);
+    }
+
+    public long getSequence() {
+        return sequence;
+    }
+
     public NanoTime getTime() {
         return time;
+    }
+
+    public String getNodeUuid() {
+        return nodeUuid;
     }
 
     public String getTraceId() {
@@ -128,7 +200,9 @@ public class PathwayMutation {
             return false;
         }
         final PathwayMutation that = (PathwayMutation) o;
-        return Objects.equals(time, that.time)
+        return sequence == that.sequence
+               && Objects.equals(nodeUuid, that.nodeUuid)
+               && Objects.equals(time, that.time)
                && Objects.equals(traceId, that.traceId)
                && Objects.equals(spanId, that.spanId)
                && Objects.equals(path, that.path)
@@ -140,12 +214,13 @@ public class PathwayMutation {
 
     @Override
     public int hashCode() {
-        return Objects.hash(time, traceId, spanId, path, constraint, type, oldValue, newValue);
+        return Objects.hash(sequence, time, traceId, spanId, path, nodeUuid, constraint, type,
+                oldValue, newValue);
     }
 
     @Override
     public String toString() {
-        return type + " " + path + (constraint == null
+        return sequence + " " + type + " " + path + (constraint == null
                 ? ""
                 : " " + constraint) + " " + oldValue + " -> " + newValue;
     }

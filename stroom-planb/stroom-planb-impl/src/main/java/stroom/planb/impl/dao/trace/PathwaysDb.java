@@ -17,6 +17,7 @@
 package stroom.planb.impl.dao.trace;
 
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.lmdb.stream.LmdbEntry;
 import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbIterable.EntryConsumer;
 import stroom.lmdb.stream.LmdbKeyRange;
@@ -162,6 +163,22 @@ public class PathwaysDb implements AutoCloseable {
         public void iterate(final Txn<ByteBuffer> txn,
                             final EntryConsumer consumer) {
             LmdbIterable.iterate(txn, dbi, consumer);
+        }
+
+        /**
+         * The last key beginning with the given bytes, or null where there is none. Seeks straight to
+         * it rather than walking, so it costs the same whatever the owner's history holds.
+         */
+        public <R> R lastPrefixed(final ByteBuffer prefix, final Function<ByteBuffer, R> keyConsumer) {
+            return env.read(txn -> {
+                try (final LmdbIterable iterable = LmdbIterable.create(txn, dbi,
+                        LmdbKeyRange.builder().prefix(prefix).reverse().build())) {
+                    for (final LmdbEntry entry : iterable) {
+                        return keyConsumer.apply(entry.getKey());
+                    }
+                }
+                return keyConsumer.apply(null);
+            });
         }
 
         /**

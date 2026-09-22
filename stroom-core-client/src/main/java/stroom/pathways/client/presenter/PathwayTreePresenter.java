@@ -225,12 +225,41 @@ public class PathwayTreePresenter
 
     public void read(final Pathway pathway,
                      final boolean readOnly) {
+        // What was selected before, so it can be picked out again afterwards. A node keeps its uuid
+        // when the model is wound back, so the same node is still the same node — and where it is not
+        // in the model being read, nothing is selected, which is the right answer.
+        final String was = uuid(selectedNode);
+
         this.pathway = pathway;
         this.readOnly = readOnly;
         this.selectedNode = null;
         selectionModel.clear();
         enableButtons();
         refresh();
+        reselect(was);
+    }
+
+    /**
+     * Forgets what was selected, so the next read starts clean rather than picking the same node out
+     * again. Reading keeps a selection on purpose, which is what lets the model be wound back with the
+     * node being looked at staying put.
+     */
+    public void clearSelection() {
+        selectedNode = null;
+        selectedElement = null;
+        selectionModel.clear();
+        enableButtons();
+        showInfo();
+    }
+
+    private void reselect(final String uuid) {
+        if (uuid != null) {
+            final PathNode node = nodeMap.get(uuid);
+            if (node != null) {
+                select(node, ElementUtil.findChild(html.getElement(),
+                        element -> uuid.equals(element.getAttribute("uuid"))));
+            }
+        }
     }
 
     private static String uuid(final PathNode pathNode) {

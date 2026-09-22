@@ -42,6 +42,7 @@ import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.DataGridUtil;
 import stroom.util.shared.ModelStringUtil;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResultPage;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.dropdowntree.client.view.QuickFilterPageView;
@@ -55,6 +56,7 @@ import com.google.gwt.view.client.Range;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -75,6 +77,10 @@ public class PathwayListPresenter
     private final ButtonView editButton;
     private final ButtonView removeButton;
     private RestDataProvider<PathwaySummary, ResultPage<PathwaySummary>> dataProvider;
+    private String selectedName;
+    private Pathway selectedPathway;
+    private boolean fetching;
+    private final List<Consumer<Pathway>> waiting = new ArrayList<>();
 
     private String filter;
     private DocRef docRef;
@@ -136,12 +142,16 @@ public class PathwayListPresenter
             }
         }));
         registerHandler(selectionModel.addSelectionHandler(event -> {
-            if (!readOnly) {
-                enableButtons();
-                if (event.getSelectionType().isDoubleSelect()) {
-                    onEdit();
+            // A double click raises this twice, once for each click, so the model is fetched only when
+            // the row being looked at has really changed.
+            withSelectedPathway(pathway -> {
+                if (!readOnly) {
+                    enableButtons();
+                    if (event.getSelectionType().isDoubleSelect()) {
+                        edit(pathway);
+                    }
                 }
-            }
+            });
         }));
         registerHandler(dataGrid.addColumnSortHandler(event -> refresh()));
     }
@@ -260,17 +270,77 @@ public class PathwayListPresenter
     }
 
     private void onEdit() {
+        withSelectedPathway(this::edit);
+    }
+
+    private void edit(final Pathway pathway) {
         final PathwaySummary selected = selectionModel.getSelected();
-        if (selected != null) {
-            // The row carries no model — see PathwaySummary — so fetch the one being edited.
-            restFactory
-                    .create(PATHWAYS_RESOURCE)
-                    .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, selected.getName())))
-                    .onSuccess(existingPathway -> editFetched(selected, existingPathway))
-                    .onFailure(new DefaultErrorHandler(this, null))
-                    .taskMonitorFactory(pagerView)
-                    .exec();
+        if (selected != null && pathway != null) {
+            editFetched(selected, pathway);
         }
+    }
+
+    /**
+     * The model for the row being looked at, fetched once and held. The row carries only its size —
+     * see {@link PathwaySummary} — and the model is the expensive half, so it is not fetched again
+     * while the same row is selected.
+     */
+    public void withSelectedPathway(final Consumer<Pathway> consumer) {
+        final String name = NullSafe.get(selectionModel.getSelected(), PathwaySummary::getName);
+
+        if (name == null) {
+            forget();
+            consumer.accept(null);
+            return;
+        }
+
+        if (name.equals(selectedName)) {
+            if (fetching) {
+                // One is already on its way for this row. Everyone asking is told when it lands, so a
+                // row is fetched once however many parts of the view want it.
+                waiting.add(consumer);
+            } else {
+                consumer.accept(selectedPathway);
+            }
+            return;
+        }
+
+        forget();
+        selectedName = name;
+        fetching = true;
+        waiting.add(consumer);
+
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, name)))
+                .onSuccess(pathway -> {
+                    // A row selected since this was asked for has its own fetch, so this one is stale.
+                    if (name.equals(selectedName)) {
+                        selectedPathway = pathway;
+                        fetching = false;
+                        tell(pathway);
+                    }
+                })
+                .onFailure(new DefaultErrorHandler(this, () -> {
+                    if (name.equals(selectedName)) {
+                        forget();
+                    }
+                }))
+                .taskMonitorFactory(pagerView)
+                .exec();
+    }
+
+    private void tell(final Pathway pathway) {
+        final List<Consumer<Pathway>> toTell = new ArrayList<>(waiting);
+        waiting.clear();
+        toTell.forEach(consumer -> consumer.accept(pathway));
+    }
+
+    private void forget() {
+        selectedName = null;
+        selectedPathway = null;
+        fetching = false;
+        waiting.clear();
     }
 
     private void editFetched(final PathwaySummary selected, final Pathway existingPathway) {

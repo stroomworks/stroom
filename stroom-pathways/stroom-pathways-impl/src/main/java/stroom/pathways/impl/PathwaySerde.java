@@ -219,10 +219,12 @@ public class PathwaySerde {
     public void writeMutation(final PathwayMutation mutation, final Consumer<ByteBuffer> consumer) {
         try (final ByteBufferPoolOutput output =
                 new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeLong(mutation.getSequence());
             writeNanoTime(mutation.getTime(), output);
             output.writeString(mutation.getTraceId());
             output.writeString(mutation.getSpanId());
             writeStrings(mutation.getPath(), output);
+            output.writeString(mutation.getNodeUuid());
             output.writeString(mutation.getConstraint());
             output.writeByte(mutation.getType().getPrimitiveValue());
             writeNullableValue(mutation.getOldValue(), output);
@@ -234,10 +236,12 @@ public class PathwaySerde {
     public PathwayMutation readMutation(final ByteBuffer byteBuffer) {
         final Input input = new UnsafeByteBufferInput(byteBuffer);
         return new PathwayMutation(
+                input.readLong(),
                 readNanoTime(input),
                 input.readString(),
                 input.readString(),
                 readStrings(input),
+                input.readString(),
                 input.readString(),
                 MutationType.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValue(input.readByte()),
                 readNullableValue(input),

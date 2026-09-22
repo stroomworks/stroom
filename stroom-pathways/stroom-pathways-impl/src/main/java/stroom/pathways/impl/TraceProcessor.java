@@ -202,31 +202,40 @@ public class TraceProcessor {
                                 final PathwaysDb pathwaysDb,
                                 final byte[] pathwayKey,
                                 final List<PathwayMutation> mutations) {
+        if (mutations.isEmpty()) {
+            return;
+        }
+
         final SimpleDb db = pathwaysDb.getMutations();
-        int sequence = 0;
+        long sequence = lastSequence(db, pathwayKey);
         for (final PathwayMutation mutation : mutations) {
-            final byte[] key = mutationKey(pathwayKey, mutation.getTime(), sequence);
             sequence++;
+            final byte[] key = mutationKey(pathwayKey, sequence);
+            final PathwayMutation numbered = mutation.withSequence(sequence);
             byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
-                    pathwaySerde.writeMutation(mutation, valueByteBuffer ->
+                    pathwaySerde.writeMutation(numbered, valueByteBuffer ->
                             db.insert(writer, keyByteBuffer, valueByteBuffer)));
         }
     }
 
-    // Pathway first, so one model's changes are a single run of keys, then the time and a counter
-    // within it. Big endian throughout because LMDB orders keys by their bytes, and that is the order
-    // a replay wants to walk them in.
-    private static byte[] mutationKey(final byte[] pathwayKey,
-                                      final NanoTime time,
-                                      final int sequence) {
-        final ByteBuffer buffer = ByteBuffer
-                .allocate(pathwayKey.length + 1 + Long.BYTES + Integer.BYTES);
+    // Where this pathway's history got to, taken from the last key rather than kept anywhere, so
+    // nothing has to stay in step with it.
+    private static long lastSequence(final SimpleDb db, final byte[] pathwayKey) {
+        final ByteBuffer prefix = ByteBuffer.allocateDirect(pathwayKey.length + 1);
+        prefix.put(pathwayKey).put((byte) 0).flip();
+        return db.lastPrefixed(prefix, key -> key == null
+                ? 0L
+                : key.getLong(key.limit() - Long.BYTES));
+    }
+
+    // Pathway first, so one model's changes are a single run of keys, then where each sits in that
+    // history. Big endian because LMDB orders keys by their bytes, and that is the order a replay
+    // walks them in.
+    private static byte[] mutationKey(final byte[] pathwayKey, final long sequence) {
+        final ByteBuffer buffer = ByteBuffer.allocate(pathwayKey.length + 1 + Long.BYTES);
         buffer.put(pathwayKey);
         buffer.put((byte) 0);
-        buffer.putLong(time == null
-                ? 0L
-                : time.toEpochNanos());
-        buffer.putInt(sequence);
+        buffer.putLong(sequence);
         return buffer.array();
     }
 }

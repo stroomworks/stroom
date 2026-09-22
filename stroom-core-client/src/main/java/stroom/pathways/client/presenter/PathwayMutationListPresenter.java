@@ -16,17 +16,10 @@
 
 package stroom.pathways.client.presenter;
 
+import stroom.config.global.client.presenter.ListDataProvider;
 import stroom.data.client.presenter.ColumnSizeConstants;
-import stroom.data.client.presenter.CriteriaUtil;
-import stroom.data.client.presenter.RestDataProvider;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
-import stroom.dispatch.client.RestErrorHandler;
-import stroom.dispatch.client.RestFactory;
-import stroom.docref.DocRef;
-import stroom.pathways.shared.FindPathwayMutationCriteria;
-import stroom.pathways.shared.PathwayMutationResultPage;
-import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.ConstraintValue;
 import stroom.pathways.shared.pathway.MutationType;
@@ -34,18 +27,17 @@ import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.util.client.DataGridUtil;
 import stroom.util.shared.NullSafe;
-import stroom.util.shared.PageResponse;
-import stroom.util.shared.ResultPage;
+import stroom.widget.util.client.MultiSelectionModelImpl;
 
-import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.cellview.client.Column;
-import com.google.gwt.view.client.Range;
+import com.google.gwt.user.cellview.client.ColumnSortList;
+import com.google.gwt.user.cellview.client.ColumnSortList.ColumnSortInfo;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
-import java.util.Collections;
-import java.util.function.Consumer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -56,29 +48,30 @@ import java.util.function.Function;
  */
 public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
-    private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
-
     private final PagerView pagerView;
-    private final RestFactory restFactory;
     private final DateTimeFormatter dateTimeFormatter;
     private final MyDataGrid<PathwayMutation> dataGrid;
+    private final MultiSelectionModelImpl<PathwayMutation> selectionModel;
 
-    private RestDataProvider<PathwayMutation, ResultPage<PathwayMutation>> dataProvider;
-    private DocRef docRef;
-    private String pathwayName;
+    private final ListDataProvider<PathwayMutation> dataProvider;
 
     @Inject
     public PathwayMutationListPresenter(final EventBus eventBus,
                                         final PagerView view,
-                                        final RestFactory restFactory,
                                         final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
         this.pagerView = view;
-        this.restFactory = restFactory;
         this.dateTimeFormatter = dateTimeFormatter;
 
         dataGrid = new MyDataGrid<>(this);
+        selectionModel = dataGrid.addDefaultSelectionModel(true);
         pagerView.setDataWidget(dataGrid);
+
+        // Held here rather than fetched a page at a time: the view around this one already has the
+        // whole history so it can wind the model back without asking the server, and this pages
+        // through that same copy so the two cannot disagree.
+        dataProvider = new ListDataProvider<>();
+        dataProvider.addDataDisplay(dataGrid);
 
         addColumns();
     }
@@ -86,23 +79,56 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(dataGrid.addColumnSortHandler(event -> refresh()));
+        registerHandler(dataGrid.addColumnSortHandler(event -> order()));
     }
 
     /**
-     * Shows the changes made to one pathway, or nothing where none is named.
+     * The change being looked at, so the view around this one can show the model as it stood then.
      */
-    public void read(final DocRef docRef, final String pathwayName) {
-        this.docRef = docRef;
-        this.pathwayName = pathwayName;
-        refresh();
+    public MultiSelectionModelImpl<PathwayMutation> getSelectionModel() {
+        return selectionModel;
+    }
+
+    /**
+     * Shows the changes made to one pathway. Given rather than fetched: the view around this one
+     * already holds the whole history so it can wind the model back without asking the server, and one
+     * copy means the grid and the model on show cannot disagree.
+     */
+    public void setData(final List<PathwayMutation> mutations) {
+        // Whatever was selected belonged to the list being replaced, and the view around this one asks
+        // what is selected to decide which model to show.
+        selectionModel.clear();
+
+        dataProvider.setCompleteList(new ArrayList<>(NullSafe.list(mutations)));
+        order();
+    }
+
+    // Newest first unless the grid has been told otherwise. Nothing but the order the changes were
+    // made in means anything here, so that is the only thing the columns offer.
+    private void order() {
+        final ColumnSortList sortList = dataGrid.getColumnSortList();
+        final boolean descending = sortList == null
+                                   || sortList.size() == 0
+                                   || !sortList.get(0).isAscending();
+
+        dataProvider.getList().sort(PathwayMutation.comparator(PathwayMutation.FIELD_TIME, descending));
+        dataProvider.refresh(true);
     }
 
     private void addColumns() {
-        addColumn(PathwayMutation.FIELD_TIME,
-                mutation -> NullSafe.get(mutation.getTime(),
-                        time -> dateTimeFormatter.format(time.toEpochMillis())),
-                ColumnSizeConstants.DATE_COL);
+        // The only column that sorts. Time stands in for the order the changes were made, which is
+        // what the sort really runs on — every change a trace made shares one timestamp, so the times
+        // alone would shuffle changes that happened in a definite order.
+        final Column<PathwayMutation, String> time = DataGridUtil
+                .textColumnBuilder((PathwayMutation mutation) -> NullSafe.get(mutation.getTime(),
+                        value -> dateTimeFormatter.format(value.toEpochMillis())))
+                .withSorting(PathwayMutation.FIELD_TIME)
+                .build();
+        dataGrid.addResizableColumn(time, PathwayMutation.FIELD_TIME, ColumnSizeConstants.DATE_COL);
+        // Seeded rather than pushed, because pushing a column sorts it ascending and the list starts
+        // newest first. Done here so the header shows which way it is ordered before anything is
+        // clicked.
+        dataGrid.getColumnSortList().push(new ColumnSortInfo(time, false));
         addColumn(PathwayMutation.FIELD_TYPE,
                 mutation -> NullSafe.get(mutation.getType(), MutationType::getDisplayValue),
                 ColumnSizeConstants.MEDIUM_COL);
@@ -131,7 +157,6 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
                            final int width) {
         final Column<PathwayMutation, String> column = DataGridUtil
                 .textColumnBuilder(value)
-                .withSorting(name)
                 .build();
         dataGrid.addResizableColumn(column, name, width);
     }
@@ -142,39 +167,4 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
                 : value.toString();
     }
 
-    private void refresh() {
-        if (dataProvider == null) {
-            dataProvider = new RestDataProvider<PathwayMutation, ResultPage<PathwayMutation>>(getEventBus()) {
-                @Override
-                protected void exec(final Range range,
-                                    final Consumer<ResultPage<PathwayMutation>> dataConsumer,
-                                    final RestErrorHandler errorHandler) {
-                    if (docRef == null || NullSafe.isBlankString(pathwayName)) {
-                        dataConsumer.accept(new PathwayMutationResultPage(
-                                Collections.emptyList(), PageResponse.empty()));
-                        return;
-                    }
-
-                    final FindPathwayMutationCriteria criteria = new FindPathwayMutationCriteria(
-                            CriteriaUtil.createPageRequest(range),
-                            CriteriaUtil.createSortList(dataGrid.getColumnSortList()),
-                            docRef,
-                            pathwayName);
-
-                    restFactory
-                            .create(PATHWAYS_RESOURCE)
-                            .method(res -> res.findMutations(criteria))
-                            .onSuccess(result -> dataConsumer.accept(
-                                    new ResultPage<>(result.getValues(), result.getPageResponse())))
-                            .onFailure(errorHandler)
-                            .taskMonitorFactory(pagerView)
-                            .exec();
-                }
-            };
-            dataProvider.addDataDisplay(dataGrid);
-
-        } else {
-            dataProvider.refresh();
-        }
-    }
 }

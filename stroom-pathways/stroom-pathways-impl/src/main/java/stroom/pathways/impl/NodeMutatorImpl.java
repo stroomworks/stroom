@@ -78,12 +78,12 @@ public class NodeMutatorImpl {
     // order the changes happened so a replay can follow them.
     private final List<PathwayMutation> mutations = new ArrayList<>();
 
-    // Where the change being recorded is happening. Set as the walk descends, because the methods that
-    // notice a constraint moving are several calls below the one that knows which span it came from.
+    // Which trace and span the change being recorded came from. Fields because the methods that
+    // notice a constraint moving are several calls below the one that knows. Which node it happened to
+    // is passed instead, so a constraint is never recorded against the wrong one.
     private NanoTime time;
     private String traceId;
     private String spanId;
-    private List<String> path;
 
     public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
                            final IgnoredAttributes ignoredAttributes) {
@@ -107,12 +107,23 @@ public class NodeMutatorImpl {
         return !mutations.isEmpty();
     }
 
-    private void record(final MutationType type,
+    private void record(final List<String> path,
+                        final String nodeUuid,
+                        final MutationType type,
                         final String constraint,
                         final ConstraintValue oldValue,
                         final ConstraintValue newValue) {
-        mutations.add(new PathwayMutation(time, traceId, spanId, path, constraint, type, oldValue,
-                newValue));
+        // Numbered when written, because where it sits in the pathway's history is not known here.
+        mutations.add(new PathwayMutation(0L, time, traceId, spanId, path, nodeUuid, constraint, type,
+                oldValue, newValue));
+    }
+
+    private void record(final PathNode node,
+                        final MutationType type,
+                        final String constraint,
+                        final ConstraintValue oldValue,
+                        final ConstraintValue newValue) {
+        record(node.getPath(), node.getUuid(), type, constraint, oldValue, newValue);
     }
 
 
@@ -125,7 +136,6 @@ public class NodeMutatorImpl {
         time = NanoTimeUtil.fromInstant(Instant.now());
         traceId = trace.getTraceId();
         spanId = root.getSpanId();
-        path = List.of();
         final MessageReceiver messages =
                 MessageReceiver.forSpan(messageReceiver, traceId, spanId);
         if (pathNode == null && !pathwaysDoc.isAllowPathwayCreation()) {
@@ -136,8 +146,11 @@ public class NodeMutatorImpl {
         final PathNode node;
         if (pathNode == null) {
             messages.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
-            record(MutationType.PATHWAY_ADDED, null, null, null);
             node = new PathNode(root.getName());
+            // Named like any other node, so a replay running forwards can put the root back as it was.
+            // That this was the pathway coming into being rather than a node appearing beneath one is
+            // what the type says.
+            record(node, MutationType.PATHWAY_ADDED, null, null, null);
         } else {
             node = pathNode;
         }
@@ -154,7 +167,6 @@ public class NodeMutatorImpl {
         // receiver this one was given, not this one's, so each level puts its own span on the front
         // rather than stacking them up.
         spanId = parentSpan.getSpanId();
-        path = parentNode.getPath();
         final MessageReceiver messages =
                 MessageReceiver.forSpan(messageReceiver, traceId, spanId);
 
@@ -200,11 +212,8 @@ public class NodeMutatorImpl {
                 final List<String> path = new ArrayList<>(parentNode.getPath());
                 path.add(name);
                 messages.log(Severity.INFO, () -> "Adding new path: " + path);
-                final List<String> parentPath = this.path;
-                this.path = path;
-                record(MutationType.NODE_ADDED, null, null, null);
-                this.path = parentPath;
                 child = new PathNode(name, path);
+                record(child, MutationType.NODE_ADDED, null, null, null);
             }
 
             // Fold every span of this name into the one child, then record how many there were. A
@@ -213,8 +222,8 @@ public class NodeMutatorImpl {
                 for (final Span span : spans) {
                     child = walk(trace, span, child, messageReceiver, pathwaysDoc);
                 }
+                // The recursion moved the span on; put it back for what this level does next.
                 spanId = parentSpan.getSpanId();
-                path = parentNode.getPath();
             }
             children.add(withCount(child,
                     spans == null
@@ -308,7 +317,8 @@ public class NodeMutatorImpl {
                     messageReceiver.log(Severity.INFO, () -> "Making constraint optional: " +
                                                              pathNode.getPath() + " " +
                                                              key);
-                    record(MutationType.CONSTRAINT_OPTIONAL, key, value.getValue(), value.getValue());
+                    record(pathNode, MutationType.CONSTRAINT_OPTIONAL, key, value.getValue(),
+                            value.getValue());
                     newConstraints.put(key, new Constraint(value.getName(), value.getValue(), true));
                 }
             } else {
@@ -327,7 +337,7 @@ public class NodeMutatorImpl {
                     // Not through put(): AnyTypeValue defines no equals, so every trace would look
                     // like a change. Recorded once, and thereafter this branch does nothing.
                     final Constraint was = newConstraints.get(key);
-                    record(MutationType.CONSTRAINT_IGNORED, key,
+                    record(pathNode, MutationType.CONSTRAINT_IGNORED, key,
                             NullSafe.get(was, Constraint::getValue), new AnyTypeValue());
                     newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional));
                 }
@@ -364,35 +374,35 @@ public class NodeMutatorImpl {
             } else {
                 final boolean opt = NullSafe.getOrElse(constraint, Constraint::isOptional, optional);
                 switch (value) {
-                    case final Integer val -> put(constraints, name,
+                    case final Integer val -> put(constraints, pathNode, name,
                             createIntConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
                             opt);
-                    case final Long val -> put(constraints, name,
+                    case final Long val -> put(constraints, pathNode, name,
                             createLongConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
                             opt);
-                    case final Boolean val -> put(constraints, name,
+                    case final Boolean val -> put(constraints, pathNode, name,
                             createBooleanConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
                             opt);
-                    case final String val -> put(constraints, name,
+                    case final String val -> put(constraints, pathNode, name,
                             createStringConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
                                     pathwaysDoc),
                             opt);
-                    case final NanoTime val -> put(constraints, name,
+                    case final NanoTime val -> put(constraints, pathNode, name,
                             createNanoTimeConstraint(location,
                                     getConstraintValue(constraint),
                                     val,
@@ -440,14 +450,15 @@ public class NodeMutatorImpl {
     // createXConstraint hands the value straight back when the trace is within what the model already
     // allows, and that must not count as the model having moved.
     private void put(final Map<String, Constraint> constraints,
+                     final PathNode pathNode,
                      final String name,
                      final ConstraintValue value,
                      final boolean optional) {
         final Constraint existing = constraints.get(name);
         if (existing == null) {
-            record(MutationType.CONSTRAINT_ADDED, name, null, value);
+            record(pathNode, MutationType.CONSTRAINT_ADDED, name, null, value);
         } else if (existing.isOptional() != optional || !Objects.equals(existing.getValue(), value)) {
-            record(widening(existing.getValue(), value), name, existing.getValue(), value);
+            record(pathNode, widening(existing.getValue(), value), name, existing.getValue(), value);
         }
         constraints.put(name, new Constraint(name, value, optional));
     }

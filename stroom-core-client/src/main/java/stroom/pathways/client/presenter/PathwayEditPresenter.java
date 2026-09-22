@@ -16,30 +16,58 @@
 
 package stroom.pathways.client.presenter;
 
+import stroom.dispatch.client.DefaultErrorHandler;
+import stroom.dispatch.client.RestFactory;
+import stroom.docref.DocRef;
 import stroom.pathways.client.presenter.PathwayEditPresenter.PathwayEditView;
+import stroom.pathways.shared.FindPathwayMutationCriteria;
 import stroom.pathways.shared.PathwaysDoc;
+import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.PathwayReplay;
+import stroom.util.shared.CriteriaFieldSort;
+import stroom.util.shared.NullSafe;
+import stroom.util.shared.PageRequest;
+import stroom.util.shared.PageResponse;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
 import stroom.widget.popup.client.presenter.PopupType;
 
+import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Focus;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import javax.validation.ValidationException;
 
 public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
+    private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
+
+    /**
+     * How much of a pathway's history is held for winding the model back. A pathway's history is
+     * bounded by what is novel rather than by traffic, so this is not expected to be reached — but
+     * winding back part of a history would show a model that never existed, so past this the view
+     * stays on the current one and says nothing false.
+     */
+    private static final int MAX_HISTORY = 20000;
+
     private Pathway pathway;
+    private List<PathwayMutation> history = Collections.emptyList();
+    private boolean historyComplete;
     private final PathwayTreePresenter pathwayTreePresenter;
     private final ConstraintListPresenter constraintListPresenter;
     private final PathwayMutationListPresenter mutationListPresenter;
+    private final RestFactory restFactory;
     private boolean readOnly = true;
 
     @Inject
@@ -47,8 +75,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                                 final PathwayEditView view,
                                 final PathwayTreePresenter pathwayTreePresenter,
                                 final ConstraintListPresenter constraintListPresenter,
-                                final PathwayMutationListPresenter mutationListPresenter) {
+                                final PathwayMutationListPresenter mutationListPresenter,
+                                final RestFactory restFactory) {
         super(eventBus, view);
+        this.restFactory = restFactory;
         this.pathwayTreePresenter = pathwayTreePresenter;
         this.constraintListPresenter = constraintListPresenter;
         this.mutationListPresenter = mutationListPresenter;
@@ -67,6 +97,8 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
             final PathNode selected = pathwayTreePresenter.getSelectionModel().getSelectedObject();
             constraintListPresenter.setData(selected, readOnly);
         }));
+
+        registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
 
 //        registerHandler(getView().getDetails().addClickHandler(e -> {
 //            final Element target = e.getNativeEvent().getEventTarget().cast();
@@ -256,15 +288,73 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 //        return hb.toSafeHtml();
 //    }
 
+    // The whole history at once, so winding the model back is done here rather than asked for a step
+    // at a time. It is bounded by what the model has learnt, not by how many traces went through it.
+    private void fetchHistory(final DocRef docRef, final String name) {
+        final FindPathwayMutationCriteria criteria = new FindPathwayMutationCriteria(
+                new PageRequest(0, MAX_HISTORY),
+                List.of(new CriteriaFieldSort(PathwayMutation.FIELD_TIME, false, false)),
+                docRef,
+                name);
+
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.findMutations(criteria))
+                .onSuccess(result -> {
+                    history = result.getValues();
+                    historyComplete = history.size() >= NullSafe.getOrElse(
+                            result.getPageResponse(), PageResponse::getTotal, 0L);
+                    mutationListPresenter.setData(history);
+                    showModel();
+                })
+                .onFailure(new DefaultErrorHandler(this, null))
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    // The model as it stood at the change being looked at, or as it stands now where none is.
+    private void showModel() {
+        if (pathway == null) {
+            return;
+        }
+
+        final PathwayMutation selected = mutationListPresenter.getSelectionModel().getSelected();
+        if (selected == null || !historyComplete) {
+            pathwayTreePresenter.read(pathway, readOnly);
+            return;
+        }
+
+        final List<PathwayMutation> later = new ArrayList<>();
+        for (final PathwayMutation mutation : history) {
+            if (mutation.getSequence() > selected.getSequence()) {
+                later.add(mutation);
+            }
+        }
+
+        final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
+        pathwayTreePresenter.read(root == null
+                ? null
+                : pathway.copy().root(root).build(), readOnly);
+    }
+
     public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {
         this.readOnly = readOnly;
         this.pathway = pathway;
 //        this.selected = null;
 //
 //        getView().setDetails(SafeHtmlUtils.EMPTY_SAFE_HTML);
+        this.history = Collections.emptyList();
+        this.historyComplete = false;
+
+        // This is reused for every pathway opened, so anything left over from the last one is dropped
+        // before the new one is read. Without it the model shows as it stood at whichever change was
+        // being looked at last time.
+        pathwayTreePresenter.clearSelection();
+
         pathwayTreePresenter.read(pathway, readOnly);
         constraintListPresenter.setData(null, readOnly);
-        mutationListPresenter.read(pathwaysDoc.asDocRef(), pathway.getName());
+        mutationListPresenter.setData(Collections.emptyList());
+        fetchHistory(pathwaysDoc.asDocRef(), pathway.getName());
 //        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
 //        getView().setSpans(SafeHtmlUtils.EMPTY_SAFE_HTML);
 

@@ -69,8 +69,8 @@ class TestPathwayMutations {
                 .contains(MutationType.NODE_ADDED, MutationType.CONSTRAINT_ADDED);
 
         assertThat(mutator.getMutations().getFirst().getPath())
-                .as("the pathway is not a node, so it has no path; its root node does")
-                .isEmpty();
+                .as("named like any node, so a replay can put the root back")
+                .containsExactly(OPERATION);
 
         assertThat(mutator.getMutations()).allSatisfy(mutation -> {
             assertThat(mutation.getTraceId()).isEqualTo(TRACE_ID);

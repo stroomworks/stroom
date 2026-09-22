@@ -58,22 +58,9 @@ public class PathwaysSplitPresenter extends DocPresenter<PathwaysSplitView, Path
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(pathwayListPresenter.getSelectionModel().addSelectionHandler(e -> {
-            final PathwaySummary selected = pathwayListPresenter.getSelectionModel().getSelected();
-            if (selected == null) {
-                pathwayTreePresenter.read(null, isReadOnly());
-                return;
-            }
-            // The row carries no model, only its size — a pathway holds every path it has seen, so the
-            // list cannot afford to bring them along. Fetch the one being looked at.
-            restFactory
-                    .create(PATHWAYS_RESOURCE)
-                    .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, selected.getName())))
-                    .onSuccess(pathway -> pathwayTreePresenter.read(pathway, isReadOnly()))
-                    .onFailure(new DefaultErrorHandler(this, null))
-                    .taskMonitorFactory(this)
-                    .exec();
-        }));
+        registerHandler(pathwayListPresenter.getSelectionModel().addSelectionHandler(e ->
+                pathwayListPresenter.withSelectedPathway(pathway ->
+                        pathwayTreePresenter.read(pathway, isReadOnly()))));
     }
 
     @Override
