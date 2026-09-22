@@ -107,23 +107,20 @@ public class NodeMutatorImpl {
         return !mutations.isEmpty();
     }
 
-    private void record(final List<String> path,
-                        final String nodeUuid,
-                        final MutationType type,
-                        final String constraint,
-                        final ConstraintValue oldValue,
-                        final ConstraintValue newValue) {
-        // Numbered when written, because where it sits in the pathway's history is not known here.
-        mutations.add(new PathwayMutation(0L, time, traceId, spanId, path, nodeUuid, constraint, type,
-                oldValue, newValue));
-    }
-
     private void record(final PathNode node,
                         final MutationType type,
                         final String constraint,
+                        final boolean optional,
                         final ConstraintValue oldValue,
                         final ConstraintValue newValue) {
-        record(node.getPath(), node.getUuid(), type, constraint, oldValue, newValue);
+        // Numbered when written, because where it sits in the pathway's history is not known here.
+        mutations.add(new PathwayMutation(0L, time, traceId, spanId, node.getPath(), node.getUuid(),
+                constraint, type, optional, oldValue, newValue));
+    }
+
+    // A change to the node rather than to one of its constraints, so there is no flag to carry.
+    private void record(final PathNode node, final MutationType type) {
+        record(node, type, null, false, null, null);
     }
 
 
@@ -150,7 +147,7 @@ public class NodeMutatorImpl {
             // Named like any other node, so a replay running forwards can put the root back as it was.
             // That this was the pathway coming into being rather than a node appearing beneath one is
             // what the type says.
-            record(node, MutationType.PATHWAY_ADDED, null, null, null);
+            record(node, MutationType.PATHWAY_ADDED);
         } else {
             node = pathNode;
         }
@@ -213,7 +210,7 @@ public class NodeMutatorImpl {
                 path.add(name);
                 messages.log(Severity.INFO, () -> "Adding new path: " + path);
                 child = new PathNode(name, path);
-                record(child, MutationType.NODE_ADDED, null, null, null);
+                record(child, MutationType.NODE_ADDED);
             }
 
             // Fold every span of this name into the one child, then record how many there were. A
@@ -317,7 +314,7 @@ public class NodeMutatorImpl {
                     messageReceiver.log(Severity.INFO, () -> "Making constraint optional: " +
                                                              pathNode.getPath() + " " +
                                                              key);
-                    record(pathNode, MutationType.CONSTRAINT_OPTIONAL, key, value.getValue(),
+                    record(pathNode, MutationType.CONSTRAINT_OPTIONAL, key, true, value.getValue(),
                             value.getValue());
                     newConstraints.put(key, new Constraint(value.getName(), value.getValue(), true));
                 }
@@ -337,7 +334,7 @@ public class NodeMutatorImpl {
                     // Not through put(): AnyTypeValue defines no equals, so every trace would look
                     // like a change. Recorded once, and thereafter this branch does nothing.
                     final Constraint was = newConstraints.get(key);
-                    record(pathNode, MutationType.CONSTRAINT_IGNORED, key,
+                    record(pathNode, MutationType.CONSTRAINT_IGNORED, key, optional,
                             NullSafe.get(was, Constraint::getValue), new AnyTypeValue());
                     newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional));
                 }
@@ -456,9 +453,10 @@ public class NodeMutatorImpl {
                      final boolean optional) {
         final Constraint existing = constraints.get(name);
         if (existing == null) {
-            record(pathNode, MutationType.CONSTRAINT_ADDED, name, null, value);
+            record(pathNode, MutationType.CONSTRAINT_ADDED, name, optional, null, value);
         } else if (existing.isOptional() != optional || !Objects.equals(existing.getValue(), value)) {
-            record(pathNode, widening(existing.getValue(), value), name, existing.getValue(), value);
+            record(pathNode, widening(existing.getValue(), value), name, optional, existing.getValue(),
+                    value);
         }
         constraints.put(name, new Constraint(name, value, optional));
     }

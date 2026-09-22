@@ -24,6 +24,7 @@ import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.Constraint;
+import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
@@ -109,6 +110,65 @@ class TestPathwayReplay {
                 .isEqualTo(uuids(learnt.root));
     }
 
+    @Test
+    void aConstraintBornOptionalStaysOptional() {
+        // An attribute first seen on a node that already had constraints is added as optional. The
+        // flag is not something a replay can work out from the values, so the change has to carry it.
+        PathNode root = null;
+        final List<PathwayMutation> mutations = new ArrayList<>();
+        long sequence = 0;
+        for (final Trace trace : List.of(trace("GET", 20, PING), traceWithExtraAttribute())) {
+            final NodeMutatorImpl mutator = mutator();
+            root = mutator.process(trace, new NamePathKey(OPERATION), root, quiet(), doc());
+            for (final PathwayMutation mutation : mutator.getMutations()) {
+                mutations.add(mutation.withSequence(++sequence));
+            }
+        }
+
+        assertThat(root.getConstraints().get("attribute.http.status").isOptional())
+                .as("the fixture only says something if the constraint really was born optional")
+                .isTrue();
+
+        PathNode replayed = PathwayReplay.rewind(root, mutations);
+        for (final PathwayMutation mutation : mutations) {
+            replayed = PathwayReplay.apply(replayed, mutation);
+        }
+        assertSame(replayed, root);
+    }
+
+    @Test
+    void undoingAnIgnoredAttributeRemovesIt() {
+        // An ignored attribute is recorded with nothing before it, so undoing it has to take the
+        // constraint away rather than put back a constraint holding no value.
+        final IgnoredAttributes ignored = new IgnoredAttributes(List.of("http.method"));
+        final NodeMutatorImpl mutator = new NodeMutatorImpl(
+                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), ignored);
+        final PathNode root = mutator.process(trace("GET", 20, PING), new NamePathKey(OPERATION), null,
+                quiet(), doc());
+
+        final List<PathwayMutation> mutations = new ArrayList<>();
+        long sequence = 0;
+        for (final PathwayMutation mutation : mutator.getMutations()) {
+            mutations.add(mutation.withSequence(++sequence));
+        }
+
+        assertThat(root.getConstraints()).containsKey("attribute.http.method");
+
+        // Back to just before it was recorded. Winding the whole way would end at null whether this
+        // works or not, so the state either side of the one change is what has to be looked at.
+        final PathwayMutation change = mutations.stream()
+                .filter(m -> MutationType.CONSTRAINT_IGNORED.equals(m.getType()))
+                .findFirst()
+                .orElseThrow();
+        final List<PathwayMutation> from = mutations.stream()
+                .filter(m -> m.getSequence() >= change.getSequence())
+                .toList();
+
+        assertThat(PathwayReplay.rewind(root, from).getConstraints())
+                .as("it did not exist before, so undoing must take it away rather than blank it")
+                .doesNotContainKey("attribute.http.method");
+    }
+
     // Compares the shape, the names, and every constraint, which is everything a replay has to get
     // right. Left as text so a failure says where the two differ.
     private static void assertSame(final PathNode actual, final PathNode expected) {
@@ -189,6 +249,33 @@ class TestPathwayReplay {
         assertThat(mutations).as("the fixture only says something if the model really moved")
                 .hasSizeGreaterThan(10);
         return new Learnt(root, mutations);
+    }
+
+    // The root carries a second attribute this time, so it is added to a node that already has
+    // constraints — which is what makes it optional.
+    private static Trace traceWithExtraAttribute() {
+        final Span root = Span.builder()
+                .name(OPERATION)
+                .spanId("r0")
+                .parentSpanId("")
+                .kind(SpanKind.SPAN_KIND_INTERNAL)
+                .startTimeUnixNano(Long.toString(BASE))
+                .endTimeUnixNano(Long.toString(BASE + NanoDuration.ofMillis(20).getNanos()))
+                .attributes(List.of(
+                        attribute("http.method", "GET"),
+                        attribute("http.status", "200")))
+                .build();
+        final Map<String, List<Span>> byParent = new HashMap<>();
+        byParent.put("", List.of(root));
+        byParent.put("r0", List.of(span(PING, "c0", "r0", 1, 1, null)));
+        return new Trace("0a0b0c0d0e0f00010203040506070809", byParent);
+    }
+
+    private static KeyValue attribute(final String key, final String value) {
+        return KeyValue.builder()
+                .key(key)
+                .value(new AnyValue(value, null, null, null, null, null, null))
+                .build();
     }
 
     private static NodeMutatorImpl mutator() {

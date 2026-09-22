@@ -75,6 +75,12 @@ public class PathwayMutation {
     private final String constraint;
     @JsonProperty
     private final MutationType type;
+    /**
+     * Whether the constraint is optional once this change has been made. A value changing never moves
+     * it, but a constraint can be born optional, and a replay has no way to work that out.
+     */
+    @JsonProperty
+    private final boolean optional;
     /** What the constraint held before, or null where it held nothing. */
     @JsonProperty
     private final ConstraintValue oldValue;
@@ -91,6 +97,7 @@ public class PathwayMutation {
                            @JsonProperty("nodeUuid") final String nodeUuid,
                            @JsonProperty("constraint") final String constraint,
                            @JsonProperty("type") final MutationType type,
+                           @JsonProperty("optional") final boolean optional,
                            @JsonProperty("oldValue") final ConstraintValue oldValue,
                            @JsonProperty("newValue") final ConstraintValue newValue) {
         this.sequence = sequence;
@@ -101,6 +108,7 @@ public class PathwayMutation {
         this.path = path;
         this.constraint = constraint;
         this.type = type;
+        this.optional = optional;
         this.oldValue = oldValue;
         this.newValue = newValue;
     }
@@ -148,7 +156,7 @@ public class PathwayMutation {
      */
     public PathwayMutation withSequence(final long sequence) {
         return new PathwayMutation(sequence, time, traceId, spanId, path, nodeUuid, constraint, type,
-                oldValue, newValue);
+                optional, oldValue, newValue);
     }
 
     public long getSequence() {
@@ -183,6 +191,10 @@ public class PathwayMutation {
         return type;
     }
 
+    public boolean isOptional() {
+        return optional;
+    }
+
     public ConstraintValue getOldValue() {
         return oldValue;
     }
@@ -208,6 +220,7 @@ public class PathwayMutation {
                && Objects.equals(path, that.path)
                && Objects.equals(constraint, that.constraint)
                && type == that.type
+               && optional == that.optional
                && Objects.equals(oldValue, that.oldValue)
                && Objects.equals(newValue, that.newValue);
     }
@@ -215,7 +228,7 @@ public class PathwayMutation {
     @Override
     public int hashCode() {
         return Objects.hash(sequence, time, traceId, spanId, path, nodeUuid, constraint, type,
-                oldValue, newValue);
+                optional, oldValue, newValue);
     }
 
     @Override

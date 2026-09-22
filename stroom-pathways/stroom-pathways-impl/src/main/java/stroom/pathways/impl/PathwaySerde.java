@@ -227,6 +227,7 @@ public class PathwaySerde {
             output.writeString(mutation.getNodeUuid());
             output.writeString(mutation.getConstraint());
             output.writeByte(mutation.getType().getPrimitiveValue());
+            output.writeBoolean(mutation.isOptional());
             writeNullableValue(mutation.getOldValue(), output);
             writeNullableValue(mutation.getNewValue(), output);
             consumer.accept(output.getByteBuffer().flip());
@@ -244,6 +245,7 @@ public class PathwaySerde {
                 input.readString(),
                 input.readString(),
                 MutationType.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValue(input.readByte()),
+                input.readBoolean(),
                 readNullableValue(input),
                 readNullableValue(input));
     }

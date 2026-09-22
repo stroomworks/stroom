@@ -112,13 +112,16 @@ public final class PathwayReplay {
         final String name = mutation.getConstraint();
         final Constraint existing = constraints.get(name);
 
-        if (MutationType.CONSTRAINT_ADDED.equals(mutation.getType())) {
+        if (mutation.getOldValue() == null) {
+            // Nothing was there before, whether this added the constraint or recorded one the
+            // configuration says to leave alone. Putting the null back would leave a constraint that
+            // never existed, holding no value.
             constraints.remove(name);
         } else if (MutationType.CONSTRAINT_OPTIONAL.equals(mutation.getType())) {
             // Only the flag moved, and only one way.
             constraints.put(name, new Constraint(name, mutation.getOldValue(), false));
         } else {
-            // A value change never moves the flag, so the node keeps the one it has.
+            // A value changing never moves the flag, so the node keeps the one it has.
             constraints.put(name, new Constraint(name, mutation.getOldValue(),
                     existing != null && existing.isOptional()));
         }
@@ -127,12 +130,10 @@ public final class PathwayReplay {
 
     private static PathNode applyConstraint(final PathNode node, final PathwayMutation mutation) {
         final Map<String, Constraint> constraints = new HashMap<>(NullSafe.map(node.getConstraints()));
-        final String name = mutation.getConstraint();
-        final Constraint existing = constraints.get(name);
-
-        final boolean optional = MutationType.CONSTRAINT_OPTIONAL.equals(mutation.getType())
-                || (existing != null && existing.isOptional());
-        constraints.put(name, new Constraint(name, mutation.getNewValue(), optional));
+        // The change says what the flag is once it has been made, which is the only way to know that a
+        // constraint was born optional rather than made so later.
+        constraints.put(mutation.getConstraint(), new Constraint(mutation.getConstraint(),
+                mutation.getNewValue(), mutation.isOptional()));
         return node.copy().constraints(constraints).build();
     }
 
