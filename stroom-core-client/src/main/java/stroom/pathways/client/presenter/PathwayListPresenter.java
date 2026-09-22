@@ -80,6 +80,7 @@ public class PathwayListPresenter
     private String selectedName;
     private Pathway selectedPathway;
     private boolean fetching;
+    private long requests;
     private final List<Consumer<Pathway>> waiting = new ArrayList<>();
 
     private String filter;
@@ -309,21 +310,26 @@ public class PathwayListPresenter
         selectedName = name;
         fetching = true;
         waiting.add(consumer);
+        // Counted rather than matched on the name: selecting a row, leaving it and coming back starts
+        // a second fetch for the same name, and the first one landing late must not answer for it.
+        requests++;
+        final long request = requests;
 
         restFactory
                 .create(PATHWAYS_RESOURCE)
                 .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, name)))
                 .onSuccess(pathway -> {
-                    // A row selected since this was asked for has its own fetch, so this one is stale.
-                    if (name.equals(selectedName)) {
+                    if (request == requests) {
                         selectedPathway = pathway;
                         fetching = false;
                         tell(pathway);
                     }
                 })
                 .onFailure(new DefaultErrorHandler(this, () -> {
-                    if (name.equals(selectedName)) {
-                        forget();
+                    if (request == requests) {
+                        // Told, not dropped. Otherwise the view around this one keeps showing the model
+                        // for the row before, beside a different row highlighted.
+                        failed();
                     }
                 }))
                 .taskMonitorFactory(pagerView)
@@ -334,6 +340,12 @@ public class PathwayListPresenter
         final List<Consumer<Pathway>> toTell = new ArrayList<>(waiting);
         waiting.clear();
         toTell.forEach(consumer -> consumer.accept(pathway));
+    }
+
+    private void failed() {
+        final List<Consumer<Pathway>> toTell = new ArrayList<>(waiting);
+        forget();
+        toTell.forEach(consumer -> consumer.accept(null));
     }
 
     private void forget() {
@@ -357,6 +369,8 @@ public class PathwayListPresenter
                                         selected.getName(),
                                         pathway)))
                                 .onSuccess(response -> {
+                                    // The model held here is the one from before the edit.
+                                    forget();
                                     refresh();
                                     e.hide();
                                 })
@@ -401,6 +415,9 @@ public class PathwayListPresenter
 
     @Override
     protected void onRead(final DocRef docRef, final PathwaysDoc document, final boolean readOnly) {
+        // A different document holds different pathways, so what was fetched for the last one says
+        // nothing about this one.
+        forget();
         this.docRef = docRef;
         this.pathwaysDoc = document;
         this.readOnly = readOnly;

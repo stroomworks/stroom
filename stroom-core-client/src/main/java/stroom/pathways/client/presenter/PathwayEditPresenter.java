@@ -301,6 +301,11 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                 .create(PATHWAYS_RESOURCE)
                 .method(res -> res.findMutations(criteria))
                 .onSuccess(result -> {
+                    // This is opened again for other pathways, so a history arriving late must not be
+                    // used to wind back a model it does not belong to.
+                    if (pathway == null || !name.equals(pathway.getName())) {
+                        return;
+                    }
                     history = result.getValues();
                     historyComplete = history.size() >= NullSafe.getOrElse(
                             result.getPageResponse(), PageResponse::getTotal, 0L);

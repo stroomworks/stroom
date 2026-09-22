@@ -16,41 +16,28 @@
 
 package stroom.pathways.client.presenter;
 
-import stroom.dispatch.client.DefaultErrorHandler;
-import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.pathways.client.presenter.PathwaysSplitPresenter.PathwaysSplitView;
-import stroom.pathways.shared.FetchPathwayRequest;
-import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
-import stroom.pathways.shared.PathwaysResource;
 
-import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 public class PathwaysSplitPresenter extends DocPresenter<PathwaysSplitView, PathwaysDoc> {
 
-    private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
-
     private final PathwayListPresenter pathwayListPresenter;
     private final PathwayTreePresenter pathwayTreePresenter;
-    private final RestFactory restFactory;
-
-    private DocRef docRef;
 
     @Inject
     public PathwaysSplitPresenter(final EventBus eventBus,
                                   final PathwaysSplitView view,
                                   final PathwayListPresenter pathwayListPresenter,
-                                  final PathwayTreePresenter pathwayTreePresenter,
-                                  final RestFactory restFactory) {
+                                  final PathwayTreePresenter pathwayTreePresenter) {
         super(eventBus, view);
         this.pathwayListPresenter = pathwayListPresenter;
         this.pathwayTreePresenter = pathwayTreePresenter;
-        this.restFactory = restFactory;
         view.setTable(pathwayListPresenter.getView());
         view.setTree(pathwayTreePresenter.getView());
     }
@@ -65,7 +52,6 @@ public class PathwaysSplitPresenter extends DocPresenter<PathwaysSplitView, Path
 
     @Override
     protected void onRead(final DocRef docRef, final PathwaysDoc document, final boolean readOnly) {
-        this.docRef = docRef;
         pathwayListPresenter.onRead(docRef, document, readOnly);
     }
 
