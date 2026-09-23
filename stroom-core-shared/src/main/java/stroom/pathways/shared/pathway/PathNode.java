@@ -16,6 +16,7 @@
 
 package stroom.pathways.shared.pathway;
 
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.util.shared.AbstractBuilder;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -43,13 +44,19 @@ public class PathNode {
     private final List<PathNode> children;
     @JsonProperty
     private final Map<String, Constraint> constraints;
+    @JsonProperty
+    private final long timesUsed;
+    @JsonProperty
+    private final NanoTime lastUsedTime;
 
     @JsonCreator
     public PathNode(@JsonProperty("uuid") final String uuid,
                     @JsonProperty("name") final String name,
                     @JsonProperty("path") final List<String> path,
                     @JsonProperty("children") final List<PathNode> children,
-                    @JsonProperty("constraints") final Map<String, Constraint> constraints) {
+                    @JsonProperty("constraints") final Map<String, Constraint> constraints,
+                    @JsonProperty("timesUsed") final long timesUsed,
+                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime) {
         this.uuid = uuid;
         this.name = name;
         this.path = path;
@@ -57,6 +64,19 @@ public class PathNode {
                 ? new ArrayList<>()
                 : new ArrayList<>(children);
         this.constraints = constraints;
+        this.timesUsed = timesUsed;
+        this.lastUsedTime = lastUsedTime;
+    }
+
+    /**
+     * A node no trace has reached yet, for a caller making one outside the learner.
+     */
+    public PathNode(final String uuid,
+                    final String name,
+                    final List<String> path,
+                    final List<PathNode> children,
+                    final Map<String, Constraint> constraints) {
+        this(uuid, name, path, children, constraints, 0L, null);
     }
 
     public PathNode(final String name,
@@ -66,6 +86,8 @@ public class PathNode {
         this.path = path;
         this.children = new ArrayList<>();
         this.constraints = null;
+        this.timesUsed = 0L;
+        this.lastUsedTime = null;
     }
 
     public PathNode(final String name) {
@@ -74,6 +96,25 @@ public class PathNode {
         this.path = Collections.singletonList(name);
         this.children = new ArrayList<>();
         this.constraints = null;
+        this.timesUsed = 0L;
+        this.lastUsedTime = null;
+    }
+
+    /**
+     * How many spans have been folded into this node. Counted per span rather than per trace, so a
+     * trace carrying forty spans of this name adds forty — what a diagram weighs a node by is how much
+     * went through it, not how many traces mentioned it.
+     */
+    public long getTimesUsed() {
+        return timesUsed;
+    }
+
+    /**
+     * The last time a trace reached this node. When it last <em>changed</em> is not held here — that
+     * is what the stored changes say, and holding it twice would let the two differ.
+     */
+    public NanoTime getLastUsedTime() {
+        return lastUsedTime;
     }
 
     public String getUuid() {
@@ -148,6 +189,8 @@ public class PathNode {
         private List<String> path;
         private List<PathNode> children;
         private Map<String, Constraint> constraints;
+        private long timesUsed;
+        private NanoTime lastUsedTime;
 
         public Builder() {
         }
@@ -158,6 +201,8 @@ public class PathNode {
             this.path = pathNode.path;
             this.children = pathNode.children;
             this.constraints = pathNode.constraints;
+            this.timesUsed = pathNode.timesUsed;
+            this.lastUsedTime = pathNode.lastUsedTime;
         }
 
         public Builder uuid(final String uuid) {
@@ -185,6 +230,16 @@ public class PathNode {
             return self();
         }
 
+        public Builder timesUsed(final long timesUsed) {
+            this.timesUsed = timesUsed;
+            return self();
+        }
+
+        public Builder lastUsedTime(final NanoTime lastUsedTime) {
+            this.lastUsedTime = lastUsedTime;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -196,7 +251,9 @@ public class PathNode {
                     name,
                     path,
                     children,
-                    constraints);
+                    constraints,
+                    timesUsed,
+                    lastUsedTime);
         }
     }
 }

@@ -250,7 +250,10 @@ public class NodeMutatorImpl {
                                             final String childOrder,
                                             final MessageReceiver messageReceiver,
                                             final PathwaysDoc pathwaysDoc) {
-        final PathNode.Builder pathNodeBuilder = pathNode.copy();
+        // This runs once for every span folded into the node, so it counts spans rather than traces.
+        final PathNode.Builder pathNodeBuilder = pathNode.copy()
+                .timesUsed(pathNode.getTimesUsed() + 1)
+                .lastUsedTime(time);
 
 //        // Add additional span info if wanted.
 //        final List<Span> spans;
@@ -316,7 +319,7 @@ public class NodeMutatorImpl {
                                                              key);
                     record(pathNode, MutationType.CONSTRAINT_OPTIONAL, key, true, value.getValue(),
                             value.getValue());
-                    newConstraints.put(key, new Constraint(value.getName(), value.getValue(), true));
+                    newConstraints.put(key, value.copy().optional(true).build());
                 }
             } else {
                 newConstraints.put(key, value);
@@ -329,15 +332,20 @@ public class NodeMutatorImpl {
         attributes.forEach((key, value) -> {
             if (!ignoredAttributes.isEmpty()
                 && ignoredAttributes.test(key.substring(ATTRIBUTE_PREFIX.length()))) {
-                if (!(NullSafe.get(newConstraints.get(key), Constraint::getValue)
-                      instanceof AnyTypeValue)) {
+                final Constraint was = newConstraints.get(key);
+                if (!(NullSafe.get(was, Constraint::getValue) instanceof AnyTypeValue)) {
                     // Not through put(): AnyTypeValue defines no equals, so every trace would look
-                    // like a change. Recorded once, and thereafter this branch does nothing.
-                    final Constraint was = newConstraints.get(key);
+                    // like a change. Recorded once, and thereafter only the count moves.
                     record(pathNode, MutationType.CONSTRAINT_IGNORED, key, optional,
                             NullSafe.get(was, Constraint::getValue), new AnyTypeValue());
-                    newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional));
                 }
+                // The span carried the attribute whether or not its value is being learnt, so it
+                // counts as a use like any other.
+                newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional,
+                        was == null
+                                ? 1L
+                                : was.getTimesUsed() + 1,
+                        time));
             } else {
                 setOrExpand(newConstraints, pathNode, key, value.getValue(), optional,
                         messageReceiver, pathwaysDoc);
@@ -458,7 +466,13 @@ public class NodeMutatorImpl {
             record(pathNode, widening(existing.getValue(), value), name, optional, existing.getValue(),
                     value);
         }
-        constraints.put(name, new Constraint(name, value, optional));
+        // Counted whether or not the value moved: this is how many values the constraint has been
+        // given, which is a different question from how often it has changed.
+        constraints.put(name, new Constraint(name, value, optional,
+                existing == null
+                        ? 1L
+                        : existing.getTimesUsed() + 1,
+                time));
     }
 
     // How a constraint loosened, worked out from the pair of values rather than passed down from the

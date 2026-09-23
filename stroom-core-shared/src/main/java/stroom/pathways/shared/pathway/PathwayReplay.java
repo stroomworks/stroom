@@ -119,10 +119,10 @@ public final class PathwayReplay {
             constraints.remove(name);
         } else if (MutationType.CONSTRAINT_OPTIONAL.equals(mutation.getType())) {
             // Only the flag moved, and only one way.
-            constraints.put(name, new Constraint(name, mutation.getOldValue(), false));
+            constraints.put(name, rebuild(existing, name, mutation.getOldValue(), false));
         } else {
             // A value changing never moves the flag, so the node keeps the one it has.
-            constraints.put(name, new Constraint(name, mutation.getOldValue(),
+            constraints.put(name, rebuild(existing, name, mutation.getOldValue(),
                     existing != null && existing.isOptional()));
         }
         return node.copy().constraints(constraints).build();
@@ -132,9 +132,29 @@ public final class PathwayReplay {
         final Map<String, Constraint> constraints = new HashMap<>(NullSafe.map(node.getConstraints()));
         // The change says what the flag is once it has been made, which is the only way to know that a
         // constraint was born optional rather than made so later.
-        constraints.put(mutation.getConstraint(), new Constraint(mutation.getConstraint(),
-                mutation.getNewValue(), mutation.isOptional()));
+        constraints.put(mutation.getConstraint(), rebuild(constraints.get(mutation.getConstraint()),
+                mutation.getConstraint(), mutation.getNewValue(), mutation.isOptional()));
         return node.copy().constraints(constraints).build();
+    }
+
+    // How often a constraint has been used, and when it last was, are what the model holds now rather
+    // than something the changes describe. Winding the model back says what it allowed at the time, so
+    // those counts carry across untouched rather than being wound back with the value.
+    private static Constraint rebuild(final Constraint existing,
+                                      final String name,
+                                      final ConstraintValue value,
+                                      final boolean optional) {
+        return Constraint.builder()
+                .name(name)
+                .value(value)
+                .optional(optional)
+                .timesUsed(existing == null
+                        ? 0L
+                        : existing.getTimesUsed())
+                .lastUsedTime(existing == null
+                        ? null
+                        : existing.getLastUsedTime())
+                .build();
     }
 
     // The node the change happened to, found by name from the root down. Unambiguous because children

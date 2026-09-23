@@ -143,6 +143,20 @@ public class PathwaySerde {
         return new NanoTime(input.readLong(), input.readInt());
     }
 
+    // A node or constraint made outside the learner has never been used, so it has no time to write.
+    private NanoTime readNullableNanoTime(final Input input) {
+        return input.readBoolean()
+                ? readNanoTime(input)
+                : null;
+    }
+
+    private void writeNullableNanoTime(final NanoTime nanoTime, final Output output) {
+        output.writeBoolean(nanoTime != null);
+        if (nanoTime != null) {
+            writeNanoTime(nanoTime, output);
+        }
+    }
+
     private PathKey readPathKey(final Input input) {
         final byte type = input.readByte();
         return switch (type) {
@@ -159,6 +173,8 @@ public class PathwaySerde {
                 .path(readStrings(input))
                 .children(readList(input, this::readPathNode))
                 .constraints(readConstraints(input))
+                .timesUsed(input.readLong())
+                .lastUsedTime(readNullableNanoTime(input))
                 .build();
     }
 
@@ -198,6 +214,8 @@ public class PathwaySerde {
                 .name(input.readString())
                 .value(readConstraintValue(input))
                 .optional(input.readBoolean())
+                .timesUsed(input.readLong())
+                .lastUsedTime(readNullableNanoTime(input))
                 .build();
     }
 
@@ -345,6 +363,8 @@ public class PathwaySerde {
         writeStrings(pathNode.getPath(), output);
         writeList(pathNode.getChildren(), output, this::writePathNode);
         writeConstraints(pathNode.getConstraints(), output);
+        output.writeLong(pathNode.getTimesUsed());
+        writeNullableNanoTime(pathNode.getLastUsedTime(), output);
     }
 
     private void writeString(final String string, final Output output) {
@@ -396,6 +416,8 @@ public class PathwaySerde {
         writeString(constraint.getName(), output);
         writeConstraintValue(constraint.getValue(), output);
         output.writeBoolean(constraint.isOptional());
+        output.writeLong(constraint.getTimesUsed());
+        writeNullableNanoTime(constraint.getLastUsedTime(), output);
     }
 
     private void writeConstraintValue(final ConstraintValue constraintValue, final Output output) {

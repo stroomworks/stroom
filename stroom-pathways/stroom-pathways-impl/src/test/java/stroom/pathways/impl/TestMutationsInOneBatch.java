@@ -26,6 +26,7 @@ import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.MutationType;
+import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
@@ -147,6 +148,68 @@ class TestMutationsInOneBatch {
         assertThat(pathway.getTimesUpdated())
                 .as("t1 created it and t2 and t4 repeated what was already known, leaving t3")
                 .isEqualTo(1);
+    }
+
+    @Test
+    void nodesAndConstraintsCountEverySpanThatReachedThem(@TempDir final Path dir) {
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING, PING, COMMIT),
+                trace("t2", "GET", 20, PING, PING, COMMIT));
+
+        final PathNode ping = child(readPathway(dir).getRoot(), PING);
+        assertThat(ping.getTimesUsed())
+                .as("two spans of this name in each of two traces, counted per span not per trace")
+                .isEqualTo(4);
+        assertThat(ping.getLastUsedTime()).isNotNull();
+
+        assertThat(ping.getConstraints().get("duration").getTimesUsed())
+                .as("every span carried a duration, so the constraint saw as many values")
+                .isEqualTo(4);
+        assertThat(ping.getConstraints().get("occurrences").getTimesUsed())
+                .as("worked out once per trace from how many spans there were, not once per span")
+                .isEqualTo(2);
+    }
+
+    @Test
+    void aNodeNoTraceReachedIsNotCounted(@TempDir final Path dir) {
+        // The second trace has no Commit, so the model keeps the node and records that it happened no
+        // times. Reaching a node and recording its absence are not the same thing.
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING, COMMIT),
+                trace("t2", "GET", 20, PING));
+
+        assertThat(child(readPathway(dir).getRoot(), COMMIT).getTimesUsed()).isEqualTo(1);
+        assertThat(child(readPathway(dir).getRoot(), PING).getTimesUsed()).isEqualTo(2);
+    }
+
+    @Test
+    void windingBackKeepsTheCounts(@TempDir final Path dir) {
+        final List<PathwayMutation> stored = applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "POST", 90, PING));
+
+        final PathNode current = readPathway(dir).getRoot();
+        final List<PathwayMutation> last = new ArrayList<>();
+        for (final PathwayMutation mutation : stored) {
+            if (mutation.getSequence() == stored.get(stored.size() - 1).getSequence()) {
+                last.add(mutation);
+            }
+        }
+
+        final PathNode wound = PathwayReplay.rewind(current, last);
+        assertThat(child(wound, PING).getConstraints().get("duration").getTimesUsed())
+                .as("how often a constraint was used is what the model holds now, not something the "
+                    + "changes describe, so it is not wound back with the value")
+                .isEqualTo(child(current, PING).getConstraints().get("duration").getTimesUsed());
+    }
+
+    private static PathNode child(final PathNode parent, final String name) {
+        for (final PathNode child : parent.getChildren()) {
+            if (name.equals(child.getName())) {
+                return child;
+            }
+        }
+        throw new AssertionError("No child called " + name);
     }
 
     // Applies each trace through TraceProcessor on one writer, as a batch does, then reads back what
