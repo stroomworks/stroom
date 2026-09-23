@@ -17,6 +17,7 @@
 package stroom.pathways.impl;
 
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
+import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
@@ -69,12 +70,33 @@ class TestStoredFormats {
                 .hasMessageContaining("pathways table has to be cleared");
     }
 
+    @Test
+    void aStoredPathwayKeepsItsCounts() {
+        final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
+
+        assertThat(read.getTimesUsed()).isEqualTo(4207);
+        assertThat(read.getTimesUpdated()).isEqualTo(31);
+    }
+
+    @Test
+    void aSummaryReadsTheCountsToo() {
+        // The list stops reading before the model, so the counts have to sit ahead of it. Were they
+        // written after, a row would show whatever the first bytes of the path key came to.
+        final PathwaySummary summary = new PathwaySerde(BYTE_BUFFER_FACTORY).readSummary(write());
+
+        assertThat(summary.getTimesUsed()).isEqualTo(4207);
+        assertThat(summary.getTimesUpdated()).isEqualTo(31);
+        assertThat(summary.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(3));
+    }
+
     private static ByteBuffer write() {
         final Pathway pathway = Pathway.builder()
                 .name("GET /orders")
                 .createTime(NanoTime.ofMillis(1))
                 .updateTime(NanoTime.ofMillis(2))
                 .lastUsedTime(NanoTime.ofMillis(3))
+                .timesUsed(4207)
+                .timesUpdated(31)
                 .pathKey(new NamePathKey("GET /orders"))
                 .root(new PathNode("GET /orders"))
                 .build();

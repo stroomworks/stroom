@@ -195,6 +195,8 @@ public class PathwayListPresenter
         addCreateTimeColumn();
         addUpdateTimeColumn();
         addLastUsedColumn();
+        addTimesUsedColumn();
+        addTimesUpdatedColumn();
         addSizeColumn();
     }
 
@@ -229,6 +231,27 @@ public class PathwayListPresenter
 
     private void addLastUsedColumn() {
         addTimeColumn(PathwaySummary.FIELD_LAST_USED_TIME, PathwaySummary::getLastUsedTime);
+    }
+
+    // How many traces have taken this route, beside the time the last one did. A route used once an
+    // hour and one used a thousand times an hour read the same from Last Used alone.
+    private void addTimesUsedColumn() {
+        addCountColumn(PathwaySummary.FIELD_TIMES_USED, PathwaySummary::getTimesUsed);
+    }
+
+    // How many of those traces taught the model something, which is how many times Update Time moved
+    // after the first. Beside Times Used it says whether a route is still being learnt or has
+    // settled, which neither count says on its own.
+    private void addTimesUpdatedColumn() {
+        addCountColumn(PathwaySummary.FIELD_TIMES_UPDATED, PathwaySummary::getTimesUpdated);
+    }
+
+    private void addCountColumn(final String name, final Function<PathwaySummary, Long> count) {
+        final Column<PathwaySummary, String> column = DataGridUtil
+                .textColumnBuilder((PathwaySummary summary) -> ModelStringUtil.formatCsv(count.apply(summary)))
+                .withSorting(name)
+                .build();
+        dataGrid.addResizableColumn(column, name, ColumnSizeConstants.SMALL_COL);
     }
 
     private void addTimeColumn(final String name, final Function<PathwaySummary, NanoTime> function) {

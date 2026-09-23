@@ -104,7 +104,7 @@ public class PathwaySerde {
     /**
      * Reads only what the pathway list shows, leaving the model where it is.
      *
-     * <p>The four fields a row needs are written before {@code pathKey} and {@code root}, so this is a
+     * <p>Every field a row needs is written before {@code pathKey} and {@code root}, so this is a
      * matter of stopping rather than of skipping — nothing is decoded that is not displayed. That is
      * the whole point: a pathway keeps every path it has seen, so deserialising one to read its name
      * is what made a page of them unopenable.
@@ -121,6 +121,8 @@ public class PathwaySerde {
                 readNanoTime(input),
                 readNanoTime(input),
                 readNanoTime(input),
+                input.readLong(),
+                input.readLong(),
                 sizeBytes);
     }
 
@@ -130,6 +132,8 @@ public class PathwaySerde {
                 .createTime(readNanoTime(input))
                 .updateTime(readNanoTime(input))
                 .lastUsedTime(readNanoTime(input))
+                .timesUsed(input.readLong())
+                .timesUpdated(input.readLong())
                 .pathKey(readPathKey(input))
                 .root(readPathNode(input))
                 .build();
@@ -310,6 +314,8 @@ public class PathwaySerde {
         writeNanoTime(pathway.getCreateTime(), output);
         writeNanoTime(pathway.getUpdateTime(), output);
         writeNanoTime(pathway.getLastUsedTime(), output);
+        output.writeLong(pathway.getTimesUsed());
+        output.writeLong(pathway.getTimesUpdated());
         writePathKey(pathway.getPathKey(), output);
         writePathNode(pathway.getRoot(), output);
     }

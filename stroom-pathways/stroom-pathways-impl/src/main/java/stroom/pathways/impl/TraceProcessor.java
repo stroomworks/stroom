@@ -151,9 +151,14 @@ public class TraceProcessor {
         // What the pathway took last time, which is what it will take again give or take this trace.
         // Read before the value is decoded, because decoding consumes the buffer's position.
         final int[] storedSize = {0};
+        // Whether this trace is the one bringing the pathway into being, which is not counted as an
+        // update: it taught the model everything it knew, so counting it would leave every pathway
+        // reading as having been updated at least once.
+        final boolean[] created = {false};
         byteBuffers.useBytes(keyBytes, keyByteBuffer -> {
             Pathway pathway = pathways.get(writer.getWriteTxn(), keyByteBuffer, valueByteBuffer -> {
                 if (valueByteBuffer == null) {
+                    created[0] = true;
                     // No root yet. The mutator makes it, so that a pathway coming into being is
                     // recorded as a change like any other and a replay can rebuild it from nothing.
                     final Instant now = Instant.now();
@@ -177,18 +182,23 @@ public class TraceProcessor {
                 return;
             }
 
-            // Last used is the last time a trace took this route, so it moves for every trace applied.
-            // Updated is the last time the model itself moved, so it only changes when the trace taught
-            // it something. Once a pathway has settled the two come apart, which is how a route that is
-            // still busy is told from one that has gone quiet.
+            // Last used is the last time a trace took this route, and times used is how many have
+            // taken it, so both move for every trace applied. Updated is the last time the model
+            // itself moved and times updated is how many traces moved it, so those two only move when
+            // the trace taught it something. Once a pathway has settled the two pairs come apart,
+            // which is how a route that is still busy is told from one that has gone quiet.
             final Instant now = Instant.now();
             final NanoTime nanoTime = NanoTimeUtil.fromInstant(now);
             final Pathway.Builder builder = pathway
                     .copy()
                     .lastUsedTime(nanoTime)
+                    .timesUsed(pathway.getTimesUsed() + 1)
                     .root(pathNode);
             if (nodeMutator.isChanged()) {
                 builder.updateTime(nanoTime);
+                if (!created[0]) {
+                    builder.timesUpdated(pathway.getTimesUpdated() + 1);
+                }
             }
             pathway = builder.build();
 

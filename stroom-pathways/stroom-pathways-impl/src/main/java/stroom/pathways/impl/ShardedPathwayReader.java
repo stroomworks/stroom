@@ -162,6 +162,9 @@ public class ShardedPathwayReader {
             case PathwaySummary.FIELD_CREATE_TIME -> byTime(PathwaySummary::getCreateTime);
             case PathwaySummary.FIELD_UPDATE_TIME -> byTime(PathwaySummary::getUpdateTime);
             case PathwaySummary.FIELD_LAST_USED_TIME -> byTime(PathwaySummary::getLastUsedTime);
+            case PathwaySummary.FIELD_TIMES_USED -> Comparator.comparingLong(PathwaySummary::getTimesUsed);
+            case PathwaySummary.FIELD_TIMES_UPDATED -> Comparator.comparingLong(
+                    PathwaySummary::getTimesUpdated);
             case PathwaySummary.FIELD_SIZE -> Comparator.comparingLong(PathwaySummary::getSizeBytes);
             // A column the reader knows nothing about orders on nothing, rather than throwing away a
             // page of results.

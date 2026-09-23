@@ -30,7 +30,7 @@ import java.util.Objects;
  * the model it holds.
  *
  * <p>A pathway keeps every path it has ever seen an operation take, so one can run to megabytes. The
- * list shows four fields, and reading the tree to render them is what made the screen unopenable —
+ * list shows a handful of fields, and reading the tree to render them is what made the screen unopenable —
  * so the read stops before it, and {@link #getSizeBytes()} says how much was not read.
  */
 @JsonInclude(Include.NON_NULL)
@@ -42,6 +42,8 @@ public class PathwaySummary {
     public static final String FIELD_CREATE_TIME = "Create Time";
     public static final String FIELD_UPDATE_TIME = "Update Time";
     public static final String FIELD_LAST_USED_TIME = "Last Used";
+    public static final String FIELD_TIMES_USED = "Times Used";
+    public static final String FIELD_TIMES_UPDATED = "Times Updated";
     public static final String FIELD_SIZE = "Size";
 
     @JsonProperty
@@ -53,6 +55,10 @@ public class PathwaySummary {
     @JsonProperty
     private final NanoTime lastUsedTime;
     @JsonProperty
+    private final long timesUsed;
+    @JsonProperty
+    private final long timesUpdated;
+    @JsonProperty
     private final long sizeBytes;
 
     @JsonCreator
@@ -60,11 +66,15 @@ public class PathwaySummary {
                           @JsonProperty("createTime") final NanoTime createTime,
                           @JsonProperty("updateTime") final NanoTime updateTime,
                           @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
+                          @JsonProperty("timesUsed") final long timesUsed,
+                          @JsonProperty("timesUpdated") final long timesUpdated,
                           @JsonProperty("sizeBytes") final long sizeBytes) {
         this.name = name;
         this.createTime = createTime;
         this.updateTime = updateTime;
         this.lastUsedTime = lastUsedTime;
+        this.timesUsed = timesUsed;
+        this.timesUpdated = timesUpdated;
         this.sizeBytes = sizeBytes;
     }
 
@@ -85,6 +95,20 @@ public class PathwaySummary {
     }
 
     /**
+     * How many traces have taken this route since the pathway was first learnt.
+     */
+    public long getTimesUsed() {
+        return timesUsed;
+    }
+
+    /**
+     * How many traces have taught the model something, not counting the one that created it.
+     */
+    public long getTimesUpdated() {
+        return timesUpdated;
+    }
+
+    /**
      * How large this pathway is where it is stored, which is also roughly what fetching it costs.
      */
     public long getSizeBytes() {
@@ -101,6 +125,8 @@ public class PathwaySummary {
         }
         final PathwaySummary that = (PathwaySummary) o;
         return sizeBytes == that.sizeBytes
+               && timesUsed == that.timesUsed
+               && timesUpdated == that.timesUpdated
                && Objects.equals(name, that.name)
                && Objects.equals(createTime, that.createTime)
                && Objects.equals(updateTime, that.updateTime)
@@ -109,7 +135,8 @@ public class PathwaySummary {
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, createTime, updateTime, lastUsedTime, sizeBytes);
+        return Objects.hash(name, createTime, updateTime, lastUsedTime, timesUsed, timesUpdated,
+                sizeBytes);
     }
 
     @Override

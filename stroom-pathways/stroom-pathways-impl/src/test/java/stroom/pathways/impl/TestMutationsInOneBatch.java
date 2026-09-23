@@ -26,7 +26,6 @@ import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.MutationType;
-import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
@@ -104,9 +103,50 @@ class TestMutationsInOneBatch {
                 trace("t1", "GET", 20, PING),
                 trace("t2", "POST", 5, PING, COMMIT));
 
-        assertThat(PathwayReplay.rewind(readModel(dir), stored))
+        assertThat(PathwayReplay.rewind(readPathway(dir).getRoot(), stored))
                 .as("what was stored is enough to take the model apart again")
                 .isNull();
+    }
+
+    @Test
+    void everyTraceIsCounted(@TempDir final Path dir) {
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "GET", 20, PING),
+                trace("t3", "GET", 20, PING));
+
+        assertThat(readPathway(dir).getTimesUsed())
+                .as("counted for every trace that took the route, not only the ones that taught it "
+                    + "something — the second and third here are the same shape as the first")
+                .isEqualTo(3);
+    }
+
+    @Test
+    void theTraceThatCreatedThePathwayIsNotCountedAsAnUpdate(@TempDir final Path dir) {
+        applyBatch(dir, trace("t1", "GET", 20, PING));
+
+        final Pathway pathway = readPathway(dir);
+        assertThat(pathway.getTimesUsed()).isEqualTo(1);
+        assertThat(pathway.getTimesUpdated())
+                .as("it taught the model everything it knew, which is not the model being updated")
+                .isZero();
+    }
+
+    @Test
+    void onlyTracesThatTaughtTheModelSomethingAreCountedAsUpdates(@TempDir final Path dir) {
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "GET", 20, PING),
+                trace("t3", "POST", 90, PING, COMMIT),
+                trace("t4", "POST", 90, PING, COMMIT));
+
+        final Pathway pathway = readPathway(dir);
+        assertThat(pathway.getTimesUsed())
+                .as("every trace took the route")
+                .isEqualTo(4);
+        assertThat(pathway.getTimesUpdated())
+                .as("t1 created it and t2 and t4 repeated what was already known, leaving t3")
+                .isEqualTo(1);
     }
 
     // Applies each trace through TraceProcessor on one writer, as a batch does, then reads back what
@@ -135,13 +175,13 @@ class TestMutationsInOneBatch {
         return stored;
     }
 
-    private static PathNode readModel(final Path dir) {
+    private static Pathway readPathway(final Path dir) {
         final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
         final Pathway[] found = new Pathway[1];
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
             db.getPathways().iterate((key, val) -> found[0] = serde.readPathway(val));
         }
-        return found[0].getRoot();
+        return found[0];
     }
 
     private static PathwaysDoc doc() {

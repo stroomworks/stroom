@@ -38,6 +38,10 @@ public class Pathway {
     @JsonProperty
     private final NanoTime lastUsedTime;
     @JsonProperty
+    private final long timesUsed;
+    @JsonProperty
+    private final long timesUpdated;
+    @JsonProperty
     private final PathKey pathKey;
     @JsonProperty
     private final PathNode root;
@@ -47,12 +51,16 @@ public class Pathway {
                    @JsonProperty("createTime") final NanoTime createTime,
                    @JsonProperty("updateTime") final NanoTime updateTime,
                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
+                   @JsonProperty("timesUsed") final long timesUsed,
+                   @JsonProperty("timesUpdated") final long timesUpdated,
                    @JsonProperty("pathKey") final PathKey pathKey,
                    @JsonProperty("root") final PathNode root) {
         this.name = name;
         this.createTime = createTime;
         this.updateTime = updateTime;
         this.lastUsedTime = lastUsedTime;
+        this.timesUsed = timesUsed;
+        this.timesUpdated = timesUpdated;
         this.pathKey = pathKey;
         this.root = root;
     }
@@ -71,6 +79,27 @@ public class Pathway {
 
     public NanoTime getLastUsedTime() {
         return lastUsedTime;
+    }
+
+    /**
+     * How many traces have taken this route since the pathway was first learnt. Counted for every
+     * trace applied, whether or not it taught the model anything, so it says how busy a route is
+     * rather than how much it has moved.
+     */
+    public long getTimesUsed() {
+        return timesUsed;
+    }
+
+    /**
+     * How many traces have taught the model something since it was first learnt. The trace that
+     * created the pathway is not counted — it taught the model everything it knew at the time, so
+     * counting it would say every pathway had been updated at least once.
+     *
+     * <p>One per trace, however much that trace moved: a trace that widened nine constraints counts
+     * the same as one that widened a single range.
+     */
+    public long getTimesUpdated() {
+        return timesUpdated;
     }
 
     public PathKey getPathKey() {
@@ -94,13 +123,16 @@ public class Pathway {
                Objects.equals(createTime, pathway.createTime) &&
                Objects.equals(updateTime, pathway.updateTime) &&
                Objects.equals(lastUsedTime, pathway.lastUsedTime) &&
+               timesUsed == pathway.timesUsed &&
+               timesUpdated == pathway.timesUpdated &&
                Objects.equals(pathKey, pathway.pathKey) &&
                Objects.equals(root, pathway.root);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, createTime, updateTime, lastUsedTime, pathKey, root);
+        return Objects.hash(name, createTime, updateTime, lastUsedTime, timesUsed, timesUpdated,
+                pathKey, root);
     }
 
     @Override
@@ -110,6 +142,8 @@ public class Pathway {
                ", createTime=" + createTime +
                ", updateTime=" + updateTime +
                ", lastUsedTime=" + lastUsedTime +
+               ", timesUsed=" + timesUsed +
+               ", timesUpdated=" + timesUpdated +
                ", pathKey=" + pathKey +
                ", root=" + root +
                '}';
@@ -129,6 +163,8 @@ public class Pathway {
         private NanoTime createTime;
         private NanoTime updateTime;
         private NanoTime lastUsedTime;
+        private long timesUsed;
+        private long timesUpdated;
         private PathKey pathKey;
         private PathNode root;
 
@@ -140,6 +176,8 @@ public class Pathway {
             this.createTime = pathway.createTime;
             this.updateTime = pathway.updateTime;
             this.lastUsedTime = pathway.lastUsedTime;
+            this.timesUsed = pathway.timesUsed;
+            this.timesUpdated = pathway.timesUpdated;
             this.pathKey = pathway.pathKey;
             this.root = pathway.root;
         }
@@ -164,6 +202,16 @@ public class Pathway {
             return self();
         }
 
+        public Builder timesUsed(final long timesUsed) {
+            this.timesUsed = timesUsed;
+            return self();
+        }
+
+        public Builder timesUpdated(final long timesUpdated) {
+            this.timesUpdated = timesUpdated;
+            return self();
+        }
+
         public Builder pathKey(final PathKey pathKey) {
             this.pathKey = pathKey;
             return self();
@@ -185,6 +233,8 @@ public class Pathway {
                     createTime,
                     updateTime,
                     lastUsedTime,
+                    timesUsed,
+                    timesUpdated,
                     pathKey,
                     root);
         }
