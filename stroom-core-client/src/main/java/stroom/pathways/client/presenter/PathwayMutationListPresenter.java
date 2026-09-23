@@ -21,6 +21,7 @@ import stroom.data.client.presenter.ColumnSizeConstants;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
 import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.pathways.shared.pathway.AbstractRange;
 import stroom.pathways.shared.pathway.ConstraintValue;
 import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.PathwayMutation;
@@ -150,10 +151,10 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
                 PathwayMutation::getConstraint,
                 ColumnSizeConstants.MEDIUM_COL);
         addColumn(PathwayMutation.FIELD_OLD_VALUE,
-                mutation -> text(mutation.getOldValue()),
+                mutation -> text(mutation, mutation.getOldValue()),
                 ColumnSizeConstants.MEDIUM_COL);
         addColumn(PathwayMutation.FIELD_NEW_VALUE,
-                mutation -> text(mutation.getNewValue()),
+                mutation -> text(mutation, mutation.getNewValue()),
                 ColumnSizeConstants.MEDIUM_COL);
         addColumn(PathwayMutation.FIELD_TRACE_ID,
                 PathwayMutation::getTraceId,
@@ -172,7 +173,24 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         dataGrid.addResizableColumn(column, name, width);
     }
 
-    private static String text(final ConstraintValue value) {
+    // A trace carries one value, so it can only push out one end of a range. Showing the whole range
+    // reads as though the end that stayed put had moved as well. Where the constraint held a single
+    // value before, that value was itself the end that moved, so it is shown as it stands.
+    private static String text(final PathwayMutation mutation, final ConstraintValue value) {
+        if (value instanceof AbstractRange) {
+            final AbstractRange<?> range = (AbstractRange<?>) value;
+            final Object end;
+            if (MutationType.CONSTRAINT_MIN_EXPANDED.equals(mutation.getType())) {
+                end = range.getMin();
+            } else if (MutationType.CONSTRAINT_MAX_EXPANDED.equals(mutation.getType())) {
+                end = range.getMax();
+            } else {
+                end = null;
+            }
+            if (end != null) {
+                return end.toString();
+            }
+        }
         return value == null
                 ? ""
                 : value.toString();
