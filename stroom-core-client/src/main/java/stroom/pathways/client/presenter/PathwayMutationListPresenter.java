@@ -30,6 +30,7 @@ import stroom.util.client.DataGridUtil;
 import stroom.util.shared.NullSafe;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
+import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.cellview.client.ColumnSortList;
 import com.google.gwt.user.cellview.client.ColumnSortList.ColumnSortInfo;
@@ -56,6 +57,9 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
     private final ListDataProvider<PathwayMutation> dataProvider;
     private Column<PathwayMutation, String> timeColumn;
+    // Columns holding a name or an id, which reads as nothing much once it is cut short. They are
+    // widened to whatever the rows need rather than guessed at when the column is made.
+    private final List<Column<PathwayMutation, String>> sizedToContent = new ArrayList<>();
 
     @Inject
     public PathwayMutationListPresenter(final EventBus eventBus,
@@ -106,6 +110,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         newestFirst();
         dataProvider.setCompleteList(new ArrayList<>(NullSafe.list(mutations)));
         order();
+        sizeColumns();
     }
 
     // Seeded rather than pushed, because pushing a column sorts it ascending and the list starts
@@ -141,9 +146,9 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         dataGrid.addResizableColumn(timeColumn, PathwayMutation.FIELD_TIME,
                 ColumnSizeConstants.DATE_COL);
         newestFirst();
-        addColumn(PathwayMutation.FIELD_TYPE,
+        sizedToContent.add(addColumn(PathwayMutation.FIELD_TYPE,
                 mutation -> NullSafe.get(mutation.getType(), MutationType::getDisplayValue),
-                ColumnSizeConstants.MEDIUM_COL);
+                ColumnSizeConstants.MEDIUM_COL));
         addColumn(PathwayMutation.FIELD_PATH,
                 mutation -> String.join(" / ", NullSafe.list(mutation.getPath())),
                 400);
@@ -156,21 +161,28 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         addColumn(PathwayMutation.FIELD_NEW_VALUE,
                 mutation -> text(mutation, mutation.getNewValue()),
                 ColumnSizeConstants.MEDIUM_COL);
-        addColumn(PathwayMutation.FIELD_TRACE_ID,
+        sizedToContent.add(addColumn(PathwayMutation.FIELD_TRACE_ID,
                 PathwayMutation::getTraceId,
-                ColumnSizeConstants.MEDIUM_COL);
-        addColumn(PathwayMutation.FIELD_SPAN_ID,
+                ColumnSizeConstants.MEDIUM_COL));
+        sizedToContent.add(addColumn(PathwayMutation.FIELD_SPAN_ID,
                 PathwayMutation::getSpanId,
-                ColumnSizeConstants.SMALL_COL);
+                ColumnSizeConstants.SMALL_COL));
     }
 
-    private void addColumn(final String name,
-                           final Function<PathwayMutation, String> value,
-                           final int width) {
+    private Column<PathwayMutation, String> addColumn(final String name,
+                                                      final Function<PathwayMutation, String> value,
+                                                      final int width) {
         final Column<PathwayMutation, String> column = DataGridUtil
                 .textColumnBuilder(value)
                 .build();
         dataGrid.addResizableColumn(column, name, width);
+        return column;
+    }
+
+    // Nothing can be measured until the rows are drawn, so this waits for the grid to show the list it
+    // has just been given.
+    private void sizeColumns() {
+        Scheduler.get().scheduleDeferred(() -> sizedToContent.forEach(dataGrid::sizeToFitContent));
     }
 
     // A trace carries one value, so it can only push out one end of a range. Showing the whole range

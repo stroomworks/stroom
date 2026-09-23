@@ -33,7 +33,7 @@ public class ResizeHandle<R> extends Widget {
     private static final int HALF_HANDLE_WIDTH = HANDLE_WIDTH / 2;
     private static final int LINE_WIDTH = 2;
     private static final int HALF_LINE_WIDTH = LINE_WIDTH / 2;
-    private static final int MIN_COL_WIDTH = 30;
+    static final int MIN_COL_WIDTH = 30;
 
     private final MyDataGrid<R> dataGrid;
     private final List<ColSettings> colSettings;

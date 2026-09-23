@@ -698,21 +698,9 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
                 if (resizeHandle.isResizing()) {
                     if (doubleClickTester.isDoubleClick(resizeHandle)) {
                         final int colNo = resizeHandle.getColNo();
-
-                        final Element tempDiv = DOM.createDiv();
-                        tempDiv.setClassName("dataGridCell-text-measurement");
-
-                        RootPanel.get().getElement().appendChild(tempDiv);
-
-                        final double minHeaderWidth = getMinHeaderWidth(colNo, tempDiv);
-                        final double minBodyWidth = getMinBodyWidth(colNo, tempDiv);
-                        final double minWidth = Math.max(minHeaderWidth, minBodyWidth);
-
-                        RootPanel.get().getElement().removeChild(tempDiv);
-
+                        final int minWidth = contentWidth(colNo);
                         final int existingWidth = resizeHandle.getExistingWidth();
-                        final int diff = (int) minWidth - existingWidth;
-                        resizeHandle.endResize(diff);
+                        resizeHandle.endResize(minWidth - existingWidth);
 
                     } else {
                         // Find out how far we moved.
@@ -795,6 +783,39 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
     @Override
     public TableSectionElement getTableHeadElement() {
         return super.getTableHeadElement();
+    }
+
+    /**
+     * Sets a column to the width its contents need, header included. The rows have to be on screen
+     * before anything can be measured, so this is for calling once the grid has drawn the list rather
+     * than as the columns are added. A grid showing nothing is left alone, as is a column the user is
+     * not allowed to resize.
+     */
+    public void sizeToFitContent(final Column<R, ?> column) {
+        final int colNo = super.getColumnIndex(column);
+        if (colNo < 0 || colNo >= colSettings.size() || getVisibleItemCount() == 0) {
+            return;
+        }
+        // The same two rules dragging a column edge follows, so asking for a width and dragging to it
+        // cannot leave the grid in states that differ.
+        final ColSettings settings = colSettings.get(colNo);
+        if (settings == null || !settings.isResizable()) {
+            return;
+        }
+        resizeColumn(colNo, Math.max(contentWidth(colNo), ResizeHandle.MIN_COL_WIDTH));
+    }
+
+    // Measured against a throwaway element carrying the cell font, because the width text takes is not
+    // something that can be worked out from the number of characters.
+    private int contentWidth(final int colNo) {
+        final Element tempDiv = DOM.createDiv();
+        tempDiv.setClassName("dataGridCell-text-measurement");
+        RootPanel.get().getElement().appendChild(tempDiv);
+        try {
+            return (int) Math.max(getMinHeaderWidth(colNo, tempDiv), getMinBodyWidth(colNo, tempDiv));
+        } finally {
+            RootPanel.get().getElement().removeChild(tempDiv);
+        }
     }
 
     private double getMinHeaderWidth(final int colNo, final Element tempDiv) {
