@@ -785,26 +785,6 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
         return super.getTableHeadElement();
     }
 
-    /**
-     * Sets a column to the width its contents need, header included. The rows have to be on screen
-     * before anything can be measured, so this is for calling once the grid has drawn the list rather
-     * than as the columns are added. A grid showing nothing is left alone, as is a column the user is
-     * not allowed to resize.
-     */
-    public void sizeToFitContent(final Column<R, ?> column) {
-        final int colNo = super.getColumnIndex(column);
-        if (colNo < 0 || colNo >= colSettings.size() || getVisibleItemCount() == 0) {
-            return;
-        }
-        // The same two rules dragging a column edge follows, so asking for a width and dragging to it
-        // cannot leave the grid in states that differ.
-        final ColSettings settings = colSettings.get(colNo);
-        if (settings == null || !settings.isResizable()) {
-            return;
-        }
-        resizeColumn(colNo, Math.max(contentWidth(colNo), ResizeHandle.MIN_COL_WIDTH));
-    }
-
     // Measured against a throwaway element carrying the cell font, because the width text takes is not
     // something that can be worked out from the number of characters.
     private int contentWidth(final int colNo) {
@@ -848,10 +828,19 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
     private double getMinBodyWidth(final int colNo, final Element tempDiv) {
         double minWidth = 3;
         for (int row = 0; row < getVisibleItemCount(); row++) {
+            // The grid counts the rows it has been given, which is not the same as the rows on the
+            // page: it draws them after the data reaches it. One that is not there yet measures
+            // nothing rather than bringing the measurement down.
             final TableRowElement tableRowElement = getRowElement(row);
+            if (tableRowElement == null) {
+                continue;
+            }
             final NodeList<TableCellElement> cells = tableRowElement.getCells();
 
             Element el = cells.getItem(colNo);
+            if (el == null) {
+                continue;
+            }
             while (el.getFirstChildElement() != null) {
                 el = el.getFirstChildElement();
             }

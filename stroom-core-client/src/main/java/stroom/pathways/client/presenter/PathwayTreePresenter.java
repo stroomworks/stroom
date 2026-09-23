@@ -230,12 +230,18 @@ public class PathwayTreePresenter
         // in the model being read, nothing is selected, which is the right answer.
         final String was = uuid(selectedNode);
 
+        // Reading the same pathway again is the model being wound back, and the reader is looking at
+        // the same tree, so it stays where they left it. A different pathway starts at the top.
+        final boolean samePathway = this.pathway != null
+                                    && pathway != null
+                                    && Objects.equals(this.pathway.getName(), pathway.getName());
+
         this.pathway = pathway;
         this.readOnly = readOnly;
         this.selectedNode = null;
         selectionModel.clear();
         enableButtons();
-        refresh();
+        refresh(samePathway);
         reselect(was);
     }
 
@@ -269,9 +275,19 @@ public class PathwayTreePresenter
     }
 
     // Draws the whole thing. Only a new pathway needs this; selecting a node does not.
-    private void refresh() {
+    private void refresh(final boolean keepScroll) {
         nodeMap.clear();
         selectedElement = null;
+
+        // The element that scrolls is the one being rebuilt below, so where it had got to has to be
+        // taken off it first and put back on the one that replaces it.
+        final Element scrolling = html.getElement().getFirstChildElement();
+        final int scrollLeft = keepScroll && scrolling != null
+                ? scrolling.getScrollLeft()
+                : 0;
+        final int scrollTop = keepScroll && scrolling != null
+                ? scrolling.getScrollTop()
+                : 0;
 
         final HtmlBuilder hb = new HtmlBuilder();
         hb.div(div -> {
@@ -304,6 +320,12 @@ public class PathwayTreePresenter
             }
         }, Attribute.className("pathway"));
         html.setHTML(hb.toSafeHtml());
+
+        final Element rebuilt = html.getElement().getFirstChildElement();
+        if (rebuilt != null) {
+            rebuilt.setScrollLeft(scrollLeft);
+            rebuilt.setScrollTop(scrollTop);
+        }
         showInfo();
     }
 

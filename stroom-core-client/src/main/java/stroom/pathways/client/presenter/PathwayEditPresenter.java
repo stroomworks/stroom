@@ -321,7 +321,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
             return;
         }
 
-        final PathwayMutation selected = mutationListPresenter.getSelectionModel().getSelected();
+        final Long selected = mutationListPresenter.getSelectedSequence();
         if (selected == null || !historyComplete) {
             pathwayTreePresenter.read(pathway, readOnly);
             return;
@@ -329,7 +329,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
         final List<PathwayMutation> later = new ArrayList<>();
         for (final PathwayMutation mutation : history) {
-            if (mutation.getSequence() > selected.getSequence()) {
+            if (mutation.getSequence() > selected) {
                 later.add(mutation);
             }
         }
