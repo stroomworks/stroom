@@ -812,3 +812,174 @@
     color: #888;
     font-size: 13px;
 }
+
+/* The model drawn as a network, the operation at the centre and what was seen beneath it on rings
+ * around it. Everything positional is worked out by the renderer, because it depends on how many
+ * nodes there are and how deep they go; only the look is set here. */
+
+/* The box is the dot. The name is hung off it rather than laid out beside it, so a long name cannot
+ * push the dot off the point the renderer placed it on. */
+.pathway-graph-node {
+    position: absolute;
+}
+
+/* Size says how much has gone through the node, colour says when it last changed. Both come from the
+ * renderer as inline styles, so neither is set here. */
+.pathway-graph-dot {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+/* Written away from the middle of the diagram — to the right of a node on the right, to the left of
+ * one on the left — so names run outwards into space rather than across whatever is next to them.
+ * Clamped well inside the gap between one ring and the next, so a name stops short of the node it
+ * would otherwise be written across. */
+.pathway-graph-label {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: calc(100% + 6px);
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.pathway-graph-node--left .pathway-graph-label {
+    left: auto;
+    right: calc(100% + 6px);
+    text-align: right;
+}
+
+/* The drawing is scaled by the view rather than drawn again at a new size. Scaling does not change
+ * what a thing takes up, so the box around it carries the scaled size and the scrollbars follow it. */
+.pathway-graph-canvas {
+    position: relative;
+    transform-origin: 0 0;
+}
+
+/* The two layers have to start from the same origin, and padding does not affect them alike: the svg
+ * is laid out in flow so padding moves it, while the nodes are placed absolutely, which measures from
+ * inside the border and ignores padding. Five pixels of it put every line five pixels off the dots it
+ * joins. The tree keeps its padding — its curve coordinates are worked out with the offset in them. */
+.pathway-graph .pathway-curves {
+    padding: 0;
+}
+
+/* What the colours mean, over the bottom left of the panel — behind a button, because it says
+ * something that only needs reading once. Outside the drawing, so scrolling and zooming leave it
+ * where it is. */
+.pathway-graph-key-panel {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.pathway-graph-key {
+    display: none;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--app__background-color, rgba(28, 28, 33, 0.85));
+    font-size: 11px;
+    pointer-events: none;
+}
+
+.pathway-graph-key.pathway-graph-key--shown {
+    display: block;
+}
+
+.pathway-graph-key-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+/* A row of the key: a dot the size of a small node beside what it means. */
+.pathway-graph-key-scale {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+
+.pathway-graph-key-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.pathway-graph-key-end {
+    opacity: 0.8;
+}
+
+.pathway-graph-key-note {
+    margin-top: 4px;
+    opacity: 0.7;
+}
+
+/* The drawing's own buttons: zoom over the bottom right the way a map puts them, and the one that
+ * opens the key over the bottom left. Outside the drawing, so they stay put while it is scrolled and
+ * are not scaled along with it. */
+.pathway-graph-zoom {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+}
+
+.pathway-graph-controls {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.pathway-graph-control {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    font-size: 16px;
+    line-height: 1;
+    background-color: var(--app__background-color, rgba(28, 28, 33, 0.85));
+}
+
+.pathway-graph-control:hover {
+    background-color: var(--navigation__background-color--hover, rgba(255, 255, 255, 0.12));
+}
+
+.pathway-graph-control + .pathway-graph-control {
+    border-top: 1px solid var(--border-color);
+}
+
+/* Selecting in the tree fills the name in, which is what a row wants. On a circle the same styling
+ * reads as a box drawn round it, so the marker takes the selection instead: the ring goes outside the
+ * circle rather than on it, leaving the colour that says when the node last changed to be seen. */
+.pathway-graph-node.pathway-nodeName--selected {
+    background-color: transparent;
+    box-shadow: none;
+}
+
+.pathway-graph-node.pathway-nodeName--selected .pathway-graph-dot {
+    box-shadow: 0 0 0 3px #ffffff;
+}
+
+/* Faint, so the shape of the model reads without the joins competing with the nodes. currentColor
+ * rather than a fixed colour: the panel is dark in one theme and light in the other, and a colour
+ * picked for either disappears into the other. */
+.pathway-graph .pathway-curves svg line {
+    stroke: currentColor;
+    stroke-width: 1;
+    opacity: 0.35;
+}

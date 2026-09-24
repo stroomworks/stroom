@@ -47,11 +47,14 @@ public class PathwaysSplitPresenter extends DocPresenter<PathwaysSplitView, Path
         super.onBind();
         registerHandler(pathwayListPresenter.getSelectionModel().addSelectionHandler(e ->
                 pathwayListPresenter.withSelectedPathway(pathway ->
-                        pathwayTreePresenter.read(pathway, isReadOnly()))));
+                        pathwayTreePresenter.read(pathway))));
     }
 
     @Override
     protected void onRead(final DocRef docRef, final PathwaysDoc document, final boolean readOnly) {
+        // Nothing here holds the changes behind a model, so the tree is told where to ask for them.
+        // It only does so for the graph, which is the one drawing that needs them.
+        pathwayTreePresenter.setDocRef(docRef);
         pathwayListPresenter.onRead(docRef, document, readOnly);
     }
 

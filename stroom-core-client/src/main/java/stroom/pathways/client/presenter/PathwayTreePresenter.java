@@ -19,23 +19,34 @@ package stroom.pathways.client.presenter;
 import stroom.data.client.presenter.CopyTextUtil;
 import stroom.data.grid.client.DefaultResources;
 import stroom.data.grid.client.Glass;
+import stroom.dispatch.client.DefaultErrorHandler;
+import stroom.dispatch.client.RestFactory;
+import stroom.docref.DocRef;
 import stroom.pathways.client.presenter.PathwayTreePresenter.PathwayTreeView;
+import stroom.pathways.shared.FindPathwayMutationCriteria;
+import stroom.pathways.shared.PathwaysResource;
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.svg.client.Preset;
-import stroom.svg.client.SvgPresets;
 import stroom.svg.shared.SvgImage;
+import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.NullSafe;
+import stroom.util.shared.PageRequest;
 import stroom.widget.button.client.ButtonView;
-import stroom.widget.htree.client.treelayout.Point;
+import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.util.client.ElementUtil;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.MySingleSelectionModel;
 import stroom.widget.util.client.SafeHtmlUtil;
 
+import com.google.gwt.core.client.GWT;
+import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.Style.Position;
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.user.client.Event;
@@ -47,12 +58,12 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class PathwayTreePresenter
@@ -64,21 +75,38 @@ public class PathwayTreePresenter
     private static final int TREE_MIN_WIDTH = 240;
     private static final String ATTRIBUTE_PREFIX = "attribute.";
     private static final String SELECTED_CLASS = "pathway-nodeName--selected";
+    private static final String GRAPH_TITLE = "Show as a graph";
+    private static final String TREE_TITLE = "Show as a tree";
+    private static final double ZOOM_STEP = 1.25;
+    private static final double MIN_ZOOM = 0.2;
+    private static final double MAX_ZOOM = 3;
+    private static final int MAX_HISTORY = 20000;
+    private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
 
-    private final ButtonView newButton;
-    private final ButtonView editButton;
-    private final ButtonView removeButton;
+    private final InlineSvgToggleButton viewButton;
+    private final RestFactory restFactory;
 
     private final HTML html;
     private final HTML side;
     private final Glass glass;
     private final MySingleSelectionModel<PathNode> selectionModel = new MySingleSelectionModel<PathNode>();
+    private final PathwayRenderer treeRenderer = new PathwayTreeRenderer();
+    private final PathwayRenderer graphRenderer = new PathwayGraphRenderer();
+    private PathwayRenderer renderer = treeRenderer;
+    // When each node last changed, by uuid. Worked out from the stored changes rather than held on the
+    // node: the changes already say it, and holding it twice would let the two differ.
+    private Map<String, NanoTime> updateTimes = Collections.emptyMap();
+    private double zoom = 1;
+    private boolean showKey;
+    // Where to ask for the changes if nothing hands them over. The view around this one may already
+    // hold them, in which case it gives them and nothing is fetched.
+    private DocRef docRef;
+    private String historyFor;
 
     private Pathway pathway;
     private boolean showNodeInfo = true;
     private Element selectedElement;
     private PathNode selectedNode;
-    private boolean readOnly = true;
     private final Map<String, PathNode> nodeMap = new HashMap<>();
 
     private int infoWidth = 340;
@@ -88,17 +116,24 @@ public class PathwayTreePresenter
     @Inject
     public PathwayTreePresenter(final EventBus eventBus,
                                 final PathwayTreeView view,
+                                final RestFactory restFactory,
                                 final DefaultResources resources) {
         super(eventBus, view);
-        newButton = view.addButton(SvgPresets.NEW_ITEM);
-        editButton = view.addButton(SvgPresets.EDIT);
-        removeButton = view.addButton(SvgPresets.DELETE);
-        enableButtons();
+        this.restFactory = restFactory;
+        // Which way the model is drawn, not what is drawn, so it sits with the tree rather than with
+        // the buttons that change the model. It holds which drawing is on show, so nothing else has to.
+        viewButton = new InlineSvgToggleButton();
+        viewButton.setSvg(SvgImage.NODES);
+        viewButton.setTitle(GRAPH_TITLE);
+        view.addButton(viewButton);
 
         glass = new Glass(resources.dataGridStyle().resizeGlass());
 
         html = new HTML();
         html.addStyleName("max");
+        // What the graph's key is placed against. The drawing inside scrolls and is scaled; the key
+        // is neither, so it hangs off the panel rather than off the drawing.
+        html.getElement().getStyle().setPosition(Position.RELATIVE);
         view.setDataWidget(html);
 
         // Docked beside the toolbar and the tree together, not inside them, so the panel starts at
@@ -110,9 +145,20 @@ public class PathwayTreePresenter
     @Override
     protected void onBind() {
         super.onBind();
+        // Follows the button rather than deciding for itself which clicks count: the button turns
+        // itself over on any click it accepts, and a drawing that disagreed with the icon on it would
+        // be worse than a drawing swapped by an unusual click.
+        registerHandler(viewButton.addClickHandler(e -> swapView()));
         registerHandler(html.addClickHandler(e -> {
             final Element target = e.getNativeEvent().getEventTarget().cast();
             if (target == null) {
+                return;
+            }
+
+            // The drawing carries its own controls, so a click is theirs before it is a node's.
+            final Element button = ElementUtil.findParent(target, element ->
+                    NullSafe.isNonBlankString(element.getId()), 3);
+            if (button != null && onControl(button.getId())) {
                 return;
             }
 
@@ -200,8 +246,118 @@ public class PathwayTreePresenter
         } else {
             selectionModel.setSelected(pathNode, true);
         }
-        enableButtons();
         showInfo();
+    }
+
+    // The two drawings answer different questions of the same model, so which one is on show is not
+    // worth a redraw of anything but the drawing. What is selected is kept: a node is the same node
+    // however it is drawn.
+    //
+    // The button has already turned itself over by the time this runs — it handles its own click
+    // before the one registered here — so which drawing to use is read from it rather than tracked.
+    private void swapView() {
+        renderer = viewButton.getState()
+                ? graphRenderer
+                : treeRenderer;
+        viewButton.setTitle(viewButton.getState()
+                ? TREE_TITLE
+                : GRAPH_TITLE);
+
+        fetchHistory();
+
+        final String was = uuid(selectedNode);
+        this.selectedNode = null;
+        refresh(false);
+        reselect(was);
+    }
+
+    // Only the graph needs the changes, and only for colour, so they are asked for when it is first
+    // shown rather than with every pathway opened. A page of them is large enough that the pathway
+    // list was unopenable while it read them.
+    private void fetchHistory() {
+        final String name = NullSafe.get(pathway, Pathway::getName);
+        if (!renderer.isCentred() || docRef == null || name == null || name.equals(historyFor)) {
+            return;
+        }
+
+        historyFor = name;
+        final FindPathwayMutationCriteria criteria = new FindPathwayMutationCriteria(
+                new PageRequest(0, MAX_HISTORY),
+                List.of(new CriteriaFieldSort(PathwayMutation.FIELD_TIME, false, false)),
+                docRef,
+                name);
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.findMutations(criteria))
+                .onSuccess(result -> {
+                    // Another pathway may have been picked while this was in flight, and colouring one
+                    // model by another model's changes would be worse than not colouring it at all.
+                    if (name.equals(NullSafe.get(pathway, Pathway::getName))) {
+                        setHistory(result.getValues());
+                        refresh(true);
+                    }
+                })
+                .onFailure(new DefaultErrorHandler(this, null))
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    // @return whether the click was on one of the drawing's own controls rather than on the drawing.
+    private boolean onControl(final String id) {
+        if (PathwayGraphRenderer.ZOOM_IN_ID.equals(id)) {
+            zoom(ZOOM_STEP);
+        } else if (PathwayGraphRenderer.ZOOM_OUT_ID.equals(id)) {
+            zoom(1 / ZOOM_STEP);
+        } else if (PathwayGraphRenderer.KEY_ID.equals(id)) {
+            showKey = !showKey;
+            applyKey();
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    // Held here rather than in the drawing, which is rebuilt whenever the model is, so that opening
+    // the key does not close itself again the next time a trace moves the model on.
+    private void applyKey() {
+        final Element key = ElementUtil.findChild(html.getElement(), element ->
+                PathwayGraphRenderer.KEY_PANEL_ID.equals(element.getId()));
+        if (key != null) {
+            if (showKey) {
+                key.addClassName(PathwayGraphRenderer.KEY_SHOWN_CLASS);
+            } else {
+                key.removeClassName(PathwayGraphRenderer.KEY_SHOWN_CLASS);
+            }
+        }
+    }
+
+    // Scaling the drawing rather than drawing it again: nothing about the model has changed, and a
+    // redraw would lose what is selected and where the view had got to.
+    private void zoom(final double by) {
+        final double wanted = zoom * by;
+        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, wanted));
+        applyZoom();
+    }
+
+    private void applyZoom() {
+        final Element root = html.getElement().getFirstChildElement();
+        final Element sizer = root == null
+                ? null
+                : root.getFirstChildElement();
+        final Element canvas = sizer == null
+                ? null
+                : sizer.getFirstChildElement();
+        if (canvas == null) {
+            return;
+        }
+
+        // Read off the canvas rather than remembered, because scaling does not change what a thing
+        // measures and this stays the drawing's own size however far it has been zoomed.
+        final int width = canvas.getOffsetWidth();
+        final int height = canvas.getOffsetHeight();
+        canvas.getStyle().setProperty("transform", "scale(" + zoom + ")");
+        sizer.getStyle().setWidth(width * zoom, Unit.PX);
+        sizer.getStyle().setHeight(height * zoom, Unit.PX);
     }
 
     /**
@@ -223,8 +379,7 @@ public class PathwayTreePresenter
         }
     }
 
-    public void read(final Pathway pathway,
-                     final boolean readOnly) {
+    public void read(final Pathway pathway) {
         // What was selected before, so it can be picked out again afterwards. A node keeps its uuid
         // when the model is wound back, so the same node is still the same node — and where it is not
         // in the model being read, nothing is selected, which is the right answer.
@@ -237,12 +392,52 @@ public class PathwayTreePresenter
                                     && Objects.equals(this.pathway.getName(), pathway.getName());
 
         this.pathway = pathway;
-        this.readOnly = readOnly;
         this.selectedNode = null;
         selectionModel.clear();
-        enableButtons();
         refresh(samePathway);
         reselect(was);
+        // A different pathway was picked, so the changes behind the one on show are not the ones held.
+        fetchHistory();
+    }
+
+    /**
+     * Which pathways document the model on show belongs to, so the changes behind it can be asked for
+     * where nothing hands them over.
+     */
+    public void setDocRef(final DocRef docRef) {
+        this.docRef = docRef;
+    }
+
+    /**
+     * Every change made to this pathway, which is where the graph gets the colour of a node from.
+     * Handing them over stops them being asked for. Takes effect on the next read.
+     */
+    public void setHistory(final List<PathwayMutation> history) {
+        historyFor = NullSafe.get(pathway, Pathway::getName);
+        final Map<String, Long> newest = new HashMap<>();
+        final Map<String, NanoTime> times = new HashMap<>();
+        for (final PathwayMutation mutation : NullSafe.list(history)) {
+            final String key = key(mutation.getPath());
+            final Long seen = newest.get(key);
+            // By sequence rather than by time, because every change a trace made shares one timestamp.
+            if (seen == null || mutation.getSequence() > seen) {
+                newest.put(key, mutation.getSequence());
+                times.put(key, mutation.getTime());
+            }
+        }
+
+        // Keyed by uuid for the renderer, which knows nodes by the uuid it draws against them.
+        updateTimes = new HashMap<>();
+        nodeMap.values().forEach(node -> {
+            final NanoTime time = times.get(key(node.getPath()));
+            if (time != null) {
+                updateTimes.put(node.getUuid(), time);
+            }
+        });
+    }
+
+    private static String key(final List<String> path) {
+        return String.join("\u0000", NullSafe.list(path));
     }
 
     /**
@@ -254,7 +449,6 @@ public class PathwayTreePresenter
         selectedNode = null;
         selectedElement = null;
         selectionModel.clear();
-        enableButtons();
         showInfo();
     }
 
@@ -289,42 +483,32 @@ public class PathwayTreePresenter
                 ? scrolling.getScrollTop()
                 : 0;
 
-        final HtmlBuilder hb = new HtmlBuilder();
-        hb.div(div -> {
-            if (pathway != null) {
-                addNode(pathway.getRoot());
-
-                // Draw bezier curves.
-                final HtmlBuilder svgBuilder = new HtmlBuilder();
-                final HtmlBuilder nodeBuilder = new HtmlBuilder();
-                final AtomicInteger rowNum = new AtomicInteger();
-                final AtomicInteger width = new AtomicInteger();
-                final AtomicInteger height = new AtomicInteger();
-
-                append(nodeBuilder,
-                        pathway.getRoot(),
-                        svgBuilder,
-                        0,
-                        rowNum,
-                        width,
-                        height);
-
-                div.div(d -> {
-                    d.elem(rootSvgElement -> rootSvgElement.append(svgBuilder.toSafeHtml()),
-                            SafeHtmlUtil.from("svg"),
-                            new Attribute("width", String.valueOf(width.get() + 10)),
-                            new Attribute("height", String.valueOf(height.get() + 10)),
-                            new Attribute("xmlns", "http://www.w3.org/2000/svg"));
-                }, Attribute.className("pathway-curves"));
-                div.div(d -> d.append(nodeBuilder.toSafeHtml()), Attribute.className("pathway-nodes"));
-            }
-        }, Attribute.className("pathway"));
-        html.setHTML(hb.toSafeHtml());
+        if (pathway != null && pathway.getRoot() != null) {
+            addNode(pathway.getRoot());
+        }
+        html.setHTML(renderer.render(pathway, updateTimes));
+        if (renderer.isCentred()) {
+            applyZoom();
+            applyKey();
+        }
 
         final Element rebuilt = html.getElement().getFirstChildElement();
         if (rebuilt != null) {
-            rebuilt.setScrollLeft(scrollLeft);
-            rebuilt.setScrollTop(scrollTop);
+            if (keepScroll) {
+                rebuilt.setScrollLeft(scrollLeft);
+                rebuilt.setScrollTop(scrollTop);
+            } else if (renderer.isCentred()) {
+                // Waits for the browser to lay the drawing out. Read in the same turn as it is put on
+                // the page, the panel has no width yet, and centring on a width of nothing puts the
+                // middle of the drawing against the left edge rather than in the middle of the view.
+                Scheduler.get().scheduleDeferred(() -> {
+                    rebuilt.setScrollLeft((rebuilt.getScrollWidth() - rebuilt.getClientWidth()) / 2);
+                    rebuilt.setScrollTop((rebuilt.getScrollHeight() - rebuilt.getClientHeight()) / 2);
+                });
+            } else {
+                rebuilt.setScrollLeft(0);
+                rebuilt.setScrollTop(0);
+            }
         }
         showInfo();
     }
@@ -404,138 +588,6 @@ public class PathwayTreePresenter
     private void addNode(final PathNode node) {
         nodeMap.put(node.getUuid(), node);
         NullSafe.list(node.getChildren()).forEach(this::addNode);
-    }
-
-    private void append(final HtmlBuilder hb,
-                        final PathNode node,
-                        final HtmlBuilder svg,
-                        final int nodeDepth,
-                        final AtomicInteger rowNum,
-                        final AtomicInteger width,
-                        final AtomicInteger height) {
-        final int sourceRowNum = rowNum.incrementAndGet();
-
-        // Render node icon and text.
-        hb.div(nodeDiv -> {
-            nodeDiv.div(icon ->
-                            icon.appendTrustedString(SvgImage.PATHWAYS_NODE.getSvg()),
-                    Attribute.className("pathway-nodeIcon svgIcon " +
-                                        SvgImage.PATHWAYS_NODE.getClassName()));
-            nodeDiv.div(n -> n.append(node.getName()),
-                    Attribute.className("pathway-nodeName"), new Attribute("uuid", node.getUuid()));
-        }, Attribute.className("pathway-node"));
-
-        // Add the things seen beneath this node.
-        final List<PathNode> children = NullSafe.list(node.getChildren());
-        if (!children.isEmpty()) {
-            // Add bezier curve to child set.
-            appendBezier(svg, nodeDepth, sourceRowNum, rowNum.get(), width, height);
-
-            addChildren(hb, children, svg, nodeDepth + 1, rowNum, width, height);
-        }
-    }
-
-    private void addChildren(final HtmlBuilder hb,
-                             final List<PathNode> children,
-                             final HtmlBuilder svg,
-                             final int nodeDepth,
-                             final AtomicInteger rowNum,
-                             final AtomicInteger width,
-                             final AtomicInteger height) {
-        if (!children.isEmpty()) {
-            final int sourceRowNum = rowNum.get();
-
-            // Add child set.
-            final String choiceCss = "pathway-nodeIcon svgIcon " +
-                                     SvgImage.PATHWAYS_SEQUENCE.getClassName();
-
-            hb.div(targetDiv -> {
-                targetDiv.div(icon -> icon.appendTrustedString(SvgImage.PATHWAYS_SEQUENCE.getSvg()),
-                        Attribute.className(choiceCss));
-
-                targetDiv.div(o -> {
-
-                    o.div(targetsDiv -> {
-                        children.forEach(pathNode -> {
-                            // Add quadratic curve to this node.
-                            appendQuadratic(svg, nodeDepth + 1, sourceRowNum, rowNum.get(), width, height);
-
-                            // Add node div.
-                            append(targetsDiv,
-                                    pathNode,
-                                    svg,
-                                    nodeDepth + 2,
-                                    rowNum,
-                                    width,
-                                    height);
-                        });
-                    }, Attribute.className("pathway-target-inner"));
-                }, Attribute.className("pathway-targets-inner"));
-
-
-            }, Attribute.className("pathway-target"));
-        }
-    }
-
-    private void appendBezier(final HtmlBuilder svg,
-                              final int depth,
-                              final int startRow,
-                              final int endRow,
-                              final AtomicInteger width,
-                              final AtomicInteger height) {
-        final int startX = (depth * INDENT) + 8;
-        final int startY = (startRow * ROW_HEIGHT) - 4;
-        final int endX = (depth * INDENT) + 18;
-        final int endY = (endRow * ROW_HEIGHT) + 8;
-        Bezier.curve(svg, new Point(startX, startY), new Point(endX, endY));
-
-        if (endX > width.get()) {
-            width.set(endX);
-        }
-        if (endY > height.get()) {
-            height.set(endY);
-        }
-    }
-
-    private void appendQuadratic(final HtmlBuilder svg,
-                                 final int depth,
-                                 final int startRow,
-                                 final int endRow,
-                                 final AtomicInteger width,
-                                 final AtomicInteger height) {
-        final int startX = (depth * INDENT) - 2;
-        final int startY = (startRow * ROW_HEIGHT) + 8;
-        final int endX = (depth * INDENT) + 18;
-        final int endY = (endRow * ROW_HEIGHT) + 8;
-        Bezier.quadratic(svg, new Point(startX, startY), new Point(endX, endY));
-        if (endX > width.get()) {
-            width.set(endX);
-        }
-        if (endY > height.get()) {
-            height.set(endY);
-        }
-    }
-
-    private void enableButtons() {
-        newButton.setEnabled(!readOnly);
-        final PathNode pathNode = selectionModel.getSelectedObject();
-        if (!readOnly) {
-            final boolean enabled = pathNode != null;
-            editButton.setEnabled(enabled);
-            removeButton.setEnabled(enabled);
-        } else {
-            editButton.setEnabled(false);
-            removeButton.setEnabled(false);
-        }
-        if (readOnly) {
-            newButton.setTitle("New path disabled as read only");
-            editButton.setTitle("Edit path disabled as read only");
-            removeButton.setTitle("Remove path disabled as read only");
-        } else {
-            newButton.setTitle("New Path");
-            editButton.setTitle("Edit Path");
-            removeButton.setTitle("Remove Path");
-        }
     }
 
     public MySingleSelectionModel<PathNode> getSelectionModel() {

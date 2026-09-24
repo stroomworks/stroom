@@ -305,6 +305,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                         return;
                     }
                     history = result.getValues();
+                    pathwayTreePresenter.setHistory(history);
                     historyComplete = history.size() >= NullSafe.getOrElse(
                             result.getPageResponse(), PageResponse::getTotal, 0L);
                     mutationListPresenter.setData(history);
@@ -323,7 +324,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
         final Long selected = mutationListPresenter.getSelectedSequence();
         if (selected == null || !historyComplete) {
-            pathwayTreePresenter.read(pathway, readOnly);
+            pathwayTreePresenter.read(pathway);
             return;
         }
 
@@ -337,7 +338,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
         pathwayTreePresenter.read(root == null
                 ? null
-                : pathway.copy().root(root).build(), readOnly);
+                : pathway.copy().root(root).build());
         showConstraints();
     }
 
@@ -363,7 +364,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         // being looked at last time.
         pathwayTreePresenter.clearSelection();
 
-        pathwayTreePresenter.read(pathway, readOnly);
+        pathwayTreePresenter.read(pathway);
         showConstraints();
         mutationListPresenter.setData(Collections.emptyList());
         fetchHistory(pathwaysDoc.asDocRef(), pathway.getName());
