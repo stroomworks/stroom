@@ -47,7 +47,6 @@ import com.gwtplatform.mvp.client.View;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import javax.validation.ValidationException;
 
 public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
@@ -411,7 +410,6 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 //        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
 //        getView().setSpans(SafeHtmlUtils.EMPTY_SAFE_HTML);
 
-        getView().setName(pathway.getName());
 //        getView().setDetails(new PathwayTreePresenter().build(pathway));
 //
 //        addNode(pathway.getRoot());
@@ -425,15 +423,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 //    }
 
     public Pathway write() {
-        String name = getView().getName();
-        name = name.trim();
-
-        if (name.isEmpty()) {
-            throw new ValidationException("A pathway must have a name");
-        }
-
+        // A pathway is named after the operation it was learnt from, which is how it is found again.
+        // Nothing here can rename it, so the name is carried through rather than read back.
         final NanoTime now = NanoTime.ofMillis(System.currentTimeMillis());
-        return pathway.copy().name(name).updateTime(now).build();
+        return pathway.copy().updateTime(now).build();
     }
 
     public void show(final String caption, final HidePopupRequestEvent.Handler handler) {
@@ -448,10 +441,6 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     }
 
     public interface PathwayEditView extends View, Focus {
-
-        String getName();
-
-        void setName(final String name);
 
         void setTree(View view);
 

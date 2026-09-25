@@ -3,9 +3,6 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max form dock-container-vertical">
-        <form:FormGroup identity="pathwayName" label="Name">
-            <g:TextBox ui:field="name" addStyleNames="w-100"/>
-        </form:FormGroup>
         <g:MySplitLayoutPanel styleName="dock-max">
             <g:south size="220">
                 <form:FormGroup identity="pathwayMutations" label="Changes">

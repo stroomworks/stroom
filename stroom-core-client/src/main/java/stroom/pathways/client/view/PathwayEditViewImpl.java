@@ -23,7 +23,6 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.SimplePanel;
-import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
@@ -33,8 +32,6 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
 
     private final Widget widget;
 
-    @UiField
-    TextBox name;
     @UiField
     SimplePanel tree;
     @UiField
@@ -54,17 +51,8 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
 
     @Override
     public void focus() {
-        name.setFocus(true);
-    }
-
-    @Override
-    public String getName() {
-        return name.getText();
-    }
-
-    @Override
-    public void setName(final String fieldName) {
-        name.setText(fieldName);
+        // Nothing here is typed into. What the dialog shows is read, and the parts that are clicked
+        // take focus as they are clicked.
     }
 
     @Override

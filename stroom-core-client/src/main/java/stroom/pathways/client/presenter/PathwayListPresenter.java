@@ -381,7 +381,7 @@ public class PathwayListPresenter
     private void editFetched(final PathwaySummary selected, final Pathway existingPathway) {
         if (existingPathway != null) {
             pathwayEditPresenter.read(pathwaysDoc, existingPathway, readOnly);
-            pathwayEditPresenter.show("Edit Pathway", e -> {
+            pathwayEditPresenter.show("Edit Pathway - " + existingPathway.getName(), e -> {
                 if (e.isOk()) {
                     try {
                         final Pathway pathway = pathwayEditPresenter.write();
