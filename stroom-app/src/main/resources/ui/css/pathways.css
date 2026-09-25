@@ -966,6 +966,24 @@
     border-top: 1px solid var(--border-color);
 }
 
+/* Nodes and joins the model being shown does not hold yet — the drawing is placed from the model as
+ * it stands now, so that winding back does not move everything that is left. Drawn faintly rather
+ * than left out: a gap says nothing, whereas something the model has not learnt yet says what is
+ * about to happen. */
+.pathway-graph-node--absent {
+    opacity: 0.22;
+}
+
+.pathway-graph-node--absent .pathway-graph-dot {
+    background-color: transparent !important;
+    box-shadow: 0 0 0 2px currentColor !important;
+}
+
+.pathway-graph .pathway-curves svg line.pathway-graph-edge--absent {
+    stroke-dasharray: 3 4;
+    opacity: 0.18;
+}
+
 /* The nodes a change being looked at touched, picked out for a few seconds when the change is
  * selected in the mutation list. It runs a fixed number of times rather than forever: it is there to
  * be noticed, and something that never stops moving stops being looked at. */

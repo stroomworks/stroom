@@ -103,6 +103,10 @@ public class PathwayTreePresenter
     // The moment being looked at. Zero while the model on show is the current one, in which case it
     // is the time now.
     private long asAt;
+    // Every node the model has ever held, which the drawing places from so that a node appearing does
+    // not move the ones around it. Null where the model on show is the current one and is its own
+    // answer.
+    private PathNode layout;
     // Nodes to draw attention to, as path keys. Held rather than applied once, because the drawing is
     // rebuilt whenever the model is and the elements it was put on go with it.
     private Set<String> highlighted = Collections.emptySet();
@@ -459,6 +463,14 @@ public class PathwayTreePresenter
     }
 
     /**
+     * The model to work the positions out from, which is the model as it stands now rather than the
+     * one being shown. Null where they are the same.
+     */
+    public void setLayout(final PathNode layout) {
+        this.layout = layout;
+    }
+
+    /**
      * The moment the model on show stood at, or null where it is the model as it stands now. How long
      * ago a node changed is measured from here, so winding back an hour does not age every node by an
      * hour.
@@ -519,9 +531,9 @@ public class PathwayTreePresenter
         if (pathway != null && pathway.getRoot() != null) {
             addNode(pathway.getRoot());
         }
-        html.setHTML(renderer.render(pathway, byUuid(), asAt > 0
+        html.setHTML(renderer.render(new RenderRequest(pathway, layout, byUuid(), asAt > 0
                 ? asAt
-                : System.currentTimeMillis()));
+                : System.currentTimeMillis())));
         if (renderer.isCentred()) {
             applyZoom();
             applyKey();

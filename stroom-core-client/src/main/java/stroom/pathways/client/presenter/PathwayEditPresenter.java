@@ -324,6 +324,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
         // Set before the model is read, because the nodes are picked out as the drawing is built.
         pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedPaths());
+        // Winding the model back takes nodes out of it. Placing what is left from the model as it
+        // stands now keeps every node where it was, rather than closing the gaps and moving
+        // everything the reader was looking at.
+        pathwayTreePresenter.setLayout(pathway.getRoot());
 
         final Long selected = mutationListPresenter.getSelectedSequence();
         if (selected == null || !historyComplete) {

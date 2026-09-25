@@ -28,7 +28,6 @@ import stroom.widget.util.client.SafeHtmlUtil;
 import com.google.gwt.safehtml.shared.SafeHtml;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -47,9 +46,8 @@ class PathwayTreeRenderer implements PathwayRenderer {
     }
 
     @Override
-    public SafeHtml render(final Pathway pathway,
-                           final Map<String, NodeChange> changes,
-                           final long asAt) {
+    public SafeHtml render(final RenderRequest request) {
+        final Pathway pathway = request.getPathway();
         final HtmlBuilder hb = new HtmlBuilder();
         hb.div(div -> {
             if (pathway != null) {

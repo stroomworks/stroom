@@ -28,8 +28,10 @@ import stroom.widget.util.client.SafeHtmlUtil;
 import com.google.gwt.safehtml.shared.SafeHtml;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The model as a network: the operation at the centre and everything seen beneath it on rings around
@@ -99,14 +101,21 @@ class PathwayGraphRenderer implements PathwayRenderer {
     }
 
     @Override
-    public SafeHtml render(final Pathway pathway,
-                           final Map<String, NodeChange> changes,
-                           final long asAt) {
-        final PathNode root = NullSafe.get(pathway, Pathway::getRoot);
+    public SafeHtml render(final RenderRequest request) {
+        final PathNode shown = NullSafe.get(request.getPathway(), Pathway::getRoot);
+        // Placed from every node the model has ever held, so a node arriving does not move the ones
+        // around it. What is drawn solidly is still only what the model being shown holds.
+        final PathNode root = request.getLayout() == null
+                ? shown
+                : request.getLayout();
         if (root == null) {
             return new HtmlBuilder().toSafeHtml();
         }
 
+        final Set<String> present = new HashSet<>();
+        collect(shown, present);
+
+        final Map<String, NodeChange> changes = request.getChanges();
         leftOfCentre.clear();
         final Map<String, Point> places = new HashMap<>();
         final int size = centre(depth(root, 0)) * 2;
@@ -114,7 +123,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
-        draw(root, places, edges, markers, new Scale(root, changes), asAt, changes);
+        draw(root, places, edges, markers, new Scale(root, changes), request.getAsAt(), changes,
+                present);
 
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.elem(svg -> svg.append(edges.toSafeHtml()),
@@ -235,15 +245,20 @@ class PathwayGraphRenderer implements PathwayRenderer {
                       final HtmlBuilder markers,
                       final Scale scale,
                       final long now,
-                      final Map<String, NodeChange> changes) {
+                      final Map<String, NodeChange> changes,
+                      final Set<String> present) {
+        final boolean here = present.contains(node.getUuid());
         final Point at = places.get(node.getUuid());
         final NodeChange change = changes.get(node.getUuid());
         final int radius = scale.radius(change);
         final NanoTime updated = NullSafe.get(change, NodeChange::getLastUpdated);
 
-        final String side = Boolean.TRUE.equals(leftOfCentre.get(node.getUuid()))
+        final String side = (Boolean.TRUE.equals(leftOfCentre.get(node.getUuid()))
                 ? " pathway-graph-node--left"
-                : "";
+                : "")
+                + (here
+                        ? ""
+                        : " pathway-graph-node--absent");
         markers.div(marker -> {
             marker.div("", Attribute.className("pathway-graph-dot"),
                     // A shadow rather than a border: the width given here is what says how much the
@@ -267,8 +282,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
             final Point childAt = places.get(child.getUuid());
             // As thick as the traffic reaching what it points at, so the busy routes through the
             // model stand out from the ones taken once.
-            line(edges, at, childAt, scale.edge(child.getTimesUsed()));
-            draw(child, places, edges, markers, scale, now, changes);
+            line(edges, at, childAt, scale.edge(child.getTimesUsed()),
+                    present.contains(child.getUuid()));
+            draw(child, places, edges, markers, scale, now, changes, present);
         }
     }
 
@@ -277,13 +293,24 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static void line(final HtmlBuilder svg,
                              final Point start,
                              final Point end,
-                             final int width) {
+                             final int width,
+                             final boolean present) {
         svg.elem(SafeHtmlUtil.from("line"),
                 new Attribute("x1", String.valueOf((int) start.getX())),
                 new Attribute("y1", String.valueOf((int) start.getY())),
                 new Attribute("x2", String.valueOf((int) end.getX())),
                 new Attribute("y2", String.valueOf((int) end.getY())),
-                new Attribute("stroke-width", String.valueOf(width)));
+                new Attribute("stroke-width", String.valueOf(width)),
+                Attribute.className(present
+                        ? "pathway-graph-edge"
+                        : "pathway-graph-edge pathway-graph-edge--absent"));
+    }
+
+    private static void collect(final PathNode node, final Set<String> uuids) {
+        if (node != null) {
+            uuids.add(node.getUuid());
+            NullSafe.list(node.getChildren()).forEach(child -> collect(child, uuids));
+        }
     }
 
     private static String colour(final NanoTime updated, final long now) {
