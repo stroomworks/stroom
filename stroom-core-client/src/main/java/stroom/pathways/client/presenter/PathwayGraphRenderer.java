@@ -187,7 +187,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
             appendSwatch(key, NEVER_CHANGED, NEVER_CHANGED_RING, "never changed");
             key.div("Size shows how many times the node has changed",
                     Attribute.className("pathway-graph-key-note"));
-            key.div("Line thickness shows how much goes through it",
+            key.div("Line thickness shows how much goes through it, and its colour when that last "
+                    + "happened, on the same scale",
                     Attribute.className("pathway-graph-key-note"));
         }, Attribute.className("pathway-graph-key"), Attribute.id(KEY_PANEL_ID));
     }
@@ -280,10 +281,12 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
         for (final PathNode child : NullSafe.list(node.getChildren())) {
             final Point childAt = places.get(child.getUuid());
-            // As thick as the traffic reaching what it points at, so the busy routes through the
-            // model stand out from the ones taken once.
+            // As thick as the traffic reaching what it points at, and coloured by how recently that
+            // traffic last came through, on the same scale as the nodes. So the thick bright lines
+            // are the routes being taken now and the thin dim ones are the routes that have stopped.
             line(edges, at, childAt, scale.edge(child.getTimesUsed()),
-                    present.contains(child.getUuid()));
+                    present.contains(child.getUuid()),
+                    colour(child.getLastUsedTime(), now));
             draw(child, places, edges, markers, scale, now, changes, present);
         }
     }
@@ -294,13 +297,15 @@ class PathwayGraphRenderer implements PathwayRenderer {
                              final Point start,
                              final Point end,
                              final int width,
-                             final boolean present) {
+                             final boolean present,
+                             final String colour) {
         svg.elem(SafeHtmlUtil.from("line"),
                 new Attribute("x1", String.valueOf((int) start.getX())),
                 new Attribute("y1", String.valueOf((int) start.getY())),
                 new Attribute("x2", String.valueOf((int) end.getX())),
                 new Attribute("y2", String.valueOf((int) end.getY())),
                 new Attribute("stroke-width", String.valueOf(width)),
+                new Attribute("stroke", colour),
                 Attribute.className(present
                         ? "pathway-graph-edge"
                         : "pathway-graph-edge pathway-graph-edge--absent"));
@@ -327,12 +332,18 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 : band.ring;
     }
 
-    // The first band the node's age falls inside, or null where it has never changed.
+    // The first band the age falls inside, or null where it is not known.
     private static Band band(final NanoTime updated, final long now) {
         if (updated == null) {
             return null;
         }
         final long age = now - updated.toEpochMillis();
+        if (age < 0) {
+            // After the moment being shown. Only reaches here for a time the model holds now rather
+            // than one the stored changes give — when a route was last taken is not wound back with
+            // the model, so as at an earlier moment it is simply not known.
+            return null;
+        }
         for (final Band band : BANDS) {
             if (age < band.within) {
                 return band;

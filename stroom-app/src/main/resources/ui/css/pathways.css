@@ -1028,9 +1028,9 @@
 /* Faint, so the shape of the model reads without the joins competing with the nodes. currentColor
  * rather than a fixed colour: the panel is dark in one theme and light in the other, and a colour
  * picked for either disappears into the other. */
-/* Width is not set here: the renderer gives each line one of its own, saying how much traffic reaches
- * what it points at, and a rule here would override it. */
+/* Neither width nor colour is set here: the renderer gives each line both of its own — how much
+ * traffic reaches what it points at, and when that last happened — and a rule here would override
+ * them. Held back a little so the joins do not compete with the nodes they join. */
 .pathway-graph .pathway-curves svg line {
-    stroke: currentColor;
-    opacity: 0.35;
+    opacity: 0.6;
 }
