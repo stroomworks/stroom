@@ -50,11 +50,13 @@ import java.util.Set;
 class PathwayGraphRenderer implements PathwayRenderer {
 
     private static final int RING = 170;
-    // Room outside the furthest ring for a node's name, which is written away from the middle and so
-    // runs outwards from the last ring rather than inwards. A node at the edge reaches its own radius
-    // plus the gap plus the width its name is clamped to (26 + 6 + 110 in the stylesheet), and
-    // anything past the edge of the canvas cannot be scrolled to because it is not in it.
-    private static final int MARGIN = 150;
+    // Room outside the outermost nodes. Wider to the sides than above and below, because a name is
+    // written beside its node rather than over it: sideways a node reaches its own radius plus the
+    // gap plus the width its name is clamped to (26 + 6 + 110 in the stylesheet), while upwards it
+    // reaches only its own radius. One margin for both would leave a strip of dead space along the
+    // top and bottom that nothing can ever occupy.
+    private static final int SIDE_MARGIN = 150;
+    private static final int END_MARGIN = 40;
     private static final int MIN_RADIUS = 6;
     private static final int MAX_RADIUS = 26;
     private static final int MIN_EDGE = 1;
@@ -120,8 +122,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final Map<String, NodeUsage> usage = request.getUsage();
         leftOfCentre.clear();
         final Map<String, Point> places = new HashMap<>();
-        final int size = centre(depth(root, 0)) * 2;
-        place(root, 0, 0, 2 * Math.PI, places, size / 2);
+        place(root, 0, 0, 2 * Math.PI, places, 0);
+
+        // Only part of the outermost ring is ever occupied — a branch that goes deep reaches it, the
+        // rest stop short — so a canvas sized to the ring is mostly empty. Sized to what was actually
+        // placed instead, with room for the names that hang off it.
+        final Size size = new Size(places);
+        places.replaceAll((uuid, at) -> new Point(at.getX() - size.left, at.getY() - size.top));
 
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
@@ -132,8 +139,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.elem(svg -> svg.append(edges.toSafeHtml()),
                         SafeHtmlUtil.from("svg"),
-                        new Attribute("width", String.valueOf(size)),
-                        new Attribute("height", String.valueOf(size)),
+                        new Attribute("width", String.valueOf(size.width)),
+                        new Attribute("height", String.valueOf(size.height)),
                         new Attribute("xmlns", "http://www.w3.org/2000/svg")),
                 Attribute.className("pathway-curves"));
         canvas.div(d -> d.append(markers.toSafeHtml()), Attribute.className("pathway-nodes"));
@@ -144,12 +151,12 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final HtmlBuilder scaled = new HtmlBuilder();
         scaled.div(d -> d.append(canvas.toSafeHtml()),
                 Attribute.className("pathway-graph-canvas"),
-                Attribute.style(square(size)));
+                Attribute.style(size.style()));
 
         final HtmlBuilder hb = new HtmlBuilder();
         hb.div(d -> d.div(inner -> inner.append(scaled.toSafeHtml()),
                         Attribute.className("pathway-graph-sizer"),
-                        Attribute.style(square(size))),
+                        Attribute.style(size.style())),
                 Attribute.className("pathway pathway-graph"));
         // Beside the drawing rather than inside it, so it stays put while the drawing is scrolled and
         // is not scaled along with it when the view is zoomed.
@@ -208,9 +215,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         }, Attribute.className("pathway-graph-key-scale"));
     }
 
-    private static String square(final int size) {
-        return "width: " + size + "px; height: " + size + "px;";
-    }
+
 
     // Each node takes the slice of its parent's arc that its share of the leaves below it comes to, so
     // a branch with more under it is given more room and no two nodes are placed on top of each other.
@@ -385,16 +390,43 @@ class PathwayGraphRenderer implements PathwayRenderer {
         return count;
     }
 
-    private static int depth(final PathNode node, final int soFar) {
-        int deepest = soFar;
-        for (final PathNode child : NullSafe.list(node.getChildren())) {
-            deepest = Math.max(deepest, depth(child, soFar + 1));
-        }
-        return deepest;
-    }
 
-    private static int centre(final int depth) {
-        return (depth * RING) + MARGIN;
+
+
+
+
+    // --------------------------------------------------------------------------------
+
+
+    // What the drawing came to, and where it starts. Worked out from the nodes once they are placed,
+    // because where a ring is occupied depends on the shape of the model rather than on its depth.
+    private static class Size {
+
+        private final int width;
+        private final int height;
+        private final double left;
+        private final double top;
+
+        private Size(final Map<String, Point> places) {
+            double minX = 0;
+            double maxX = 0;
+            double minY = 0;
+            double maxY = 0;
+            for (final Point at : places.values()) {
+                minX = Math.min(minX, at.getX());
+                maxX = Math.max(maxX, at.getX());
+                minY = Math.min(minY, at.getY());
+                maxY = Math.max(maxY, at.getY());
+            }
+            this.left = minX - SIDE_MARGIN;
+            this.top = minY - END_MARGIN;
+            this.width = (int) Math.round((maxX - minX) + (SIDE_MARGIN * 2));
+            this.height = (int) Math.round((maxY - minY) + (END_MARGIN * 2));
+        }
+
+        private String style() {
+            return "width: " + width + "px; height: " + height + "px;";
+        }
     }
 
 

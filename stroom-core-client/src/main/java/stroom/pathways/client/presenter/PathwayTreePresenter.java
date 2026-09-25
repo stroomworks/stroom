@@ -460,6 +460,12 @@ public class PathwayTreePresenter
         // measures and this stays the drawing's own size however far it has been zoomed.
         final int width = canvas.getOffsetWidth();
         final int height = canvas.getOffsetHeight();
+        if (width <= 0 || height <= 0) {
+            // Nothing laid out to measure yet. Sizing the box to nothing would leave the drawing with
+            // nowhere to scroll, so this waits and asks again rather than settling on zero.
+            Scheduler.get().scheduleDeferred(this::applyZoom);
+            return;
+        }
         canvas.getStyle().setProperty("transform", "scale(" + zoom + ")");
         sizer.getStyle().setWidth(width * zoom, Unit.PX);
         sizer.getStyle().setHeight(height * zoom, Unit.PX);
@@ -495,6 +501,12 @@ public class PathwayTreePresenter
         final boolean samePathway = this.pathway != null
                                     && pathway != null
                                     && Objects.equals(this.pathway.getName(), pathway.getName());
+
+        if (!samePathway) {
+            // A different model, which may be a different size altogether. Keeping the zoom set for
+            // the last one would show this one at whatever suited that, so it starts as drawn.
+            zoom = 1;
+        }
 
         this.pathway = pathway;
         this.selectedNode = null;
@@ -750,14 +762,39 @@ public class PathwayTreePresenter
      * against one already thrown away, which is why the middle was only sometimes found.
      */
     private void centre() {
-        final Element root = html.getElement().getFirstChildElement();
-        if (root == null || root.getClientWidth() <= 0) {
+        final Element scroller = html.getElement().getFirstChildElement();
+        if (scroller == null || scroller.getClientWidth() <= 0) {
             // Nothing laid out to measure against yet. Still wanted, so the next draw tries again.
             return;
         }
-        root.setScrollLeft((root.getScrollWidth() - root.getClientWidth()) / 2);
-        root.setScrollTop((root.getScrollHeight() - root.getClientHeight()) / 2);
+
+        // On the root itself rather than on the middle of the drawing. The drawing is only as large as
+        // what was placed in it, and a model that reaches further one way than another does not put
+        // its root in the middle of that.
+        final Element node = rootElement();
+        if (node == null) {
+            scroller.setScrollLeft((scroller.getScrollWidth() - scroller.getClientWidth()) / 2);
+            scroller.setScrollTop((scroller.getScrollHeight() - scroller.getClientHeight()) / 2);
+        } else {
+            // Scaled, because what an element measures is what it was drawn at rather than what it is
+            // shown at.
+            final double x = (node.getOffsetLeft() + (node.getOffsetWidth() / 2.0)) * zoom;
+            final double y = (node.getOffsetTop() + (node.getOffsetHeight() / 2.0)) * zoom;
+            scroller.setScrollLeft((int) Math.round(x - (scroller.getClientWidth() / 2.0)));
+            scroller.setScrollTop((int) Math.round(y - (scroller.getClientHeight() / 2.0)));
+        }
         centreWanted = false;
+    }
+
+    private Element rootElement() {
+        final PathNode root = layout == null
+                ? NullSafe.get(pathway, Pathway::getRoot)
+                : layout;
+        if (root == null) {
+            return null;
+        }
+        return ElementUtil.findChild(html.getElement(), element ->
+                root.getUuid().equals(element.getAttribute("uuid")));
     }
 
     // The changes against the nodes the model actually holds, worked out once the model has been read
