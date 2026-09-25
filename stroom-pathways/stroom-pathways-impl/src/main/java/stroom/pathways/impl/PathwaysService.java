@@ -27,9 +27,12 @@ import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.UpdatePathway;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.PathwayUsage;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+
+import java.util.List;
 
 @Singleton
 public class PathwaysService {
@@ -61,6 +64,14 @@ public class PathwaysService {
             throw new DocumentNotFoundException(criteria.getPathwaysDocRef());
         }
         return shardedPathwayReader.findMutations(pathwaysDoc, criteria);
+    }
+
+    public List<PathwayUsage> findUsage(final FindPathwayMutationCriteria criteria) {
+        final PathwaysDoc pathwaysDoc = pathwaysStore.readDocument(criteria.getPathwaysDocRef());
+        if (pathwaysDoc == null) {
+            throw new DocumentNotFoundException(criteria.getPathwaysDocRef());
+        }
+        return shardedPathwayReader.findUsage(pathwaysDoc, criteria);
     }
 
     /**

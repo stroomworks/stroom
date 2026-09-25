@@ -27,9 +27,11 @@ import stroom.pathways.shared.FindPathwayMutationCriteria;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
+import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.svg.client.Preset;
 import stroom.svg.shared.SvgImage;
 import stroom.util.shared.CriteriaFieldSort;
@@ -107,6 +109,11 @@ public class PathwayTreePresenter
     // not move the ones around it. Null where the model on show is the current one and is its own
     // answer.
     private PathNode layout;
+    private List<PathwayUsage> usage = Collections.emptyList();
+    // The change being wound back to, which says which reading applies.
+    private long upTo;
+    private List<PathwayMutation> history = Collections.emptyList();
+    private long changeCeiling;
     // Nodes to draw attention to, as path keys. Held rather than applied once, because the drawing is
     // rebuilt whenever the model is and the elements it was put on go with it.
     private Set<String> highlighted = Collections.emptySet();
@@ -456,10 +463,31 @@ public class PathwayTreePresenter
      */
     public void setHistory(final List<PathwayMutation> history) {
         historyFor = NullSafe.get(pathway, Pathway::getName);
+        this.history = NullSafe.list(history);
+        changesByPath = countChanges(upTo);
+
+        // What the sizes are measured against, taken over the whole history rather than the part being
+        // shown. Measured against the part being shown, the largest node of the moment would always be
+        // drawn at full size, so winding back would rescale the picture rather than shrink it.
+        long ceiling = 0;
+        for (final NodeChange change : countChanges(0).values()) {
+            ceiling = Math.max(ceiling, change.getCount());
+        }
+        changeCeiling = ceiling;
+    }
+
+    // What each node had changed by a point in the history, by path. Kept by path rather than by uuid
+    // because the nodes are not known until the model is read, and the model read may not be the one
+    // that was on show when the history was handed over.
+    private Map<String, NodeChange> countChanges(final long upToSequence) {
         final Map<String, Long> newest = new HashMap<>();
         final Map<String, Long> counts = new HashMap<>();
         final Map<String, NanoTime> times = new HashMap<>();
-        for (final PathwayMutation mutation : NullSafe.list(history)) {
+        for (final PathwayMutation mutation : history) {
+            if (upToSequence > 0 && mutation.getSequence() > upToSequence) {
+                continue;
+            }
+
             final String key = key(mutation.getPath());
             final Long count = counts.get(key);
             counts.put(key, count == null
@@ -474,10 +502,38 @@ public class PathwayTreePresenter
             }
         }
 
-        // Kept by path rather than by uuid. The nodes are not known until the model is read, and the
-        // model read may not be the one that was on show when this was handed over.
-        changesByPath = new HashMap<>();
-        counts.forEach((key, count) -> changesByPath.put(key, new NodeChange(count, times.get(key))));
+        final Map<String, NodeChange> byPath = new HashMap<>();
+        counts.forEach((key, count) -> byPath.put(key, new NodeChange(count, times.get(key))));
+        return byPath;
+    }
+
+    /**
+     * Readings of how much each node had been used, one per trace that changed the model. Given rather
+     * than fetched, like the changes themselves.
+     */
+    public void setUsage(final List<PathwayUsage> usage) {
+        this.usage = NullSafe.list(usage);
+    }
+
+    // The newest reading taken at or before the moment being shown, by node uuid. Empty while the
+    // current model is on show: the nodes already say how much they have been used.
+    private Map<String, NodeUsage> usageAsAt() {
+        final Map<String, NodeUsage> byUuid = new HashMap<>();
+        if (asAt <= 0 || upTo <= 0) {
+            return byUuid;
+        }
+
+        PathwayUsage newest = null;
+        for (final PathwayUsage reading : usage) {
+            if (reading.getSequence() <= upTo
+                && (newest == null || reading.getSequence() > newest.getSequence())) {
+                newest = reading;
+            }
+        }
+        if (newest != null) {
+            NullSafe.list(newest.getNodes()).forEach(node -> byUuid.put(node.getNodeUuid(), node));
+        }
+        return byUuid;
     }
 
     /**
@@ -493,10 +549,14 @@ public class PathwayTreePresenter
      * ago a node changed is measured from here, so winding back an hour does not age every node by an
      * hour.
      */
-    public void setAsAt(final NanoTime asAt) {
+    public void setAsAt(final NanoTime asAt, final Long upTo) {
         this.asAt = asAt == null
                 ? 0L
                 : asAt.toEpochMillis();
+        this.upTo = upTo == null
+                ? 0L
+                : upTo;
+        changesByPath = countChanges(this.upTo);
     }
 
     private static String key(final List<String> path) {
@@ -549,9 +609,14 @@ public class PathwayTreePresenter
         if (pathway != null && pathway.getRoot() != null) {
             addNode(pathway.getRoot());
         }
-        html.setHTML(renderer.render(new RenderRequest(pathway, layout, byUuid(), asAt > 0
-                ? asAt
-                : System.currentTimeMillis())));
+        html.setHTML(renderer.render(new RenderRequest(pathway, layout, byUuid(), usageAsAt(),
+                asAt > 0
+                        ? asAt
+                        : System.currentTimeMillis(),
+                changeCeiling,
+                mostUsed(layout == null
+                        ? NullSafe.get(pathway, Pathway::getRoot)
+                        : layout))));
         if (renderer.isCentred()) {
             applyZoom();
             applyKey();
@@ -577,6 +642,19 @@ public class PathwayTreePresenter
         }
         applyHighlight();
         showInfo();
+    }
+
+    // The most any one node has been used, over the model as it stands rather than the part on show,
+    // so that winding back thins the lines rather than rescaling them.
+    private static long mostUsed(final PathNode node) {
+        if (node == null) {
+            return 0L;
+        }
+        long most = node.getTimesUsed();
+        for (final PathNode child : NullSafe.list(node.getChildren())) {
+            most = Math.max(most, mostUsed(child));
+        }
+        return most;
     }
 
     // The changes against the nodes the model actually holds, worked out once the model has been read

@@ -17,6 +17,7 @@
 package stroom.pathways.client.presenter;
 
 import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.util.shared.NullSafe;
@@ -116,6 +117,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         collect(shown, present);
 
         final Map<String, NodeChange> changes = request.getChanges();
+        final Map<String, NodeUsage> usage = request.getUsage();
         leftOfCentre.clear();
         final Map<String, Point> places = new HashMap<>();
         final int size = centre(depth(root, 0)) * 2;
@@ -123,8 +125,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
-        draw(root, places, edges, markers, new Scale(root, changes), request.getAsAt(), changes,
-                present);
+        draw(root, places, edges, markers,
+                new Scale(request.getChangeCeiling(), request.getUsageCeiling()),
+                request.getAsAt(), changes, present, usage);
 
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.elem(svg -> svg.append(edges.toSafeHtml()),
@@ -247,7 +250,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
                       final Scale scale,
                       final long now,
                       final Map<String, NodeChange> changes,
-                      final Set<String> present) {
+                      final Set<String> present,
+                      final Map<String, NodeUsage> usage) {
         final boolean here = present.contains(node.getUuid());
         final Point at = places.get(node.getUuid());
         final NodeChange change = changes.get(node.getUuid());
@@ -284,10 +288,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
             // As thick as the traffic reaching what it points at, and coloured by how recently that
             // traffic last came through, on the same scale as the nodes. So the thick bright lines
             // are the routes being taken now and the thin dim ones are the routes that have stopped.
-            line(edges, at, childAt, scale.edge(child.getTimesUsed()),
+            line(edges, at, childAt, scale.edge(timesUsed(child, usage)),
                     present.contains(child.getUuid()),
-                    colour(child.getLastUsedTime(), now));
-            draw(child, places, edges, markers, scale, now, changes, present);
+                    colour(lastUsed(child, usage), now));
+            draw(child, places, edges, markers, scale, now, changes, present, usage);
         }
     }
 
@@ -309,6 +313,22 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 Attribute.className(present
                         ? "pathway-graph-edge"
                         : "pathway-graph-edge pathway-graph-edge--absent"));
+    }
+
+    // What the reading kept at the moment being shown says, or what the node says where there is no
+    // reading — which is the case when the current model is on show, there being nothing to wind back.
+    private static long timesUsed(final PathNode node, final Map<String, NodeUsage> usage) {
+        final NodeUsage reading = usage.get(node.getUuid());
+        return reading == null
+                ? node.getTimesUsed()
+                : reading.getTimesUsed();
+    }
+
+    private static NanoTime lastUsed(final PathNode node, final Map<String, NodeUsage> usage) {
+        final NodeUsage reading = usage.get(node.getUuid());
+        return reading == null
+                ? node.getLastUsedTime()
+                : reading.getLastUsedTime();
     }
 
     private static void collect(final PathNode node, final Set<String> uuids) {
@@ -339,9 +359,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
         }
         final long age = now - updated.toEpochMillis();
         if (age < 0) {
-            // After the moment being shown. Only reaches here for a time the model holds now rather
-            // than one the stored changes give — when a route was last taken is not wound back with
-            // the model, so as at an earlier moment it is simply not known.
+            // After the moment being shown, which the readings taken as the model changed should have
+            // ruled out. Not known rather than brand new.
             return null;
         }
         for (final Band band : BANDS) {
@@ -380,18 +399,18 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // --------------------------------------------------------------------------------
 
 
-    // How the model's own largest numbers turn into sizes. Scaled against the biggest in this model
-    // rather than a fixed number, so a model whose counts are all small is still readable, and square
-    // rooted because the counts run over orders of magnitude — on a straight scale everything but the
-    // biggest would be drawn at the minimum.
+    // How the numbers turn into sizes. Scaled against the biggest this model has ever reached rather
+    // than a fixed number, so a model whose counts are all small is still readable, and square rooted
+    // because the counts run over orders of magnitude — on a straight scale everything but the biggest
+    // would be drawn at the minimum.
     private static class Scale {
 
         private final long mostChanged;
         private final long mostUsed;
 
-        private Scale(final PathNode root, final Map<String, NodeChange> changes) {
-            this.mostChanged = mostChanged(root, changes);
-            this.mostUsed = mostUsed(root);
+        private Scale(final long mostChanged, final long mostUsed) {
+            this.mostChanged = mostChanged;
+            this.mostUsed = mostUsed;
         }
 
         private int radius(final NodeChange change) {
@@ -410,21 +429,6 @@ class PathwayGraphRenderer implements PathwayRenderer {
             return (int) Math.round(Math.sqrt((double) value / most) * range);
         }
 
-        private static long mostChanged(final PathNode node, final Map<String, NodeChange> changes) {
-            long most = NullSafe.getOrElse(changes.get(node.getUuid()), NodeChange::getCount, 0L);
-            for (final PathNode child : NullSafe.list(node.getChildren())) {
-                most = Math.max(most, mostChanged(child, changes));
-            }
-            return most;
-        }
-
-        private static long mostUsed(final PathNode node) {
-            long most = node.getTimesUsed();
-            for (final PathNode child : NullSafe.list(node.getChildren())) {
-                most = Math.max(most, mostUsed(child));
-            }
-            return most;
-        }
     }
 
 

@@ -26,6 +26,7 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.planb.impl.dao.ShardKeyRouter;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.shared.SharedFileStoreSettings;
@@ -69,6 +70,9 @@ public class ShardedPathwayReader {
     // Separates the pathway name from the rest of a mutation key. Must match TraceProcessor, which
     // writes them.
     static final char KEY_SEPARATOR = '\0';
+    // Usage readings sit under the same pathway key as its changes, marked apart so that
+    // reading one does not walk over the other.
+    static final char USAGE_SEPARATOR = '\1';
 
     private static final Comparator<PathwaySummary> BY_NAME =
             Comparator.comparing(PathwaySummary::getName, Comparator.nullsFirst(Comparator.naturalOrder()));
@@ -178,6 +182,34 @@ public class ShardedPathwayReader {
     // A pathway that has never recorded the time sorts before one that has, rather than blowing up.
     private static Comparator<PathwaySummary> byTime(final Function<PathwaySummary, NanoTime> time) {
         return Comparator.comparing(time, Comparator.nullsFirst(Comparator.naturalOrder()));
+    }
+
+    /**
+     * How much each node had been used at each point this pathway's history can be wound back to.
+     *
+     * <p>Not paged and not sorted: a reading is kept only where a trace changed the model, so there
+     * are as many as there are traces that taught it something, and the browser holds the lot to
+     * colour the drawing wherever the reader winds it back to.
+     */
+    public List<PathwayUsage> findUsage(final PathwaysDoc doc,
+                                        final FindPathwayMutationCriteria criteria) {
+        final SharedFileStoreSettings settings = doc.getSharedFileStore();
+        final String name = criteria.getPathwayName();
+        if (settings == null || NullSafe.isBlankString(settings.getSharedPath())
+            || NullSafe.isBlankString(name)) {
+            return List.of();
+        }
+
+        final int shard = ShardKeyRouter.computeShardIndex(name, shardCountOf(settings));
+        final List<PathwayUsage> usage = new ArrayList<>();
+        readShard(doc, shard, db -> {
+            withKey(name + USAGE_SEPARATOR, prefix ->
+                    db.getMutations().iteratePrefix(prefix, (key, val) ->
+                            usage.add(pathwaySerde.readUsage(val))));
+            return null;
+        });
+        usage.sort(Comparator.comparingLong(PathwayUsage::getSequence));
+        return usage;
     }
 
     /**

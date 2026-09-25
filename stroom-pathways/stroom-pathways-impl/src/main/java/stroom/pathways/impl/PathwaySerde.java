@@ -40,10 +40,12 @@ import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.NamesPathKey;
 import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
+import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -87,6 +89,7 @@ public class PathwaySerde {
      * by its contents alone. Raise this whenever a field is added, removed or moved.
      */
     private static final byte MUTATION_VERSION = 1;
+    private static final byte USAGE_VERSION = 1;
 
     private final ByteBufferFactory byteBufferFactory;
 
@@ -410,6 +413,30 @@ public class PathwaySerde {
             writeString(entry.getKey(), output);
             writeConstraint(entry.getValue(), output);
         }
+    }
+
+    public void writeUsage(final PathwayUsage usage, final Consumer<ByteBuffer> consumer) {
+        try (final ByteBufferPoolOutput output =
+                new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeByte(USAGE_VERSION);
+            output.writeLong(usage.getSequence());
+            writeList(usage.getNodes(), output, (node, out) -> {
+                out.writeString(node.getNodeUuid());
+                out.writeLong(node.getTimesUsed());
+                writeNullableNanoTime(node.getLastUsedTime(), out);
+            });
+            consumer.accept(output.getByteBuffer().flip());
+        }
+    }
+
+    public PathwayUsage readUsage(final ByteBuffer byteBuffer) {
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), USAGE_VERSION, "pathway usage", "mutations");
+        final long sequence = input.readLong();
+        return new PathwayUsage(sequence, readList(input, in -> new NodeUsage(
+                in.readString(),
+                in.readLong(),
+                readNullableNanoTime(in))));
     }
 
     private void writeConstraint(final Constraint constraint, final Output output) {

@@ -306,10 +306,34 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                     }
                     history = result.getValues();
                     pathwayTreePresenter.setHistory(history);
+                    fetchUsage(docRef, name);
                     historyComplete = history.size() >= NullSafe.getOrElse(
                             result.getPageResponse(), PageResponse::getTotal, 0L);
                     mutationListPresenter.setData(history);
                     showModel();
+                })
+                .onFailure(new DefaultErrorHandler(this, null))
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    // How much each node had been used at each point the model can be wound back to. Fetched apart
+    // from the changes because there is one reading per trace that changed the model rather than one
+    // per change, and the drawing needs all of them rather than a page.
+    private void fetchUsage(final DocRef docRef, final String name) {
+        final FindPathwayMutationCriteria criteria = new FindPathwayMutationCriteria(
+                new PageRequest(0, MAX_HISTORY),
+                List.of(new CriteriaFieldSort(PathwayMutation.FIELD_TIME, false, false)),
+                docRef,
+                name);
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.findUsage(criteria))
+                .onSuccess(usage -> {
+                    if (pathway != null && name.equals(pathway.getName())) {
+                        pathwayTreePresenter.setUsage(usage);
+                        showModel();
+                    }
                 })
                 .onFailure(new DefaultErrorHandler(this, null))
                 .taskMonitorFactory(this)
@@ -332,26 +356,24 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         final Long selected = mutationListPresenter.getSelectedSequence();
         if (selected == null || !historyComplete) {
             pathwayTreePresenter.setHistory(history);
-            pathwayTreePresenter.setAsAt(null);
+            pathwayTreePresenter.setAsAt(null, null);
             pathwayTreePresenter.read(pathway);
             return;
         }
 
         final List<PathwayMutation> later = new ArrayList<>();
-        final List<PathwayMutation> upToHere = new ArrayList<>();
         for (final PathwayMutation mutation : history) {
             if (mutation.getSequence() > selected) {
                 later.add(mutation);
-            } else {
-                upToHere.add(mutation);
             }
         }
 
-        // The model is being shown as it stood at the selected change, so what is known about how much
-        // each node had changed by then, and how long ago, has to stop there as well. Handed the whole
-        // history it would colour the model by changes that had not happened yet.
-        pathwayTreePresenter.setHistory(upToHere);
-        pathwayTreePresenter.setAsAt(mutationListPresenter.getSelectedTime());
+        // The whole history, with where the replay stands said separately: what each node had changed
+        // by that point is counted from it, while what the sizes are measured against stays the most
+        // any node has ever changed. Handed only the part up to here, winding back would rescale the
+        // picture rather than shrink it.
+        pathwayTreePresenter.setHistory(history);
+        pathwayTreePresenter.setAsAt(mutationListPresenter.getSelectedTime(), selected);
 
         final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
         pathwayTreePresenter.read(root == null

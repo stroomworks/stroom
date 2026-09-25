@@ -21,10 +21,12 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
+import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.planb.impl.dao.trace.PathwaysDb;
@@ -32,11 +34,13 @@ import stroom.planb.impl.dao.trace.PathwaysDb.SimpleDb;
 import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -47,6 +51,8 @@ import java.util.function.Function;
 public class TraceProcessor {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TraceProcessor.class);
+    // Distinguishes a usage reading from a change under the same pathway key.
+    private static final byte USAGE_MARKER = 1;
     private static final ByteBuffer PROCESSED = ByteBuffer.allocateDirect(0);
 
     private final ByteBuffers byteBuffers;
@@ -208,14 +214,15 @@ public class TraceProcessor {
 
             // In the same transaction as the model change they describe, so the two cannot disagree
             // and a batch that fails leaves neither.
-            writeMutations(writer, pathwaysDb, keyBytes, nodeMutator.getMutations());
+            writeMutations(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode);
         });
     }
 
     private void writeMutations(final LmdbWriter writer,
                                 final PathwaysDb pathwaysDb,
                                 final byte[] pathwayKey,
-                                final List<PathwayMutation> mutations) {
+                                final List<PathwayMutation> mutations,
+                                final PathNode root) {
         if (mutations.isEmpty()) {
             return;
         }
@@ -229,6 +236,41 @@ public class TraceProcessor {
             byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
                     pathwaySerde.writeMutation(numbered, valueByteBuffer ->
                             db.insert(writer, keyByteBuffer, valueByteBuffer)));
+        }
+
+        writeUsage(writer, db, pathwayKey, sequence, root);
+    }
+
+    /**
+     * How much every node had been used once this trace was done with the model.
+     *
+     * <p>Once for the trace, not once for each change it made — a trace that moved nine constraints
+     * leaves nine changes and a single reading. Nothing else records it: how often a node has been
+     * used is what the model holds now, and a trace that teaches the model nothing changes it without
+     * leaving any trace of having done so. Without this a replay can say what the model allowed at a
+     * point but not how busy it was.
+     *
+     * <p>Numbered with the last change the trace made, so winding back to any change finds the newest
+     * reading at or before it.
+     */
+    private void writeUsage(final LmdbWriter writer,
+                            final SimpleDb db,
+                            final byte[] pathwayKey,
+                            final long sequence,
+                            final PathNode root) {
+        final List<NodeUsage> nodes = new ArrayList<>();
+        collectUsage(root, nodes);
+
+        final byte[] key = usageKey(pathwayKey, sequence);
+        byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
+                pathwaySerde.writeUsage(new PathwayUsage(sequence, nodes), valueByteBuffer ->
+                        db.insert(writer, keyByteBuffer, valueByteBuffer)));
+    }
+
+    private static void collectUsage(final PathNode node, final List<NodeUsage> nodes) {
+        if (node != null) {
+            nodes.add(new NodeUsage(node.getUuid(), node.getTimesUsed(), node.getLastUsedTime()));
+            NullSafe.list(node.getChildren()).forEach(child -> collectUsage(child, nodes));
         }
     }
 
@@ -249,6 +291,16 @@ public class TraceProcessor {
     // Pathway first, so one model's changes are a single run of keys, then where each sits in that
     // history. Big endian because LMDB orders keys by their bytes, and that is the order a replay
     // walks them in.
+    // Alongside the changes but under a marker of their own, so that reading a pathway's changes does
+    // not walk over these as well.
+    private static byte[] usageKey(final byte[] pathwayKey, final long sequence) {
+        final ByteBuffer buffer = ByteBuffer.allocate(pathwayKey.length + 1 + Long.BYTES);
+        buffer.put(pathwayKey);
+        buffer.put(USAGE_MARKER);
+        buffer.putLong(sequence);
+        return buffer.array();
+    }
+
     private static byte[] mutationKey(final byte[] pathwayKey, final long sequence) {
         final ByteBuffer buffer = ByteBuffer.allocate(pathwayKey.length + 1 + Long.BYTES);
         buffer.put(pathwayKey);

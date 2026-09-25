@@ -16,6 +16,7 @@
 
 package stroom.pathways.client.presenter;
 
+import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 
@@ -30,16 +31,25 @@ class RenderRequest {
     private final Pathway pathway;
     private final PathNode layout;
     private final Map<String, NodeChange> changes;
+    private final Map<String, NodeUsage> usage;
     private final long asAt;
+    private final long changeCeiling;
+    private final long usageCeiling;
 
     RenderRequest(final Pathway pathway,
                   final PathNode layout,
                   final Map<String, NodeChange> changes,
-                  final long asAt) {
+                  final Map<String, NodeUsage> usage,
+                  final long asAt,
+                  final long changeCeiling,
+                  final long usageCeiling) {
         this.pathway = pathway;
         this.layout = layout;
         this.changes = changes;
+        this.usage = usage;
         this.asAt = asAt;
+        this.changeCeiling = changeCeiling;
+        this.usageCeiling = usageCeiling;
     }
 
     /**
@@ -66,6 +76,31 @@ class RenderRequest {
      */
     Map<String, NodeChange> getChanges() {
         return changes;
+    }
+
+    /**
+     * How much each node had been used at the moment being shown, by node uuid. Taken from the reading
+     * kept whenever a trace changed the model, because the node itself only knows how much it has been
+     * used now — a node absent from this has no reading at or before the moment being shown.
+     */
+    Map<String, NodeUsage> getUsage() {
+        return usage;
+    }
+
+    /**
+     * The most any one node has ever changed, and the most any one node has ever been used. What the
+     * sizes are measured against.
+     *
+     * <p>Taken over the whole history rather than over the part being shown. Measured against the
+     * part being shown, the largest node of the moment would always be drawn at full size, so winding
+     * back would rescale the picture rather than shrink it and nothing could be seen to grow.
+     */
+    long getChangeCeiling() {
+        return changeCeiling;
+    }
+
+    long getUsageCeiling() {
+        return usageCeiling;
     }
 
     /**

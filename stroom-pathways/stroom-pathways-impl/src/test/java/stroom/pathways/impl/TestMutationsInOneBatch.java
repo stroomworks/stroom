@@ -30,6 +30,7 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
+import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 
@@ -66,6 +67,7 @@ class TestMutationsInOneBatch {
     private static final String PING = "Ping";
     private static final String COMMIT = "Commit";
     private static final long BASE = 1_700_000_000_000_000_000L;
+    private static final byte MUTATION_MARKER = 0;
 
     @Test
     void everyChangeIsKeptAndNumberedInOrder(@TempDir final Path dir) {
@@ -212,6 +214,42 @@ class TestMutationsInOneBatch {
         throw new AssertionError("No child called " + name);
     }
 
+    @Test
+    void oneUsageReadingIsKeptPerChangingTrace(@TempDir final Path dir) {
+        // t2 and t4 repeat what is already known, so they teach the model nothing and leave nothing.
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "GET", 20, PING),
+                trace("t3", "POST", 90, PING, COMMIT),
+                trace("t4", "POST", 90, PING, COMMIT));
+
+        final List<PathwayUsage> readings = readUsage(dir);
+        assertThat(readings)
+                .as("one per trace that changed the model, not one per change it made")
+                .hasSize(2);
+
+        final PathwayUsage last = readings.get(readings.size() - 1);
+        assertThat(last.getNodes())
+                .as("every node of the model, so a replay can say how busy any of them was")
+                .hasSize(3);
+        assertThat(last.getNodes().get(0).getTimesUsed())
+                .as("the root, reached by all three traces applied by the time this was taken")
+                .isEqualTo(3);
+    }
+
+    private static List<PathwayUsage> readUsage(final Path dir) {
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+        final List<PathwayUsage> readings = new ArrayList<>();
+        try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
+            db.getMutations().iterate((key, val) -> {
+                if (key.get(key.limit() - Long.BYTES - 1) != MUTATION_MARKER) {
+                    readings.add(serde.readUsage(val));
+                }
+            });
+        }
+        return readings;
+    }
+
     // Applies each trace through TraceProcessor on one writer, as a batch does, then reads back what
     // was stored rather than what was recorded in memory.
     private static List<PathwayMutation> applyBatch(final Path dir, final Trace... traces) {
@@ -233,7 +271,14 @@ class TestMutationsInOneBatch {
 
         final List<PathwayMutation> stored = new ArrayList<>();
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
-            db.getMutations().iterate((key, val) -> stored.add(serde.readMutation(val)));
+            // The table holds a usage reading per changing trace as well as the changes themselves,
+            // marked apart in the key. Reading one as the other gets nonsense, so only the changes are
+            // taken here — which is what the prefix the application reads by does for it.
+            db.getMutations().iterate((key, val) -> {
+                if (key.get(key.limit() - Long.BYTES - 1) == MUTATION_MARKER) {
+                    stored.add(serde.readMutation(val));
+                }
+            });
         }
         return stored;
     }
