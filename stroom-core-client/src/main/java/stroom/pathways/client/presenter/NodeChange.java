@@ -19,7 +19,10 @@ package stroom.pathways.client.presenter;
 import stroom.pathways.shared.otel.trace.NanoTime;
 
 /**
- * How much one node has changed and when it last did, worked out from the stored changes.
+ * How many traces have changed one node, and when it last changed, worked out from the stored changes.
+ *
+ * <p>Traces rather than changes: a trace that widened nine of a node's constraints taught it one
+ * thing on one occasion, the same as a trace that widened one.
  *
  * <p>Neither is held on the node. The changes already say both, and holding them twice would let the
  * two differ.
@@ -34,6 +37,9 @@ class NodeChange {
         this.lastUpdated = lastUpdated;
     }
 
+    /**
+     * How many traces have changed this node since it was learnt.
+     */
     long getCount() {
         return count;
     }

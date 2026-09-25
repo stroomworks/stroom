@@ -27,6 +27,7 @@ import stroom.pathways.shared.FindPathwayMutationCriteria;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
+import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
@@ -546,18 +547,26 @@ public class PathwayTreePresenter
     // that was on show when the history was handed over.
     private Map<String, NodeChange> countChanges(final long upToSequence) {
         final Map<String, Long> newest = new HashMap<>();
-        final Map<String, Long> counts = new HashMap<>();
+        // The traces that changed each node, not the changes they made. A trace that widened nine of
+        // a node's constraints taught it one thing on one occasion, the same as a trace that widened
+        // one — which is how the pathway's own Times Updated counts, and how the list groups them.
+        final Map<String, Set<String>> traces = new HashMap<>();
         final Map<String, NanoTime> times = new HashMap<>();
         for (final PathwayMutation mutation : history) {
             if (upToSequence > 0 && mutation.getSequence() > upToSequence) {
                 continue;
             }
+            // Something coming into being is not it changing. The pathway's own Times Updated skips
+            // the trace that created it and a constraint's skips it being added, so a node counts the
+            // same way — a node just learnt has changed no times, however much was learnt about it.
+            if (MutationType.PATHWAY_ADDED.equals(mutation.getType())
+                || MutationType.NODE_ADDED.equals(mutation.getType())
+                || MutationType.CONSTRAINT_ADDED.equals(mutation.getType())) {
+                continue;
+            }
 
             final String key = key(mutation.getPath());
-            final Long count = counts.get(key);
-            counts.put(key, count == null
-                    ? 1L
-                    : count + 1);
+            traces.computeIfAbsent(key, k -> new HashSet<>()).add(mutation.getTraceId());
 
             final Long seen = newest.get(key);
             // By sequence rather than by time, because every change a trace made shares one timestamp.
@@ -568,7 +577,8 @@ public class PathwayTreePresenter
         }
 
         final Map<String, NodeChange> byPath = new HashMap<>();
-        counts.forEach((key, count) -> byPath.put(key, new NodeChange(count, times.get(key))));
+        traces.forEach((key, traceIds) ->
+                byPath.put(key, new NodeChange(traceIds.size(), times.get(key))));
         return byPath;
     }
 

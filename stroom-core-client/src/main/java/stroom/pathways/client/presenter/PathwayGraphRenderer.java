@@ -279,9 +279,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("uuid", node.getUuid()),
                 Attribute.style("left: " + ((int) at.getX() - radius) + "px;"
                                 + " top: " + ((int) at.getY() - radius) + "px;"),
+                // Both as at the moment being shown, not as they stand now: the reading kept when the
+                // model last changed says how much the node had been used by then.
                 Attribute.title(node.getName()
                                 + " — changed " + NullSafe.getOrElse(change, NodeChange::getCount, 0L)
-                                + " times, used " + node.getTimesUsed() + " times"));
+                                + " times, used " + timesUsed(node, usage) + " times"));
 
         for (final PathNode child : NullSafe.list(node.getChildren())) {
             final Point childAt = places.get(child.getUuid());
