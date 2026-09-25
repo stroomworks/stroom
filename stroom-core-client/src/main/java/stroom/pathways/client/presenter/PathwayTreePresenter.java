@@ -348,9 +348,27 @@ public class PathwayTreePresenter
     // Scaling the drawing rather than drawing it again: nothing about the model has changed, and a
     // redraw would lose what is selected and where the view had got to.
     private void zoom(final double by) {
-        final double wanted = zoom * by;
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, wanted));
+        final double was = zoom;
+        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * by));
+
+        // Whatever was in the middle of the view stays in the middle of it. Scaling moves everything
+        // away from the drawing's top left corner, so without this the picture slides out from under
+        // the reader towards the corner they are not looking at.
+        final Element root = html.getElement().getFirstChildElement();
+        if (root == null || was <= 0) {
+            applyZoom();
+            return;
+        }
+
+        // Where the middle of the view falls on the drawing, at the size the drawing is drawn rather
+        // than the size it is shown at.
+        final double middleX = (root.getScrollLeft() + (root.getClientWidth() / 2.0)) / was;
+        final double middleY = (root.getScrollTop() + (root.getClientHeight() / 2.0)) / was;
+
+        // The scrollbars only reach the new size once the box carrying it has been resized.
         applyZoom();
+        root.setScrollLeft((int) Math.round((middleX * zoom) - (root.getClientWidth() / 2.0)));
+        root.setScrollTop((int) Math.round((middleY * zoom) - (root.getClientHeight() / 2.0)));
     }
 
     private void applyZoom() {
