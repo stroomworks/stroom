@@ -76,7 +76,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final long DAY = 24 * HOUR;
     private static final String NEVER_CHANGED = "#5c6470";
     private static final String NEVER_CHANGED_RING = "#434955";
-    private static final String NEVER_CHANGED_LIGHT = "#7d838d";
+    private static final String NEVER_CHANGED_LIGHT = "#707781";
 
     // A colour of its own for each step rather than shades of one. Steps are a handful of named
     // things, not a measurement, so nothing is lost by their colours being unrelated — and four
@@ -88,10 +88,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // Ordered by how recent, newest first. Read by both the drawing and its key, so the two cannot
     // come to disagree.
     private static final List<Band> BANDS = List.of(
-            new Band(5 * MINUTE, "#e8543f", "#a8341f", "#ed7665", "in the last 5 minutes"),
-            new Band(HOUR, "#f0b429", "#a8780c", "#f3c354", "in the last hour"),
-            new Band(DAY, "#22a2a2", "#0f6e6e", "#4eb5b5", "in the last day"),
-            new Band(Long.MAX_VALUE, "#4a7fc1", "#2b5488", "#6e99cd", "over a day ago"));
+            new Band(5 * MINUTE, "#e8543f", "#a8341f", "#ea624e", "in the last 5 minutes"),
+            new Band(HOUR, "#f0b429", "#a8780c", "#f2bd43", "in the last hour"),
+            new Band(DAY, "#22a2a2", "#0f6e6e", "#3dadad", "in the last day"),
+            new Band(Long.MAX_VALUE, "#4a7fc1", "#2b5488", "#608ec8", "over a day ago"));
 
     static final String ZOOM_IN_ID = "pathwayZoomIn";
     static final String ZOOM_OUT_ID = "pathwayZoomOut";
@@ -543,10 +543,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
         private final long within;
         private final String colour;
         private final String ring;
-        // The same colour lightened a fifth of the way to white, for the end of a link where it
-        // leaves its parent. Given rather than worked out: on a dark panel, thinning a colour makes
-        // it darker, not lighter. The same fraction for every band, so the fade says the same thing
-        // whatever colour the link is.
+        // The same colour lightened, for the end of a link where it leaves its parent. Given rather
+        // than worked out, for two reasons: on a dark panel, thinning a colour makes it darker rather
+        // than lighter; and the same step toward white does not look the same step on every colour.
+        // Red turns pink and washes out well before blue or teal do, so it is lightened less — the
+        // aim is a fade that looks alike, not one that measures alike.
         private final String light;
         private final String label;
 
