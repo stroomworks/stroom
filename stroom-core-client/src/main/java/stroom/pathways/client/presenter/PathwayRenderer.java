@@ -16,7 +16,6 @@
 
 package stroom.pathways.client.presenter;
 
-import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Pathway;
 
 import com.google.gwt.safehtml.shared.SafeHtml;
@@ -44,10 +43,15 @@ import java.util.Map;
 interface PathwayRenderer {
 
     /**
-     * @param updateTimes when each node last changed, by node uuid, worked out from the stored
-     *                    changes. A node absent from it has not changed since it was learnt.
+     * @param changes how much each node has changed and when it last did, by node uuid, worked out
+     *                from the stored changes. A node absent from it has not changed since it was
+     *                learnt.
+     * @param asAt    the moment being looked at, which is the time of the change being wound back to
+     *                rather than the time now. How long ago a node changed has to be measured from
+     *                the same point the model is being shown at, or a model wound back an hour shows
+     *                every node as an hour staler than it was.
      */
-    SafeHtml render(Pathway pathway, Map<String, NanoTime> updateTimes);
+    SafeHtml render(Pathway pathway, Map<String, NodeChange> changes, long asAt);
 
     /**
      * Whether the drawing opens in the middle rather than at its top left. A drawing that puts the

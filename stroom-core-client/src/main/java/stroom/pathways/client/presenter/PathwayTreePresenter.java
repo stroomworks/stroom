@@ -61,9 +61,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class PathwayTreePresenter
@@ -75,6 +77,7 @@ public class PathwayTreePresenter
     private static final int TREE_MIN_WIDTH = 240;
     private static final String ATTRIBUTE_PREFIX = "attribute.";
     private static final String SELECTED_CLASS = "pathway-nodeName--selected";
+    private static final String HIGHLIGHT_CLASS = "pathway-node--changed";
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final double ZOOM_STEP = 1.25;
@@ -93,9 +96,16 @@ public class PathwayTreePresenter
     private final PathwayRenderer treeRenderer = new PathwayTreeRenderer();
     private final PathwayRenderer graphRenderer = new PathwayGraphRenderer();
     private PathwayRenderer renderer = treeRenderer;
-    // When each node last changed, by uuid. Worked out from the stored changes rather than held on the
-    // node: the changes already say it, and holding it twice would let the two differ.
-    private Map<String, NanoTime> updateTimes = Collections.emptyMap();
+    // How much each node has changed and when it last did, by uuid. Worked out from the stored changes
+    // rather than held on the node: the changes already say it, and holding it twice would let the two
+    // differ.
+    private Map<String, NodeChange> changesByPath = Collections.emptyMap();
+    // The moment being looked at. Zero while the model on show is the current one, in which case it
+    // is the time now.
+    private long asAt;
+    // Nodes to draw attention to, as path keys. Held rather than applied once, because the drawing is
+    // rebuilt whenever the model is and the elements it was put on go with it.
+    private Set<String> highlighted = Collections.emptySet();
     private double zoom = 1;
     private boolean showKey;
     // Where to ask for the changes if nothing hands them over. The view around this one may already
@@ -401,6 +411,16 @@ public class PathwayTreePresenter
     }
 
     /**
+     * The nodes to draw attention to when the model is next read — the ones a change being looked at
+     * touched. They are picked out for a moment rather than marked, because it is what just happened
+     * that is worth seeing, not a state the node is in.
+     */
+    public void setHighlighted(final List<List<String>> paths) {
+        highlighted = new HashSet<>();
+        NullSafe.list(paths).forEach(path -> highlighted.add(key(path)));
+    }
+
+    /**
      * Which pathways document the model on show belongs to, so the changes behind it can be asked for
      * where nothing hands them over.
      */
@@ -415,9 +435,15 @@ public class PathwayTreePresenter
     public void setHistory(final List<PathwayMutation> history) {
         historyFor = NullSafe.get(pathway, Pathway::getName);
         final Map<String, Long> newest = new HashMap<>();
+        final Map<String, Long> counts = new HashMap<>();
         final Map<String, NanoTime> times = new HashMap<>();
         for (final PathwayMutation mutation : NullSafe.list(history)) {
             final String key = key(mutation.getPath());
+            final Long count = counts.get(key);
+            counts.put(key, count == null
+                    ? 1L
+                    : count + 1);
+
             final Long seen = newest.get(key);
             // By sequence rather than by time, because every change a trace made shares one timestamp.
             if (seen == null || mutation.getSequence() > seen) {
@@ -426,14 +452,21 @@ public class PathwayTreePresenter
             }
         }
 
-        // Keyed by uuid for the renderer, which knows nodes by the uuid it draws against them.
-        updateTimes = new HashMap<>();
-        nodeMap.values().forEach(node -> {
-            final NanoTime time = times.get(key(node.getPath()));
-            if (time != null) {
-                updateTimes.put(node.getUuid(), time);
-            }
-        });
+        // Kept by path rather than by uuid. The nodes are not known until the model is read, and the
+        // model read may not be the one that was on show when this was handed over.
+        changesByPath = new HashMap<>();
+        counts.forEach((key, count) -> changesByPath.put(key, new NodeChange(count, times.get(key))));
+    }
+
+    /**
+     * The moment the model on show stood at, or null where it is the model as it stands now. How long
+     * ago a node changed is measured from here, so winding back an hour does not age every node by an
+     * hour.
+     */
+    public void setAsAt(final NanoTime asAt) {
+        this.asAt = asAt == null
+                ? 0L
+                : asAt.toEpochMillis();
     }
 
     private static String key(final List<String> path) {
@@ -486,7 +519,9 @@ public class PathwayTreePresenter
         if (pathway != null && pathway.getRoot() != null) {
             addNode(pathway.getRoot());
         }
-        html.setHTML(renderer.render(pathway, updateTimes));
+        html.setHTML(renderer.render(pathway, byUuid(), asAt > 0
+                ? asAt
+                : System.currentTimeMillis()));
         if (renderer.isCentred()) {
             applyZoom();
             applyKey();
@@ -510,7 +545,38 @@ public class PathwayTreePresenter
                 rebuilt.setScrollTop(0);
             }
         }
+        applyHighlight();
         showInfo();
+    }
+
+    // The changes against the nodes the model actually holds, worked out once the model has been read
+    // and its nodes are known.
+    private Map<String, NodeChange> byUuid() {
+        final Map<String, NodeChange> byUuid = new HashMap<>();
+        nodeMap.values().forEach(node -> {
+            final NodeChange change = changesByPath.get(key(node.getPath()));
+            if (change != null) {
+                byUuid.put(node.getUuid(), change);
+            }
+        });
+        return byUuid;
+    }
+
+    // Put on after the drawing is built, so every read starts the attention-drawing again — putting
+    // the same class on the same element would not, a run once started being a run already run.
+    private void applyHighlight() {
+        if (highlighted.isEmpty()) {
+            return;
+        }
+        nodeMap.values().forEach(node -> {
+            if (highlighted.contains(key(node.getPath()))) {
+                final Element element = ElementUtil.findChild(html.getElement(), el ->
+                        node.getUuid().equals(el.getAttribute("uuid")));
+                if (element != null) {
+                    element.addClassName(HIGHLIGHT_CLASS);
+                }
+            }
+        });
     }
 
     // The Node Info side panel: the selected node's name, where it sits in the pathway, and everything

@@ -16,7 +16,6 @@
 
 package stroom.pathways.client.presenter;
 
-import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.svg.shared.SvgImage;
@@ -48,7 +47,9 @@ class PathwayTreeRenderer implements PathwayRenderer {
     }
 
     @Override
-    public SafeHtml render(final Pathway pathway, final Map<String, NanoTime> updateTimes) {
+    public SafeHtml render(final Pathway pathway,
+                           final Map<String, NodeChange> changes,
+                           final long asAt) {
         final HtmlBuilder hb = new HtmlBuilder();
         hb.div(div -> {
             if (pathway != null) {

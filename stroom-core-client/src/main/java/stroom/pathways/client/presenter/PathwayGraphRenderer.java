@@ -54,6 +54,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final int MARGIN = 150;
     private static final int MIN_RADIUS = 6;
     private static final int MAX_RADIUS = 26;
+    private static final int MIN_EDGE = 1;
+    private static final int MAX_EDGE = 7;
 
     private final Map<String, Boolean> leftOfCentre = new HashMap<>();
 
@@ -64,6 +66,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final long HOUR = 60 * MINUTE;
     private static final long DAY = 24 * HOUR;
     private static final String NEVER_CHANGED = "#5c6470";
+    private static final String NEVER_CHANGED_RING = "#434955";
 
     // A colour of its own for each step rather than shades of one. Steps are a handful of named
     // things, not a measurement, so nothing is lost by their colours being unrelated — and four
@@ -75,10 +78,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // Ordered by how recent, newest first. Read by both the drawing and its key, so the two cannot
     // come to disagree.
     private static final List<Band> BANDS = List.of(
-            new Band(5 * MINUTE, "#e8543f", "in the last 5 minutes"),
-            new Band(HOUR, "#f0b429", "in the last hour"),
-            new Band(DAY, "#22a2a2", "in the last day"),
-            new Band(Long.MAX_VALUE, "#4a7fc1", "over a day ago"));
+            new Band(5 * MINUTE, "#e8543f", "#a8341f", "in the last 5 minutes"),
+            new Band(HOUR, "#f0b429", "#a8780c", "in the last hour"),
+            new Band(DAY, "#22a2a2", "#0f6e6e", "in the last day"),
+            new Band(Long.MAX_VALUE, "#4a7fc1", "#2b5488", "over a day ago"));
 
     static final String ZOOM_IN_ID = "pathwayZoomIn";
     static final String ZOOM_OUT_ID = "pathwayZoomOut";
@@ -96,7 +99,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
     }
 
     @Override
-    public SafeHtml render(final Pathway pathway, final Map<String, NanoTime> updateTimes) {
+    public SafeHtml render(final Pathway pathway,
+                           final Map<String, NodeChange> changes,
+                           final long asAt) {
         final PathNode root = NullSafe.get(pathway, Pathway::getRoot);
         if (root == null) {
             return new HtmlBuilder().toSafeHtml();
@@ -109,7 +114,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
-        draw(root, places, edges, markers, busiest(root), System.currentTimeMillis(), updateTimes);
+        draw(root, places, edges, markers, new Scale(root, changes), asAt, changes);
 
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.elem(svg -> svg.append(edges.toSafeHtml()),
@@ -168,17 +173,23 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private void appendScale(final HtmlBuilder hb) {
         hb.div(key -> {
             key.div("Last updated", Attribute.className("pathway-graph-key-title"));
-            BANDS.forEach(band -> appendSwatch(key, band.colour, band.label));
-            appendSwatch(key, NEVER_CHANGED, "never changed");
-            key.div("Size shows how many spans have gone through the node",
+            BANDS.forEach(band -> appendSwatch(key, band.colour, band.ring, band.label));
+            appendSwatch(key, NEVER_CHANGED, NEVER_CHANGED_RING, "never changed");
+            key.div("Size shows how many times the node has changed",
+                    Attribute.className("pathway-graph-key-note"));
+            key.div("Line thickness shows how much goes through it",
                     Attribute.className("pathway-graph-key-note"));
         }, Attribute.className("pathway-graph-key"), Attribute.id(KEY_PANEL_ID));
     }
 
-    private void appendSwatch(final HtmlBuilder hb, final String colour, final String label) {
+    private void appendSwatch(final HtmlBuilder hb,
+                              final String colour,
+                              final String ring,
+                              final String label) {
         hb.div(row -> {
             row.div("", Attribute.className("pathway-graph-key-swatch"),
-                    Attribute.style("background-color: " + colour + ";"));
+                    Attribute.style("background-color: " + colour + ";"
+                                    + " box-shadow: 0 0 0 2px " + ring + ";"));
             row.div(label, Attribute.className("pathway-graph-key-end"));
         }, Attribute.className("pathway-graph-key-scale"));
     }
@@ -222,21 +233,26 @@ class PathwayGraphRenderer implements PathwayRenderer {
                       final Map<String, Point> places,
                       final HtmlBuilder edges,
                       final HtmlBuilder markers,
-                      final long busiest,
+                      final Scale scale,
                       final long now,
-                      final Map<String, NanoTime> updateTimes) {
+                      final Map<String, NodeChange> changes) {
         final Point at = places.get(node.getUuid());
-        final int radius = radius(node.getTimesUsed(), busiest);
-        final NanoTime updated = updateTimes.get(node.getUuid());
+        final NodeChange change = changes.get(node.getUuid());
+        final int radius = scale.radius(change);
+        final NanoTime updated = NullSafe.get(change, NodeChange::getLastUpdated);
 
         final String side = Boolean.TRUE.equals(leftOfCentre.get(node.getUuid()))
                 ? " pathway-graph-node--left"
                 : "";
         markers.div(marker -> {
             marker.div("", Attribute.className("pathway-graph-dot"),
+                    // A shadow rather than a border: the width given here is what says how much the
+                    // node has changed, and a border would eat into it. Selecting draws an outline
+                    // instead of a second shadow, so the two do not fight over one property.
                     Attribute.style("width: " + (radius * 2) + "px;"
                                     + " height: " + (radius * 2) + "px;"
-                                    + " background-color: " + colour(updated, now) + ";"));
+                                    + " background-color: " + colour(updated, now) + ";"
+                                    + " box-shadow: 0 0 0 2px " + ring(updated, now) + ";"));
             marker.div(label -> label.append(node.getName()),
                     Attribute.className("pathway-graph-label"));
         }, Attribute.className("pathway-graph-node" + side),
@@ -244,40 +260,44 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 Attribute.style("left: " + ((int) at.getX() - radius) + "px;"
                                 + " top: " + ((int) at.getY() - radius) + "px;"),
                 Attribute.title(node.getName()
-                                + " — used " + node.getTimesUsed() + " times"));
+                                + " — changed " + NullSafe.getOrElse(change, NodeChange::getCount, 0L)
+                                + " times, used " + node.getTimesUsed() + " times"));
 
         for (final PathNode child : NullSafe.list(node.getChildren())) {
             final Point childAt = places.get(child.getUuid());
-            line(edges, at, childAt);
-            draw(child, places, edges, markers, busiest, now, updateTimes);
+            // As thick as the traffic reaching what it points at, so the busy routes through the
+            // model stand out from the ones taken once.
+            line(edges, at, childAt, scale.edge(child.getTimesUsed()));
+            draw(child, places, edges, markers, scale, now, changes);
         }
     }
 
     // Straight, not the curves the tree draws: those bend towards a left-to-right layout, and on a
     // ring the bend would point the edge away from the node it joins.
-    private static void line(final HtmlBuilder svg, final Point start, final Point end) {
+    private static void line(final HtmlBuilder svg,
+                             final Point start,
+                             final Point end,
+                             final int width) {
         svg.elem(SafeHtmlUtil.from("line"),
                 new Attribute("x1", String.valueOf((int) start.getX())),
                 new Attribute("y1", String.valueOf((int) start.getY())),
                 new Attribute("x2", String.valueOf((int) end.getX())),
-                new Attribute("y2", String.valueOf((int) end.getY())));
-    }
-
-    // Scaled against the busiest node rather than a fixed number, so a model whose counts are all
-    // small is still readable. Square rooted because the counts run over orders of magnitude, and on a
-    // straight scale everything but the busiest node would be a dot.
-    private static int radius(final long timesUsed, final long busiest) {
-        if (timesUsed <= 0 || busiest <= 0) {
-            return MIN_RADIUS;
-        }
-        final double share = Math.sqrt((double) timesUsed / busiest);
-        return MIN_RADIUS + (int) Math.round(share * (MAX_RADIUS - MIN_RADIUS));
+                new Attribute("y2", String.valueOf((int) end.getY())),
+                new Attribute("stroke-width", String.valueOf(width)));
     }
 
     private static String colour(final NanoTime updated, final long now) {
-        return band(updated, now) == null
+        final Band band = band(updated, now);
+        return band == null
                 ? NEVER_CHANGED
-                : band(updated, now).colour;
+                : band.colour;
+    }
+
+    private static String ring(final NanoTime updated, final long now) {
+        final Band band = band(updated, now);
+        return band == null
+                ? NEVER_CHANGED_RING
+                : band.ring;
     }
 
     // The first band the node's age falls inside, or null where it has never changed.
@@ -292,14 +312,6 @@ class PathwayGraphRenderer implements PathwayRenderer {
             }
         }
         return BANDS.get(BANDS.size() - 1);
-    }
-
-    private static long busiest(final PathNode node) {
-        long most = node.getTimesUsed();
-        for (final PathNode child : NullSafe.list(node.getChildren())) {
-            most = Math.max(most, busiest(child));
-        }
-        return most;
     }
 
     private static int leaves(final PathNode node) {
@@ -330,16 +342,69 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // --------------------------------------------------------------------------------
 
 
+    // How the model's own largest numbers turn into sizes. Scaled against the biggest in this model
+    // rather than a fixed number, so a model whose counts are all small is still readable, and square
+    // rooted because the counts run over orders of magnitude — on a straight scale everything but the
+    // biggest would be drawn at the minimum.
+    private static class Scale {
+
+        private final long mostChanged;
+        private final long mostUsed;
+
+        private Scale(final PathNode root, final Map<String, NodeChange> changes) {
+            this.mostChanged = mostChanged(root, changes);
+            this.mostUsed = mostUsed(root);
+        }
+
+        private int radius(final NodeChange change) {
+            return MIN_RADIUS + step(NullSafe.getOrElse(change, NodeChange::getCount, 0L),
+                    mostChanged, MAX_RADIUS - MIN_RADIUS);
+        }
+
+        private int edge(final long timesUsed) {
+            return MIN_EDGE + step(timesUsed, mostUsed, MAX_EDGE - MIN_EDGE);
+        }
+
+        private static int step(final long value, final long most, final int range) {
+            if (value <= 0 || most <= 0) {
+                return 0;
+            }
+            return (int) Math.round(Math.sqrt((double) value / most) * range);
+        }
+
+        private static long mostChanged(final PathNode node, final Map<String, NodeChange> changes) {
+            long most = NullSafe.getOrElse(changes.get(node.getUuid()), NodeChange::getCount, 0L);
+            for (final PathNode child : NullSafe.list(node.getChildren())) {
+                most = Math.max(most, mostChanged(child, changes));
+            }
+            return most;
+        }
+
+        private static long mostUsed(final PathNode node) {
+            long most = node.getTimesUsed();
+            for (final PathNode child : NullSafe.list(node.getChildren())) {
+                most = Math.max(most, mostUsed(child));
+            }
+            return most;
+        }
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
     // One step of the scale: how recent a change has to be to fall in it, and what it is drawn as.
     private static class Band {
 
         private final long within;
         private final String colour;
+        private final String ring;
         private final String label;
 
-        private Band(final long within, final String colour, final String label) {
+        private Band(final long within, final String colour, final String ring, final String label) {
             this.within = within;
             this.colour = colour;
+            this.ring = ring;
             this.label = label;
         }
     }

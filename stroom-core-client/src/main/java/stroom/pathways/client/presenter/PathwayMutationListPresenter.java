@@ -133,6 +133,36 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
+     * Which nodes the selected row changed, as paths. A trace answers with everything it touched,
+     * which is the whole point of picking one rather than picking through its changes.
+     */
+    public List<List<String>> getSelectedPaths() {
+        final MutationRow selected = selectionModel.getSelected();
+        final List<List<String>> paths = new ArrayList<>();
+        if (selected == null) {
+            return paths;
+        }
+
+        for (final PathwayMutation mutation : mutations) {
+            final boolean mine = selected.isTrace()
+                    ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
+                    : mutation.getSequence() == selected.getSequence();
+            if (mine && !paths.contains(mutation.getPath())) {
+                paths.add(mutation.getPath());
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * When the selected row happened, or null where nothing is selected. What the model is being
+     * shown as at.
+     */
+    public NanoTime getSelectedTime() {
+        return NullSafe.get(selectionModel.getSelected(), MutationRow::getTime);
+    }
+
+    /**
      * The point in the history being looked at, or null where nothing is selected. A trace answers
      * with the last change it made, so selecting one shows the model as that trace left it.
      */

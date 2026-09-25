@@ -322,18 +322,32 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
             return;
         }
 
+        // Set before the model is read, because the nodes are picked out as the drawing is built.
+        pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedPaths());
+
         final Long selected = mutationListPresenter.getSelectedSequence();
         if (selected == null || !historyComplete) {
+            pathwayTreePresenter.setHistory(history);
+            pathwayTreePresenter.setAsAt(null);
             pathwayTreePresenter.read(pathway);
             return;
         }
 
         final List<PathwayMutation> later = new ArrayList<>();
+        final List<PathwayMutation> upToHere = new ArrayList<>();
         for (final PathwayMutation mutation : history) {
             if (mutation.getSequence() > selected) {
                 later.add(mutation);
+            } else {
+                upToHere.add(mutation);
             }
         }
+
+        // The model is being shown as it stood at the selected change, so what is known about how much
+        // each node had changed by then, and how long ago, has to stop there as well. Handed the whole
+        // history it would colour the model by changes that had not happened yet.
+        pathwayTreePresenter.setHistory(upToHere);
+        pathwayTreePresenter.setAsAt(mutationListPresenter.getSelectedTime());
 
         final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
         pathwayTreePresenter.read(root == null
