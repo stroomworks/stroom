@@ -60,7 +60,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final int MIN_RADIUS = 6;
     private static final int MAX_RADIUS = 26;
     private static final int MIN_EDGE = 1;
-    private static final int MAX_EDGE = 7;
+    private static final int MAX_EDGE = 15;
 
     private final Map<String, Boolean> leftOfCentre = new HashMap<>();
 
@@ -295,7 +295,15 @@ class PathwayGraphRenderer implements PathwayRenderer {
             // As thick as the traffic reaching what it points at, and coloured by how recently that
             // traffic last came through, on the same scale as the nodes. So the thick bright lines
             // are the routes being taken now and the thin dim ones are the routes that have stopped.
-            line(edges, at, childAt, scale.edge(timesUsed(child, usage)),
+            //
+            // Drawn between the two circles rather than between their middles. A line runs as wide as
+            // its traffic says and a node is as large as its changes say, so a line can be wider than
+            // what it joins; ending at the middle, it would show either side of the circle meant to
+            // be hiding it. Ending at the rim, neither has to be held back for the other.
+            line(edges,
+                    toward(at, childAt, radius),
+                    toward(childAt, at, scale.radius(changes.get(child.getUuid()))),
+                    scale.edge(timesUsed(child, usage)),
                     present.contains(child.getUuid()),
                     colour(lastUsed(child, usage), now));
             draw(child, places, edges, markers, scale, now, changes, present, usage);
@@ -304,6 +312,18 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
     // Straight, not the curves the tree draws: those bend towards a left-to-right layout, and on a
     // ring the bend would point the edge away from the node it joins.
+    // The point on a node's rim facing the other end of the line, which is where the line starts.
+    private static Point toward(final Point from, final Point to, final int radius) {
+        final double dx = to.getX() - from.getX();
+        final double dy = to.getY() - from.getY();
+        final double length = Math.sqrt((dx * dx) + (dy * dy));
+        if (length <= 0) {
+            return from;
+        }
+        return new Point(from.getX() + ((dx / length) * radius),
+                from.getY() + ((dy / length) * radius));
+    }
+
     private static void line(final HtmlBuilder svg,
                              final Point start,
                              final Point end,

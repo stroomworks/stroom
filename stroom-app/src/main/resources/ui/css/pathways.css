@@ -1050,4 +1050,7 @@
  * them. Held back a little so the joins do not compete with the nodes they join. */
 .pathway-graph .pathway-curves svg line {
     opacity: 0.6;
+    /* Rounded, because a line now stops at the rim of the node it joins rather than under it, so its
+       end is on show. A flat end reads as a cut-off pipe where a round one reads as a join. */
+    stroke-linecap: round;
 }
