@@ -80,6 +80,9 @@ public class PathwayTreePresenter
     private static final String ATTRIBUTE_PREFIX = "attribute.";
     private static final String SELECTED_CLASS = "pathway-nodeName--selected";
     private static final String HIGHLIGHT_CLASS = "pathway-node--changed";
+    private static final String DRAGGING_CLASS = "pathway-dragging";
+    // How far the pointer has to move before it counts as a drag rather than a click that wandered.
+    private static final int DRAG_THRESHOLD = 3;
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final double ZOOM_STEP = 1.25;
@@ -114,6 +117,10 @@ public class PathwayTreePresenter
     private long upTo;
     private List<PathwayMutation> history = Collections.emptyList();
     private long changeCeiling;
+    private boolean panning;
+    private boolean panned;
+    private int panX;
+    private int panY;
     // Nodes to draw attention to, as path keys. Held rather than applied once, because the drawing is
     // rebuilt whenever the model is and the elements it was put on go with it.
     private Set<String> highlighted = Collections.emptySet();
@@ -170,7 +177,64 @@ public class PathwayTreePresenter
         // itself over on any click it accepts, and a drawing that disagreed with the icon on it would
         // be worse than a drawing swapped by an unusual click.
         registerHandler(viewButton.addClickHandler(e -> swapView()));
+        registerHandler(html.addMouseDownHandler(e -> {
+            // Only the graph is dragged. The tree scrolls a row at a time and reads top to bottom;
+            // there is nothing to move around in it.
+            if (!renderer.isCentred()) {
+                return;
+            }
+
+            final Element target = e.getNativeEvent().getEventTarget().cast();
+            // Not from the buttons sitting over the drawing: they are there to be pressed.
+            if (target != null && ElementUtil.findParent(target, element ->
+                    NullSafe.isNonBlankString(element.getId()), 3) != null) {
+                return;
+            }
+
+            panX = e.getClientX();
+            panY = e.getClientY();
+            panning = true;
+            panned = false;
+            Event.setCapture(html.getElement());
+            html.addStyleName(DRAGGING_CLASS);
+        }));
+
+        registerHandler(html.addMouseMoveHandler(e -> {
+            final Element root = panning
+                    ? html.getElement().getFirstChildElement()
+                    : null;
+            if (root == null) {
+                return;
+            }
+
+            // Dragging moves the drawing with the pointer, so the view moves the opposite way.
+            final int dx = panX - e.getClientX();
+            final int dy = panY - e.getClientY();
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                panned = true;
+            }
+            root.setScrollLeft(root.getScrollLeft() + dx);
+            root.setScrollTop(root.getScrollTop() + dy);
+            panX = e.getClientX();
+            panY = e.getClientY();
+        }));
+
+        registerHandler(html.addMouseUpHandler(e -> {
+            if (panning) {
+                panning = false;
+                Event.releaseCapture(html.getElement());
+                html.removeStyleName(DRAGGING_CLASS);
+            }
+        }));
+
         registerHandler(html.addClickHandler(e -> {
+            // A drag ends in a click. Selecting whatever the pointer happened to come to rest on would
+            // be a surprise, so the click that ends one is let go.
+            if (panned) {
+                panned = false;
+                return;
+            }
+
             final Element target = e.getNativeEvent().getEventTarget().cast();
             if (target == null) {
                 return;

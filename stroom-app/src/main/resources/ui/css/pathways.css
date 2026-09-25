@@ -869,6 +869,23 @@
     padding: 0;
 }
 
+/* Dragged to move around, the way a map is. Selecting text while dragging would leave the drawing
+ * highlighted blue behind the pointer, so it is turned off over the graph. */
+.pathway-graph {
+    cursor: grab;
+    user-select: none;
+}
+
+.pathway-dragging .pathway-graph {
+    cursor: grabbing;
+}
+
+/* The nodes stay pointers: they are there to be clicked. */
+.pathway-graph .pathway-graph-node,
+.pathway-graph .pathway-graph-control {
+    cursor: pointer;
+}
+
 /* What the colours mean, over the bottom left of the panel — behind a button, because it says
  * something that only needs reading once. Outside the drawing, so scrolling and zooming leave it
  * where it is. */
