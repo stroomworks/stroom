@@ -250,6 +250,28 @@ class TestMutationsInOneBatch {
         return readings;
     }
 
+    @Test
+    void aNodeATraceDidNotCarryIsRecordedAsAbsent(@TempDir final Path dir) {
+        // The second trace has no Commit, so the model learns that it sometimes happens no times.
+        final List<PathwayMutation> stored = applyBatch(dir,
+                trace("t1", "GET", 20, PING, COMMIT),
+                trace("t2", "GET", 20, PING));
+
+        final List<PathwayMutation> absent = new ArrayList<>();
+        for (final PathwayMutation mutation : stored) {
+            if (MutationType.NODE_ABSENT.equals(mutation.getType())) {
+                absent.add(mutation);
+            }
+        }
+
+        assertThat(absent).hasSize(1);
+        assertThat(absent.getFirst().getPath()).endsWith(COMMIT);
+        assertThat(absent.getFirst().getSpanId())
+                .as("the trace carried no span for this node, so none may be named against it")
+                .isNull();
+        assertThat(absent.getFirst().getConstraint()).isEqualTo("occurrences");
+    }
+
     // Applies each trace through TraceProcessor on one writer, as a batch does, then reads back what
     // was stored rather than what was recorded in memory.
     private static List<PathwayMutation> applyBatch(final Path dir, final Trace... traces) {

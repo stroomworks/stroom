@@ -48,7 +48,13 @@ public enum MutationType implements HasDisplayValue, HasPrimitiveValue {
     /** A value of a type the constraint had not held before, so it stopped checking the type. */
     CONSTRAINT_TYPE_CONFLICT("Type Conflict", 10),
     /** Named in the configuration as one not to learn, so recorded as admitting anything. */
-    CONSTRAINT_IGNORED("Ignored", 11);
+    CONSTRAINT_IGNORED("Ignored", 11),
+    /**
+     * A node the model knows about that this trace did not carry, so its occurrences widened to admit
+     * none. A real change — it is how the model learns a node is optional — but not one made by a
+     * trace that reached the node, which is why it is told apart from an ordinary widening.
+     */
+    NODE_ABSENT("Absent", 12);
 
     public static final PrimitiveValueConverter<MutationType> PRIMITIVE_VALUE_CONVERTER =
             PrimitiveValueConverter.create(MutationType.class, MutationType.values());

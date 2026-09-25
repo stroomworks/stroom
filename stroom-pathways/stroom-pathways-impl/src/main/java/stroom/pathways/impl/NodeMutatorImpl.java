@@ -84,6 +84,8 @@ public class NodeMutatorImpl {
     private NanoTime time;
     private String traceId;
     private String spanId;
+    // Whether what is being recorded is a node this trace did not carry.
+    private boolean absent;
 
     public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
                            final IgnoredAttributes ignoredAttributes) {
@@ -108,11 +110,16 @@ public class NodeMutatorImpl {
     }
 
     private void record(final PathNode node,
-                        final MutationType type,
+                        final MutationType type0,
                         final String constraint,
                         final boolean optional,
                         final ConstraintValue oldValue,
                         final ConstraintValue newValue) {
+        // A node the trace did not carry is not the node changing the way the others here are, so it
+        // is told apart rather than looking like any other widening.
+        final MutationType type = absent
+                ? MutationType.NODE_ABSENT
+                : type0;
         // Numbered when written, because where it sits in the pathway's history is not known here.
         mutations.add(new PathwayMutation(0L, time, traceId, spanId, node.getPath(), node.getUuid(),
                 constraint, type, optional, oldValue, newValue));
@@ -241,7 +248,21 @@ public class NodeMutatorImpl {
         final Map<String, Constraint> constraints = pathNode.getConstraints() == null
                 ? new HashMap<>()
                 : new HashMap<>(pathNode.getConstraints());
-        setOrExpand(constraints, pathNode, OCCURRENCES, count, false, messageReceiver, pathwaysDoc);
+
+        // A node this trace did not carry has no span of its own, so nothing here may claim one. What
+        // is put back afterwards is the span whose children are being counted, which is the parent's.
+        final String was = spanId;
+        if (count == 0) {
+            spanId = null;
+            absent = true;
+        }
+        try {
+            setOrExpand(constraints, pathNode, OCCURRENCES, count, false, messageReceiver,
+                    pathwaysDoc);
+        } finally {
+            spanId = was;
+            absent = false;
+        }
         return pathNode.copy().constraints(constraints).build();
     }
 

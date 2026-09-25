@@ -564,6 +564,11 @@ public class PathwayTreePresenter
                 || MutationType.CONSTRAINT_ADDED.equals(mutation.getType())) {
                 continue;
             }
+            // A trace that did not carry the node did not change it the way a trace that walked it
+            // did. Counting it would say a node had been changed more often than it had been reached.
+            if (MutationType.NODE_ABSENT.equals(mutation.getType())) {
+                continue;
+            }
 
             final String key = key(mutation.getPath());
             traces.computeIfAbsent(key, k -> new HashSet<>()).add(mutation.getTraceId());
@@ -598,15 +603,19 @@ public class PathwayTreePresenter
             return byUuid;
         }
 
-        PathwayUsage newest = null;
-        for (final PathwayUsage reading : usage) {
-            if (reading.getSequence() <= upTo
-                && (newest == null || reading.getSequence() > newest.getSequence())) {
-                newest = reading;
+        // The reading taken for the trace the change being looked at belongs to, which is the first at
+        // or after it: a reading is written once the trace is done, numbered with the last change it
+        // made. Taking the one before instead would report the model as it stood a whole trace
+        // earlier, so a node could read as changed more often than it had been used.
+        PathwayUsage reading = null;
+        for (final PathwayUsage candidate : usage) {
+            if (candidate.getSequence() >= upTo
+                && (reading == null || candidate.getSequence() < reading.getSequence())) {
+                reading = candidate;
             }
         }
-        if (newest != null) {
-            NullSafe.list(newest.getNodes()).forEach(node -> byUuid.put(node.getNodeUuid(), node));
+        if (reading != null) {
+            NullSafe.list(reading.getNodes()).forEach(node -> byUuid.put(node.getNodeUuid(), node));
         }
         return byUuid;
     }
