@@ -117,6 +117,7 @@ public class PathwayTreePresenter
     private long upTo;
     private List<PathwayMutation> history = Collections.emptyList();
     private long changeCeiling;
+    private boolean centreWanted;
     private boolean panning;
     private boolean panned;
     private int panX;
@@ -692,17 +693,14 @@ public class PathwayTreePresenter
                 rebuilt.setScrollLeft(scrollLeft);
                 rebuilt.setScrollTop(scrollTop);
             } else if (renderer.isCentred()) {
-                // Waits for the browser to lay the drawing out. Read in the same turn as it is put on
-                // the page, the panel has no width yet, and centring on a width of nothing puts the
-                // middle of the drawing against the left edge rather than in the middle of the view.
-                Scheduler.get().scheduleDeferred(() -> {
-                    rebuilt.setScrollLeft((rebuilt.getScrollWidth() - rebuilt.getClientWidth()) / 2);
-                    rebuilt.setScrollTop((rebuilt.getScrollHeight() - rebuilt.getClientHeight()) / 2);
-                });
+                centreWanted = true;
             } else {
                 rebuilt.setScrollLeft(0);
                 rebuilt.setScrollTop(0);
             }
+        }
+        if (centreWanted) {
+            Scheduler.get().scheduleDeferred(this::centre);
         }
         applyHighlight();
         showInfo();
@@ -719,6 +717,28 @@ public class PathwayTreePresenter
             most = Math.max(most, mostUsed(child));
         }
         return most;
+    }
+
+    /**
+     * Puts the middle of the drawing in the middle of the view.
+     *
+     * <p>Deferred, because the panel has no width in the turn the drawing is put on the page, and
+     * centring against a width of nothing puts the middle of the drawing against the left edge.
+     *
+     * <p>Held as something wanted rather than done to one element, because opening a pathway draws it
+     * three times — once for the model, again when its changes arrive, and again when the readings do
+     * — and the drawing is rebuilt each time. Pinned to the element it was asked for, it would fire
+     * against one already thrown away, which is why the middle was only sometimes found.
+     */
+    private void centre() {
+        final Element root = html.getElement().getFirstChildElement();
+        if (root == null || root.getClientWidth() <= 0) {
+            // Nothing laid out to measure against yet. Still wanted, so the next draw tries again.
+            return;
+        }
+        root.setScrollLeft((root.getScrollWidth() - root.getClientWidth()) / 2);
+        root.setScrollTop((root.getScrollHeight() - root.getClientHeight()) / 2);
+        centreWanted = false;
     }
 
     // The changes against the nodes the model actually holds, worked out once the model has been read
