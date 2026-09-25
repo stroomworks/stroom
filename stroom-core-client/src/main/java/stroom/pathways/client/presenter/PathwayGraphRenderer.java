@@ -63,6 +63,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final int MAX_EDGE = 15;
 
     private final Map<String, Boolean> leftOfCentre = new HashMap<>();
+    private HtmlBuilder gradients = new HtmlBuilder();
+    private int gradientCount;
+    // Counted up for every drawing, so the ids one leaves behind cannot be picked up by the next.
+    private int drawings;
 
     // How long ago the node last changed, in steps against the clock rather than a scale running from
     // the oldest change in this model to the newest. A scale within the model has no fixed meaning —
@@ -72,6 +76,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final long DAY = 24 * HOUR;
     private static final String NEVER_CHANGED = "#5c6470";
     private static final String NEVER_CHANGED_RING = "#434955";
+    private static final String NEVER_CHANGED_LIGHT = "#7d838d";
 
     // A colour of its own for each step rather than shades of one. Steps are a handful of named
     // things, not a measurement, so nothing is lost by their colours being unrelated — and four
@@ -83,10 +88,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // Ordered by how recent, newest first. Read by both the drawing and its key, so the two cannot
     // come to disagree.
     private static final List<Band> BANDS = List.of(
-            new Band(5 * MINUTE, "#e8543f", "#a8341f", "in the last 5 minutes"),
-            new Band(HOUR, "#f0b429", "#a8780c", "in the last hour"),
-            new Band(DAY, "#22a2a2", "#0f6e6e", "in the last day"),
-            new Band(Long.MAX_VALUE, "#4a7fc1", "#2b5488", "over a day ago"));
+            new Band(5 * MINUTE, "#e8543f", "#a8341f", "#ed7665", "in the last 5 minutes"),
+            new Band(HOUR, "#f0b429", "#a8780c", "#f3c354", "in the last hour"),
+            new Band(DAY, "#22a2a2", "#0f6e6e", "#4eb5b5", "in the last day"),
+            new Band(Long.MAX_VALUE, "#4a7fc1", "#2b5488", "#6e99cd", "over a day ago"));
 
     static final String ZOOM_IN_ID = "pathwayZoomIn";
     static final String ZOOM_OUT_ID = "pathwayZoomOut";
@@ -130,14 +135,22 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final Size size = new Size(places);
         places.replaceAll((uuid, at) -> new Point(at.getX() - size.left, at.getY() - size.top));
 
+        gradients = new HtmlBuilder();
+        gradientCount = 0;
+        drawings++;
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
         draw(root, places, edges, markers,
                 new Scale(request.getChangeCeiling(), request.getUsageCeiling()),
                 request.getAsAt(), changes, present, usage);
 
+        // The gradients come before the lines that point at them.
+        final HtmlBuilder painted = new HtmlBuilder();
+        painted.elem(defs -> defs.append(gradients.toSafeHtml()), SafeHtmlUtil.from("defs"));
+        painted.append(edges.toSafeHtml());
+
         final HtmlBuilder canvas = new HtmlBuilder();
-        canvas.div(d -> d.elem(svg -> svg.append(edges.toSafeHtml()),
+        canvas.div(d -> d.elem(svg -> svg.append(painted.toSafeHtml()),
                         SafeHtmlUtil.from("svg"),
                         new Attribute("width", String.valueOf(size.width)),
                         new Attribute("height", String.valueOf(size.height)),
@@ -300,18 +313,46 @@ class PathwayGraphRenderer implements PathwayRenderer {
             // its traffic says and a node is as large as its changes say, so a line can be wider than
             // what it joins; ending at the middle, it would show either side of the circle meant to
             // be hiding it. Ending at the rim, neither has to be held back for the other.
+            final Point from = toward(at, childAt, radius);
+            final Point to = toward(childAt, at, scale.radius(changes.get(child.getUuid())));
+            // Lighter where it leaves the parent, full strength where it arrives, so a link reads in
+            // the direction the work flows without needing an arrow head on it.
             line(edges,
-                    toward(at, childAt, radius),
-                    toward(childAt, at, scale.radius(changes.get(child.getUuid()))),
+                    from,
+                    to,
                     scale.edge(timesUsed(child, usage)),
                     present.contains(child.getUuid()),
-                    colour(lastUsed(child, usage), now));
+                    gradient(from, to,
+                            light(lastUsed(child, usage), now),
+                            colour(lastUsed(child, usage), now)));
             draw(child, places, edges, markers, scale, now, changes, present, usage);
         }
     }
 
     // Straight, not the curves the tree draws: those bend towards a left-to-right layout, and on a
     // ring the bend would point the edge away from the node it joins.
+    // A gradient of its own for each link, laid along the line it paints. Along the line rather than
+    // across the drawing, which is what gradientUnits="userSpaceOnUse" with the line's own ends does —
+    // the default would measure against the shape's box and turn with it.
+    private String gradient(final Point from, final Point to, final String start, final String end) {
+        final String id = "pathwayEdge" + drawings + "-" + gradientCount++;
+        gradients.elem(gradient -> {
+            gradient.elem(SafeHtmlUtil.from("stop"),
+                    new Attribute("offset", "0"),
+                    new Attribute("stop-color", start));
+            gradient.elem(SafeHtmlUtil.from("stop"),
+                    new Attribute("offset", "1"),
+                    new Attribute("stop-color", end));
+        }, SafeHtmlUtil.from("linearGradient"),
+                new Attribute("id", id),
+                new Attribute("gradientUnits", "userSpaceOnUse"),
+                new Attribute("x1", String.valueOf((int) from.getX())),
+                new Attribute("y1", String.valueOf((int) from.getY())),
+                new Attribute("x2", String.valueOf((int) to.getX())),
+                new Attribute("y2", String.valueOf((int) to.getY())));
+        return "url(#" + id + ")";
+    }
+
     // The point on a node's rim facing the other end of the line, which is where the line starts.
     private static Point toward(final Point from, final Point to, final int radius) {
         final double dx = to.getX() - from.getX();
@@ -377,6 +418,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
         return band == null
                 ? NEVER_CHANGED_RING
                 : band.ring;
+    }
+
+    private static String light(final NanoTime updated, final long now) {
+        final Band band = band(updated, now);
+        return band == null
+                ? NEVER_CHANGED_LIGHT
+                : band.light;
     }
 
     // The first band the age falls inside, or null where it is not known.
@@ -495,12 +543,22 @@ class PathwayGraphRenderer implements PathwayRenderer {
         private final long within;
         private final String colour;
         private final String ring;
+        // The same colour lightened a fifth of the way to white, for the end of a link where it
+        // leaves its parent. Given rather than worked out: on a dark panel, thinning a colour makes
+        // it darker, not lighter. The same fraction for every band, so the fade says the same thing
+        // whatever colour the link is.
+        private final String light;
         private final String label;
 
-        private Band(final long within, final String colour, final String ring, final String label) {
+        private Band(final long within,
+                     final String colour,
+                     final String ring,
+                     final String light,
+                     final String label) {
             this.within = within;
             this.colour = colour;
             this.ring = ring;
+            this.light = light;
             this.label = label;
         }
     }
