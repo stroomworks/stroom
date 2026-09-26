@@ -28,16 +28,19 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
+import stroom.svg.client.SvgPresets;
 import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.util.shared.PageResponse;
+import stroom.widget.button.client.ButtonView;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
 import stroom.widget.popup.client.presenter.PopupType;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.Focus;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -59,6 +62,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
      * stays on the current one and says nothing false.
      */
     private static final int MAX_HISTORY = 20000;
+    private static final int STEP_MILLIS = 1500;
 
     private Pathway pathway;
     private List<PathwayMutation> history = Collections.emptyList();
@@ -66,6 +70,18 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     private final PathwayTreePresenter pathwayTreePresenter;
     private final ConstraintListPresenter constraintListPresenter;
     private final PathwayMutationListPresenter mutationListPresenter;
+    private final ButtonView playButton;
+    private final ButtonView stopButton;
+    private final Timer stepper = new Timer() {
+        @Override
+        public void run() {
+            if (!mutationListPresenter.selectNextTrace()) {
+                // The end of the list. Nothing left to step to, so it stops rather than sitting there
+                // firing at a selection that cannot move.
+                stop();
+            }
+        }
+    };
     private final RestFactory restFactory;
     private boolean readOnly = true;
 
@@ -87,11 +103,24 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         view.setTree(pathwayTreePresenter.getView());
         view.setConstraints(constraintListPresenter.getView());
         view.setMutations(mutationListPresenter.getView());
+
+        // On the drawing's own toolbar, beside the button that swaps the drawing over. Added from
+        // here rather than by the tree: what they step through is the list of changes, which only
+        // this view has.
+        playButton = pathwayTreePresenter.getView().addButton(SvgPresets.RUN.title("Play"));
+        stopButton = pathwayTreePresenter.getView().addButton(SvgPresets.STOP.title("Stop"));
+        playButton.setVisible(false);
+        stopButton.setVisible(false);
     }
 
     @Override
     protected void onBind() {
         super.onBind();
+        registerHandler(playButton.addClickHandler(e -> play()));
+        registerHandler(stopButton.addClickHandler(e -> stop()));
+        // Only the graph is worth watching change; the tree says the same thing a row at a time.
+        pathwayTreePresenter.setViewChangeHandler(this::showPlayButtons);
+
         registerHandler(pathwayTreePresenter.getSelectionModel()
                 .addSelectionChangeHandler(e -> showConstraints()));
 
@@ -339,6 +368,34 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                 .exec();
     }
 
+    // Steps to the next trace every second and a half, so the model can be watched changing rather
+    // than having to be clicked through — long enough to take in what moved between one trace and
+    // the next, which is the point of watching it.
+    private void play() {
+        if (!mutationListPresenter.selectNextTrace()) {
+            // Already at the last one, so there is nothing to watch.
+            return;
+        }
+        pathwayTreePresenter.setStepping(true);
+        stepper.scheduleRepeating(STEP_MILLIS);
+        showPlayButtons();
+    }
+
+    private void stop() {
+        stepper.cancel();
+        pathwayTreePresenter.setStepping(false);
+        showPlayButtons();
+    }
+
+    private void showPlayButtons() {
+        final boolean graph = pathwayTreePresenter.isGraphShown();
+        playButton.setVisible(graph && !stepper.isRunning());
+        stopButton.setVisible(graph && stepper.isRunning());
+        if (!graph) {
+            stepper.cancel();
+        }
+    }
+
     // The model as it stood at the change being looked at, or as it stands now where none is.
     private void showModel() {
         if (pathway == null) {
@@ -408,6 +465,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
         pathwayTreePresenter.read(pathway);
         showConstraints();
+        showPlayButtons();
         mutationListPresenter.setData(Collections.emptyList());
         fetchHistory(pathwaysDoc.asDocRef(), pathway.getName());
 //        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
@@ -440,6 +498,9 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                 .caption(caption)
                 .onShow(e -> getView().focus())
                 .onHideRequest(handler)
+                // Nothing to step through once the dialog has gone, and a clock left running would
+                // keep moving a selection in a list nobody is looking at.
+                .onHide(e -> stop())
                 .fire();
     }
 

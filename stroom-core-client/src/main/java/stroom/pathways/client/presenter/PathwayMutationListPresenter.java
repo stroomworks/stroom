@@ -155,6 +155,48 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
+     * Moves the selection on to the next trace, so the model can be watched changing a trace at a
+     * time. Starts at the first where nothing is selected yet.
+     *
+     * <p>Traces rather than every row: one trace is one thing that happened to the model, and its
+     * changes were all made at once.
+     *
+     * @return whether there was another trace to move on to.
+     */
+    public boolean selectNextTrace() {
+        final List<MutationRow> rows = dataProvider.getList();
+        if (NullSafe.isEmptyCollection(rows)) {
+            return false;
+        }
+
+        // The next trace forward in time, not the next row down. Which way the list happens to be
+        // sorted is how the reader wants to read it; it says nothing about which way a model grew, so
+        // stepping follows the history rather than the order the rows are in. On a list newest first
+        // that walks up it rather than down.
+        final MutationRow selected = selectionModel.getSelected();
+        final long after = selected == null
+                ? Long.MIN_VALUE
+                : selected.getSequence();
+
+        MutationRow next = null;
+        for (final MutationRow row : rows) {
+            if (row.isTrace()
+                && row.getSequence() > after
+                && (next == null || row.getSequence() < next.getSequence())) {
+                next = row;
+            }
+        }
+        if (next == null) {
+            return false;
+        }
+
+        // The single-select form. Handed a flag instead, each step would add to the selection rather
+        // than move it, and the list would fill up with everything stepped through.
+        selectionModel.setSelected(next);
+        return true;
+    }
+
+    /**
      * When the selected row happened, or null where nothing is selected. What the model is being
      * shown as at.
      */

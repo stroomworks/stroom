@@ -82,6 +82,10 @@ public class PathwayTreePresenter
     private static final String ATTRIBUTE_PREFIX = "attribute.";
     private static final String SELECTED_CLASS = "pathway-nodeName--selected";
     private static final String HIGHLIGHT_CLASS = "pathway-node--changed";
+    // The same marking, over once rather than over and over. While the model is being stepped
+    // through, the next step arrives before a long run has finished and every node is caught part
+    // way through one; a single pass finishes and settles before the drawing is replaced.
+    private static final String HIGHLIGHT_ONCE_CLASS = "pathway-node--changed-once";
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final int MAX_HISTORY = 20000;
@@ -90,6 +94,8 @@ public class PathwayTreePresenter
     private final InlineSvgToggleButton viewButton;
     private final RestFactory restFactory;
     private final PathwayViewport viewport;
+    private Runnable viewChangeHandler;
+    private boolean stepping;
 
     private final HTML html;
     private final HTML side;
@@ -312,6 +318,9 @@ public class PathwayTreePresenter
 
         fetchHistory();
         refresh(false);
+        if (viewChangeHandler != null) {
+            viewChangeHandler.run();
+        }
     }
 
     // Only the graph needs the changes, and only for colour, so they are asked for when it is first
@@ -373,6 +382,30 @@ public class PathwayTreePresenter
                 refresh(true);
             }
         });
+    }
+
+    /**
+     * Whether the model is being shown as a graph rather than as a tree.
+     */
+    public boolean isGraphShown() {
+        return renderer == graphRenderer;
+    }
+
+    /**
+     * Whether the model is being stepped through rather than looked at a change at a time. What
+     * changed is marked once and left, instead of going on drawing the eye to a node that is about
+     * to be replaced.
+     */
+    public void setStepping(final boolean stepping) {
+        this.stepping = stepping;
+    }
+
+    /**
+     * Told whenever the drawing is swapped for the other one, so a view around this one can offer
+     * whatever only makes sense against one of them.
+     */
+    public void setViewChangeHandler(final Runnable viewChangeHandler) {
+        this.viewChangeHandler = viewChangeHandler;
     }
 
     /**
@@ -634,19 +667,27 @@ public class PathwayTreePresenter
             }
         });
         if (!wanted.isEmpty()) {
-            mark(html.getElement(), wanted);
+            mark(html.getElement(), wanted, highlightClass());
         }
     }
 
-    private static void mark(final Element element, final Set<String> wanted) {
+    private String highlightClass() {
+        return stepping
+                ? HIGHLIGHT_ONCE_CLASS
+                : HIGHLIGHT_CLASS;
+    }
+
+    private static void mark(final Element element,
+                             final Set<String> wanted,
+                             final String highlightClass) {
         if (wanted.contains(element.getAttribute("uuid"))) {
-            element.addClassName(HIGHLIGHT_CLASS);
+            element.addClassName(highlightClass);
         }
         final NodeList<Node> children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node node = children.getItem(i);
             if (Element.is(node)) {
-                mark(Element.as(node), wanted);
+                mark(Element.as(node), wanted, highlightClass);
             }
         }
     }

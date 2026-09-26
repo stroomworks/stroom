@@ -1017,6 +1017,13 @@
     animation: pathway-node-changed 1.1s ease-out 10;
 }
 
+/* Over once, for a model being stepped through: the next step lands before a long run has finished,
+   so every node would be caught part way through one. A single pass finishes and settles inside the
+   step it belongs to. */
+.pathway-node--changed-once {
+    animation: pathway-node-changed 1.1s ease-out 1;
+}
+
 /* On the graph the ring belongs on the circle, not on the box around it, or it would pulse square. */
 .pathway-graph-node.pathway-node--changed {
     animation: none;
@@ -1024,6 +1031,14 @@
 
 .pathway-graph-node.pathway-node--changed .pathway-graph-dot {
     animation: pathway-node-changed 1.1s ease-out 10;
+}
+
+.pathway-graph-node.pathway-node--changed-once {
+    animation: none;
+}
+
+.pathway-graph-node.pathway-node--changed-once .pathway-graph-dot {
+    animation: pathway-node-changed 1.1s ease-out 1;
 }
 
 /* Selecting in the tree fills the name in, which is what a row wants. On a circle the same styling
