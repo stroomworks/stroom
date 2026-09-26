@@ -30,14 +30,17 @@ import java.util.Set;
 /**
  * How much each node of a pathway had changed by a point in its history.
  *
- * <p>Three rules, kept here so that everything showing a count says the same thing by the same
+ * <p>Four rules, kept here so that everything showing a count says the same thing by the same
  * measure:
  *
  * <ul>
  *     <li><b>Traces, not changes.</b> A trace that widened nine constraints of a node taught it one
  *     thing on one occasion, the same as a trace that widened one.</li>
  *     <li><b>Coming into being is not changing.</b> A node just learnt has changed no times, however
- *     much was learnt about it, which is how a pathway's own Times Updated counts.</li>
+ *     much was learnt about it. This covers the whole of the trace that first took the route, not
+ *     just the parts of it that added something: a first trace that sets a duration and then widens
+ *     it taught the model what it knows rather than changing its mind. That is how a pathway's own
+ *     Times Updated counts, which does not move for the trace that created the pathway.</li>
  *     <li><b>A node a trace did not carry was not changed by it.</b> Its occurrences widen to admit
  *     none, which is a real change to the model, but no trace reached the node — counting it would
  *     say a node had been changed more often than it had been used.</li>
@@ -63,9 +66,13 @@ class MutationCounts {
      * @param upTo the change being looked at, or zero to count the whole history.
      */
     static MutationCounts of(final List<PathwayMutation> history, final long upTo) {
+        final String creatingTrace = creatingTrace(history);
         final Counter nodes = new Counter();
         for (final PathwayMutation mutation : NullSafe.list(history)) {
             if (upTo > 0 && mutation.getSequence() > upTo) {
+                continue;
+            }
+            if (creatingTrace != null && creatingTrace.equals(mutation.getTraceId())) {
                 continue;
             }
             if (isCreation(mutation.getType()) || MutationType.NODE_ABSENT.equals(mutation.getType())) {
@@ -98,6 +105,22 @@ class MutationCounts {
 
     private static String key(final List<String> path) {
         return String.join(SEPARATOR, NullSafe.list(path));
+    }
+
+    /**
+     * The trace the pathway was born on, or null where the history does not reach back that far.
+     *
+     * <p>Everything that trace did is the model being learnt rather than changed, whether it added
+     * the constraint or moved one it had just added. Shared so that what is drawn as a change and
+     * what is counted as one cannot come apart.
+     */
+    static String creatingTrace(final List<PathwayMutation> history) {
+        for (final PathwayMutation mutation : NullSafe.list(history)) {
+            if (MutationType.PATHWAY_ADDED.equals(mutation.getType())) {
+                return mutation.getTraceId();
+            }
+        }
+        return null;
     }
 
     private static boolean isCreation(final MutationType type) {

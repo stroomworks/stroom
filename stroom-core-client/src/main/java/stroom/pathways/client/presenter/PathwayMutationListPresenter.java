@@ -143,6 +143,14 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             return paths;
         }
 
+        // Nothing is picked out for the trace the pathway was created on. Those nodes were learnt on
+        // that trace rather than changed by it, so marking them would say a change had been made
+        // where the count beside them says none was.
+        final String creating = MutationCounts.creatingTrace(mutations);
+        if (creating != null && creating.equals(selected.getTraceId())) {
+            return paths;
+        }
+
         for (final PathwayMutation mutation : mutations) {
             final boolean mine = selected.isTrace()
                     ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
