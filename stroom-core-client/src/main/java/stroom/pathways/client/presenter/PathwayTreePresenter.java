@@ -49,6 +49,8 @@ import stroom.widget.util.client.SafeHtmlUtil;
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.Node;
+import com.google.gwt.dom.client.NodeList;
 import com.google.gwt.dom.client.Style.Position;
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
@@ -816,15 +818,32 @@ public class PathwayTreePresenter
         if (highlighted.isEmpty()) {
             return;
         }
+
+        // The uuids being looked for, rather than a search of the drawing for each of them in turn.
+        // Picking a trace marks most of the model at once, and a search that starts again at the top
+        // for every node walks the whole drawing as many times as there are nodes in it.
+        final Set<String> wanted = new HashSet<>();
         nodeMap.values().forEach(node -> {
             if (highlighted.contains(key(node.getPath()))) {
-                final Element element = ElementUtil.findChild(html.getElement(), el ->
-                        node.getUuid().equals(el.getAttribute("uuid")));
-                if (element != null) {
-                    element.addClassName(HIGHLIGHT_CLASS);
-                }
+                wanted.add(node.getUuid());
             }
         });
+        if (!wanted.isEmpty()) {
+            mark(html.getElement(), wanted);
+        }
+    }
+
+    private static void mark(final Element element, final Set<String> wanted) {
+        if (wanted.contains(element.getAttribute("uuid"))) {
+            element.addClassName(HIGHLIGHT_CLASS);
+        }
+        final NodeList<Node> children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            final Node node = children.getItem(i);
+            if (Element.is(node)) {
+                mark(Element.as(node), wanted);
+            }
+        }
     }
 
     // The Node Info side panel: the selected node's name, where it sits in the pathway, and everything

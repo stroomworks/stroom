@@ -65,8 +65,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private final Map<String, Boolean> leftOfCentre = new HashMap<>();
     private HtmlBuilder gradients = new HtmlBuilder();
     private int gradientCount;
-    // Counted up for every drawing, so the ids one leaves behind cannot be picked up by the next.
-    private int drawings;
+    // Counted up for every drawing anywhere, so no two drawings can name a gradient alike. Static
+    // rather than per renderer: two graphs can be on the page at once — the pathway list has one
+    // behind the edit dialog's — and a url(#id) is looked up across the whole document, so the one in
+    // front would be painted with the one behind's colours.
+    private static int drawings;
 
     // How long ago the node last changed, in steps against the clock rather than a scale running from
     // the oldest change in this model to the newest. A scale within the model has no fixed meaning —

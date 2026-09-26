@@ -352,9 +352,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         // everything the reader was looking at.
         pathwayTreePresenter.setLayout(pathway.getRoot());
 
+        // The history itself is handed over once, when it arrives. Only where the replay stands moves
+        // from here, and saying so is a walk of the history rather than three.
         final Long selected = mutationListPresenter.getSelectedSequence();
         if (selected == null || !historyComplete) {
-            pathwayTreePresenter.setHistory(history);
             pathwayTreePresenter.setAsAt(null, null);
             pathwayTreePresenter.read(pathway);
             return;
@@ -367,11 +368,9 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
             }
         }
 
-        // The whole history, with where the replay stands said separately: what each node had changed
-        // by that point is counted from it, while what the sizes are measured against stays the most
-        // any node has ever changed. Handed only the part up to here, winding back would rescale the
-        // picture rather than shrink it.
-        pathwayTreePresenter.setHistory(history);
+        // What each node had changed by this point is counted from the whole history held there, while
+        // what the sizes are measured against stays the most any node has ever changed. Handed only
+        // the part up to here, winding back would rescale the picture rather than shrink it.
         pathwayTreePresenter.setAsAt(mutationListPresenter.getSelectedTime(), selected);
 
         final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
@@ -397,6 +396,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 //        getView().setDetails(SafeHtmlUtils.EMPTY_SAFE_HTML);
         this.history = Collections.emptyList();
         this.historyComplete = false;
+        // The last pathway's changes say nothing about this one, and they are what the drawing is
+        // coloured and sized from until this one's arrive.
+        pathwayTreePresenter.setHistory(Collections.emptyList());
+        pathwayTreePresenter.setUsage(Collections.emptyList());
 
         // This is reused for every pathway opened, so anything left over from the last one is dropped
         // before the new one is read. Without it the model shows as it stood at whichever change was
