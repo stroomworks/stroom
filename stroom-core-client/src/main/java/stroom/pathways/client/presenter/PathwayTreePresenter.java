@@ -47,7 +47,6 @@ import stroom.widget.util.client.MySingleSelectionModel;
 import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.core.client.GWT;
-import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.Node;
 import com.google.gwt.dom.client.NodeList;
@@ -83,19 +82,14 @@ public class PathwayTreePresenter
     private static final String ATTRIBUTE_PREFIX = "attribute.";
     private static final String SELECTED_CLASS = "pathway-nodeName--selected";
     private static final String HIGHLIGHT_CLASS = "pathway-node--changed";
-    private static final String DRAGGING_CLASS = "pathway-dragging";
-    // How far the pointer has to move before it counts as a drag rather than a click that wandered.
-    private static final int DRAG_THRESHOLD = 3;
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
-    private static final double ZOOM_STEP = 1.25;
-    private static final double MIN_ZOOM = 0.2;
-    private static final double MAX_ZOOM = 3;
     private static final int MAX_HISTORY = 20000;
     private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
 
     private final InlineSvgToggleButton viewButton;
     private final RestFactory restFactory;
+    private final PathwayViewport viewport;
 
     private final HTML html;
     private final HTML side;
@@ -120,15 +114,9 @@ public class PathwayTreePresenter
     private long upTo;
     private List<PathwayMutation> history = Collections.emptyList();
     private long changeCeiling;
-    private boolean centreWanted;
-    private boolean panning;
-    private boolean panned;
-    private int panX;
-    private int panY;
     // Nodes to draw attention to, as path keys. Held rather than applied once, because the drawing is
     // rebuilt whenever the model is and the elements it was put on go with it.
     private Set<String> highlighted = Collections.emptySet();
-    private double zoom = 1;
     private boolean showKey;
     // Where to ask for the changes if nothing hands them over. The view around this one may already
     // hold them, in which case it gives them and nothing is fetched.
@@ -166,6 +154,7 @@ public class PathwayTreePresenter
         // What the graph's key is placed against. The drawing inside scrolls and is scaled; the key
         // is neither, so it hangs off the panel rather than off the drawing.
         html.getElement().getStyle().setPosition(Position.RELATIVE);
+        viewport = new PathwayViewport(html);
         view.setDataWidget(html);
 
         // Docked beside the toolbar and the tree together, not inside them, so the panel starts at
@@ -194,48 +183,17 @@ public class PathwayTreePresenter
                     NullSafe.isNonBlankString(element.getId()), 3) != null) {
                 return;
             }
-
-            panX = e.getClientX();
-            panY = e.getClientY();
-            panning = true;
-            panned = false;
-            Event.setCapture(html.getElement());
-            html.addStyleName(DRAGGING_CLASS);
+            viewport.startDrag(e.getClientX(), e.getClientY());
         }));
 
-        registerHandler(html.addMouseMoveHandler(e -> {
-            final Element root = panning
-                    ? html.getElement().getFirstChildElement()
-                    : null;
-            if (root == null) {
-                return;
-            }
+        registerHandler(html.addMouseMoveHandler(e -> viewport.drag(e.getClientX(), e.getClientY())));
 
-            // Dragging moves the drawing with the pointer, so the view moves the opposite way.
-            final int dx = panX - e.getClientX();
-            final int dy = panY - e.getClientY();
-            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                panned = true;
-            }
-            root.setScrollLeft(root.getScrollLeft() + dx);
-            root.setScrollTop(root.getScrollTop() + dy);
-            panX = e.getClientX();
-            panY = e.getClientY();
-        }));
-
-        registerHandler(html.addMouseUpHandler(e -> {
-            if (panning) {
-                panning = false;
-                Event.releaseCapture(html.getElement());
-                html.removeStyleName(DRAGGING_CLASS);
-            }
-        }));
+        registerHandler(html.addMouseUpHandler(e -> viewport.endDrag()));
 
         registerHandler(html.addClickHandler(e -> {
             // A drag ends in a click. Selecting whatever the pointer happened to come to rest on would
             // be a surprise, so the click that ends one is let go.
-            if (panned) {
-                panned = false;
+            if (viewport.wasDragged()) {
                 return;
             }
 
@@ -397,9 +355,9 @@ public class PathwayTreePresenter
     // @return whether the click was on one of the drawing's own controls rather than on the drawing.
     private boolean onControl(final String id) {
         if (PathwayGraphRenderer.ZOOM_IN_ID.equals(id)) {
-            zoom(ZOOM_STEP);
+            viewport.zoomIn();
         } else if (PathwayGraphRenderer.ZOOM_OUT_ID.equals(id)) {
-            zoom(1 / ZOOM_STEP);
+            viewport.zoomOut();
         } else if (PathwayGraphRenderer.KEY_ID.equals(id)) {
             showKey = !showKey;
             applyKey();
@@ -425,57 +383,6 @@ public class PathwayTreePresenter
 
     // Scaling the drawing rather than drawing it again: nothing about the model has changed, and a
     // redraw would lose what is selected and where the view had got to.
-    private void zoom(final double by) {
-        final double was = zoom;
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * by));
-
-        // Whatever was in the middle of the view stays in the middle of it. Scaling moves everything
-        // away from the drawing's top left corner, so without this the picture slides out from under
-        // the reader towards the corner they are not looking at.
-        final Element root = html.getElement().getFirstChildElement();
-        if (root == null || was <= 0) {
-            applyZoom();
-            return;
-        }
-
-        // Where the middle of the view falls on the drawing, at the size the drawing is drawn rather
-        // than the size it is shown at.
-        final double middleX = (root.getScrollLeft() + (root.getClientWidth() / 2.0)) / was;
-        final double middleY = (root.getScrollTop() + (root.getClientHeight() / 2.0)) / was;
-
-        // The scrollbars only reach the new size once the box carrying it has been resized.
-        applyZoom();
-        root.setScrollLeft((int) Math.round((middleX * zoom) - (root.getClientWidth() / 2.0)));
-        root.setScrollTop((int) Math.round((middleY * zoom) - (root.getClientHeight() / 2.0)));
-    }
-
-    private void applyZoom() {
-        final Element root = html.getElement().getFirstChildElement();
-        final Element sizer = root == null
-                ? null
-                : root.getFirstChildElement();
-        final Element canvas = sizer == null
-                ? null
-                : sizer.getFirstChildElement();
-        if (canvas == null) {
-            return;
-        }
-
-        // Read off the canvas rather than remembered, because scaling does not change what a thing
-        // measures and this stays the drawing's own size however far it has been zoomed.
-        final int width = canvas.getOffsetWidth();
-        final int height = canvas.getOffsetHeight();
-        if (width <= 0 || height <= 0) {
-            // Nothing laid out to measure yet. Sizing the box to nothing would leave the drawing with
-            // nowhere to scroll, so this waits and asks again rather than settling on zero.
-            Scheduler.get().scheduleDeferred(this::applyZoom);
-            return;
-        }
-        canvas.getStyle().setProperty("transform", "scale(" + zoom + ")");
-        sizer.getStyle().setWidth(width * zoom, Unit.PX);
-        sizer.getStyle().setHeight(height * zoom, Unit.PX);
-    }
-
     /**
      * Whether clicking a node opens the Node Info panel beside the tree. Off where the view around the
      * tree already shows what the node holds, so the two do not say the same thing twice.
@@ -505,7 +412,7 @@ public class PathwayTreePresenter
         if (!samePathway) {
             // A different model, which may be a different size altogether. Keeping the zoom set for
             // the last one would show this one at whatever suited that, so it starts as drawn.
-            zoom = 1;
+            viewport.resetZoom();
         }
 
         this.pathway = pathway;
@@ -649,13 +556,7 @@ public class PathwayTreePresenter
 
         // The element that scrolls is the one being rebuilt below, so where it had got to has to be
         // taken off it first and put back on the one that replaces it.
-        final Element scrolling = html.getElement().getFirstChildElement();
-        final int scrollLeft = keepScroll && scrolling != null
-                ? scrolling.getScrollLeft()
-                : 0;
-        final int scrollTop = keepScroll && scrolling != null
-                ? scrolling.getScrollTop()
-                : 0;
+        viewport.beforeDraw();
 
         if (pathway != null && pathway.getRoot() != null) {
             addNode(pathway.getRoot());
@@ -668,25 +569,9 @@ public class PathwayTreePresenter
                 mostUsed(layout == null
                         ? NullSafe.get(pathway, Pathway::getRoot)
                         : layout))));
+        viewport.afterDraw(keepScroll, renderer.isCentred(), this::rootElement);
         if (renderer.isCentred()) {
-            applyZoom();
             applyKey();
-        }
-
-        final Element rebuilt = html.getElement().getFirstChildElement();
-        if (rebuilt != null) {
-            if (keepScroll) {
-                rebuilt.setScrollLeft(scrollLeft);
-                rebuilt.setScrollTop(scrollTop);
-            } else if (renderer.isCentred()) {
-                centreWanted = true;
-            } else {
-                rebuilt.setScrollLeft(0);
-                rebuilt.setScrollTop(0);
-            }
-        }
-        if (centreWanted) {
-            Scheduler.get().scheduleDeferred(this::centre);
         }
         reselect(was);
         applyHighlight();
@@ -717,31 +602,6 @@ public class PathwayTreePresenter
      * — and the drawing is rebuilt each time. Pinned to the element it was asked for, it would fire
      * against one already thrown away, which is why the middle was only sometimes found.
      */
-    private void centre() {
-        final Element scroller = html.getElement().getFirstChildElement();
-        if (scroller == null || scroller.getClientWidth() <= 0) {
-            // Nothing laid out to measure against yet. Still wanted, so the next draw tries again.
-            return;
-        }
-
-        // On the root itself rather than on the middle of the drawing. The drawing is only as large as
-        // what was placed in it, and a model that reaches further one way than another does not put
-        // its root in the middle of that.
-        final Element node = rootElement();
-        if (node == null) {
-            scroller.setScrollLeft((scroller.getScrollWidth() - scroller.getClientWidth()) / 2);
-            scroller.setScrollTop((scroller.getScrollHeight() - scroller.getClientHeight()) / 2);
-        } else {
-            // Scaled, because what an element measures is what it was drawn at rather than what it is
-            // shown at.
-            final double x = (node.getOffsetLeft() + (node.getOffsetWidth() / 2.0)) * zoom;
-            final double y = (node.getOffsetTop() + (node.getOffsetHeight() / 2.0)) * zoom;
-            scroller.setScrollLeft((int) Math.round(x - (scroller.getClientWidth() / 2.0)));
-            scroller.setScrollTop((int) Math.round(y - (scroller.getClientHeight() / 2.0)));
-        }
-        centreWanted = false;
-    }
-
     private Element rootElement() {
         final PathNode root = layout == null
                 ? NullSafe.get(pathway, Pathway::getRoot)
