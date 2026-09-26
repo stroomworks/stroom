@@ -28,26 +28,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * How much each node and each constraint of a pathway had changed by a point in its history.
+ * How much each node of a pathway had changed by a point in its history.
  *
- * <p>Worked out here rather than wherever it is shown, because it was worked out in two places and
- * the two came to disagree: the drawing counted traces and the constraint list counted changes, one
- * stopped at the point being looked at and the other did not, and both were labelled the same thing
- * on screen. Three rules settle it, and they hold at both scopes:
+ * <p>Three rules, kept here so that everything showing a count says the same thing by the same
+ * measure:
  *
  * <ul>
  *     <li><b>Traces, not changes.</b> A trace that widened nine constraints of a node taught it one
  *     thing on one occasion, the same as a trace that widened one.</li>
  *     <li><b>Coming into being is not changing.</b> A node just learnt has changed no times, however
  *     much was learnt about it, which is how a pathway's own Times Updated counts.</li>
+ *     <li><b>A node a trace did not carry was not changed by it.</b> Its occurrences widen to admit
+ *     none, which is a real change to the model, but no trace reached the node — counting it would
+ *     say a node had been changed more often than it had been used.</li>
  *     <li><b>The point being looked at is honoured.</b> Winding a model back and then counting
  *     changes it had not yet been through says something that was never true.</li>
  * </ul>
- *
- * <p>The one place the two scopes part company is a node a trace did not carry. It is not counted
- * against the node, because no trace reached it, but it is counted against its occurrences
- * constraint, whose value really did widen to admit none. Different questions, answered differently
- * on purpose.
  */
 class MutationCounts {
 
@@ -56,14 +52,10 @@ class MutationCounts {
     private static final String SEPARATOR = "\u0000";
 
     private final Map<String, NodeChange> nodes;
-    private final Map<String, NodeChange> constraints;
     private final long mostChangedNode;
 
-    private MutationCounts(final Map<String, NodeChange> nodes,
-                           final Map<String, NodeChange> constraints,
-                           final long mostChangedNode) {
+    private MutationCounts(final Map<String, NodeChange> nodes, final long mostChangedNode) {
         this.nodes = nodes;
-        this.constraints = constraints;
         this.mostChangedNode = mostChangedNode;
     }
 
@@ -72,23 +64,14 @@ class MutationCounts {
      */
     static MutationCounts of(final List<PathwayMutation> history, final long upTo) {
         final Counter nodes = new Counter();
-        final Counter constraints = new Counter();
-
         for (final PathwayMutation mutation : NullSafe.list(history)) {
             if (upTo > 0 && mutation.getSequence() > upTo) {
                 continue;
             }
-            if (isCreation(mutation.getType())) {
+            if (isCreation(mutation.getType()) || MutationType.NODE_ABSENT.equals(mutation.getType())) {
                 continue;
             }
-
-            final String path = key(mutation.getPath());
-            if (!MutationType.NODE_ABSENT.equals(mutation.getType())) {
-                nodes.add(path, mutation);
-            }
-            if (mutation.getConstraint() != null) {
-                constraints.add(path + SEPARATOR + mutation.getConstraint(), mutation);
-            }
+            nodes.add(key(mutation.getPath()), mutation);
         }
 
         final Map<String, NodeChange> byNode = nodes.counted();
@@ -96,7 +79,7 @@ class MutationCounts {
         for (final NodeChange change : byNode.values()) {
             most = Math.max(most, change.getCount());
         }
-        return new MutationCounts(byNode, constraints.counted(), most);
+        return new MutationCounts(byNode, most);
     }
 
     /**
@@ -104,10 +87,6 @@ class MutationCounts {
      */
     NodeChange node(final List<String> path) {
         return nodes.get(key(path));
-    }
-
-    NodeChange constraint(final List<String> path, final String name) {
-        return constraints.get(key(path) + SEPARATOR + name);
     }
 
     /**

@@ -41,6 +41,7 @@ import stroom.widget.popup.client.presenter.PopupType;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.Timer;
+import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Focus;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -63,6 +64,9 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
      */
     private static final int MAX_HISTORY = 20000;
     private static final int STEP_MILLIS = 1500;
+    private static final int DIALOG_INSET = 60;
+    private static final int MIN_DIALOG_WIDTH = 800;
+    private static final int MIN_DIALOG_HEIGHT = 600;
 
     private Pathway pathway;
     private List<PathwayMutation> history = Collections.emptyList();
@@ -340,7 +344,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                     mutationListPresenter.setData(history);
                     showModel();
                 })
-                .onFailure(new DefaultErrorHandler(this, null))
+                .onFailure(new DefaultErrorHandler(this, () ->
+                        // Asked and not answered. The drawing waits for these, so it has to be told
+                        // that none are coming or it waits for ever.
+                        pathwayTreePresenter.setHistory(Collections.emptyList())))
                 .taskMonitorFactory(this)
                 .exec();
     }
@@ -442,7 +449,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     // be asked for rather than waited for.
     private void showConstraints() {
         constraintListPresenter.setData(pathwayTreePresenter.getSelectionModel().getSelectedObject(),
-                history, mutationListPresenter.getSelectedSequence(), readOnly);
+                readOnly);
     }
 
     public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {
@@ -454,8 +461,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         this.history = Collections.emptyList();
         this.historyComplete = false;
         // The last pathway's changes say nothing about this one, and they are what the drawing is
-        // coloured and sized from until this one's arrive.
-        pathwayTreePresenter.setHistory(Collections.emptyList());
+        // coloured and sized from. They are not cleared here: handing over an empty list would say
+        // this pathway's changes had arrived and were none, and the drawing would be made with
+        // everything at its smallest. The tree is told which pathway it holds changes for, and waits
+        // where they are not this one's.
         pathwayTreePresenter.setUsage(Collections.emptyList());
 
         // This is reused for every pathway opened, so anything left over from the last one is dropped
@@ -491,7 +500,17 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     }
 
     public void show(final String caption, final HidePopupRequestEvent.Handler handler) {
-        final PopupSize popupSize = PopupSize.resizable(1024, 800);
+        // As large as the window allows. The dialog holds a drawing, a list of changes and a table
+        // of constraints at once, and at a fixed size all three were too small to read together.
+        // Short of the edges, so it reads as a dialog rather than as the page.
+        final PopupSize popupSize = PopupSize.resizable(
+                Window.getClientWidth() - DIALOG_INSET,
+                Window.getClientHeight() - DIALOG_INSET,
+                MIN_DIALOG_WIDTH,
+                MIN_DIALOG_HEIGHT);
+        // Two thirds to the drawing, the rest to the constraints. The drawing is the thing being
+        // read; the constraints are what is read about whichever part of it was clicked.
+        getView().setTreeWidth((Window.getClientWidth() - DIALOG_INSET) * 2 / 3);
         ShowPopupEvent.builder(this)
                 .popupType(PopupType.OK_CANCEL_DIALOG)
                 .popupSize(popupSize)
@@ -505,6 +524,8 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     }
 
     public interface PathwayEditView extends View, Focus {
+
+        void setTreeWidth(int width);
 
         void setTree(View view);
 

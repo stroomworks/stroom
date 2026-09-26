@@ -11,9 +11,9 @@
                 </form:FormGroup>
             </g:south>
             <g:center>
-                <g:MySplitLayoutPanel>
+                <g:MySplitLayoutPanel ui:field="centreSplit">
                     <g:west size="400">
-                        <form:FormGroup identity="pathwayDetails" label="Paths">
+                        <form:FormGroup ui:field="treeGroup" identity="pathwayDetails" label="Paths">
                             <g:SimplePanel ui:field="tree"
                                            styleName="max form-control-background form-control-border"/>
                         </form:FormGroup>

@@ -20,18 +20,14 @@ import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.cell.tickbox.client.TickBoxCell;
 import stroom.cell.tickbox.shared.TickBoxState;
-import stroom.data.client.presenter.ColumnSizeConstants;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.RestFactory;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.PathwayMutation;
-import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.DataGridUtil;
-import stroom.util.shared.ModelStringUtil;
 import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.util.client.MouseUtil;
@@ -43,9 +39,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -56,7 +50,6 @@ public class ConstraintListPresenter
 
 //    private static final ConstraintsResource PATHWAYS_RESOURCE = GWT.create(ConstraintsResource.class);
 
-    private final DateTimeFormatter dateTimeFormatter;
     private final PagerView pagerView;
     private final RestFactory restFactory;
     private final MyDataGrid<Constraint> dataGrid;
@@ -68,10 +61,6 @@ public class ConstraintListPresenter
 
 
     private PathNode pathNode;
-    // How often each constraint on this node has moved and when it last did, worked out from the
-    // changes rather than held on the constraint: the changes already say both, and holding them twice
-    // would let the two differ.
-    private MutationCounts counts = MutationCounts.of(Collections.emptyList(), 0);
 
     //    private String filter;
     private boolean readOnly = true;
@@ -80,12 +69,10 @@ public class ConstraintListPresenter
     public ConstraintListPresenter(final EventBus eventBus,
                                    final PagerView view,
                                    final RestFactory restFactory,
-                                   final DateTimeFormatter dateTimeFormatter,
                                    final ConstraintEditPresenter constraintEditPresenter) {
         super(eventBus, view);
         this.pagerView = view;
         this.restFactory = restFactory;
-        this.dateTimeFormatter = dateTimeFormatter;
 //        view.setDataView(pagerView);
 //        view.setUiHandlers(this);
 
@@ -174,38 +161,10 @@ public class ConstraintListPresenter
         addTypeColumn();
         addValueColumn();
         addOptionalColumn();
-        addUsedColumns();
     }
 
     // How much this constraint has been checked and how often it moved. Uses are counted per span, so
     // a node one trace reached forty times adds forty; updates are counted per change.
-    private void addUsedColumns() {
-        addTextColumn("Times Used", 100, constraint -> constraint == null
-                ? null
-                : ModelStringUtil.formatCsv(constraint.getTimesUsed()));
-        addTextColumn("Last Used", ColumnSizeConstants.DATE_COL, constraint -> constraint == null
-                ? null
-                : time(constraint.getLastUsedTime()));
-        addTextColumn("Times Updated", 110, constraint -> constraint == null
-                ? null
-                : ModelStringUtil.formatCsv(count(constraint.getName())));
-        addTextColumn("Last Updated", ColumnSizeConstants.DATE_COL, constraint -> constraint == null
-                ? null
-                : time(NullSafe.get(counts.constraint(pathNode.getPath(), constraint.getName()),
-                        NodeChange::getLastUpdated)));
-    }
-
-    private long count(final String constraintName) {
-        return NullSafe.getOrElse(counts.constraint(pathNode.getPath(), constraintName),
-                NodeChange::getCount, 0L);
-    }
-
-    private String time(final NanoTime nanoTime) {
-        return nanoTime == null
-                ? null
-                : dateTimeFormatter.format(nanoTime.toEpochMillis());
-    }
-
     private void addNameColumn() {
         addTextColumn("Name", 300, Constraint::getName);
     }
@@ -326,16 +285,8 @@ public class ConstraintListPresenter
      *                comes from. Given rather than fetched: the view around this one already holds it
      *                so it can wind the model back.
      */
-    public void setData(final PathNode pathNode,
-                        final List<PathwayMutation> history,
-                        final Long upTo,
-                        final boolean readOnly) {
+    public void setData(final PathNode pathNode, final boolean readOnly) {
         this.pathNode = pathNode;
-        // Counted the same way, and stopped at the same point, as the drawing beside this one. The
-        // two worked it out for themselves and came to disagree about the same number.
-        this.counts = MutationCounts.of(history, upTo == null
-                ? 0L
-                : upTo);
         this.readOnly = readOnly;
         refresh();
     }

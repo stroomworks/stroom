@@ -17,11 +17,13 @@
 package stroom.pathways.client.view;
 
 import stroom.pathways.client.presenter.PathwayEditPresenter.PathwayEditView;
+import stroom.widget.form.client.FormGroup;
 
 import com.google.gwt.safehtml.shared.SafeHtml;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.HTML;
+import com.google.gwt.user.client.ui.MySplitLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -32,6 +34,10 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
 
     private final Widget widget;
 
+    @UiField
+    MySplitLayoutPanel centreSplit;
+    @UiField
+    FormGroup treeGroup;
     @UiField
     SimplePanel tree;
     @UiField
@@ -53,6 +59,11 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     public void focus() {
         // Nothing here is typed into. What the dialog shows is read, and the parts that are clicked
         // take focus as they are clicked.
+    }
+
+    @Override
+    public void setTreeWidth(final int width) {
+        centreSplit.setWidgetSize(treeGroup, width);
     }
 
     @Override

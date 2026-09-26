@@ -54,6 +54,7 @@ import com.google.gwt.dom.client.Style.Position;
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.user.client.Event;
+import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -89,12 +90,22 @@ public class PathwayTreePresenter
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final int MAX_HISTORY = 20000;
+    private static final int HISTORY_DELAY_MILLIS = 400;
     private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
 
     private final InlineSvgToggleButton viewButton;
     private final RestFactory restFactory;
     private final PathwayViewport viewport;
     private Runnable viewChangeHandler;
+    private boolean historyPending;
+    private boolean blanked;
+    private String wantedSelection;
+    private final Timer historyRequest = new Timer() {
+        @Override
+        public void run() {
+            fetchHistoryNow();
+        }
+    };
     private boolean stepping;
 
     private final HTML html;
@@ -103,7 +114,10 @@ public class PathwayTreePresenter
     private final MySingleSelectionModel<PathNode> selectionModel = new MySingleSelectionModel<PathNode>();
     private final PathwayRenderer treeRenderer = new PathwayTreeRenderer();
     private final PathwayRenderer graphRenderer = new PathwayGraphRenderer();
-    private PathwayRenderer renderer = treeRenderer;
+    // The graph to begin with: it says how much has gone through each part of the model and how
+    // recently, which is what a reader opening a pathway is usually after. The tree is a click away
+    // for reading the structure itself.
+    private PathwayRenderer renderer = graphRenderer;
     // How much each node has changed and when it last did, by uuid. Worked out from the stored changes
     // rather than held on the node: the changes already say it, and holding it twice would let the two
     // differ.
@@ -150,7 +164,9 @@ public class PathwayTreePresenter
         // the buttons that change the model. It holds which drawing is on show, so nothing else has to.
         viewButton = new InlineSvgToggleButton();
         viewButton.setSvg(SvgImage.NODES);
-        viewButton.setTitle(GRAPH_TITLE);
+        // Turned on to match the drawing it starts on, so the button and what is on show agree.
+        viewButton.setState(true);
+        viewButton.setTitle(TREE_TITLE);
         view.addButton(viewButton);
 
         glass = new Glass(resources.dataGridStyle().resizeGlass());
@@ -326,7 +342,17 @@ public class PathwayTreePresenter
     // Only the graph needs the changes, and only for colour, so they are asked for when it is first
     // shown rather than with every pathway opened. A page of them is large enough that the pathway
     // list was unopenable while it read them.
+    // Asked for a moment after the reader stops moving, not as they move. Running down a list of
+    // pathways with the arrow keys would otherwise ask for the whole history of every one passed
+    // over, and every answer but the last would be thrown away.
     private void fetchHistory() {
+        historyRequest.cancel();
+        if (renderer.usesHistory() && docRef != null) {
+            historyRequest.schedule(HISTORY_DELAY_MILLIS);
+        }
+    }
+
+    private void fetchHistoryNow() {
         final String name = NullSafe.get(pathway, Pathway::getName);
         if (!renderer.usesHistory() || docRef == null || name == null || name.equals(historyFor)) {
             return;
@@ -356,7 +382,12 @@ public class PathwayTreePresenter
                         refresh(true);
                     }
                 })
-                .onFailure(new DefaultErrorHandler(this, null))
+                .onFailure(new DefaultErrorHandler(this, () -> {
+                    // Asked and not answered. Drawn with nothing known rather than left blank, which
+                    // would look like a model with no nodes in it.
+                    setHistory(Collections.emptyList());
+                    refresh(true);
+                }))
                 .taskMonitorFactory(this)
                 .exec();
     }
@@ -441,8 +472,17 @@ public class PathwayTreePresenter
         }
 
         this.pathway = pathway;
+        // Held changes belong to whichever pathway they were fetched for. Where that is not this one,
+        // a drawing that needs them waits: either the fetch below answers, or whoever opened this
+        // hands them over.
+        historyPending = !Objects.equals(NullSafe.get(pathway, Pathway::getName), historyFor);
         selectionModel.clear();
         refresh(samePathway);
+        if (!samePathway) {
+            // A model just opened with nothing picked out shows an empty panel beside it. The root is
+            // the one node every model has, and what the whole pathway is named after.
+            selectRoot();
+        }
         // A different pathway was picked, so the changes behind the one on show are not the ones held.
         fetchHistory();
     }
@@ -471,6 +511,7 @@ public class PathwayTreePresenter
      */
     public void setHistory(final List<PathwayMutation> history) {
         historyFor = NullSafe.get(pathway, Pathway::getName);
+        historyPending = false;
         this.history = NullSafe.list(history);
         counts = MutationCounts.of(this.history, upTo);
 
@@ -552,6 +593,23 @@ public class PathwayTreePresenter
         showInfo();
     }
 
+    private void selectRoot() {
+        final PathNode root = NullSafe.get(pathway, Pathway::getRoot);
+        if (root != null) {
+            if (waiting()) {
+                // Nothing is drawn, so nothing is picked out. Remembered, and done once there is.
+                wantedSelection = root.getUuid();
+            } else {
+                reselect(root.getUuid());
+            }
+        }
+    }
+
+    // Whether the drawing on show is made from the model's changes and has not been given them.
+    private boolean waiting() {
+        return renderer.usesHistory() && historyPending;
+    }
+
     private void reselect(final String uuid) {
         if (uuid != null) {
             final PathNode node = nodeMap.get(uuid);
@@ -579,13 +637,42 @@ public class PathwayTreePresenter
         nodeMap.clear();
         selectedElement = null;
 
+        if (pathway != null && pathway.getRoot() != null) {
+            addNode(pathway.getRoot());
+        }
+
+        // A drawing that says how much each node has changed cannot be made before that is known.
+        // Drawn anyway, every node would appear at its smallest and in the colour of never having
+        // changed, and then jump as the answer arrived. Nothing is better than something wrong, so
+        // the panel is left empty until the changes arrive. Whichever node is to be picked out waits
+        // with it: what a node is made of, read beside an empty panel, describes a model that is not
+        // on show.
+        if (waiting()) {
+            html.setHTML(SafeHtmlUtils.EMPTY_SAFE_HTML);
+            blanked = true;
+            wantedSelection = was;
+            selectionModel.clear();
+            showInfo();
+            return;
+        }
+
+        // Whatever the caller says, a drawing that follows an empty panel is the first one made of
+        // this model, so it opens where a first drawing opens rather than where the last one of some
+        // other model was left.
+        final boolean keep = keepScroll && !blanked;
+        blanked = false;
+
+        // Either what was on show a moment ago, or what was asked for while there was nothing to
+        // show it on.
+        final String restore = was != null
+                ? was
+                : wantedSelection;
+        wantedSelection = null;
+
         // The element that scrolls is the one being rebuilt below, so where it had got to has to be
         // taken off it first and put back on the one that replaces it.
         viewport.beforeDraw();
 
-        if (pathway != null && pathway.getRoot() != null) {
-            addNode(pathway.getRoot());
-        }
         html.setHTML(renderer.render(new RenderRequest(pathway, layout, byUuid(), usageAsAt(),
                 asAt > 0
                         ? asAt
@@ -595,9 +682,9 @@ public class PathwayTreePresenter
                         ? NullSafe.get(pathway, Pathway::getRoot)
                         : layout),
                 showKey)));
-        viewport.afterDraw(keepScroll, renderer.opensCentred(), renderer.isZoomable(),
+        viewport.afterDraw(keep, renderer.opensCentred(), renderer.isZoomable(),
                 this::rootElement);
-        reselect(was);
+        reselect(restore);
         applyHighlight();
         showInfo();
     }
