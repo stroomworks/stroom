@@ -38,6 +38,7 @@ import stroom.svg.shared.SvgImage;
 import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
+import stroom.util.shared.PageResponse;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.util.client.ElementUtil;
@@ -353,11 +354,7 @@ public class PathwayTreePresenter
                 : GRAPH_TITLE);
 
         fetchHistory();
-
-        final String was = uuid(selectedNode);
-        this.selectedNode = null;
         refresh(false);
-        reselect(was);
     }
 
     // Only the graph needs the changes, and only for colour, so they are asked for when it is first
@@ -382,7 +379,14 @@ public class PathwayTreePresenter
                     // Another pathway may have been picked while this was in flight, and colouring one
                     // model by another model's changes would be worse than not colouring it at all.
                     if (name.equals(NullSafe.get(pathway, Pathway::getName))) {
-                        setHistory(result.getValues());
+                        // A page of them rather than all of them says nothing dependable about how
+                        // much a node has changed or when it last did. Better to colour nothing than
+                        // to colour it from part of the story with no way of saying so.
+                        final long total = NullSafe.getOrElse(
+                                result.getPageResponse(), PageResponse::getTotal, 0L);
+                        setHistory(result.getValues().size() >= total
+                                ? result.getValues()
+                                : Collections.emptyList());
                         refresh(true);
                     }
                 })
@@ -493,11 +497,6 @@ public class PathwayTreePresenter
     }
 
     public void read(final Pathway pathway) {
-        // What was selected before, so it can be picked out again afterwards. A node keeps its uuid
-        // when the model is wound back, so the same node is still the same node — and where it is not
-        // in the model being read, nothing is selected, which is the right answer.
-        final String was = uuid(selectedNode);
-
         // Reading the same pathway again is the model being wound back, and the reader is looking at
         // the same tree, so it stays where they left it. A different pathway starts at the top.
         final boolean samePathway = this.pathway != null
@@ -511,10 +510,8 @@ public class PathwayTreePresenter
         }
 
         this.pathway = pathway;
-        this.selectedNode = null;
         selectionModel.clear();
         refresh(samePathway);
-        reselect(was);
         // A different pathway was picked, so the changes behind the one on show are not the ones held.
         fetchHistory();
     }
@@ -691,6 +688,12 @@ public class PathwayTreePresenter
 
     // Draws the whole thing. Only a new pathway needs this; selecting a node does not.
     private void refresh(final boolean keepScroll) {
+        // What was selected, so it can be picked out again once the drawing has been rebuilt. Kept
+        // here rather than at each place that redraws: a node keeps its uuid when the model is wound
+        // back, so the same node is still the same node, and a redraw that forgot to put the
+        // selection back would leave the node marked in one place and not in the other.
+        final String was = uuid(selectedNode);
+        selectedNode = null;
         nodeMap.clear();
         selectedElement = null;
 
@@ -735,6 +738,7 @@ public class PathwayTreePresenter
         if (centreWanted) {
             Scheduler.get().scheduleDeferred(this::centre);
         }
+        reselect(was);
         applyHighlight();
         showInfo();
     }
