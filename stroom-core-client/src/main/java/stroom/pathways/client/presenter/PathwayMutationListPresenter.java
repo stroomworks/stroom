@@ -44,6 +44,7 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -160,6 +161,39 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             }
         }
         return paths;
+    }
+
+    /**
+     * The constraints of one node that the selected row changed, so they can be picked out beside the
+     * node that was. A trace row gives everything that trace did to the node; a single row gives the
+     * one constraint it names.
+     *
+     * @param path the node being shown, or null where none is.
+     * @return the constraint names, empty where the selection changed nothing of that node.
+     */
+    public Set<String> getSelectedConstraints(final List<String> path) {
+        final MutationRow selected = selectionModel.getSelected();
+        final Set<String> names = new HashSet<>();
+        if (selected == null || path == null) {
+            return names;
+        }
+
+        // Nothing is picked out for the trace the pathway was created on, for the same reason the
+        // nodes are not: what that trace did was the model being learnt rather than changed.
+        final String creating = MutationCounts.creatingTrace(mutations);
+        if (creating != null && creating.equals(selected.getTraceId())) {
+            return names;
+        }
+
+        for (final PathwayMutation mutation : mutations) {
+            final boolean mine = selected.isTrace()
+                    ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
+                    : mutation.getSequence() == selected.getSequence();
+            if (mine && mutation.getConstraint() != null && path.equals(mutation.getPath())) {
+                names.add(mutation.getConstraint());
+            }
+        }
+        return names;
     }
 
     /**

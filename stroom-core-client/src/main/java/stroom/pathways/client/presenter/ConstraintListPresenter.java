@@ -39,9 +39,11 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -61,6 +63,7 @@ public class ConstraintListPresenter
 
 
     private PathNode pathNode;
+    private Set<String> changed = Collections.emptySet();
 
     //    private String filter;
     private boolean readOnly = true;
@@ -88,6 +91,12 @@ public class ConstraintListPresenter
         removeButton = pagerView.addButton(SvgPresets.DELETE);
 
         addColumns();
+        // Which rows are marked changes with the selection rather than with the data, so the style is
+        // asked for at draw time rather than baked into a row.
+        dataGrid.setRowStyles((constraint, index) ->
+                constraint != null && changed.contains(constraint.getName())
+                        ? "constraint-row--changed"
+                        : "");
         enableButtons();
     }
 
@@ -281,13 +290,14 @@ public class ConstraintListPresenter
     }
 
     /**
-     * @param history every change made to this pathway, which is where a constraint's last update time
-     *                comes from. Given rather than fetched: the view around this one already holds it
-     *                so it can wind the model back.
+     * @param changed the constraints the change being looked at moved, which are marked so the reader
+     *                can see which of a node's constraints that change was about. Empty where no
+     *                change is being looked at.
      */
-    public void setData(final PathNode pathNode, final boolean readOnly) {
+    public void setData(final PathNode pathNode, final boolean readOnly, final Set<String> changed) {
         this.pathNode = pathNode;
         this.readOnly = readOnly;
+        this.changed = NullSafe.set(changed);
         refresh();
     }
 

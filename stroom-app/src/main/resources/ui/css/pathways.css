@@ -1041,6 +1041,18 @@
     animation: pathway-node-changed 1.1s ease-out 1;
 }
 
+/* The constraints the change being looked at moved, marked in the same red the nodes pulse in so the
+   two panels read as one answer: this node, and these of its constraints. Steady rather than pulsing,
+   because a row is read and text that moves is harder to read than a circle that does. Translucent so
+   the selected row still shows through it. */
+.constraint-row--changed .dataGridCell {
+    background-color: rgba(232, 84, 63, 0.16);
+}
+
+.constraint-row--changed .dataGridCell:first-child {
+    box-shadow: inset 3px 0 0 0 rgb(232, 84, 63);
+}
+
 /* Selecting in the tree fills the name in, which is what a row wants. On a circle the same styling
  * reads as a box drawn round it, so the marker takes the selection instead: the ring goes outside the
  * circle rather than on it, leaving the colour that says when the node last changed to be seen. */

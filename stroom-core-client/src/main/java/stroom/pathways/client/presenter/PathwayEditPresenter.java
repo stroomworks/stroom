@@ -448,8 +448,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     // node out again, and the selection model treats that as no change and says nothing, so this has to
     // be asked for rather than waited for.
     private void showConstraints() {
-        constraintListPresenter.setData(pathwayTreePresenter.getSelectionModel().getSelectedObject(),
-                readOnly);
+        final PathNode node = pathwayTreePresenter.getSelectionModel().getSelectedObject();
+        constraintListPresenter.setData(node,
+                readOnly,
+                mutationListPresenter.getSelectedConstraints(NullSafe.get(node, PathNode::getPath)));
     }
 
     public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {
