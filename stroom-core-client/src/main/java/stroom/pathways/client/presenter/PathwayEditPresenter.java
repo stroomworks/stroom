@@ -385,7 +385,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     // be asked for rather than waited for.
     private void showConstraints() {
         constraintListPresenter.setData(pathwayTreePresenter.getSelectionModel().getSelectedObject(),
-                history, readOnly);
+                history, mutationListPresenter.getSelectedSequence(), readOnly);
     }
 
     public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {

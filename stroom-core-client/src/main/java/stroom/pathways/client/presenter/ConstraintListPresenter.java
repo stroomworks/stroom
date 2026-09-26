@@ -26,7 +26,6 @@ import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.RestFactory;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
-import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.preferences.client.DateTimeFormatter;
@@ -69,12 +68,10 @@ public class ConstraintListPresenter
 
 
     private PathNode pathNode;
-    private List<PathwayMutation> history = Collections.emptyList();
     // How often each constraint on this node has moved and when it last did, worked out from the
     // changes rather than held on the constraint: the changes already say both, and holding them twice
     // would let the two differ.
-    private Map<String, NanoTime> updateTimes = Collections.emptyMap();
-    private Map<String, Long> updateCounts = Collections.emptyMap();
+    private MutationCounts counts = MutationCounts.of(Collections.emptyList(), 0);
 
     //    private String filter;
     private boolean readOnly = true;
@@ -194,14 +191,13 @@ public class ConstraintListPresenter
                 : ModelStringUtil.formatCsv(count(constraint.getName())));
         addTextColumn("Last Updated", ColumnSizeConstants.DATE_COL, constraint -> constraint == null
                 ? null
-                : time(updateTimes.get(constraint.getName())));
+                : time(NullSafe.get(counts.constraint(pathNode.getPath(), constraint.getName()),
+                        NodeChange::getLastUpdated)));
     }
 
     private long count(final String constraintName) {
-        final Long count = updateCounts.get(constraintName);
-        return count == null
-                ? 0L
-                : count;
+        return NullSafe.getOrElse(counts.constraint(pathNode.getPath(), constraintName),
+                NodeChange::getCount, 0L);
     }
 
     private String time(final NanoTime nanoTime) {
@@ -332,47 +328,19 @@ public class ConstraintListPresenter
      */
     public void setData(final PathNode pathNode,
                         final List<PathwayMutation> history,
+                        final Long upTo,
                         final boolean readOnly) {
         this.pathNode = pathNode;
-        this.history = NullSafe.list(history);
+        // Counted the same way, and stopped at the same point, as the drawing beside this one. The
+        // two worked it out for themselves and came to disagree about the same number.
+        this.counts = MutationCounts.of(history, upTo == null
+                ? 0L
+                : upTo);
         this.readOnly = readOnly;
         refresh();
     }
 
-    // How often each constraint on this node moved and when it last did, in one pass over the
-    // changes. The newest is found by sequence rather than by time, because every change a trace made
-    // shares one timestamp.
-    //
-    // A constraint coming into being is not counted as an update, the same way the trace that creates
-    // a pathway is not counted against its Times Updated.
-    private void findUpdates() {
-        updateTimes = new HashMap<>();
-        updateCounts = new HashMap<>();
-        if (pathNode == null) {
-            return;
-        }
-
-        final Map<String, Long> newest = new HashMap<>();
-        for (final PathwayMutation mutation : history) {
-            final String name = mutation.getConstraint();
-            if (name == null || !pathNode.getPath().equals(mutation.getPath())) {
-                continue;
-            }
-
-            if (!MutationType.CONSTRAINT_ADDED.equals(mutation.getType())) {
-                updateCounts.put(name, count(name) + 1);
-            }
-
-            final Long seen = newest.get(name);
-            if (seen == null || mutation.getSequence() > seen) {
-                newest.put(name, mutation.getSequence());
-                updateTimes.put(name, mutation.getTime());
-            }
-        }
-    }
-
     private void refresh() {
-        findUpdates();
         final List<Constraint> constraints = getConstraintList(pathNode);
         dataGrid.setRowData(constraints);
         dataGrid.setRowCount(constraints.size());

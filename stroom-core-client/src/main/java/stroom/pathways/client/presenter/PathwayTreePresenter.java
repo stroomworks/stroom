@@ -27,7 +27,6 @@ import stroom.pathways.shared.FindPathwayMutationCriteria;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
-import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
@@ -108,7 +107,7 @@ public class PathwayTreePresenter
     // How much each node has changed and when it last did, by uuid. Worked out from the stored changes
     // rather than held on the node: the changes already say it, and holding it twice would let the two
     // differ.
-    private Map<String, NodeChange> changesByPath = Collections.emptyMap();
+    private MutationCounts counts = MutationCounts.of(Collections.emptyList(), 0);
     // The moment being looked at. Zero while the model on show is the current one, in which case it
     // is the time now.
     private long asAt;
@@ -541,83 +540,34 @@ public class PathwayTreePresenter
     public void setHistory(final List<PathwayMutation> history) {
         historyFor = NullSafe.get(pathway, Pathway::getName);
         this.history = NullSafe.list(history);
-        changesByPath = countChanges(upTo);
+        counts = MutationCounts.of(this.history, upTo);
 
-        // What the sizes are measured against, taken over the whole history rather than the part being
-        // shown. Measured against the part being shown, the largest node of the moment would always be
-        // drawn at full size, so winding back would rescale the picture rather than shrink it.
-        long ceiling = 0;
-        for (final NodeChange change : countChanges(0).values()) {
-            ceiling = Math.max(ceiling, change.getCount());
-        }
-        changeCeiling = ceiling;
-    }
-
-    // What each node had changed by a point in the history, by path. Kept by path rather than by uuid
-    // because the nodes are not known until the model is read, and the model read may not be the one
-    // that was on show when the history was handed over.
-    private Map<String, NodeChange> countChanges(final long upToSequence) {
-        final Map<String, Long> newest = new HashMap<>();
-        // The traces that changed each node, not the changes they made. A trace that widened nine of
-        // a node's constraints taught it one thing on one occasion, the same as a trace that widened
-        // one — which is how the pathway's own Times Updated counts, and how the list groups them.
-        final Map<String, Set<String>> traces = new HashMap<>();
-        final Map<String, NanoTime> times = new HashMap<>();
-        for (final PathwayMutation mutation : history) {
-            if (upToSequence > 0 && mutation.getSequence() > upToSequence) {
-                continue;
-            }
-            // Something coming into being is not it changing. The pathway's own Times Updated skips
-            // the trace that created it and a constraint's skips it being added, so a node counts the
-            // same way — a node just learnt has changed no times, however much was learnt about it.
-            if (MutationType.PATHWAY_ADDED.equals(mutation.getType())
-                || MutationType.NODE_ADDED.equals(mutation.getType())
-                || MutationType.CONSTRAINT_ADDED.equals(mutation.getType())) {
-                continue;
-            }
-            // A trace that did not carry the node did not change it the way a trace that walked it
-            // did. Counting it would say a node had been changed more often than it had been reached.
-            if (MutationType.NODE_ABSENT.equals(mutation.getType())) {
-                continue;
-            }
-
-            final String key = key(mutation.getPath());
-            traces.computeIfAbsent(key, k -> new HashSet<>()).add(mutation.getTraceId());
-
-            final Long seen = newest.get(key);
-            // By sequence rather than by time, because every change a trace made shares one timestamp.
-            if (seen == null || mutation.getSequence() > seen) {
-                newest.put(key, mutation.getSequence());
-                times.put(key, mutation.getTime());
-            }
-        }
-
-        final Map<String, NodeChange> byPath = new HashMap<>();
-        traces.forEach((key, traceIds) ->
-                byPath.put(key, new NodeChange(traceIds.size(), times.get(key))));
-        return byPath;
+        // What the sizes are measured against, taken over the whole history rather than the part
+        // being shown. Measured against the part being shown, the largest node of the moment would
+        // always be drawn at full size, so winding back would rescale the picture rather than shrink
+        // it. Worked out once here, because the history is what it depends on and that does not
+        // change as the reader moves through it.
+        changeCeiling = MutationCounts.of(this.history, 0).getMostChangedNode();
     }
 
     /**
-     * Readings of how much each node had been used, one per trace that changed the model. Given rather
-     * than fetched, like the changes themselves.
+     * Readings of how much each node had been used, one per trace that changed the model. Given
+     * rather than fetched, like the changes themselves.
      */
     public void setUsage(final List<PathwayUsage> usage) {
         this.usage = NullSafe.list(usage);
     }
 
-    // The newest reading taken at or before the moment being shown, by node uuid. Empty while the
-    // current model is on show: the nodes already say how much they have been used.
+    // The reading taken for the trace the change being looked at belongs to, which is the first at or
+    // after it: a reading is written once the trace is done, numbered with the last change it made.
+    // Taking the one before instead would report the model as it stood a whole trace earlier, so a
+    // node could read as changed more often than it had been used.
     private Map<String, NodeUsage> usageAsAt() {
         final Map<String, NodeUsage> byUuid = new HashMap<>();
         if (asAt <= 0 || upTo <= 0) {
             return byUuid;
         }
 
-        // The reading taken for the trace the change being looked at belongs to, which is the first at
-        // or after it: a reading is written once the trace is done, numbered with the last change it
-        // made. Taking the one before instead would report the model as it stood a whole trace
-        // earlier, so a node could read as changed more often than it had been used.
         PathwayUsage reading = null;
         for (final PathwayUsage candidate : usage) {
             if (candidate.getSequence() >= upTo
@@ -651,7 +601,7 @@ public class PathwayTreePresenter
         this.upTo = upTo == null
                 ? 0L
                 : upTo;
-        changesByPath = countChanges(this.upTo);
+        counts = MutationCounts.of(history, this.upTo);
     }
 
     private static String key(final List<String> path) {
@@ -808,7 +758,7 @@ public class PathwayTreePresenter
     private Map<String, NodeChange> byUuid() {
         final Map<String, NodeChange> byUuid = new HashMap<>();
         nodeMap.values().forEach(node -> {
-            final NodeChange change = changesByPath.get(key(node.getPath()));
+            final NodeChange change = counts.node(node.getPath());
             if (change != null) {
                 byUuid.put(node.getUuid(), change);
             }
