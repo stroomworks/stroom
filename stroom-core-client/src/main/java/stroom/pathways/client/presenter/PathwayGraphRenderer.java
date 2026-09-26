@@ -96,18 +96,45 @@ class PathwayGraphRenderer implements PathwayRenderer {
             new Band(DAY, "#22a2a2", "#0f6e6e", "#3dadad", "in the last day"),
             new Band(Long.MAX_VALUE, "#4a7fc1", "#2b5488", "#608ec8", "over a day ago"));
 
-    static final String ZOOM_IN_ID = "pathwayZoomIn";
-    static final String ZOOM_OUT_ID = "pathwayZoomOut";
-    static final String KEY_ID = "pathwayKeyToggle";
-    // Found by id rather than by class: a class it is found by is a class nothing else may add, and
-    // showing it adds one.
-    static final String KEY_PANEL_ID = "pathwayKey";
-    static final String KEY_SHOWN_CLASS = "pathway-graph-key--shown";
+    private static final String ZOOM_IN_ID = "pathwayZoomIn";
+    private static final String ZOOM_OUT_ID = "pathwayZoomOut";
+    private static final String KEY_ID = "pathwayKeyToggle";
+    private static final String KEY_SHOWN_CLASS = "pathway-graph-key--shown";
 
     @Override
-    public boolean isCentred() {
-        // The root sits at the middle of the canvas and the rings grow out around it, so a view
+    public boolean opensCentred() {
+        // The root sits in the middle of the drawing and the rings grow out around it, so a view
         // starting at the top left would be looking at empty space in a corner.
+        return true;
+    }
+
+    @Override
+    public boolean isPannable() {
+        return true;
+    }
+
+    @Override
+    public boolean isZoomable() {
+        return true;
+    }
+
+    @Override
+    public boolean usesHistory() {
+        // How much a node has changed is its size, and how long ago is its colour.
+        return true;
+    }
+
+    @Override
+    public boolean onControl(final String id, final PathwayControls controls) {
+        if (ZOOM_IN_ID.equals(id)) {
+            controls.zoomIn();
+        } else if (ZOOM_OUT_ID.equals(id)) {
+            controls.zoomOut();
+        } else if (KEY_ID.equals(id)) {
+            controls.toggleLegend();
+        } else {
+            return false;
+        }
         return true;
     }
 
@@ -176,7 +203,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 Attribute.className("pathway pathway-graph"));
         // Beside the drawing rather than inside it, so it stays put while the drawing is scrolled and
         // is not scaled along with it when the view is zoomed.
-        appendKey(hb);
+        appendKey(hb, request.isLegendVisible());
         appendZoom(hb);
         return hb.toSafeHtml();
     }
@@ -195,9 +222,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // What the colours mean, kept behind a button: it takes a corner of the drawing to say something
     // that only has to be read once. Built from the same numbers the nodes are coloured with, so it
     // cannot come to say something the drawing does not.
-    private void appendKey(final HtmlBuilder hb) {
+    private void appendKey(final HtmlBuilder hb, final boolean visible) {
         hb.div(panel -> {
-            appendScale(panel);
+            appendScale(panel, visible);
             panel.div(controls -> controls.div("i",
                             Attribute.className("pathway-graph-control"),
                             Attribute.id(KEY_ID),
@@ -206,7 +233,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         }, Attribute.className("pathway-graph-key-panel"));
     }
 
-    private void appendScale(final HtmlBuilder hb) {
+    private void appendScale(final HtmlBuilder hb, final boolean visible) {
         hb.div(key -> {
             key.div("Last updated", Attribute.className("pathway-graph-key-title"));
             BANDS.forEach(band -> appendSwatch(key, band.colour, band.ring, band.label));
@@ -216,7 +243,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
             key.div("Line thickness shows how much goes through it, and its colour when that last "
                     + "happened, on the same scale",
                     Attribute.className("pathway-graph-key-note"));
-        }, Attribute.className("pathway-graph-key"), Attribute.id(KEY_PANEL_ID));
+        }, Attribute.className(visible
+                ? "pathway-graph-key " + KEY_SHOWN_CLASS
+                : "pathway-graph-key"));
     }
 
     private void appendSwatch(final HtmlBuilder hb,

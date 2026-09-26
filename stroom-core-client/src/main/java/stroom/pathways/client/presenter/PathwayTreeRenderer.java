@@ -40,8 +40,31 @@ class PathwayTreeRenderer implements PathwayRenderer {
     private static final int INDENT = 20;
 
     @Override
-    public boolean isCentred() {
+    public boolean opensCentred() {
         // Rows run down from the root, so the top left is where the model starts.
+        return false;
+    }
+
+    @Override
+    public boolean isPannable() {
+        // Rows read top to bottom. There is nowhere to move to that scrolling does not reach.
+        return false;
+    }
+
+    @Override
+    public boolean isZoomable() {
+        return false;
+    }
+
+    @Override
+    public boolean usesHistory() {
+        // Names and constraints only. What has changed and when is not drawn here.
+        return false;
+    }
+
+    @Override
+    public boolean onControl(final String id, final PathwayControls controls) {
+        // No buttons of its own.
         return false;
     }
 

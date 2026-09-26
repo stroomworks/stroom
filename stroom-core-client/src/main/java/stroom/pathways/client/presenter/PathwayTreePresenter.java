@@ -173,7 +173,7 @@ public class PathwayTreePresenter
         registerHandler(html.addMouseDownHandler(e -> {
             // Only the graph is dragged. The tree scrolls a row at a time and reads top to bottom;
             // there is nothing to move around in it.
-            if (!renderer.isCentred()) {
+            if (!renderer.isPannable()) {
                 return;
             }
 
@@ -319,7 +319,7 @@ public class PathwayTreePresenter
     // list was unopenable while it read them.
     private void fetchHistory() {
         final String name = NullSafe.get(pathway, Pathway::getName);
-        if (!renderer.isCentred() || docRef == null || name == null || name.equals(historyFor)) {
+        if (!renderer.usesHistory() || docRef == null || name == null || name.equals(historyFor)) {
             return;
         }
 
@@ -354,35 +354,27 @@ public class PathwayTreePresenter
 
     // @return whether the click was on one of the drawing's own controls rather than on the drawing.
     private boolean onControl(final String id) {
-        if (PathwayGraphRenderer.ZOOM_IN_ID.equals(id)) {
-            viewport.zoomIn();
-        } else if (PathwayGraphRenderer.ZOOM_OUT_ID.equals(id)) {
-            viewport.zoomOut();
-        } else if (PathwayGraphRenderer.KEY_ID.equals(id)) {
-            showKey = !showKey;
-            applyKey();
-        } else {
-            return false;
-        }
-        return true;
-    }
-
-    // Held here rather than in the drawing, which is rebuilt whenever the model is, so that opening
-    // the key does not close itself again the next time a trace moves the model on.
-    private void applyKey() {
-        final Element key = ElementUtil.findChild(html.getElement(), element ->
-                PathwayGraphRenderer.KEY_PANEL_ID.equals(element.getId()));
-        if (key != null) {
-            if (showKey) {
-                key.addClassName(PathwayGraphRenderer.KEY_SHOWN_CLASS);
-            } else {
-                key.removeClassName(PathwayGraphRenderer.KEY_SHOWN_CLASS);
+        return renderer.onControl(id, new PathwayControls() {
+            @Override
+            public void zoomIn() {
+                viewport.zoomIn();
             }
-        }
+
+            @Override
+            public void zoomOut() {
+                viewport.zoomOut();
+            }
+
+            @Override
+            public void toggleLegend() {
+                // Drawn again rather than opened in place: the drawing owns its own markup, and it is
+                // rebuilt on every step through the history anyway.
+                showKey = !showKey;
+                refresh(true);
+            }
+        });
     }
 
-    // Scaling the drawing rather than drawing it again: nothing about the model has changed, and a
-    // redraw would lose what is selected and where the view had got to.
     /**
      * Whether clicking a node opens the Node Info panel beside the tree. Off where the view around the
      * tree already shows what the node holds, so the two do not say the same thing twice.
@@ -568,11 +560,10 @@ public class PathwayTreePresenter
                 changeCeiling,
                 mostUsed(layout == null
                         ? NullSafe.get(pathway, Pathway::getRoot)
-                        : layout))));
-        viewport.afterDraw(keepScroll, renderer.isCentred(), this::rootElement);
-        if (renderer.isCentred()) {
-            applyKey();
-        }
+                        : layout),
+                showKey)));
+        viewport.afterDraw(keepScroll, renderer.opensCentred(), renderer.isZoomable(),
+                this::rootElement);
         reselect(was);
         applyHighlight();
         showInfo();

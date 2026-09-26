@@ -98,10 +98,15 @@ class PathwayViewport {
      * @param centred    whether this drawing opens in the middle rather than at its top left.
      * @param centreOn   what to put in the middle, asked for only once there is something to measure.
      */
-    void afterDraw(final boolean keepScroll, final boolean centred, final Supplier<Element> centreOn) {
+    void afterDraw(final boolean keepScroll,
+                   final boolean centred,
+                   final boolean zoomable,
+                   final Supplier<Element> centreOn) {
         // Before the scroll is touched: the scrollbars only reach the scaled size once the box
         // carrying it has been resized.
-        applyZoom();
+        if (zoomable) {
+            applyZoom();
+        }
 
         final Element scroller = scroller();
         if (scroller != null) {

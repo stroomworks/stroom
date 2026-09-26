@@ -35,6 +35,7 @@ class RenderRequest {
     private final long asAt;
     private final long changeCeiling;
     private final long usageCeiling;
+    private final boolean legendVisible;
 
     RenderRequest(final Pathway pathway,
                   final PathNode layout,
@@ -42,7 +43,8 @@ class RenderRequest {
                   final Map<String, NodeUsage> usage,
                   final long asAt,
                   final long changeCeiling,
-                  final long usageCeiling) {
+                  final long usageCeiling,
+                  final boolean legendVisible) {
         this.pathway = pathway;
         this.layout = layout;
         this.changes = changes;
@@ -50,6 +52,7 @@ class RenderRequest {
         this.asAt = asAt;
         this.changeCeiling = changeCeiling;
         this.usageCeiling = usageCeiling;
+        this.legendVisible = legendVisible;
     }
 
     /**
@@ -101,6 +104,14 @@ class RenderRequest {
 
     long getUsageCeiling() {
         return usageCeiling;
+    }
+
+    /**
+     * Whether the drawing shows what its colours and sizes mean. Asked for here rather than put on
+     * afterwards, so the drawing owns all of its own markup and nothing has to reach into it.
+     */
+    boolean isLegendVisible() {
+        return legendVisible;
     }
 
     /**

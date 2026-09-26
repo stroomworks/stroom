@@ -45,5 +45,34 @@ interface PathwayRenderer {
      * root in the middle of the canvas shows nothing much in the corner the view would otherwise
      * start at.
      */
-    boolean isCentred();
+    boolean opensCentred();
+
+    /**
+     * Whether the drawing is moved around by dragging it. A drawing that reads top to bottom in rows
+     * has nowhere to be moved to.
+     */
+    boolean isPannable();
+
+    /**
+     * Whether the drawing is scaled to be seen at a different size. Only a drawing built to be scaled
+     * can be: the view resizes the box around it, and a drawing not laid out for that would be cut.
+     */
+    boolean isZoomable();
+
+    /**
+     * Whether the drawing says anything about how the model has changed, which is what decides
+     * whether the changes behind it are worth asking the server for. They are a page of rows; a
+     * drawing that does not use them should not be paying for them.
+     */
+    boolean usesHistory();
+
+    /**
+     * Acts on a click on one of the drawing's own buttons.
+     *
+     * @param id       the id of the element clicked, or of the nearest parent carrying one.
+     * @param controls what the button can ask the view around the drawing to do.
+     * @return whether the click was on one of this drawing's buttons, in which case it was not a
+     * click on the drawing itself.
+     */
+    boolean onControl(String id, PathwayControls controls);
 }
