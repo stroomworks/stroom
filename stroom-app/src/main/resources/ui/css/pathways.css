@@ -876,18 +876,36 @@
 
 /* The nodes a change being looked at touched, picked out for a few seconds when the change is
  * selected in the mutation list. It runs a fixed number of times rather than forever: it is there to
- * be noticed, and something that never stops moving stops being looked at. */
+ * be noticed, and something that never stops moving stops being looked at.
+ *
+ * Magenta, which none of the bands that say when a node last changed uses. A node worth pulsing has
+ * just changed, so it is already drawn in the red of the most recent band, and a red ring around a
+ * red node could only be picked out zoomed right in. It opens as a solid ring rather than out of
+ * nothing for the same reason: the drawing is scaled to fit, so a ring that starts at nothing starts
+ * at less than a pixel once it is zoomed out. */
 @keyframes pathway-node-changed {
     from {
-        box-shadow: 0 0 0 0 rgba(232, 84, 63, 0.85);
+        box-shadow: 0 0 0 3px rgb(255, 77, 200);
     }
     to {
-        box-shadow: 0 0 0 14px rgba(232, 84, 63, 0);
+        box-shadow: 0 0 0 20px rgba(255, 77, 200, 0);
+    }
+}
+
+/* The same ring, started outside the white outline a selected node wears. An outline is painted over
+ * a shadow, so on the node being looked at the first and brightest moment of the pulse was the part
+ * covered up. */
+@keyframes pathway-node-changed-outside {
+    from {
+        box-shadow: 0 0 0 6px rgb(255, 77, 200);
+    }
+    to {
+        box-shadow: 0 0 0 23px rgba(255, 77, 200, 0);
     }
 }
 
 .pathway-node--changed {
-    animation: pathway-node-changed 1.1s ease-out 10;
+    animation: pathway-node-changed 1.1s ease-out 5;
 }
 
 /* Over once, for a model being stepped through: the next step lands before a long run has finished,
@@ -903,7 +921,7 @@
 }
 
 .pathway-graph-node.pathway-node--changed .pathway-graph-dot {
-    animation: pathway-node-changed 1.1s ease-out 10;
+    animation: pathway-node-changed 1.1s ease-out 5;
 }
 
 .pathway-graph-node.pathway-node--changed-once {
@@ -914,10 +932,15 @@
     animation: pathway-node-changed 1.1s ease-out 1;
 }
 
-/* The constraints the change being looked at moved, marked in the same red the nodes pulse in so the
-   two panels read as one answer: this node, and these of its constraints. Steady rather than pulsing,
-   because a row is read and text that moves is harder to read than a circle that does. Translucent so
-   the selected row still shows through it. */
+/* Only where it starts changes, so each keeps however many times it runs. */
+.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed .pathway-graph-dot,
+.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed-once .pathway-graph-dot {
+    animation-name: pathway-node-changed-outside;
+}
+
+/* The constraints the change being looked at moved, marked in the red that says a node has just
+   changed. Steady rather than pulsing, because a row is read and text that moves is harder to read
+   than a circle that does. Translucent so the selected row still shows through it. */
 .constraint-row--changed .dataGridCell {
     background-color: rgba(232, 84, 63, 0.16);
 }
