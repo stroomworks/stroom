@@ -370,6 +370,11 @@ public class PathwayTreePresenter
             viewport.resetZoom();
         }
 
+        // Whether there is a node to go back to. A reader stepping through the model's changes has
+        // one and keeps it; one who has just been handed this model has none, whether or not it is
+        // the same model they were shown last time.
+        final boolean nothingSelected = selectedNode == null && wantedSelection == null;
+
         this.pathway = pathway;
         // Held changes belong to whichever pathway they were fetched for. Where that is not this one,
         // a drawing that needs them waits: either the fetch below answers, or whoever opened this
@@ -377,7 +382,7 @@ public class PathwayTreePresenter
         historyPending = !Objects.equals(NullSafe.get(pathway, Pathway::getName), historyFor);
         selectionModel.clear();
         refresh(samePathway);
-        if (!samePathway) {
+        if (!samePathway || nothingSelected) {
             // The root is the one node every model has, and what the whole pathway is named after, so
             // a model just opened has it picked out rather than nothing.
             selectRoot();
@@ -488,6 +493,7 @@ public class PathwayTreePresenter
     public void clearSelection() {
         selectedNode = null;
         selectedElement = null;
+        wantedSelection = null;
         selectionModel.clear();
     }
 
