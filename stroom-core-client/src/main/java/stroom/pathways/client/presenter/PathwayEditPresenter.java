@@ -478,6 +478,18 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         getView().getLayerContainer().show(changesTab.equals(tab)
                 ? mutationListPresenter
                 : routeListPresenter);
+
+        // Stepping through the changes is driven by the list on the Changes tab, and the buttons that
+        // start and stop it sit on that list's own toolbar. Left running behind the other tab it would
+        // go on picking changes with nothing on show to stop it.
+        stop();
+
+        // Neither table's selection says anything on the other tab — a change winds the model back
+        // where a route picks nodes out of it as it stands — so the switch starts at the model as it
+        // is with nothing picked out. Cleared without telling anyone, because the read below is the
+        // one the switch asked for rather than the third of three.
+        mutationListPresenter.getSelectionModel().clear(false);
+        routeListPresenter.getSelectionModel().clear(false);
         showModel();
     }
 
