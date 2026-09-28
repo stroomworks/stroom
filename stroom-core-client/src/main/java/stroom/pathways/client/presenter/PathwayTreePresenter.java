@@ -56,11 +56,9 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public class PathwayTreePresenter
         extends MyPresenterWidget<PathwayTreeView> {
@@ -73,6 +71,12 @@ public class PathwayTreePresenter
     // through, the next step arrives before a long run has finished and every node is caught part
     // way through one; a single pass finishes and settles before the drawing is replaced.
     private static final String HIGHLIGHT_ONCE_CLASS = "pathway-node--changed-once";
+    // How long the walk takes to travel the whole route, whatever its length. Worked out per route
+    // rather than fixed per node, so a short route is not over before it has been seen and a long one
+    // does not crawl.
+    private static final int ROUTE_SWEEP_MS = 2500;
+    // As far apart as two nodes are ever held off, so a route of two or three does not amble.
+    private static final int ROUTE_STAGGER_MAX_MS = 500;
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final int MAX_HISTORY = 20000;
@@ -118,9 +122,13 @@ public class PathwayTreePresenter
     private long upTo;
     private List<PathwayMutation> history = Collections.emptyList();
     private long changeCeiling;
-    // Nodes to draw attention to, as path keys. Held rather than applied once, because the drawing is
-    // rebuilt whenever the model is and the elements it was put on go with it.
-    private Set<String> highlighted = Collections.emptySet();
+    // Nodes to draw attention to, each path key against its place in the order they were given in.
+    // Held rather than applied once, because the drawing is rebuilt whenever the model is and the
+    // elements it was put on go with it.
+    private Map<String, Integer> highlighted = Collections.emptyMap();
+    // Whether what is picked out is a walk, which is shown one node after another and once, rather
+    // than a change, which moved every node it touched at the same moment.
+    private boolean highlightedRoute;
     private boolean showKey;
     // Where to ask for the changes if nothing hands them over. The view around this one may already
     // hold them, in which case it gives them and nothing is fetched.
@@ -395,10 +403,26 @@ public class PathwayTreePresenter
      * The nodes to draw attention to when the model is next read — the ones a change being looked at
      * touched. They are picked out for a moment rather than marked, because it is what just happened
      * that is worth seeing, not a state the node is in.
+     *
+     * <p>All at once, because a change moved all of them at the same moment. A route did not, and has
+     * {@link #setHighlightedRoute(List)} instead.
      */
     public void setHighlighted(final List<List<String>> paths) {
-        highlighted = new HashSet<>();
-        NullSafe.list(paths).forEach(path -> highlighted.add(key(path)));
+        highlighted = new HashMap<>();
+        highlightedRoute = false;
+        NullSafe.list(paths).forEach(path -> highlighted.putIfAbsent(key(path), 0));
+    }
+
+    /**
+     * The nodes a route ran, in the sequence it ran them. Picked out one after another rather than
+     * together, so the walk can be followed rather than only seen.
+     */
+    public void setHighlightedRoute(final List<List<String>> paths) {
+        highlighted = new HashMap<>();
+        highlightedRoute = true;
+        // Where each node comes in the walk, counting the ones kept rather than the ones given, so a
+        // node reached twice keeps its first place and the places run without gaps.
+        NullSafe.list(paths).forEach(path -> highlighted.putIfAbsent(key(path), highlighted.size()));
     }
 
     /**
@@ -645,37 +669,56 @@ public class PathwayTreePresenter
             return;
         }
 
-        // The uuids being looked for, rather than a search of the drawing for each of them in turn.
-        // Picking a trace marks most of the model at once, and a search that starts again at the top
-        // for every node walks the whole drawing as many times as there are nodes in it.
-        final Set<String> wanted = new HashSet<>();
+        // The uuids being looked for and where each comes in the order, rather than a search of the
+        // drawing for each of them in turn. Picking a trace marks most of the model at once, and a
+        // search that starts again at the top for every node walks the whole drawing as many times as
+        // there are nodes in it.
+        final Map<String, Integer> wanted = new HashMap<>();
         nodeMap.values().forEach(node -> {
-            if (highlighted.contains(key(node.getPath()))) {
-                wanted.add(node.getUuid());
+            final Integer place = highlighted.get(key(node.getPath()));
+            if (place != null) {
+                wanted.put(node.getUuid(), place);
             }
         });
         if (!wanted.isEmpty()) {
-            mark(html.getElement(), wanted, highlightClass());
+            mark(html.getElement(), wanted, highlightClass(), stagger());
         }
     }
 
+    // How far apart to start the nodes of the route on show. Nothing for a change, whose nodes all
+    // moved at once.
+    private int stagger() {
+        if (!highlightedRoute || highlighted.size() < 2) {
+            return 0;
+        }
+        return Math.min(ROUTE_STAGGER_MAX_MS, ROUTE_SWEEP_MS / (highlighted.size() - 1));
+    }
+
     private String highlightClass() {
-        return stepping
+        // A route is walked once: its nodes are held off one after another to show the walk, and
+        // running that over and over would replay it rather than show it.
+        return stepping || highlightedRoute
                 ? HIGHLIGHT_ONCE_CLASS
                 : HIGHLIGHT_CLASS;
     }
 
     private static void mark(final Element element,
-                             final Set<String> wanted,
-                             final String highlightClass) {
-        if (wanted.contains(element.getAttribute("uuid"))) {
+                             final Map<String, Integer> wanted,
+                             final String highlightClass,
+                             final int stagger) {
+        final Integer place = wanted.get(element.getAttribute("uuid"));
+        if (place != null) {
+            // Held off by where the node comes in the walk, so a route travels along itself. Set here
+            // rather than in the stylesheet, which cannot know the order, and left to go with the
+            // drawing: the next read builds the markup again, so nothing has to take it back off.
+            element.getStyle().setProperty("animationDelay", (place * stagger) + "ms");
             element.addClassName(highlightClass);
         }
         final NodeList<Node> children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node node = children.getItem(i);
             if (Element.is(node)) {
-                mark(Element.as(node), wanted, highlightClass);
+                mark(Element.as(node), wanted, highlightClass, stagger);
             }
         }
     }

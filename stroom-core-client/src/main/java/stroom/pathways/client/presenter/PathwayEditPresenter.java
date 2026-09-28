@@ -429,9 +429,11 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         // Set before the model is read, because the nodes are picked out as the drawing is built. The
         // tab on show decides which selection picks them out, so a route left selected behind the
         // Changes tab does not keep marking the drawing while changes are being clicked through.
-        pathwayTreePresenter.setHighlighted(changesTab.equals(selectedTab)
-                ? mutationListPresenter.getSelectedPaths()
-                : routeListPresenter.getSelectedPaths());
+        if (changesTab.equals(selectedTab)) {
+            pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedPaths());
+        } else {
+            pathwayTreePresenter.setHighlightedRoute(routeListPresenter.getSelectedPaths());
+        }
         // Winding the model back takes nodes out of it. Placing what is left from the model as it
         // stands now keeps every node where it was, rather than closing the gaps and moving
         // everything the reader was looking at.

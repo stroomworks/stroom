@@ -892,15 +892,31 @@
     }
 }
 
-/* The same ring, started outside the white outline a selected node wears. An outline is painted over
- * a shadow, so on the node being looked at the first and brightest moment of the pulse was the part
- * covered up. */
-@keyframes pathway-node-changed-outside {
+/* The graph's version, which moves an outline away from the node rather than growing a shadow out of
+ * it. The circle carries a shadow of its own, put there by the renderer to say when the node last
+ * changed, and a pulse that animated the same property would take that ring away for as long as it
+ * ran and hand it back at the end. An outline is a property of its own, and its offset says how far
+ * out to draw, so the pulse can start beyond the ring and leave it alone. */
+@keyframes pathway-node-changed-ring {
     from {
-        box-shadow: 0 0 0 6px rgb(255, 77, 200);
+        outline-offset: 2px;
+        outline-color: rgb(255, 77, 200);
     }
     to {
-        box-shadow: 0 0 0 23px rgba(255, 77, 200, 0);
+        outline-offset: 20px;
+        outline-color: rgba(255, 77, 200, 0);
+    }
+}
+
+/* The same, started beyond the white outline a selected node wears, which reaches four pixels out. */
+@keyframes pathway-node-changed-ring-outside {
+    from {
+        outline-offset: 5px;
+        outline-color: rgb(255, 77, 200);
+    }
+    to {
+        outline-offset: 23px;
+        outline-color: rgba(255, 77, 200, 0);
     }
 }
 
@@ -908,34 +924,35 @@
     animation: pathway-node-changed 1.1s ease-out 5;
 }
 
-/* Over once, for a model being stepped through: the next step lands before a long run has finished,
-   so every node would be caught part way through one. A single pass finishes and settles inside the
-   step it belongs to. */
+/* Over once. A model being stepped through needs it, because the next step lands before a long run
+   has finished and every node would be caught part way through one. A route needs it too: its nodes
+   are held off one after another to show the walk, so running it again would replay the walk rather
+   than show it. */
 .pathway-node--changed-once {
     animation: pathway-node-changed 1.1s ease-out 1;
 }
 
-/* On the graph the ring belongs on the circle, not on the box around it, or it would pulse square. */
-.pathway-graph-node.pathway-node--changed {
-    animation: none;
+/* A graph node's box is the circle's bounding square — the name beside it is placed out of the flow —
+   so a half radius makes the outline round rather than square. Drawn clear from the start, and left
+   in place afterwards at no colour, which shows nothing. */
+.pathway-graph-node.pathway-node--changed,
+.pathway-graph-node.pathway-node--changed-once {
+    border-radius: 50%;
+    outline: 3px solid transparent;
 }
 
-.pathway-graph-node.pathway-node--changed .pathway-graph-dot {
-    animation: pathway-node-changed 1.1s ease-out 5;
+.pathway-graph-node.pathway-node--changed {
+    animation: pathway-node-changed-ring 1.1s ease-out 5;
 }
 
 .pathway-graph-node.pathway-node--changed-once {
-    animation: none;
-}
-
-.pathway-graph-node.pathway-node--changed-once .pathway-graph-dot {
-    animation: pathway-node-changed 1.1s ease-out 1;
+    animation: pathway-node-changed-ring 1.1s ease-out 1;
 }
 
 /* Only where it starts changes, so each keeps however many times it runs. */
-.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed .pathway-graph-dot,
-.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed-once .pathway-graph-dot {
-    animation-name: pathway-node-changed-outside;
+.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed,
+.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed-once {
+    animation-name: pathway-node-changed-ring-outside;
 }
 
 /* The constraints the change being looked at moved, marked in the red that says a node has just

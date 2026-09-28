@@ -220,7 +220,7 @@ public class NodeMutatorImpl {
         // that is already recorded as a count of zero on each child the model knows.
         final String childSteps = spansByName.isEmpty()
                 ? null
-                : String.join(" > ", spansByName.keySet());
+                : String.join(StepsUse.SEPARATOR, spansByName.keySet());
 
         final PathNode.Builder pathNodeBuilder =
                 addConstraints(parentNode, parentSpan, childSteps, messages, pathwaysDoc);

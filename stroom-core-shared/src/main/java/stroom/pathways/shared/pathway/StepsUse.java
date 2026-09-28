@@ -43,6 +43,12 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class StepsUse {
 
+    /**
+     * What separates one child's name from the next in a set of steps. Both the writing of a set and
+     * the reading back of which children ran depend on it, and they are in different modules.
+     */
+    public static final String SEPARATOR = " > ";
+
     @JsonProperty
     private final String steps;
     @JsonProperty

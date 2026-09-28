@@ -38,6 +38,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -102,7 +103,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
-     * Which nodes the selected route visited, as paths, so they can be picked out on the tree and the
+     * Which nodes the selected route ran, as paths, so they can be picked out on the tree and the
      * graph. Empty where nothing is selected.
      */
     public List<List<String>> getSelectedPaths() {
@@ -114,12 +115,37 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         final List<List<String>> paths = new ArrayList<>();
         for (final RouteVisit visit : selected.getVisits()) {
             final PathNode node = nodesByPosition.get(visit.getNode());
-            final List<String> path = NullSafe.get(node, PathNode::getPath);
-            if (path != null && !paths.contains(path)) {
-                paths.add(path);
+            if (node == null) {
+                continue;
             }
+            add(paths, node.getPath());
+            addChildren(paths, node, steps(node, visit.getSteps()));
         }
         return paths;
+    }
+
+    // A route only names the nodes that had children to run, because what it holds for each is which
+    // of their sets of steps they took, and a node with no children has none. The leaves ran all the
+    // same, and the steps are where they are named, so they are read back off them.
+    private static void addChildren(final List<List<String>> paths,
+                                    final PathNode node,
+                                    final String steps) {
+        if (steps.isEmpty()) {
+            return;
+        }
+        // Split reads its argument as a pattern, which the separator is safe to be read as.
+        final List<String> ran = Arrays.asList(steps.split(StepsUse.SEPARATOR));
+        for (final PathNode child : NullSafe.list(node.getChildren())) {
+            if (ran.contains(child.getName())) {
+                add(paths, child.getPath());
+            }
+        }
+    }
+
+    private static void add(final List<List<String>> paths, final List<String> path) {
+        if (path != null && !paths.contains(path)) {
+            paths.add(path);
+        }
     }
 
     /**
