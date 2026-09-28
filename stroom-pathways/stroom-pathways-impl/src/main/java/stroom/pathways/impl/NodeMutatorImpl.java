@@ -43,6 +43,7 @@ import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.Regex;
+import stroom.pathways.shared.pathway.StepsUse;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
@@ -59,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -67,7 +69,7 @@ public class NodeMutatorImpl {
 
     private static final int MAX_SET_SIZE = 10;
     private static final String ATTRIBUTE_PREFIX = "attribute.";
-    private static final String CHILD_ORDER = "childOrder";
+    private static final String CHILD_STEPS = "childSteps";
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
@@ -77,6 +79,12 @@ public class NodeMutatorImpl {
     // widen. One of these is made per trace, so the list covers that trace and no other. Kept in the
     // order the changes happened so a replay can follow them.
     private final List<PathwayMutation> mutations = new ArrayList<>();
+
+    // Every node visit this trace made, in the order the trace was walked, each paired with the steps
+    // that node took on that visit. A node several spans reached appears once per span, so this holds
+    // everything a caller could want to know about what ran and in what sequence; narrower views are
+    // derived from it rather than recorded alongside it.
+    private final List<NodeSteps> stepsVisits = new ArrayList<>();
 
     // Which trace and span the change being recorded came from. Fields because the methods that
     // notice a constraint moving are several calls below the one that knows. Which node it happened to
@@ -100,6 +108,30 @@ public class NodeMutatorImpl {
      */
     public List<PathwayMutation> getMutations() {
         return mutations;
+    }
+
+    /**
+     * Every node visit this trace made, in the sequence it made them.
+     *
+     * <p>A node's steps are given as a position in its {@code stepsUse}, which is only ever appended
+     * to, so a position names the same steps for the life of the pathway. A node the trace reached
+     * that ran no children makes no visit here; that it ran at all is recorded in the steps of the
+     * node above it.
+     */
+    public List<NodeSteps> getStepsVisits() {
+        return stepsVisits;
+    }
+
+    /**
+     * Which steps each node took while this trace was folded in, by node uuid, ignoring how many
+     * times each was taken and which visit took which.
+     */
+    public Map<String, Set<Integer>> getStepsTaken() {
+        final Map<String, Set<Integer>> taken = new LinkedHashMap<>();
+        for (final NodeSteps visit : stepsVisits) {
+            taken.computeIfAbsent(visit.nodeUuid(), k -> new TreeSet<>()).add(visit.steps());
+        }
+        return taken;
     }
 
     /**
@@ -181,17 +213,17 @@ public class NodeMutatorImpl {
                 .computeIfAbsent(span.getName(), k -> new ArrayList<>())
                 .add(span));
 
-        // The child names in the order they were first reached, kept on the parent as a constraint.
-        // A route that starts doing the same work in a different order widens that constraint rather
-        // than becoming a route of its own. How many times each one ran is counted on the child, so
-        // repeats are left out here, and so is a trace that reached no children at all — that is
-        // already recorded as a count of zero on each child the model knows.
-        final String childOrder = spansByName.isEmpty()
+        // The children this node ran, named in the sequence they were reached, kept on the parent as
+        // a constraint. A route that starts doing the same work a different way widens that constraint
+        // rather than becoming a route of its own. How many times each one ran is counted on the
+        // child, so repeats are left out here, and so is a trace that reached no children at all —
+        // that is already recorded as a count of zero on each child the model knows.
+        final String childSteps = spansByName.isEmpty()
                 ? null
                 : String.join(" > ", spansByName.keySet());
 
         final PathNode.Builder pathNodeBuilder =
-                addConstraints(parentNode, parentSpan, childOrder, messages, pathwaysDoc);
+                addConstraints(parentNode, parentSpan, childSteps, messages, pathwaysDoc);
 
         final Map<String, PathNode> existing = new LinkedHashMap<>();
         NullSafe.list(parentNode.getChildren()).forEach(child -> existing.put(child.getName(), child));
@@ -268,13 +300,20 @@ public class NodeMutatorImpl {
 
     private PathNode.Builder addConstraints(final PathNode pathNode,
                                             final Span span,
-                                            final String childOrder,
+                                            final String childSteps,
                                             final MessageReceiver messageReceiver,
                                             final PathwaysDoc pathwaysDoc) {
         // This runs once for every span folded into the node, so it counts spans rather than traces.
         final PathNode.Builder pathNodeBuilder = pathNode.copy()
                 .timesUsed(pathNode.getTimesUsed() + 1)
                 .lastUsedTime(time);
+        if (childSteps != null) {
+            final List<StepsUse> existing = pathNode.getStepsUse();
+            // Noted before the count is applied, because the position steps will hold is the one they
+            // already have or the end of the list, and afterwards they are no longer new.
+            stepsVisits.add(new NodeSteps(pathNode.getUuid(), stepsIndex(existing, childSteps)));
+            pathNodeBuilder.stepsUse(countSteps(existing, childSteps, time));
+        }
 
 //        // Add additional span info if wanted.
 //        final List<Span> spans;
@@ -312,9 +351,9 @@ public class NodeMutatorImpl {
         // Set or expand kind.
         setOrExpand(constraints, pathNode, "kind", span.getKind().name(), false, messageReceiver, pathwaysDoc);
 
-        // Set or expand the order the children ran in. Null for a node that has never had any.
-        if (childOrder != null) {
-            setOrExpand(constraints, pathNode, CHILD_ORDER, childOrder, false, messageReceiver, pathwaysDoc);
+        // Set or expand the steps the node took. Null for a node that has never had any children.
+        if (childSteps != null) {
+            setOrExpand(constraints, pathNode, CHILD_STEPS, childSteps, false, messageReceiver, pathwaysDoc);
         }
 
         // Create attribute sets. A span can legitimately carry no attributes at all, and then arrives
@@ -377,6 +416,34 @@ public class NodeMutatorImpl {
         return pathNodeBuilder;
     }
 
+    // One more run of these steps, counted the same way as timesUsed: per span folded in, so a node
+    // four spans reached counts four. New steps are appended rather than sorted in, so a position in
+    // the list names the same steps for the life of the pathway.
+    private static List<StepsUse> countSteps(final List<StepsUse> existing,
+                                             final String steps,
+                                             final NanoTime time) {
+        final List<StepsUse> list = new ArrayList<>(NullSafe.list(existing));
+        final int index = stepsIndex(list, steps);
+        if (index < list.size()) {
+            list.set(index, list.get(index).used(time));
+        } else {
+            list.add(new StepsUse(steps, 1, time));
+        }
+        return list;
+    }
+
+    // Where these steps sit in a node's list, or the end of it where the node has not taken them
+    // before and they are about to be appended.
+    private static int stepsIndex(final List<StepsUse> existing, final String steps) {
+        final List<StepsUse> list = NullSafe.list(existing);
+        for (int i = 0; i < list.size(); i++) {
+            if (steps.equals(list.get(i).getSteps())) {
+                return i;
+            }
+        }
+        return list.size();
+    }
+
     private void setOrExpand(final Map<String, Constraint> constraints,
                              final PathNode pathNode,
                              final String name,
@@ -423,6 +490,7 @@ public class NodeMutatorImpl {
                             opt);
                     case final String val -> put(constraints, pathNode, name,
                             createStringConstraint(location,
+                                    name,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
@@ -854,6 +922,7 @@ public class NodeMutatorImpl {
     }
 
     private ConstraintValue createStringConstraint(final Supplier<String> location,
+                                                   final String name,
                                                    final ConstraintValue current,
                                                    final String value,
                                                    final MessageReceiver messageReceiver,
@@ -888,7 +957,10 @@ public class NodeMutatorImpl {
                         messageReceiver.log(Severity.ERROR, () ->
                                 "Unexpected string: " + location.get() + " " + value);
                     } else {
-                        if (set.size() > MAX_SET_SIZE) {
+                        // Steps are the one string constraint that is never generalised. A route is
+                        // read back from them, and a pattern that matches anything would say nothing
+                        // about which children ran with no way to work it out again afterwards.
+                        if (set.size() > MAX_SET_SIZE && !CHILD_STEPS.equals(name)) {
                             // Convert to pattern.
                             // TODO : Create some sort of pattern expansion if possible.
                             messageReceiver.log(Severity.INFO, () ->
@@ -919,5 +991,15 @@ public class NodeMutatorImpl {
             }
         }
         return current;
+    }
+
+    /**
+     * One node visit, and the steps it took on that visit.
+     *
+     * @param nodeUuid which node was reached.
+     * @param steps    a position in that node's {@code stepsUse}.
+     */
+    public record NodeSteps(String nodeUuid, int steps) {
+
     }
 }

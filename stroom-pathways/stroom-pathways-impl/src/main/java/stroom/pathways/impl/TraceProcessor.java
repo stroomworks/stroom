@@ -199,7 +199,13 @@ public class TraceProcessor {
                     .copy()
                     .lastUsedTime(nanoTime)
                     .timesUsed(pathway.getTimesUsed() + 1)
-                    .root(pathNode);
+                    .root(pathNode)
+                    // Recorded whether or not the trace changed anything, because a route the model
+                    // already knew is still a route taken.
+                    .routes(RouteRecorder.add(pathway.getRoutes(),
+                            nodeMutator.getStepsVisits(),
+                            nanoTime,
+                            trace.getTraceId()));
             if (nodeMutator.isChanged()) {
                 builder.updateTime(nanoTime);
                 if (!created[0]) {

@@ -1,14 +1,16 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
-             xmlns:form="urn:import:stroom.widget.form.client">
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tab="urn:import:stroom.widget.tab.client.view">
     <g:FlowPanel styleName="max form dock-container-vertical">
         <g:MySplitLayoutPanel styleName="dock-max">
             <g:south size="220">
-                <form:FormGroup identity="pathwayMutations" label="Changes">
-                    <g:SimplePanel ui:field="mutations"
-                                   styleName="max form-control-background form-control-border"/>
-                </form:FormGroup>
+                <g:FlowPanel styleName="max dock-container-vertical">
+                    <tab:LinkTabBar ui:field="tabBar" styleName="dock-min linkTabBar"/>
+                    <tab:LayerContainerImpl ui:field="layerContainer"
+                                            styleName="dock-max form-control-background form-control-border"/>
+                </g:FlowPanel>
             </g:south>
             <g:center>
                 <g:MySplitLayoutPanel ui:field="centreSplit">

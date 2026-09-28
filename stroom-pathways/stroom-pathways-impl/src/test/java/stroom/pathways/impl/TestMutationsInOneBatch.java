@@ -31,6 +31,7 @@ import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
 import stroom.pathways.shared.pathway.PathwayUsage;
+import stroom.pathways.shared.pathway.RouteUse;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 
@@ -122,6 +123,24 @@ class TestMutationsInOneBatch {
                 .as("counted for every trace that took the route, not only the ones that taught it "
                     + "something — the second and third here are the same shape as the first")
                 .isEqualTo(3);
+    }
+
+    @Test
+    void everyTraceStoresTheRouteItTook(@TempDir final Path dir) {
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "GET", 20, PING, COMMIT),
+                trace("t3", "GET", 20, PING));
+
+        final Pathway pathway = readPathway(dir);
+        assertThat(pathway.getRoutes().getRoutes())
+                .as("two shapes went through, so two routes, whatever the model learnt")
+                .hasSize(2);
+        assertThat(pathway.getRoutes().getRoutes().stream()
+                .mapToLong(RouteUse::getTimesUsed)
+                .sum())
+                .as("every trace takes exactly one route, so the counts account for all of them")
+                .isEqualTo(pathway.getTimesUsed());
     }
 
     @Test

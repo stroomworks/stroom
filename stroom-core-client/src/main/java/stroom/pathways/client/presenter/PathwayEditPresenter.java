@@ -38,6 +38,9 @@ import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
 import stroom.widget.popup.client.presenter.PopupType;
+import stroom.widget.tab.client.presenter.TabData;
+import stroom.widget.tab.client.presenter.TabDataImpl;
+import stroom.widget.tab.client.view.LinkTabBar;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.Timer;
@@ -45,6 +48,7 @@ import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Focus;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
+import com.gwtplatform.mvp.client.LayerContainer;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
@@ -74,6 +78,10 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     private final PathwayTreePresenter pathwayTreePresenter;
     private final ConstraintListPresenter constraintListPresenter;
     private final PathwayMutationListPresenter mutationListPresenter;
+    private final PathwayRouteListPresenter routeListPresenter;
+    private final TabData routesTab = new TabDataImpl("Routes");
+    private final TabData changesTab = new TabDataImpl("Changes");
+    private TabData selectedTab = routesTab;
     private final ButtonView playButton;
     private final ButtonView stopButton;
     private final Timer stepper = new Timer() {
@@ -95,24 +103,28 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                                 final PathwayTreePresenter pathwayTreePresenter,
                                 final ConstraintListPresenter constraintListPresenter,
                                 final PathwayMutationListPresenter mutationListPresenter,
+                                final PathwayRouteListPresenter routeListPresenter,
                                 final RestFactory restFactory) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.pathwayTreePresenter = pathwayTreePresenter;
         this.constraintListPresenter = constraintListPresenter;
         this.mutationListPresenter = mutationListPresenter;
+        this.routeListPresenter = routeListPresenter;
         // The Constraints panel beside the tree already shows what the selected node holds, so the
         // tree's own Node Info panel would only repeat it.
         pathwayTreePresenter.setShowNodeInfo(false);
         view.setTree(pathwayTreePresenter.getView());
         view.setConstraints(constraintListPresenter.getView());
-        view.setMutations(mutationListPresenter.getView());
+        // One at a time rather than side by side. Both are wide tables of the whole pathway and
+        // neither is read while the other is, so sharing the strip left each too narrow to read.
+        view.getTabBar().addTab(routesTab);
+        view.getTabBar().addTab(changesTab);
 
-        // On the drawing's own toolbar, beside the button that swaps the drawing over. Added from
-        // here rather than by the tree: what they step through is the list of changes, which only
-        // this view has.
-        playButton = pathwayTreePresenter.getView().addButton(SvgPresets.RUN.title("Play"));
-        stopButton = pathwayTreePresenter.getView().addButton(SvgPresets.STOP.title("Stop"));
+        // On the Changes toolbar, beside the buttons that open and close it. What they step through
+        // is that list, so they sit with it rather than on the drawing they happen to animate.
+        playButton = mutationListPresenter.getView().addButton(SvgPresets.RUN.title("Play"));
+        stopButton = mutationListPresenter.getView().addButton(SvgPresets.STOP.title("Stop"));
         playButton.setVisible(false);
         stopButton.setVisible(false);
     }
@@ -122,13 +134,21 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         super.onBind();
         registerHandler(playButton.addClickHandler(e -> play()));
         registerHandler(stopButton.addClickHandler(e -> stop()));
-        // Only the graph is worth watching change; the tree says the same thing a row at a time.
+        // Still driven by which drawing is on show: only the graph is worth watching change, and the
+        // tree says the same thing a row at a time.
         pathwayTreePresenter.setViewChangeHandler(this::showPlayButtons);
 
         registerHandler(pathwayTreePresenter.getSelectionModel()
                 .addSelectionChangeHandler(e -> showConstraints()));
 
         registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
+        registerHandler(routeListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
+        registerHandler(getView().getTabBar().addSelectionHandler(e -> showTab(e.getSelectedItem())));
+        registerHandler(getView().getTabBar().addShowMenuHandler(e -> getEventBus().fireEvent(e)));
+
+        // Routes first: what the pathway actually does is what a reader opens it for, and the changes
+        // are how it came to be that way.
+        showTab(routesTab);
 
 //        registerHandler(getView().getDetails().addClickHandler(e -> {
 //            final Element target = e.getNativeEvent().getEventTarget().cast();
@@ -409,8 +429,12 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
             return;
         }
 
-        // Set before the model is read, because the nodes are picked out as the drawing is built.
-        pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedPaths());
+        // Set before the model is read, because the nodes are picked out as the drawing is built. The
+        // tab on show decides which selection picks them out, so a route left selected behind the
+        // Changes tab does not keep marking the drawing while changes are being clicked through.
+        pathwayTreePresenter.setHighlighted(changesTab.equals(selectedTab)
+                ? mutationListPresenter.getSelectedPaths()
+                : routeListPresenter.getSelectedPaths());
         // Winding the model back takes nodes out of it. Placing what is left from the model as it
         // stands now keeps every node where it was, rather than closing the gaps and moving
         // everything the reader was looking at.
@@ -444,6 +468,20 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         showConstraints();
     }
 
+    // Only the selected one is built into the strip, so the other stops drawing rather than being
+    // hidden behind it.
+    private void showTab(final TabData tab) {
+        if (tab == null) {
+            return;
+        }
+        selectedTab = tab;
+        getView().getTabBar().selectTab(tab);
+        getView().getLayerContainer().show(changesTab.equals(tab)
+                ? mutationListPresenter
+                : routeListPresenter);
+        showModel();
+    }
+
     // The node the tree is holding, whichever model it came from. Winding the model back picks the same
     // node out again, and the selection model treats that as no change and says nothing, so this has to
     // be asked for rather than waited for.
@@ -457,6 +495,9 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {
         this.readOnly = readOnly;
         this.pathway = pathway;
+        // The routes arrive on the pathway itself, so they are on show as soon as it is opened rather
+        // than waiting on the history the way the changes do.
+        routeListPresenter.setData(pathway);
 //        this.selected = null;
 //
 //        getView().setDetails(SafeHtmlUtils.EMPTY_SAFE_HTML);
@@ -533,6 +574,8 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
 
         void setConstraints(View view);
 
-        void setMutations(View view);
+        LinkTabBar getTabBar();
+
+        LayerContainer getLayerContainer();
     }
 }

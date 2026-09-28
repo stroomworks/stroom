@@ -45,6 +45,8 @@ public class Pathway {
     private final PathKey pathKey;
     @JsonProperty
     private final PathNode root;
+    @JsonProperty
+    private final Routes routes;
 
     @JsonCreator
     public Pathway(@JsonProperty("name") final String name,
@@ -54,7 +56,8 @@ public class Pathway {
                    @JsonProperty("timesUsed") final long timesUsed,
                    @JsonProperty("timesUpdated") final long timesUpdated,
                    @JsonProperty("pathKey") final PathKey pathKey,
-                   @JsonProperty("root") final PathNode root) {
+                   @JsonProperty("root") final PathNode root,
+                   @JsonProperty("routes") final Routes routes) {
         this.name = name;
         this.createTime = createTime;
         this.updateTime = updateTime;
@@ -63,6 +66,9 @@ public class Pathway {
         this.timesUpdated = timesUpdated;
         this.pathKey = pathKey;
         this.root = root;
+        this.routes = routes == null
+                ? Routes.empty()
+                : routes;
     }
 
     public String getName() {
@@ -110,6 +116,13 @@ public class Pathway {
         return root;
     }
 
+    /**
+     * Every distinct route taken through this model, with how many traces took each.
+     */
+    public Routes getRoutes() {
+        return routes;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -126,13 +139,14 @@ public class Pathway {
                timesUsed == pathway.timesUsed &&
                timesUpdated == pathway.timesUpdated &&
                Objects.equals(pathKey, pathway.pathKey) &&
-               Objects.equals(root, pathway.root);
+               Objects.equals(root, pathway.root) &&
+               Objects.equals(routes, pathway.routes);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(name, createTime, updateTime, lastUsedTime, timesUsed, timesUpdated,
-                pathKey, root);
+                pathKey, root, routes);
     }
 
     @Override
@@ -167,6 +181,7 @@ public class Pathway {
         private long timesUpdated;
         private PathKey pathKey;
         private PathNode root;
+        private Routes routes;
 
         public Builder() {
         }
@@ -180,6 +195,7 @@ public class Pathway {
             this.timesUpdated = pathway.timesUpdated;
             this.pathKey = pathway.pathKey;
             this.root = pathway.root;
+            this.routes = pathway.routes;
         }
 
         public Builder name(final String name) {
@@ -222,6 +238,11 @@ public class Pathway {
             return self();
         }
 
+        public Builder routes(final Routes routes) {
+            this.routes = routes;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -236,7 +257,8 @@ public class Pathway {
                     timesUsed,
                     timesUpdated,
                     pathKey,
-                    root);
+                    root,
+                    routes);
         }
     }
 }

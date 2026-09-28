@@ -58,7 +58,7 @@ import java.util.stream.Collectors;
 
 public class TracePredicate implements Predicate<Trace> {
 
-    private static final String CHILD_ORDER = "childOrder";
+    private static final String CHILD_STEPS = "childSteps";
     private static final String OCCURRENCES = "occurrences";
 
     private final Comparator<Span> spanComparator;
@@ -148,7 +148,7 @@ public class TracePredicate implements Predicate<Trace> {
 
     private boolean addConstraints(final PathNode pathNode,
                                    final Span span,
-                                   final String childOrder) {
+                                   final String childSteps) {
 
 
         final Map<String, Constraint> constraints = pathNode.getConstraints();
@@ -176,9 +176,9 @@ public class TracePredicate implements Predicate<Trace> {
         }
 
         // Check the order the children ran in, where the model records one and this trace reached any.
-        if (childOrder != null
-            && constraints.containsKey(CHILD_ORDER)
-            && !checkConstraint(constraints, CHILD_ORDER, childOrder)) {
+        if (childSteps != null
+            && constraints.containsKey(CHILD_STEPS)
+            && !checkConstraint(constraints, CHILD_STEPS, childSteps)) {
             return false;
         }
 

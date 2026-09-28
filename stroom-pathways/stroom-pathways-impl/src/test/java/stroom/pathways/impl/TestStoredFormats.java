@@ -22,10 +22,14 @@ import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.RouteUse;
+import stroom.pathways.shared.pathway.RouteVisit;
+import stroom.pathways.shared.pathway.Routes;
 
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -89,6 +93,42 @@ class TestStoredFormats {
         assertThat(summary.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(3));
     }
 
+    @Test
+    void aStoredPathwayKeepsItsRoutes() {
+        final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
+        final RouteUse route = read.getRoutes().getRoutes().getFirst();
+
+        assertThat(read.getRoutes().getNodes()).containsExactly("node-a", "node-b");
+        assertThat(route.getVisits()).containsExactly(new RouteVisit(0, 0), new RouteVisit(1, 2));
+        assertThat(route.getTimesUsed()).isEqualTo(19);
+        assertThat(route.getFirstUsedTime()).isEqualTo(NanoTime.ofMillis(4));
+        assertThat(route.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(5));
+        assertThat(route.getCreatedByTraceId()).isEqualTo("0a0b0c0d");
+    }
+
+    @Test
+    void aPathwayWithNoRoutesYetReadsBackWithNone() {
+        final Pathway pathway = Pathway.builder()
+                .name("GET /orders")
+                .createTime(NanoTime.ofMillis(1))
+                .updateTime(NanoTime.ofMillis(2))
+                .lastUsedTime(NanoTime.ofMillis(3))
+                .pathKey(new NamePathKey("GET /orders"))
+                .root(new PathNode("GET /orders"))
+                .build();
+
+        final ByteBuffer[] written = new ByteBuffer[1];
+        new PathwaySerde(BYTE_BUFFER_FACTORY).writePathway(pathway, 0, buffer -> {
+            final ByteBuffer copy = ByteBuffer.allocateDirect(buffer.remaining());
+            copy.put(buffer).flip();
+            written[0] = copy;
+        });
+
+        final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(written[0]);
+        assertThat(read.getRoutes().getRoutes()).isEmpty();
+        assertThat(read.getRoutes().getNodes()).isEmpty();
+    }
+
     private static ByteBuffer write() {
         final Pathway pathway = Pathway.builder()
                 .name("GET /orders")
@@ -99,6 +139,14 @@ class TestStoredFormats {
                 .timesUpdated(31)
                 .pathKey(new NamePathKey("GET /orders"))
                 .root(new PathNode("GET /orders"))
+                .routes(new Routes(
+                        List.of("node-a", "node-b"),
+                        List.of(new RouteUse(
+                                List.of(new RouteVisit(0, 0), new RouteVisit(1, 2)),
+                                19,
+                                NanoTime.ofMillis(4),
+                                NanoTime.ofMillis(5),
+                                "0a0b0c0d"))))
                 .build();
 
         final ByteBuffer[] written = new ByteBuffer[1];

@@ -18,6 +18,7 @@ package stroom.pathways.client.view;
 
 import stroom.pathways.client.presenter.PathwayEditPresenter.PathwayEditView;
 import stroom.widget.form.client.FormGroup;
+import stroom.widget.tab.client.view.LinkTabBar;
 
 import com.google.gwt.safehtml.shared.SafeHtml;
 import com.google.gwt.uibinder.client.UiBinder;
@@ -27,6 +28,7 @@ import com.google.gwt.user.client.ui.MySplitLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
+import com.gwtplatform.mvp.client.LayerContainer;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewImpl;
 
@@ -43,7 +45,9 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     @UiField
     SimplePanel constraints;
     @UiField
-    SimplePanel mutations;
+    LinkTabBar tabBar;
+    @UiField
+    LayerContainer layerContainer;
 
     @Inject
     public PathwayEditViewImpl(final Binder binder) {
@@ -72,8 +76,13 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     }
 
     @Override
-    public void setMutations(final View view) {
-        mutations.setWidget(view.asWidget());
+    public LinkTabBar getTabBar() {
+        return tabBar;
+    }
+
+    @Override
+    public LayerContainer getLayerContainer() {
+        return layerContainer;
     }
 
     @Override

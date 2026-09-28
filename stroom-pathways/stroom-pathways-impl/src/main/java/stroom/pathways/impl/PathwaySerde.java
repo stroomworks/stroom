@@ -47,6 +47,10 @@ import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.pathways.shared.pathway.Regex;
+import stroom.pathways.shared.pathway.RouteUse;
+import stroom.pathways.shared.pathway.RouteVisit;
+import stroom.pathways.shared.pathway.Routes;
+import stroom.pathways.shared.pathway.StepsUse;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.pathways.shared.pathway.TerminalPathKey;
@@ -139,6 +143,7 @@ public class PathwaySerde {
                 .timesUpdated(input.readLong())
                 .pathKey(readPathKey(input))
                 .root(readPathNode(input))
+                .routes(readRoutes(input))
                 .build();
     }
 
@@ -178,7 +183,25 @@ public class PathwaySerde {
                 .constraints(readConstraints(input))
                 .timesUsed(input.readLong())
                 .lastUsedTime(readNullableNanoTime(input))
+                .stepsUse(readList(input, this::readStepsUse))
                 .build();
+    }
+
+    private Routes readRoutes(final Input input) {
+        return new Routes(readStrings(input), readList(input, this::readRouteUse));
+    }
+
+    private RouteUse readRouteUse(final Input input) {
+        return new RouteUse(
+                readList(input, i -> new RouteVisit(i.readVarInt(true), i.readVarInt(true))),
+                input.readLong(),
+                readNullableNanoTime(input),
+                readNullableNanoTime(input),
+                input.readString());
+    }
+
+    private StepsUse readStepsUse(final Input input) {
+        return new StepsUse(input.readString(), input.readLong(), readNullableNanoTime(input));
     }
 
     private List<String> readStrings(final Input input) {
@@ -339,6 +362,25 @@ public class PathwaySerde {
         output.writeLong(pathway.getTimesUpdated());
         writePathKey(pathway.getPathKey(), output);
         writePathNode(pathway.getRoot(), output);
+        writeRoutes(pathway.getRoutes(), output);
+    }
+
+    private void writeRoutes(final Routes routes, final Output output) {
+        writeStrings(routes.getNodes(), output);
+        writeList(routes.getRoutes(), output, this::writeRouteUse);
+    }
+
+    // Positions rather than names, and both small, so a variable-length integer is most of why a
+    // route costs a couple of bytes a visit instead of the length of a uuid.
+    private void writeRouteUse(final RouteUse routeUse, final Output output) {
+        writeList(routeUse.getVisits(), output, (visit, out) -> {
+            out.writeVarInt(visit.getNode(), true);
+            out.writeVarInt(visit.getSteps(), true);
+        });
+        output.writeLong(routeUse.getTimesUsed());
+        writeNullableNanoTime(routeUse.getFirstUsedTime(), output);
+        writeNullableNanoTime(routeUse.getLastUsedTime(), output);
+        output.writeString(routeUse.getCreatedByTraceId());
     }
 
     private void writeNanoTime(final NanoTime nanoTime, final Output output) {
@@ -368,6 +410,13 @@ public class PathwaySerde {
         writeConstraints(pathNode.getConstraints(), output);
         output.writeLong(pathNode.getTimesUsed());
         writeNullableNanoTime(pathNode.getLastUsedTime(), output);
+        writeList(pathNode.getStepsUse(), output, this::writeStepsUse);
+    }
+
+    private void writeStepsUse(final StepsUse stepsUse, final Output output) {
+        output.writeString(stepsUse.getSteps());
+        output.writeLong(stepsUse.getTimesUsed());
+        writeNullableNanoTime(stepsUse.getLastUsedTime(), output);
     }
 
     private void writeString(final String string, final Output output) {
