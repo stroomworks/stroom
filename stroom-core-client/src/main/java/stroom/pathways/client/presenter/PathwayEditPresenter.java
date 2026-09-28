@@ -111,9 +111,6 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         this.constraintListPresenter = constraintListPresenter;
         this.mutationListPresenter = mutationListPresenter;
         this.routeListPresenter = routeListPresenter;
-        // The Constraints panel beside the tree already shows what the selected node holds, so the
-        // tree's own Node Info panel would only repeat it.
-        pathwayTreePresenter.setShowNodeInfo(false);
         view.setTree(pathwayTreePresenter.getView());
         view.setConstraints(constraintListPresenter.getView());
         // One at a time rather than side by side. Both are wide tables of the whole pathway and

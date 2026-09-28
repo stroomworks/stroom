@@ -197,7 +197,31 @@ public class PathwayListPresenter
         addLastUsedColumn();
         addTimesUsedColumn();
         addTimesUpdatedColumn();
+        addNodesColumn();
+        addRoutesColumn();
         addSizeColumn();
+    }
+
+    // How wide the model is, against Size which is how heavy. A handful of nodes taking a lot of room
+    // is a pathway carrying large constraint values rather than much structure, which is the one shape
+    // the size on its own cannot be read for.
+    private void addNodesColumn() {
+        addIntColumn(PathwaySummary.FIELD_NODES, PathwaySummary::getNodes);
+    }
+
+    // How many distinct ways traces have gone through. Against Traces it says whether the ways through
+    // have settled or are still being found.
+    private void addRoutesColumn() {
+        addIntColumn(PathwaySummary.FIELD_ROUTES, PathwaySummary::getRoutes);
+    }
+
+    private void addIntColumn(final String name, final Function<PathwaySummary, Integer> count) {
+        final Column<PathwaySummary, String> column = DataGridUtil
+                .textColumnBuilder((PathwaySummary summary) ->
+                        ModelStringUtil.formatCsv((long) count.apply(summary)))
+                .withSorting(name)
+                .build();
+        dataGrid.addResizableColumn(column, name, ColumnSizeConstants.SMALL_COL);
     }
 
     // A pathway keeps every path it has seen, so they differ by orders of magnitude and the large ones
@@ -240,8 +264,8 @@ public class PathwayListPresenter
     }
 
     // How many of those traces taught the model something, which is how many times Update Time moved
-    // after the first. Beside Times Used it says whether a route is still being learnt or has
-    // settled, which neither count says on its own.
+    // after the first. Beside Traces it says whether a pathway is still being learnt or has settled,
+    // which neither count says on its own.
     private void addTimesUpdatedColumn() {
         addCountColumn(PathwaySummary.FIELD_TIMES_UPDATED, PathwaySummary::getTimesUpdated);
     }

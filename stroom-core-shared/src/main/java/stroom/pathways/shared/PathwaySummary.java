@@ -42,8 +42,10 @@ public class PathwaySummary {
     public static final String FIELD_CREATE_TIME = "Create Time";
     public static final String FIELD_UPDATE_TIME = "Update Time";
     public static final String FIELD_LAST_USED_TIME = "Last Used";
-    public static final String FIELD_TIMES_USED = "Times Used";
-    public static final String FIELD_TIMES_UPDATED = "Times Updated";
+    public static final String FIELD_TIMES_USED = "Traces";
+    public static final String FIELD_TIMES_UPDATED = "Updates";
+    public static final String FIELD_NODES = "Nodes";
+    public static final String FIELD_ROUTES = "Routes";
     public static final String FIELD_SIZE = "Size";
 
     @JsonProperty
@@ -59,6 +61,10 @@ public class PathwaySummary {
     @JsonProperty
     private final long timesUpdated;
     @JsonProperty
+    private final int nodes;
+    @JsonProperty
+    private final int routes;
+    @JsonProperty
     private final long sizeBytes;
 
     @JsonCreator
@@ -68,6 +74,8 @@ public class PathwaySummary {
                           @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
                           @JsonProperty("timesUsed") final long timesUsed,
                           @JsonProperty("timesUpdated") final long timesUpdated,
+                          @JsonProperty("nodes") final int nodes,
+                          @JsonProperty("routes") final int routes,
                           @JsonProperty("sizeBytes") final long sizeBytes) {
         this.name = name;
         this.createTime = createTime;
@@ -75,6 +83,8 @@ public class PathwaySummary {
         this.lastUsedTime = lastUsedTime;
         this.timesUsed = timesUsed;
         this.timesUpdated = timesUpdated;
+        this.nodes = nodes;
+        this.routes = routes;
         this.sizeBytes = sizeBytes;
     }
 
@@ -109,6 +119,23 @@ public class PathwaySummary {
     }
 
     /**
+     * How many nodes the model holds, counting the root. How wide the thing is, against the size,
+     * which says how heavy it is — a small model taking a lot of room is carrying large constraint
+     * values rather than much structure.
+     */
+    public int getNodes() {
+        return nodes;
+    }
+
+    /**
+     * How many distinct routes traces have taken. Against the trace count it says whether the ways
+     * through this pathway have settled or are still being found.
+     */
+    public int getRoutes() {
+        return routes;
+    }
+
+    /**
      * How large this pathway is where it is stored, which is also roughly what fetching it costs.
      */
     public long getSizeBytes() {
@@ -125,6 +152,8 @@ public class PathwaySummary {
         }
         final PathwaySummary that = (PathwaySummary) o;
         return sizeBytes == that.sizeBytes
+               && nodes == that.nodes
+               && routes == that.routes
                && timesUsed == that.timesUsed
                && timesUpdated == that.timesUpdated
                && Objects.equals(name, that.name)
@@ -136,7 +165,7 @@ public class PathwaySummary {
     @Override
     public int hashCode() {
         return Objects.hash(name, createTime, updateTime, lastUsedTime, timesUsed, timesUpdated,
-                sizeBytes);
+                nodes, routes, sizeBytes);
     }
 
     @Override

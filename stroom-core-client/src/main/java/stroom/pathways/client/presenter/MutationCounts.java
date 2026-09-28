@@ -40,7 +40,7 @@ import java.util.Set;
  *     much was learnt about it. This covers the whole of the trace that first took the route, not
  *     just the parts of it that added something: a first trace that sets a duration and then widens
  *     it taught the model what it knows rather than changing its mind. That is how a pathway's own
- *     Times Updated counts, which does not move for the trace that created the pathway.</li>
+ *     Updates counts, which does not move for the trace that created the pathway.</li>
  *     <li><b>A node a trace did not carry was not changed by it.</b> Its occurrences widen to admit
  *     none, which is a real change to the model, but no trace reached the node — counting it would
  *     say a node had been changed more often than it had been used.</li>

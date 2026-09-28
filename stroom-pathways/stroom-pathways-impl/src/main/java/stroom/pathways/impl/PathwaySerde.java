@@ -130,17 +130,27 @@ public class PathwaySerde {
                 readNanoTime(input),
                 input.readLong(),
                 input.readLong(),
+                input.readVarInt(true),
+                input.readVarInt(true),
                 sizeBytes);
     }
 
     private Pathway readPathway(final Input input) {
-        return Pathway.builder()
+        final Pathway.Builder builder = Pathway.builder()
                 .name(input.readString())
                 .createTime(readNanoTime(input))
                 .updateTime(readNanoTime(input))
                 .lastUsedTime(readNanoTime(input))
                 .timesUsed(input.readLong())
-                .timesUpdated(input.readLong())
+                .timesUpdated(input.readLong());
+
+        // The node and route counts the list reads. Taken off the front to keep everything after
+        // them lined up, and then dropped: what they count is about to be read in full, and a
+        // pathway holding its own count of itself is a second answer that can disagree.
+        input.readVarInt(true);
+        input.readVarInt(true);
+
+        return builder
                 .pathKey(readPathKey(input))
                 .root(readPathNode(input))
                 .routes(readRoutes(input))
@@ -360,6 +370,10 @@ public class PathwaySerde {
         writeNanoTime(pathway.getLastUsedTime(), output);
         output.writeLong(pathway.getTimesUsed());
         output.writeLong(pathway.getTimesUpdated());
+        // Derived here rather than held on the pathway, so they cannot say something the model does
+        // not. Written ahead of the model because the list reads them and stops before it.
+        output.writeVarInt(countNodes(pathway.getRoot()), true);
+        output.writeVarInt(pathway.getRoutes().getRoutes().size(), true);
         writePathKey(pathway.getPathKey(), output);
         writePathNode(pathway.getRoot(), output);
         writeRoutes(pathway.getRoutes(), output);
@@ -381,6 +395,17 @@ public class PathwaySerde {
         writeNullableNanoTime(routeUse.getFirstUsedTime(), output);
         writeNullableNanoTime(routeUse.getLastUsedTime(), output);
         output.writeString(routeUse.getCreatedByTraceId());
+    }
+
+    private static int countNodes(final PathNode pathNode) {
+        if (pathNode == null) {
+            return 0;
+        }
+        int count = 1;
+        for (final PathNode child : NullSafe.list(pathNode.getChildren())) {
+            count += countNodes(child);
+        }
+        return count;
     }
 
     private void writeNanoTime(final NanoTime nanoTime, final Output output) {

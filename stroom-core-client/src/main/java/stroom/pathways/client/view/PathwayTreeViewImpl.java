@@ -35,8 +35,6 @@ public class PathwayTreeViewImpl extends ViewImpl implements PathwayTreeView {
     FlowPanel toolbarWidgets;
     @UiField
     FlowPanel listContainer;
-    @UiField
-    FlowPanel sideContainer;
 
     private ButtonPanel buttonPanel;
     private final Widget widget;
@@ -50,11 +48,6 @@ public class PathwayTreeViewImpl extends ViewImpl implements PathwayTreeView {
     @Override
     public void setDataWidget(final Widget widget) {
         listContainer.add(widget);
-    }
-
-    @Override
-    public void setSideWidget(final Widget widget) {
-        sideContainer.add(widget);
     }
 
     @Override

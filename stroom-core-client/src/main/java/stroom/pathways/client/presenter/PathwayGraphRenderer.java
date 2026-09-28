@@ -209,7 +209,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     }
 
     // Over the drawing at the bottom right, where a map puts them. Ids rather than a class, because
-    // the view around this one finds them the same way it finds the Node Info panel's own buttons.
+    // the drawing is rebuilt as one piece of html and the view around it finds a button by id.
     private void appendZoom(final HtmlBuilder hb) {
         hb.div(zoom -> {
             zoom.div("+", Attribute.className("pathway-graph-control"),

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -129,6 +130,27 @@ class TestStoredFormats {
         assertThat(read.getRoutes().getNodes()).isEmpty();
     }
 
+    @Test
+    void aSummaryCountsTheNodesAndRoutesWithoutReadingTheModel() {
+        final PathwaySummary summary = new PathwaySerde(BYTE_BUFFER_FACTORY).readSummary(write());
+
+        // Three nodes: the root and the two children built below. One route.
+        assertThat(summary.getNodes()).isEqualTo(3);
+        assertThat(summary.getRoutes()).isEqualTo(1);
+    }
+
+    @Test
+    void theCountsTheListReadsDoNotShiftTheModelBehindThem() {
+        // The counts sit ahead of the model in an unversioned positional layout, so a full read that
+        // did not take them off the front would find the path key where a node count is.
+        final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
+
+        assertThat(read.getName()).isEqualTo("GET /orders");
+        assertThat(read.getRoot().getName()).isEqualTo("GET /orders");
+        assertThat(read.getRoot().getChildren()).hasSize(2);
+        assertThat(read.getRoutes().getRoutes()).hasSize(1);
+    }
+
     private static ByteBuffer write() {
         final Pathway pathway = Pathway.builder()
                 .name("GET /orders")
@@ -138,7 +160,12 @@ class TestStoredFormats {
                 .timesUsed(4207)
                 .timesUpdated(31)
                 .pathKey(new NamePathKey("GET /orders"))
-                .root(new PathNode("GET /orders"))
+                .root(new PathNode(
+                        UUID.randomUUID().toString(),
+                        "GET /orders",
+                        List.of("GET /orders"),
+                        List.of(new PathNode("Prepare statement"), new PathNode("Commit")),
+                        null))
                 .routes(new Routes(
                         List.of("node-a", "node-b"),
                         List.of(new RouteUse(
