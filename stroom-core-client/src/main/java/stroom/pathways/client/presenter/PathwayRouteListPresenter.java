@@ -38,11 +38,12 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -74,6 +75,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * cannot say which node it visited.
      */
     private final Map<Integer, PathNode> nodesByPosition = new HashMap<>();
+
+    /**
+     * Where a route's walk starts. Held with the nodes above for the same reason: a route says which
+     * steps were taken, and only the model says what taking them reaches.
+     */
+    private PathNode root;
 
     @Inject
     public PathwayRouteListPresenter(final EventBus eventBus,
@@ -108,38 +115,58 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      */
     public List<List<String>> getSelectedPaths() {
         final RouteUse selected = selectionModel.getSelected();
-        if (selected == null) {
+        if (selected == null || root == null) {
             return Collections.emptyList();
         }
 
-        final List<List<String>> paths = new ArrayList<>();
+        // Which sets of steps each node took, so the walk below knows whether a name in a node's steps
+        // is somewhere it carries on into or somewhere it stops.
+        final Map<String, List<Integer>> stepsByNode = new HashMap<>();
         for (final RouteVisit visit : selected.getVisits()) {
             final PathNode node = nodesByPosition.get(visit.getNode());
-            if (node == null) {
-                continue;
+            if (node != null) {
+                stepsByNode.computeIfAbsent(node.getUuid(), k -> new ArrayList<>()).add(visit.getSteps());
             }
-            add(paths, node.getPath());
-            addChildren(paths, node, steps(node, visit.getSteps()));
         }
+
+        final List<List<String>> paths = new ArrayList<>();
+        walk(root, stepsByNode, paths, new HashSet<>());
         return paths;
     }
 
+    // Down into each child before moving on to the next, which is the order the work happened in.
+    // Reading the visits in the order the route holds them would not: they are gathered by node, so a
+    // node's whole subtree would come after every one of its later siblings.
+    //
     // A route only names the nodes that had children to run, because what it holds for each is which
     // of their sets of steps they took, and a node with no children has none. The leaves ran all the
-    // same, and the steps are where they are named, so they are read back off them.
-    private static void addChildren(final List<List<String>> paths,
-                                    final PathNode node,
-                                    final String steps) {
-        if (steps.isEmpty()) {
+    // same, and the steps are where they are named, so the walk reaches them from there.
+    private static void walk(final PathNode node,
+                             final Map<String, List<Integer>> stepsByNode,
+                             final List<List<String>> paths,
+                             final Set<String> done) {
+        if (!done.add(node.getUuid())) {
             return;
         }
-        // Split reads its argument as a pattern, which the separator is safe to be read as.
-        final List<String> ran = Arrays.asList(steps.split(StepsUse.SEPARATOR));
-        for (final PathNode child : NullSafe.list(node.getChildren())) {
-            if (ran.contains(child.getName())) {
-                add(paths, child.getPath());
+        add(paths, node.getPath());
+        for (final Integer position : NullSafe.list(stepsByNode.get(node.getUuid()))) {
+            // Split reads its argument as a pattern, which the separator is safe to be read as.
+            for (final String name : steps(node, position).split(StepsUse.SEPARATOR)) {
+                final PathNode child = child(node, name);
+                if (child != null) {
+                    walk(child, stepsByNode, paths, done);
+                }
             }
         }
+    }
+
+    private static PathNode child(final PathNode node, final String name) {
+        for (final PathNode child : NullSafe.list(node.getChildren())) {
+            if (child.getName().equals(name)) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private static void add(final List<List<String>> paths, final List<String> path) {
@@ -157,6 +184,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         // asks what is selected to decide what to pick out.
         selectionModel.clear();
         nodesByPosition.clear();
+        root = NullSafe.get(pathway, Pathway::getRoot);
 
         final Routes routes = NullSafe.get(pathway, Pathway::getRoutes);
         if (routes == null) {
