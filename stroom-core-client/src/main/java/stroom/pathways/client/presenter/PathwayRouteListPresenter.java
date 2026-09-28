@@ -119,19 +119,22 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             return Collections.emptyList();
         }
 
-        // Which sets of steps each node took, so the walk below knows whether a name in a node's steps
-        // is somewhere it carries on into or somewhere it stops.
+        final List<List<String>> paths = new ArrayList<>();
+        walk(root, stepsByNode(selected), paths, new HashSet<>());
+        return paths;
+    }
+
+    // Which sets of steps each node took, so a walk knows whether a name in a node's steps is
+    // somewhere it carries on into or somewhere it stops.
+    private Map<String, List<Integer>> stepsByNode(final RouteUse route) {
         final Map<String, List<Integer>> stepsByNode = new HashMap<>();
-        for (final RouteVisit visit : selected.getVisits()) {
+        for (final RouteVisit visit : NullSafe.list(route.getVisits())) {
             final PathNode node = nodesByPosition.get(visit.getNode());
             if (node != null) {
                 stepsByNode.computeIfAbsent(node.getUuid(), k -> new ArrayList<>()).add(visit.getSteps());
             }
         }
-
-        final List<List<String>> paths = new ArrayList<>();
-        walk(root, stepsByNode, paths, new HashSet<>());
-        return paths;
+        return stepsByNode;
     }
 
     // Down into each child before moving on to the next, which is the order the work happened in.
@@ -234,23 +237,51 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         addColumn("Traces", route -> Long.toString(route.getTimesUsed()), COUNT_COL);
     }
 
-    // The walk in the sequence it happened, each node and set of steps named once. A node that ran
-    // the same children fifteen times is one entry; a node that ran them two different ways is two.
+    // The walk in the sequence it happened, which is the sequence the drawing picks the nodes out in.
+    // Starts below the root rather than at it: the root is the pathway, which is named in the dialog
+    // this sits in and drawn beside the table, so every row would open with the same words.
     private String routeText(final RouteUse route) {
-        final StringBuilder sb = new StringBuilder();
-        for (final RouteVisit visit : NullSafe.list(route.getVisits())) {
-            final PathNode node = nodesByPosition.get(visit.getNode());
-            if (node == null) {
-                continue;
-            }
-            if (sb.length() > 0) {
-                sb.append("  |  ");
-            }
-            sb.append(node.getName()).append(": ").append(steps(node, visit.getSteps()));
+        final String steps = root == null
+                ? ""
+                : stepsText(root, stepsByNode(route), new HashSet<>());
+        // A route holds a visit only for a node that ran children, so one with no visits at all is a
+        // trace where the operation ran and nothing under it did. The root is then the whole of what
+        // ran, so it is what the row says — the same as every other row, which says what ran.
+        return steps.isEmpty()
+                ? NullSafe.getOrElse(root, PathNode::getName, "")
+                : steps;
+    }
+
+    // The children a node ran, in the order it ran them, each carrying its own in brackets. Nested
+    // rather than listed node by node, because what a reader follows is the work in the order it
+    // happened, and a list by node puts everything one step from the root ahead of anything further
+    // out. A node that ran the same children fifteen times is named once; a node that ran them two
+    // different ways carries both, one set after the other.
+    private static String stepsText(final PathNode node,
+                                    final Map<String, List<Integer>> stepsByNode,
+                                    final Set<String> done) {
+        if (!done.add(node.getUuid())) {
+            return "";
         }
-        return sb.length() == 0
-                ? "Nothing below the root"
-                : sb.toString();
+        final StringBuilder sb = new StringBuilder();
+        for (final Integer position : NullSafe.list(stepsByNode.get(node.getUuid()))) {
+            // Split reads its argument as a pattern, which the separator is safe to be read as.
+            for (final String name : steps(node, position).split(StepsUse.SEPARATOR)) {
+                final PathNode child = child(node, name);
+                if (child == null) {
+                    continue;
+                }
+                if (sb.length() > 0) {
+                    sb.append(StepsUse.SEPARATOR);
+                }
+                sb.append(child.getName());
+                final String inner = stepsText(child, stepsByNode, done);
+                if (!inner.isEmpty()) {
+                    sb.append(" (").append(inner).append(")");
+                }
+            }
+        }
+        return sb.toString();
     }
 
     private static String steps(final PathNode node, final int position) {
