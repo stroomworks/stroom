@@ -5,6 +5,21 @@
     --pathway-off-route: 0.22;
 }
 
+/* Which node the constraints under it belong to. Inside the box rather than under the panel's label,
+ * because anything put between a label and the thing it labels pushes that thing down — and this panel
+ * is read beside the drawing, which would then no longer be level with it.
+ *
+ * The path, root first, which ends in the node's own name: one line saying both what it is and where
+ * it sits. Held back, because it is there to say what the table below is about rather than to be read
+ * in itself. */
+.pathway-node-path {
+    padding: 4px 4px;
+    color: var(--text-color--disabled);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .pathway {
     position: relative;
     overflow: auto;

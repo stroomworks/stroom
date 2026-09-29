@@ -25,8 +25,11 @@
                     </g:west>
                     <g:center>
                         <form:FormGroup identity="pathwayConstraints" label="Constraints">
-                            <g:SimplePanel ui:field="constraints"
-                                           styleName="max form-control-background form-control-border"/>
+                            <g:FlowPanel
+                                    styleName="max dock-container-vertical form-control-background form-control-border">
+                                <g:Label ui:field="nodePath" styleName="dock-min pathway-node-path"/>
+                                <g:SimplePanel ui:field="constraints" styleName="dock-max"/>
+                            </g:FlowPanel>
                         </form:FormGroup>
                     </g:center>
                 </g:MySplitLayoutPanel>
