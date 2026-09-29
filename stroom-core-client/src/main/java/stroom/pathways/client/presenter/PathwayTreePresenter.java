@@ -197,6 +197,15 @@ public class PathwayTreePresenter
 
         registerHandler(html.addMouseMoveHandler(e -> viewport.drag(e.getClientX(), e.getClientY())));
 
+        // Showing another tab takes the drawing off the screen, and putting anything back on the
+        // screen starts every animation it carries over again. A route already walked would walk
+        // itself a second time for no reason but the reader having looked at something else, so the
+        // drawing is put into the state the walk leaves it in on the way out.
+        registerHandler(html.addAttachHandler(e -> {
+            if (!e.isAttached()) {
+                settle(html.getElement());
+            }
+        }));
         registerHandler(html.addMouseUpHandler(e -> viewport.endDrag()));
 
         registerHandler(html.addClickHandler(e -> {
@@ -777,11 +786,57 @@ public class PathwayTreePresenter
         }
     }
 
+    // Where a walk leaves things: the nodes lit and still, the veils over them gone, the names up, and
+    // the lines it traced cleared again. Said outright rather than left as an animation that has
+    // finished, because an animation that has finished starts again the moment it is put back on the
+    // screen.
+    private static void settle(final Element element) {
+        // Read and written as an attribute rather than through the class name methods, which go at the
+        // className property — on an svg element that is not a string but an object, so asking it
+        // whether it holds a name throws, and a throw in here is a throw in the middle of the tab
+        // being taken off the screen. Lines are drawn in svg, so this walks over them.
+        final String classes = element.getAttribute("class");
+        if (has(classes, WALK_CLASS)) {
+            element.setAttribute("class", without(classes, WALK_CLASS));
+            hold(child(element, PathwayGraphRenderer.VEIL_CLASS), "0");
+            hold(child(element, PathwayGraphRenderer.LABEL_CLASS), "1");
+        } else if (has(classes, HIGHLIGHT_CLASS) || has(classes, HIGHLIGHT_ONCE_CLASS)) {
+            // A change is picked out by the same sort of run, and has nothing to leave behind but
+            // itself.
+            element.setAttribute("class", without(without(classes, HIGHLIGHT_CLASS), HIGHLIGHT_ONCE_CLASS));
+        } else if (has(classes, PathwayGraphRenderer.WALK_EDGE_CLASS)) {
+            hold(element, "0");
+        }
+
+        final NodeList<Node> children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            final Node node = children.getItem(i);
+            if (Element.is(node)) {
+                settle(Element.as(node));
+            }
+        }
+    }
+
+    private static boolean has(final String classes, final String name) {
+        return (" " + classes + " ").contains(" " + name + " ");
+    }
+
+    private static String without(final String classes, final String name) {
+        return (" " + classes + " ").replace(" " + name + " ", " ").trim();
+    }
+
+    private static void hold(final Element element, final String opacity) {
+        if (element != null) {
+            element.getStyle().setProperty("animation", "none");
+            element.getStyle().setProperty("opacity", opacity);
+        }
+    }
+
     private static Element child(final Element element, final String className) {
         final NodeList<Node> children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node node = children.getItem(i);
-            if (Element.is(node) && Element.as(node).hasClassName(className)) {
+            if (Element.is(node) && has(Element.as(node).getAttribute("class"), className)) {
                 return Element.as(node);
             }
         }

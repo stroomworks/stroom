@@ -123,6 +123,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
      * let up as a walk passes, and whatever tells it when has to know what to look for.
      */
     static final String LABEL_CLASS = "pathway-graph-label";
+    /**
+     * The line a walk traces along an edge. Named here for the same reason as the veil and the name.
+     */
+    static final String WALK_EDGE_CLASS = "pathway-graph-walk";
 
     @Override
     public boolean opensCentred() {
@@ -429,7 +433,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("stroke-width", String.valueOf(width)),
                 new Attribute("stroke-dasharray", length),
                 new Attribute("stroke-dashoffset", length),
-                Attribute.className("pathway-graph-walk"));
+                Attribute.className(WALK_EDGE_CLASS));
     }
 
     // Whether the route being looked at ran this node. Everything counts while none is being looked
