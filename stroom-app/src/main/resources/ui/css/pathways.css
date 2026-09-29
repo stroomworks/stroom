@@ -1048,6 +1048,26 @@
     animation: none;
 }
 
+/* The name beside a node the route never ran. Held back the same amount as the node it names, so the
+   two read as one thing being kept out of the way. Faded rather than covered like the node is: a name
+   is written out beside the drawing rather than on it, so there is nothing under it to show through. */
+.pathway-graph-node--off-route .pathway-graph-label {
+    opacity: var(--pathway-off-route);
+}
+
+/* And the name beside a node the walk has not reached yet, held back the same amount as that node is
+   and let up with it. Where it starts is written onto it as the walk is marked. */
+.pathway-graph-node.pathway-node--walk .pathway-graph-label {
+    opacity: var(--pathway-unwalked);
+    animation: pathway-label-lit 0.25s ease-out 1 forwards;
+}
+
+@keyframes pathway-label-lit {
+    to {
+        opacity: 1;
+    }
+}
+
 .pathway-graph-node.pathway-node--changed {
     animation: pathway-node-changed-ring 1.1s ease-out 5;
 }

@@ -118,6 +118,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
      * tells it when to lift, because the two have to agree.
      */
     static final String VEIL_CLASS = "pathway-graph-veil";
+    /**
+     * The name written beside a node. Named here for the same reason as the veil: it is held back and
+     * let up as a walk passes, and whatever tells it when has to know what to look for.
+     */
+    static final String LABEL_CLASS = "pathway-graph-label";
 
     @Override
     public boolean opensCentred() {
@@ -356,7 +361,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 marker.div("", Attribute.className(VEIL_CLASS));
             }
             marker.div(label -> label.append(node.getName()),
-                    Attribute.className("pathway-graph-label"));
+                    Attribute.className(LABEL_CLASS));
         }, Attribute.className("pathway-graph-node" + side),
                 new Attribute("uuid", node.getUuid()),
                 Attribute.style("left: " + ((int) at.getX() - radius) + "px;"

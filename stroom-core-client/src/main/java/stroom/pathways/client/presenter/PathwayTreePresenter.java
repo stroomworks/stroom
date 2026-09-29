@@ -729,13 +729,11 @@ public class PathwayTreePresenter
             // drawing: the next read builds the markup again, so nothing has to take it back off.
             element.getStyle().setProperty("animationDelay", (place * stagger) + "ms");
             element.addClassName(highlightClass);
-            // The veil over a node the walk has not reached, which lifts as it arrives. Told on its
-            // own because it is a child of the node, and a hold off put on a parent is not a hold off
-            // on what is inside it.
-            final Element veil = child(element, PathwayGraphRenderer.VEIL_CLASS);
-            if (veil != null) {
-                veil.getStyle().setProperty("animationDelay", (place * stagger) + "ms");
-            }
+            // The veil over a node the walk has not reached and the name written beside it, both of
+            // which change as the walk arrives. Told on their own because they are children of the
+            // node, and a hold off put on a parent is not a hold off on what is inside it.
+            holdOff(child(element, PathwayGraphRenderer.VEIL_CLASS), place * stagger);
+            holdOff(child(element, PathwayGraphRenderer.LABEL_CLASS), place * stagger);
         }
 
         // The line reaching a node, drawn over the gap before that node lights so the route traces
@@ -771,6 +769,12 @@ public class PathwayTreePresenter
         // Both ends held. Before its turn the line is off the end of itself by the offset it was given
         // as it was placed, and afterwards it is left cleared.
         style.setProperty("animationFillMode", "forwards, forwards");
+    }
+
+    private static void holdOff(final Element element, final int delayMs) {
+        if (element != null) {
+            element.getStyle().setProperty("animationDelay", delayMs + "ms");
+        }
     }
 
     private static Element child(final Element element, final String className) {
