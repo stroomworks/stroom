@@ -3,6 +3,8 @@
        yet, and one the route never ran at all. What is over it is the rest. */
     --pathway-unwalked: 0.45;
     --pathway-off-route: 0.22;
+    /* How far off a node the ring that says it has just been reached starts. */
+    --pathway-pulse-start: 2px;
 }
 
 /* Which node the constraints under it belong to. Inside the box rather than under the panel's label,
@@ -942,23 +944,11 @@
  * out to draw, so the pulse can start beyond the ring and leave it alone. */
 @keyframes pathway-node-changed-ring {
     from {
-        outline-offset: 2px;
+        outline-offset: var(--pathway-pulse-start);
         outline-color: rgb(255, 77, 200);
     }
     to {
-        outline-offset: 20px;
-        outline-color: rgba(255, 77, 200, 0);
-    }
-}
-
-/* The same, started beyond the white outline a selected node wears, which reaches four pixels out. */
-@keyframes pathway-node-changed-ring-outside {
-    from {
-        outline-offset: 5px;
-        outline-color: rgb(255, 77, 200);
-    }
-    to {
-        outline-offset: 23px;
+        outline-offset: calc(var(--pathway-pulse-start) + 18px);
         outline-color: rgba(255, 77, 200, 0);
     }
 }
@@ -1091,14 +1081,13 @@
     animation: pathway-node-changed-ring 1.1s ease-out 1;
 }
 
-/* Only where it starts changes, so each keeps however many times it runs. */
-.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed,
-.pathway-graph-node.pathway-nodeName--selected.pathway-node--changed-once {
-    animation-name: pathway-node-changed-ring-outside;
-}
-
-.pathway-graph-node.pathway-nodeName--selected.pathway-node--walk {
-    animation-name: pathway-node-changed-ring-outside;
+/* Started beyond the white outline a selected node wears, which reaches four pixels out. Said as a
+   value the ring is drawn from rather than as a second set of keyframes: picking a node adds this
+   class and drops it from the node picked before, and changing which animation an element runs is
+   what cancels the one it was running and starts it again — so a node already walked past would pulse
+   again every time the reader clicked somewhere else. */
+.pathway-graph-node.pathway-nodeName--selected {
+    --pathway-pulse-start: 5px;
 }
 
 /* The constraints the change being looked at moved, marked in the red that says a node has just
