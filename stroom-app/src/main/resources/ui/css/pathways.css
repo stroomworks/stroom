@@ -1014,15 +1014,16 @@
 .pathway-graph-node.pathway-node--walk {
     border-radius: 50%;
     outline: 3px solid transparent;
-    /* Held back until the walk arrives. Still well clear of the nodes the route never ran, which are
-       fainter again, so the three states read apart: never ran, not yet, been there. */
-    opacity: var(--pathway-unwalked);
 }
 
 /* Two at once, both held off until the walk reaches this node: the ring that travels out and fades,
    and the one that fades in and stays. The delay is written onto the node as it is marked, and one
    value there applies to both. */
 .pathway-graph-node.pathway-node--walk {
+    /* Held back until the walk arrives, and only for a walk — a change moves the nodes it moved all at
+       once and has nothing to say about an order. Still well clear of the nodes the route never ran,
+       which are fainter again, so the three states read apart: never ran, not yet, been there. */
+    opacity: var(--pathway-unwalked);
     animation-name: pathway-node-changed-ring, pathway-node-reached;
     animation-duration: 1.1s, 0.25s;
     animation-timing-function: ease-out;
