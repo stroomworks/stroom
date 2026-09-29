@@ -71,12 +71,10 @@ public class PathwayTreePresenter
     // through, the next step arrives before a long run has finished and every node is caught part
     // way through one; a single pass finishes and settles before the drawing is replaced.
     private static final String HIGHLIGHT_ONCE_CLASS = "pathway-node--changed-once";
-    // How long the walk takes to travel the whole route, whatever its length. Worked out per route
-    // rather than fixed per node, so a short route is not over before it has been seen and a long one
-    // does not crawl.
-    private static final int ROUTE_SWEEP_MS = 2500;
-    // As far apart as two nodes are ever held off, so a route of two or three does not amble.
-    private static final int ROUTE_STAGGER_MAX_MS = 500;
+    // How long the walk waits between one node and the next. The same for every route however many
+    // nodes it has: worked out from the length instead, a long route would travel so fast that the
+    // walk could not be followed, which is the whole of what it is for.
+    private static final int ROUTE_STAGGER_MS = 400;
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final int MAX_HISTORY = 20000;
@@ -694,10 +692,9 @@ public class PathwayTreePresenter
     // How far apart to start the nodes of the route on show. Nothing for a change, whose nodes all
     // moved at once.
     private int stagger() {
-        if (!highlightedRoute || highlighted.size() < 2) {
-            return 0;
-        }
-        return Math.min(ROUTE_STAGGER_MAX_MS, ROUTE_SWEEP_MS / (highlighted.size() - 1));
+        return highlightedRoute
+                ? ROUTE_STAGGER_MS
+                : 0;
     }
 
     private String highlightClass() {
