@@ -179,8 +179,11 @@ public class ConstraintListPresenter
 
     // How much this constraint has been checked and how often it moved. Uses are counted per span, so
     // a node one trace reached forty times adds forty; updates are counted per change.
+    //
+    // Wide enough for the longest names a model holds, which are the attributes — the room past that
+    // is worth more to the value beside it, which is a whole sql statement or a set of names.
     private void addNameColumn() {
-        addTextColumn("Name", 300, Constraint::getName);
+        addTextColumn("Name", 220, Constraint::getName);
     }
 
     private void addTextColumn(final String name, final int width, final Function<Constraint, String> function) {
@@ -203,7 +206,7 @@ public class ConstraintListPresenter
     }
 
     private void addValueColumn() {
-        addTextColumn("Type", 400, constraint -> {
+        addTextColumn("Value", 400, constraint -> {
             if (constraint == null || constraint.getValue() == null) {
                 return null;
             }

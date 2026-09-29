@@ -83,7 +83,7 @@ public class PathwayEditPresenter
      * What the tab is called in the list of open tabs, and the type its synthetic doc ref carries.
      */
     private static final String TAB_TYPE = "Pathway";
-    private static final double TREE_SHARE = 0.75;
+    private static final double TREE_SHARE = 0.6;
 
     private Pathway pathway;
     private DocRef docRef;
@@ -687,9 +687,9 @@ public class PathwayEditPresenter
     public void onOpened() {
         if (!split) {
             split = true;
-            // Three quarters to the drawing, the rest to the constraints. The drawing is the thing
-            // being read and it is the one that runs out of room — the constraints are a handful of
-            // rows about whichever part of it was clicked.
+            // Three fifths to the drawing, the rest to the constraints. The drawing wants all the
+            // room it can have, but a constraint's value is a whole sql statement or a set of names
+            // and is worth nothing cut off at the second word.
             getView().setTreeShare(TREE_SHARE, pathwayTreePresenter::centre);
         }
     }
