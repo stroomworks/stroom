@@ -67,6 +67,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // The nodes the route being looked at ran, for as long as one drawing takes. Held here rather
     // than carried down, like the rest of what a single drawing needs.
     private Set<String> onRoute = Collections.emptySet();
+    // The bright lines that run along the route as it is walked. Gathered apart from the lines the
+    // model draws so they can be laid over the lot of them rather than in among them.
+    private HtmlBuilder walkEdges = new HtmlBuilder();
     private HtmlBuilder gradients = new HtmlBuilder();
     private int gradientCount;
     // Counted up for every drawing anywhere, so no two drawings can name a gradient alike. Static
@@ -104,6 +107,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final String ZOOM_OUT_ID = "pathwayZoomOut";
     private static final String KEY_ID = "pathwayKeyToggle";
     private static final String KEY_SHOWN_CLASS = "pathway-graph-key--shown";
+    private static final int WALK_WIDTH = 3;
 
     @Override
     public boolean opensCentred() {
@@ -175,6 +179,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         drawings++;
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
+        walkEdges = new HtmlBuilder();
         draw(root, places, edges, markers,
                 new Scale(request.getChangeCeiling(), request.getUsageCeiling()),
                 request.getAsAt(), changes, present, usage);
@@ -183,6 +188,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final HtmlBuilder painted = new HtmlBuilder();
         painted.elem(defs -> defs.append(gradients.toSafeHtml()), SafeHtmlUtil.from("defs"));
         painted.append(edges.toSafeHtml());
+        // Last, so they lie over every line the model draws rather than under the ones drawn after
+        // them.
+        painted.append(walkEdges.toSafeHtml());
 
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.elem(svg -> svg.append(painted.toSafeHtml()),
@@ -357,17 +365,52 @@ class PathwayGraphRenderer implements PathwayRenderer {
             final Point to = toward(childAt, at, scale.radius(changes.get(child.getUuid())));
             // Lighter where it leaves the parent, full strength where it arrives, so a link reads in
             // the direction the work flows without needing an arrow head on it.
+            final int edgeWidth = scale.edge(timesUsed(child, usage));
             line(edges,
                     from,
                     to,
-                    scale.edge(timesUsed(child, usage)),
+                    edgeWidth,
                     present.contains(child.getUuid()),
                     ran(child),
                     gradient(from, to,
                             light(lastUsed(child, usage), now),
                             colour(lastUsed(child, usage), now)));
+            if (!onRoute.isEmpty() && ran(child)) {
+                walkLine(walkEdges, child.getUuid(), from, to, edgeWidth);
+            }
             draw(child, places, edges, markers, scale, now, changes, present, usage);
         }
+    }
+
+    // The bright line that runs along an edge as the walk reaches the node at its far end. A second
+    // line laid over the one the model draws rather than a change to it: that one says what joins what
+    // and how busy the join is, and a route being watched must not take that away while it plays.
+    //
+    // It is held off the end of itself to start with, so nothing of it is on show until the walk says
+    // so. How long it is is measured here because only the drawing knows that; when it starts is
+    // written onto it later because only the walk knows that.
+    private static void walkLine(final HtmlBuilder svg,
+                                 final String reaches,
+                                 final Point start,
+                                 final Point end,
+                                 final int width) {
+        final double across = end.getX() - start.getX();
+        final double down = end.getY() - start.getY();
+        final String length = String.valueOf((int) Math.ceil(Math.sqrt((across * across) + (down * down))));
+        svg.elem(SafeHtmlUtil.from("line"),
+                // The node at the far end, which is how the walk finds this line. Not the uuid the
+                // nodes carry: a walk looks for both and one is not the other.
+                new Attribute("edge", reaches),
+                new Attribute("x1", String.valueOf((int) start.getX())),
+                new Attribute("y1", String.valueOf((int) start.getY())),
+                new Attribute("x2", String.valueOf((int) end.getX())),
+                new Attribute("y2", String.valueOf((int) end.getY())),
+                // Never thinner than it takes to be seen when the drawing is scaled down, which is the
+                // case this is for, but as wide as the line beneath where that is wider.
+                new Attribute("stroke-width", String.valueOf(Math.max(width, WALK_WIDTH))),
+                new Attribute("stroke-dasharray", length),
+                new Attribute("stroke-dashoffset", length),
+                Attribute.className("pathway-graph-walk"));
     }
 
     // Whether the route being looked at ran this node. Everything counts while none is being looked

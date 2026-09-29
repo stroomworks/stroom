@@ -44,6 +44,7 @@ import com.google.gwt.core.client.GWT;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.Node;
 import com.google.gwt.dom.client.NodeList;
+import com.google.gwt.dom.client.Style;
 import com.google.gwt.dom.client.Style.Position;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.user.client.Timer;
@@ -74,6 +75,11 @@ public class PathwayTreePresenter
     // A route walked, which is marked differently from a change: each node keeps a ring once the walk
     // has reached it, so what has been covered can be seen rather than held in the reader's head.
     private static final String WALK_CLASS = "pathway-node--walk";
+    // What draws the line reaching a node, and what clears it again once the node has been reached.
+    // Named here because when each runs is written onto the line rather than held in the stylesheet —
+    // only the walk knows the order.
+    private static final String WALK_EDGE_DRAWN = "pathway-walk-drawn";
+    private static final String WALK_EDGE_CLEARED = "pathway-walk-cleared";
     // How long the walk waits between one node and the next. The same for every route however many
     // nodes it has: worked out from the length instead, a long route would travel so fast that the
     // walk could not be followed, which is the whole of what it is for.
@@ -725,6 +731,14 @@ public class PathwayTreePresenter
             element.addClassName(highlightClass);
         }
 
+        // The line reaching a node, drawn over the gap before that node lights so the route traces
+        // itself along rather than blinking from one node to the next. A line is long and thin and can
+        // still be seen where a ring round a dot cannot.
+        final Integer arrival = wanted.get(element.getAttribute("edge"));
+        if (arrival != null && arrival > 0 && stagger > 0) {
+            drawWalkEdge(element, (arrival - 1) * stagger, stagger);
+        }
+
         final NodeList<Node> children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node node = children.getItem(i);
@@ -732,6 +746,24 @@ public class PathwayTreePresenter
                 mark(Element.as(node), wanted, highlightClass, stagger);
             }
         }
+    }
+
+    // Written straight onto the element rather than put in a class, because a line is drawn in svg and
+    // an svg element does not take a class name the way a div does. Nothing here touches how long the
+    // line is or where it is held off from — the drawing set both as it placed the line, and this only
+    // says when it runs.
+    private static void drawWalkEdge(final Element element, final int delayMs, final int durationMs) {
+        final Style style = element.getStyle();
+        // Two in turn: the line draws itself over the gap before the node it reaches, and then clears
+        // again while that node is pinged. What is left is the drawing as it was, so a magenta stretch
+        // travels along the route rather than the whole of it staying painted over.
+        style.setProperty("animationName", WALK_EDGE_DRAWN + ", " + WALK_EDGE_CLEARED);
+        style.setProperty("animationDuration", durationMs + "ms, " + durationMs + "ms");
+        style.setProperty("animationDelay", delayMs + "ms, " + (delayMs + durationMs) + "ms");
+        style.setProperty("animationTimingFunction", "linear, ease-in");
+        // Both ends held. Before its turn the line is off the end of itself by the offset it was given
+        // as it was placed, and afterwards it is left cleared.
+        style.setProperty("animationFillMode", "forwards, forwards");
     }
 
     private void addNode(final PathNode node) {
