@@ -28,6 +28,7 @@ import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.safehtml.shared.SafeHtml;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -63,6 +64,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final int MAX_EDGE = 15;
 
     private final Map<String, Boolean> leftOfCentre = new HashMap<>();
+    // The nodes the route being looked at ran, for as long as one drawing takes. Held here rather
+    // than carried down, like the rest of what a single drawing needs.
+    private Set<String> onRoute = Collections.emptySet();
     private HtmlBuilder gradients = new HtmlBuilder();
     private int gradientCount;
     // Counted up for every drawing anywhere, so no two drawings can name a gradient alike. Static
@@ -152,6 +156,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
         final Set<String> present = new HashSet<>();
         collect(shown, present);
+        onRoute = NullSafe.set(request.getOnRoute());
 
         final Map<String, NodeChange> changes = request.getChanges();
         final Map<String, NodeUsage> usage = request.getUsage();
@@ -313,7 +318,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 : "")
                 + (here
                         ? ""
-                        : " pathway-graph-node--absent");
+                        : " pathway-graph-node--absent")
+                + (ran(node)
+                        ? ""
+                        : " pathway-graph-node--off-route");
         markers.div(marker -> {
             marker.div("", Attribute.className("pathway-graph-dot"),
                     // A shadow rather than a border: the width given here is what says how much the
@@ -354,11 +362,18 @@ class PathwayGraphRenderer implements PathwayRenderer {
                     to,
                     scale.edge(timesUsed(child, usage)),
                     present.contains(child.getUuid()),
+                    ran(child),
                     gradient(from, to,
                             light(lastUsed(child, usage), now),
                             colour(lastUsed(child, usage), now)));
             draw(child, places, edges, markers, scale, now, changes, present, usage);
         }
+    }
+
+    // Whether the route being looked at ran this node. Everything counts while none is being looked
+    // at, which is most of the time.
+    private boolean ran(final PathNode node) {
+        return onRoute.isEmpty() || onRoute.contains(node.getUuid());
     }
 
     // Straight, not the curves the tree draws: those bend towards a left-to-right layout, and on a
@@ -402,6 +417,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                              final Point end,
                              final int width,
                              final boolean present,
+                             final boolean ran,
                              final String colour) {
         svg.elem(SafeHtmlUtil.from("line"),
                 new Attribute("x1", String.valueOf((int) start.getX())),
@@ -410,9 +426,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("y2", String.valueOf((int) end.getY())),
                 new Attribute("stroke-width", String.valueOf(width)),
                 new Attribute("stroke", colour),
-                Attribute.className(present
-                        ? "pathway-graph-edge"
-                        : "pathway-graph-edge pathway-graph-edge--absent"));
+                Attribute.className("pathway-graph-edge"
+                                    + (present
+                                            ? ""
+                                            : " pathway-graph-edge--absent")
+                                    + (ran
+                                            ? ""
+                                            : " pathway-graph-edge--off-route")));
     }
 
     // What the reading kept at the moment being shown says, or what the node says where there is no

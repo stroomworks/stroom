@@ -599,6 +599,10 @@ public class PathwayTreePresenter
         // taken off it first and put back on the one that replaces it.
         viewport.beforeDraw();
 
+        // Worked out before the drawing is built as well as after it: the drawing is made faint
+        // around the nodes a route ran, and then they are marked on it.
+        final Map<String, Integer> wanted = wanted();
+
         html.setHTML(renderer.render(new RenderRequest(pathway, layout, byUuid(), usageAsAt(),
                 asAt > 0
                         ? asAt
@@ -607,11 +611,18 @@ public class PathwayTreePresenter
                 mostUsed(layout == null
                         ? NullSafe.get(pathway, Pathway::getRoot)
                         : layout),
-                showKey)));
+                showKey,
+                // Only a route says which nodes did not run. A change touched the nodes it touched
+                // and says nothing about the rest, so nothing is faded for one.
+                highlightedRoute
+                        ? wanted.keySet()
+                        : Collections.emptySet())));
         viewport.afterDraw(keep, renderer.opensCentred(), renderer.isZoomable(),
                 this::rootElement);
         reselect(restore);
-        applyHighlight();
+        if (!wanted.isEmpty()) {
+            mark(html.getElement(), wanted, highlightClass(), stagger());
+        }
     }
 
     // The most any one node has been used, over the model as it stands rather than the part on show,
@@ -662,17 +673,14 @@ public class PathwayTreePresenter
         return byUuid;
     }
 
-    // Put on after the drawing is built, so every read starts the attention-drawing again — putting
-    // the same class on the same element would not, a run once started being a run already run.
-    private void applyHighlight() {
+    // The nodes being picked out, by uuid and where each comes in the order. Looked up this way round
+    // rather than a search of the drawing for each of them in turn: picking a trace marks most of the
+    // model at once, and a search that starts again at the top for every node walks the whole drawing
+    // as many times as there are nodes in it.
+    private Map<String, Integer> wanted() {
         if (highlighted.isEmpty()) {
-            return;
+            return Collections.emptyMap();
         }
-
-        // The uuids being looked for and where each comes in the order, rather than a search of the
-        // drawing for each of them in turn. Picking a trace marks most of the model at once, and a
-        // search that starts again at the top for every node walks the whole drawing as many times as
-        // there are nodes in it.
         final Map<String, Integer> wanted = new HashMap<>();
         nodeMap.values().forEach(node -> {
             final Integer place = highlighted.get(key(node.getPath()));
@@ -680,9 +688,7 @@ public class PathwayTreePresenter
                 wanted.put(node.getUuid(), place);
             }
         });
-        if (!wanted.isEmpty()) {
-            mark(html.getElement(), wanted, highlightClass(), stagger());
-        }
+        return wanted;
     }
 
     // How far apart to start the nodes of the route on show. Nothing for a change, whose nodes all

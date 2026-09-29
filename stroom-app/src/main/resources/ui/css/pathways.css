@@ -874,6 +874,19 @@
     opacity: 0.18;
 }
 
+/* What the route being looked at did not run. Faded rather than taken out: where every node sits and
+ * what it joins are worked out from the whole model, so they stay put and one route can be held
+ * against another without the drawing rearranging itself in between. Fading alone, so a node still
+ * looks like itself — its size and its colour go on saying how much it has changed and when. */
+.pathway-node--off-route,
+.pathway-graph-node--off-route {
+    opacity: 0.22;
+}
+
+.pathway-graph .pathway-curves svg line.pathway-graph-edge--off-route {
+    opacity: 0.18;
+}
+
 /* The nodes a change being looked at touched, picked out for a few seconds when the change is
  * selected in the mutation list. It runs a fixed number of times rather than forever: it is there to
  * be noticed, and something that never stops moving stops being looked at.

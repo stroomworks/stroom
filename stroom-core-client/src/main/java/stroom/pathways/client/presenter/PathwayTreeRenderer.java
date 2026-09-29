@@ -27,7 +27,9 @@ import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.safehtml.shared.SafeHtml;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -38,6 +40,9 @@ class PathwayTreeRenderer implements PathwayRenderer {
 
     private static final int ROW_HEIGHT = 22;
     private static final int INDENT = 20;
+
+    // The nodes the route being looked at ran, for as long as one drawing takes.
+    private Set<String> onRoute = Collections.emptySet();
 
     @Override
     public boolean opensCentred() {
@@ -71,6 +76,7 @@ class PathwayTreeRenderer implements PathwayRenderer {
     @Override
     public SafeHtml render(final RenderRequest request) {
         final Pathway pathway = request.getPathway();
+        onRoute = NullSafe.set(request.getOnRoute());
         final HtmlBuilder hb = new HtmlBuilder();
         hb.div(div -> {
             if (pathway != null) {
@@ -112,7 +118,9 @@ class PathwayTreeRenderer implements PathwayRenderer {
                                         SvgImage.PATHWAYS_NODE.getClassName()));
             nodeDiv.div(n -> n.append(node.getName()),
                     Attribute.className("pathway-nodeName"), new Attribute("uuid", node.getUuid()));
-        }, Attribute.className("pathway-node"));
+        }, Attribute.className(onRoute.isEmpty() || onRoute.contains(node.getUuid())
+                ? "pathway-node"
+                : "pathway-node pathway-node--off-route"));
 
         // Add the things seen beneath this node.
         final List<PathNode> children = NullSafe.list(node.getChildren());
