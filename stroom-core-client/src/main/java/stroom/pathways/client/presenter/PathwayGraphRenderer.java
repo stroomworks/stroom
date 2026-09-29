@@ -107,7 +107,17 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final String ZOOM_OUT_ID = "pathwayZoomOut";
     private static final String KEY_ID = "pathwayKeyToggle";
     private static final String KEY_SHOWN_CLASS = "pathway-graph-key--shown";
+    // The thinnest a line traced by a walk is ever drawn. The drawing is scaled to fit, and following
+    // a route on a large one is what this is for, so a line as thin as the traffic through it would
+    // leave nothing to follow.
     private static final int WALK_WIDTH = 3;
+    // How far a node's own ring stands off its rim, which is drawn onto the dot as the node is placed.
+    private static final int NODE_RING = 2;
+    /**
+     * What covers a node the walk being watched has not reached yet. Named here and used by whatever
+     * tells it when to lift, because the two have to agree.
+     */
+    static final String VEIL_CLASS = "pathway-graph-veil";
 
     @Override
     public boolean opensCentred() {
@@ -338,7 +348,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
                     Attribute.style("width: " + (radius * 2) + "px;"
                                     + " height: " + (radius * 2) + "px;"
                                     + " background-color: " + colour(updated, now) + ";"
-                                    + " box-shadow: 0 0 0 2px " + ring(updated, now) + ";"));
+                                    + " box-shadow: 0 0 0 " + NODE_RING + "px " + ring(updated, now) + ";"));
+            if (!onRoute.isEmpty()) {
+                // Over the node rather than making the node see-through, whether it is held back until
+                // the walk arrives or never ran at all. Faded out instead, a node shows through itself
+                // the lines that end under it.
+                marker.div("", Attribute.className(VEIL_CLASS));
+            }
             marker.div(label -> label.append(node.getName()),
                     Attribute.className("pathway-graph-label"));
         }, Attribute.className("pathway-graph-node" + side),
@@ -376,7 +392,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                             light(lastUsed(child, usage), now),
                             colour(lastUsed(child, usage), now)));
             if (!onRoute.isEmpty() && ran(child)) {
-                walkLine(walkEdges, child.getUuid(), from, to, edgeWidth);
+                walkLine(walkEdges, child.getUuid(), from, to, Math.max(edgeWidth, WALK_WIDTH));
             }
             draw(child, places, edges, markers, scale, now, changes, present, usage);
         }
@@ -405,9 +421,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("y1", String.valueOf((int) start.getY())),
                 new Attribute("x2", String.valueOf((int) end.getX())),
                 new Attribute("y2", String.valueOf((int) end.getY())),
-                // Never thinner than it takes to be seen when the drawing is scaled down, which is the
-                // case this is for, but as wide as the line beneath where that is wider.
-                new Attribute("stroke-width", String.valueOf(Math.max(width, WALK_WIDTH))),
+                new Attribute("stroke-width", String.valueOf(width)),
                 new Attribute("stroke-dasharray", length),
                 new Attribute("stroke-dashoffset", length),
                 Attribute.className("pathway-graph-walk"));

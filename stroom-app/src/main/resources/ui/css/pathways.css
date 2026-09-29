@@ -1,6 +1,8 @@
 :root {
-    /* How much of a node on the route being walked is on show before the walk gets to it. */
+    /* How much of a node is on show while a route is being looked at: one the walk has not reached
+       yet, and one the route never ran at all. What is over it is the rest. */
     --pathway-unwalked: 0.45;
+    --pathway-off-route: 0.22;
 }
 
 .pathway {
@@ -889,9 +891,10 @@
 /* What the route being looked at did not run. Faded rather than taken out: where every node sits and
  * what it joins are worked out from the whole model, so they stay put and one route can be held
  * against another without the drawing rearranging itself in between. Fading alone, so a node still
- * looks like itself — its size and its colour go on saying how much it has changed and when. */
-.pathway-node--off-route,
-.pathway-graph-node--off-route {
+ * looks like itself — its size and its colour go on saying how much it has changed and when.
+ *
+ * A row on the tree fades; a node on the graph is covered instead, for the reason the veil gives. */
+.pathway-node--off-route {
     opacity: 0.22;
 }
 
@@ -945,19 +948,17 @@
     }
 }
 
-/* Coming up to full and staying there. What a walk leaves behind it, so the part of the route already
- * covered is on show rather than held in the reader's head — without it only the two or three nodes
- * lit at that moment can be seen, and on a large model that is not enough to follow.
+/* Lifting the veil off a node as the walk reaches it, and leaving it off. What a walk leaves behind
+ * it, so the part of the route already covered is on show rather than held in the reader's head —
+ * without it only the two or three nodes lit at that moment can be seen, and on a large model that is
+ * not enough to follow.
  *
  * Brightness rather than a ring round the node. A ring is a couple of pixels and the whole drawing is
  * scaled to fit, so zoomed out there is nothing left of it — which is the case this is for. A whole
  * node changing brightness is the same change at any size. */
 @keyframes pathway-node-reached {
-    from {
-        opacity: var(--pathway-unwalked);
-    }
     to {
-        opacity: 1;
+        opacity: 0;
     }
 }
 
@@ -984,7 +985,10 @@
  * lines beneath are held at so they do not compete with the nodes. */
 .pathway-graph .pathway-curves svg line.pathway-graph-walk {
     stroke: rgb(255, 77, 200);
-    stroke-linecap: round;
+    /* Cut off square, unlike the lines beneath. A round end reaches half the line's width past where
+       the line was put, and a line is put on the rim of the node it joins — so a round one puts a
+       magenta tip inside the node, which is the one place it has nothing to say. */
+    stroke-linecap: butt;
     opacity: 1;
 }
 
@@ -1020,15 +1024,28 @@
    and the one that fades in and stays. The delay is written onto the node as it is marked, and one
    value there applies to both. */
 .pathway-graph-node.pathway-node--walk {
-    /* Held back until the walk arrives, and only for a walk — a change moves the nodes it moved all at
-       once and has nothing to say about an order. Still well clear of the nodes the route never ran,
-       which are fainter again, so the three states read apart: never ran, not yet, been there. */
-    opacity: var(--pathway-unwalked);
-    animation-name: pathway-node-changed-ring, pathway-node-reached;
-    animation-duration: 1.1s, 0.25s;
-    animation-timing-function: ease-out;
-    animation-iteration-count: 1;
-    animation-fill-mode: none, forwards;
+    animation: pathway-node-changed-ring 1.1s ease-out 1;
+}
+
+/* Over a node the walk has not reached yet, painted in the colour of the panel behind it, so the node
+   is held back without being made see-through — the lines of the drawing end under the nodes, and a
+   node faded out shows them through itself. Lifts as the walk arrives and stays off, which is what
+   says how far the walk has got. Where it starts is written onto it as the walk is marked. */
+.pathway-graph-veil {
+    position: absolute;
+    /* Out over the ring the node wears, which is as much a part of it as the circle. */
+    inset: -2px;
+    border-radius: 50%;
+    background-color: var(--control__background-color);
+    opacity: calc(1 - var(--pathway-unwalked));
+    pointer-events: none;
+    animation: pathway-node-reached 0.25s ease-out 1 forwards;
+}
+
+/* Heavier over a node the route never ran, and never lifted — no walk is coming for it. */
+.pathway-graph-node--off-route .pathway-graph-veil {
+    opacity: calc(1 - var(--pathway-off-route));
+    animation: none;
 }
 
 .pathway-graph-node.pathway-node--changed {
@@ -1046,7 +1063,7 @@
 }
 
 .pathway-graph-node.pathway-nodeName--selected.pathway-node--walk {
-    animation-name: pathway-node-changed-ring-outside, pathway-node-reached;
+    animation-name: pathway-node-changed-ring-outside;
 }
 
 /* The constraints the change being looked at moved, marked in the red that says a node has just
