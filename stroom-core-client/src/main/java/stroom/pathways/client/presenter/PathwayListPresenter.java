@@ -16,7 +16,6 @@
 
 package stroom.pathways.client.presenter;
 
-import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.presenter.ColumnSizeConstants;
 import stroom.data.client.presenter.CriteriaUtil;
@@ -35,7 +34,6 @@ import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
-import stroom.pathways.shared.UpdatePathway;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.preferences.client.DateTimeFormatter;
@@ -72,7 +70,7 @@ public class PathwayListPresenter
     private final RestFactory restFactory;
     private final MyDataGrid<PathwaySummary> dataGrid;
     private final MultiSelectionModelImpl<PathwaySummary> selectionModel;
-    private final PathwayEditPresenter pathwayEditPresenter;
+    private final PathwayTabManager pathwayTabManager;
     private final ButtonView newButton;
     private final ButtonView editButton;
     private final ButtonView removeButton;
@@ -94,7 +92,7 @@ public class PathwayListPresenter
                                 final PagerView pagerView,
                                 final RestFactory restFactory,
                                 final DateTimeFormatter dateTimeFormatter,
-                                final PathwayEditPresenter pathwayEditPresenter) {
+                                final PathwayTabManager pathwayTabManager) {
         super(eventBus, view);
         this.pagerView = pagerView;
         this.restFactory = restFactory;
@@ -107,7 +105,7 @@ public class PathwayListPresenter
         selectionModel = dataGrid.addDefaultSelectionModel(true);
         pagerView.setDataWidget(dataGrid);
 
-        this.pathwayEditPresenter = pathwayEditPresenter;
+        this.pathwayTabManager = pathwayTabManager;
 
         newButton = pagerView.addButton(SvgPresets.NEW_ITEM);
         editButton = pagerView.addButton(SvgPresets.EDIT);
@@ -143,16 +141,12 @@ public class PathwayListPresenter
             }
         }));
         registerHandler(selectionModel.addSelectionHandler(event -> {
-            // A double click raises this twice, once for each click, so the model is fetched only when
-            // the row being looked at has really changed.
-            withSelectedPathway(pathway -> {
-                if (!readOnly) {
-                    enableButtons();
-                    if (event.getSelectionType().isDoubleSelect()) {
-                        edit(pathway);
-                    }
+            if (!readOnly) {
+                enableButtons();
+                if (event.getSelectionType().isDoubleSelect()) {
+                    onEdit();
                 }
-            });
+            }
         }));
         registerHandler(dataGrid.addColumnSortHandler(event -> refresh()));
     }
@@ -296,35 +290,36 @@ public class PathwayListPresenter
     }
 
     private void onAdd() {
+        // Made first and opened afterwards, rather than built in a dialog and made on OK. A tab has no
+        // OK, and a pathway that exists is the only thing a tab can be opened on.
         final NanoTime now = NanoTime.ofMillis(System.currentTimeMillis());
-        pathwayEditPresenter.read(pathwaysDoc, Pathway.builder().name("").createTime(now).build(), readOnly);
-        pathwayEditPresenter.show("New Pathway", e -> {
-            if (e.isOk()) {
-                final Pathway pathway = pathwayEditPresenter.write();
-                restFactory
-                        .create(PATHWAYS_RESOURCE)
-                        .method(res -> res.addPathway(new AddPathway(docRef, pathway)))
-                        .onSuccess(response -> {
-                            refresh();
-                            e.hide();
-                        })
-                        .onFailure(new DefaultErrorHandler(this, e::reset))
-                        .taskMonitorFactory(pagerView)
-                        .exec();
-            } else {
-                e.hide();
-            }
-        });
+        final Pathway pathway = Pathway.builder().name("").createTime(now).build();
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.addPathway(new AddPathway(docRef, pathway)))
+                .onSuccess(response -> {
+                    refresh();
+                    pathwayTabManager.open(pathwaysDoc, pathway.getName(), readOnly, () -> {
+                        forget();
+                        refresh();
+                    });
+                })
+                .onFailure(new DefaultErrorHandler(this, null))
+                .taskMonitorFactory(pagerView)
+                .exec();
     }
 
     private void onEdit() {
-        withSelectedPathway(this::edit);
-    }
-
-    private void edit(final Pathway pathway) {
         final PathwaySummary selected = selectionModel.getSelected();
-        if (selected != null && pathway != null) {
-            editFetched(selected, pathway);
+        if (selected != null && pathwaysDoc != null) {
+            // The tab fetches the model itself. The copy held here is shared with the drawing beside
+            // this list, and constraints are edited straight into whatever model they were given, so
+            // handing this one over would put unsaved edits on a screen that never asked for them.
+            pathwayTabManager.open(pathwaysDoc, selected.getName(), readOnly, () -> {
+                // The row shows a size and a time that a save has just moved.
+                forget();
+                refresh();
+            });
         }
     }
 
@@ -400,38 +395,6 @@ public class PathwayListPresenter
         selectedPathway = null;
         fetching = false;
         waiting.clear();
-    }
-
-    private void editFetched(final PathwaySummary selected, final Pathway existingPathway) {
-        if (existingPathway != null) {
-            pathwayEditPresenter.read(pathwaysDoc, existingPathway, readOnly);
-            pathwayEditPresenter.show("Edit Pathway - " + existingPathway.getName(), e -> {
-                if (e.isOk()) {
-                    try {
-                        final Pathway pathway = pathwayEditPresenter.write();
-                        restFactory
-                                .create(PATHWAYS_RESOURCE)
-                                .method(res -> res.updatePathway(new UpdatePathway(
-                                        docRef,
-                                        selected.getName(),
-                                        pathway)))
-                                .onSuccess(response -> {
-                                    // The model held here is the one from before the edit.
-                                    forget();
-                                    refresh();
-                                    e.hide();
-                                })
-                                .onFailure(new DefaultErrorHandler(this, e::reset))
-                                .taskMonitorFactory(pagerView)
-                                .exec();
-                    } catch (final RuntimeException ex) {
-                        AlertEvent.fireError(PathwayListPresenter.this, ex.getMessage(), e::reset);
-                    }
-                } else {
-                    e.hide();
-                }
-            });
-        }
     }
 
     private void onRemove() {

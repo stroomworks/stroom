@@ -17,13 +17,16 @@
 package stroom.pathways.client.view;
 
 import stroom.pathways.client.presenter.PathwayEditPresenter.PathwayEditView;
+import stroom.svg.client.Preset;
+import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.ButtonView;
 import stroom.widget.form.client.FormGroup;
 import stroom.widget.tab.client.view.LinkTabBar;
 
-import com.google.gwt.safehtml.shared.SafeHtml;
+import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.HTML;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.MySplitLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
@@ -35,7 +38,10 @@ import com.gwtplatform.mvp.client.ViewImpl;
 public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
 
     private final Widget widget;
+    private ButtonPanel buttonPanel;
 
+    @UiField
+    FlowPanel toolbarWidgets;
     @UiField
     MySplitLayoutPanel centreSplit;
     @UiField
@@ -60,14 +66,32 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     }
 
     @Override
-    public void focus() {
-        // Nothing here is typed into. What the dialog shows is read, and the parts that are clicked
-        // take focus as they are clicked.
+    public ButtonView addButton(final Preset preset) {
+        if (buttonPanel == null) {
+            buttonPanel = new ButtonPanel();
+            toolbarWidgets.add(buttonPanel);
+        }
+        return buttonPanel.addButton(preset);
     }
 
     @Override
-    public void setTreeWidth(final int width) {
-        centreSplit.setWidgetSize(treeGroup, width);
+    public void setTreeShare(final double share, final Runnable onSized) {
+        // Of the room these two share, not of the window — the explorer down the side of the screen
+        // takes a good part of the window and none of it is this.
+        final int width = centreSplit.getOffsetWidth();
+        if (width <= 0) {
+            // Nothing laid out to measure yet. Splitting nothing would leave the drawing with no room
+            // at all, so this waits and asks again rather than settling on zero — but only while the
+            // tab is still on the screen, or a tab closed before it was laid out would ask for ever.
+            if (widget.isAttached()) {
+                Scheduler.get().scheduleDeferred(() -> setTreeShare(share, onSized));
+            }
+            return;
+        }
+        centreSplit.setWidgetSize(treeGroup, width * share);
+        // Told afterwards rather than alongside, because whatever is drawn in there is placed against
+        // a width that has only just stopped moving.
+        onSized.run();
     }
 
     @Override

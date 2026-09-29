@@ -5,6 +5,13 @@
     height: 100%;
 }
 
+/* Which of the routes and the changes is on show. Held off the table below it so the two read as a
+   bar over a panel rather than as one block. Said here because the rule that used to say it applied
+   only inside a dialog, which is not where this is shown any more. */
+.pathway-tabs {
+    margin-bottom: var(--control__gap--vertical);
+}
+
 .pathway-curves {
     position: absolute;
     left: 0;

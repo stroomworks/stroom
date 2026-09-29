@@ -16,47 +16,58 @@
 
 package stroom.pathways.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
+import stroom.alert.client.event.ConfirmEvent;
+import stroom.content.client.event.RefreshContentTabEvent;
+import stroom.content.client.presenter.ContentTabPresenter;
+import stroom.core.client.HasSave;
+import stroom.core.client.event.CloseContentEvent;
+import stroom.core.client.event.CloseContentEvent.DirtyMode;
 import stroom.dispatch.client.DefaultErrorHandler;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.pathways.client.presenter.PathwayEditPresenter.PathwayEditView;
+import stroom.pathways.shared.FetchPathwayRequest;
 import stroom.pathways.shared.FindPathwayMutationCriteria;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
+import stroom.pathways.shared.UpdatePathway;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
+import stroom.svg.client.Preset;
 import stroom.svg.client.SvgPresets;
+import stroom.svg.shared.SvgImage;
 import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.util.shared.PageResponse;
 import stroom.widget.button.client.ButtonView;
-import stroom.widget.popup.client.event.HidePopupRequestEvent;
-import stroom.widget.popup.client.event.ShowPopupEvent;
-import stroom.widget.popup.client.presenter.PopupSize;
-import stroom.widget.popup.client.presenter.PopupType;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 import stroom.widget.tab.client.view.LinkTabBar;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.Timer;
-import com.google.gwt.user.client.Window;
-import com.google.gwt.user.client.ui.Focus;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.LayerContainer;
-import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
+/**
+ * One pathway open as a tab of its own. A tab rather than a dialog because reading a model is not a
+ * question to be answered and dismissed — two can be held open side by side, and the drawing keeps
+ * whatever the reader had scrolled to while they look at something else.
+ */
+public class PathwayEditPresenter
+        extends ContentTabPresenter<PathwayEditView>
+        implements HasSave, CloseContentEvent.Handler {
 
     private static final PathwaysResource PATHWAYS_RESOURCE = GWT.create(PathwaysResource.class);
 
@@ -68,13 +79,32 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
      */
     private static final int MAX_HISTORY = 20000;
     private static final int STEP_MILLIS = 1500;
-    private static final int DIALOG_INSET = 60;
-    private static final int MIN_DIALOG_WIDTH = 800;
-    private static final int MIN_DIALOG_HEIGHT = 600;
+    /**
+     * What the tab is called in the list of open tabs, and the type its synthetic doc ref carries.
+     */
+    private static final String TAB_TYPE = "Pathway";
+    private static final double TREE_SHARE = 0.75;
 
     private Pathway pathway;
+    private DocRef docRef;
+    // The name the pathway was opened under, which is what it is saved back against. Held rather than
+    // read off the model, so a tab can be labelled before the model it is waiting for arrives.
+    private String name;
+    private boolean dirty;
+    // What the tab was last called. The label carries whether there is anything unsaved, so it has to
+    // be repainted when that changes — and only then.
+    private String lastLabel;
+    // Told when a save lands, so the list this was opened from can show the new size and time.
+    private Runnable savedHandler;
+    // Whether the split between the drawing and the constraints has been set. Once only, so that
+    // reading something else and coming back does not undo wherever the reader dragged it to.
+    private boolean split;
     private List<PathwayMutation> history = Collections.emptyList();
     private boolean historyComplete;
+    // Whether each of the two things the drawing is made from has arrived. Both are asked for at once
+    // and neither waits on the other, so which lands first is not known.
+    private boolean historyArrived;
+    private boolean usageArrived;
     private final PathwayTreePresenter pathwayTreePresenter;
     private final ConstraintListPresenter constraintListPresenter;
     private final PathwayMutationListPresenter mutationListPresenter;
@@ -82,6 +112,7 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     private final TabData routesTab = new TabDataImpl("Routes");
     private final TabData changesTab = new TabDataImpl("Changes");
     private TabData selectedTab = routesTab;
+    private final ButtonView saveButton;
     private final ButtonView playButton;
     private final ButtonView stopButton;
     private final Timer stepper = new Timer() {
@@ -118,6 +149,11 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         view.getTabBar().addTab(routesTab);
         view.getTabBar().addTab(changesTab);
 
+        // On the tab's own toolbar rather than on any one panel's, because it is the pathway that is
+        // saved rather than anything on show.
+        saveButton = view.addButton(SvgPresets.SAVE);
+        saveButton.setEnabled(false);
+
         // On the Changes toolbar, beside the buttons that open and close it. What they step through
         // is that list, so they sit with it rather than on the drawing they happen to animate.
         playButton = mutationListPresenter.getView().addButton(SvgPresets.RUN.title("Play"));
@@ -129,6 +165,11 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
     @Override
     protected void onBind() {
         super.onBind();
+        registerHandler(saveButton.addClickHandler(e -> save()));
+        // Constraints are the only thing on this screen that writes, and they are written straight
+        // into the model the moment the constraint dialog is accepted. This is how the tab learns
+        // there is something to save.
+        registerHandler(constraintListPresenter.addDirtyHandler(e -> setDirty(true)));
         registerHandler(playButton.addClickHandler(e -> play()));
         registerHandler(stopButton.addClickHandler(e -> stop()));
         // Still driven by which drawing is on show: only the graph is worth watching change, and the
@@ -361,16 +402,19 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                     }
                     history = result.getValues();
                     pathwayTreePresenter.setHistory(history);
-                    fetchUsage(docRef, name);
                     historyComplete = history.size() >= NullSafe.getOrElse(
                             result.getPageResponse(), PageResponse::getTotal, 0L);
                     mutationListPresenter.setData(history);
-                    showModel();
+                    historyArrived = true;
+                    drawWhenReady();
                 })
-                .onFailure(new DefaultErrorHandler(this, () ->
-                        // Asked and not answered. The drawing waits for these, so it has to be told
-                        // that none are coming or it waits for ever.
-                        pathwayTreePresenter.setHistory(Collections.emptyList())))
+                .onFailure(new DefaultErrorHandler(this, () -> {
+                    // Asked and not answered. The drawing waits for these, so it has to be told that
+                    // none are coming or it waits for ever.
+                    pathwayTreePresenter.setHistory(Collections.emptyList());
+                    historyArrived = true;
+                    drawWhenReady();
+                }))
                 .taskMonitorFactory(this)
                 .exec();
     }
@@ -390,12 +434,26 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                 .onSuccess(usage -> {
                     if (pathway != null && name.equals(pathway.getName())) {
                         pathwayTreePresenter.setUsage(usage);
-                        showModel();
+                        usageArrived = true;
+                        drawWhenReady();
                     }
                 })
-                .onFailure(new DefaultErrorHandler(this, null))
+                .onFailure(new DefaultErrorHandler(this, () -> {
+                    usageArrived = true;
+                    drawWhenReady();
+                }))
                 .taskMonitorFactory(this)
                 .exec();
+    }
+
+    // Once, when everything the drawing is made from is in. The changes say how much each node has
+    // moved and the readings say how much has gone through it, and a drawing made with one but not
+    // the other is drawn at the wrong sizes and then drawn again — on a large model that is two slow
+    // redraws and a jump, for a picture that was never right the first time.
+    private void drawWhenReady() {
+        if (historyArrived && usageArrived) {
+            showModel();
+        }
     }
 
     // Steps to the next trace every second and a half, so the model can be watched changing rather
@@ -509,83 +567,173 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
                 mutationListPresenter.getSelectedConstraints(NullSafe.get(node, PathNode::getPath)));
     }
 
-    public void read(final PathwaysDoc pathwaysDoc, final Pathway pathway, final boolean readOnly) {
+    /**
+     * Opens one pathway. The model is fetched here rather than handed over, so a tab holds its own
+     * copy — constraints are edited straight into it, and a shared one would carry those edits into
+     * every other screen showing the same pathway whether or not they were ever saved.
+     */
+    public void read(final PathwaysDoc pathwaysDoc, final String name, final boolean readOnly) {
         this.readOnly = readOnly;
+        this.docRef = pathwaysDoc.asDocRef();
+        this.name = name;
+        setDirty(false);
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, name)))
+                .onSuccess(this::show)
+                .onFailure(new DefaultErrorHandler(this, null))
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    private void show(final Pathway pathway) {
         this.pathway = pathway;
+        if (pathway == null) {
+            return;
+        }
+
         // The routes arrive on the pathway itself, so they are on show as soon as it is opened rather
         // than waiting on the history the way the changes do.
         routeListPresenter.setData(pathway);
-//        this.selected = null;
-//
-//        getView().setDetails(SafeHtmlUtils.EMPTY_SAFE_HTML);
-        this.history = Collections.emptyList();
-        this.historyComplete = false;
-        // The last pathway's changes say nothing about this one, and they are what the drawing is
-        // coloured and sized from. They are not cleared here: handing over an empty list would say
-        // this pathway's changes had arrived and were none, and the drawing would be made with
-        // everything at its smallest. The tree is told which pathway it holds changes for, and waits
-        // where they are not this one's.
+
+        // The drawing is coloured and sized from the changes behind the model, which are asked for at
+        // the end of this. Nothing is handed over until they arrive: an empty list would say this
+        // pathway's changes had arrived and were none, and the drawing would be made with every node
+        // at its smallest.
         pathwayTreePresenter.setUsage(Collections.emptyList());
-
-        // This is reused for every pathway opened, so anything left over from the last one is dropped
-        // before the new one is read. Without it the model shows as it stood at whichever change was
-        // being looked at last time.
-        pathwayTreePresenter.clearSelection();
-
         pathwayTreePresenter.read(pathway);
         showConstraints();
         showPlayButtons();
         mutationListPresenter.setData(Collections.emptyList());
-        fetchHistory(pathwaysDoc.asDocRef(), pathway.getName());
-//        getView().setConstraints(SafeHtmlUtils.EMPTY_SAFE_HTML);
-//        getView().setSpans(SafeHtmlUtils.EMPTY_SAFE_HTML);
 
-//        getView().setDetails(new PathwayTreePresenter().build(pathway));
-//
-//        addNode(pathway.getRoot());
+        // Both at once rather than one after the other. The changes and the readings are answered by
+        // different queries and neither needs the other, so asking in turn only made the wait twice
+        // as long.
+        historyArrived = false;
+        usageArrived = false;
+        fetchHistory(docRef, pathway.getName());
+        fetchUsage(docRef, pathway.getName());
     }
 
-//    private void addNode(final PathNode node) {
-//        nodeMap.put(node.getUuid(), node);
-//        node.getTargets().forEach(target -> {
-//            target.getNodes().forEach(this::addNode);
-//        });
-//    }
-
-    public Pathway write() {
+    private Pathway write() {
         // A pathway is named after the operation it was learnt from, which is how it is found again.
         // Nothing here can rename it, so the name is carried through rather than read back.
         final NanoTime now = NanoTime.ofMillis(System.currentTimeMillis());
         return pathway.copy().updateTime(now).build();
     }
 
-    public void show(final String caption, final HidePopupRequestEvent.Handler handler) {
-        // As large as the window allows. The dialog holds a drawing, a list of changes and a table
-        // of constraints at once, and at a fixed size all three were too small to read together.
-        // Short of the edges, so it reads as a dialog rather than as the page.
-        final PopupSize popupSize = PopupSize.resizable(
-                Window.getClientWidth() - DIALOG_INSET,
-                Window.getClientHeight() - DIALOG_INSET,
-                MIN_DIALOG_WIDTH,
-                MIN_DIALOG_HEIGHT);
-        // Two thirds to the drawing, the rest to the constraints. The drawing is the thing being
-        // read; the constraints are what is read about whichever part of it was clicked.
-        getView().setTreeWidth((Window.getClientWidth() - DIALOG_INSET) * 2 / 3);
-        ShowPopupEvent.builder(this)
-                .popupType(PopupType.OK_CANCEL_DIALOG)
-                .popupSize(popupSize)
-                .caption(caption)
-                .onShow(e -> getView().focus())
-                .onHideRequest(handler)
-                // Nothing to step through once the dialog has gone, and a clock left running would
-                // keep moving a selection in a list nobody is looking at.
-                .onHide(e -> stop())
-                .fire();
+    /**
+     * Whether anything has been changed since the pathway was opened or last saved. What the Save
+     * button, the Save menu item and the prompt on closing all read.
+     */
+    @Override
+    public boolean isDirty() {
+        return dirty;
     }
 
-    public interface PathwayEditView extends View, Focus {
+    @Override
+    public void save() {
+        if (!dirty || pathway == null) {
+            return;
+        }
+        try {
+            restFactory
+                    .create(PATHWAYS_RESOURCE)
+                    .method(res -> res.updatePathway(new UpdatePathway(docRef, name, write())))
+                    .onSuccess(response -> {
+                        setDirty(false);
+                        if (savedHandler != null) {
+                            savedHandler.run();
+                        }
+                    })
+                    .onFailure(new DefaultErrorHandler(this, null))
+                    .taskMonitorFactory(this)
+                    .exec();
+        } catch (final RuntimeException e) {
+            AlertEvent.fireError(this, e.getMessage(), null);
+        }
+    }
 
-        void setTreeWidth(int width);
+    /**
+     * Told whenever a save lands, so whatever opened this can show the pathway's new size and time.
+     */
+    public void setSavedHandler(final Runnable savedHandler) {
+        this.savedHandler = savedHandler;
+    }
+
+    private void setDirty(final boolean dirty) {
+        this.dirty = dirty;
+        saveButton.setEnabled(dirty);
+        // The label says whether there is anything unsaved, so the tab is repainted when that changes
+        // and not on every edit. Nothing is repainted the first time, which is the pathway being read
+        // before its tab exists to carry a label.
+        final String label = getLabel();
+        final String was = lastLabel;
+        lastLabel = label;
+        if (was != null && !was.equals(label)) {
+            RefreshContentTabEvent.fire(this, this);
+        }
+    }
+
+    /**
+     * Told once the tab has been opened. A content tab is shown by being added to a layer rather than
+     * put in a slot, so nothing calls the reveal a presenter would otherwise wait for.
+     */
+    public void onOpened() {
+        if (!split) {
+            split = true;
+            // Three quarters to the drawing, the rest to the constraints. The drawing is the thing
+            // being read and it is the one that runs out of room — the constraints are a handful of
+            // rows about whichever part of it was clicked.
+            getView().setTreeShare(TREE_SHARE, pathwayTreePresenter::centre);
+        }
+    }
+
+    @Override
+    public void onCloseRequest(final CloseContentEvent event) {
+        final DirtyMode dirtyMode = event.getDirtyMode();
+        if (!dirty || DirtyMode.FORCE == dirtyMode) {
+            close(event, true);
+        } else if (DirtyMode.CONFIRM_DIRTY == dirtyMode) {
+            ConfirmEvent.fire(this,
+                    "Pathway '" + name + "' has unsaved changes. Are you sure you want to close it?",
+                    ok -> close(event, ok));
+        }
+        // SKIP_DIRTY leaves a pathway with unsaved changes open, which is what it asks for.
+    }
+
+    private void close(final CloseContentEvent event, final boolean ok) {
+        if (ok) {
+            // Nothing to step through once the tab has gone, and a clock left running would keep
+            // moving a selection in a list nobody is looking at.
+            stop();
+        }
+        event.getCallback().closeTab(ok);
+    }
+
+    @Override
+    public String getLabel() {
+        return dirty
+                ? "* " + name
+                : name;
+    }
+
+    @Override
+    public SvgImage getIcon() {
+        return SvgImage.PATHWAYS_CHOICE;
+    }
+
+    @Override
+    public String getType() {
+        return TAB_TYPE;
+    }
+
+
+    public interface PathwayEditView extends View {
+
+        ButtonView addButton(Preset preset);
+
+        void setTreeShare(double share, Runnable onSized);
 
         void setTree(View view);
 

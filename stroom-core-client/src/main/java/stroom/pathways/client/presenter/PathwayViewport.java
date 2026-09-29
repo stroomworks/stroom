@@ -19,6 +19,7 @@ package stroom.pathways.client.presenter;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.dom.client.Style.Visibility;
 import com.google.gwt.user.client.Event;
 import com.google.gwt.user.client.ui.HTML;
 
@@ -51,6 +52,16 @@ class PathwayViewport {
     private double zoom = 1;
     private int scrollLeft;
     private int scrollTop;
+    // Where the drawing that is not on show was last left. The two drawings of a model are scrolled
+    // differently — a tree is read from its top left and a graph from its middle — so each is given
+    // back its own place rather than whatever the other happened to be showing.
+    private int otherScrollLeft;
+    private int otherScrollTop;
+    private boolean swapping;
+    // Where the drawing was when it was last taken off the screen, which the browser does not keep.
+    private int awayLeft;
+    private int awayTop;
+    private boolean away;
     // Centring is held as something wanted rather than done, because a drawing is replaced more than
     // once as a pathway opens and the request has to outlive the drawing it was made for.
     private boolean centreWanted;
@@ -61,6 +72,46 @@ class PathwayViewport {
 
     PathwayViewport(final HTML panel) {
         this.panel = panel;
+        // Showing another tab takes this drawing off the screen altogether, and the browser keeps no
+        // scroll for anything it has removed. Put back on the way in rather than redrawn: nothing
+        // about the model has changed, only where it was hanging.
+        panel.addAttachHandler(event -> {
+            if (event.isAttached()) {
+                restoreAfterAway();
+            } else {
+                rememberBeforeAway();
+            }
+        });
+    }
+
+    private void rememberBeforeAway() {
+        final Element scroller = scroller();
+        if (scroller != null) {
+            awayLeft = scroller.getScrollLeft();
+            awayTop = scroller.getScrollTop();
+            away = true;
+        }
+    }
+
+    private void restoreAfterAway() {
+        if (!away) {
+            return;
+        }
+        away = false;
+        final int left = awayLeft;
+        final int top = awayTop;
+        // The drawing is put back on the screen before the browser has laid it out, so the scrollbars
+        // have nowhere to go yet — and it is kept out of sight until they have, so that coming back to
+        // a tab does not show the drawing at its top left before moving it.
+        hide();
+        Scheduler.get().scheduleDeferred(() -> {
+            final Element scroller = scroller();
+            if (scroller != null) {
+                scroller.setScrollLeft(left);
+                scroller.setScrollTop(top);
+            }
+            reveal();
+        });
     }
 
     /**
@@ -80,16 +131,37 @@ class PathwayViewport {
     }
 
     /**
+     * The drawing being replaced is the other one, so the reader gets back where they left that one
+     * rather than being carried to wherever this one happens to be. Takes effect on the next draw.
+     */
+    void swapDrawing() {
+        swapping = true;
+    }
+
+    /**
      * Remembers where the drawing is scrolled to, before it is replaced by another.
      */
     void beforeDraw() {
         final Element scroller = scroller();
-        scrollLeft = scroller == null
+        final int left = scroller == null
                 ? 0
                 : scroller.getScrollLeft();
-        scrollTop = scroller == null
+        final int top = scroller == null
                 ? 0
                 : scroller.getScrollTop();
+
+        if (swapping) {
+            swapping = false;
+            // The two change places: what is on show now is what will be put back when it returns,
+            // and what is arriving is given the place it was left at.
+            scrollLeft = otherScrollLeft;
+            scrollTop = otherScrollTop;
+            otherScrollLeft = left;
+            otherScrollTop = top;
+        } else {
+            scrollLeft = left;
+            scrollTop = top;
+        }
     }
 
     /**
@@ -121,8 +193,31 @@ class PathwayViewport {
             }
         }
         if (centreWanted) {
+            hide();
             Scheduler.get().scheduleDeferred(() -> centre(centreOn));
         }
+    }
+
+    // Where a drawing has to be put somewhere before it is worth looking at. The browser paints what
+    // was just drawn at the end of this turn, and where it belongs cannot be worked out until it has
+    // done that — so a drawing left on show appears at its top left and then jumps, which on a large
+    // model is two slow frames and reads as being drawn twice.
+    private void hide() {
+        panel.getElement().getStyle().setVisibility(Visibility.HIDDEN);
+    }
+
+    private void reveal() {
+        panel.getElement().getStyle().clearVisibility();
+    }
+
+    /**
+     * Puts the drawing back in the middle of a panel that has changed size under it. Where the middle
+     * is has moved and the scroll the drawing was given has not, so it has to be worked out again.
+     */
+    void recentre(final Supplier<Element> centreOn) {
+        centreWanted = true;
+        hide();
+        Scheduler.get().scheduleDeferred(() -> centre(centreOn));
     }
 
     boolean isDragging() {
@@ -221,7 +316,9 @@ class PathwayViewport {
     private void centre(final Supplier<Element> centreOn) {
         final Element scroller = scroller();
         if (scroller == null || scroller.getClientWidth() <= 0) {
-            // Nothing laid out to measure against yet. Still wanted, so the next draw tries again.
+            // Nothing laid out to measure against yet. Still wanted, so the next draw tries again —
+            // and there is nothing to keep out of sight in the meantime.
+            reveal();
             return;
         }
 
@@ -243,6 +340,7 @@ class PathwayViewport {
             scroller.setScrollTop((int) Math.round(y - (scroller.getClientHeight() / 2.0)));
         }
         centreWanted = false;
+        reveal();
     }
 
     // What scrolls is the drawing's own outer element, which the renderer promises is the only one.

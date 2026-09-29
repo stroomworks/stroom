@@ -3,11 +3,14 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client"
              xmlns:tab="urn:import:stroom.widget.tab.client.view">
-    <g:FlowPanel styleName="max form dock-container-vertical">
+    <g:FlowPanel styleName="max form form-padding dock-container-vertical">
+        <g:FlowPanel styleName="pager dock-container-horizontal dock-min align-center">
+            <g:FlowPanel ui:field="toolbarWidgets" addStyleNames="pager-toolbar"/>
+        </g:FlowPanel>
         <g:MySplitLayoutPanel styleName="dock-max">
             <g:south size="220">
                 <g:FlowPanel styleName="max dock-container-vertical">
-                    <tab:LinkTabBar ui:field="tabBar" styleName="dock-min linkTabBar"/>
+                    <tab:LinkTabBar ui:field="tabBar" styleName="dock-min linkTabBar pathway-tabs"/>
                     <tab:LayerContainerImpl ui:field="layerContainer"
                                             styleName="dock-max form-control-background form-control-border"/>
                 </g:FlowPanel>
@@ -15,7 +18,7 @@
             <g:center>
                 <g:MySplitLayoutPanel ui:field="centreSplit">
                     <g:west size="400">
-                        <form:FormGroup ui:field="treeGroup" identity="pathwayDetails" label="Paths">
+                        <form:FormGroup ui:field="treeGroup" identity="pathwayDetails" label="Pathway">
                             <g:SimplePanel ui:field="tree"
                                            styleName="max form-control-background form-control-border"/>
                         </form:FormGroup>

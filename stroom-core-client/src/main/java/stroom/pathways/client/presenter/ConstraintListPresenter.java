@@ -23,6 +23,9 @@ import stroom.cell.tickbox.shared.TickBoxState;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.RestFactory;
+import stroom.document.client.event.DirtyEvent;
+import stroom.document.client.event.DirtyEvent.DirtyHandler;
+import stroom.document.client.event.HasDirtyHandlers;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.PathNode;
@@ -36,6 +39,7 @@ import stroom.widget.util.client.MultiSelectionModelImpl;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
+import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
@@ -48,7 +52,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ConstraintListPresenter
-        extends MyPresenterWidget<PagerView> {
+        extends MyPresenterWidget<PagerView>
+        implements HasDirtyHandlers {
 
 //    private static final ConstraintsResource PATHWAYS_RESOURCE = GWT.create(ConstraintsResource.class);
 
@@ -239,6 +244,7 @@ public class ConstraintListPresenter
                     pathNode.getConstraints().remove(constraint.getName());
                     pathNode.getConstraints().put(constraint.getName(), constraint);
                     refresh();
+                    DirtyEvent.fire(this, true);
                 }
             } catch (final RuntimeException ex) {
                 AlertEvent.fireErrorFromException(this, "Error", ex, null);
@@ -259,7 +265,7 @@ public class ConstraintListPresenter
                         pathNode.getConstraints().remove(constraint.getName());
                         pathNode.getConstraints().put(constraint.getName(), constraint);
                         refresh();
-
+                        DirtyEvent.fire(this, true);
                     }
                 } catch (final RuntimeException ex) {
                     AlertEvent.fireErrorFromException(this, "Error", ex, null);
@@ -284,9 +290,21 @@ public class ConstraintListPresenter
                         pathNode.getConstraints().remove(constraint.getName());
                     }
                     refresh();
+                    DirtyEvent.fire(this, true);
                 }
             });
         }
+    }
+
+    /**
+     * Told whenever a constraint is added, changed or removed. The edits are written straight into the
+     * node this was given, so whoever holds that node has to hear about them to know there is
+     * something to save. Registered against this presenter as the source, so one pathway hears only
+     * its own.
+     */
+    @Override
+    public HandlerRegistration addDirtyHandler(final DirtyHandler handler) {
+        return addHandlerToSource(DirtyEvent.getType(), handler);
     }
 
     /**

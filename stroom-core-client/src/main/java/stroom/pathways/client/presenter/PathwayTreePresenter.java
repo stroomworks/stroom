@@ -257,7 +257,10 @@ public class PathwayTreePresenter
                 : GRAPH_TITLE);
 
         fetchHistory();
-        refresh(false);
+        // Where the drawing arriving was last left, rather than the middle. Only the first sight of a
+        // model opens in the middle; after that the reader put it where they wanted it.
+        viewport.swapDrawing();
+        refresh(true);
         if (viewChangeHandler != null) {
             viewChangeHandler.run();
         }
@@ -337,6 +340,16 @@ public class PathwayTreePresenter
                 refresh(true);
             }
         });
+    }
+
+    /**
+     * Puts the drawing back in the middle, for a panel that has changed size around it. Only for a
+     * drawing that opens in the middle: a tree is read from its top left and would jump.
+     */
+    public void centre() {
+        if (renderer.opensCentred()) {
+            viewport.recentre(this::rootElement);
+        }
     }
 
     /**
@@ -505,18 +518,6 @@ public class PathwayTreePresenter
 
     private static String key(final List<String> path) {
         return String.join("\u0000", NullSafe.list(path));
-    }
-
-    /**
-     * Forgets what was selected, so the next read starts clean rather than picking the same node out
-     * again. Reading keeps a selection on purpose, which is what lets the model be wound back with the
-     * node being looked at staying put.
-     */
-    public void clearSelection() {
-        selectedNode = null;
-        selectedElement = null;
-        wantedSelection = null;
-        selectionModel.clear();
     }
 
     private void selectRoot() {
