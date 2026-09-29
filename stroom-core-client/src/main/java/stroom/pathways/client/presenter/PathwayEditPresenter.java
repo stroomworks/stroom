@@ -509,25 +509,30 @@ public class PathwayEditPresenter
         if (selected == null || !historyComplete) {
             pathwayTreePresenter.setAsAt(null, null);
             pathwayTreePresenter.read(pathway);
-            return;
-        }
-
-        final List<PathwayMutation> later = new ArrayList<>();
-        for (final PathwayMutation mutation : history) {
-            if (mutation.getSequence() > selected) {
-                later.add(mutation);
+        } else {
+            final List<PathwayMutation> later = new ArrayList<>();
+            for (final PathwayMutation mutation : history) {
+                if (mutation.getSequence() > selected) {
+                    later.add(mutation);
+                }
             }
+
+            // What each node had changed by this point is counted from the whole history held there,
+            // while what the sizes are measured against stays the most any node has ever changed.
+            // Handed only the part up to here, winding back would rescale the picture rather than
+            // shrink it.
+            pathwayTreePresenter.setAsAt(mutationListPresenter.getSelectedTime(), selected);
+
+            final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
+            pathwayTreePresenter.read(root == null
+                    ? null
+                    : pathway.copy().root(root).build());
         }
 
-        // What each node had changed by this point is counted from the whole history held there, while
-        // what the sizes are measured against stays the most any node has ever changed. Handed only
-        // the part up to here, winding back would rescale the picture rather than shrink it.
-        pathwayTreePresenter.setAsAt(mutationListPresenter.getSelectedTime(), selected);
-
-        final PathNode root = PathwayReplay.rewind(pathway.getRoot(), later);
-        pathwayTreePresenter.read(root == null
-                ? null
-                : pathway.copy().root(root).build());
+        // Which of a node's constraints the change being looked at moved is marked in the table beside
+        // the drawing, and there may no longer be a change being looked at. Whichever way this went,
+        // asked for rather than waited for: the node picked out has not moved, so the selection that
+        // usually brings this on says nothing.
         showConstraints();
     }
 
