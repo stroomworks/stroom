@@ -182,7 +182,6 @@ public class PathwaysProcessor {
         });
     }
 
-    @WithSpan
     private Backlog processDocument(final DocRef docRef) {
         final PathwaysDoc doc = pathwaysStore.readDocument(docRef);
         final SharedFileStoreSettings settings = doc == null
@@ -250,9 +249,8 @@ public class PathwaysProcessor {
 
     // Applies what this hold has time for into a local copy of the shard's model, pushes the model
     // back, then deletes exactly what went into it.
-    @WithSpan
     private void drain(final PathwaysDoc doc,
-                       @SpanAttribute final int shardIndex,
+                       final int shardIndex,
                        final ShardQueue queue) {
         final List<Path> applied = new ArrayList<>();
         try {
@@ -272,7 +270,6 @@ public class PathwaysProcessor {
     // Fills `applied` with the items that went in, so the caller can delete exactly those once the
     // model is safely back on the shared store. Returns whether the local model changed, which is what
     // decides whether it is worth pushing.
-    @WithSpan
     private boolean applyBatch(final PathwaysDoc doc,
                                final ShardQueue queue,
                                final Path localDir,
