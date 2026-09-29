@@ -136,7 +136,13 @@ public class PathwayEditPresenter extends MyPresenterWidget<PathwayEditView> {
         pathwayTreePresenter.setViewChangeHandler(this::showPlayButtons);
 
         registerHandler(pathwayTreePresenter.getSelectionModel()
-                .addSelectionChangeHandler(e -> showConstraints()));
+                .addSelectionChangeHandler(e -> {
+                    // The routes table can narrow itself to the node being looked at, and the drawing
+                    // is where that node is picked out, so it is told each time that moves.
+                    routeListPresenter.setSelectedNode(
+                            pathwayTreePresenter.getSelectionModel().getSelectedObject());
+                    showConstraints();
+                }));
 
         registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
         registerHandler(routeListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));

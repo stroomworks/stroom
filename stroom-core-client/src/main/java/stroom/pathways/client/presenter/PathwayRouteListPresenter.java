@@ -28,8 +28,10 @@ import stroom.pathways.shared.pathway.RouteVisit;
 import stroom.pathways.shared.pathway.Routes;
 import stroom.pathways.shared.pathway.StepsUse;
 import stroom.preferences.client.DateTimeFormatter;
+import stroom.svg.shared.SvgImage;
 import stroom.util.client.DataGridUtil;
 import stroom.util.shared.NullSafe;
+import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
 import com.google.gwt.user.cellview.client.Column;
@@ -43,6 +45,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -63,8 +66,11 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     private static final int ROUTE_COL = 700;
     // A trace id is 16 bytes written as hex, so this holds one rather than being measured.
     private static final int TRACE_ID_COL = 270;
+    private static final String FILTER_OFF_TITLE = "Filter by selected node";
+    private static final String FILTER_ON_TITLE = "Show every route";
 
     private final DateTimeFormatter dateTimeFormatter;
+    private final InlineSvgToggleButton filterButton;
     private final MyDataGrid<RouteUse> dataGrid;
     private final MultiSelectionModelImpl<RouteUse> selectionModel;
     private final ListDataProvider<RouteUse> dataProvider;
@@ -82,12 +88,25 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      */
     private PathNode root;
 
+    // Every route of the pathway on show, busiest first, which is not always what the table is given.
+    private List<RouteUse> rows = Collections.emptyList();
+    // The node picked out on the drawing, which only matters while the filter is on.
+    private String selectedNode;
+
     @Inject
     public PathwayRouteListPresenter(final EventBus eventBus,
                                      final PagerView view,
                                      final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
         this.dateTimeFormatter = dateTimeFormatter;
+
+        // Narrows the table to the routes that ran the node being looked at. On this toolbar rather
+        // than on the drawing because it is this table it changes, and the node it works from is
+        // picked out on the drawing either way.
+        filterButton = new InlineSvgToggleButton();
+        filterButton.setSvg(SvgImage.FILTER);
+        filterButton.setTitle(FILTER_OFF_TITLE);
+        view.addButton(filterButton);
 
         dataGrid = new MyDataGrid<>(this);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
@@ -99,6 +118,35 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         dataProvider.addDataDisplay(dataGrid);
 
         addColumns();
+    }
+
+    @Override
+    protected void onBind() {
+        super.onBind();
+        // Follows the button rather than deciding which clicks count, the same as the drawing's own
+        // view button: it turns itself over on any click it accepts.
+        registerHandler(filterButton.addClickHandler(e -> {
+            filterButton.setTitle(filterButton.getState()
+                    ? FILTER_ON_TITLE
+                    : FILTER_OFF_TITLE);
+            show();
+        }));
+    }
+
+    /**
+     * The node picked out on the drawing, so the filter knows which routes to keep. Given rather than
+     * asked for, because the drawing and this table are held by the view around them both.
+     */
+    public void setSelectedNode(final PathNode node) {
+        final String uuid = NullSafe.get(node, PathNode::getUuid);
+        if (!Objects.equals(uuid, selectedNode)) {
+            selectedNode = uuid;
+            // Nothing to redo while every route is on show, and a node is clicked far more often than
+            // the filter is turned on.
+            if (filterButton.getState()) {
+                show();
+            }
+        }
     }
 
     /**
@@ -114,14 +162,25 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * graph. Empty where nothing is selected.
      */
     public List<List<String>> getSelectedPaths() {
-        final RouteUse selected = selectionModel.getSelected();
-        if (selected == null || root == null) {
+        final List<List<String>> paths = new ArrayList<>();
+        for (final PathNode node : nodesIn(selectionModel.getSelected())) {
+            if (node.getPath() != null) {
+                paths.add(node.getPath());
+            }
+        }
+        return paths;
+    }
+
+    // The nodes a route ran, in the order it ran them. Worked out afresh rather than kept beside the
+    // row: a pathway holds a handful of routes and a walk of one is a walk of the model, so holding
+    // the answer would only be something else to keep true.
+    private List<PathNode> nodesIn(final RouteUse route) {
+        if (route == null || root == null) {
             return Collections.emptyList();
         }
-
-        final List<List<String>> paths = new ArrayList<>();
-        walk(root, stepsByNode(selected), paths, new HashSet<>());
-        return paths;
+        final List<PathNode> nodes = new ArrayList<>();
+        walk(root, stepsByNode(route), nodes, new HashSet<>());
+        return nodes;
     }
 
     // Which sets of steps each node took, so a walk knows whether a name in a node's steps is
@@ -146,18 +205,18 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // same, and the steps are where they are named, so the walk reaches them from there.
     private static void walk(final PathNode node,
                              final Map<String, List<Integer>> stepsByNode,
-                             final List<List<String>> paths,
+                             final List<PathNode> nodes,
                              final Set<String> done) {
         if (!done.add(node.getUuid())) {
             return;
         }
-        add(paths, node.getPath());
+        nodes.add(node);
         for (final Integer position : NullSafe.list(stepsByNode.get(node.getUuid()))) {
             // Split reads its argument as a pattern, which the separator is safe to be read as.
             for (final String name : steps(node, position).split(StepsUse.SEPARATOR)) {
                 final PathNode child = child(node, name);
                 if (child != null) {
-                    walk(child, stepsByNode, paths, done);
+                    walk(child, stepsByNode, nodes, done);
                 }
             }
         }
@@ -172,12 +231,6 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return null;
     }
 
-    private static void add(final List<List<String>> paths, final List<String> path) {
-        if (path != null && !paths.contains(path)) {
-            paths.add(path);
-        }
-    }
-
     /**
      * Shows the routes of one pathway. Given rather than fetched, for the reason the data provider
      * gives above.
@@ -188,10 +241,14 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         selectionModel.clear();
         nodesByPosition.clear();
         root = NullSafe.get(pathway, Pathway::getRoot);
+        // Whatever was picked out belonged to the model being replaced, so the filter starts with
+        // nothing to work from rather than with a node this pathway may not have.
+        selectedNode = null;
 
         final Routes routes = NullSafe.get(pathway, Pathway::getRoutes);
         if (routes == null) {
-            dataProvider.setCompleteList(Collections.emptyList());
+            rows = Collections.emptyList();
+            show();
             return;
         }
 
@@ -199,9 +256,44 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
 
         // Busiest first. Nothing else about a route is worth ordering on: what a reader wants to know
         // is what normally happens, and after that what hardly ever does.
-        final List<RouteUse> rows = new ArrayList<>(NullSafe.list(routes.getRoutes()));
-        rows.sort((a, b) -> Long.compare(b.getTimesUsed(), a.getTimesUsed()));
-        dataProvider.setCompleteList(rows);
+        final List<RouteUse> sorted = new ArrayList<>(NullSafe.list(routes.getRoutes()));
+        sorted.sort((a, b) -> Long.compare(b.getTimesUsed(), a.getTimesUsed()));
+        rows = sorted;
+        show();
+    }
+
+    // What the table is given: every route, or only those that ran the node picked out on the
+    // drawing. With the filter on and nothing picked out there is nothing to narrow by, so everything
+    // is shown rather than nothing.
+    private void show() {
+        if (!filterButton.getState() || selectedNode == null) {
+            dataProvider.setCompleteList(rows);
+            return;
+        }
+
+        final List<RouteUse> kept = new ArrayList<>();
+        for (final RouteUse route : rows) {
+            if (runs(route, selectedNode)) {
+                kept.add(route);
+            }
+        }
+
+        // A route that has just been taken off the table should not go on picking nodes out on the
+        // drawing, where the reader has no row left to click to stop it.
+        final RouteUse selected = selectionModel.getSelected();
+        if (selected != null && !kept.contains(selected)) {
+            selectionModel.clear();
+        }
+        dataProvider.setCompleteList(kept);
+    }
+
+    private boolean runs(final RouteUse route, final String uuid) {
+        for (final PathNode node : nodesIn(route)) {
+            if (uuid.equals(node.getUuid())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Walks the model once, keeping the nodes the routes name. A node a route references that is not
