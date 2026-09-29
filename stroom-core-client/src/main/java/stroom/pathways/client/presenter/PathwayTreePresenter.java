@@ -71,6 +71,9 @@ public class PathwayTreePresenter
     // through, the next step arrives before a long run has finished and every node is caught part
     // way through one; a single pass finishes and settles before the drawing is replaced.
     private static final String HIGHLIGHT_ONCE_CLASS = "pathway-node--changed-once";
+    // A route walked, which is marked differently from a change: each node keeps a ring once the walk
+    // has reached it, so what has been covered can be seen rather than held in the reader's head.
+    private static final String WALK_CLASS = "pathway-node--walk";
     // How long the walk waits between one node and the next. The same for every route however many
     // nodes it has: worked out from the length instead, a long route would travel so fast that the
     // walk could not be followed, which is the whole of what it is for.
@@ -699,9 +702,12 @@ public class PathwayTreePresenter
     }
 
     private String highlightClass() {
-        // A route is walked once: its nodes are held off one after another to show the walk, and
-        // running that over and over would replay it rather than show it.
-        return stepping || highlightedRoute
+        if (highlightedRoute) {
+            // Walked once: the nodes are held off one after another to show the walk, and running that
+            // over and over would replay it rather than show it.
+            return WALK_CLASS;
+        }
+        return stepping
                 ? HIGHLIGHT_ONCE_CLASS
                 : HIGHLIGHT_CLASS;
     }
@@ -718,6 +724,7 @@ public class PathwayTreePresenter
             element.getStyle().setProperty("animationDelay", (place * stagger) + "ms");
             element.addClassName(highlightClass);
         }
+
         final NodeList<Node> children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node node = children.getItem(i);
