@@ -21,6 +21,7 @@ import stroom.config.global.client.presenter.ListDataProvider;
 import stroom.data.client.presenter.ColumnSizeConstants;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.RouteUse;
@@ -35,12 +36,15 @@ import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
 import com.google.gwt.user.cellview.client.Column;
+import com.google.gwt.user.cellview.client.ColumnSortList;
+import com.google.gwt.user.cellview.client.ColumnSortList.ColumnSortInfo;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -92,6 +96,19 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     private List<RouteUse> rows = Collections.emptyList();
     // The node picked out on the drawing, which only matters while the filter is on.
     private String selectedNode;
+    // How to order the rows for each column that offers it, and the one ordered on where nothing has
+    // been chosen.
+    private final Map<Column<?, ?>, Comparator<RouteUse>> orders = new HashMap<>();
+    private Column<RouteUse, String> tracesColumn;
+
+    /**
+     * What each route comes to when it is walked, worked out the first time it is wanted and kept.
+     * A walk is a walk of the whole model, and the same answers are asked for over and over — the
+     * grid asks for a route's text on every draw of every visible row, and ordering on it asks twice
+     * for each pair it puts in order. Emptied with the data, which is the only thing that changes it.
+     */
+    private final Map<RouteUse, String> texts = new HashMap<>();
+    private final Map<RouteUse, List<PathNode>> walks = new HashMap<>();
 
     @Inject
     public PathwayRouteListPresenter(final EventBus eventBus,
@@ -125,6 +142,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         super.onBind();
         // Follows the button rather than deciding which clicks count, the same as the drawing's own
         // view button: it turns itself over on any click it accepts.
+        registerHandler(dataGrid.addColumnSortHandler(e -> order()));
         registerHandler(filterButton.addClickHandler(e -> {
             filterButton.setTitle(filterButton.getState()
                     ? FILTER_ON_TITLE
@@ -171,15 +189,17 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return paths;
     }
 
-    // The nodes a route ran, in the order it ran them. Worked out afresh rather than kept beside the
-    // row: a pathway holds a handful of routes and a walk of one is a walk of the model, so holding
-    // the answer would only be something else to keep true.
+    // The nodes a route ran, in the order it ran them.
     private List<PathNode> nodesIn(final RouteUse route) {
         if (route == null || root == null) {
             return Collections.emptyList();
         }
-        final List<PathNode> nodes = new ArrayList<>();
-        walk(root, stepsByNode(route), nodes, new HashSet<>());
+        List<PathNode> nodes = walks.get(route);
+        if (nodes == null) {
+            nodes = new ArrayList<>();
+            walk(root, stepsByNode(route), nodes, new HashSet<>());
+            walks.put(route, nodes);
+        }
         return nodes;
     }
 
@@ -240,6 +260,10 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         // asks what is selected to decide what to pick out.
         selectionModel.clear();
         nodesByPosition.clear();
+        // What was worked out about the routes of the pathway being replaced says nothing about this
+        // one's, and the walk they came from starts at a root that is about to change.
+        texts.clear();
+        walks.clear();
         root = NullSafe.get(pathway, Pathway::getRoot);
         // Whatever was picked out belonged to the model being replaced, so the filter starts with
         // nothing to work from rather than with a node this pathway may not have.
@@ -254,12 +278,8 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
 
         indexNodes(NullSafe.get(pathway, Pathway::getRoot), routes.getNodes());
 
-        // Busiest first. Nothing else about a route is worth ordering on: what a reader wants to know
-        // is what normally happens, and after that what hardly ever does.
-        final List<RouteUse> sorted = new ArrayList<>(NullSafe.list(routes.getRoutes()));
-        sorted.sort((a, b) -> Long.compare(b.getTimesUsed(), a.getTimesUsed()));
-        rows = sorted;
-        show();
+        rows = new ArrayList<>(NullSafe.list(routes.getRoutes()));
+        order();
     }
 
     // What the table is given: every route, or only those that ran the node picked out on the
@@ -321,12 +341,85 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
 
     private void addColumns() {
         addColumn("Created", route -> NullSafe.get(route.getFirstUsedTime(),
-                value -> dateTimeFormatter.format(value.toEpochMillis())), ColumnSizeConstants.DATE_COL);
+                        value -> dateTimeFormatter.format(value.toEpochMillis())),
+                ColumnSizeConstants.DATE_COL,
+                (a, b) -> compare(a.getFirstUsedTime(), b.getFirstUsedTime()));
         addColumn("Last Used", route -> NullSafe.get(route.getLastUsedTime(),
-                value -> dateTimeFormatter.format(value.toEpochMillis())), ColumnSizeConstants.DATE_COL);
-        addColumn("Route", this::routeText, ROUTE_COL);
-        addColumn("Created By", RouteUse::getCreatedByTraceId, TRACE_ID_COL);
-        addColumn("Traces", route -> Long.toString(route.getTimesUsed()), COUNT_COL);
+                        value -> dateTimeFormatter.format(value.toEpochMillis())),
+                ColumnSizeConstants.DATE_COL,
+                (a, b) -> compare(a.getLastUsedTime(), b.getLastUsedTime()));
+        addColumn("Route", this::text, ROUTE_COL,
+                (a, b) -> compare(text(a), text(b)));
+        addColumn("Created By", RouteUse::getCreatedByTraceId, TRACE_ID_COL,
+                (a, b) -> compare(a.getCreatedByTraceId(), b.getCreatedByTraceId()));
+        tracesColumn = addColumn("Traces", route -> Long.toString(route.getTimesUsed()), COUNT_COL,
+                (a, b) -> Long.compare(a.getTimesUsed(), b.getTimesUsed()));
+        busiestFirst();
+    }
+
+    // Busiest first unless the grid has been told otherwise. What a reader wants to know is what
+    // normally happens, and after that what hardly ever does.
+    private void busiestFirst() {
+        final ColumnSortList sortList = dataGrid.getColumnSortList();
+        sortList.clear();
+        sortList.push(new ColumnSortInfo(tracesColumn, false));
+    }
+
+    // Whatever the grid has been told to order on, or the busiest first where it has been told
+    // nothing it knows about.
+    private void order() {
+        Comparator<RouteUse> order = orders.get(tracesColumn);
+        boolean ascending = false;
+
+        final ColumnSortList sortList = dataGrid.getColumnSortList();
+        if (sortList != null && sortList.size() > 0) {
+            final ColumnSortInfo info = sortList.get(0);
+            final Comparator<RouteUse> chosen = orders.get(info.getColumn());
+            if (chosen != null) {
+                order = chosen;
+                ascending = info.isAscending();
+            }
+        }
+
+        final Comparator<RouteUse> chosen = order;
+        final boolean up = ascending;
+        final List<RouteUse> sorted = new ArrayList<>(rows);
+        sorted.sort((a, b) -> up
+                ? chosen.compare(a, b)
+                : chosen.compare(b, a));
+        rows = sorted;
+        show();
+    }
+
+    private static int compare(final NanoTime a, final NanoTime b) {
+        if (a == null || b == null) {
+            return a == b
+                    ? 0
+                    : (a == null
+                            ? -1
+                            : 1);
+        }
+        return a.compareTo(b);
+    }
+
+    private static int compare(final String a, final String b) {
+        if (a == null || b == null) {
+            return a == b
+                    ? 0
+                    : (a == null
+                            ? -1
+                            : 1);
+        }
+        return a.compareTo(b);
+    }
+
+    private String text(final RouteUse route) {
+        String text = texts.get(route);
+        if (text == null) {
+            text = routeText(route);
+            texts.put(route, text);
+        }
+        return text;
     }
 
     // The walk in the sequence it happened, which is the sequence the drawing picks the nodes out in.
@@ -383,12 +476,18 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                 : "";
     }
 
-    private void addColumn(final String name,
-                           final Function<RouteUse, String> value,
-                           final int width) {
+    private Column<RouteUse, String> addColumn(final String name,
+                                               final Function<RouteUse, String> value,
+                                               final int width,
+                                               final Comparator<RouteUse> order) {
         final Column<RouteUse, String> column = DataGridUtil
                 .textColumnBuilder(value)
+                .withSorting(name)
                 .build();
         dataGrid.addResizableColumn(column, name, width);
+        // Held against the column rather than the name, because what the grid hands back when a header
+        // is clicked is the column.
+        orders.put(column, order);
+        return column;
     }
 }
