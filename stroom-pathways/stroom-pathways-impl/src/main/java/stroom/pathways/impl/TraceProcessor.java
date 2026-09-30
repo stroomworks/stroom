@@ -28,6 +28,7 @@ import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.PathwaysDb.SimpleDb;
@@ -58,13 +59,16 @@ public class TraceProcessor {
     private final ByteBuffers byteBuffers;
     private final PathwaySerde pathwaySerde;
     private final IgnoredAttributes ignoredAttributes;
+    private final IgnoredSpans ignoredSpans;
 
     public TraceProcessor(final ByteBuffers byteBuffers,
                           final PathwaySerde pathwaySerde,
-                          final IgnoredAttributes ignoredAttributes) {
+                          final IgnoredAttributes ignoredAttributes,
+                          final IgnoredSpans ignoredSpans) {
         this.byteBuffers = byteBuffers;
         this.pathwaySerde = pathwaySerde;
         this.ignoredAttributes = ignoredAttributes;
+        this.ignoredSpans = ignoredSpans;
     }
 
     /**
@@ -144,7 +148,7 @@ public class TraceProcessor {
                                final PathwaysDb pathwaysDb) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(doc.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder, ignoredAttributes);
+        final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder, ignoredAttributes, ignoredSpans);
 
         final Span root = trace.root();
         final PathKey pathKey = pathKeyFactory.create(Collections.singletonList(root));
@@ -203,7 +207,7 @@ public class TraceProcessor {
                     // Recorded whether or not the trace changed anything, because a route the model
                     // already knew is still a route taken.
                     .routes(RouteRecorder.add(pathway.getRoutes(),
-                            nodeMutator.getStepsVisits(),
+                            nodeMutator.getRouteShape(),
                             nanoTime,
                             trace.getTraceId()));
             if (nodeMutator.isChanged()) {

@@ -43,9 +43,10 @@ import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.Regex;
-import stroom.pathways.shared.pathway.StepsUse;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder.SpanGroup;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
@@ -68,23 +69,27 @@ import java.util.stream.Collectors;
 public class NodeMutatorImpl {
 
     private static final int MAX_SET_SIZE = 10;
+    // The longest run of children looked at when saying a repeat once. A repeating group longer than
+    // this is not one a reader would follow as a repeat.
+    private static final int MAX_GROUP = 64;
     private static final String ATTRIBUTE_PREFIX = "attribute.";
-    private static final String CHILD_STEPS = "childSteps";
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
     private final IgnoredAttributes ignoredAttributes;
+    private final IgnoredSpans ignoredSpans;
 
     // What this trace taught the model: a node it had not seen, or a constraint it had to add or
     // widen. One of these is made per trace, so the list covers that trace and no other. Kept in the
     // order the changes happened so a replay can follow them.
     private final List<PathwayMutation> mutations = new ArrayList<>();
 
-    // Every node visit this trace made, in the order the trace was walked, each paired with the steps
-    // that node took on that visit. A node several spans reached appears once per span, so this holds
-    // everything a caller could want to know about what ran and in what sequence; narrower views are
-    // derived from it rather than recorded alongside it.
-    private final List<NodeSteps> stepsVisits = new ArrayList<>();
+
+    // The shape of what each span did, by the span it was folded from. Held while the trace is walked
+    // because a span's shape is only complete once its children have been, and the walk reaches those
+    // grouped by name rather than in the order they ran.
+    private final Map<String, RouteShape> shapeBySpan = new HashMap<>();
+    private String rootSpanId;
 
     // Which trace and span the change being recorded came from. Fields because the methods that
     // notice a constraint moving are several calls below the one that knows. Which node it happened to
@@ -96,9 +101,11 @@ public class NodeMutatorImpl {
     private boolean absent;
 
     public NodeMutatorImpl(final CanonicalSpanOrder spanOrder,
-                           final IgnoredAttributes ignoredAttributes) {
+                           final IgnoredAttributes ignoredAttributes,
+                           final IgnoredSpans ignoredSpans) {
         this.spanOrder = spanOrder;
         this.ignoredAttributes = ignoredAttributes;
+        this.ignoredSpans = ignoredSpans;
     }
 
     /**
@@ -110,29 +117,15 @@ public class NodeMutatorImpl {
         return mutations;
     }
 
-    /**
-     * Every node visit this trace made, in the sequence it made them.
-     *
-     * <p>A node's steps are given as a position in its {@code stepsUse}, which is only ever appended
-     * to, so a position names the same steps for the life of the pathway. A node the trace reached
-     * that ran no children makes no visit here; that it ran at all is recorded in the steps of the
-     * node above it.
-     */
-    public List<NodeSteps> getStepsVisits() {
-        return stepsVisits;
-    }
 
     /**
-     * Which steps each node took while this trace was folded in, by node uuid, ignoring how many
-     * times each was taken and which visit took which.
+     * What the trace did, as one shape holding the whole walk: every node it reached, the children it
+     * ran at each, and the order it ran them in. Null where no trace has been folded in.
      */
-    public Map<String, Set<Integer>> getStepsTaken() {
-        final Map<String, Set<Integer>> taken = new LinkedHashMap<>();
-        for (final NodeSteps visit : stepsVisits) {
-            taken.computeIfAbsent(visit.nodeUuid(), k -> new TreeSet<>()).add(visit.steps());
-        }
-        return taken;
+    public RouteShape getRouteShape() {
+        return shapeBySpan.get(rootSpanId);
     }
+
 
     /**
      * Whether the trace taught the model anything. The same question as whether it made any changes.
@@ -172,6 +165,7 @@ public class NodeMutatorImpl {
         time = NanoTimeUtil.fromInstant(Instant.now());
         traceId = trace.getTraceId();
         spanId = root.getSpanId();
+        rootSpanId = root.getSpanId();
         final MessageReceiver messages =
                 MessageReceiver.forSpan(messageReceiver, traceId, spanId);
         if (pathNode == null && !pathwaysDoc.isAllowPathwayCreation()) {
@@ -206,24 +200,28 @@ public class NodeMutatorImpl {
         final MessageReceiver messages =
                 MessageReceiver.forSpan(messageReceiver, traceId, spanId);
 
+        final List<SpanGroup> groups = spanOrder.groups(trace.children(parentSpan));
+        final List<Span> ordered = new ArrayList<>();
+        groups.forEach(group -> group.runs().forEach(ordered::addAll));
+
         // This trace's children grouped by name, first appearance first. The same name twice is one
-        // child that happened twice, not two children.
+        // child that happened twice, not two children — what a child is does not change because it ran
+        // again, so every span of a name is folded into the one node.
         final Map<String, List<Span>> spansByName = new LinkedHashMap<>();
-        spanOrder.sort(trace.children(parentSpan)).forEach(span -> spansByName
+        ordered.forEach(span -> spansByName
                 .computeIfAbsent(span.getName(), k -> new ArrayList<>())
                 .add(span));
 
-        // The children this node ran, named in the sequence they were reached, kept on the parent as
-        // a constraint. A route that starts doing the same work a different way widens that constraint
-        // rather than becoming a route of its own. How many times each one ran is counted on the
-        // child, so repeats are left out here, and so is a trace that reached no children at all —
-        // that is already recorded as a count of zero on each child the model knows.
-        final String childSteps = spansByName.isEmpty()
-                ? null
-                : String.join(StepsUse.SEPARATOR, spansByName.keySet());
-
+        // The children this node ran, named in the sequence they were reached, with work done over and
+        // over said once. A run of the same child is one step, and so is a run of the same group of
+        // children: reading twenty documents a page at a time is the amount of work there was to do,
+        // not a different way of working, and how many times each child ran is counted on the child.
+        // A child that comes back after another has run is a step of its own, because it did not
+        // happen where the first one happened — running a then b then a is not running a twice and
+        // then b, and a model that could not tell the two apart said the second was the first.
+        //
         final PathNode.Builder pathNodeBuilder =
-                addConstraints(parentNode, parentSpan, childSteps, messages, pathwaysDoc);
+                addConstraints(parentNode, parentSpan, messages, pathwaysDoc);
 
         final Map<String, PathNode> existing = new LinkedHashMap<>();
         NullSafe.list(parentNode.getChildren()).forEach(child -> existing.put(child.getName(), child));
@@ -269,8 +267,235 @@ public class NodeMutatorImpl {
                     pathwaysDoc));
         }
 
+        // Read in the order the work happened rather than the order the model holds the names, so the
+        // shape says what the trace did. The children loop above has put each span's shape in hand.
+        final List<RouteShape> ran = new ArrayList<>(ordered.size());
+        for (final SpanGroup group : groups) {
+            final List<RouteShape> runs = new ArrayList<>(group.runs().size());
+            for (final List<Span> run : group.runs()) {
+                final List<RouteShape> shapes = shapesOf(run);
+                if (!shapes.isEmpty()) {
+                    runs.add(RouteShape.run(collapse(sameNodeRunsInOrder(shapes))));
+                }
+            }
+            if (runs.size() == 1) {
+                // One thread had the moment to itself, so there is nothing to say about order beyond
+                // what it did.
+                ran.addAll(runs.getFirst().steps());
+            } else if (!runs.isEmpty()) {
+                // Read in an order settled by what the runs are rather than by which thread got there
+                // first, so the same work on four threads is the same route however they were timed.
+                // Sorting also brings runs that did the same thing together, and the collapse then
+                // says them once: how many threads there were is how much work there was to do.
+                //
+                // What is left is held as work that happened at the same time even where it came down
+                // to a single run, because that is the thing worth saying about it. Only a moment one
+                // run had to itself, handled above, is read as a plain sequence.
+                runs.sort(NodeMutatorImpl::compare);
+                ran.add(RouteShape.concurrent(mergeTurnsOfOneNode(collapse(runs))));
+            }
+        }
+        shapeBySpan.put(parentSpan.getSpanId(),
+                RouteShape.of(parentNode.getUuid(), collapse(sameNodeRunsInOrder(ran))));
+
         pathNodeBuilder.children(children);
         return pathNodeBuilder.build();
+    }
+
+    // The shapes of the spans given, leaving out any span that is not part of the route. What such a
+    // span ran goes with it, because its steps are held in the shape being dropped — a step that is
+    // not on the route cannot have steps of its own that are.
+    private List<RouteShape> shapesOf(final List<Span> spans) {
+        final List<RouteShape> shapes = new ArrayList<>(spans.size());
+        for (final Span span : spans) {
+            if (!ignoredSpans.isEmpty() && ignoredSpans.test(span.getName())) {
+                continue;
+            }
+            final RouteShape shape = shapeBySpan.get(span.getSpanId());
+            if (shape != null) {
+                shapes.add(shape);
+            }
+        }
+        return shapes;
+    }
+
+    // Runs that hold nothing but turns of one node, said as a single run of the turns they took
+    // between them; the runs left alone where they hold anything else.
+    //
+    // Where several threads take turns of the same node off a shared queue, which thread takes which
+    // turn is decided by what it reached first. A thread that took a turn the others did not is then
+    // a run apart, and the route records which thread that was — a fact about the workload that
+    // changes every time the job runs. Saying the turns between them keeps what was done and drops
+    // who did it; how many threads there were is already counted on the node.
+    //
+    // Threads doing different work keep their runs, because doing different things is what the runs
+    // are there to say.
+    private static List<RouteShape> mergeTurnsOfOneNode(final List<RouteShape> runs) {
+        if (runs.size() < 2) {
+            return runs;
+        }
+        String node = null;
+        for (final RouteShape run : runs) {
+            for (final RouteShape turn : run.steps()) {
+                if (turn.nodeUuid() == null) {
+                    return runs;
+                }
+                if (node == null) {
+                    node = turn.nodeUuid();
+                } else if (!node.equals(turn.nodeUuid())) {
+                    return runs;
+                }
+            }
+        }
+        if (node == null) {
+            return runs;
+        }
+
+        final List<RouteShape> turns = new ArrayList<>();
+        runs.forEach(run -> turns.addAll(run.steps()));
+        return List.of(RouteShape.run(collapse(sameNodeRunsInOrder(turns))));
+    }
+
+    // One node's own turns, put in an order that does not depend on which of them ran first.
+    //
+    // A node reached several times in a row can behave differently each time, and which turn behaved
+    // which way is not the path through the code: where the turns run in parallel it is decided by
+    // which thread read the clock first, and where they do not it is decided by what was queued. Two
+    // traces where the same node ran both ways took the same route, so the turns are read in an order
+    // settled by what they are rather than by when they happened.
+    //
+    // Only turns of the same node next to each other, so a node that came back after another one ran
+    // is left where it is: running a then b then a is not running a twice and then b.
+    private static List<RouteShape> sameNodeRunsInOrder(final List<RouteShape> steps) {
+        final List<RouteShape> out = new ArrayList<>(steps);
+        int i = 0;
+        while (i < out.size()) {
+            final String node = out.get(i).nodeUuid();
+            int end = i + 1;
+            while (node != null && end < out.size() && node.equals(out.get(end).nodeUuid())) {
+                end++;
+            }
+            if (end - i > 1) {
+                out.subList(i, end).sort(NodeMutatorImpl::compare);
+            }
+            i = end;
+        }
+        return out;
+    }
+
+    // Any order at all, so long as the same shapes always come out the same way round.
+    private static int compare(final RouteShape a, final RouteShape b) {
+        if (a.steps().size() != b.steps().size()) {
+            return Integer.compare(a.steps().size(), b.steps().size());
+        }
+        for (int i = 0; i < a.steps().size(); i++) {
+            final int step = compare(a.steps().get(i), b.steps().get(i));
+            if (step != 0) {
+                return step;
+            }
+        }
+        if (a.kind() != b.kind()) {
+            return a.kind().compareTo(b.kind());
+        }
+        return NullSafe.string(a.nodeUuid()).compareTo(NullSafe.string(b.nodeUuid()));
+    }
+
+    // The children run here in order, with work that repeated said once.
+    //
+    // The unit is found first and the list is then read at that length, rather than every length from
+    // one upwards being tried against a grid fixed to the start of the list. That is what lets a run
+    // whose turn stopped early be told from a clean one wherever in the run it happened, rather than
+    // only at the end, and what stops a doubled child being eaten before the round it belongs to is
+    // looked at.
+    private static List<RouteShape> collapse(final List<RouteShape> steps) {
+        final List<RouteShape> out = new ArrayList<>(steps.size());
+        int i = 0;
+        while (i < steps.size()) {
+            final int unit = bestUnit(steps, i);
+            if (unit == 0) {
+                out.add(steps.get(i));
+                i++;
+            } else {
+                final List<RouteShape> group = new ArrayList<>(steps.subList(i, i + unit));
+                int next = i + unit;
+                boolean partial = false;
+                while (next < steps.size()) {
+                    if (matches(steps, next, group)) {
+                        next += unit;
+                        continue;
+                    }
+                    final int part = partialRun(steps, next, group);
+                    if (part > 0) {
+                        partial = true;
+                        next += part;
+                        continue;
+                    }
+                    break;
+                }
+                // The unit is read the same way, so a repeat inside a repeat comes out once rather
+                // than several times. It is shorter than what it came from, so this ends.
+                final List<RouteShape> said = collapse(group);
+                if (partial) {
+                    out.add(RouteShape.unfinished(said));
+                } else {
+                    // Said once, with nothing to mark that it happened again. How much work there was
+                    // to do is the workload rather than the path through the code, so a turn that ran
+                    // once and a turn that ran twenty times read the same.
+                    out.addAll(said);
+                }
+                i = next;
+            }
+        }
+        return out;
+    }
+
+    // How long a run has to be for the list from here to be that run happening again, taking the
+    // length that covers the most; zero where nothing from here repeats.
+    private static int bestUnit(final List<RouteShape> steps, final int from) {
+        int best = 0;
+        int bestCover = 0;
+        for (int length = 1; length <= MAX_GROUP && from + 2 * length <= steps.size(); length++) {
+            final List<RouteShape> unit = steps.subList(from, from + length);
+            int runs = 1;
+            while (matches(steps, from + runs * length, unit)) {
+                runs++;
+            }
+            if (runs > 1 && runs * length > bestCover) {
+                best = length;
+                bestCover = runs * length;
+            }
+        }
+        return best;
+    }
+
+    private static boolean matches(final List<RouteShape> steps, final int at, final List<RouteShape> unit) {
+        return at + unit.size() <= steps.size()
+               && steps.subList(at, at + unit.size()).equals(unit);
+    }
+
+    // How much of the unit ran here, where it started and did not finish; zero where no part of it
+    // did. Only counted where the work picks the unit up again straight after, or there is nothing
+    // after it at all — a step that merely starts the same way as the unit but is followed by
+    // something else is its own step, not an unfinished turn of this one.
+    //
+    // Longest first, because a shorter reading can satisfy that test where the longest does not: a
+    // turn of "a b P d" that stopped after "a b" is followed by another turn beginning "a b", so
+    // matching as far as the names go would run past where the turn actually ended.
+    private static int partialRun(final List<RouteShape> steps,
+                                  final int at,
+                                  final List<RouteShape> unit) {
+        int longest = 0;
+        while (longest < unit.size() - 1
+               && at + longest < steps.size()
+               && steps.get(at + longest).equals(unit.get(longest))) {
+            longest++;
+        }
+        for (int length = longest; length > 0; length--) {
+            if (at + length == steps.size() || matches(steps, at + length, unit)) {
+                return length;
+            }
+        }
+        return 0;
     }
 
     private PathNode withCount(final PathNode pathNode,
@@ -300,21 +525,12 @@ public class NodeMutatorImpl {
 
     private PathNode.Builder addConstraints(final PathNode pathNode,
                                             final Span span,
-                                            final String childSteps,
                                             final MessageReceiver messageReceiver,
                                             final PathwaysDoc pathwaysDoc) {
         // This runs once for every span folded into the node, so it counts spans rather than traces.
         final PathNode.Builder pathNodeBuilder = pathNode.copy()
                 .timesUsed(pathNode.getTimesUsed() + 1)
                 .lastUsedTime(time);
-        if (childSteps != null) {
-            final List<StepsUse> existing = pathNode.getStepsUse();
-            // Noted before the count is applied, because the position steps will hold is the one they
-            // already have or the end of the list, and afterwards they are no longer new.
-            stepsVisits.add(new NodeSteps(pathNode.getUuid(), stepsIndex(existing, childSteps)));
-            pathNodeBuilder.stepsUse(countSteps(existing, childSteps, time));
-        }
-
 //        // Add additional span info if wanted.
 //        final List<Span> spans;
 //        if (pathNode.getSpans() != null) {
@@ -350,11 +566,6 @@ public class NodeMutatorImpl {
 
         // Set or expand kind.
         setOrExpand(constraints, pathNode, "kind", span.getKind().name(), false, messageReceiver, pathwaysDoc);
-
-        // Set or expand the steps the node took. Null for a node that has never had any children.
-        if (childSteps != null) {
-            setOrExpand(constraints, pathNode, CHILD_STEPS, childSteps, false, messageReceiver, pathwaysDoc);
-        }
 
         // Create attribute sets. A span can legitimately carry no attributes at all, and then arrives
         // with a null list rather than an empty one.
@@ -414,34 +625,6 @@ public class NodeMutatorImpl {
 
         pathNodeBuilder.constraints(newConstraints);
         return pathNodeBuilder;
-    }
-
-    // One more run of these steps, counted the same way as timesUsed: per span folded in, so a node
-    // four spans reached counts four. New steps are appended rather than sorted in, so a position in
-    // the list names the same steps for the life of the pathway.
-    private static List<StepsUse> countSteps(final List<StepsUse> existing,
-                                             final String steps,
-                                             final NanoTime time) {
-        final List<StepsUse> list = new ArrayList<>(NullSafe.list(existing));
-        final int index = stepsIndex(list, steps);
-        if (index < list.size()) {
-            list.set(index, list.get(index).used(time));
-        } else {
-            list.add(new StepsUse(steps, 1, time));
-        }
-        return list;
-    }
-
-    // Where these steps sit in a node's list, or the end of it where the node has not taken them
-    // before and they are about to be appended.
-    private static int stepsIndex(final List<StepsUse> existing, final String steps) {
-        final List<StepsUse> list = NullSafe.list(existing);
-        for (int i = 0; i < list.size(); i++) {
-            if (steps.equals(list.get(i).getSteps())) {
-                return i;
-            }
-        }
-        return list.size();
     }
 
     private void setOrExpand(final Map<String, Constraint> constraints,
@@ -957,10 +1140,7 @@ public class NodeMutatorImpl {
                         messageReceiver.log(Severity.ERROR, () ->
                                 "Unexpected string: " + location.get() + " " + value);
                     } else {
-                        // Steps are the one string constraint that is never generalised. A route is
-                        // read back from them, and a pattern that matches anything would say nothing
-                        // about which children ran with no way to work it out again afterwards.
-                        if (set.size() > MAX_SET_SIZE && !CHILD_STEPS.equals(name)) {
+                        if (set.size() > MAX_SET_SIZE) {
                             // Convert to pattern.
                             // TODO : Create some sort of pattern expansion if possible.
                             messageReceiver.log(Severity.INFO, () ->
@@ -993,13 +1173,4 @@ public class NodeMutatorImpl {
         return current;
     }
 
-    /**
-     * One node visit, and the steps it took on that visit.
-     *
-     * @param nodeUuid which node was reached.
-     * @param steps    a position in that node's {@code stepsUse}.
-     */
-    public record NodeSteps(String nodeUuid, int steps) {
-
-    }
 }

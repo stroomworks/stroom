@@ -43,7 +43,6 @@ import stroom.util.shared.NullSafe;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -58,17 +57,16 @@ import java.util.stream.Collectors;
 
 public class TracePredicate implements Predicate<Trace> {
 
-    private static final String CHILD_STEPS = "childSteps";
     private static final String OCCURRENCES = "occurrences";
 
-    private final Comparator<Span> spanComparator;
+    private final CanonicalSpanOrder spanOrder;
     private final PathKeyFactory pathKeyFactory;
     private final Map<PathKey, PathNode> roots;
 
-    public TracePredicate(final Comparator<Span> spanComparator,
+    public TracePredicate(final CanonicalSpanOrder spanOrder,
                           final PathKeyFactory pathKeyFactory,
                           final Map<PathKey, PathNode> roots) {
-        this.spanComparator = spanComparator;
+        this.spanOrder = spanOrder;
         this.pathKeyFactory = pathKeyFactory;
         this.roots = roots;
     }
@@ -90,19 +88,16 @@ public class TracePredicate implements Predicate<Trace> {
     private boolean walk(final Trace trace,
                          final Span parentSpan,
                          final PathNode parentNode) {
-        final List<Span> sortedSpans = new ArrayList<>(trace.children(parentSpan));
-        sortedSpans.sort(spanComparator);
-
         // Children are matched by name, the way the model is written. The same name twice is one
-        // child that happened twice, not two children.
+        // child that happened twice, not two children. Ordered the same way the model was built, so a
+        // trace is judged against the order it was learnt in rather than one settled a different way.
+        final List<Span> sortedSpans = spanOrder.sort(trace.children(parentSpan));
         final Map<String, List<Span>> spansByName = new LinkedHashMap<>();
         sortedSpans.forEach(span -> spansByName
                 .computeIfAbsent(span.getName(), k -> new ArrayList<>())
                 .add(span));
 
-        if (!addConstraints(parentNode, parentSpan, spansByName.isEmpty()
-                ? null
-                : String.join(" > ", spansByName.keySet()))) {
+        if (!addConstraints(parentNode, parentSpan)) {
             return false;
         }
 
@@ -147,8 +142,7 @@ public class TracePredicate implements Predicate<Trace> {
     }
 
     private boolean addConstraints(final PathNode pathNode,
-                                   final Span span,
-                                   final String childSteps) {
+                                   final Span span) {
 
 
         final Map<String, Constraint> constraints = pathNode.getConstraints();
@@ -172,13 +166,6 @@ public class TracePredicate implements Predicate<Trace> {
 
         // Check kind.
         if (!checkConstraint(constraints, "kind", span.getKind().name())) {
-            return false;
-        }
-
-        // Check the order the children ran in, where the model records one and this trace reached any.
-        if (childSteps != null
-            && constraints.containsKey(CHILD_STEPS)
-            && !checkConstraint(constraints, CHILD_STEPS, childSteps)) {
             return false;
         }
 

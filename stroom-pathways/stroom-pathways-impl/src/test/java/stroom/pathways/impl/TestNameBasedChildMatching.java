@@ -25,9 +25,9 @@ import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.IntegerValue;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.StepsUse;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -58,7 +58,6 @@ class TestNameBasedChildMatching {
     private static final String COMMIT = "Commit";
     private static final String BATCH = "PathwaysProcessor.applyBatch";
     private static final String OCCURRENCES = "occurrences";
-    private static final String CHILD_STEPS = "childSteps";
     private static final long BASE = 1_700_000_000_000_000_000L;
 
     @Test
@@ -136,27 +135,45 @@ class TestNameBasedChildMatching {
     }
 
     @Test
-    void takingTheSameStepsAgainJustCountsThem() {
-        PathNode root = learn(null, sequential(PING, COMMIT));
-        root = learn(root, sequential(PING, COMMIT));
+    void theSameWorkTwiceIsTheSameShape() {
+        final PathNode root = learn(null, sequential(PING, COMMIT));
 
-        assertThat(root.getStepsUse())
-                .as("the same steps twice is one set taken twice, not two sets")
-                .hasSize(1);
-        assertThat(root.getStepsUse().getFirst().getSteps()).isEqualTo(PING + " > " + COMMIT);
-        assertThat(root.getStepsUse().getFirst().getTimesUsed()).isEqualTo(2L);
+        assertThat(stepsOf(root, sequential(PING, COMMIT)))
+                .as("the same work twice is one way of working, not two")
+                .isEqualTo(stepsOf(null, sequential(PING, COMMIT)));
     }
 
     @Test
-    void newStepsGoAfterTheOnesAlreadyKnown() {
-        PathNode root = learn(null, sequential(PING, COMMIT));
-        root = learn(root, sequential(COMMIT, PING));
+    void aRunOfOneChildOverAndOverIsOneStep() {
+        final PathNode root = learn(null, sequential(PING, PING, PING, COMMIT));
 
-        assertThat(root.getStepsUse().stream().map(StepsUse::getSteps))
-                .as("steps keep the position they were first given, so a position names one set")
-                .containsExactly(PING + " > " + COMMIT, COMMIT + " > " + PING);
-        assertThat(root.getStepsUse().stream().map(StepsUse::getTimesUsed))
-                .containsExactly(1L, 1L);
+        assertThat(stepsOf(null, sequential(PING, PING, PING, COMMIT)))
+                .as("doing the same work three times rather than once is how much there was to do, "
+                    + "not a different way of working")
+                .isEqualTo(PING + " " + COMMIT);
+        assertThat(count(child(root, PING)))
+                .as("how many times is still counted on the child")
+                .isEqualTo(new IntegerValue(3));
+    }
+
+    @Test
+    void aChildComingBackAfterAnotherIsAStepOfItsOwn() {
+        final PathNode root = learn(null, sequential(PING, COMMIT, PING));
+
+        assertThat(stepsOf(null, sequential(PING, COMMIT, PING)))
+                .as("the second Ping did not happen where the first one did, and a model that put it "
+                    + "there would say this node pinged twice and then committed")
+                .isEqualTo(PING + " " + COMMIT + " " + PING);
+        assertThat(count(child(root, PING)))
+                .isEqualTo(new IntegerValue(2));
+    }
+
+    @Test
+    void goingRoundAgainIsNotTheSameAsDoingItAllAtOnce() {
+        assertThat(stepsOf(null, sequential(PING, COMMIT, PING)))
+                .as("both ping twice and commit once, and the counts on their children are the same, "
+                    + "so the shape is the only thing that can tell a batch from a loop")
+                .isNotEqualTo(stepsOf(null, sequential(PING, PING, COMMIT)));
     }
 
     @Test
@@ -174,51 +191,36 @@ class TestNameBasedChildMatching {
     }
 
     @Test
-    void aNodeReachedTwiceRecordsBothSetsOfStepsItTook() {
+    void aNodeReachedTwiceKeepsBothWaysItRan() {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, twoBatches(PING, COMMIT, COMMIT, PING));
-        final PathNode batch = child(root, BATCH);
 
-        assertThat(batch.getStepsUse().stream().map(StepsUse::getSteps))
-                .containsExactly(PING + " > " + COMMIT, COMMIT + " > " + PING);
-        assertThat(mutator.getStepsTaken().get(batch.getUuid()))
-                .as("a node several spans reached can take different steps each time, so one entry "
-                    + "for the trace would lose all but the last")
-                .containsExactly(0, 1);
+        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+                .as("a node several spans reached can run differently each time, and the shape keeps "
+                    + "both ways — read in an order settled by what they are, not by which ran first, "
+                    + "so nothing here may depend on that order")
+                .contains(BATCH + "[" + PING + " " + COMMIT + "]")
+                .contains(BATCH + "[" + COMMIT + " " + PING + "]");
     }
 
     @Test
-    void takingOneSetOfStepsTwiceInATraceRecordsItOnce() {
+    void runningTheSameWayTwiceInATraceIsSaidOnce() {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, twoBatches(PING, COMMIT, PING, COMMIT));
 
-        assertThat(mutator.getStepsTaken().get(child(root, BATCH).getUuid()))
-                .as("which steps ran is what tells one way of running apart from another; a node that "
-                    + "took one set three times and another once did the same work as one that took "
-                    + "each twice")
-                .containsExactly(0);
+        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+                .as("the same run twice over is how much work there was to do, so it is said once")
+                .isEqualTo(OPERATION + "[" + BATCH + "[" + PING + " " + COMMIT + "]]");
     }
 
     @Test
-    void aNodeThatRanNoChildrenRecordsNoSteps() {
+    void aNodeThatRanNoChildrenIsALeaf() {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, trace(PING));
 
-        assertThat(mutator.getStepsTaken())
-                .as("a node with nothing below it has no steps to take")
-                .doesNotContainKey(child(root, PING).getUuid());
-    }
-
-    @Test
-    void aStepsPositionNamesTheSameStepsOnALaterTrace() {
-        final PathNode first = learn(null, sequential(PING, COMMIT));
-
-        final NodeMutatorImpl mutator = mutator();
-        process(mutator, sequential(COMMIT, PING), first);
-
-        assertThat(mutator.getStepsTaken().get(first.getUuid()))
-                .as("the steps the model already knew keep position zero, so the new ones are one")
-                .containsExactly(1);
+        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+                .as("a node with nothing below it is a leaf, and that is the only thing it can mean")
+                .isEqualTo(OPERATION + "[" + PING + "]");
     }
 
     @Test
@@ -229,42 +231,79 @@ class TestNameBasedChildMatching {
         final NodeMutatorImpl withoutCommit = mutator();
         final PathNode root = process(withoutCommit, sequential(PING), first);
 
-        assertThat(root.getStepsUse().stream().map(StepsUse::getSteps))
-                .as("a child that did not run leaves its parent taking different steps, which is the "
-                    + "only place a route records that the child was skipped")
-                .containsExactly(PING + " > " + COMMIT, PING);
-        assertThat(withBoth.getStepsTaken().get(first.getUuid()))
-                .as("the trace that ran both took the first steps")
-                .containsExactly(0);
-        assertThat(withoutCommit.getStepsTaken().get(root.getUuid()))
-                .as("the trace that skipped one took different steps, so the two routes differ")
-                .containsExactly(1);
+        assertThat(RouteShapeText.of(withoutCommit.getRouteShape(), root))
+                .as("a child that did not run leaves its parent running differently, which is where a "
+                    + "route records that the child was skipped")
+                .isEqualTo(OPERATION + "[" + PING + "]");
+        assertThat(RouteShapeText.of(withBoth.getRouteShape(), first))
+                .isEqualTo(OPERATION + "[" + PING + " " + COMMIT + "]");
     }
 
     @Test
-    void stepsAreNeverGeneralisedHoweverManySetsAreSeen() {
-        // Sixty distinct sets, comfortably past the point where any other string constraint gives up
-        // and becomes a pattern that matches anything.
-        PathNode root = null;
-        for (int i = 0; i < 60; i++) {
-            root = learn(root, trace("child-" + i));
+    void aTraceThatReachedNoChildrenIsJustTheRoot() {
+        final PathNode root = learn(null, trace(PING));
+
+        assertThat(stepsOf(root, trace()))
+                .as("doing no work below is a count of zero on the child, not an empty run")
+                .isEmpty();
+    }
+
+    @Test
+    void aRunOfTheSameTwoChildrenIsOneRound() {
+        final PathNode root = learn(null, sequential(PING, COMMIT, PING, COMMIT, PING, COMMIT));
+
+        assertThat(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT, PING, COMMIT)))
+                .as("going round the same two children three times is the amount of work there was "
+                    + "to do, exactly as doing one child three times is")
+                .isEqualTo(PING + " " + COMMIT);
+        assertThat(count(child(root, PING)))
+                .as("how many times round is still counted on each child")
+                .isEqualTo(new IntegerValue(3));
+    }
+
+    @Test
+    void aRoundInsideARoundIsSaidOnce() {
+        // Two children over and over, then a third, and the whole thing again — which is what
+        // reading documents a page at a time and then reading the page looks like.
+        assertThat(stepsOf(null, sequential(
+                PREPARE, PING, PREPARE, PING, PREPARE, COMMIT,
+                PREPARE, PING, PREPARE, PING, PREPARE, COMMIT)))
+                .as("the long round is found first and said once, and the short one inside it is "
+                    + "said once within that — neither carries a mark saying it happened again")
+                .isEqualTo(PREPARE + " " + PING + " " + PREPARE + " " + COMMIT);
+    }
+
+    @Test
+    void aChildAfterTheRoundEndsIsStillAStep() {
+        final PathNode root = learn(null, sequential(PING, COMMIT, PING, COMMIT, PREPARE));
+
+        assertThat(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT, PREPARE)))
+                .as("only what repeated is said once; what ran afterwards did not repeat and is "
+                    + "where this route differs from one that stopped")
+                .isEqualTo(PING + " " + COMMIT + " " + PREPARE);
+    }
+
+    @Test
+    void goingRoundMoreTimesIsTheSameShapeNotANewOne() {
+        assertThat(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT, PING, COMMIT, PING, COMMIT)))
+                .as("a run over more documents is the same way of working, and a model that called "
+                    + "it a new shape would hold another for every count it ever saw")
+                .isEqualTo(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT)));
+    }
+
+    @Test
+    void aLongSequenceWithNothingRepeatingIsStillRecorded() {
+        final String[] names = new String[60];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = "child-" + i;
         }
+        final PathNode root = learn(null, sequential(names));
 
-        assertThat(root.getConstraints().get(CHILD_STEPS).getValue())
-                .as("a pattern here would erase which children ran, and traces age out so nothing "
-                    + "could work it out again")
-                .isInstanceOfSatisfying(StringSet.class, set ->
-                        assertThat(set.getSet()).hasSize(60));
-    }
-
-    @Test
-    void aTraceThatReachedNoChildrenDoesNotRecordBlankSteps() {
-        PathNode root = learn(null, trace(PING));
-        root = learn(root, trace());
-
-        assertThat(root.getConstraints().get(CHILD_STEPS).getValue())
-                .as("doing no work below is a count of zero on the child, not blank steps")
-                .isEqualTo(new StringValue(PING));
+        assertThat(shapeOf(sequential(names)).steps())
+                .as("a route is the shape, so a node that gave none would go missing from its own "
+                    + "route and two traces that went different ways would then be told apart by "
+                    + "nothing")
+                .hasSize(60);
     }
 
     @Test
@@ -296,6 +335,20 @@ class TestNameBasedChildMatching {
         assertThat(predicate.test(trace(PING, PREPARE))).isFalse();
     }
 
+    // What one trace ran below the root, read off its shape: a run is recorded on the route now
+    // rather than gathered onto the node it happened at.
+    private static String stepsOf(final PathNode current, final Trace trace) {
+        final NodeMutatorImpl mutator = mutator();
+        final PathNode root = process(mutator, trace, current);
+        return RouteShapeText.under(mutator.getRouteShape(), root, OPERATION);
+    }
+
+    private static RouteShape shapeOf(final Trace trace) {
+        final NodeMutatorImpl mutator = mutator();
+        process(mutator, trace, null);
+        return mutator.getRouteShape();
+    }
+
     private static PathNode learn(final PathNode current, final Trace trace) {
         return mutator().process(trace, new NamePathKey(OPERATION), current, (severity, message) -> {
         }, doc());
@@ -321,7 +374,8 @@ class TestNameBasedChildMatching {
 
     private static NodeMutatorImpl mutator() {
         return new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), NO_IGNORED);
+                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), NO_IGNORED,
+                new IgnoredSpans(List.of()));
     }
 
     private static Object count(final PathNode pathNode) {

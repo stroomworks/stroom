@@ -48,8 +48,6 @@ public class PathNode {
     private final long timesUsed;
     @JsonProperty
     private final NanoTime lastUsedTime;
-    @JsonProperty
-    private final List<StepsUse> stepsUse;
 
     @JsonCreator
     public PathNode(@JsonProperty("uuid") final String uuid,
@@ -58,8 +56,7 @@ public class PathNode {
                     @JsonProperty("children") final List<PathNode> children,
                     @JsonProperty("constraints") final Map<String, Constraint> constraints,
                     @JsonProperty("timesUsed") final long timesUsed,
-                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
-                    @JsonProperty("stepsUse") final List<StepsUse> stepsUse) {
+                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime) {
         this.uuid = uuid;
         this.name = name;
         this.path = path;
@@ -69,9 +66,6 @@ public class PathNode {
         this.constraints = constraints;
         this.timesUsed = timesUsed;
         this.lastUsedTime = lastUsedTime;
-        this.stepsUse = stepsUse == null
-                ? new ArrayList<>()
-                : new ArrayList<>(stepsUse);
     }
 
     /**
@@ -82,7 +76,7 @@ public class PathNode {
                     final List<String> path,
                     final List<PathNode> children,
                     final Map<String, Constraint> constraints) {
-        this(uuid, name, path, children, constraints, 0L, null, null);
+        this(uuid, name, path, children, constraints, 0L, null);
     }
 
     public PathNode(final String name,
@@ -94,7 +88,6 @@ public class PathNode {
         this.constraints = null;
         this.timesUsed = 0L;
         this.lastUsedTime = null;
-        this.stepsUse = new ArrayList<>();
     }
 
     public PathNode(final String name) {
@@ -105,7 +98,6 @@ public class PathNode {
         this.constraints = null;
         this.timesUsed = 0L;
         this.lastUsedTime = null;
-        this.stepsUse = new ArrayList<>();
     }
 
     /**
@@ -123,14 +115,6 @@ public class PathNode {
      */
     public NanoTime getLastUsedTime() {
         return lastUsedTime;
-    }
-
-    /**
-     * How often this node ran each set of steps it has been seen to take, oldest first. Which steps
-     * are allowed is the childSteps constraint; this is what traces did.
-     */
-    public List<StepsUse> getStepsUse() {
-        return stepsUse;
     }
 
     public String getUuid() {
@@ -207,7 +191,6 @@ public class PathNode {
         private Map<String, Constraint> constraints;
         private long timesUsed;
         private NanoTime lastUsedTime;
-        private List<StepsUse> stepsUse;
 
         public Builder() {
         }
@@ -220,7 +203,6 @@ public class PathNode {
             this.constraints = pathNode.constraints;
             this.timesUsed = pathNode.timesUsed;
             this.lastUsedTime = pathNode.lastUsedTime;
-            this.stepsUse = pathNode.stepsUse;
         }
 
         public Builder uuid(final String uuid) {
@@ -258,11 +240,6 @@ public class PathNode {
             return self();
         }
 
-        public Builder stepsUse(final List<StepsUse> stepsUse) {
-            this.stepsUse = stepsUse;
-            return self();
-        }
-
         @Override
         protected Builder self() {
             return this;
@@ -276,8 +253,7 @@ public class PathNode {
                     children,
                     constraints,
                     timesUsed,
-                    lastUsedTime,
-                    stepsUse);
+                    lastUsedTime);
         }
     }
 }

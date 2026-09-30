@@ -32,6 +32,10 @@ import java.util.Objects;
  * <p>{@code nodes} holds a node uuid per position and is only ever appended to, so a position names
  * the same node for the life of the pathway. Keeping the uuid here once rather than in every visit
  * is what makes a route a list of small integers.
+ *
+ * <p>{@code steps} holds every distinct shape a route takes at any point, each once, and is appended
+ * to the same way. A subtree that many routes share is one entry however many reach it, so what a
+ * route stores is the position of its outermost shape.
  */
 @JsonInclude(Include.NON_NULL)
 public class Routes {
@@ -39,21 +43,27 @@ public class Routes {
     @JsonProperty
     private final List<String> nodes;
     @JsonProperty
+    private final List<RouteStep> steps;
+    @JsonProperty
     private final List<RouteUse> routes;
 
     @JsonCreator
     public Routes(@JsonProperty("nodes") final List<String> nodes,
+                  @JsonProperty("steps") final List<RouteStep> steps,
                   @JsonProperty("routes") final List<RouteUse> routes) {
         this.nodes = nodes == null
                 ? Collections.emptyList()
                 : new ArrayList<>(nodes);
+        this.steps = steps == null
+                ? Collections.emptyList()
+                : new ArrayList<>(steps);
         this.routes = routes == null
                 ? Collections.emptyList()
                 : new ArrayList<>(routes);
     }
 
     public static Routes empty() {
-        return new Routes(Collections.emptyList(), Collections.emptyList());
+        return new Routes(Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
     /**
@@ -61,6 +71,14 @@ public class Routes {
      */
     public List<String> getNodes() {
         return nodes;
+    }
+
+    /**
+     * Every distinct shape by position. A route's {@code root}, and every step within a shape, indexes
+     * this.
+     */
+    public List<RouteStep> getSteps() {
+        return steps;
     }
 
     /**
@@ -79,16 +97,19 @@ public class Routes {
             return false;
         }
         final Routes that = (Routes) o;
-        return Objects.equals(nodes, that.nodes) && Objects.equals(routes, that.routes);
+        return Objects.equals(nodes, that.nodes)
+               && Objects.equals(steps, that.steps)
+               && Objects.equals(routes, that.routes);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nodes, routes);
+        return Objects.hash(nodes, steps, routes);
     }
 
     @Override
     public String toString() {
-        return "Routes{" + routes.size() + " routes over " + nodes.size() + " nodes}";
+        return "Routes{" + routes.size() + " routes over " + nodes.size() + " nodes, "
+               + steps.size() + " shapes}";
     }
 }

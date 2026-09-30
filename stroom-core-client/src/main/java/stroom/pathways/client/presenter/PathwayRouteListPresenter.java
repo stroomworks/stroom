@@ -24,10 +24,9 @@ import stroom.data.grid.client.PagerView;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.RouteStep;
 import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.RouteVisit;
 import stroom.pathways.shared.pathway.Routes;
-import stroom.pathways.shared.pathway.StepsUse;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.DataGridUtil;
@@ -46,11 +45,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -72,6 +69,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     private static final int TRACE_ID_COL = 270;
     private static final String FILTER_OFF_TITLE = "Filter by selected node";
     private static final String FILTER_ON_TITLE = "Show every route";
+    // What separates one step from the next on show. A reading choice rather than anything the stored
+    // route depends on, which holds its steps as a tree.
+    private static final String STEP_SEPARATOR = " > ";
+    // What separates one run from the next where several happened at the same time. Different from the
+    // step separator because what it joins did not follow on from what came before it.
+    private static final String RUN_SEPARATOR = " | ";
 
     private final DateTimeFormatter dateTimeFormatter;
     private final InlineSvgToggleButton filterButton;
@@ -92,6 +95,13 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      */
     private PathNode root;
 
+    /**
+     * Every shape the routes are built from, by the position they name it at. Held with the nodes
+     * above and for the same reason: a route is positions, and only the pathway beside it says what
+     * they reach.
+     */
+    private List<RouteStep> shapes = Collections.emptyList();
+
     // Every route of the pathway on show, busiest first, which is not always what the table is given.
     private List<RouteUse> rows = Collections.emptyList();
     // The node picked out on the drawing, which only matters while the filter is on.
@@ -108,7 +118,8 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * for each pair it puts in order. Emptied with the data, which is the only thing that changes it.
      */
     private final Map<RouteUse, String> texts = new HashMap<>();
-    private final Map<RouteUse, List<PathNode>> walks = new HashMap<>();
+    private final Map<RouteUse, List<List<PathNode>>> walks = new HashMap<>();
+    private final Map<RouteUse, Integer> stepCounts = new HashMap<>();
 
     @Inject
     public PathwayRouteListPresenter(final EventBus eventBus,
@@ -179,76 +190,112 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * Which nodes the selected route ran, as paths, so they can be picked out on the tree and the
      * graph. Empty where nothing is selected.
      */
-    public List<List<String>> getSelectedPaths() {
-        final List<List<String>> paths = new ArrayList<>();
-        for (final PathNode node : nodesIn(selectionModel.getSelected())) {
-            if (node.getPath() != null) {
-                paths.add(node.getPath());
+    public List<List<List<String>>> getSelectedPaths() {
+        return pathsIn(selectionModel.getSelected());
+    }
+
+    // The paths the drawing lights, gathered by the moment they light at. Everything in one entry
+    // lights at once, so work that happened at the same time is shown happening at the same time.
+    private List<List<List<String>>> pathsIn(final RouteUse route) {
+        final List<List<List<String>>> moments = new ArrayList<>();
+        for (final List<PathNode> nodes : momentsIn(route)) {
+            final List<List<String>> paths = new ArrayList<>(nodes.size());
+            for (final PathNode node : nodes) {
+                if (node.getPath() != null) {
+                    paths.add(node.getPath());
+                }
             }
+            moments.add(paths);
         }
-        return paths;
+        return moments;
     }
 
-    // The nodes a route ran, in the order it ran them.
-    private List<PathNode> nodesIn(final RouteUse route) {
-        if (route == null || root == null) {
-            return Collections.emptyList();
+    // How many moments the drawing steps through, which is what the Steps column says. Not the same as
+    // how many nodes ran: four threads doing twelve things each is twelve moments, not forty-eight.
+    private int steps(final RouteUse route) {
+        Integer count = stepCounts.get(route);
+        if (count == null) {
+            count = momentsIn(route).size();
+            stepCounts.put(route, count);
         }
-        List<PathNode> nodes = walks.get(route);
-        if (nodes == null) {
-            nodes = new ArrayList<>();
-            walk(root, stepsByNode(route), nodes, new HashSet<>());
-            walks.put(route, nodes);
-        }
-        return nodes;
+        return count;
     }
 
-    // Which sets of steps each node took, so a walk knows whether a name in a node's steps is
-    // somewhere it carries on into or somewhere it stops.
-    private Map<String, List<Integer>> stepsByNode(final RouteUse route) {
-        final Map<String, List<Integer>> stepsByNode = new HashMap<>();
-        for (final RouteVisit visit : NullSafe.list(route.getVisits())) {
-            final PathNode node = nodesByPosition.get(visit.getNode());
-            if (node != null) {
-                stepsByNode.computeIfAbsent(node.getUuid(), k -> new ArrayList<>()).add(visit.getSteps());
-            }
-        }
-        return stepsByNode;
-    }
-
-    // Down into each child before moving on to the next, which is the order the work happened in.
-    // Reading the visits in the order the route holds them would not: they are gathered by node, so a
-    // node's whole subtree would come after every one of its later siblings.
-    //
-    // A route only names the nodes that had children to run, because what it holds for each is which
-    // of their sets of steps they took, and a node with no children has none. The leaves ran all the
-    // same, and the steps are where they are named, so the walk reaches them from there.
-    private static void walk(final PathNode node,
-                             final Map<String, List<Integer>> stepsByNode,
-                             final List<PathNode> nodes,
-                             final Set<String> done) {
-        if (!done.add(node.getUuid())) {
-            return;
-        }
-        nodes.add(node);
-        for (final Integer position : NullSafe.list(stepsByNode.get(node.getUuid()))) {
-            // Split reads its argument as a pattern, which the separator is safe to be read as.
-            for (final String name : steps(node, position).split(StepsUse.SEPARATOR)) {
-                final PathNode child = child(node, name);
-                if (child != null) {
-                    walk(child, stepsByNode, nodes, done);
+    // Whether this route ran the given node at all.
+    private boolean runs(final RouteUse route, final String uuid) {
+        for (final List<PathNode> moment : momentsIn(route)) {
+            for (final PathNode node : moment) {
+                if (uuid.equals(node.getUuid())) {
+                    return true;
                 }
             }
         }
+        return false;
     }
 
-    private static PathNode child(final PathNode node, final String name) {
-        for (final PathNode child : NullSafe.list(node.getChildren())) {
-            if (child.getName().equals(name)) {
-                return child;
+    // What the route ran, by the moment it ran it.
+    private List<List<PathNode>> momentsIn(final RouteUse route) {
+        if (route == null || root == null) {
+            return Collections.emptyList();
+        }
+        List<List<PathNode>> moments = walks.get(route);
+        if (moments == null) {
+            moments = new ArrayList<>();
+            walk(route.getRoot(), moments, 0);
+            walks.put(route, moments);
+        }
+        return moments;
+    }
+
+    // Down into each child before moving on to the next, which is the order the work happened in, and
+    // says how many moments the shape took so the one after it knows where to start.
+    //
+    // Runs that happened at the same time all begin at the same moment, and what holds them lasts as
+    // long as the longest of them. Everything else follows on from what came before it.
+    private int walk(final int shape, final List<List<PathNode>> moments, final int at) {
+        final RouteStep step = shapeAt(shape);
+        if (step == null) {
+            return 0;
+        }
+
+        int used = 0;
+        // Only a node is somewhere the trace reached; a shape holding runs lights nothing of its own.
+        if (step.getNode() >= 0) {
+            final PathNode node = nodesByPosition.get(step.getNode());
+            if (node != null) {
+                lightAt(moments, at, node);
+                used = 1;
             }
         }
-        return null;
+
+        if (step.isConcurrent()) {
+            int longest = 0;
+            for (final Integer run : NullSafe.list(step.getSteps())) {
+                longest = Math.max(longest, walk(run, moments, at + used));
+            }
+            return used + longest;
+        }
+
+        for (final Integer child : NullSafe.list(step.getSteps())) {
+            used += walk(child, moments, at + used);
+        }
+        return used;
+    }
+
+    private static void lightAt(final List<List<PathNode>> moments, final int at, final PathNode node) {
+        while (moments.size() <= at) {
+            moments.add(new ArrayList<>());
+        }
+        moments.get(at).add(node);
+    }
+
+    // A shape is written after the shapes it is made of, so its steps are always earlier in the list
+    // than it is and following them cannot come back round. A step naming a shape that is not there
+    // belongs to a pathway written by another build, and is left rather than guessed at.
+    private RouteStep shapeAt(final int shape) {
+        return shape >= 0 && shape < shapes.size()
+                ? shapes.get(shape)
+                : null;
     }
 
     /**
@@ -264,7 +311,9 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         // one's, and the walk they came from starts at a root that is about to change.
         texts.clear();
         walks.clear();
+        stepCounts.clear();
         root = NullSafe.get(pathway, Pathway::getRoot);
+        shapes = Collections.emptyList();
         // Whatever was picked out belonged to the model being replaced, so the filter starts with
         // nothing to work from rather than with a node this pathway may not have.
         selectedNode = null;
@@ -277,6 +326,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         }
 
         indexNodes(NullSafe.get(pathway, Pathway::getRoot), routes.getNodes());
+        shapes = NullSafe.list(routes.getSteps());
 
         rows = new ArrayList<>(NullSafe.list(routes.getRoutes()));
         order();
@@ -305,15 +355,6 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             selectionModel.clear();
         }
         dataProvider.setCompleteList(kept);
-    }
-
-    private boolean runs(final RouteUse route, final String uuid) {
-        for (final PathNode node : nodesIn(route)) {
-            if (uuid.equals(node.getUuid())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // Walks the model once, keeping the nodes the routes name. A node a route references that is not
@@ -352,6 +393,8 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                 (a, b) -> compare(text(a), text(b)));
         addColumn("Created By", RouteUse::getCreatedByTraceId, TRACE_ID_COL,
                 (a, b) -> compare(a.getCreatedByTraceId(), b.getCreatedByTraceId()));
+        addColumn("Steps", route -> Integer.toString(steps(route)), COUNT_COL,
+                (a, b) -> Integer.compare(steps(a), steps(b)));
         tracesColumn = addColumn("Traces", route -> Long.toString(route.getTimesUsed()), COUNT_COL,
                 (a, b) -> Long.compare(a.getTimesUsed(), b.getTimesUsed()));
         busiestFirst();
@@ -426,54 +469,77 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // Starts below the root rather than at it: the root is the pathway, which is named in the dialog
     // this sits in and drawn beside the table, so every row would open with the same words.
     private String routeText(final RouteUse route) {
-        final String steps = root == null
+        final RouteStep step = shapeAt(route.getRoot());
+        final String steps = step == null
                 ? ""
-                : stepsText(root, stepsByNode(route), new HashSet<>());
-        // A route holds a visit only for a node that ran children, so one with no visits at all is a
-        // trace where the operation ran and nothing under it did. The root is then the whole of what
-        // ran, so it is what the row says — the same as every other row, which says what ran.
+                : ran(step);
+        // A shape with no steps is a node that ran nothing, so a root with none is a trace where the
+        // operation ran and nothing under it did. The root is then the whole of what ran, so it is
+        // what the row says — the same as every other row, which says what ran.
         return steps.isEmpty()
                 ? NullSafe.getOrElse(root, PathNode::getName, "")
                 : steps;
     }
 
-    // The children a node ran, in the order it ran them, each carrying its own in brackets. Nested
-    // rather than listed node by node, because what a reader follows is the work in the order it
-    // happened, and a list by node puts everything one step from the root ahead of anything further
-    // out. A node that ran the same children fifteen times is named once; a node that ran them two
-    // different ways carries both, one set after the other.
-    private static String stepsText(final PathNode node,
-                                    final Map<String, List<Integer>> stepsByNode,
-                                    final Set<String> done) {
-        if (!done.add(node.getUuid())) {
+    // One shape as it reads: a name on its own where the node ran nothing, and the name with what it
+    // ran in brackets where it ran something. Nested rather than listed node by node, because what a
+    // reader follows is the work in the order it happened, and a list by node puts everything one step
+    // from the root ahead of anything further out.
+    private String stepText(final int shape) {
+        final RouteStep step = shapeAt(shape);
+        if (step == null) {
             return "";
         }
-        final StringBuilder sb = new StringBuilder();
-        for (final Integer position : NullSafe.list(stepsByNode.get(node.getUuid()))) {
-            // Split reads its argument as a pattern, which the separator is safe to be read as.
-            for (final String name : steps(node, position).split(StepsUse.SEPARATOR)) {
-                final PathNode child = child(node, name);
-                if (child == null) {
+        if (step.isConcurrent()) {
+            // Runs that happened at the same time, held in brackets and parted by the run separator.
+            // Read in an order settled by what they are rather than by which thread got there first,
+            // so a reader must not follow them as a sequence.
+            final StringBuilder sb = new StringBuilder();
+            for (final Integer run : NullSafe.list(step.getSteps())) {
+                final String text = stepText(run);
+                if (text.isEmpty()) {
                     continue;
                 }
                 if (sb.length() > 0) {
-                    sb.append(StepsUse.SEPARATOR);
+                    sb.append(RUN_SEPARATOR);
                 }
-                sb.append(child.getName());
-                final String inner = stepsText(child, stepsByNode, done);
-                if (!inner.isEmpty()) {
-                    sb.append(" (").append(inner).append(")");
-                }
+                sb.append(text);
             }
+            return "[" + sb + "]";
         }
-        return sb.toString();
+        final String inner = ran(step);
+        if (step.isRun()) {
+            return inner;
+        }
+        if (step.isUnfinished()) {
+            // Work that ran over and over and stopped part way through the last time. Work that
+            // repeated and did finish is simply said once, because how much there was to do is the
+            // workload rather than the path through the code.
+            return "[" + inner + "] unfinished";
+        }
+        final PathNode node = nodesByPosition.get(step.getNode());
+        if (node == null) {
+            return "";
+        }
+        return inner.isEmpty()
+                ? node.getName()
+                : node.getName() + " (" + inner + ")";
     }
 
-    private static String steps(final PathNode node, final int position) {
-        final List<StepsUse> stepsUse = NullSafe.list(node.getStepsUse());
-        return position >= 0 && position < stepsUse.size()
-                ? stepsUse.get(position).getSteps()
-                : "";
+    // What one shape ran, in the order it ran it.
+    private String ran(final RouteStep step) {
+        final StringBuilder sb = new StringBuilder();
+        for (final Integer child : NullSafe.list(step.getSteps())) {
+            final String text = stepText(child);
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(STEP_SEPARATOR);
+            }
+            sb.append(text);
+        }
+        return sb.toString();
     }
 
     private Column<RouteUse, String> addColumn(final String name,

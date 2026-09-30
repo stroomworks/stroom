@@ -281,7 +281,8 @@ public class PathwaysProcessor {
             withMessageReceiver(doc, messageReceiver -> {
                 try (final LmdbWriter writer = pathwaysDb.createWriter()) {
                     final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde,
-                            new IgnoredAttributes(configProvider.get().getIgnoredAttributes()));
+                            new IgnoredAttributes(configProvider.get().getIgnoredAttributes()),
+                            new IgnoredSpans(configProvider.get().getIgnoredSpanNames()));
                     for (final Path item : queue.itemsOldestFirst()) {
                         if (Thread.currentThread().isInterrupted()) {
                             // The lock's heartbeat interrupts us when it cannot renew. Carrying on

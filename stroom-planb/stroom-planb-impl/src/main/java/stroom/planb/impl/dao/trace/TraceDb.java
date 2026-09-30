@@ -1477,11 +1477,11 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
         final List<TraceRoot> list = new ArrayList<>();
         final PageResponse.Builder builder = PageResponse.builder();
 
-        final Comparator<Span> spanComparator = new CloseSpanComparator(criteria.getTemporalOrderingTolerance());
+        final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(criteria.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
         if (criteria.getPathway() != null) {
             final TracePredicate tracePredicate = new TracePredicate(
-                    spanComparator,
+                    spanOrder,
                     pathKeyFactory,
                     Map.of(criteria.getPathway().getPathKey(), criteria.getPathway().getRoot()));
             // Derive the time filter once so every root is judged against the same window.

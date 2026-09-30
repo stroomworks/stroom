@@ -32,6 +32,7 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.otel.trace.TraceRoot;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.planb.shared.PlanBDoc;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -157,7 +158,7 @@ public class TraceLoader {
                                                  final MessageReceiver messageReceiver) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(NanoDuration.ofMillis(10));
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
-        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder, NO_IGNORED);
+        final NodeMutatorImpl traceProcessor = new NodeMutatorImpl(spanOrder, NO_IGNORED, new IgnoredSpans(List.of()));
         final Map<PathKey, PathNode> pathRoots = new HashMap<>();
         for (final Trace trace : traces) {
             final Span root = trace.root();

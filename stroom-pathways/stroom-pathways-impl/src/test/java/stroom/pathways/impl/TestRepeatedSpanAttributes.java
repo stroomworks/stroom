@@ -26,6 +26,7 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -58,7 +59,8 @@ class TestRepeatedSpanAttributes {
     void theModelTakesTheLastValueRatherThanThrowing() {
         final PathwaysDoc doc = doc();
         final NodeMutatorImpl mutator = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED);
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED,
+                new IgnoredSpans(List.of()));
         final PathKey pathKey = new NamePathKey(OPERATION);
 
         final PathNode[] root = new PathNode[1];
@@ -77,7 +79,8 @@ class TestRepeatedSpanAttributes {
     void aPathwaySearchSurvivesIt() {
         final PathwaysDoc doc = doc();
         final PathNode root = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED)
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()), NO_IGNORED,
+                new IgnoredSpans(List.of()))
                 .process(traceWithRepeatedAttribute(), new NamePathKey(OPERATION), null,
                         (severity, message) -> {
                         }, doc);

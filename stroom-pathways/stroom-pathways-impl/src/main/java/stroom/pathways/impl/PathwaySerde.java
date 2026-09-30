@@ -47,10 +47,9 @@ import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.pathways.shared.pathway.Regex;
+import stroom.pathways.shared.pathway.RouteStep;
 import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.RouteVisit;
 import stroom.pathways.shared.pathway.Routes;
-import stroom.pathways.shared.pathway.StepsUse;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.pathways.shared.pathway.TerminalPathKey;
@@ -94,6 +93,12 @@ public class PathwaySerde {
      */
     private static final byte MUTATION_VERSION = 1;
     private static final byte USAGE_VERSION = 1;
+
+    /**
+     * Added to a shape's node before it is written and taken off after. A shape that is not a node
+     * carries a negative marker, and a variable length integer written as positive cannot hold one.
+     */
+    private static final int MARKER_OFFSET = 4;
 
     private final ByteBufferFactory byteBufferFactory;
 
@@ -193,25 +198,30 @@ public class PathwaySerde {
                 .constraints(readConstraints(input))
                 .timesUsed(input.readLong())
                 .lastUsedTime(readNullableNanoTime(input))
-                .stepsUse(readList(input, this::readStepsUse))
                 .build();
     }
 
     private Routes readRoutes(final Input input) {
-        return new Routes(readStrings(input), readList(input, this::readRouteUse));
+        return new Routes(readStrings(input),
+                readList(input, this::readRouteStep),
+                readList(input, this::readRouteUse));
+    }
+
+    // Written one more than it is held, so the group marker of -1 fits a variable length integer
+    // that cannot carry a negative.
+    private RouteStep readRouteStep(final Input input) {
+        return new RouteStep(
+                input.readVarInt(true) - MARKER_OFFSET,
+                readList(input, in -> in.readVarInt(true)));
     }
 
     private RouteUse readRouteUse(final Input input) {
         return new RouteUse(
-                readList(input, i -> new RouteVisit(i.readVarInt(true), i.readVarInt(true))),
+                input.readVarInt(true) - MARKER_OFFSET,
                 input.readLong(),
                 readNullableNanoTime(input),
                 readNullableNanoTime(input),
                 input.readString());
-    }
-
-    private StepsUse readStepsUse(final Input input) {
-        return new StepsUse(input.readString(), input.readLong(), readNullableNanoTime(input));
     }
 
     private List<String> readStrings(final Input input) {
@@ -381,16 +391,19 @@ public class PathwaySerde {
 
     private void writeRoutes(final Routes routes, final Output output) {
         writeStrings(routes.getNodes(), output);
+        writeList(routes.getSteps(), output, this::writeRouteStep);
         writeList(routes.getRoutes(), output, this::writeRouteUse);
+    }
+
+    private void writeRouteStep(final RouteStep step, final Output output) {
+        output.writeVarInt(step.getNode() + MARKER_OFFSET, true);
+        writeList(step.getSteps(), output, (child, out) -> out.writeVarInt(child, true));
     }
 
     // Positions rather than names, and both small, so a variable-length integer is most of why a
     // route costs a couple of bytes a visit instead of the length of a uuid.
     private void writeRouteUse(final RouteUse routeUse, final Output output) {
-        writeList(routeUse.getVisits(), output, (visit, out) -> {
-            out.writeVarInt(visit.getNode(), true);
-            out.writeVarInt(visit.getSteps(), true);
-        });
+        output.writeVarInt(routeUse.getRoot() + MARKER_OFFSET, true);
         output.writeLong(routeUse.getTimesUsed());
         writeNullableNanoTime(routeUse.getFirstUsedTime(), output);
         writeNullableNanoTime(routeUse.getLastUsedTime(), output);
@@ -435,13 +448,6 @@ public class PathwaySerde {
         writeConstraints(pathNode.getConstraints(), output);
         output.writeLong(pathNode.getTimesUsed());
         writeNullableNanoTime(pathNode.getLastUsedTime(), output);
-        writeList(pathNode.getStepsUse(), output, this::writeStepsUse);
-    }
-
-    private void writeStepsUse(final StepsUse stepsUse, final Output output) {
-        output.writeString(stepsUse.getSteps());
-        output.writeLong(stepsUse.getTimesUsed());
-        writeNullableNanoTime(stepsUse.getLastUsedTime(), output);
     }
 
     private void writeString(final String string, final Output output) {

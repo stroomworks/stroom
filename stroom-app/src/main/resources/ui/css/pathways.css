@@ -967,11 +967,19 @@
     }
 }
 
-/* Uncovering a line from one end to the other. Only a finish, because where it starts from is how long
- * the line is, and that was written onto it as it was drawn — a stylesheet cannot measure a line. */
+/* Uncovering a line from one end to the other. Both ends are said outright, which is what makes a
+ * walk that runs along the same line twice work: the first run leaves the line drawn and faded out,
+ * and a second run that left either end to be taken from the line as it stands would start from
+ * drawn and only flash. Every line is given a length of one where it is drawn, so one is the whole
+ * of it however long it really is. */
 @keyframes pathway-walk-drawn {
+    from {
+        stroke-dashoffset: 1;
+        opacity: 1;
+    }
     to {
         stroke-dashoffset: 0;
+        opacity: 1;
     }
 }
 
@@ -980,6 +988,9 @@
  * whole of it staying painted over — what has already been walked is said by the nodes, which stay
  * lit, and does not need saying twice. */
 @keyframes pathway-walk-cleared {
+    from {
+        opacity: 1;
+    }
     to {
         opacity: 0;
     }
@@ -1001,12 +1012,6 @@
     animation: pathway-node-changed 1.1s ease-out 5;
 }
 
-/* A route being walked. On a tree this is the same single pulse a change gets; the ring it leaves
- * belongs to the graph, where the nodes are circles far enough apart to carry one. */
-.pathway-node--walk {
-    animation: pathway-node-changed 1.1s ease-out 1;
-}
-
 /* Over once. A model being stepped through needs it, because the next step lands before a long run
    has finished and every node would be caught part way through one. A route needs it too: its nodes
    are held off one after another to show the walk, so running it again would replay the walk rather
@@ -1014,6 +1019,10 @@
 .pathway-node--changed-once {
     animation: pathway-node-changed 1.1s ease-out 1;
 }
+
+/* A node a walk reaches. What it runs and when is written onto it as the walk is marked, not said
+   here: a node its parent ran, came away from and ran again is reached more than once, and a rule can
+   hold one run of a marking where a walk needs a list of them. */
 
 /* A graph node's box is the circle's bounding square — the name beside it is placed out of the flow —
    so a half radius makes the outline round rather than square. Drawn clear from the start, and left
@@ -1023,13 +1032,6 @@
 .pathway-graph-node.pathway-node--walk {
     border-radius: 50%;
     outline: 3px solid transparent;
-}
-
-/* Two at once, both held off until the walk reaches this node: the ring that travels out and fades,
-   and the one that fades in and stays. The delay is written onto the node as it is marked, and one
-   value there applies to both. */
-.pathway-graph-node.pathway-node--walk {
-    animation: pathway-node-changed-ring 1.1s ease-out 1;
 }
 
 /* Over a node the walk has not reached yet, painted in the colour of the panel behind it, so the node

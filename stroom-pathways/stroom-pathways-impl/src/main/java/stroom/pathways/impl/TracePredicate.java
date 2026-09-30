@@ -39,6 +39,7 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.util.shared.NullSafe;
 
 import java.util.ArrayList;
@@ -57,7 +58,6 @@ import java.util.stream.Collectors;
 
 public class TracePredicate implements Predicate<Trace> {
 
-    private static final String CHILD_STEPS = "childSteps";
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
@@ -96,9 +96,7 @@ public class TracePredicate implements Predicate<Trace> {
                 .computeIfAbsent(span.getName(), k -> new ArrayList<>())
                 .add(span));
 
-        if (!addConstraints(parentNode, parentSpan, spansByName.isEmpty()
-                ? null
-                : String.join(" > ", spansByName.keySet()))) {
+        if (!addConstraints(parentNode, parentSpan)) {
             return false;
         }
 
@@ -143,8 +141,7 @@ public class TracePredicate implements Predicate<Trace> {
     }
 
     private boolean addConstraints(final PathNode pathNode,
-                                   final Span span,
-                                   final String childSteps) {
+                                   final Span span) {
 
 
         final Map<String, Constraint> constraints = pathNode.getConstraints();
@@ -168,13 +165,6 @@ public class TracePredicate implements Predicate<Trace> {
 
         // Check kind.
         if (!checkConstraint(constraints, "kind", span.getKind().name())) {
-            return false;
-        }
-
-        // Check the order the children ran in, where the model records one and this trace reached any.
-        if (childSteps != null
-            && constraints.containsKey(CHILD_STEPS)
-            && !checkConstraint(constraints, CHILD_STEPS, childSteps)) {
             return false;
         }
 

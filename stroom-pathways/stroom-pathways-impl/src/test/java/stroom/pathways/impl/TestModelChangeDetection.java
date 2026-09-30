@@ -25,6 +25,7 @@ import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -122,10 +123,10 @@ class TestModelChangeDetection {
     @Test
     void anIgnoredAttributeSettlesAfterTheFirstSight() {
         final IgnoredAttributes ignored = new IgnoredAttributes(List.of("http.method"));
-        final PathNode root = new NodeMutatorImpl(spanOrder(), ignored)
+        final PathNode root = new NodeMutatorImpl(spanOrder(), ignored, new IgnoredSpans(List.of()))
                 .process(trace("GET", 5, PING), key(), null, quiet(), doc());
 
-        final NodeMutatorImpl mutator = new NodeMutatorImpl(spanOrder(), ignored);
+        final NodeMutatorImpl mutator = new NodeMutatorImpl(spanOrder(), ignored, new IgnoredSpans(List.of()));
         mutator.process(trace("a-value-never-seen", 5, PING), key(), root, quiet(), doc());
 
         assertThat(mutator.isChanged())
@@ -138,7 +139,8 @@ class TestModelChangeDetection {
     }
 
     private static NodeMutatorImpl mutator() {
-        return new NodeMutatorImpl(spanOrder(), new IgnoredAttributes(List.of()));
+        return new NodeMutatorImpl(spanOrder(), new IgnoredAttributes(List.of()),
+                new IgnoredSpans(List.of()));
     }
 
     private static CanonicalSpanOrder spanOrder() {

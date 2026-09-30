@@ -145,7 +145,8 @@ public class TestPathwayProcessor {
 
         try (final LmdbWriter writer = pathwaysDb.createWriter()) {
             final TraceProcessor traceProcessor =
-                    new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED);
+                    new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED,
+                            new IgnoredSpans(List.of()));
             traceDb.iterateTraces((traceId, ignored) ->
                     traceProcessor.processTrace(writer,
                             pathwaysDb,

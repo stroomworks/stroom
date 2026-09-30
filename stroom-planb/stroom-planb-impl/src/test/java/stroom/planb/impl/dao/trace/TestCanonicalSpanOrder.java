@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-package stroom.pathways.impl;
+package stroom.planb.impl.dao.trace;
 
+import stroom.pathways.shared.otel.trace.AnyValue;
+import stroom.pathways.shared.otel.trace.KeyValue;
 import stroom.pathways.shared.otel.trace.NanoDuration;
 import stroom.pathways.shared.otel.trace.Span;
 
@@ -38,6 +40,110 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestCanonicalSpanOrder {
 
     private static final long US = 1_000L;
+
+    @Test
+    void oneThreadsSpansKeepTheOrderItRanThem() {
+        // Two threads doing the same four steps, woven together the way a trace records them. The
+        // steps of each thread ran one after another, so that order is the program's; which thread
+        // got there first is the scheduler's.
+        final List<Span> woven = List.of(
+                span("Ping", 100, 400, "A"),
+                span("Ping", 150, 450, "B"),
+                span("Set autocommit", 410, 700, "A"),
+                span("Set autocommit", 460, 750, "B"),
+                span("UPDATE lock", 710, 1000, "A"),
+                span("UPDATE lock", 760, 1050, "B"),
+                span("Commit", 1010, 1300, "A"),
+                span("Commit", 1060, 1350, "B"));
+
+        assertThat(names(order().sort(woven)))
+                .as("each thread's own steps read in the order it ran them, one thread after another, "
+                    + "rather than every name gathered together")
+                .containsExactly(
+                        "Ping", "Set autocommit", "UPDATE lock", "Commit",
+                        "Ping", "Set autocommit", "UPDATE lock", "Commit");
+    }
+
+    @Test
+    void whichThreadWentFirstDoesNotChangeTheAnswer() {
+        final List<Span> aFirst = List.of(
+                span("Ping", 100, 400, "A"),
+                span("Commit", 410, 700, "A"),
+                span("Ping", 150, 450, "B"),
+                span("Commit", 460, 750, "B"));
+        final List<Span> bFirst = List.of(
+                span("Ping", 100, 400, "B"),
+                span("Commit", 410, 700, "B"),
+                span("Ping", 150, 450, "A"),
+                span("Commit", 460, 750, "A"));
+
+        assertThat(names(order().sort(aFirst)))
+                .as("two threads that did the same work read the same however they were timed, which "
+                    + "is what lets the work be seen as the repeat it is")
+                .isEqualTo(names(order().sort(bFirst)));
+    }
+
+    @Test
+    void aLongRunningSpanNoLongerSwallowsTheOrderOfEverythingAfterIt() {
+        // The shape of a real ProcessPathways trace: one thread holds a long span while the others
+        // carry on working, so overlap alone puts all of it in one group.
+        final List<Span> spans = List.of(
+                span("Ping", 100, 200, "A"),
+                span("UPDATE lock", 210, 300, "A"),
+                span("drain", 310, 9000, "A"),
+                span("Ping", 150, 250, "B"),
+                span("UPDATE lock", 260, 350, "B"),
+                span("drain", 360, 9500, "B"));
+
+        assertThat(names(order().sort(spans)))
+                .as("the lock is taken before the drain that needs it, which ordering by name inside "
+                    + "the group would have reversed")
+                .containsExactly("Ping", "UPDATE lock", "drain", "Ping", "UPDATE lock", "drain");
+    }
+
+    @Test
+    void aThreadsLastSpanIsNotStrandedByWhereTheGroupEnded() {
+        // What a real ProcessPathways trace does: two threads doing the same four steps, but B's last
+        // step starts just after the moment A's work finished. Ending the group there would leave B a
+        // step short, and the two would no longer read as the same work done twice.
+        final List<Span> spans = List.of(
+                span("Ping", 100, 200, "A"),
+                span("Ping", 110, 210, "B"),
+                span("drain", 220, 900, "A"),
+                span("drain", 230, 910, "B"),
+                span("Commit", 905, 950, "A"),
+                span("Commit", 960, 1000, "B"));
+
+        assertThat(names(order().sort(spans)))
+                .as("B's Commit belongs to the run B was already making, however late it started")
+                .containsExactly("Ping", "drain", "Commit", "Ping", "drain", "Commit");
+    }
+
+    @Test
+    void spansThatDoNotSayWhichThreadRanThemDoNotHoldAGroupOpen() {
+        // Nothing says these belong to one run, so they must not chain: treating them as one thread
+        // would put every span with no thread named into a single group.
+        final List<Span> spans = List.of(
+                span("b", 100, 200),
+                span("a", 5000, 5100),
+                span("c", 9000, 9100));
+
+        assertThat(names(order().sort(spans)))
+                .as("well apart in time, so these are three steps rather than one moment")
+                .containsExactly("b", "a", "c");
+    }
+
+    @Test
+    void spansThatDoNotSayWhichThreadRanThemAreOrderedByName() {
+        final List<Span> spans = List.of(
+                span("b", 100, 900),
+                span("a", 200, 800));
+
+        assertThat(names(order().sort(spans)))
+                .as("nothing says these could not have run at the same time, so the only repeatable "
+                    + "thing to do is order them by name")
+                .containsExactly("a", "b");
+    }
 
     @Test
     void concurrentChildrenComeBackInTheSameOrderWhicheverStartedFirst() {
@@ -161,6 +267,18 @@ class TestCanonicalSpanOrder {
                 .name(name)
                 .startTimeUnixNano(Long.toString(startMicros * US))
                 .endTimeUnixNano(Long.toString(endMicros * US))
+                .build();
+    }
+
+    private static Span span(final String name,
+                             final long startMicros,
+                             final long endMicros,
+                             final String thread) {
+        return Span.builder()
+                .name(name)
+                .startTimeUnixNano(Long.toString(startMicros * US))
+                .endTimeUnixNano(Long.toString(endMicros * US))
+                .attributes(List.of(new KeyValue("thread.name", AnyValue.stringValue(thread))))
                 .build();
     }
 }

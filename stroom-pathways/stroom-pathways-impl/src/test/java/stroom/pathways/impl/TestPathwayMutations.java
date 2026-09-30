@@ -30,6 +30,7 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -165,7 +166,8 @@ class TestPathwayMutations {
     void anAttributeNamedInTheConfigurationSaysItWasIgnored() {
         final IgnoredAttributes ignored = new IgnoredAttributes(List.of("http.method"));
         final NodeMutatorImpl mutator = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), ignored);
+                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), ignored,
+                new IgnoredSpans(List.of()));
         mutator.process(trace("GET", 20, PING), key(), null, quiet(), doc());
 
         assertThat(methodChange(mutator))
@@ -242,7 +244,8 @@ class TestPathwayMutations {
     private static NodeMutatorImpl mutator() {
         return new NodeMutatorImpl(
                 new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()),
-                new IgnoredAttributes(List.of()));
+                new IgnoredAttributes(List.of()),
+                new IgnoredSpans(List.of()));
     }
 
     private static NamePathKey key() {

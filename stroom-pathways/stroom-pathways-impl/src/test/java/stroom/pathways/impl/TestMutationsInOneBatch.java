@@ -297,7 +297,8 @@ class TestMutationsInOneBatch {
         final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, false);
                 final LmdbWriter writer = db.createWriter()) {
-            final TraceProcessor processor = new TraceProcessor(BYTE_BUFFERS, serde, NO_IGNORED);
+            final TraceProcessor processor = new TraceProcessor(
+                    BYTE_BUFFERS, serde, NO_IGNORED, new IgnoredSpans(List.of()));
             for (final Trace trace : traces) {
                 processor.processTrace(writer,
                         db,

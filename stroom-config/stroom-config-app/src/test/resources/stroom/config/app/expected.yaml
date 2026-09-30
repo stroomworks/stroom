@@ -701,6 +701,9 @@ appConfig:
   path:
     home: null
     temp: null
+  pathways:
+    ignoredAttributes: []
+    ignoredSpanNames: []
   pipeline:
     appender:
       maxActiveDestinations: 100

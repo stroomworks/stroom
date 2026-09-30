@@ -23,19 +23,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 
 /**
  * One route through the model, with how many traces took it.
  *
- * <p>The visits are gathered by node, nodes in the order the walk first reached them and each node's
- * steps in ascending order. A node reached fifteen times taking the same steps each time appears
- * once, because how much work there was to do is the workload rather than the path through the code,
- * and a node that ran two ways appears twice however its runs were timed. Two traces that visited the
- * same nodes taking the same steps took the same route and share a row.
+ * <p>What the trace did is one shape, {@code root}, holding the whole walk: every node reached, the
+ * children run at each, and the order they ran in, with work that repeated said once. How many times
+ * a repeat ran is not part of it, because how much work there was to do is the workload rather than
+ * the path through the code. Two traces whose shapes are the same took the same route and share a
+ * row.
  *
  * <p>The id of the trace that created the row is kept so the screen can open one that took the
  * route. It stays put as the count rises rather than moving to the newest, so the row points at a
@@ -46,7 +43,7 @@ import java.util.Objects;
 public class RouteUse {
 
     @JsonProperty
-    private final List<RouteVisit> visits;
+    private final int root;
     @JsonProperty
     private final long timesUsed;
     @JsonProperty
@@ -57,22 +54,23 @@ public class RouteUse {
     private final String createdByTraceId;
 
     @JsonCreator
-    public RouteUse(@JsonProperty("visits") final List<RouteVisit> visits,
+    public RouteUse(@JsonProperty("root") final int root,
                     @JsonProperty("timesUsed") final long timesUsed,
                     @JsonProperty("firstUsedTime") final NanoTime firstUsedTime,
                     @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
                     @JsonProperty("createdByTraceId") final String createdByTraceId) {
-        this.visits = visits == null
-                ? Collections.emptyList()
-                : new ArrayList<>(visits);
+        this.root = root;
         this.timesUsed = timesUsed;
         this.firstUsedTime = firstUsedTime;
         this.lastUsedTime = lastUsedTime;
         this.createdByTraceId = createdByTraceId;
     }
 
-    public List<RouteVisit> getVisits() {
-        return visits;
+    /**
+     * Where the walk this route took begins, as a position in the shape list on {@link Routes}.
+     */
+    public int getRoot() {
+        return root;
     }
 
     public long getTimesUsed() {
@@ -96,7 +94,7 @@ public class RouteUse {
      * given, so the row still points at a trace that has been checked rather than the newest one.
      */
     public RouteUse used(final NanoTime time) {
-        return new RouteUse(visits, timesUsed + 1, firstUsedTime, time, createdByTraceId);
+        return new RouteUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId);
     }
 
     @Override
@@ -109,7 +107,7 @@ public class RouteUse {
         }
         final RouteUse that = (RouteUse) o;
         return timesUsed == that.timesUsed
-               && Objects.equals(visits, that.visits)
+               && root == that.root
                && Objects.equals(firstUsedTime, that.firstUsedTime)
                && Objects.equals(lastUsedTime, that.lastUsedTime)
                && Objects.equals(createdByTraceId, that.createdByTraceId);
@@ -117,11 +115,11 @@ public class RouteUse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(visits, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId);
+        return Objects.hash(root, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId);
     }
 
     @Override
     public String toString() {
-        return "RouteUse{" + visits.size() + " visits x" + timesUsed + '}';
+        return "RouteUse{shape " + root + " x" + timesUsed + '}';
     }
 }

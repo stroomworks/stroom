@@ -27,6 +27,7 @@ import stroom.pathways.shared.pathway.AnyTypeValue;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.StringValue;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -116,7 +117,8 @@ class TestIgnoredAttributes {
         final PathwaysDoc doc = doc();
         return new NodeMutatorImpl(
                 new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()),
-                new IgnoredAttributes(ignored))
+                new IgnoredAttributes(ignored),
+                new IgnoredSpans(List.of()))
                 .process(trace, new NamePathKey(OPERATION), current, (severity, message) -> {
                 }, doc);
     }

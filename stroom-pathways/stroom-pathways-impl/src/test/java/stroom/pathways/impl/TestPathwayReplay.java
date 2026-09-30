@@ -29,6 +29,7 @@ import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -142,7 +143,8 @@ class TestPathwayReplay {
         // constraint away rather than put back a constraint holding no value.
         final IgnoredAttributes ignored = new IgnoredAttributes(List.of("http.method"));
         final NodeMutatorImpl mutator = new NodeMutatorImpl(
-                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), ignored);
+                new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()), ignored,
+                new IgnoredSpans(List.of()));
         final PathNode root = mutator.process(trace("GET", 20, PING), new NamePathKey(OPERATION), null,
                 quiet(), doc());
 
@@ -281,7 +283,8 @@ class TestPathwayReplay {
     private static NodeMutatorImpl mutator() {
         return new NodeMutatorImpl(
                 new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()),
-                new IgnoredAttributes(List.of()));
+                new IgnoredAttributes(List.of()),
+                new IgnoredSpans(List.of()));
     }
 
     private static MessageReceiver quiet() {

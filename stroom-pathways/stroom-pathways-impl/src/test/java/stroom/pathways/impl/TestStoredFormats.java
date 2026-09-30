@@ -22,8 +22,8 @@ import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.pathways.shared.pathway.RouteStep;
 import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.RouteVisit;
 import stroom.pathways.shared.pathway.Routes;
 
 import org.junit.jupiter.api.Test;
@@ -100,11 +100,25 @@ class TestStoredFormats {
         final RouteUse route = read.getRoutes().getRoutes().getFirst();
 
         assertThat(read.getRoutes().getNodes()).containsExactly("node-a", "node-b");
-        assertThat(route.getVisits()).containsExactly(new RouteVisit(0, 0), new RouteVisit(1, 2));
+        assertThat(route.getRoot()).isEqualTo(2);
         assertThat(route.getTimesUsed()).isEqualTo(19);
         assertThat(route.getFirstUsedTime()).isEqualTo(NanoTime.ofMillis(4));
         assertThat(route.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(5));
         assertThat(route.getCreatedByTraceId()).isEqualTo("0a0b0c0d");
+    }
+
+    @Test
+    void aStoredPathwayKeepsTheShapesItsRoutesAreBuiltFrom() {
+        final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
+
+        assertThat(read.getRoutes().getSteps()).containsExactly(
+                new RouteStep(1, List.of()),
+                new RouteStep(RouteStep.UNFINISHED, List.of(0)),
+                new RouteStep(0, List.of(0, 1)));
+        assertThat(read.getRoutes().getRoutes().getFirst().getRoot()).isEqualTo(2);
+        // The unfinished marker is negative and the length written is not, so it is the one value
+        // that could be lost in the round trip.
+        assertThat(read.getRoutes().getSteps().get(1).isUnfinished()).isTrue();
     }
 
     @Test
@@ -128,6 +142,7 @@ class TestStoredFormats {
         final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(written[0]);
         assertThat(read.getRoutes().getRoutes()).isEmpty();
         assertThat(read.getRoutes().getNodes()).isEmpty();
+        assertThat(read.getRoutes().getSteps()).isEmpty();
     }
 
     @Test
@@ -168,8 +183,11 @@ class TestStoredFormats {
                         null))
                 .routes(new Routes(
                         List.of("node-a", "node-b"),
+                        List.of(new RouteStep(1, List.of()),
+                                new RouteStep(RouteStep.UNFINISHED, List.of(0)),
+                                new RouteStep(0, List.of(0, 1))),
                         List.of(new RouteUse(
-                                List.of(new RouteVisit(0, 0), new RouteVisit(1, 2)),
+                                2,
                                 19,
                                 NanoTime.ofMillis(4),
                                 NanoTime.ofMillis(5),

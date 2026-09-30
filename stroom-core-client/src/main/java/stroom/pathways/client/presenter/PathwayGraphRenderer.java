@@ -412,16 +412,16 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // and how busy the join is, and a route being watched must not take that away while it plays.
     //
     // It is held off the end of itself to start with, so nothing of it is on show until the walk says
-    // so. How long it is is measured here because only the drawing knows that; when it starts is
-    // written onto it later because only the walk knows that.
+    // so. Its length is given as one rather than measured: a dash the whole length of the line and an
+    // offset of the same puts it out of sight, and saying that as one means the stylesheet can name
+    // both ends of the run without knowing how long any particular line is. It has to name both,
+    // because a walk that runs along the same line twice leaves the line drawn from the first time,
+    // and a run that only said where to finish would start from there and be there already.
     private static void walkLine(final HtmlBuilder svg,
                                  final String reaches,
                                  final Point start,
                                  final Point end,
                                  final int width) {
-        final double across = end.getX() - start.getX();
-        final double down = end.getY() - start.getY();
-        final String length = String.valueOf((int) Math.ceil(Math.sqrt((across * across) + (down * down))));
         svg.elem(SafeHtmlUtil.from("line"),
                 // The node at the far end, which is how the walk finds this line. Not the uuid the
                 // nodes carry: a walk looks for both and one is not the other.
@@ -431,8 +431,9 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("x2", String.valueOf((int) end.getX())),
                 new Attribute("y2", String.valueOf((int) end.getY())),
                 new Attribute("stroke-width", String.valueOf(width)),
-                new Attribute("stroke-dasharray", length),
-                new Attribute("stroke-dashoffset", length),
+                new Attribute("pathLength", "1"),
+                new Attribute("stroke-dasharray", "1"),
+                new Attribute("stroke-dashoffset", "1"),
                 Attribute.className(WALK_EDGE_CLASS));
     }
 

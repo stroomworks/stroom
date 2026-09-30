@@ -31,6 +31,7 @@ import stroom.pathways.shared.TracesResultPage;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.otel.trace.TraceRoot;
+import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResultPage;
 
