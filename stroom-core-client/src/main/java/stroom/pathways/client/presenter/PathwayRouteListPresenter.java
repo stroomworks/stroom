@@ -46,6 +46,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -131,6 +132,13 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      */
     private final Map<RouteUse, String> texts = new HashMap<>();
     private final Map<RouteUse, List<List<PathNode>>> walks = new HashMap<>();
+    // Which run of work happening at the same time each moment belongs to, numbered as the runs are
+    // reached throughout the route, and zero for a moment that was not part of one. Held beside the
+    // walk rather than in it because only the drawing wants it.
+    private final Map<RouteUse, List<Integer>> walkRuns = new HashMap<>();
+    // Where each run of work that happened at the same time begins: the moment it starts, against the
+    // run it is. Held per route, and only for routes whose walk has been worked out.
+    private final Map<RouteUse, List<int[]>> walkRunStarts = new HashMap<>();
     private final Map<RouteUse, Integer> stepCounts = new HashMap<>();
 
     @Inject
@@ -206,6 +214,50 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return pathsIn(selectionModel.getSelected());
     }
 
+    /**
+     * Which run of work happening at the same time each moment of the selected route belongs to,
+     * numbered as the runs are reached throughout the route, and zero where the moment was not part of
+     * one. One entry per moment, so it reads alongside {@link #getSelectedPaths()}.
+     *
+     * <p>Runs are walked one after another rather than together, so a reader can follow one before the
+     * next begins. This is what says they were not a sequence.
+     */
+    public List<Integer> getSelectedRuns() {
+        final RouteUse route = selectionModel.getSelected();
+        if (route == null || root == null) {
+            return Collections.emptyList();
+        }
+        momentsIn(route);
+        return NullSafe.list(walkRuns.get(route));
+    }
+
+    /**
+     * Where each run of work that happened at the same time begins, as the node the walk arrives at
+     * first in that run, against which run it is and the moment it starts. By node uuid, because the
+     * line into a node is how the drawing finds the place to say it.
+     *
+     * <p>A node can open more than one run — two runs that began by doing the same thing — so a uuid
+     * can carry several, each at its own moment.
+     */
+    public Map<String, List<int[]>> getSelectedRunStarts() {
+        final RouteUse route = selectionModel.getSelected();
+        if (route == null || root == null) {
+            return Collections.emptyMap();
+        }
+        final List<List<PathNode>> moments = momentsIn(route);
+        final Map<String, List<int[]>> starts = new LinkedHashMap<>();
+        for (final int[] start : NullSafe.list(walkRunStarts.get(route))) {
+            final int moment = start[0];
+            final int run = start[1];
+            if (moment < 0 || moment >= moments.size() || moments.get(moment).isEmpty()) {
+                continue;
+            }
+            starts.computeIfAbsent(moments.get(moment).get(0).getUuid(), k -> new ArrayList<>())
+                    .add(new int[]{run, moment});
+        }
+        return starts;
+    }
+
     // The paths the drawing lights, gathered by the moment they light at. Everything in one entry
     // lights at once, so work that happened at the same time is shown happening at the same time.
     private List<List<List<String>>> pathsIn(final RouteUse route) {
@@ -223,7 +275,8 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     // How many moments the drawing steps through, which is what the Steps column says. Not the same as
-    // how many nodes ran: four threads doing twelve things each is twelve moments, not forty-eight.
+    // how many nodes ran: work repeated is held as one step however many times it went round, and the
+    // runs of a moment are stepped through one after another, so each of them adds its own.
     private int steps(final RouteUse route) {
         Integer count = stepCounts.get(route);
         if (count == null) {
@@ -253,8 +306,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         List<List<PathNode>> moments = walks.get(route);
         if (moments == null) {
             moments = new ArrayList<>();
-            walk(route.getRoot(), moments, 0);
+            final List<Integer> runs = new ArrayList<>();
+            final List<int[]> starts = new ArrayList<>();
+            walk(route.getRoot(), moments, runs, starts, 0, 0);
             walks.put(route, moments);
+            walkRuns.put(route, runs);
+            walkRunStarts.put(route, starts);
         }
         return moments;
     }
@@ -262,9 +319,17 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // Down into each child before moving on to the next, which is the order the work happened in, and
     // says how many moments the shape took so the one after it knows where to start.
     //
-    // Runs that happened at the same time all begin at the same moment, and what holds them lasts as
-    // long as the longest of them. Everything else follows on from what came before it.
-    private int walk(final int shape, final List<List<PathNode>> moments, final int at) {
+    // Runs that happened at the same time are walked one after another rather than together, because
+    // several lines lighting at once is hard to follow. Each moment is marked with the run it belongs
+    // to so the drawing can say which one is being watched; that mark is the only thing left saying
+    // they did not follow on from one another. Runs are numbered as they are reached, throughout the
+    // route, so the numbers only ever count up.
+    private int walk(final int shape,
+                     final List<List<PathNode>> moments,
+                     final List<Integer> runs,
+                     final List<int[]> starts,
+                     final int at,
+                     final int run) {
         final RouteStep step = shapeAt(shape);
         if (step == null) {
             return 0;
@@ -275,28 +340,58 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         if (step.getNode() >= 0) {
             final PathNode node = nodesByPosition.get(step.getNode());
             if (node != null) {
-                lightAt(moments, at, node);
+                lightAt(moments, runs, at, node, run);
                 used = 1;
             }
         }
 
         if (step.isConcurrent()) {
-            int longest = 0;
-            for (final Integer run : NullSafe.list(step.getSteps())) {
-                longest = Math.max(longest, walk(run, moments, at + used));
+            int after = 0;
+            for (final Integer child : NullSafe.list(step.getSteps())) {
+                // Where a run came down to turns of one node, each turn is what one of the threads
+                // did, and the run holding them is all that is left of the work being shared out.
+                // So the turns are numbered rather than the run they were gathered into, which
+                // would otherwise leave a lone 1 over work several threads took a hand in. Turns
+                // the same as one another are held as one, so this counts the turns, not the
+                // threads.
+                final RouteStep held = shapeAt(child);
+                final List<Integer> strands = held != null && turnsOfOneNode(held)
+                        ? NullSafe.list(held.getSteps())
+                        : Collections.singletonList(child);
+                for (final Integer strand : strands) {
+                    // Counted across the whole route rather than within the moment it belongs to.
+                    // Work happening at the same time can hold work that does too, and numbering
+                    // each lot from one would put a 1 after a 2 and leave a reader with no way of
+                    // telling which lot either belonged to. Counting up throughout says only what
+                    // the badge has to say, which is that this is a strand apart from the one
+                    // before it.
+                    final int which = starts.size() + 1;
+                    starts.add(new int[]{at + used + after, which});
+                    after += walk(strand, moments, runs, starts, at + used + after, which);
+                }
             }
-            return used + longest;
+            return used + after;
         }
 
         for (final Integer child : NullSafe.list(step.getSteps())) {
-            used += walk(child, moments, at + used);
+            used += walk(child, moments, runs, starts, at + used, run);
         }
         return used;
     }
 
-    private static void lightAt(final List<List<PathNode>> moments, final int at, final PathNode node) {
+    private static void lightAt(final List<List<PathNode>> moments,
+                                final List<Integer> runs,
+                                final int at,
+                                final PathNode node,
+                                final int run) {
         while (moments.size() <= at) {
             moments.add(new ArrayList<>());
+            runs.add(0);
+        }
+        // A moment is reached by one run only, because the runs are walked one after another, so the
+        // first to say which it is says it for the moment.
+        if (runs.get(at) == 0) {
+            runs.set(at, run);
         }
         moments.get(at).add(node);
     }
@@ -324,6 +419,8 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         // one's, and the walk they came from starts at a root that is about to change.
         texts.clear();
         walks.clear();
+        walkRuns.clear();
+        walkRunStarts.clear();
         stepCounts.clear();
         root = NullSafe.get(pathway, Pathway::getRoot);
         shapes = Collections.emptyList();

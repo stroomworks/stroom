@@ -1008,6 +1008,50 @@
     opacity: 1;
 }
 
+/* The number of a run, shown on the line that run starts at while that line is being drawn, and gone
+ * again once it has. Runs of work that happened at the same time are walked one after another so a
+ * reader can follow one before the next begins; without this they would read as one long sequence,
+ * and this is the only thing left saying where one run ends and the next starts. */
+@keyframes pathway-walk-badge-shown {
+    from {
+        opacity: 0;
+    }
+    20% {
+        opacity: 1;
+    }
+    80% {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+/* Out of sight until its turn, and out of sight again afterwards. Every line into a node the route
+ * ran carries one of these, and most of them are never given a run to say. */
+.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge {
+    opacity: 0;
+}
+
+/* White against the magenta line it sits on, which is the one colour in the drawing nothing else
+ * uses. Ringed in the same magenta so it reads as part of the walk rather than as a node. */
+.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge circle {
+    fill: rgb(255, 255, 255);
+    stroke: rgb(255, 77, 200);
+    stroke-width: 2;
+}
+
+/* Black on white, which is the plainest thing a number can be, and heavy enough to be read at the
+ * size a whole pathway is looked at. */
+.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge text.pathway-graph-walk-badge-text {
+    fill: rgb(0, 0, 0);
+    font-size: 13px;
+    font-weight: 700;
+    /* The number is said by the drawing, not picked out of it. */
+    pointer-events: none;
+    user-select: none;
+}
+
 .pathway-node--changed {
     animation: pathway-node-changed 1.1s ease-out 5;
 }

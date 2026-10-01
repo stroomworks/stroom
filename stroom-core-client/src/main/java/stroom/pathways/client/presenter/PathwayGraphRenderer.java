@@ -111,6 +111,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // a route on a large one is what this is for, so a line as thin as the traffic through it would
     // leave nothing to follow.
     private static final int WALK_WIDTH = 3;
+    // Big enough to hold a two figure number at the size the drawing is read at.
+    private static final int BADGE_RADIUS = 11;
     // How far a node's own ring stands off its rim, which is drawn onto the dot as the node is placed.
     private static final int NODE_RING = 2;
     /**
@@ -127,6 +129,16 @@ class PathwayGraphRenderer implements PathwayRenderer {
      * The line a walk traces along an edge. Named here for the same reason as the veil and the name.
      */
     static final String WALK_EDGE_CLASS = "pathway-graph-walk";
+
+    /**
+     * The badge that says which run of work happening at the same time the walk is on. Drawn on the
+     * line into the node that run starts at, because that is the one place a run begins. Named here
+     * because whatever times the walk has to find it, and writes the number on then.
+     */
+    static final String WALK_BADGE_CLASS = "pathway-graph-walk-badge";
+
+    /** The number inside the badge, named so whatever times the walk can write it. */
+    static final String WALK_BADGE_TEXT_CLASS = "pathway-graph-walk-badge-text";
 
     @Override
     public boolean opensCentred() {
@@ -402,6 +414,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                             colour(lastUsed(child, usage), now)));
             if (!onRoute.isEmpty() && ran(child)) {
                 walkLine(walkEdges, child.getUuid(), from, to, Math.max(edgeWidth, WALK_WIDTH));
+                walkBadge(walkEdges, child.getUuid(), from, to);
             }
             draw(child, places, edges, markers, scale, now, changes, present, usage);
         }
@@ -435,6 +448,39 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("stroke-dasharray", "1"),
                 new Attribute("stroke-dashoffset", "1"),
                 Attribute.className(WALK_EDGE_CLASS));
+    }
+
+    // The round badge that flashes the number of a run on the line that run starts at. Drawn empty
+    // and held out of sight, because which runs there are and which of them begins here is not known
+    // until a route is picked; whatever marks the walk writes the number on and says when.
+    //
+    // Halfway along the line, which is the one place on it belonging to neither node it joins.
+    private static void walkBadge(final HtmlBuilder svg,
+                                  final String reaches,
+                                  final Point start,
+                                  final Point end) {
+        final int x = (int) ((start.getX() + end.getX()) / 2);
+        final int y = (int) ((start.getY() + end.getY()) / 2);
+        svg.elem(badge -> {
+            badge.elem(SafeHtmlUtil.from("circle"),
+                    new Attribute("cx", String.valueOf(x)),
+                    new Attribute("cy", String.valueOf(y)),
+                    new Attribute("r", String.valueOf(BADGE_RADIUS)));
+            // Held in the middle both ways, so the number sits in the circle whatever it is.
+            badge.elem("", SafeHtmlUtil.from("text"),
+                    new Attribute("x", String.valueOf(x)),
+                    new Attribute("y", String.valueOf(y)),
+                    new Attribute("text-anchor", "middle"),
+                    new Attribute("dominant-baseline", "central"),
+                    Attribute.className(WALK_BADGE_TEXT_CLASS));
+        }, SafeHtmlUtil.from("g"),
+                // The node at the far end, the same way the line into it is found.
+                new Attribute("edge", reaches),
+                // Out of sight on the drawing itself rather than in the stylesheet. Every line into a
+                // node the route ran carries one of these and most are never given a run to say, so
+                // what hides them must not depend on a sheet being found.
+                new Attribute("opacity", "0"),
+                Attribute.className(WALK_BADGE_CLASS));
     }
 
     // Whether the route being looked at ran this node. Everything counts while none is being looked
