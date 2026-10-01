@@ -45,9 +45,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -88,6 +90,11 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * cannot say which node it visited.
      */
     private final Map<Integer, PathNode> nodesByPosition = new HashMap<>();
+    // What each node is called in the Route column. The schema a database span carries, and the class
+    // a code span carries, are the same down most of a route, so dropping them fits far more of the
+    // route in the column. A name is only shortened where nothing else in the pathway shortens to the
+    // same thing, so two nodes can never come to read alike.
+    private final Map<Integer, String> shortNames = new HashMap<>();
 
     /**
      * Where a route's walk starts. Held with the nodes above for the same reason: a route says which
@@ -307,6 +314,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         // asks what is selected to decide what to pick out.
         selectionModel.clear();
         nodesByPosition.clear();
+        shortNames.clear();
         // What was worked out about the routes of the pathway being replaced says nothing about this
         // one's, and the walk they came from starts at a root that is about to change.
         texts.clear();
@@ -371,6 +379,44 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                 nodesByPosition.put(i, node);
             }
         }
+        nameNodes();
+    }
+
+    // Shortens every node name that stays its own after shortening, and leaves the rest in full. One
+    // name reaching the model twice is still one name, so what disqualifies a shortening is two
+    // different names coming to the same thing, not the same name arriving again.
+    private void nameNodes() {
+        shortNames.clear();
+        final Map<String, String> firstSeen = new HashMap<>();
+        final Set<String> ambiguous = new HashSet<>();
+        for (final PathNode node : nodesByPosition.values()) {
+            final String shortened = shorten(node.getName());
+            final String seen = firstSeen.putIfAbsent(shortened, node.getName());
+            if (seen != null && !seen.equals(node.getName())) {
+                ambiguous.add(shortened);
+            }
+        }
+        for (final Map.Entry<Integer, PathNode> entry : nodesByPosition.entrySet()) {
+            final String shortened = shorten(entry.getValue().getName());
+            shortNames.put(entry.getKey(), ambiguous.contains(shortened)
+                    ? entry.getValue().getName()
+                    : shortened);
+        }
+    }
+
+    // A database span is named for the operation and the table, a code span for the class and the
+    // method. Either way what comes before the last dot is shared with the names around it and what
+    // comes after it is the part that tells them apart. A name holding a quote is left alone: the dot
+    // in it belongs to a value rather than to a name, and cutting there would mangle it.
+    static String shorten(final String name) {
+        final int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1 || name.indexOf('\'') >= 0 || name.indexOf('"') >= 0) {
+            return name;
+        }
+        final int space = name.lastIndexOf(' ', dot);
+        return space < 0
+                ? name.substring(dot + 1)
+                : name.substring(0, space + 1) + name.substring(dot + 1);
     }
 
     private static void collect(final PathNode node, final Map<String, PathNode> byUuid) {
@@ -491,7 +537,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             return "";
         }
         if (step.isConcurrent()) {
-            // Runs that happened at the same time, held in brackets and parted by the run separator.
+            // Runs that happened at the same time, held in braces and parted by the run separator.
             // Read in an order settled by what they are rather than by which thread got there first,
             // so a reader must not follow them as a sequence.
             final StringBuilder sb = new StringBuilder();
@@ -505,25 +551,27 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                 }
                 sb.append(text);
             }
-            return "[" + sb + "]";
+            return "{" + sb + "}";
         }
         final String inner = ran(step);
         if (step.isRun()) {
             return inner;
         }
         if (step.isUnfinished()) {
-            // Work that ran over and over and stopped part way through the last time. Work that
-            // repeated and did finish is simply said once, because how much there was to do is the
-            // workload rather than the path through the code.
-            return "[" + inner + "] unfinished";
+            // Work that ran over and over and stopped part way through the last time, held in square
+            // brackets. Work that repeated and did finish is simply said once with nothing to mark
+            // it, because how much there was to do is the workload rather than the path through the
+            // code. Each of the three brackets means one thing and nothing else: round for what a
+            // node ran, braces for work at the same time, square for a run that stopped part way.
+            return "[" + inner + "]";
         }
-        final PathNode node = nodesByPosition.get(step.getNode());
-        if (node == null) {
+        final String name = shortNames.get(step.getNode());
+        if (name == null) {
             return "";
         }
         return inner.isEmpty()
-                ? node.getName()
-                : node.getName() + " (" + inner + ")";
+                ? name
+                : name + " (" + inner + ")";
     }
 
     // What one shape ran, in the order it ran it.

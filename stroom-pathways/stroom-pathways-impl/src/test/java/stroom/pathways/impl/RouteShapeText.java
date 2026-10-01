@@ -24,10 +24,11 @@ import java.util.Map;
 /**
  * A trace's shape written out, so a test can say what a trace did in one line.
  *
- * <p>{@code name} is a node that ran nothing, {@code name[a b]} one that ran a and then b,
- * {@code (a b)~} work that ran over and over and stopped part way through the last time, and
- * {@code {a | b}} runs that happened at the same time. Work that repeated and did finish is simply
- * said once, so it has no mark of its own.
+ * <p>Written the way the routes table writes it, so what a test asserts is what a reader sees.
+ * {@code name} is a node that ran nothing and {@code name (a > b)} one that ran a and then b;
+ * {@code [a > b]} is work that ran over and over and stopped part way through the last time;
+ * {@code {a | b}} is runs that happened at the same time. Each bracket means one thing and nothing
+ * else. Work that repeated and did finish is simply said once, so it has no mark of its own.
  */
 final class RouteShapeText {
 
@@ -52,10 +53,10 @@ final class RouteShapeText {
             return "";
         }
         final String text = render(found, names);
-        final int open = text.indexOf('[');
+        final int open = text.indexOf(" (");
         return open < 0
                 ? ""
-                : text.substring(open + 1, text.length() - 1);
+                : text.substring(open + 2, text.length() - 1);
     }
 
     private static RouteShape find(final RouteShape shape,
@@ -81,7 +82,7 @@ final class RouteShapeText {
     private static String render(final RouteShape shape, final Map<String, String> names) {
         final String separator = shape.kind() == RouteShape.Kind.CONCURRENT
                 ? " | "
-                : " ";
+                : " > ";
         final StringBuilder sb = new StringBuilder();
         for (final RouteShape step : shape.steps()) {
             if (sb.length() > 0) {
@@ -90,12 +91,12 @@ final class RouteShapeText {
             sb.append(render(step, names));
         }
         return switch (shape.kind()) {
-            case UNFINISHED -> "(" + sb + ")~";
+            case UNFINISHED -> "[" + sb + "]";
             case CONCURRENT -> "{" + sb + "}";
             case RUN -> sb.toString();
             case NODE -> shape.steps().isEmpty()
                     ? names.get(shape.nodeUuid())
-                    : names.get(shape.nodeUuid()) + "[" + sb + "]";
+                    : names.get(shape.nodeUuid()) + " (" + sb + ")";
         };
     }
 }

@@ -274,8 +274,8 @@ class TestRouteRecording {
         // Both turns are there. Which way round they read is settled by what they are rather than by
         // which ran first, so nothing here may depend on that order.
         assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
-                .contains("A[" + PING + "]")
-                .contains("A[" + COMMIT + "]");
+                .contains("A (" + PING + ")")
+                .contains("A (" + COMMIT + ")");
     }
 
     @Test

@@ -334,6 +334,17 @@ public class NodeMutatorImpl {
         if (runs.size() < 2) {
             return runs;
         }
+        // Runs of a single turn each are already the turns, one apiece, so saying them between the
+        // runs would move nothing: there is only one way to deal one turn to each thread. All it
+        // would do is put them in one run, where they read as one following another rather than as
+        // what they are, which is the several things that happened at the same time.
+        boolean several = false;
+        for (final RouteShape run : runs) {
+            several |= run.steps().size() > 1;
+        }
+        if (!several) {
+            return runs;
+        }
         String node = null;
         for (final RouteShape run : runs) {
             for (final RouteShape turn : run.steps()) {

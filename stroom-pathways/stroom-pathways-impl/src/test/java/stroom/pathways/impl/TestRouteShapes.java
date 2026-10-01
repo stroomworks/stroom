@@ -40,9 +40,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What one trace's shape says about work that repeated.
  *
- * <p>Written as {@code name} for a node that ran nothing, {@code name[a b]} for one that ran a and
- * then b, and {@code (a b)~} for work that ran over and over and stopped part way through the last
- * time. Work that repeated and did finish is said once, with nothing to mark that it happened again.
+ * <p>Written as the routes table writes it: {@code name} for a node that ran nothing,
+ * {@code name (a > b)} for one that ran a and then b, and {@code [a > b]} for work that ran over and
+ * over and stopped part way through the last time. Work that repeated and did finish is said once,
+ * with nothing to mark that it happened again.
  */
 class TestRouteShapes {
 
@@ -53,12 +54,12 @@ class TestRouteShapes {
 
     @Test
     void workThatDidNotRepeatIsKeptAsItRan() {
-        assertThat(shapeOf("a", "b", "c")).isEqualTo("job.run[a b c]");
+        assertThat(shapeOf("a", "b", "c")).isEqualTo("job.run (a > b > c)");
     }
 
     @Test
     void aChildRunOverAndOverIsSaidOnce() {
-        assertThat(shapeOf("a", "a", "a", "a")).isEqualTo("job.run[a]");
+        assertThat(shapeOf("a", "a", "a", "a")).isEqualTo("job.run (a)");
     }
 
     @Test
@@ -71,16 +72,16 @@ class TestRouteShapes {
 
     @Test
     void aRunWhoseLastTurnStoppedEarlyIsNotACleanRun() {
-        assertThat(shapeOf("a", "b", "a", "b", "a", "b")).isEqualTo("job.run[a b]");
-        assertThat(shapeOf("a", "b", "a", "b", "a")).isEqualTo("job.run[(a b)~]");
+        assertThat(shapeOf("a", "b", "a", "b", "a", "b")).isEqualTo("job.run (a > b)");
+        assertThat(shapeOf("a", "b", "a", "b", "a")).isEqualTo("job.run ([a > b])");
     }
 
     @Test
     void aRunWhoseMiddleTurnStoppedEarlyIsNotACleanRunEither() {
         // The case the old collapse could not see: an unfinished turn anywhere but the end came out
         // reading exactly like a run where every turn finished.
-        assertThat(shapeOf("a", "b", "a", "b", "a", "a", "b")).isEqualTo("job.run[(a b)~]");
-        assertThat(shapeOf("a", "b", "a", "b", "a", "b", "a", "b")).isEqualTo("job.run[a b]");
+        assertThat(shapeOf("a", "b", "a", "b", "a", "a", "b")).isEqualTo("job.run ([a > b])");
+        assertThat(shapeOf("a", "b", "a", "b", "a", "b", "a", "b")).isEqualTo("job.run (a > b)");
     }
 
     @Test
@@ -88,21 +89,21 @@ class TestRouteShapes {
         // The shape the GitRepoPush trace actually has, with one turn missing its last step. Matching
         // as far as the names go would run past the end of the short turn and miss it.
         assertThat(shapeOf("p", "d", "p", "e", "p", "d", "p", "e", "p", "d", "p", "d", "p", "e"))
-                .isEqualTo("job.run[(p d p e)~]");
+                .isEqualTo("job.run ([p > d > p > e])");
     }
 
     @Test
     void aStepThatMerelyStartsLikeTheGroupIsItsOwnStep() {
         // "a" here is followed by "c", so the work did not pick the group up again and this is not an
         // unfinished turn of it.
-        assertThat(shapeOf("a", "b", "a", "b", "a", "c")).isEqualTo("job.run[a b a c]");
+        assertThat(shapeOf("a", "b", "a", "b", "a", "c")).isEqualTo("job.run (a > b > a > c)");
     }
 
     @Test
     void aRepeatInsideARepeatIsStillSaidOnce() {
         // The case the old collapse got wrong the other way: folding the shortest run first ate the
         // doubled "a" and left "a b", losing that the pair ran twice.
-        assertThat(shapeOf("a", "a", "b", "a", "a", "b")).isEqualTo("job.run[a b]");
+        assertThat(shapeOf("a", "a", "b", "a", "a", "b")).isEqualTo("job.run (a > b)");
     }
 
     @Test
@@ -129,7 +130,7 @@ class TestRouteShapes {
     void aNodeComingBackAfterAnotherOneKeepsItsPlace() {
         // Not the same thing: these are different nodes either side, so running a then b then a is
         // not running a twice and then b, and nothing here may be reordered.
-        assertThat(shapeOf("a", "b", "a")).isEqualTo("job.run[a b a]");
+        assertThat(shapeOf("a", "b", "a")).isEqualTo("job.run (a > b > a)");
     }
 
     @Test
@@ -147,10 +148,10 @@ class TestRouteShapes {
         assertThat(concurrentShape(new String[]{"a", "b"}, new String[]{"c", "d"}))
                 .as("the two threads overlapped, so what each did is held side by side rather than "
                     + "one after the other")
-                .startsWith("job.run[{")
-                .endsWith("}]")
-                .contains("a b")
-                .contains("c d")
+                .startsWith("job.run ({")
+                .endsWith("})")
+                .contains("a > b")
+                .contains("c > d")
                 .contains(" | ");
     }
 
@@ -179,12 +180,12 @@ class TestRouteShapes {
         assertThat(concurrentShape(new String[]{"a", "b"}, new String[]{"a", "b"}))
                 .as("how many threads there were is how much work there was to do, not the path "
                     + "through the code")
-                .isEqualTo("job.run[{a b}]");
+                .isEqualTo("job.run ({a > b})");
     }
 
     @Test
     void aNodeThatRanNothingIsALeaf() {
-        assertThat(shapeOf("a")).isEqualTo("job.run[a]");
+        assertThat(shapeOf("a")).isEqualTo("job.run (a)");
     }
 
     @Test
@@ -201,11 +202,11 @@ class TestRouteShapes {
         // per thread.
         assertThat(turnsShape(new String[]{"p", "q"}, new String[]{"p", "q", "r"}))
                 .as("the turns the threads took between them, not who took which")
-                .startsWith("job.run[{")
-                .endsWith("}]")
-                .contains(TURN + "[p]")
-                .contains(TURN + "[q]")
-                .contains(TURN + "[r]")
+                .startsWith("job.run ({")
+                .endsWith("})")
+                .contains(TURN + " (p)")
+                .contains(TURN + " (q)")
+                .contains(TURN + " (r)")
                 .doesNotContain(" | ");
     }
 

@@ -150,7 +150,7 @@ class TestNameBasedChildMatching {
         assertThat(stepsOf(null, sequential(PING, PING, PING, COMMIT)))
                 .as("doing the same work three times rather than once is how much there was to do, "
                     + "not a different way of working")
-                .isEqualTo(PING + " " + COMMIT);
+                .isEqualTo(PING + " > " + COMMIT);
         assertThat(count(child(root, PING)))
                 .as("how many times is still counted on the child")
                 .isEqualTo(new IntegerValue(3));
@@ -163,7 +163,7 @@ class TestNameBasedChildMatching {
         assertThat(stepsOf(null, sequential(PING, COMMIT, PING)))
                 .as("the second Ping did not happen where the first one did, and a model that put it "
                     + "there would say this node pinged twice and then committed")
-                .isEqualTo(PING + " " + COMMIT + " " + PING);
+                .isEqualTo(PING + " > " + COMMIT + " > " + PING);
         assertThat(count(child(root, PING)))
                 .isEqualTo(new IntegerValue(2));
     }
@@ -199,8 +199,8 @@ class TestNameBasedChildMatching {
                 .as("a node several spans reached can run differently each time, and the shape keeps "
                     + "both ways — read in an order settled by what they are, not by which ran first, "
                     + "so nothing here may depend on that order")
-                .contains(BATCH + "[" + PING + " " + COMMIT + "]")
-                .contains(BATCH + "[" + COMMIT + " " + PING + "]");
+                .contains(BATCH + " (" + PING + " > " + COMMIT + ")")
+                .contains(BATCH + " (" + COMMIT + " > " + PING + ")");
     }
 
     @Test
@@ -210,7 +210,7 @@ class TestNameBasedChildMatching {
 
         assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
                 .as("the same run twice over is how much work there was to do, so it is said once")
-                .isEqualTo(OPERATION + "[" + BATCH + "[" + PING + " " + COMMIT + "]]");
+                .isEqualTo(OPERATION + " (" + BATCH + " (" + PING + " > " + COMMIT + "))");
     }
 
     @Test
@@ -220,7 +220,7 @@ class TestNameBasedChildMatching {
 
         assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
                 .as("a node with nothing below it is a leaf, and that is the only thing it can mean")
-                .isEqualTo(OPERATION + "[" + PING + "]");
+                .isEqualTo(OPERATION + " (" + PING + ")");
     }
 
     @Test
@@ -234,9 +234,9 @@ class TestNameBasedChildMatching {
         assertThat(RouteShapeText.of(withoutCommit.getRouteShape(), root))
                 .as("a child that did not run leaves its parent running differently, which is where a "
                     + "route records that the child was skipped")
-                .isEqualTo(OPERATION + "[" + PING + "]");
+                .isEqualTo(OPERATION + " (" + PING + ")");
         assertThat(RouteShapeText.of(withBoth.getRouteShape(), first))
-                .isEqualTo(OPERATION + "[" + PING + " " + COMMIT + "]");
+                .isEqualTo(OPERATION + " (" + PING + " > " + COMMIT + ")");
     }
 
     @Test
@@ -255,7 +255,7 @@ class TestNameBasedChildMatching {
         assertThat(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT, PING, COMMIT)))
                 .as("going round the same two children three times is the amount of work there was "
                     + "to do, exactly as doing one child three times is")
-                .isEqualTo(PING + " " + COMMIT);
+                .isEqualTo(PING + " > " + COMMIT);
         assertThat(count(child(root, PING)))
                 .as("how many times round is still counted on each child")
                 .isEqualTo(new IntegerValue(3));
@@ -270,7 +270,7 @@ class TestNameBasedChildMatching {
                 PREPARE, PING, PREPARE, PING, PREPARE, COMMIT)))
                 .as("the long round is found first and said once, and the short one inside it is "
                     + "said once within that — neither carries a mark saying it happened again")
-                .isEqualTo(PREPARE + " " + PING + " " + PREPARE + " " + COMMIT);
+                .isEqualTo(PREPARE + " > " + PING + " > " + PREPARE + " > " + COMMIT);
     }
 
     @Test
@@ -280,7 +280,7 @@ class TestNameBasedChildMatching {
         assertThat(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT, PREPARE)))
                 .as("only what repeated is said once; what ran afterwards did not repeat and is "
                     + "where this route differs from one that stopped")
-                .isEqualTo(PING + " " + COMMIT + " " + PREPARE);
+                .isEqualTo(PING + " > " + COMMIT + " > " + PREPARE);
     }
 
     @Test

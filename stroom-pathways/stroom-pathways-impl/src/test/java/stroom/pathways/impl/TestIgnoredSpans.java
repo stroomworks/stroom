@@ -57,12 +57,12 @@ class TestIgnoredSpans {
 
     @Test
     void anIgnoredSpanIsLeftOutOfTheRoute() {
-        assertThat(routeOf(List.of(PING), trace("a", PING, "b"))).isEqualTo("job.run[a b]");
+        assertThat(routeOf(List.of(PING), trace("a", PING, "b"))).isEqualTo("job.run (a > b)");
     }
 
     @Test
     void namingNothingLeavesTheRouteAsItRan() {
-        assertThat(routeOf(List.of(), trace("a", PING, "b"))).isEqualTo("job.run[a " + PING + " b]");
+        assertThat(routeOf(List.of(), trace("a", PING, "b"))).isEqualTo("job.run (a > " + PING + " > b)");
     }
 
     @Test
@@ -98,7 +98,7 @@ class TestIgnoredSpans {
         final PathNode root = mutator.process(nested("a", PING, "q"), new NamePathKey(OPERATION),
                 null, quiet(), doc());
 
-        assertThat(RouteShapeText.of(mutator.getRouteShape(), root)).isEqualTo("job.run[a]");
+        assertThat(RouteShapeText.of(mutator.getRouteShape(), root)).isEqualTo("job.run (a)");
         assertThat(root.getChildren().stream()
                 .filter(child -> PING.equals(child.getName()))
                 .flatMap(child -> child.getChildren().stream())
