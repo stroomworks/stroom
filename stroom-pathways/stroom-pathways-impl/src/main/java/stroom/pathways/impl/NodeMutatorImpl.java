@@ -334,37 +334,44 @@ public class NodeMutatorImpl {
         if (runs.size() < 2) {
             return runs;
         }
-        // Runs of a single turn each are already the turns, one apiece, so saying them between the
-        // runs would move nothing: there is only one way to deal one turn to each thread. All it
-        // would do is put them in one run, where they read as one following another rather than as
-        // what they are, which is the several things that happened at the same time.
-        boolean several = false;
+        // Asked of each run on its own rather than of the group, so a thread that was doing something
+        // else at the time is held apart without stopping the rest being said between them. One
+        // unrelated query running alongside otherwise left the whole group as one run per thread,
+        // which is the share-out the runs are there to drop.
+        final Map<String, List<RouteShape>> byNode = new LinkedHashMap<>();
+        final List<RouteShape> kept = new ArrayList<>();
         for (final RouteShape run : runs) {
-            several |= run.steps().size() > 1;
-        }
-        if (!several) {
-            return runs;
-        }
-        String node = null;
-        for (final RouteShape run : runs) {
-            for (final RouteShape turn : run.steps()) {
-                if (turn.nodeUuid() == null) {
-                    return runs;
-                }
-                if (node == null) {
-                    node = turn.nodeUuid();
-                } else if (!node.equals(turn.nodeUuid())) {
-                    return runs;
-                }
+            final String node = soleNodeOf(run);
+            if (node == null) {
+                kept.add(run);
+            } else {
+                byNode.computeIfAbsent(node, k -> new ArrayList<>()).addAll(run.steps());
             }
         }
-        if (node == null) {
+        if (byNode.isEmpty()) {
             return runs;
         }
+        byNode.values().forEach(turns ->
+                kept.add(RouteShape.run(collapse(sameNodeRunsInOrder(turns)))));
+        kept.sort(NodeMutatorImpl::compare);
+        return kept;
+    }
 
-        final List<RouteShape> turns = new ArrayList<>();
-        runs.forEach(run -> turns.addAll(run.steps()));
-        return List.of(RouteShape.run(collapse(sameNodeRunsInOrder(turns))));
+    // The node every turn of this run reached, or null where the run holds anything else — a turn of
+    // another node, or a shape that is not a node at all.
+    private static String soleNodeOf(final RouteShape run) {
+        String node = null;
+        for (final RouteShape turn : run.steps()) {
+            if (turn.nodeUuid() == null) {
+                return null;
+            }
+            if (node == null) {
+                node = turn.nodeUuid();
+            } else if (!node.equals(turn.nodeUuid())) {
+                return null;
+            }
+        }
+        return node;
     }
 
     // One node's own turns, put in an order that does not depend on which of them ran first.

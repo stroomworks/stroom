@@ -79,10 +79,32 @@ final class RouteShapeText {
         node.getChildren().forEach(child -> collect(child, names));
     }
 
+    // Everything this shape ran is a turn of one and the same node, so the order shown is settled by
+    // what the turns are rather than by when they happened.
+    private static boolean turnsOfOneNode(final RouteShape shape) {
+        if (shape.steps().size() < 2) {
+            return false;
+        }
+        String node = null;
+        for (final RouteShape step : shape.steps()) {
+            if (step.nodeUuid() == null) {
+                return false;
+            }
+            if (node == null) {
+                node = step.nodeUuid();
+            } else if (!node.equals(step.nodeUuid())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static String render(final RouteShape shape, final Map<String, String> names) {
         final String separator = shape.kind() == RouteShape.Kind.CONCURRENT
                 ? " | "
-                : " > ";
+                : turnsOfOneNode(shape)
+                        ? ", "
+                        : " > ";
         final StringBuilder sb = new StringBuilder();
         for (final RouteShape step : shape.steps()) {
             if (sb.length() > 0) {

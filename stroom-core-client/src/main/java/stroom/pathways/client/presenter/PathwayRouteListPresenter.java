@@ -77,6 +77,11 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // What separates one run from the next where several happened at the same time. Different from the
     // step separator because what it joins did not follow on from what came before it.
     private static final String RUN_SEPARATOR = " | ";
+    // What separates turns of one node from each other. Different from the step separator because
+    // they did not follow on from one another: turns of a node are read in an order settled by what
+    // they are rather than by when they happened, whether they were taken by one thread or shared
+    // between several.
+    private static final String TURN_SEPARATOR = ", ";
 
     private final DateTimeFormatter dateTimeFormatter;
     private final InlineSvgToggleButton filterButton;
@@ -574,8 +579,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                 : name + " (" + inner + ")";
     }
 
-    // What one shape ran, in the order it ran it.
+    // What one shape ran, in the order it ran it — or, where everything it ran is a turn of one
+    // node, in no order at all.
     private String ran(final RouteStep step) {
+        final String separator = turnsOfOneNode(step)
+                ? TURN_SEPARATOR
+                : STEP_SEPARATOR;
         final StringBuilder sb = new StringBuilder();
         for (final Integer child : NullSafe.list(step.getSteps())) {
             final String text = stepText(child);
@@ -583,11 +592,34 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                 continue;
             }
             if (sb.length() > 0) {
-                sb.append(STEP_SEPARATOR);
+                sb.append(separator);
             }
             sb.append(text);
         }
         return sb.toString();
+    }
+
+    // Whether everything this shape ran is a turn of one and the same node. The model reads a run of
+    // turns of one node in an order settled by what they are, so what is shown is not the order they
+    // happened in and must not be read as one.
+    private boolean turnsOfOneNode(final RouteStep step) {
+        final List<Integer> children = NullSafe.list(step.getSteps());
+        if (children.size() < 2) {
+            return false;
+        }
+        int node = -1;
+        for (final Integer child : children) {
+            final RouteStep shape = shapeAt(child);
+            if (shape == null || shape.getNode() < 0) {
+                return false;
+            }
+            if (node < 0) {
+                node = shape.getNode();
+            } else if (node != shape.getNode()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Column<RouteUse, String> addColumn(final String name,
