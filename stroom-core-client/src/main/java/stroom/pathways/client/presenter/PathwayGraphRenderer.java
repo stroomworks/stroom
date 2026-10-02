@@ -73,6 +73,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // The bright lines that run along the route as it is walked. Gathered apart from the lines the
     // model draws so they can be laid over the lot of them rather than in among them.
     private HtmlBuilder walkEdges = new HtmlBuilder();
+    // Kept apart from the lines rather than written in beside them. Both are built as the tree is
+    // walked, so a line reached later lands after a badge reached earlier and is painted over it —
+    // which on a drawing of any size means badges disappearing under lines belonging to another
+    // branch entirely. Gathered here and laid down once every line is in.
+    private HtmlBuilder walkBadges = new HtmlBuilder();
     private HtmlBuilder gradients = new HtmlBuilder();
     private int gradientCount;
     // Counted up for every drawing anywhere, so no two drawings can name a gradient alike. Static
@@ -202,7 +207,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
     }
 
-    private record Painted(Size size, SafeHtml curves, SafeHtml markers) {
+    private record Painted(Size size, SafeHtml curves, SafeHtml markers, SafeHtml badges) {
 
     }
 
@@ -229,6 +234,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.append(painted.curves()), Attribute.className("pathway-curves"));
         canvas.div(d -> d.append(painted.markers()), Attribute.className("pathway-nodes"));
+        // After the nodes, so a badge is read over the name of whatever it lands on. The names are
+        // written horizontally and so are many of the links, so the two share a band of the drawing
+        // often; a badge is up for a moment and a name is up always, so the badge is the one that has
+        // to be legible while it is there.
+        canvas.div(d -> d.append(painted.badges()), Attribute.className("pathway-badges"));
 
         // Drawn at its own size and scaled by the view. The box around it is what carries the scaled
         // size, because scaling does not change what a thing takes up and the scrollbars would
@@ -276,7 +286,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
         }
         final Element curves = byClass(element, "pathway-curves");
         final Element nodes = byClass(element, "pathway-nodes");
-        if (curves == null || nodes == null) {
+        final Element badges = byClass(element, "pathway-badges");
+        if (curves == null || nodes == null || badges == null) {
             return false;
         }
 
@@ -300,6 +311,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         }
 
         curves.setInnerHTML(painted.curves().asString());
+        badges.setInnerHTML(painted.badges().asString());
         appearance.forEach((uuid, want) -> {
             final Element node = onScreen.get(uuid);
             node.setAttribute("class", want.className());
@@ -360,6 +372,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final HtmlBuilder edges = new HtmlBuilder();
         final HtmlBuilder markers = new HtmlBuilder();
         walkEdges = new HtmlBuilder();
+        walkBadges = new HtmlBuilder();
         draw(root, places, edges, markers,
                 new Scale(request.getChangeCeiling(), request.getUsageCeiling()),
                 request.getAsAt(), changes, present, usage);
@@ -368,8 +381,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final HtmlBuilder inner = new HtmlBuilder();
         inner.elem(defs -> defs.append(gradients.toSafeHtml()), SafeHtmlUtil.from("defs"));
         inner.append(edges.toSafeHtml());
-        // Last, so they lie over every line the model draws rather than under the ones drawn after
-        // them.
+        // Over every line the model draws rather than under the ones drawn after them.
         inner.append(walkEdges.toSafeHtml());
 
         final HtmlBuilder curves = new HtmlBuilder();
@@ -379,7 +391,15 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 new Attribute("height", String.valueOf(size.height)),
                 new Attribute("xmlns", "http://www.w3.org/2000/svg"));
 
-        return new Painted(size, curves.toSafeHtml(), markers.toSafeHtml());
+        // A drawing of their own, laid over the nodes rather than under them.
+        final HtmlBuilder badges = new HtmlBuilder();
+        badges.elem(svg -> svg.append(walkBadges.toSafeHtml()),
+                SafeHtmlUtil.from("svg"),
+                new Attribute("width", String.valueOf(size.width)),
+                new Attribute("height", String.valueOf(size.height)),
+                new Attribute("xmlns", "http://www.w3.org/2000/svg"));
+
+        return new Painted(size, curves.toSafeHtml(), markers.toSafeHtml(), badges.toSafeHtml());
     }
 
     // Over the drawing at the bottom right, where a map puts them. Ids rather than a class, because
@@ -551,7 +571,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                             colour(lastUsed(child, usage), now)));
             if (!onRoute.isEmpty() && ran(child)) {
                 walkLine(walkEdges, child.getUuid(), from, to, Math.max(edgeWidth, WALK_WIDTH));
-                walkBadge(walkEdges, child.getUuid(), from, to);
+                walkBadge(walkBadges, child.getUuid(), from, to);
             }
             draw(child, places, edges, markers, scale, now, changes, present, usage);
         }

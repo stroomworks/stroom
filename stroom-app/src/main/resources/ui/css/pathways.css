@@ -50,6 +50,17 @@
     padding: 5px;
 }
 
+/* The run numbers, over everything else. A name is written horizontally and so is many a link, so a
+   badge and a name share a band of the drawing more often than not; the name is there always and the
+   badge for a moment, so the badge is the one that has to be readable while it is up. Nothing in it
+   is there to be clicked, so it is kept out of the way of whatever is underneath. */
+.pathway-badges {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+}
+
 .pathway-curves svg {
 
 }
@@ -800,7 +811,8 @@
  * is laid out in flow so padding moves it, while the nodes are placed absolutely, which measures from
  * inside the border and ignores padding. Five pixels of it put every line five pixels off the dots it
  * joins. The tree keeps its padding — its curve coordinates are worked out with the offset in them. */
-.pathway-graph .pathway-curves {
+.pathway-graph .pathway-curves,
+.pathway-graph .pathway-badges {
     padding: 0;
 }
 
@@ -1070,14 +1082,18 @@
 }
 
 /* Out of sight until its turn, and out of sight again afterwards. Every line into a node the route
- * ran carries one of these, and most of them are never given a run to say. */
-.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge {
+ * ran carries one of these, and most of them are never given a run to say.
+ *
+ * In the badge layer rather than the one holding the lines: these are drawn over the node names, so
+ * they live in a drawing of their own laid on top. Anything written for them has to say that layer or
+ * it reaches nothing, and an svg shape with nothing said about it is painted solid black. */
+.pathway-graph .pathway-badges svg g.pathway-graph-walk-badge {
     opacity: 0;
 }
 
 /* White against the magenta line it sits on, which is the one colour in the drawing nothing else
  * uses. Ringed in the same magenta so it reads as part of the walk rather than as a node. */
-.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge rect {
+.pathway-graph .pathway-badges svg g.pathway-graph-walk-badge rect {
     fill: rgb(255, 255, 255);
     stroke: rgb(255, 77, 200);
     stroke-width: 2;
@@ -1085,7 +1101,7 @@
 
 /* Black on white, which is the plainest thing a number can be, and heavy enough to be read at the
  * size a whole pathway is looked at. */
-.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge text.pathway-graph-walk-badge-text {
+.pathway-graph .pathway-badges svg g.pathway-graph-walk-badge text.pathway-graph-walk-badge-text {
     fill: rgb(0, 0, 0);
     font-size: 13px;
     font-weight: 700;
