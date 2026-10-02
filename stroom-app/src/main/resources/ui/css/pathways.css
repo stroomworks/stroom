@@ -1012,14 +1012,19 @@
  * again once it has. Runs of work that happened at the same time are walked one after another so a
  * reader can follow one before the next begins; without this they would read as one long sequence,
  * and this is the only thing left saying where one run ends and the next starts. */
+/* On, and later off. Said as two runs rather than one so the badge can stay up for as long as the
+   run it belongs to, however long that is, without the fading stretching to match. */
 @keyframes pathway-walk-badge-shown {
     from {
         opacity: 0;
     }
-    20% {
+    to {
         opacity: 1;
     }
-    80% {
+}
+
+@keyframes pathway-walk-badge-gone {
+    from {
         opacity: 1;
     }
     to {
@@ -1035,7 +1040,7 @@
 
 /* White against the magenta line it sits on, which is the one colour in the drawing nothing else
  * uses. Ringed in the same magenta so it reads as part of the walk rather than as a node. */
-.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge circle {
+.pathway-graph .pathway-curves svg g.pathway-graph-walk-badge rect {
     fill: rgb(255, 255, 255);
     stroke: rgb(255, 77, 200);
     stroke-width: 2;

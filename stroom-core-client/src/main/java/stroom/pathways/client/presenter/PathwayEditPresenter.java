@@ -497,7 +497,8 @@ public class PathwayEditPresenter
             pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedPaths());
         } else {
             pathwayTreePresenter.setHighlightedRoute(routeListPresenter.getSelectedPaths(),
-                    routeListPresenter.getSelectedRunStarts());
+                    routeListPresenter.getSelectedRunStarts(),
+                    routeListPresenter.getSelectedHolds());
         }
         // Winding the model back takes nodes out of it. Placing what is left from the model as it
         // stands now keeps every node where it was, rather than closing the gaps and moving

@@ -113,6 +113,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final int WALK_WIDTH = 3;
     // Big enough to hold a two figure number at the size the drawing is read at.
     private static final int BADGE_RADIUS = 11;
+    // Wide enough for which strand of several this is, said as one over the other. A round badge fits
+    // a single figure and nothing more, and the count beside it is what says how much of the block is
+    // still to come.
+    private static final int BADGE_WIDTH = 32;
     // How far a node's own ring stands off its rim, which is drawn onto the dot as the node is placed.
     private static final int NODE_RING = 2;
     /**
@@ -462,10 +466,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final int x = (int) ((start.getX() + end.getX()) / 2);
         final int y = (int) ((start.getY() + end.getY()) / 2);
         svg.elem(badge -> {
-            badge.elem(SafeHtmlUtil.from("circle"),
-                    new Attribute("cx", String.valueOf(x)),
-                    new Attribute("cy", String.valueOf(y)),
-                    new Attribute("r", String.valueOf(BADGE_RADIUS)));
+            badge.elem(SafeHtmlUtil.from("rect"),
+                    new Attribute("x", String.valueOf(x - (BADGE_WIDTH / 2))),
+                    new Attribute("y", String.valueOf(y - BADGE_RADIUS)),
+                    new Attribute("width", String.valueOf(BADGE_WIDTH)),
+                    new Attribute("height", String.valueOf(BADGE_RADIUS * 2)),
+                    // Ends as round as the badge was when it held one figure.
+                    new Attribute("rx", String.valueOf(BADGE_RADIUS)));
             // Held in the middle both ways, so the number sits in the circle whatever it is.
             badge.elem("", SafeHtmlUtil.from("text"),
                     new Attribute("x", String.valueOf(x)),

@@ -80,6 +80,7 @@ public class PathwayTreePresenter
     // Named here because when each runs is written onto the line rather than held in the stylesheet —
     // only the walk knows the order.
     private static final String WALK_BADGE_SHOWN = "pathway-walk-badge-shown";
+    private static final String WALK_BADGE_GONE = "pathway-walk-badge-gone";
     private static final String WALK_EDGE_DRAWN = "pathway-walk-drawn";
     private static final String WALK_EDGE_CLEARED = "pathway-walk-cleared";
     // What marks a node the walk has reached, and how long one of those takes. Said here rather than
@@ -148,6 +149,7 @@ public class PathwayTreePresenter
     // Which runs of work that happened at the same time begin at each node, against the moment each
     // begins at. By node uuid, which is how the line into it is found.
     private Map<String, List<int[]>> runStarts = Collections.emptyMap();
+    private List<Integer> holds = Collections.emptyList();
     private boolean showKey;
     // Where to ask for the changes if nothing hands them over. The view around this one may already
     // hold them, in which case it gives them and nothing is fetched.
@@ -452,6 +454,7 @@ public class PathwayTreePresenter
         highlighted = new HashMap<>();
         highlightedRoute = false;
         runStarts = Collections.emptyMap();
+        holds = Collections.emptyList();
         // All at one moment, so one place each and all of them the same.
         NullSafe.list(paths).forEach(path -> highlighted.putIfAbsent(key(path), Collections.singletonList(0)));
     }
@@ -461,10 +464,12 @@ public class PathwayTreePresenter
      * together, so the walk can be followed rather than only seen.
      */
     public void setHighlightedRoute(final List<List<List<String>>> moments,
-                                    final Map<String, List<int[]>> runStarts) {
+                                    final Map<String, List<int[]>> runStarts,
+                                    final List<Integer> holds) {
         highlighted = new HashMap<>();
         highlightedRoute = true;
         this.runStarts = NullSafe.map(runStarts);
+        this.holds = NullSafe.list(holds);
         // Which moments of the walk each node lights at. A node the walk comes back to is held off
         // twice and lights at both; everything sharing a moment lights at once, which is how work that
         // ran at the same time is shown to have done so rather than reading as a sequence.
@@ -660,7 +665,7 @@ public class PathwayTreePresenter
                 this::rootElement);
         reselect(restore);
         if (!wanted.isEmpty()) {
-            mark(html.getElement(), wanted, runStarts, highlightClass(), pulse(), stagger());
+            mark(html.getElement(), wanted, runStarts, holds, highlightClass(), pulse(), stagger());
         }
     }
 
@@ -792,6 +797,7 @@ public class PathwayTreePresenter
     private static void mark(final Element element,
                              final Map<String, List<Integer>> wanted,
                              final Map<String, List<int[]>> runStarts,
+                             final List<Integer> holds,
                              final String highlightClass,
                              final String pulse,
                              final int stagger) {
@@ -826,7 +832,7 @@ public class PathwayTreePresenter
         if (arrivals != null
             && stagger > 0
             && has(element.getAttribute("class"), PathwayGraphRenderer.WALK_EDGE_CLASS)) {
-            drawWalkEdge(element, arrivals, stagger);
+            drawWalkEdge(element, arrivals, holds, stagger);
         }
 
         // The badges on the line into a node, one for each run of work happening at the same time that
@@ -842,11 +848,11 @@ public class PathwayTreePresenter
             && element.getAttribute("run").isEmpty()) {
             final List<int[]> starts = runStarts.get(element.getAttribute("edge"));
             if (!NullSafe.isEmptyCollection(starts)) {
-                badge(element, starts.get(0), stagger);
+                badge(element, starts.get(0), holds, stagger);
                 for (int i = 1; i < starts.size(); i++) {
                     final Element copy = Element.as(element.cloneNode(true));
                     element.getParentElement().appendChild(copy);
-                    badge(copy, starts.get(i), stagger);
+                    badge(copy, starts.get(i), holds, stagger);
                 }
             }
         }
@@ -855,7 +861,7 @@ public class PathwayTreePresenter
         for (int i = 0; i < children.getLength(); i++) {
             final Node node = children.getItem(i);
             if (Element.is(node)) {
-                mark(Element.as(node), wanted, runStarts, highlightClass, pulse, stagger);
+                mark(Element.as(node), wanted, runStarts, holds, highlightClass, pulse, stagger);
             }
         }
     }
@@ -866,6 +872,7 @@ public class PathwayTreePresenter
     // says when it runs.
     private static void drawWalkEdge(final Element element,
                                      final List<Integer> arrivals,
+                                     final List<Integer> holds,
                                      final int durationMs) {
         // Two runs for every arrival: the line draws itself over the gap before the node it reaches,
         // and then clears again while that node is pinged. What is left is the drawing as it was, so a
@@ -886,9 +893,16 @@ public class PathwayTreePresenter
                 delays.append(", ");
             }
             final int delayMs = (arrival - 1) * durationMs;
+            // Normally the line clears as soon as the node it reaches has lit. Inside a block of work
+            // that happened at the same time it is held drawn until the last strand of that block is
+            // done, so the block fills in line by line and then clears in one — which is the only
+            // thing on the drawing saying where the block began and where it ended.
+            final int goesOutAt = arrival < holds.size() && holds.get(arrival) > arrival
+                    ? holds.get(arrival)
+                    : arrival;
             names.append(WALK_EDGE_DRAWN).append(", ").append(WALK_EDGE_CLEARED);
             durations.append(durationMs).append("ms, ").append(durationMs).append("ms");
-            delays.append(delayMs).append("ms, ").append(delayMs + durationMs).append("ms");
+            delays.append(delayMs).append("ms, ").append(goesOutAt * durationMs).append("ms");
         }
         if (names.length() == 0) {
             return;
@@ -907,23 +921,39 @@ public class PathwayTreePresenter
     }
 
     // Shown while the line it sits on is being drawn, which is the gap before the node that run starts
-    // at lights, so the number and the line arrive together. The run it says is written onto the badge
-    // as well as into it, which is how a badge already dealt with is told from one still empty.
-    private static void badge(final Element element, final int[] start, final int durationMs) {
+    // at lights, so the number and the line arrive together, and left up for as long as that run's
+    // lines are, so it goes out with them. The run it says is written onto the badge as well as into
+    // it, which is how a badge already dealt with is told from one still empty.
+    private static void badge(final Element element,
+                              final int[] start,
+                              final List<Integer> holds,
+                              final int durationMs) {
         final int run = start[0];
         final int moment = start[1];
+        final int of = start[2];
         element.setAttribute("run", String.valueOf(run));
         final Element number = child(element, PathwayGraphRenderer.WALK_BADGE_TEXT_CLASS);
         if (number != null) {
-            number.setInnerText(String.valueOf(run));
+            // Which strand of how many, so a reader knows both where they are in the block and that
+            // there is more of it to come. A bare number says the first but not the second.
+            number.setInnerText(run + "/" + of);
         }
 
+        // Up, then down, the same way the line under it is drawn and cleared. Two runs rather than one
+        // long one because a fade said as a share of the whole would stretch with it, and the number
+        // would drift up and down instead of being there and then gone.
+        final int shownAt = Math.max(0, moment - 1) * durationMs;
+        final int goneAt = moment < holds.size() && holds.get(moment) > moment
+                ? holds.get(moment) * durationMs
+                : shownAt + durationMs;
         final Style style = element.getStyle();
-        style.setProperty("animationName", WALK_BADGE_SHOWN);
-        style.setProperty("animationDuration", durationMs + "ms");
-        style.setProperty("animationDelay", (Math.max(0, moment - 1) * durationMs) + "ms");
+        style.setProperty("animationName", WALK_BADGE_SHOWN + ", " + WALK_BADGE_GONE);
+        style.setProperty("animationDuration", durationMs + "ms, " + durationMs + "ms");
+        style.setProperty("animationDelay", shownAt + "ms, " + Math.max(goneAt, shownAt + durationMs) + "ms");
         style.setProperty("animationTimingFunction", "ease-out");
-        style.setProperty("animationIterationCount", "1");
+        style.setProperty("animationIterationCount", "1, 1");
+        // Both ends held, so the number stays up between going on and coming off.
+        style.setProperty("animationFillMode", "forwards");
     }
 
     private static void holdOff(final Element element, final int delayMs) {
@@ -953,7 +983,12 @@ public class PathwayTreePresenter
             // A change is picked out by the same sort of run, and has nothing to leave behind but
             // itself.
             element.setAttribute("class", without(without(classes, HIGHLIGHT_CLASS), HIGHLIGHT_ONCE_CLASS));
-        } else if (has(classes, PathwayGraphRenderer.WALK_EDGE_CLASS)) {
+        } else if (has(classes, PathwayGraphRenderer.WALK_EDGE_CLASS)
+                   || has(classes, PathwayGraphRenderer.WALK_BADGE_CLASS)) {
+            // The lines a walk traced and the numbers that sat on them both go off and stay off. A
+            // badge is told the same way as a line and for the same reason: its run is written onto it
+            // rather than held in the stylesheet, so taking a class away would not stop it, and an
+            // animation that has finished starts again the moment it is put back on the screen.
             hold(element, "0");
         }
 

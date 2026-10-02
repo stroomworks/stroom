@@ -139,6 +139,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // Where each run of work that happened at the same time begins: the moment it starts, against the
     // run it is. Held per route, and only for routes whose walk has been worked out.
     private final Map<RouteUse, List<int[]>> walkRunStarts = new HashMap<>();
+    private final Map<RouteUse, List<Integer>> walkHolds = new HashMap<>();
     private final Map<RouteUse, Integer> stepCounts = new HashMap<>();
 
     @Inject
@@ -232,6 +233,21 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
+     * When the line lit at each moment of the walk should go out, by moment. A moment inside a block
+     * of work that happened at the same time holds until the whole block is done, so the block fills
+     * in strand by strand and then clears in one, which is what says where it began and ended. Any
+     * other moment says -1, meaning go out as soon as the next one lights.
+     */
+    public List<Integer> getSelectedHolds() {
+        final RouteUse route = selectionModel.getSelected();
+        if (route == null || root == null) {
+            return Collections.emptyList();
+        }
+        momentsIn(route);
+        return NullSafe.list(walkHolds.get(route));
+    }
+
+    /**
      * Where each run of work that happened at the same time begins, as the node the walk arrives at
      * first in that run, against which run it is and the moment it starts. By node uuid, because the
      * line into a node is how the drawing finds the place to say it.
@@ -249,11 +265,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         for (final int[] start : NullSafe.list(walkRunStarts.get(route))) {
             final int moment = start[0];
             final int run = start[1];
+            final int of = start[2];
             if (moment < 0 || moment >= moments.size() || moments.get(moment).isEmpty()) {
                 continue;
             }
             starts.computeIfAbsent(moments.get(moment).get(0).getUuid(), k -> new ArrayList<>())
-                    .add(new int[]{run, moment});
+                    .add(new int[]{run, moment, of});
         }
         return starts;
     }
@@ -308,10 +325,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             moments = new ArrayList<>();
             final List<Integer> runs = new ArrayList<>();
             final List<int[]> starts = new ArrayList<>();
-            walk(route.getRoot(), moments, runs, starts, 0, 0);
+            final List<Integer> holds = new ArrayList<>();
+            walk(route.getRoot(), moments, runs, starts, holds, 0, 0);
             walks.put(route, moments);
             walkRuns.put(route, runs);
             walkRunStarts.put(route, starts);
+            walkHolds.put(route, holds);
         }
         return moments;
     }
@@ -328,6 +347,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                      final List<List<PathNode>> moments,
                      final List<Integer> runs,
                      final List<int[]> starts,
+                     final List<Integer> holds,
                      final int at,
                      final int run) {
         final RouteStep step = shapeAt(shape);
@@ -346,37 +366,62 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         }
 
         if (step.isConcurrent()) {
-            int after = 0;
+            // The strands of the block. Usually a run apiece; where the work came down to turns of one
+            // node, each turn instead, because a turn is what one thread did and the run holding them
+            // is all that is left of the work being shared out. Gathered before any of them is walked
+            // so each can be told how many it is one of.
+            final List<Integer> strands = new ArrayList<>();
             for (final Integer child : NullSafe.list(step.getSteps())) {
-                // Where a run came down to turns of one node, each turn is what one of the threads
-                // did, and the run holding them is all that is left of the work being shared out.
-                // So the turns are numbered rather than the run they were gathered into, which
-                // would otherwise leave a lone 1 over work several threads took a hand in. Turns
-                // the same as one another are held as one, so this counts the turns, not the
-                // threads.
                 final RouteStep held = shapeAt(child);
-                final List<Integer> strands = held != null && turnsOfOneNode(held)
-                        ? NullSafe.list(held.getSteps())
-                        : Collections.singletonList(child);
-                for (final Integer strand : strands) {
-                    // Counted across the whole route rather than within the moment it belongs to.
-                    // Work happening at the same time can hold work that does too, and numbering
-                    // each lot from one would put a 1 after a 2 and leave a reader with no way of
-                    // telling which lot either belonged to. Counting up throughout says only what
-                    // the badge has to say, which is that this is a strand apart from the one
-                    // before it.
-                    final int which = starts.size() + 1;
-                    starts.add(new int[]{at + used + after, which});
-                    after += walk(strand, moments, runs, starts, at + used + after, which);
+                if (held != null && turnsOfOneNode(held)) {
+                    strands.addAll(NullSafe.list(held.getSteps()));
+                } else {
+                    strands.add(child);
                 }
+            }
+
+            final int from = at + used;
+            int after = 0;
+            for (int i = 0; i < strands.size(); i++) {
+                // Counted within the block rather than across the route, because what the badge says
+                // is which of these it is and how many there are. Said together, a block inside a
+                // block is still plain: the count beside the number is what tells the two apart.
+                starts.add(new int[]{from + after, i + 1, strands.size()});
+                final int took = walk(strands.get(i), moments, runs, starts, holds, from + after, i + 1);
+                // The lines of one strand held drawn until that strand is done, so it fills in line by
+                // line, stands whole for a beat and then clears as the next one starts. Held a strand
+                // at a time rather than over the block, because a block that never cleared would run
+                // its strands into one another and there would be no telling where one ended.
+                //
+                // However many there are. A block that came down to a single strand is still a block,
+                // and leaving that one unheld would have its lines and its number go out part way
+                // through while every other block held to its end.
+                //
+                // Set after the strand is walked, so a block inside it has already said where its own
+                // strands end and keeps those rather than taking this one's.
+                holdTo(holds, from + after, from + after + took);
+                after += took;
             }
             return used + after;
         }
 
         for (final Integer child : NullSafe.list(step.getSteps())) {
-            used += walk(child, moments, runs, starts, at + used, run);
+            used += walk(child, moments, runs, starts, holds, at + used, run);
         }
         return used;
+    }
+
+    // Which moment the lines lit over a stretch of the walk should go out at. Left alone where one is
+    // already set, which is how a block inside a block keeps its own ending.
+    private static void holdTo(final List<Integer> holds, final int from, final int to) {
+        while (holds.size() < to) {
+            holds.add(-1);
+        }
+        for (int moment = Math.max(0, from); moment < to; moment++) {
+            if (holds.get(moment) < 0) {
+                holds.set(moment, to);
+            }
+        }
     }
 
     private static void lightAt(final List<List<PathNode>> moments,
