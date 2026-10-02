@@ -79,13 +79,13 @@ public class PathwaysDoc extends AbstractDoc {
     @JsonProperty
     private final SimpleDuration temporalOrderingTolerance;
     /**
-     * Spans that are not part of a route, as names where '*' stands for any run of characters, e.g.
+     * Spans that are no part of a pathway, as names where '*' stands for any run of characters, e.g.
      * 'Ping'. For work the runtime does when it feels like it rather than when the code says to, such
      * as a connection pool checking a connection it has not used for a while: whether it happens is
      * decided by how long something sat idle, so recording it doubles the routes for every place it
-     * can appear. Such a span is still a node of the model and a trace holding one still matches the
-     * pathway; only the route leaves it out, along with whatever it ran, and it takes no part in
-     * deciding what else ran at the same time. Matching is case sensitive and covers the whole name.
+     * can appear. Such a span is left out of the model as well as the route, along with whatever it
+     * ran, and it takes no part in deciding what else ran at the same time. Matching is case
+     * sensitive and covers the whole name.
      */
     @JsonProperty
     private final List<String> ignoredSpanNames;

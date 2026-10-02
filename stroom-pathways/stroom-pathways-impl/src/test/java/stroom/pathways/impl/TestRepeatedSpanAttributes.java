@@ -27,6 +27,7 @@ import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 
 import org.junit.jupiter.api.Test;
 
@@ -87,6 +88,7 @@ class TestRepeatedSpanAttributes {
 
         final TracePredicate predicate = new TracePredicate(
                 new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()),
+                new IgnoredSpans(List.of()),
                 new PathKeyFactoryImpl(),
                 Map.of(new NamePathKey(OPERATION), root));
 

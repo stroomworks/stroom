@@ -29,6 +29,7 @@ import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.PathwaysDb.SimpleDb;

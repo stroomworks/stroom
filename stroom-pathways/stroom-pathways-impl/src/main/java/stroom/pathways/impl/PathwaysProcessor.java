@@ -24,6 +24,7 @@ import stroom.pathways.impl.TraceProcessor.ApplyOutcome;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.PlanBConstants;
 import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 import stroom.planb.impl.dao.trace.QueueItem;
 import stroom.planb.impl.dao.trace.QueueItemReader;

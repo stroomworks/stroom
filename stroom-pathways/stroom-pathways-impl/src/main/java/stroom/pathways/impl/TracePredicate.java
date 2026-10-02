@@ -40,6 +40,7 @@ import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.util.shared.NullSafe;
 
 import java.util.ArrayList;
@@ -61,13 +62,16 @@ public class TracePredicate implements Predicate<Trace> {
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
+    private final IgnoredSpans ignoredSpans;
     private final PathKeyFactory pathKeyFactory;
     private final Map<PathKey, PathNode> roots;
 
     public TracePredicate(final CanonicalSpanOrder spanOrder,
+                          final IgnoredSpans ignoredSpans,
                           final PathKeyFactory pathKeyFactory,
                           final Map<PathKey, PathNode> roots) {
         this.spanOrder = spanOrder;
+        this.ignoredSpans = ignoredSpans;
         this.pathKeyFactory = pathKeyFactory;
         this.roots = roots;
     }
@@ -86,13 +90,29 @@ public class TracePredicate implements Predicate<Trace> {
         }
     }
 
+    private List<Span> kept(final List<Span> spans) {
+        if (ignoredSpans == null || ignoredSpans.isEmpty()) {
+            return spans;
+        }
+        final List<Span> kept = new ArrayList<>(spans.size());
+        for (final Span span : spans) {
+            if (!ignoredSpans.test(span.getName())) {
+                kept.add(span);
+            }
+        }
+        return kept;
+    }
+
     private boolean walk(final Trace trace,
                          final Span parentSpan,
                          final PathNode parentNode) {
         // Children are matched by name, first appearance first, the way the model is written. The
         // same name twice is one child that happened twice, not two children.
         final Map<String, List<Span>> spansByName = new LinkedHashMap<>();
-        spanOrder.sort(trace.children(parentSpan)).forEach(span -> spansByName
+        // Left out here for the same reason they were left out as the model was built: the model holds
+        // no node for them, so a trace still carrying them would be judged to have run something the
+        // pathway has never seen and would match nothing.
+        spanOrder.sort(kept(trace.children(parentSpan))).forEach(span -> spansByName
                 .computeIfAbsent(span.getName(), k -> new ArrayList<>())
                 .add(span));
 

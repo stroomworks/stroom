@@ -59,6 +59,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.ViewImpl;
 
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -90,6 +91,9 @@ public class TracesListPresenter
     private DocRef dataSourceRef;
     private String filter;
     private Pathway pathway;
+    // Set with the pathway, and meaningless without one: these are the spans the pathway was built
+    // without, which a trace has to be judged without too.
+    private List<String> ignoredSpanNames;
     private TimeRange timeRange;
 
     @Inject
@@ -400,7 +404,12 @@ public class TracesListPresenter
                                         filter,
                                         pathway,
                                         SimpleDuration.ZERO,
-                                        timeRange),
+                                        timeRange,
+                                        // Beside the pathway, because a trace can only be judged
+                                        // against a model by leaving out what that model was built
+                                        // without. Both are empty until something asks for a pathway
+                                        // to be matched; whoever wires that up fills them together.
+                                        ignoredSpanNames),
                                         HISTOGRAM_BUCKETS);
 
                         restFactory
@@ -434,8 +443,9 @@ public class TracesListPresenter
         this.filter = filter;
     }
 
-    public void setPathway(final Pathway pathway) {
+    public void setPathway(final Pathway pathway, final List<String> ignoredSpanNames) {
         this.pathway = pathway;
+        this.ignoredSpanNames = ignoredSpanNames;
     }
 
     public void setTimeRange(final TimeRange timeRange) {

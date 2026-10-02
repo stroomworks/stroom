@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.pathways.impl;
+package stroom.planb.impl.dao.trace;
 
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.util.shared.NullSafe;
@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * The span names that are not part of the route, from
+ * The span names that are no part of a pathway, from
  * {@link PathwaysDoc#getIgnoredSpanNames()}.
  *
  * <p>For work the runtime does when it feels like it rather than when the code says to — a connection
@@ -33,10 +33,13 @@ import java.util.regex.Pattern;
  * long something sat idle, so a trace where it happened took the same route as one where it did not,
  * and recording it doubles the routes for every place it can appear.
  *
- * <p>A named span still becomes a node of the model, keeping what it is and how often it ran against
- * the node above it, and a trace holding one still matches the pathway. Only the route leaves it out.
- * What the span itself ran is left out with it, because a step that is not on the route cannot have
- * steps of its own that are.
+ * <p>A named span is left out of the model as well as the route: it is not a node, it is not a step,
+ * and it takes no part in deciding what else ran at the same time. What the span itself ran is left
+ * out with it, because a span that is no part of the work cannot hold steps that are.
+ *
+ * <p>Beside the span ordering rather than with the rest of the pathway building, because both the
+ * building of a model and the matching of a trace against one have to leave out the same spans, and
+ * the matching lives here.
  *
  * <p>The patterns are built once and asked many times, so this is held for the length of a run rather
  * than rebuilt per span.

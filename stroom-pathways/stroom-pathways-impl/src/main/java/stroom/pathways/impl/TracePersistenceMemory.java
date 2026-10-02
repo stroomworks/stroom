@@ -32,6 +32,7 @@ import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.otel.trace.TraceRoot;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResultPage;
 
@@ -77,6 +78,7 @@ public class TracePersistenceMemory implements TracePersistence {
         if (criteria.getPathway() != null) {
             final TracePredicate tracePredicate = new TracePredicate(
                     spanOrder,
+                    new IgnoredSpans(criteria.getIgnoredSpanNames()),
                     pathKeyFactory,
                     Map.of(criteria.getPathway().getPathKey(), criteria.getPathway().getRoot()));
             final List<TraceRoot> filtered = traces

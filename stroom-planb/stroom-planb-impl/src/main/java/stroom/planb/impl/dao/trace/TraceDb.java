@@ -1482,6 +1482,7 @@ public class TraceDb extends AbstractDb<SpanKey, SpanValue> {
         if (criteria.getPathway() != null) {
             final TracePredicate tracePredicate = new TracePredicate(
                     spanOrder,
+                    new IgnoredSpans(criteria.getIgnoredSpanNames()),
                     pathKeyFactory,
                     Map.of(criteria.getPathway().getPathKey(), criteria.getPathway().getRoot()));
             // Derive the time filter once so every root is judged against the same window.

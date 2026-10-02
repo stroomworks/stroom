@@ -27,6 +27,7 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.RouteUse;
 import stroom.pathways.shared.pathway.Routes;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 
 import org.junit.jupiter.api.Test;
 

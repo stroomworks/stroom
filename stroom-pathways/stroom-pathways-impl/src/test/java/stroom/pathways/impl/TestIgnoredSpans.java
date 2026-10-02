@@ -24,6 +24,7 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +37,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Spans that are not part of the route, named by {@link PathwaysDoc#getIgnoredSpanNames()}.
+ * Spans that are no part of a pathway, named by {@link PathwaysDoc#getIgnoredSpanNames()}. They are
+ * left out of the model and of the route alike, along with whatever they ran.
  *
  * <p>For work the runtime does when it feels like it rather than when the code says to. A connection
  * pool checking a connection it has not used for a while is the case this was built for: it appears
@@ -67,13 +69,14 @@ class TestIgnoredSpans {
     }
 
     @Test
-    void anIgnoredSpanIsStillANodeOfTheModel() {
-        // So the reader can still see it happened and how often, and so a trace holding one still
-        // matches the pathway — the route is the only thing it is kept out of.
+    void anIgnoredSpanIsNoPartOfTheModel() {
+        // Not a node, not just absent from the route. What the document says to ignore is work the
+        // reader has said is nothing to do with the program, so a model holding it would be a model of
+        // the runtime's housekeeping as much as of the code.
         final PathNode root = model(List.of(PING), trace("a", PING, "b"));
 
         assertThat(root.getChildren().stream().map(PathNode::getName))
-                .containsExactlyInAnyOrder("a", PING, "b");
+                .containsExactlyInAnyOrder("a", "b");
     }
 
     @Test
@@ -93,19 +96,16 @@ class TestIgnoredSpans {
 
     @Test
     void whatAnIgnoredSpanRanGoesWithIt() {
-        // A step that is not on the route cannot have steps of its own that are. The model still
-        // holds them, so nothing is hidden from a reader looking at the node.
+        // A span that is no part of the work cannot hold steps that are, so its children leave with
+        // it rather than being lifted to the node above.
         final NodeMutatorImpl mutator = mutator(List.of(PING));
         final PathNode root = mutator.process(nested("a", PING, "q"), new NamePathKey(OPERATION),
                 null, quiet(), doc());
 
         assertThat(RouteShapeText.of(mutator.getRouteShape(), root)).isEqualTo("job.run (a)");
-        assertThat(root.getChildren().stream()
-                .filter(child -> PING.equals(child.getName()))
-                .flatMap(child -> child.getChildren().stream())
-                .map(PathNode::getName))
-                .as("the model still holds what it ran")
-                .containsExactly("q");
+        assertThat(root.getChildren().stream().map(PathNode::getName))
+                .as("neither the span nor what it ran is in the model")
+                .containsExactly("a");
     }
 
     @Test

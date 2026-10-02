@@ -192,8 +192,8 @@ public class TracesListTabPresenter extends DocPresenter<TracesView, TracesDoc> 
         listPresenter.setFilter(filter);
     }
 
-    public void setPathway(final Pathway pathway) {
-        listPresenter.setPathway(pathway);
+    public void setPathway(final Pathway pathway, final List<String> ignoredSpanNames) {
+        listPresenter.setPathway(pathway, ignoredSpanNames);
     }
 
     public void refresh() {

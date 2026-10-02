@@ -60,13 +60,16 @@ public class TracePredicate implements Predicate<Trace> {
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
+    private final IgnoredSpans ignoredSpans;
     private final PathKeyFactory pathKeyFactory;
     private final Map<PathKey, PathNode> roots;
 
     public TracePredicate(final CanonicalSpanOrder spanOrder,
+                          final IgnoredSpans ignoredSpans,
                           final PathKeyFactory pathKeyFactory,
                           final Map<PathKey, PathNode> roots) {
         this.spanOrder = spanOrder;
+        this.ignoredSpans = ignoredSpans;
         this.pathKeyFactory = pathKeyFactory;
         this.roots = roots;
     }
@@ -83,6 +86,19 @@ public class TracePredicate implements Predicate<Trace> {
         } else {
             return walk(trace, root, node);
         }
+    }
+
+    private List<Span> kept(final List<Span> spans) {
+        if (ignoredSpans == null || ignoredSpans.isEmpty()) {
+            return spans;
+        }
+        final List<Span> kept = new ArrayList<>(spans.size());
+        for (final Span span : spans) {
+            if (!ignoredSpans.test(span.getName())) {
+                kept.add(span);
+            }
+        }
+        return kept;
     }
 
     private boolean walk(final Trace trace,

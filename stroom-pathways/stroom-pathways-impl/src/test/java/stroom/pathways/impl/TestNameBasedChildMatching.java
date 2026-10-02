@@ -28,6 +28,7 @@ import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 
 import org.junit.jupiter.api.Test;
 
@@ -314,6 +315,7 @@ class TestNameBasedChildMatching {
 
         final TracePredicate predicate = new TracePredicate(
                 new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()),
+                new IgnoredSpans(List.of()),
                 new PathKeyFactoryImpl(),
                 Map.of(new NamePathKey(OPERATION), root));
 
@@ -329,6 +331,7 @@ class TestNameBasedChildMatching {
 
         final TracePredicate predicate = new TracePredicate(
                 new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()),
+                new IgnoredSpans(List.of()),
                 new PathKeyFactoryImpl(),
                 Map.of(new NamePathKey(OPERATION), root));
 

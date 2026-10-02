@@ -33,6 +33,7 @@ import stroom.pathways.shared.pathway.PathwayReplay;
 import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.pathways.shared.pathway.RouteUse;
 import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.planb.impl.dao.trace.PathwaysDb;
 
 import org.junit.jupiter.api.Test;

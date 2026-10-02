@@ -47,6 +47,7 @@ import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder.SpanGroup;
+import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
@@ -200,20 +201,19 @@ public class NodeMutatorImpl {
         final MessageReceiver messages =
                 MessageReceiver.forSpan(messageReceiver, traceId, spanId);
 
-        final List<Span> childSpans = trace.children(parentSpan);
+        // Left out before anything else is done with them. A span the document says to ignore is no
+        // part of this node's work: not a step of the route, not a child in the model, and whatever it
+        // ran goes with it, because the walk below never reaches it and so never reaches what it held.
+        //
+        // Left out before the grouping as well as before the model, because a span that is not part of
+        // the work must not decide what the rest of it looks like. A span holds its group open until
+        // it ends, so a long one carries whatever starts before then in with it, and that group is
+        // then read as work that happened at the same time — a connection being opened on a pool
+        // thread is enough to make a lock and the work it guarded look like one moment.
+        final List<Span> childSpans = kept(trace.children(parentSpan));
         final List<SpanGroup> groups = spanOrder.groups(childSpans);
         final List<Span> ordered = new ArrayList<>();
         groups.forEach(group -> group.runs().forEach(ordered::addAll));
-
-        // Grouped again for the route, from the spans the route keeps. A span left out of the route
-        // must not decide what the rest of it looks like, and grouping it in does exactly that: a span
-        // holds its group open until it ends, so a long one carries whatever starts before then in
-        // with it, and that group is then read as work that happened at the same time. A connection
-        // being opened on a pool thread is enough to make a lock and the work it guarded look like one
-        // moment. The model keeps every child either way — that is built from the grouping above.
-        final List<SpanGroup> routeGroups = ignoredSpans.isEmpty()
-                ? groups
-                : spanOrder.groups(onRoute(childSpans));
 
         // This trace's children grouped by name, first appearance first. The same name twice is one
         // child that happened twice, not two children — what a child is does not change because it ran
@@ -281,7 +281,7 @@ public class NodeMutatorImpl {
         // Read in the order the work happened rather than the order the model holds the names, so the
         // shape says what the trace did. The children loop above has put each span's shape in hand.
         final List<RouteShape> ran = new ArrayList<>(ordered.size());
-        for (final SpanGroup group : routeGroups) {
+        for (final SpanGroup group : groups) {
             final List<RouteShape> runs = new ArrayList<>(group.runs().size());
             for (final List<Span> run : group.runs()) {
                 final List<RouteShape> shapes = shapesOf(run);
@@ -313,10 +313,13 @@ public class NodeMutatorImpl {
         return pathNodeBuilder.build();
     }
 
-    // The spans of a node that are part of the route. What such a span ran goes with it, because its
-    // steps are held in the shape being dropped — a step that is not on the route cannot have steps of
-    // its own that are.
-    private List<Span> onRoute(final List<Span> spans) {
+    // The spans of a node that are part of its work, which is everything the document does not name as
+    // ignored. Whatever an ignored span ran is left out with it: a span that is no part of the work
+    // cannot hold steps that are.
+    private List<Span> kept(final List<Span> spans) {
+        if (ignoredSpans.isEmpty()) {
+            return spans;
+        }
         final List<Span> kept = new ArrayList<>(spans.size());
         for (final Span span : spans) {
             if (!ignoredSpans.test(span.getName())) {
@@ -326,8 +329,8 @@ public class NodeMutatorImpl {
         return kept;
     }
 
-    // The shapes of the spans given. Everything here is already on the route: what is not was left out
-    // before the spans were grouped.
+    // The shapes of the spans given. Everything here is already part of the work: what is not was left
+    // out before the spans were grouped.
     private List<RouteShape> shapesOf(final List<Span> spans) {
         final List<RouteShape> shapes = new ArrayList<>(spans.size());
         for (final Span span : spans) {
