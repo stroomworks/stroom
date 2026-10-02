@@ -16,6 +16,7 @@
 
 package stroom.pathways.impl;
 
+import stroom.pathways.shared.PathwaysDoc;
 import stroom.util.shared.NullSafe;
 import stroom.util.string.PatternUtil;
 
@@ -25,7 +26,7 @@ import java.util.regex.Pattern;
 
 /**
  * The attribute names the model should not learn a value for, from
- * {@link PathwaysConfig#getIgnoredAttributes()}. The patterns are built once and asked many times —
+ * {@link PathwaysDoc#getIgnoredAttributes()}. The patterns are built once and asked many times —
  * every attribute of every span of every trace — so this is held for the length of a run rather than
  * rebuilt per span.
  */

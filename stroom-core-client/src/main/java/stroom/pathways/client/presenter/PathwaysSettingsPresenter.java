@@ -33,6 +33,8 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.List;
+
 public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView, PathwaysDoc>
         implements PathwaysSettingsUiHandlers {
 
@@ -60,6 +62,8 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
     @Override
     protected void onRead(final DocRef docRef, final PathwaysDoc doc, final boolean readOnly) {
         getView().setTemporalOrderingTolerance(doc.getTemporalOrderingTolerance());
+        getView().setIgnoredSpanNames(doc.getIgnoredSpanNames());
+        getView().setIgnoredAttributes(doc.getIgnoredAttributes());
         getView().setAllowPathwayCreation(doc.isAllowPathwayCreation());
         getView().setAllowPathwayMutation(doc.isAllowPathwayMutation());
         getView().setAllowConstraintCreation(doc.isAllowConstraintCreation());
@@ -77,6 +81,8 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         return doc
                 .copy()
                 .temporalOrderingTolerance(getView().getTemporalOrderingTolerance())
+                .ignoredSpanNames(getView().getIgnoredSpanNames())
+                .ignoredAttributes(getView().getIgnoredAttributes())
                 .allowPathwayCreation(getView().isAllowPathwayCreation())
                 .allowPathwayMutation(getView().isAllowPathwayMutation())
                 .allowConstraintCreation(getView().isAllowConstraintCreation())
@@ -104,6 +110,14 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         SimpleDuration getTemporalOrderingTolerance();
 
         void setTemporalOrderingTolerance(SimpleDuration temporalOrderingTolerance);
+
+        List<String> getIgnoredSpanNames();
+
+        void setIgnoredSpanNames(List<String> ignoredSpanNames);
+
+        List<String> getIgnoredAttributes();
+
+        void setIgnoredAttributes(List<String> ignoredAttributes);
 
         boolean isAllowPathwayCreation();
 

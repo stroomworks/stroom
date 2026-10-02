@@ -60,6 +60,8 @@ import java.util.Objects;
         "updateUser",
         "description",
         "sharedFileStore",
+        "ignoredSpanNames",
+        "ignoredAttributes",
         "pathways"})
 @JsonInclude(Include.NON_NULL)
 public class PathwaysDoc extends AbstractDoc {
@@ -76,6 +78,25 @@ public class PathwaysDoc extends AbstractDoc {
     private final String description;
     @JsonProperty
     private final SimpleDuration temporalOrderingTolerance;
+    /**
+     * Spans that are not part of a route, as names where '*' stands for any run of characters, e.g.
+     * 'Ping'. For work the runtime does when it feels like it rather than when the code says to, such
+     * as a connection pool checking a connection it has not used for a while: whether it happens is
+     * decided by how long something sat idle, so recording it doubles the routes for every place it
+     * can appear. Such a span is still a node of the model and a trace holding one still matches the
+     * pathway; only the route leaves it out, along with whatever it ran, and it takes no part in
+     * deciding what else ran at the same time. Matching is case sensitive and covers the whole name.
+     */
+    @JsonProperty
+    private final List<String> ignoredSpanNames;
+    /**
+     * Span attributes the model should not learn a value for, as names where '*' stands for any run of
+     * characters, e.g. 'thread.*'. A matching attribute is recorded once as accepting anything and is
+     * never changed again, so it stays visible against the node without the model growing every time
+     * its value differs. Matching is case sensitive and covers the whole name.
+     */
+    @JsonProperty
+    private final List<String> ignoredAttributes;
     @JsonProperty
     private final List<Pathway> pathways;
     @JsonProperty
@@ -120,6 +141,8 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("updateUser") final String updateUser,
                        @JsonProperty("description") final String description,
                        @JsonProperty("temporalOrderingTolerance") final SimpleDuration temporalOrderingTolerance,
+                       @JsonProperty("ignoredSpanNames") final List<String> ignoredSpanNames,
+                       @JsonProperty("ignoredAttributes") final List<String> ignoredAttributes,
                        @JsonProperty("pathways") final List<Pathway> pathways,
                        @JsonProperty("allowPathwayCreation") final Boolean allowPathwayCreation,
                        @JsonProperty("allowPathwayMutation") final Boolean allowPathwayMutation,
@@ -131,6 +154,10 @@ public class PathwaysDoc extends AbstractDoc {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.temporalOrderingTolerance = temporalOrderingTolerance;
+        // Held as given, empty included, because a document saved with nothing to ignore means exactly
+        // that and must not be read as never having been asked.
+        this.ignoredSpanNames = ignoredSpanNames;
+        this.ignoredAttributes = ignoredAttributes;
         this.pathways = pathways;
         this.allowPathwayCreation =
                 Objects.requireNonNullElse(allowPathwayCreation, DEFAULT_ALLOW_PATHWAY_CREATION);
@@ -167,6 +194,14 @@ public class PathwaysDoc extends AbstractDoc {
 
     public SimpleDuration getTemporalOrderingTolerance() {
         return temporalOrderingTolerance;
+    }
+
+    public List<String> getIgnoredSpanNames() {
+        return ignoredSpanNames;
+    }
+
+    public List<String> getIgnoredAttributes() {
+        return ignoredAttributes;
     }
 
     public List<Pathway> getPathways() {
@@ -219,6 +254,8 @@ public class PathwaysDoc extends AbstractDoc {
                allowConstraintMutation == that.allowConstraintMutation &&
                Objects.equals(description, that.description) &&
                Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance) &&
+               Objects.equals(ignoredSpanNames, that.ignoredSpanNames) &&
+               Objects.equals(ignoredAttributes, that.ignoredAttributes) &&
                Objects.equals(pathways, that.pathways) &&
                Objects.equals(infoFeed, that.infoFeed) &&
                // hasSharedFileStoreData is left out on purpose: it is stamped onto the document as it
@@ -232,6 +269,8 @@ public class PathwaysDoc extends AbstractDoc {
         return Objects.hash(super.hashCode(),
                 description,
                 temporalOrderingTolerance,
+                ignoredSpanNames,
+                ignoredAttributes,
                 pathways,
                 allowPathwayCreation,
                 allowPathwayMutation,
@@ -269,6 +308,8 @@ public class PathwaysDoc extends AbstractDoc {
 
         private String description;
         private SimpleDuration temporalOrderingTolerance = new SimpleDuration(0L, TimeUnit.NANOSECONDS);
+        private List<String> ignoredSpanNames;
+        private List<String> ignoredAttributes;
         private List<Pathway> pathways;
         private boolean allowPathwayCreation = true;
         private boolean allowPathwayMutation = true;
@@ -287,6 +328,8 @@ public class PathwaysDoc extends AbstractDoc {
             super(pathwaysDoc);
             this.description = pathwaysDoc.description;
             this.temporalOrderingTolerance = pathwaysDoc.temporalOrderingTolerance;
+            this.ignoredSpanNames = pathwaysDoc.ignoredSpanNames;
+            this.ignoredAttributes = pathwaysDoc.ignoredAttributes;
             this.pathways = pathwaysDoc.pathways;
             this.allowPathwayCreation = pathwaysDoc.allowPathwayCreation;
             this.allowPathwayMutation = pathwaysDoc.allowPathwayMutation;
@@ -303,6 +346,16 @@ public class PathwaysDoc extends AbstractDoc {
 
         public Builder temporalOrderingTolerance(final SimpleDuration temporalOrderingTolerance) {
             this.temporalOrderingTolerance = temporalOrderingTolerance;
+            return self();
+        }
+
+        public Builder ignoredSpanNames(final List<String> ignoredSpanNames) {
+            this.ignoredSpanNames = ignoredSpanNames;
+            return self();
+        }
+
+        public Builder ignoredAttributes(final List<String> ignoredAttributes) {
+            this.ignoredAttributes = ignoredAttributes;
             return self();
         }
 
@@ -362,6 +415,8 @@ public class PathwaysDoc extends AbstractDoc {
                     updateUser,
                     description,
                     temporalOrderingTolerance,
+                    ignoredSpanNames,
+                    ignoredAttributes,
                     pathways,
                     allowPathwayCreation,
                     allowPathwayMutation,

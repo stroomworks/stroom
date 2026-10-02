@@ -36,7 +36,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Spans that are not part of the route, named by {@link PathwaysConfig#getIgnoredSpanNames()}.
+ * Spans that are not part of the route, named by {@link PathwaysDoc#getIgnoredSpanNames()}.
  *
  * <p>For work the runtime does when it feels like it rather than when the code says to. A connection
  * pool checking a connection it has not used for a while is the case this was built for: it appears
@@ -52,7 +52,8 @@ class TestIgnoredSpans {
 
     @Test
     void nothingIsIgnoredByDefault() {
-        assertThat(new IgnoredSpans(new PathwaysConfig().getIgnoredSpanNames()).test(PING)).isFalse();
+        assertThat(new IgnoredSpans(PathwaysDoc.builder().uuid("test").name("test").build().getIgnoredSpanNames())
+                .test(PING)).isFalse();
     }
 
     @Test

@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Some attributes carry a different value on every span — a thread name, say. Learning them fills
  * the model with values that say nothing about the route and never settle. Naming them in
- * {@link PathwaysConfig#getIgnoredAttributes()} records each one once as accepting anything, so it
+ * {@link PathwaysDoc#getIgnoredAttributes()} records each one once as accepting anything, so it
  * still shows against the node but stops driving the model.
  */
 class TestIgnoredAttributes {
@@ -69,7 +69,7 @@ class TestIgnoredAttributes {
 
     @Test
     void nothingIsIgnoredByDefault() {
-        assertThat(new IgnoredAttributes(new PathwaysConfig().getIgnoredAttributes())
+        assertThat(new IgnoredAttributes(PathwaysDoc.builder().uuid("test").name("test").build().getIgnoredAttributes())
                 .test("thread.name")).isFalse();
     }
 

@@ -21,20 +21,27 @@ import stroom.pathways.client.presenter.PathwaysSettingsPresenter.PathwaysSettin
 import stroom.pathways.client.presenter.PathwaysSettingsUiHandlers;
 import stroom.planb.client.view.SharedFileStoreSettingsWidget;
 import stroom.planb.shared.SharedFileStoreSettings;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.time.SimpleDuration;
 import stroom.util.shared.time.TimeUnit;
 import stroom.widget.customdatebox.client.DurationPicker;
 import stroom.widget.tickbox.client.view.CustomCheckBox;
 
+import com.google.gwt.event.dom.client.KeyUpEvent;
 import com.google.gwt.event.logical.shared.ValueChangeEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.uibinder.client.UiHandler;
 import com.google.gwt.user.client.ui.SimplePanel;
+import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class PathwaysSettingsViewImpl
         extends ViewWithUiHandlers<PathwaysSettingsUiHandlers>
@@ -49,6 +56,10 @@ public class PathwaysSettingsViewImpl
     SimplePanel infoFeed;
     @UiField
     DurationPicker temporalOrderingTolerance;
+    @UiField
+    TextArea ignoredSpanNames;
+    @UiField
+    TextArea ignoredAttributes;
     @UiField
     CustomCheckBox allowPathwayCreation;
     @UiField
@@ -91,6 +102,49 @@ public class PathwaysSettingsViewImpl
         } else {
             this.temporalOrderingTolerance.setValue(temporalOrderingTolerance);
         }
+    }
+
+    @Override
+    public List<String> getIgnoredSpanNames() {
+        return textToList(ignoredSpanNames.getValue());
+    }
+
+    @Override
+    public void setIgnoredSpanNames(final List<String> names) {
+        ignoredSpanNames.setValue(listToText(names));
+    }
+
+    @Override
+    public List<String> getIgnoredAttributes() {
+        return textToList(ignoredAttributes.getValue());
+    }
+
+    @Override
+    public void setIgnoredAttributes(final List<String> names) {
+        ignoredAttributes.setValue(listToText(names));
+    }
+
+    // One name a line, which is how a list of them is read and written by hand. A blank line is not a
+    // name, and a box with nothing in it is no list at all rather than a list of one empty name.
+    private static String listToText(final List<String> list) {
+        return NullSafe.isEmptyCollection(list)
+                ? ""
+                : list.stream().collect(Collectors.joining("\n"));
+    }
+
+    private static List<String> textToList(final String text) {
+        if (NullSafe.isBlankString(text)) {
+            return null;
+        }
+        final List<String> list = new ArrayList<>();
+        for (final String part : text.split("\n")) {
+            if (!NullSafe.isBlankString(part)) {
+                list.add(part.trim());
+            }
+        }
+        return list.isEmpty()
+                ? null
+                : list;
     }
 
     @Override
@@ -151,11 +205,38 @@ public class PathwaysSettingsViewImpl
     @Override
     public void onReadOnly(final boolean readOnly) {
         temporalOrderingTolerance.setEnabled(!readOnly);
+        ignoredSpanNames.setEnabled(!readOnly);
+        ignoredAttributes.setEnabled(!readOnly);
         sharedFileStoreWidget.onReadOnly(readOnly);
     }
 
     @UiHandler("temporalOrderingTolerance")
     public void onTemporalOrderingTolerance(final ValueChangeEvent<SimpleDuration> e) {
+        fireChange();
+    }
+
+    // As the reader types, rather than when they leave the box. A text widget only says its value
+    // changed on the browser's own change event, which is the moment it loses focus — so a name typed
+    // and then saved straight away would be saved from a document that did not know it had been
+    // edited. The pair of them covers both typing and a value arriving any other way, such as a paste
+    // made with the mouse.
+    @UiHandler("ignoredSpanNames")
+    public void onIgnoredSpanNamesTyped(final KeyUpEvent e) {
+        fireChange();
+    }
+
+    @UiHandler("ignoredSpanNames")
+    public void onIgnoredSpanNames(final ValueChangeEvent<String> e) {
+        fireChange();
+    }
+
+    @UiHandler("ignoredAttributes")
+    public void onIgnoredAttributesTyped(final KeyUpEvent e) {
+        fireChange();
+    }
+
+    @UiHandler("ignoredAttributes")
+    public void onIgnoredAttributes(final ValueChangeEvent<String> e) {
         fireChange();
     }
 

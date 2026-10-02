@@ -16,6 +16,7 @@
 
 package stroom.pathways.impl;
 
+import stroom.pathways.shared.PathwaysDoc;
 import stroom.util.shared.NullSafe;
 import stroom.util.string.PatternUtil;
 
@@ -25,7 +26,7 @@ import java.util.regex.Pattern;
 
 /**
  * The span names that are not part of the route, from
- * {@link PathwaysConfig#getIgnoredSpanNames()}.
+ * {@link PathwaysDoc#getIgnoredSpanNames()}.
  *
  * <p>For work the runtime does when it feels like it rather than when the code says to — a connection
  * pool checking a connection it has not used for a while, say. Whether it happens is decided by how

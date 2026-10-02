@@ -106,7 +106,6 @@ public class PathwaysProcessor {
     private final SecurityContext securityContext;
     private final ByteBuffers byteBuffers;
     private final ByteBufferFactory byteBufferFactory;
-    private final Provider<PathwaysConfig> configProvider;
 
     private final ExecutorService shardExecutor;
     private final Meter tracesApplied;
@@ -129,7 +128,6 @@ public class PathwaysProcessor {
                                   final SecurityContext securityContext,
                                   final ByteBuffers byteBuffers,
                                   final ByteBufferFactory byteBufferFactory,
-                                  final Provider<PathwaysConfig> configProvider,
                                   final Metrics metrics) {
         this.pathwaysStore = pathwaysStore;
         this.shardStore = shardStore;
@@ -139,7 +137,6 @@ public class PathwaysProcessor {
         this.securityContext = securityContext;
         this.byteBuffers = byteBuffers;
         this.byteBufferFactory = byteBufferFactory;
-        this.configProvider = configProvider;
         this.shardExecutor = createShardExecutor();
 
         this.tracesApplied = metrics.registrationBuilder(getClass())
@@ -281,8 +278,8 @@ public class PathwaysProcessor {
             withMessageReceiver(doc, messageReceiver -> {
                 try (final LmdbWriter writer = pathwaysDb.createWriter()) {
                     final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde,
-                            new IgnoredAttributes(configProvider.get().getIgnoredAttributes()),
-                            new IgnoredSpans(configProvider.get().getIgnoredSpanNames()));
+                            new IgnoredAttributes(doc.getIgnoredAttributes()),
+                            new IgnoredSpans(doc.getIgnoredSpanNames()));
                     for (final Path item : queue.itemsOldestFirst()) {
                         if (Thread.currentThread().isInterrupted()) {
                             // The lock's heartbeat interrupts us when it cannot renew. Carrying on

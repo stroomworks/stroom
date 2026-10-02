@@ -166,7 +166,6 @@ class TestPathwaysProcessor {
                 new PathwaySerde(BYTE_BUFFER_FACTORY),
                 clusterLockService, securityContext,
                 BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
-                PathwaysConfig::new,
                 () -> new MetricRegistry());
     }
 
