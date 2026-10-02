@@ -500,11 +500,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
                                 + " height: " + (radius * 2) + "px;"
                                 + " background-color: " + colour(updated, now) + ";"
                                 + " box-shadow: 0 0 0 " + NODE_RING + "px " + ring(updated, now) + ";";
-        // Both as at the moment being shown, not as they stand now: the reading kept when the model
-        // last changed says how much the node had been used by then.
-        final String title = node.getName()
-                             + " — changed " + NullSafe.getOrElse(change, NodeChange::getCount, 0L)
-                             + " times, used " + timesUsed(node, usage) + " times";
+        // The name and nothing else. How much the node has changed is its size and how long ago is its
+        // colour, both of which the key explains, so a tooltip saying them again is a second answer to
+        // a question the drawing has already given.
+        final String title = node.getName();
         appearance.put(node.getUuid(), new Appearance(nodeClass, nodeStyle, dotStyle, title));
 
         markers.div(marker -> {
