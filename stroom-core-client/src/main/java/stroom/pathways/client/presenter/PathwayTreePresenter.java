@@ -648,15 +648,11 @@ public class PathwayTreePresenter
                 : wantedSelection;
         wantedSelection = null;
 
-        // The element that scrolls is the one being rebuilt below, so where it had got to has to be
-        // taken off it first and put back on the one that replaces it.
-        viewport.beforeDraw();
-
         // Worked out before the drawing is built as well as after it: the drawing is made faint
         // around the nodes a route ran, and then they are marked on it.
         final Map<String, List<Integer>> wanted = wanted();
 
-        html.setHTML(renderer.render(new RenderRequest(pathway, layout, byUuid(), usageAsAt(),
+        final RenderRequest request = new RenderRequest(pathway, layout, byUuid(), usageAsAt(),
                 asAt > 0
                         ? asAt
                         : System.currentTimeMillis(),
@@ -669,11 +665,33 @@ public class PathwayTreePresenter
                 // and says nothing about the rest, so nothing is faded for one.
                 highlightedRoute
                         ? wanted.keySet()
-                        : Collections.emptySet())));
-        viewport.afterDraw(keep, renderer.opensCentred(), renderer.isZoomable(),
-                this::rootElement);
+                        : Collections.emptySet());
+
+        // Changed in place where the drawing on the screen is of the same model laid out the same
+        // way, which is what stepping through the history is: only how large each node is, what
+        // colour it is and whether it is there yet moves between one step and the next. Rebuilding it
+        // every step throws away the element the reader scrolled, so the scroll and the scale have to
+        // be taken off and put back, and every animation starts again — which is what makes a replay
+        // hard to watch. The renderer says whether it managed it; anything else falls through to
+        // building the lot, which is always right.
+        final boolean changedInPlace = keep && renderer.update(html.getElement(), request);
+        if (!changedInPlace) {
+            // The element that scrolls is the one being rebuilt below, so where it had got to has to
+            // be taken off it first and put back on the one that replaces it.
+            viewport.beforeDraw();
+            html.setHTML(renderer.render(request));
+            viewport.afterDraw(keep, renderer.opensCentred(), renderer.isZoomable(),
+                    this::rootElement);
+        }
         reselect(restore);
         if (!wanted.isEmpty()) {
+            if (changedInPlace) {
+                // Asked for and thrown away. Changing a node in place takes its marking off and the
+                // marking below puts it straight back, and a run that was never settled in between is
+                // a run the browser carries on rather than starts again — so the one thing a replay
+                // has to show, which node moved this time, would never be seen after the first step.
+                html.getElement().getOffsetWidth();
+            }
             mark(html.getElement(), wanted, runStarts, holds, highlightClass(), pulse(), stagger());
         }
     }

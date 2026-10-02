@@ -16,6 +16,7 @@
 
 package stroom.pathways.client.presenter;
 
+import com.google.gwt.dom.client.Element;
 import com.google.gwt.safehtml.shared.SafeHtml;
 
 /**
@@ -39,6 +40,19 @@ import com.google.gwt.safehtml.shared.SafeHtml;
 interface PathwayRenderer {
 
     SafeHtml render(RenderRequest request);
+
+    /**
+     * Brings a drawing already on the screen up to date rather than building it again, and says
+     * whether it managed to. A drawing remade flickers, loses where the reader had scrolled to and
+     * starts its animation over, which is what makes stepping through a model's history hard to
+     * watch; a drawing changed in place does none of that.
+     *
+     * <p>Answering false is always allowed and always safe: the caller builds the whole drawing
+     * instead. A drawing that cannot usefully be changed in place simply never answers true.
+     */
+    default boolean update(final Element element, final RenderRequest request) {
+        return false;
+    }
 
     /**
      * Whether the drawing opens in the middle rather than at its top left. A drawing that puts the

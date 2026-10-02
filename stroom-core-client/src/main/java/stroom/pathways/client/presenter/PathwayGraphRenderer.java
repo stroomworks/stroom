@@ -26,6 +26,9 @@ import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
 
+import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.Node;
+import com.google.gwt.dom.client.NodeList;
 import com.google.gwt.safehtml.shared.SafeHtml;
 
 import java.util.Collections;
@@ -184,18 +187,157 @@ class PathwayGraphRenderer implements PathwayRenderer {
         return true;
     }
 
-    @Override
-    public SafeHtml render(final RenderRequest request) {
+    // What the last pass gave each node, by uuid. Filled as the drawing is built and read back when a
+    // drawing already on the screen is being brought up to date, so the two say the same thing by
+    // construction rather than by two pieces of code agreeing with each other.
+    private final Map<String, Appearance> appearance = new HashMap<>();
+    // What the drawing on the screen was built with, for the two things that decide its shape rather
+    // than its colours: whether the key is open, and whether a route is being watched — which is what
+    // puts a veil over every node. Neither is part of a node's appearance, so neither can be changed
+    // in place; a drawing that wants either of them different has to be built again.
+    private boolean drawnLegend;
+    private boolean drawnVeiled;
+
+    private record Appearance(String className, String style, String dotStyle, String title) {
+
+    }
+
+    private record Painted(Size size, SafeHtml curves, SafeHtml markers) {
+
+    }
+
+    // The model being shown, placed from every node it has ever held so that a node arriving does not
+    // move the ones around it. Null where there is nothing to draw.
+    private static PathNode layoutRoot(final RenderRequest request) {
         final PathNode shown = NullSafe.get(request.getPathway(), Pathway::getRoot);
-        // Placed from every node the model has ever held, so a node arriving does not move the ones
-        // around it. What is drawn solidly is still only what the model being shown holds.
-        final PathNode root = request.getLayout() == null
+        return request.getLayout() == null
                 ? shown
                 : request.getLayout();
+    }
+
+    @Override
+    public SafeHtml render(final RenderRequest request) {
+        final PathNode root = layoutRoot(request);
         if (root == null) {
             return new HtmlBuilder().toSafeHtml();
         }
+        appearance.clear();
+        final Painted painted = paint(request, root);
+        drawnLegend = request.isLegendVisible();
+        drawnVeiled = !NullSafe.set(request.getOnRoute()).isEmpty();
 
+        final HtmlBuilder canvas = new HtmlBuilder();
+        canvas.div(d -> d.append(painted.curves()), Attribute.className("pathway-curves"));
+        canvas.div(d -> d.append(painted.markers()), Attribute.className("pathway-nodes"));
+
+        // Drawn at its own size and scaled by the view. The box around it is what carries the scaled
+        // size, because scaling does not change what a thing takes up and the scrollbars would
+        // otherwise never know it had grown.
+        final HtmlBuilder scaled = new HtmlBuilder();
+        scaled.div(d -> d.append(canvas.toSafeHtml()),
+                Attribute.className("pathway-graph-canvas"),
+                Attribute.style(painted.size().style()));
+
+        final HtmlBuilder hb = new HtmlBuilder();
+        hb.div(d -> d.div(inner -> inner.append(scaled.toSafeHtml()),
+                        Attribute.className("pathway-graph-sizer"),
+                        Attribute.style(painted.size().style())),
+                Attribute.className("pathway pathway-graph"));
+        // Beside the drawing rather than inside it, so it stays put while the drawing is scrolled and
+        // is not scaled along with it when the view is zoomed.
+        appendKey(hb, request.isLegendVisible());
+        appendZoom(hb);
+        return hb.toSafeHtml();
+    }
+
+    /**
+     * Brings a drawing already on the screen up to date rather than building it again, and says
+     * whether it managed to. The nodes are the same elements as before, moved and recoloured in
+     * place; only the lines are replaced, because where a line starts and ends depends on how large
+     * the two nodes it joins have grown and there is nothing on a line to find it by.
+     *
+     * <p>What this is for is the model being stepped through its own history: the drawing is remade
+     * every step and a drawing remade is a drawing that flickers, loses the reader's scroll and
+     * starts all of its animation again. Nothing moves between steps but how large each node is, what
+     * colour it is and whether it is there yet.
+     *
+     * <p>Refuses where the drawing is laid out differently from the one on the screen, or where it
+     * cannot find what it expects. The caller then builds the whole thing, which is always correct.
+     */
+    @Override
+    public boolean update(final Element element, final RenderRequest request) {
+        final PathNode root = layoutRoot(request);
+        if (root == null || element == null) {
+            return false;
+        }
+        if (request.isLegendVisible() != drawnLegend
+            || !NullSafe.set(request.getOnRoute()).isEmpty() != drawnVeiled) {
+            return false;
+        }
+        final Element curves = byClass(element, "pathway-curves");
+        final Element nodes = byClass(element, "pathway-nodes");
+        if (curves == null || nodes == null) {
+            return false;
+        }
+
+        appearance.clear();
+        final Painted painted = paint(request, root);
+
+        // Every node the drawing now wants has to be one already on the screen. Anything else means a
+        // different layout, and moving what happens to match would leave the rest of it stale.
+        final Map<String, Element> onScreen = new HashMap<>();
+        final NodeList<Node> children = nodes.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            final Node node = children.getItem(i);
+            if (Element.is(node)) {
+                final Element child = Element.as(node);
+                onScreen.put(child.getAttribute("uuid"), child);
+            }
+        }
+        if (!onScreen.keySet().containsAll(appearance.keySet())
+            || onScreen.size() != appearance.size()) {
+            return false;
+        }
+
+        curves.setInnerHTML(painted.curves().asString());
+        appearance.forEach((uuid, want) -> {
+            final Element node = onScreen.get(uuid);
+            node.setAttribute("class", want.className());
+            node.setAttribute("style", want.style());
+            node.setAttribute("title", want.title());
+            final Element dot = byClass(node, "pathway-graph-dot");
+            if (dot != null) {
+                dot.setAttribute("style", want.dotStyle());
+            }
+        });
+        return true;
+    }
+
+    // The first element below this one carrying the given class. Read as an attribute rather than
+    // through the class name methods, which go at a property that is not a string on an svg element.
+    private static Element byClass(final Element element, final String className) {
+        final NodeList<Node> children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            final Node node = children.getItem(i);
+            if (Element.is(node)) {
+                final Element child = Element.as(node);
+                if ((" " + child.getAttribute("class") + " ").contains(" " + className + " ")) {
+                    return child;
+                }
+                final Element found = byClass(child, className);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    // Everything inside the box: the lines as one svg, the nodes as a run of divs, and the size both
+    // are laid out at. One pass, used both to build a drawing and to bring one already on the screen
+    // up to date, so there is no second idea of what a drawing looks like to fall out of step.
+    private Painted paint(final RenderRequest request, final PathNode root) {
+        final PathNode shown = NullSafe.get(request.getPathway(), Pathway::getRoot);
         final Set<String> present = new HashSet<>();
         collect(shown, present);
         onRoute = NullSafe.set(request.getOnRoute());
@@ -223,40 +365,21 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 request.getAsAt(), changes, present, usage);
 
         // The gradients come before the lines that point at them.
-        final HtmlBuilder painted = new HtmlBuilder();
-        painted.elem(defs -> defs.append(gradients.toSafeHtml()), SafeHtmlUtil.from("defs"));
-        painted.append(edges.toSafeHtml());
+        final HtmlBuilder inner = new HtmlBuilder();
+        inner.elem(defs -> defs.append(gradients.toSafeHtml()), SafeHtmlUtil.from("defs"));
+        inner.append(edges.toSafeHtml());
         // Last, so they lie over every line the model draws rather than under the ones drawn after
         // them.
-        painted.append(walkEdges.toSafeHtml());
+        inner.append(walkEdges.toSafeHtml());
 
-        final HtmlBuilder canvas = new HtmlBuilder();
-        canvas.div(d -> d.elem(svg -> svg.append(painted.toSafeHtml()),
-                        SafeHtmlUtil.from("svg"),
-                        new Attribute("width", String.valueOf(size.width)),
-                        new Attribute("height", String.valueOf(size.height)),
-                        new Attribute("xmlns", "http://www.w3.org/2000/svg")),
-                Attribute.className("pathway-curves"));
-        canvas.div(d -> d.append(markers.toSafeHtml()), Attribute.className("pathway-nodes"));
+        final HtmlBuilder curves = new HtmlBuilder();
+        curves.elem(svg -> svg.append(inner.toSafeHtml()),
+                SafeHtmlUtil.from("svg"),
+                new Attribute("width", String.valueOf(size.width)),
+                new Attribute("height", String.valueOf(size.height)),
+                new Attribute("xmlns", "http://www.w3.org/2000/svg"));
 
-        // Drawn at its own size and scaled by the view. The box around it is what carries the scaled
-        // size, because scaling does not change what a thing takes up and the scrollbars would
-        // otherwise never know it had grown.
-        final HtmlBuilder scaled = new HtmlBuilder();
-        scaled.div(d -> d.append(canvas.toSafeHtml()),
-                Attribute.className("pathway-graph-canvas"),
-                Attribute.style(size.style()));
-
-        final HtmlBuilder hb = new HtmlBuilder();
-        hb.div(d -> d.div(inner -> inner.append(scaled.toSafeHtml()),
-                        Attribute.className("pathway-graph-sizer"),
-                        Attribute.style(size.style())),
-                Attribute.className("pathway pathway-graph"));
-        // Beside the drawing rather than inside it, so it stays put while the drawing is scrolled and
-        // is not scaled along with it when the view is zoomed.
-        appendKey(hb, request.isLegendVisible());
-        appendZoom(hb);
-        return hb.toSafeHtml();
+        return new Painted(size, curves.toSafeHtml(), markers.toSafeHtml());
     }
 
     // Over the drawing at the bottom right, where a map puts them. Ids rather than a class, because
@@ -370,15 +493,26 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 + (ran(node)
                         ? ""
                         : " pathway-graph-node--off-route");
+        final String nodeClass = "pathway-graph-node" + side;
+        final String nodeStyle = "left: " + ((int) at.getX() - radius) + "px;"
+                                 + " top: " + ((int) at.getY() - radius) + "px;";
+        final String dotStyle = "width: " + (radius * 2) + "px;"
+                                + " height: " + (radius * 2) + "px;"
+                                + " background-color: " + colour(updated, now) + ";"
+                                + " box-shadow: 0 0 0 " + NODE_RING + "px " + ring(updated, now) + ";";
+        // Both as at the moment being shown, not as they stand now: the reading kept when the model
+        // last changed says how much the node had been used by then.
+        final String title = node.getName()
+                             + " — changed " + NullSafe.getOrElse(change, NodeChange::getCount, 0L)
+                             + " times, used " + timesUsed(node, usage) + " times";
+        appearance.put(node.getUuid(), new Appearance(nodeClass, nodeStyle, dotStyle, title));
+
         markers.div(marker -> {
             marker.div("", Attribute.className("pathway-graph-dot"),
                     // A shadow rather than a border: the width given here is what says how much the
                     // node has changed, and a border would eat into it. Selecting draws an outline
                     // instead of a second shadow, so the two do not fight over one property.
-                    Attribute.style("width: " + (radius * 2) + "px;"
-                                    + " height: " + (radius * 2) + "px;"
-                                    + " background-color: " + colour(updated, now) + ";"
-                                    + " box-shadow: 0 0 0 " + NODE_RING + "px " + ring(updated, now) + ";"));
+                    Attribute.style(dotStyle));
             if (!onRoute.isEmpty()) {
                 // Over the node rather than making the node see-through, whether it is held back until
                 // the walk arrives or never ran at all. Faded out instead, a node shows through itself
@@ -387,15 +521,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
             }
             marker.div(label -> label.append(node.getName()),
                     Attribute.className(LABEL_CLASS));
-        }, Attribute.className("pathway-graph-node" + side),
+        }, Attribute.className(nodeClass),
                 new Attribute("uuid", node.getUuid()),
-                Attribute.style("left: " + ((int) at.getX() - radius) + "px;"
-                                + " top: " + ((int) at.getY() - radius) + "px;"),
-                // Both as at the moment being shown, not as they stand now: the reading kept when the
-                // model last changed says how much the node had been used by then.
-                Attribute.title(node.getName()
-                                + " — changed " + NullSafe.getOrElse(change, NodeChange::getCount, 0L)
-                                + " times, used " + timesUsed(node, usage) + " times"));
+                Attribute.style(nodeStyle),
+                Attribute.title(title));
 
         for (final PathNode child : NullSafe.list(node.getChildren())) {
             final Point childAt = places.get(child.getUuid());
