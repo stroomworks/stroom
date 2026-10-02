@@ -284,12 +284,17 @@ class PathwayViewport {
 
         // Where the middle of the view falls on the drawing, at the size it is drawn rather than the
         // size it is shown at.
-        final double middleX = (scroller.getScrollLeft() + (scroller.getClientWidth() / 2.0)) / was;
-        final double middleY = (scroller.getScrollTop() + (scroller.getClientHeight() / 2.0)) / was;
+        // The room to spare is taken off before and put back after, so that what is worked out here is
+        // a place on the drawing itself. Left in, it would be scaled along with everything else and
+        // the view would slide sideways on every step of the zoom.
+        final double middleX = (scroller.getScrollLeft() + (scroller.getClientWidth() / 2.0) - slackX()) / was;
+        final double middleY = (scroller.getScrollTop() + (scroller.getClientHeight() / 2.0) - slackY()) / was;
 
         applyZoom();
-        scroller.setScrollLeft((int) Math.round((middleX * zoom) - (scroller.getClientWidth() / 2.0)));
-        scroller.setScrollTop((int) Math.round((middleY * zoom) - (scroller.getClientHeight() / 2.0)));
+        scroller.setScrollLeft(
+                (int) Math.round((middleX * zoom) + slackX() - (scroller.getClientWidth() / 2.0)));
+        scroller.setScrollTop(
+                (int) Math.round((middleY * zoom) + slackY() - (scroller.getClientHeight() / 2.0)));
     }
 
     private void applyZoom() {
@@ -308,9 +313,31 @@ class PathwayViewport {
             Scheduler.get().scheduleDeferred(this::applyZoom);
             return;
         }
-        canvas.getStyle().setProperty("transform", "scale(" + zoom + ")");
-        canvas.getParentElement().getStyle().setWidth(width * zoom, Unit.PX);
-        canvas.getParentElement().getStyle().setHeight(height * zoom, Unit.PX);
+
+        // A view's worth of room to spare, half of it each side, and the drawing moved over by that
+        // half so it sits in the middle of it. Without this the box is exactly as big as the drawing,
+        // so a drawing smaller than the view — which is what zooming out makes of any of them — has
+        // nowhere to scroll to and is held in the top left corner whatever the reader does.
+        canvas.getStyle().setProperty("transform",
+                "translate(" + slackX() + "px, " + slackY() + "px) scale(" + zoom + ")");
+        canvas.getParentElement().getStyle().setWidth((width * zoom) + (slackX() * 2), Unit.PX);
+        canvas.getParentElement().getStyle().setHeight((height * zoom) + (slackY() * 2), Unit.PX);
+    }
+
+    // How far the drawing is moved over inside the box that holds it, which is half the room to spare
+    // and so also the gap between the box's edge and the drawing's.
+    private int slackX() {
+        final Element scroller = scroller();
+        return scroller == null
+                ? 0
+                : scroller.getClientWidth() / 2;
+    }
+
+    private int slackY() {
+        final Element scroller = scroller();
+        return scroller == null
+                ? 0
+                : scroller.getClientHeight() / 2;
     }
 
     private void centre(final Supplier<Element> centreOn) {
@@ -334,8 +361,8 @@ class PathwayViewport {
         } else {
             // Scaled, because what an element measures is what it was drawn at rather than what it is
             // shown at.
-            final double x = (on.getOffsetLeft() + (on.getOffsetWidth() / 2.0)) * zoom;
-            final double y = (on.getOffsetTop() + (on.getOffsetHeight() / 2.0)) * zoom;
+            final double x = ((on.getOffsetLeft() + (on.getOffsetWidth() / 2.0)) * zoom) + slackX();
+            final double y = ((on.getOffsetTop() + (on.getOffsetHeight() / 2.0)) * zoom) + slackY();
             scroller.setScrollLeft((int) Math.round(x - (scroller.getClientWidth() / 2.0)));
             scroller.setScrollTop((int) Math.round(y - (scroller.getClientHeight() / 2.0)));
         }
