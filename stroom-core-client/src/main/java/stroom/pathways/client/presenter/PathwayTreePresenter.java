@@ -170,12 +170,15 @@ public class PathwayTreePresenter
         this.restFactory = restFactory;
         // Which way the model is drawn, not what is drawn, so it sits with the tree rather than with
         // the buttons that change the model. It holds which drawing is on show, so nothing else has to.
+        //
+        // Made but not put on the toolbar, so the graph is the only drawing a reader gets. Kept rather
+        // than taken out because what it holds is where the choice lives, and putting it back is the
+        // one line that adds it.
         viewButton = new InlineSvgToggleButton();
         viewButton.setSvg(SvgImage.NODES);
         // Turned on to match the drawing it starts on, so the button and what is on show agree.
         viewButton.setState(true);
         viewButton.setTitle(TREE_TITLE);
-        view.addButton(viewButton);
 
         html = new HTML();
         html.addStyleName("max");

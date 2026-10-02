@@ -200,9 +200,20 @@ public class NodeMutatorImpl {
         final MessageReceiver messages =
                 MessageReceiver.forSpan(messageReceiver, traceId, spanId);
 
-        final List<SpanGroup> groups = spanOrder.groups(trace.children(parentSpan));
+        final List<Span> childSpans = trace.children(parentSpan);
+        final List<SpanGroup> groups = spanOrder.groups(childSpans);
         final List<Span> ordered = new ArrayList<>();
         groups.forEach(group -> group.runs().forEach(ordered::addAll));
+
+        // Grouped again for the route, from the spans the route keeps. A span left out of the route
+        // must not decide what the rest of it looks like, and grouping it in does exactly that: a span
+        // holds its group open until it ends, so a long one carries whatever starts before then in
+        // with it, and that group is then read as work that happened at the same time. A connection
+        // being opened on a pool thread is enough to make a lock and the work it guarded look like one
+        // moment. The model keeps every child either way — that is built from the grouping above.
+        final List<SpanGroup> routeGroups = ignoredSpans.isEmpty()
+                ? groups
+                : spanOrder.groups(onRoute(childSpans));
 
         // This trace's children grouped by name, first appearance first. The same name twice is one
         // child that happened twice, not two children — what a child is does not change because it ran
@@ -270,7 +281,7 @@ public class NodeMutatorImpl {
         // Read in the order the work happened rather than the order the model holds the names, so the
         // shape says what the trace did. The children loop above has put each span's shape in hand.
         final List<RouteShape> ran = new ArrayList<>(ordered.size());
-        for (final SpanGroup group : groups) {
+        for (final SpanGroup group : routeGroups) {
             final List<RouteShape> runs = new ArrayList<>(group.runs().size());
             for (final List<Span> run : group.runs()) {
                 final List<RouteShape> shapes = shapesOf(run);
@@ -302,15 +313,24 @@ public class NodeMutatorImpl {
         return pathNodeBuilder.build();
     }
 
-    // The shapes of the spans given, leaving out any span that is not part of the route. What such a
-    // span ran goes with it, because its steps are held in the shape being dropped — a step that is
-    // not on the route cannot have steps of its own that are.
+    // The spans of a node that are part of the route. What such a span ran goes with it, because its
+    // steps are held in the shape being dropped — a step that is not on the route cannot have steps of
+    // its own that are.
+    private List<Span> onRoute(final List<Span> spans) {
+        final List<Span> kept = new ArrayList<>(spans.size());
+        for (final Span span : spans) {
+            if (!ignoredSpans.test(span.getName())) {
+                kept.add(span);
+            }
+        }
+        return kept;
+    }
+
+    // The shapes of the spans given. Everything here is already on the route: what is not was left out
+    // before the spans were grouped.
     private List<RouteShape> shapesOf(final List<Span> spans) {
         final List<RouteShape> shapes = new ArrayList<>(spans.size());
         for (final Span span : spans) {
-            if (!ignoredSpans.isEmpty() && ignoredSpans.test(span.getName())) {
-                continue;
-            }
             final RouteShape shape = shapeBySpan.get(span.getSpanId());
             if (shape != null) {
                 shapes.add(shape);

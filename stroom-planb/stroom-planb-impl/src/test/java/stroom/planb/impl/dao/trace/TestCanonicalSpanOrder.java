@@ -56,7 +56,7 @@ class TestCanonicalSpanOrder {
                 span("Commit", 1010, 1300, "A"),
                 span("Commit", 1060, 1350, "B"));
 
-        assertThat(names(order().sort(woven)))
+        assertThat(names(noTolerance().sort(woven)))
                 .as("each thread's own steps read in the order it ran them, one thread after another, "
                     + "rather than every name gathered together")
                 .containsExactly(
@@ -77,10 +77,10 @@ class TestCanonicalSpanOrder {
                 span("Ping", 150, 450, "A"),
                 span("Commit", 460, 750, "A"));
 
-        assertThat(names(order().sort(aFirst)))
+        assertThat(names(noTolerance().sort(aFirst)))
                 .as("two threads that did the same work read the same however they were timed, which "
                     + "is what lets the work be seen as the repeat it is")
-                .isEqualTo(names(order().sort(bFirst)));
+                .isEqualTo(names(noTolerance().sort(bFirst)));
     }
 
     @Test
@@ -95,7 +95,7 @@ class TestCanonicalSpanOrder {
                 span("UPDATE lock", 260, 350, "B"),
                 span("drain", 360, 9500, "B"));
 
-        assertThat(names(order().sort(spans)))
+        assertThat(names(noTolerance().sort(spans)))
                 .as("the lock is taken before the drain that needs it, which ordering by name inside "
                     + "the group would have reversed")
                 .containsExactly("Ping", "UPDATE lock", "drain", "Ping", "UPDATE lock", "drain");
@@ -114,7 +114,7 @@ class TestCanonicalSpanOrder {
                 span("Commit", 905, 950, "A"),
                 span("Commit", 960, 1000, "B"));
 
-        assertThat(names(order().sort(spans)))
+        assertThat(names(noTolerance().sort(spans)))
                 .as("B's Commit belongs to the run B was already making, however late it started")
                 .containsExactly("Ping", "drain", "Commit", "Ping", "drain", "Commit");
     }
@@ -128,7 +128,7 @@ class TestCanonicalSpanOrder {
                 span("a", 5000, 5100),
                 span("c", 9000, 9100));
 
-        assertThat(names(order().sort(spans)))
+        assertThat(names(noTolerance().sort(spans)))
                 .as("well apart in time, so these are three steps rather than one moment")
                 .containsExactly("b", "a", "c");
     }
@@ -139,7 +139,7 @@ class TestCanonicalSpanOrder {
                 span("b", 100, 900),
                 span("a", 200, 800));
 
-        assertThat(names(order().sort(spans)))
+        assertThat(names(noTolerance().sort(spans)))
                 .as("nothing says these could not have run at the same time, so the only repeatable "
                     + "thing to do is order them by name")
                 .containsExactly("a", "b");
@@ -155,9 +155,9 @@ class TestCanonicalSpanOrder {
                 span("b", 100, 900),
                 span("a", 200, 800));
 
-        assertThat(names(order().sort(aFirst)))
+        assertThat(names(noTolerance().sort(aFirst)))
                 .as("overlapping spans are named in one order regardless of which started first")
-                .isEqualTo(names(order().sort(bFirst)))
+                .isEqualTo(names(noTolerance().sort(bFirst)))
                 .containsExactly("a", "b");
     }
 
@@ -168,7 +168,7 @@ class TestCanonicalSpanOrder {
                 span("save", 10_000, 11_000),
                 span("validate", 100, 900));
 
-        assertThat(names(order().sort(spans)))
+        assertThat(names(noTolerance().sort(spans)))
                 .as("a real sequence is behaviour, not noise, so it is kept")
                 .containsExactly("validate", "save");
     }
@@ -209,7 +209,7 @@ class TestCanonicalSpanOrder {
                 span("z", 100, 500),
                 span("a", 200, 600));
 
-        assertThat(names(order().sort(spans)))
+        assertThat(names(noTolerance().sort(spans)))
                 .as("bursts are ordered by when they happened, names only within a burst")
                 .containsExactly("a", "z", "b", "x");
     }
@@ -222,8 +222,8 @@ class TestCanonicalSpanOrder {
                 span("b", 900, 2_000),
                 span("c", 1_900, 3_000));
 
-        assertThat(names(order().sort(spans))).containsExactly("a", "b", "c");
-        assertThat(names(order().sort(List.of(
+        assertThat(names(noTolerance().sort(spans))).containsExactly("a", "b", "c");
+        assertThat(names(noTolerance().sort(List.of(
                 span("c", 0, 1_000),
                 span("b", 900, 2_000),
                 span("a", 1_900, 3_000)))))
@@ -249,11 +249,21 @@ class TestCanonicalSpanOrder {
 
     @Test
     void emptyAndSingleInputsAreReturnedAsTheyAre() {
-        assertThat(order().sort(List.of())).isEmpty();
-        assertThat(order().sort(null)).isEmpty();
-        assertThat(names(order().sort(List.of(span("only", 0, 100))))).containsExactly("only");
+        assertThat(noTolerance().sort(List.of())).isEmpty();
+        assertThat(noTolerance().sort(null)).isEmpty();
+        assertThat(names(noTolerance().sort(List.of(span("only", 0, 100))))).containsExactly("only");
     }
 
+    // The tolerance a document carries when nobody has changed it, which is none: the settings view
+    // offers zero nanoseconds and that is what gets stored. Said here so that what these tests check
+    // is what the server does. Left out, the duration falls back to a default of a millisecond, and
+    // every gap written below — tens of nanoseconds — disappears inside it, so the grouping is never
+    // asked the questions these tests are about.
+    private static CanonicalSpanOrder noTolerance() {
+        return new CanonicalSpanOrder(NanoDuration.ofNanos(0));
+    }
+
+    // A millisecond of give, which is only what the tolerance test needs.
     private static CanonicalSpanOrder order() {
         return new CanonicalSpanOrder((stroom.util.shared.time.SimpleDuration) null);
     }
