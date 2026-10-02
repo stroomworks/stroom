@@ -29,5 +29,10 @@ interface PathwayControls {
 
     void zoomOut();
 
+    /**
+     * Scaled so the whole model fits, and put in the middle of the panel.
+     */
+    void zoomToExtent();
+
     void toggleLegend();
 }

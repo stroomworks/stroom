@@ -368,6 +368,11 @@ public class PathwayTreePresenter
             }
 
             @Override
+            public void zoomToExtent() {
+                viewport.zoomToExtent();
+            }
+
+            @Override
             public void toggleLegend() {
                 // Drawn again rather than opened in place: the drawing owns its own markup, and it is
                 // rebuilt on every step through the history anyway.
@@ -420,8 +425,9 @@ public class PathwayTreePresenter
 
         if (!samePathway) {
             // A different model, which may be a different size altogether. Keeping the zoom set for
-            // the last one would show this one at whatever suited that, so it starts as drawn.
-            viewport.resetZoom();
+            // the last one would show this one at whatever suited that, so it opens showing all of
+            // itself instead.
+            viewport.fitOnNextDraw();
         }
 
         // Whether there is a node to go back to. A reader stepping through the model's changes has

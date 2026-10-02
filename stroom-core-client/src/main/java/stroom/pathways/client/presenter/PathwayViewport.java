@@ -43,6 +43,9 @@ class PathwayViewport {
     private static final double ZOOM_STEP = 1.25;
     private static final double MIN_ZOOM = 0.2;
     private static final double MAX_ZOOM = 3;
+    // A little short of filling the panel, so the outermost nodes have somewhere to sit rather than
+    // being cut in half by the edge.
+    private static final double FIT_MARGIN = 0.95;
     private static final String DRAGGING_CLASS = "pathway-dragging";
     // How far the pointer has to move before it counts as a drag rather than a click that wandered.
     private static final int DRAG_THRESHOLD = 3;
@@ -58,6 +61,9 @@ class PathwayViewport {
     private int otherScrollLeft;
     private int otherScrollTop;
     private boolean swapping;
+    // Whether the drawing being made is one the reader has not seen, and so opens showing all of
+    // itself rather than at the size and place the one before it was left at.
+    private boolean fitWanted;
     // Where the drawing was when it was last taken off the screen, which the browser does not keep.
     private int awayLeft;
     private int awayTop;
@@ -115,11 +121,16 @@ class PathwayViewport {
     }
 
     /**
-     * Back to the size it is drawn at. For a different model, which may be a different size
-     * altogether: the scale set for the last one says nothing about this one.
+     * The next drawing opens showing all of itself. For a different model, which may be a different
+     * size altogether: the scale set for the last one says nothing about this one, and a reader handed
+     * a model they have not seen wants to see what they have been given before anything else.
+     *
+     * <p>The size it is drawn at is set here as well, so that a drawing which cannot be measured when
+     * the moment comes is shown as drawn rather than at whatever suited the model before it.
      */
-    void resetZoom() {
+    void fitOnNextDraw() {
         zoom = 1;
+        fitWanted = true;
     }
 
     void zoomIn() {
@@ -185,7 +196,7 @@ class PathwayViewport {
             if (keepScroll) {
                 scroller.setScrollLeft(scrollLeft);
                 scroller.setScrollTop(scrollTop);
-            } else if (centred) {
+            } else if (centred || (zoomable && fitWanted)) {
                 centreWanted = true;
             } else {
                 scroller.setScrollLeft(0);
@@ -194,8 +205,20 @@ class PathwayViewport {
         }
         if (centreWanted) {
             hide();
-            Scheduler.get().scheduleDeferred(() -> centre(centreOn));
+            // Only a drawing that can be scaled can be fitted; the rest are centred as before. Read
+            // and cleared here rather than inside the deferred block, so that a draw which never gets
+            // there does not leave the next one fitting when it should have been left alone.
+            final boolean fit = zoomable && fitWanted;
+            fitWanted = false;
+            Scheduler.get().scheduleDeferred(() -> {
+                // Falling back where there was nothing to measure, which also puts the drawing back on
+                // the screen — the fit does that itself only when it works.
+                if (!fit || !zoomToExtent()) {
+                    centre(centreOn);
+                }
+            });
         }
+        fitWanted = false;
     }
 
     // Where a drawing has to be put somewhere before it is worth looking at. The browser paints what
@@ -267,6 +290,43 @@ class PathwayViewport {
         final boolean was = dragged;
         dragged = false;
         return was;
+    }
+
+    /**
+     * The whole drawing at once: scaled to whichever of the panel's sides it runs out of first, and
+     * put in the middle. Within the same limits as the buttons, so a model far too large to read is
+     * shown as small as those will go rather than at a size nothing can be made out at.
+     */
+    boolean zoomToExtent() {
+        final Element scroller = scroller();
+        final Element canvas = canvas();
+        if (scroller == null || canvas == null) {
+            return false;
+        }
+
+        // The drawing's own size, which is what it measures however far it has been scaled.
+        final int width = canvas.getOffsetWidth();
+        final int height = canvas.getOffsetHeight();
+        final int across = scroller.getClientWidth();
+        final int down = scroller.getClientHeight();
+        if (width <= 0 || height <= 0 || across <= 0 || down <= 0) {
+            // Nothing laid out to measure yet, and a size worked out from nothing would be no size at
+            // all. Said so rather than waiting: a reader pressing the button can press it again, and a
+            // drawing being opened is centred instead.
+            return false;
+        }
+
+        // Never larger than the size it is drawn at. Fitting is about a drawing too big to see at
+        // once; one that already fits is shown as drawn, in the middle, rather than blown up to fill
+        // the panel — a model of a single node would otherwise arrive magnified as far as the zoom
+        // goes, which says nothing about it and looks like a fault.
+        zoom = Math.max(MIN_ZOOM, Math.min(1,
+                FIT_MARGIN * Math.min(across / (double) width, down / (double) height)));
+        applyZoom();
+        // After the browser has taken the new size: the scrollbars only reach it once the box carrying
+        // it has been laid out again, and the middle is worked out from how far they reach.
+        Scheduler.get().scheduleDeferred(() -> centre(null));
+        return true;
     }
 
     private void zoomBy(final double by) {

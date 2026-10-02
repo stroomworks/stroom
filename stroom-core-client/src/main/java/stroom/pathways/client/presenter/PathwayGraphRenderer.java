@@ -105,6 +105,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
     private static final String ZOOM_IN_ID = "pathwayZoomIn";
     private static final String ZOOM_OUT_ID = "pathwayZoomOut";
+    private static final String ZOOM_FIT_ID = "pathwayZoomFit";
     private static final String KEY_ID = "pathwayKeyToggle";
     private static final String KEY_SHOWN_CLASS = "pathway-graph-key--shown";
     // The thinnest a line traced by a walk is ever drawn. The drawing is scaled to fit, and following
@@ -173,6 +174,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
             controls.zoomIn();
         } else if (ZOOM_OUT_ID.equals(id)) {
             controls.zoomOut();
+        } else if (ZOOM_FIT_ID.equals(id)) {
+            controls.zoomToExtent();
         } else if (KEY_ID.equals(id)) {
             controls.toggleLegend();
         } else {
@@ -264,6 +267,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
                     Attribute.id(ZOOM_IN_ID), Attribute.title("Zoom in"));
             zoom.div("\u2212", Attribute.className("pathway-graph-control"),
                     Attribute.id(ZOOM_OUT_ID), Attribute.title("Zoom out"));
+            zoom.div("⤢", Attribute.className("pathway-graph-control"),
+                    Attribute.id(ZOOM_FIT_ID), Attribute.title("Fit the whole model in the panel"));
         }, Attribute.className("pathway-graph-controls pathway-graph-zoom"));
     }
 
