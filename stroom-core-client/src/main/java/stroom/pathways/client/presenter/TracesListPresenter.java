@@ -83,7 +83,7 @@ public class TracesListPresenter
     private final DateTimeFormatter dateTimeFormatter;
     private final RestFactory restFactory;
     private final PagerView pagerView;
-    private final TraceHistogramWidget histogramWidget;
+    private final HistogramWidget histogramWidget;
     private final MyDataGrid<TraceRoot> dataGrid;
     private final MultiSelectionModelImpl<TraceRoot> selectionModel;
     private RestDataProvider<TraceRoot, ResultPage<TraceRoot>> dataProvider;
@@ -107,7 +107,7 @@ public class TracesListPresenter
         this.restFactory = restFactory;
         this.dateTimeFormatter = dateTimeFormatter;
         this.pagerView = pagerView;
-        this.histogramWidget = new TraceHistogramWidget(dateTimeFormatter);
+        this.histogramWidget = new HistogramWidget(dateTimeFormatter);
 
         dataGrid = new MyDataGrid<>(this);
         dataGrid.setTableName("Traces");

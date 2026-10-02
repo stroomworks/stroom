@@ -22,6 +22,7 @@ import stroom.data.client.presenter.ColumnSizeConstants;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
 import stroom.entity.client.presenter.TreeRowHandler;
+import stroom.pathways.shared.TraceHistogram;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.AbstractRange;
 import stroom.pathways.shared.pathway.ConstraintValue;
@@ -36,8 +37,7 @@ import stroom.widget.button.client.ButtonView;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
 import com.google.gwt.user.cellview.client.Column;
-import com.google.gwt.user.cellview.client.ColumnSortList;
-import com.google.gwt.user.cellview.client.ColumnSortList.ColumnSortInfo;
+import com.google.gwt.user.client.ui.InsertPanel;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -67,6 +67,8 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     private static final int TRACE_ID_COL = 270;
     private static final int SPAN_ID_COL = 150;
     private static final int CHANGE_COL = 170;
+    // Enough bars to show where the model was busy without any of them being too thin to see.
+    private static final int BUCKETS = 60;
 
     private final PagerView pagerView;
     private final DateTimeFormatter dateTimeFormatter;
@@ -82,6 +84,9 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     private List<PathwayMutation> mutations = new ArrayList<>();
     private final ButtonView expandAllButton;
     private final ButtonView collapseAllButton;
+    // The same strip the traces list puts over its rows, here over the changes. Built from the history
+    // already in hand rather than asked for, so it costs nothing to keep beside them.
+    private final HistogramWidget histogram;
 
     @Inject
     public PathwayMutationListPresenter(final EventBus eventBus,
@@ -104,17 +109,80 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         expandAllButton = pagerView.addButton(SvgPresets.EXPAND_ALL);
         collapseAllButton = pagerView.addButton(SvgPresets.COLLAPSE_ALL);
 
+        histogram = new HistogramWidget(dateTimeFormatter);
+        histogram.setEmptyText("Nothing has changed this model yet");
+        // Dragging across the bars walks the model through its own history, which is the same thing
+        // the play button does and the same thing clicking down the rows does — by hand, and as fast
+        // or as slowly as the reader likes.
+        histogram.setScrubHandler(this::selectNearest);
+        // Over the rows, the way the traces list puts one over its own. The pager view takes only a
+        // grid as its data widget, so this goes into the same box in front of it, and that box is made
+        // a column so the strip keeps its height and the rows take what is left.
+        if (dataGrid.getParent() instanceof final InsertPanel above) {
+            dataGrid.getParent().addStyleName("dock-container-vertical");
+            histogram.addStyleName("dock-min");
+            dataGrid.addStyleName("dock-max");
+            above.insert(histogram, 0);
+        }
+
         addColumns();
         // Sizes the expander column to the depth on show, which is what keeps the indent from
         // taking a fixed slice of the width whether anything is open or not.
         dataProvider.setTreeRowHandler(new TreeRowHandler<>(treeAction, dataGrid, expanderColumn));
     }
 
+    // The traces that taught the model something, counted into equal slices of the time they cover.
+    // Traces rather than changes: one trace can move a dozen constraints at once, and counting those
+    // would say the model was busy when all that happened was one trace arriving with a lot in it.
+    // The same thing the rows say, which open as one row per trace.
+    //
+    // Worked out here rather than asked for, because the whole history is already held for the model
+    // to be wound back through it.
+    private TraceHistogram bars() {
+        long from = Long.MAX_VALUE;
+        long to = Long.MIN_VALUE;
+        for (final PathwayMutation mutation : mutations) {
+            final NanoTime time = mutation.getTime();
+            if (time != null) {
+                from = Math.min(from, time.toEpochMillis());
+                to = Math.max(to, time.toEpochMillis());
+            }
+        }
+        if (from > to) {
+            return new TraceHistogram(false, 0, 0, 0, 0, Collections.emptyList(), false);
+        }
+
+        // Always the same number of slices, however little time the history covers. Fitting the
+        // slices to the history instead would leave a model taught by a single trace with one slice,
+        // drawn as a bar across the whole panel — which reads as a model changing steadily throughout
+        // when what happened was one change at one moment. Sixty slices put that change where it
+        // belongs: one bar at the left and the rest of the panel empty.
+        //
+        // Rounded up, so the slices between them cover at least the whole history and the last change
+        // falls inside the last of them rather than past it. The range given back is the slices rather
+        // than the history, so the labels along the bottom say what the bars actually show.
+        final long span = Math.max(1L, (to - from) + 1);
+        final long width = Math.max(1L, ((span + BUCKETS) - 1) / BUCKETS);
+        final List<Long> counts = new ArrayList<>(Collections.nCopies(BUCKETS, 0L));
+        final Set<String> counted = new HashSet<>();
+        for (final PathwayMutation mutation : mutations) {
+            final NanoTime time = mutation.getTime();
+            // A trace with no id of its own cannot be told from another, so each of its changes is
+            // counted once in its own right rather than all of them being folded into one.
+            if (time != null
+                && (mutation.getTraceId() == null || counted.add(mutation.getTraceId()))) {
+                final int at = (int) Math.min(BUCKETS - 1, (time.toEpochMillis() - from) / width);
+                counts.set(at, counts.get(at) + 1);
+            }
+        }
+        // Not drillable: narrowing the window is the traces list's answer to a crowded bar, and there
+        // is no window here to narrow — this is the whole history, however long it took.
+        return new TraceHistogram(true, from, from + (width * BUCKETS) - 1, width, 0, counts, false);
+    }
+
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(dataGrid.addColumnSortHandler(event -> order()));
-
         registerHandler(expandAllButton.addClickHandler(event -> {
             treeAction.expandAll(traceIds());
             order();
@@ -124,6 +192,47 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             order();
         }));
 
+        // The bar holding whatever row is being looked at, picked out so the two read together: the
+        // row says which trace, the bar says where in the model's life it landed. A change opened
+        // under a trace falls in the same bar as the trace itself, which is what it should do.
+        // The change event rather than the selection event, because the two tabs clear each other's
+        // tables without telling anyone — the switch draws the model itself rather than being the
+        // third of three to ask for it — and only this one is raised either way. A line left standing
+        // after the table under it emptied would be pointing at a row that is no longer picked.
+        registerHandler(selectionModel.addSelectionChangeHandler(e ->
+                histogram.setSelectedTime(selectedMs())));
+    }
+
+    // The trace nearest the moment scrubbed to. Nearest rather than the one before it, so dragging to
+    // the far left or right lands on the first or last trace rather than on nothing.
+    private void selectNearest(final Long ms) {
+        if (ms == null) {
+            return;
+        }
+        MutationRow nearest = null;
+        long best = Long.MAX_VALUE;
+        for (final MutationRow row : dataProvider.getList()) {
+            if (row.isTrace() && row.getTime() != null) {
+                final long away = Math.abs(row.getTime().toEpochMillis() - ms);
+                if (away < best) {
+                    best = away;
+                    nearest = row;
+                }
+            }
+        }
+        // Only where it has moved. A drag reports every pixel it crosses, and each of those lands on
+        // the same trace many times over — telling the view around this one each time would wind the
+        // model back to where it already is, over and over, while the reader is still dragging.
+        if (nearest != null && !Objects.equals(nearest, selectionModel.getSelected())) {
+            selectionModel.setSelected(nearest);
+        }
+    }
+
+    private Long selectedMs() {
+        final NanoTime time = NullSafe.get(selectionModel.getSelected(), MutationRow::getTime);
+        return time == null
+                ? null
+                : time.toEpochMillis();
     }
 
     /**
@@ -267,32 +376,20 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         // what is selected to decide which model to show.
         selectionModel.clear();
 
-        // This is reused for every pathway opened, so neither the way the last one was left sorted nor
-        // which of its traces were open is carried over to the next.
+        // This is reused for every pathway opened, so which of the last one's traces were open is not
+        // carried over to the next.
         treeAction.collapseAll();
-        newestFirst();
         this.mutations = new ArrayList<>(NullSafe.list(mutations));
         order();
+        histogram.setData(bars());
+        histogram.setSelectedTime(selectedMs());
     }
 
-    // Seeded rather than pushed, because pushing a column sorts it ascending and the list starts
-    // newest first. Also what the header reads from, so it shows which way it is ordered before
-    // anything has been clicked.
-    private void newestFirst() {
-        final ColumnSortList sortList = dataGrid.getColumnSortList();
-        sortList.clear();
-        sortList.push(new ColumnSortInfo(timeColumn, false));
-    }
-
-    // Newest first unless the grid has been told otherwise. Nothing but the order the changes were
-    // made in means anything here, so that is the only thing the columns offer.
+    // Newest first, always. The only order that means anything here is the one the changes were made
+    // in, and a reader who turned it round would be looking at a model growing backwards — so the
+    // columns offer nothing to sort by and this has nothing to read.
     private void order() {
-        final ColumnSortList sortList = dataGrid.getColumnSortList();
-        final boolean descending = sortList == null
-                                   || sortList.size() == 0
-                                   || !sortList.get(0).isAscending();
-
-        dataProvider.setCompleteList(buildRows(descending));
+        dataProvider.setCompleteList(buildRows());
         updateButtons();
     }
 
@@ -326,7 +423,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
      * grouped in the order they were made and the result turned round afterwards, so which way the
      * list is sorted cannot split a trace in two.
      */
-    private List<MutationRow> buildRows(final boolean descending) {
+    private List<MutationRow> buildRows() {
         final List<PathwayMutation> oldestFirst = new ArrayList<>(mutations);
         oldestFirst.sort(PathwayMutation.comparator(PathwayMutation.FIELD_TIME, false));
 
@@ -340,9 +437,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             current.add(mutation);
         }
 
-        if (descending) {
-            Collections.reverse(traces);
-        }
+        Collections.reverse(traces);
 
         final List<MutationRow> rows = new ArrayList<>();
         for (final List<PathwayMutation> trace : traces) {
@@ -355,9 +450,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
             if (traceRow.getExpander().isExpanded()) {
                 final List<PathwayMutation> changes = new ArrayList<>(trace);
-                if (descending) {
-                    Collections.reverse(changes);
-                }
+                Collections.reverse(changes);
                 for (final PathwayMutation mutation : changes) {
                     rows.add(MutationRow.change(mutation));
                 }
@@ -369,17 +462,14 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     private void addColumns() {
         addExpanderColumn();
 
-        // The only column that sorts. Time stands in for the order the changes were made, which is
-        // what the sort really runs on — every change a trace made shares one timestamp, so the times
-        // alone would shuffle changes that happened in a definite order.
+        // When the change was made. Not sortable: every change a trace made shares one timestamp, so
+        // ordering on the times alone would shuffle changes that happened in a definite order.
         timeColumn = DataGridUtil
                 .textColumnBuilder((MutationRow row) -> NullSafe.get(row.getTime(),
                         value -> dateTimeFormatter.format(value.toEpochMillis())))
-                .withSorting(PathwayMutation.FIELD_TIME)
                 .build();
         dataGrid.addResizableColumn(timeColumn, PathwayMutation.FIELD_TIME,
                 ColumnSizeConstants.DATE_COL);
-        newestFirst();
 
         // What the change belonged to comes before what it was: the list is grouped by trace, so the
         // trace is what a row is found by. Kept on the changes as well as on the trace they sit under,

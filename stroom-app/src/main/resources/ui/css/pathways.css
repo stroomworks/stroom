@@ -703,8 +703,33 @@
     background-color: rgba(144, 202, 249, 1);
 }
 
+/* Where the row being looked at falls. A line across the bars rather than a bar painted differently,
+   so it says the moment itself rather than the slice the moment landed in, and so it slides from one
+   row to the next instead of jumping a bar at a time.
+
+   Drawn in the text colour, which means it follows the theme and stands against the blue of the bars
+   either way round. Not in the way of a click on the bars underneath. */
+.histogram-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background-color: currentColor;
+    pointer-events: none;
+    transition: left 0.15s ease;
+}
+
 .histogram-plot--min .histogram-bar {
     cursor: default;
+}
+
+/* Where the bars can be dragged across to walk the model through its history. Said on the strip as a
+   whole so the bars and the gaps between them read the same way — the whole plot is the handle, not
+   just whatever happens to be under the pointer. */
+.trace-histogram--scrub .histogram-plot,
+.trace-histogram--scrub .histogram-bar {
+    cursor: ew-resize;
 }
 
 .histogram-hint {

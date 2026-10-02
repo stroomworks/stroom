@@ -461,8 +461,15 @@ public class PathwayEditPresenter
     // the next, which is the point of watching it.
     private void play() {
         if (!mutationListPresenter.selectNextTrace()) {
-            // Already at the last one, so there is nothing to watch.
-            return;
+            // Nothing after the one picked, which is where a replay ends and where the top of the list
+            // starts. Pressing play there means watch it again, so it goes back to the beginning
+            // rather than doing nothing. Cleared without telling anyone: the step taken straight after
+            // draws the model, and announcing the clearing first would draw it twice.
+            mutationListPresenter.getSelectionModel().clear(false);
+            if (!mutationListPresenter.selectNextTrace()) {
+                // No trace taught this model anything, so there is nothing to watch.
+                return;
+            }
         }
         pathwayTreePresenter.setStepping(true);
         stepper.scheduleRepeating(STEP_MILLIS);
