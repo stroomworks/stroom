@@ -36,6 +36,8 @@ import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -151,6 +153,45 @@ public class PathwaysDb implements AutoCloseable {
             final Txn<ByteBuffer> writeTxn = writer.getWriteTxn();
             dbi.put(writeTxn, keyByteBuffer, valueByteBuffer, putFlags);
             writer.tryCommit();
+        }
+
+        /**
+         * Takes a key out, saying whether it was there. The caller's writer, so a run of deletes and
+         * whatever else it is doing either all land or none of them do.
+         */
+        public boolean delete(final LmdbWriter writer, final ByteBuffer keyByteBuffer) {
+            final boolean deleted = dbi.delete(writer.getWriteTxn(), keyByteBuffer);
+            writer.tryCommit();
+            return deleted;
+        }
+
+        /**
+         * Takes out every key beginning with the given bytes, returning how many went. Used where one
+         * table holds rows for many owners and one owner is being forgotten.
+         *
+         * <p>The keys are gathered before any of them is removed rather than deleted as they are
+         * walked: a cursor that has had the ground taken out from under it is not something to rely
+         * on, and these keys are a name and a number apiece.
+         */
+        public int deletePrefixed(final LmdbWriter writer, final ByteBuffer prefix) {
+            final Txn<ByteBuffer> writeTxn = writer.getWriteTxn();
+            final List<byte[]> keys = new ArrayList<>();
+            try (final LmdbIterable iterable = LmdbIterable.create(writeTxn, dbi,
+                    LmdbKeyRange.builder().prefix(prefix).build())) {
+                for (final LmdbEntry entry : iterable) {
+                    final ByteBuffer key = entry.getKey().duplicate();
+                    final byte[] copy = new byte[key.remaining()];
+                    key.get(copy);
+                    keys.add(copy);
+                }
+            }
+            for (final byte[] key : keys) {
+                final ByteBuffer keyByteBuffer = ByteBuffer.allocateDirect(key.length);
+                keyByteBuffer.put(key).flip();
+                dbi.delete(writeTxn, keyByteBuffer);
+            }
+            writer.tryCommit();
+            return keys.size();
         }
 
         public void iterate(final EntryConsumer consumer) {

@@ -16,6 +16,8 @@
 
 package stroom.pathways.impl;
 
+import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeletePathway;
@@ -28,23 +30,49 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.UpdatePathway;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayUsage;
+import stroom.planb.impl.dao.LmdbWriter;
+import stroom.planb.impl.dao.ShardKeyRouter;
+import stroom.planb.impl.dao.trace.PathwaysDb;
+import stroom.planb.shared.SharedFileStoreSettings;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.logging.LogUtil;
+import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 @Singleton
 public class PathwaysService {
 
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysService.class);
+
     private final PathwaysStore pathwaysStore;
     private final ShardedPathwayReader shardedPathwayReader;
+    private final PathwaysShardStore shardStore;
+    private final ClusterLockService clusterLockService;
+    private final ByteBuffers byteBuffers;
 
     @Inject
     public PathwaysService(final ShardedPathwayReader shardedPathwayReader,
-                           final PathwaysStore pathwaysStore) {
+                           final PathwaysStore pathwaysStore,
+                           final PathwaysShardStore shardStore,
+                           final ClusterLockService clusterLockService,
+                           final ByteBuffers byteBuffers) {
         this.shardedPathwayReader = shardedPathwayReader;
         this.pathwaysStore = pathwaysStore;
+        this.shardStore = shardStore;
+        this.clusterLockService = clusterLockService;
+        this.byteBuffers = byteBuffers;
     }
 
     public PathwayResultPage findPathways(final FindPathwayCriteria criteria) {
@@ -94,7 +122,76 @@ public class PathwaysService {
         throw new UnsupportedOperationException("Not implemented");
     }
 
+    /**
+     * Forgets one learnt pathway, there and then.
+     *
+     * <p>Nothing writes to the model on the shared store directly: a shard is taken down, worked on
+     * locally and put back, and only the holder of that shard's cluster lock may do it. So this takes
+     * the same lock the job that applies traces takes. That job holds a shard for at most
+     * {@link PathwaysProcessor#MAX_TIME_PER_HOLD} and asks for the lock without waiting, so it stands
+     * aside for this rather than this queueing behind a whole cycle of it; waiting here is bounded by
+     * the configured cluster lock timeout, after which the attempt fails and says who was holding it.
+     *
+     * <p>A pathway is keyed on its name and the name decides its shard, so this is one shard, once.
+     *
+     * <p>What is forgotten can be learnt again. The next trace down this path builds the pathway
+     * afresh, which is the point: this is for a model that has learnt something wrong, not for
+     * keeping a pathway out of the model.
+     */
     public Boolean deletePathway(final DeletePathway deletePathway) {
-        throw new UnsupportedOperationException("Not implemented");
+        final PathwaysDoc doc = pathwaysStore.readDocument(deletePathway.getDocRef());
+        if (doc == null) {
+            throw new DocumentNotFoundException(deletePathway.getDocRef());
+        }
+        final String name = deletePathway.getName();
+        final SharedFileStoreSettings settings = doc.getSharedFileStore();
+        if (settings == null
+            || NullSafe.isBlankString(settings.getSharedPath())
+            || NullSafe.isBlankString(name)) {
+            return Boolean.FALSE;
+        }
+
+        final int shard = ShardKeyRouter.computeShardIndex(name, Math.max(1, settings.getShardCount()));
+        final AtomicBoolean removed = new AtomicBoolean();
+        clusterLockService.lock(PathwaysProcessor.lockName(doc.getUuid(), shard), () -> {
+            try {
+                shardStore.withShard(doc, shard, localDir -> removeFromShard(localDir, name, removed));
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
+        return removed.get();
+    }
+
+    // Everything the shard holds about this pathway: what it learnt, every change that taught it, and
+    // every reading of how much had gone through it. Said to have changed the shard only where
+    // something was actually taken out, so a pathway that was not there does not have the model
+    // written back for nothing.
+    private boolean removeFromShard(final Path localDir, final String name, final AtomicBoolean removed) {
+        try (final PathwaysDb db = PathwaysDb.create(localDir, byteBuffers, false)) {
+            try (final LmdbWriter writer = db.createWriter()) {
+                final boolean[] went = {false};
+                withKey(name, key -> went[0] = db.getPathways().delete(writer, key));
+                final int[] changes = {0};
+                withKey(name + ShardedPathwayReader.KEY_SEPARATOR, prefix ->
+                        changes[0] = db.getMutations().deletePrefixed(writer, prefix));
+                final int[] usage = {0};
+                withKey(name + ShardedPathwayReader.USAGE_SEPARATOR, prefix ->
+                        usage[0] = db.getMutations().deletePrefixed(writer, prefix));
+                writer.commit();
+                removed.set(went[0]);
+                LOGGER.info(() -> LogUtil.message(
+                        "Removed pathway {}: {} model, {} change(s), {} reading(s)",
+                        name, went[0] ? "1" : "0", changes[0], usage[0]));
+                return went[0] || changes[0] > 0 || usage[0] > 0;
+            }
+        }
+    }
+
+    private static void withKey(final String name, final Consumer<ByteBuffer> consumer) {
+        final byte[] keyBytes = name.getBytes(StandardCharsets.UTF_8);
+        final ByteBuffer keyBuffer = ByteBuffer.allocateDirect(keyBytes.length);
+        keyBuffer.put(keyBytes).flip();
+        consumer.accept(keyBuffer);
     }
 }
