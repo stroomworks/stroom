@@ -407,20 +407,44 @@ public class PathwayListPresenter
 
             ConfirmEvent.fire(this, message, result -> {
                 if (result) {
-                    for (final PathwaySummary pathway : list) {
-                        restFactory
-                                .create(PATHWAYS_RESOURCE)
-                                .method(res -> res.deletePathway(new DeletePathway(docRef, pathway.getName())))
-                                .onSuccess(response -> {
-                                    selectionModel.clear();
-                                    refresh();
-                                })
-                                .taskMonitorFactory(pagerView)
-                                .exec();
-                    }
+                    deleteNext(new ArrayList<>(list), 0);
                 }
             });
         }
+    }
+
+    // One at a time, each starting when the one before it has come back.
+    //
+    // Forgetting a pathway takes the cluster lock on the shard it lives in, and holds it for as long
+    // as it takes to bring that shard down, change it and put it back. Asked for all at once, two
+    // pathways of the same shard queue behind one another on that lock while both of them sit on a
+    // server thread waiting — and a reader deleting a dozen would have a dozen requests waiting on
+    // one lock, with the browser holding most of them back as well for its own reasons.
+    //
+    // Stopping on the first failure rather than going on: these all want the same handful of locks,
+    // so what stops one stops the rest, and a reader does not want the same message a dozen times.
+    // The list is read once here, because clearing the selection at the end would otherwise take the
+    // rest of the work with it.
+    private void deleteNext(final List<PathwaySummary> list, final int at) {
+        if (at >= list.size()) {
+            selectionModel.clear();
+            refresh();
+            return;
+        }
+
+        final String name = list.get(at).getName();
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.deletePathway(new DeletePathway(docRef, name)))
+                .onSuccess(response -> deleteNext(list, at + 1))
+                // Said once and then given up on. The handler shows what went wrong; this puts the
+                // list back to what the store actually holds, which is however far it got.
+                .onFailure(new DefaultErrorHandler(this, () -> {
+                    selectionModel.clear();
+                    refresh();
+                }))
+                .taskMonitorFactory(pagerView)
+                .exec();
     }
 
     @Override
