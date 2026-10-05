@@ -46,6 +46,10 @@ class PathwayViewport {
     // A little short of filling the panel, so the outermost nodes have somewhere to sit rather than
     // being cut in half by the edge.
     private static final double FIT_MARGIN = 0.95;
+    // How many frames the drawing is held back waiting for the panel it goes in to have a size. A
+    // handful: the panel is there on the next frame or two in practice, and a drawing kept off the
+    // screen indefinitely would be worse than one in the wrong place.
+    private static final int FIT_ATTEMPTS = 10;
     private static final String DRAGGING_CLASS = "pathway-dragging";
     // How far the pointer has to move before it counts as a drag rather than a click that wandered.
     private static final int DRAG_THRESHOLD = 3;
@@ -205,20 +209,18 @@ class PathwayViewport {
         }
         if (centreWanted) {
             hide();
-            // Only a drawing that can be scaled can be fitted; the rest are centred as before. Read
-            // and cleared here rather than inside the deferred block, so that a draw which never gets
-            // there does not leave the next one fitting when it should have been left alone.
+            // Only a drawing that can be scaled can be fitted; the rest are centred as before. The
+            // asking is not cleared here: a drawing made before there is a panel to put it in cannot
+            // be fitted yet, and what wants fitting has to outlive the attempt that could not.
             final boolean fit = zoomable && fitWanted;
-            fitWanted = false;
             Scheduler.get().scheduleDeferred(() -> {
-                // Falling back where there was nothing to measure, which also puts the drawing back on
-                // the screen — the fit does that itself only when it works.
-                if (!fit || !zoomToExtent()) {
+                if (fit) {
+                    fitOrCentre(centreOn, FIT_ATTEMPTS);
+                } else {
                     centre(centreOn);
                 }
             });
         }
-        fitWanted = false;
     }
 
     // Where a drawing has to be put somewhere before it is worth looking at. The browser paints what
@@ -240,7 +242,17 @@ class PathwayViewport {
     void recentre(final Supplier<Element> centreOn) {
         centreWanted = true;
         hide();
-        Scheduler.get().scheduleDeferred(() -> centre(centreOn));
+        Scheduler.get().scheduleDeferred(() -> {
+            // Fitted here where the drawing was made before there was anywhere to put it. A tab is
+            // drawn and then opened, so the first attempt has no panel to measure and the asking
+            // outlives it — this is the moment the panel turns up, and the same moment the reader
+            // first sees the drawing.
+            if (fitWanted) {
+                fitOrCentre(centreOn, FIT_ATTEMPTS);
+            } else {
+                centre(centreOn);
+            }
+        });
     }
 
     boolean isDragging() {
@@ -398,6 +410,32 @@ class PathwayViewport {
         return scroller == null
                 ? 0
                 : scroller.getClientHeight() / 2;
+    }
+
+    // Fitted once there is something to fit it to, and centred as it stands if that never comes.
+    //
+    // A panel being opened is laid out a moment after what goes in it is drawn, so the first try has
+    // nothing to measure. Giving up there puts the drawing on the screen at whatever size it happened
+    // to be and then moves it the instant the panel has its own size, which is the flicker a reader
+    // sees on opening a tab. Waiting instead costs a frame or two with the drawing still held back,
+    // and it arrives in its place.
+    private void fitOrCentre(final Supplier<Element> centreOn, final int attemptsLeft) {
+        if (zoomToExtent()) {
+            // Answered, so nothing asks again.
+            fitWanted = false;
+            return;
+        }
+        // Only where the panel is the thing that is missing. Anything else is not going to arrive by
+        // waiting, and the reader would be left looking at nothing.
+        final Element scroller = scroller();
+        final boolean laidOut = scroller != null
+                                && scroller.getClientWidth() > 0
+                                && scroller.getClientHeight() > 0;
+        if (!laidOut && attemptsLeft > 0) {
+            Scheduler.get().scheduleDeferred(() -> fitOrCentre(centreOn, attemptsLeft - 1));
+            return;
+        }
+        centre(centreOn);
     }
 
     private void centre(final Supplier<Element> centreOn) {
