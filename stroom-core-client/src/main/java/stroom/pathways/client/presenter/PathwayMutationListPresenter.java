@@ -111,6 +111,9 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
         histogram = new HistogramWidget(dateTimeFormatter);
         histogram.setEmptyText("Nothing has changed this model yet");
+        // The bars cover everything that has ever taught this model, which runs to days — so the time
+        // on its own would not say which day either end of it was.
+        histogram.setShowDate(true);
         // Dragging across the bars walks the model through its own history, which is the same thing
         // the play button does and the same thing clicking down the rows does — by hand, and as fast
         // or as slowly as the reader likes.

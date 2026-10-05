@@ -62,6 +62,10 @@ public class HistogramWidget extends Composite {
     // leaves the gesture off altogether rather than moving a line nothing is listening to.
     private Consumer<Long> scrubHandler;
     private boolean scrubbing;
+    // Whether the labels along the bottom say which day as well as what time. Off, because a window of
+    // a few minutes is what this was built for and a date on both ends of that is two thirds of the
+    // label saying the same thing. On where the bars cover a model's whole life, which runs to days.
+    private boolean showDate;
 
     public HistogramWidget(final DateTimeFormatter dateTimeFormatter) {
         this.dateTimeFormatter = dateTimeFormatter;
@@ -132,6 +136,10 @@ public class HistogramWidget extends Composite {
 
     public void setEmptyText(final String emptyText) {
         this.emptyText = emptyText;
+    }
+
+    public void setShowDate(final boolean showDate) {
+        this.showDate = showDate;
     }
 
     public void setSelectedTime(final Long selectedMs) {
@@ -286,10 +294,16 @@ public class HistogramWidget extends Composite {
                     Attribute.style("display: none;"));
         }, Attribute.className(drillable() ? "histogram-plot" : "histogram-plot histogram-plot--min"));
 
+        // Moment patterns, not Java ones: the formatter takes what it is given and passes it straight
+        // through, and the two agree on the time but not the date — Java's dd is the day of the month
+        // where moment's is the name of the day.
+        final String axisFormat = showDate
+                ? "YYYY-MM-DD HH:mm:ss"
+                : "HH:mm:ss.SSS";
         hb.div(x -> {
-            x.div(dateTimeFormatter.format(data.getFromMs(), "HH:mm:ss.SSS"),
+            x.div(dateTimeFormatter.format(data.getFromMs(), axisFormat),
                     Attribute.className("histogram-xlabel"));
-            x.div(dateTimeFormatter.format(data.getToMs(), "HH:mm:ss.SSS"),
+            x.div(dateTimeFormatter.format(data.getToMs(), axisFormat),
                     Attribute.className("histogram-xlabel"));
         }, Attribute.className("histogram-xaxis"));
 
