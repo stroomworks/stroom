@@ -46,7 +46,7 @@ public class Pathway {
     @JsonProperty
     private final PathNode root;
     @JsonProperty
-    private final Routes routes;
+    private final Paths paths;
 
     @JsonCreator
     public Pathway(@JsonProperty("name") final String name,
@@ -57,7 +57,7 @@ public class Pathway {
                    @JsonProperty("timesUpdated") final long timesUpdated,
                    @JsonProperty("pathKey") final PathKey pathKey,
                    @JsonProperty("root") final PathNode root,
-                   @JsonProperty("routes") final Routes routes) {
+                   @JsonProperty("paths") final Paths paths) {
         this.name = name;
         this.createTime = createTime;
         this.updateTime = updateTime;
@@ -66,9 +66,9 @@ public class Pathway {
         this.timesUpdated = timesUpdated;
         this.pathKey = pathKey;
         this.root = root;
-        this.routes = routes == null
-                ? Routes.empty()
-                : routes;
+        this.paths = paths == null
+                ? Paths.empty()
+                : paths;
     }
 
     public String getName() {
@@ -88,8 +88,8 @@ public class Pathway {
     }
 
     /**
-     * How many traces have taken this route since the pathway was first learnt. Counted for every
-     * trace applied, whether or not it taught the model anything, so it says how busy a route is
+     * How many traces have taken this path since the pathway was first learnt. Counted for every
+     * trace applied, whether or not it taught the model anything, so it says how busy a path is
      * rather than how much it has moved.
      */
     public long getTimesUsed() {
@@ -117,10 +117,10 @@ public class Pathway {
     }
 
     /**
-     * Every distinct route taken through this model, with how many traces took each.
+     * Every distinct path taken through this model, with how many traces took each.
      */
-    public Routes getRoutes() {
-        return routes;
+    public Paths getPaths() {
+        return paths;
     }
 
     @Override
@@ -140,13 +140,13 @@ public class Pathway {
                timesUpdated == pathway.timesUpdated &&
                Objects.equals(pathKey, pathway.pathKey) &&
                Objects.equals(root, pathway.root) &&
-               Objects.equals(routes, pathway.routes);
+               Objects.equals(paths, pathway.paths);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(name, createTime, updateTime, lastUsedTime, timesUsed, timesUpdated,
-                pathKey, root, routes);
+                pathKey, root, paths);
     }
 
     @Override
@@ -181,7 +181,7 @@ public class Pathway {
         private long timesUpdated;
         private PathKey pathKey;
         private PathNode root;
-        private Routes routes;
+        private Paths paths;
 
         public Builder() {
         }
@@ -195,7 +195,7 @@ public class Pathway {
             this.timesUpdated = pathway.timesUpdated;
             this.pathKey = pathway.pathKey;
             this.root = pathway.root;
-            this.routes = pathway.routes;
+            this.paths = pathway.paths;
         }
 
         public Builder name(final String name) {
@@ -238,8 +238,8 @@ public class Pathway {
             return self();
         }
 
-        public Builder routes(final Routes routes) {
-            this.routes = routes;
+        public Builder paths(final Paths paths) {
+            this.paths = paths;
             return self();
         }
 
@@ -258,7 +258,7 @@ public class Pathway {
                     timesUpdated,
                     pathKey,
                     root,
-                    routes);
+                    paths);
         }
     }
 }

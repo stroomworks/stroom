@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Attributes the configuration says to leave alone.
  *
  * <p>Some attributes carry a different value on every span — a thread name, say. Learning them fills
- * the model with values that say nothing about the route and never settle. Naming them in
+ * the model with values that say nothing about the path and never settle. Naming them in
  * {@link PathwaysDoc#getIgnoredAttributes()} records each one once as accepting anything, so it
  * still shows against the node but stops driving the model.
  */
@@ -109,7 +109,7 @@ class TestIgnoredAttributes {
                 Map.of(new NamePathKey(OPERATION), root));
 
         assertThat(predicate.test(trace("a-thread-never-seen-before", "GET")))
-                .as("an ignored attribute must not decide whether a trace took this route")
+                .as("an ignored attribute must not decide whether a trace took this path")
                 .isTrue();
     }
 

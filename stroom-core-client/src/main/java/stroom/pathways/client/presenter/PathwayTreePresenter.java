@@ -73,7 +73,7 @@ public class PathwayTreePresenter
     // through, the next step arrives before a long run has finished and every node is caught part
     // way through one; a single pass finishes and settles before the drawing is replaced.
     private static final String HIGHLIGHT_ONCE_CLASS = "pathway-node--changed-once";
-    // A route walked, which is marked differently from a change: each node keeps a ring once the walk
+    // A path walked, which is marked differently from a change: each node keeps a ring once the walk
     // has reached it, so what has been covered can be seen rather than held in the reader's head.
     private static final String WALK_CLASS = "pathway-node--walk";
     // What draws the line reaching a node, and what clears it again once the node has been reached.
@@ -89,10 +89,10 @@ public class PathwayTreePresenter
     private static final String GRAPH_PULSE = "pathway-node-changed-ring";
     private static final String TREE_PULSE = "pathway-node-changed";
     private static final int PULSE_MS = 1100;
-    // How long the walk waits between one node and the next. The same for every route however many
-    // nodes it has: worked out from the length instead, a long route would travel so fast that the
+    // How long the walk waits between one node and the next. The same for every path however many
+    // nodes it has: worked out from the length instead, a long path would travel so fast that the
     // walk could not be followed, which is the whole of what it is for.
-    private static final int ROUTE_STAGGER_MS = 400;
+    private static final int PATH_STAGGER_MS = 400;
     private static final String GRAPH_TITLE = "Show as a graph";
     private static final String TREE_TITLE = "Show as a tree";
     private static final int MAX_HISTORY = 20000;
@@ -145,7 +145,7 @@ public class PathwayTreePresenter
     private Map<String, List<Integer>> highlighted = Collections.emptyMap();
     // Whether what is picked out is a walk, which is shown one node after another and once, rather
     // than a change, which moved every node it touched at the same moment.
-    private boolean highlightedRoute;
+    private boolean highlightedPath;
     // Which runs of work that happened at the same time begin at each node, against the moment each
     // begins at. By node uuid, which is how the line into it is found.
     private Map<String, List<int[]>> runStarts = Collections.emptyMap();
@@ -215,7 +215,7 @@ public class PathwayTreePresenter
         registerHandler(html.addMouseMoveHandler(e -> viewport.drag(e.getClientX(), e.getClientY())));
 
         // Showing another tab takes the drawing off the screen, and putting anything back on the
-        // screen starts every animation it carries over again. A route already walked would walk
+        // screen starts every animation it carries over again. A path already walked would walk
         // itself a second time for no reason but the reader having looked at something else, so the
         // drawing is put into the state the walk leaves it in on the way out.
         registerHandler(html.addAttachHandler(e -> {
@@ -456,12 +456,12 @@ public class PathwayTreePresenter
      * touched. They are picked out for a moment rather than marked, because it is what just happened
      * that is worth seeing, not a state the node is in.
      *
-     * <p>All at once, because a change moved all of them at the same moment. A route did not, and has
-     * {@link #setHighlightedRoute(List, Map)} instead.
+     * <p>All at once, because a change moved all of them at the same moment. A path did not, and has
+     * {@link #setHighlightedPath(List, Map)} instead.
      */
     public void setHighlighted(final List<List<String>> paths) {
         highlighted = new HashMap<>();
-        highlightedRoute = false;
+        highlightedPath = false;
         runStarts = Collections.emptyMap();
         holds = Collections.emptyList();
         // All at one moment, so one place each and all of them the same.
@@ -469,14 +469,14 @@ public class PathwayTreePresenter
     }
 
     /**
-     * The nodes a route ran, in the sequence it ran them. Picked out one after another rather than
+     * The nodes a path ran, in the sequence it ran them. Picked out one after another rather than
      * together, so the walk can be followed rather than only seen.
      */
-    public void setHighlightedRoute(final List<List<List<String>>> moments,
+    public void setHighlightedPath(final List<List<List<String>>> moments,
                                     final Map<String, List<int[]>> runStarts,
                                     final List<Integer> holds) {
         highlighted = new HashMap<>();
-        highlightedRoute = true;
+        highlightedPath = true;
         this.runStarts = NullSafe.map(runStarts);
         this.holds = NullSafe.list(holds);
         // Which moments of the walk each node lights at. A node the walk comes back to is held off
@@ -649,7 +649,7 @@ public class PathwayTreePresenter
         wantedSelection = null;
 
         // Worked out before the drawing is built as well as after it: the drawing is made faint
-        // around the nodes a route ran, and then they are marked on it.
+        // around the nodes a path ran, and then they are marked on it.
         final Map<String, List<Integer>> wanted = wanted();
 
         final RenderRequest request = new RenderRequest(pathway, layout, byUuid(), usageAsAt(),
@@ -661,9 +661,9 @@ public class PathwayTreePresenter
                         ? NullSafe.get(pathway, Pathway::getRoot)
                         : layout),
                 showKey,
-                // Only a route says which nodes did not run. A change touched the nodes it touched
+                // Only a path says which nodes did not run. A change touched the nodes it touched
                 // and says nothing about the rest, so nothing is faded for one.
-                highlightedRoute
+                highlightedPath
                         ? wanted.keySet()
                         : Collections.emptySet());
 
@@ -736,7 +736,7 @@ public class PathwayTreePresenter
     private Map<String, NodeChange> byUuid() {
         final Map<String, NodeChange> byUuid = new HashMap<>();
         nodeMap.values().forEach(node -> {
-            final NodeChange change = counts.node(node.getPath());
+            final NodeChange change = counts.node(node.getNodePath());
             if (change != null) {
                 byUuid.put(node.getUuid(), change);
             }
@@ -754,7 +754,7 @@ public class PathwayTreePresenter
         }
         final Map<String, List<Integer>> wanted = new HashMap<>();
         nodeMap.values().forEach(node -> {
-            final List<Integer> places = highlighted.get(key(node.getPath()));
+            final List<Integer> places = highlighted.get(key(node.getNodePath()));
             if (places != null) {
                 wanted.put(node.getUuid(), places);
             }
@@ -762,18 +762,18 @@ public class PathwayTreePresenter
         return wanted;
     }
 
-    // How far apart to start the nodes of the route on show. Nothing for a change, whose nodes all
+    // How far apart to start the nodes of the path on show. Nothing for a change, whose nodes all
     // moved at once.
     private int stagger() {
-        return highlightedRoute
-                ? ROUTE_STAGGER_MS
+        return highlightedPath
+                ? PATH_STAGGER_MS
                 : 0;
     }
 
     // What to run on a node the walk reaches, or nothing where the stylesheet already says how — which
     // is a change, whose nodes all move at one moment and need no list.
     private String pulse() {
-        if (!highlightedRoute) {
+        if (!highlightedPath) {
             return null;
         }
         return renderer == graphRenderer
@@ -811,7 +811,7 @@ public class PathwayTreePresenter
     }
 
     private String highlightClass() {
-        if (highlightedRoute) {
+        if (highlightedPath) {
             // Walked once: the nodes are held off one after another to show the walk, and running that
             // over and over would replay it rather than show it.
             return WALK_CLASS;
@@ -847,7 +847,7 @@ public class PathwayTreePresenter
             holdOff(child(element, PathwayGraphRenderer.LABEL_CLASS), places.get(0) * stagger);
         }
 
-        // The line reaching a node, drawn over the gap before that node lights so the route traces
+        // The line reaching a node, drawn over the gap before that node lights so the path traces
         // itself along rather than blinking from one node to the next. A line is long and thin and can
         // still be seen where a ring round a dot cannot.
         // Drawn again for every arrival, because one line joins these two nodes however often the walk
@@ -864,7 +864,7 @@ public class PathwayTreePresenter
 
         // The badges on the line into a node, one for each run of work happening at the same time that
         // begins there. The drawing puts one empty badge on every line, because which runs there are
-        // is not known until a route is picked; the number and when it shows are written on here.
+        // is not known until a path is picked; the number and when it shows are written on here.
         //
         // A node that opens two runs — two of them beginning by doing the same thing — needs a badge
         // for each, taken by copying the one already drawn rather than building svg by hand. A badge
@@ -903,7 +903,7 @@ public class PathwayTreePresenter
                                      final int durationMs) {
         // Two runs for every arrival: the line draws itself over the gap before the node it reaches,
         // and then clears again while that node is pinged. What is left is the drawing as it was, so a
-        // magenta stretch travels along the route rather than the whole of it staying painted over.
+        // magenta stretch travels along the path rather than the whole of it staying painted over.
         // Later runs are put after earlier ones because where two of them would say different things
         // about the line, the last one said wins, and the last one said is the one whose turn it is.
         final StringBuilder names = new StringBuilder();

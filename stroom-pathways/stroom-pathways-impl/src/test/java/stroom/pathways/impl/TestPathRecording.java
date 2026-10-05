@@ -24,8 +24,8 @@ import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
-import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.Routes;
+import stroom.pathways.shared.pathway.PathUse;
+import stroom.pathways.shared.pathway.Paths;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.planb.impl.dao.trace.IgnoredSpans;
 
@@ -40,14 +40,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What a pathway records about the routes its traces took.
+ * What a pathway records about the paths its traces took.
  *
- * <p>A route is the whole walk: which nodes the trace reached, in sequence, and which steps each one
+ * <p>A path is the whole walk: which nodes the trace reached, in sequence, and which steps each one
  * took. Identical walks share a row carrying a count. The point of recording the walk rather than
  * each node on its own is coupling — that node B's steps have always followed node A's is a fact no
  * per-node record holds.
  */
-class TestRouteRecording {
+class TestPathRecording {
 
     private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
 
@@ -59,43 +59,43 @@ class TestRouteRecording {
     private static final long BASE = 1_700_000_000_000_000_000L;
 
     @Test
-    void twoTracesDoingTheSameThingShareOneRoute() {
-        Routes routes = Routes.empty();
+    void twoTracesDoingTheSameThingShareOnePath() {
+        Paths paths = Paths.empty();
         PathNode root = null;
 
         for (int i = 0; i < 2; i++) {
             final NodeMutatorImpl mutator = mutator();
             root = process(mutator, sequential(PING, COMMIT), root);
-            routes = RouteRecorder.add(
-                    routes, mutator.getRouteShape(), time(i), "trace-" + i);
+            paths = PathRecorder.add(
+                    paths, mutator.getPathShape(), time(i), "trace-" + i);
         }
 
-        assertThat(routes.getRoutes()).hasSize(1);
-        assertThat(routes.getRoutes().getFirst().getTimesUsed()).isEqualTo(2);
+        assertThat(paths.getPaths()).hasSize(1);
+        assertThat(paths.getPaths().getFirst().getTimesUsed()).isEqualTo(2);
     }
 
     @Test
-    void tracesDoingDifferentThingsGetARouteEach() {
-        Routes routes = Routes.empty();
+    void tracesDoingDifferentThingsGetAPathEach() {
+        Paths paths = Paths.empty();
 
         final NodeMutatorImpl first = mutator();
         PathNode root = process(first, sequential(PING, COMMIT), null);
-        routes = RouteRecorder.add(routes, first.getRouteShape(), time(0), "trace-0");
+        paths = PathRecorder.add(paths, first.getPathShape(), time(0), "trace-0");
 
         final NodeMutatorImpl second = mutator();
         root = process(second, sequential(COMMIT, PING), root);
-        routes = RouteRecorder.add(routes, second.getRouteShape(), time(1), "trace-1");
+        paths = PathRecorder.add(paths, second.getPathShape(), time(1), "trace-1");
 
-        assertThat(routes.getRoutes())
-                .as("the same children in a different sequence is a different route")
+        assertThat(paths.getPaths())
+                .as("the same children in a different sequence is a different path")
                 .hasSize(2);
-        assertThat(routes.getRoutes()).allSatisfy(route ->
-                assertThat(route.getTimesUsed()).isEqualTo(1));
+        assertThat(paths.getPaths()).allSatisfy(path ->
+                assertThat(path.getTimesUsed()).isEqualTo(1));
     }
 
     @Test
-    void routeCountsSumToTheTracesApplied() {
-        Routes routes = Routes.empty();
+    void pathCountsSumToTheTracesApplied() {
+        Paths paths = Paths.empty();
         PathNode root = null;
         final List<Trace> traces = List.of(
                 sequential(PING, COMMIT),
@@ -107,89 +107,89 @@ class TestRouteRecording {
         for (int i = 0; i < traces.size(); i++) {
             final NodeMutatorImpl mutator = mutator();
             root = process(mutator, traces.get(i), root);
-            routes = RouteRecorder.add(
-                    routes, mutator.getRouteShape(), time(i), "trace-" + i);
+            paths = PathRecorder.add(
+                    paths, mutator.getPathShape(), time(i), "trace-" + i);
         }
 
-        final long counted = routes.getRoutes().stream().mapToLong(RouteUse::getTimesUsed).sum();
+        final long counted = paths.getPaths().stream().mapToLong(PathUse::getTimesUsed).sum();
         assertThat(counted)
-                .as("every trace takes exactly one route, so the counts account for all of them")
+                .as("every trace takes exactly one path, so the counts account for all of them")
                 .isEqualTo(traces.size());
     }
 
     @Test
-    void aTraceThatRanNothingBelowTheRootStillTakesARoute() {
+    void aTraceThatRanNothingBelowTheRootStillTakesAPath() {
         final NodeMutatorImpl mutator = mutator();
         process(mutator, sequential(), null);
-        final Routes routes = RouteRecorder.add(Routes.empty(), mutator.getRouteShape(),
+        final Paths paths = PathRecorder.add(Paths.empty(), mutator.getPathShape(),
                 time(0), "trace-0");
 
-        assertThat(routes.getRoutes())
+        assertThat(paths.getPaths())
                 .as("doing nothing is something the trace did, and the counts have to add up")
                 .hasSize(1);
-        assertThat(routes.getRoutes().getFirst().getRoot())
+        assertThat(paths.getPaths().getFirst().getRoot())
                 .as("the shape is the root on its own, which is a leaf")
                 .isEqualTo(0);
     }
 
     @Test
     void aNodePositionNamesTheSameNodeAfterLaterNodesAppear() {
-        Routes routes = Routes.empty();
+        Paths paths = Paths.empty();
 
         final NodeMutatorImpl first = mutator();
         final PathNode root = process(first, sequential(PING), null);
-        routes = RouteRecorder.add(routes, first.getRouteShape(), time(0), "trace-0");
+        paths = PathRecorder.add(paths, first.getPathShape(), time(0), "trace-0");
         final int rootPosition = 0;
 
-        // Two more nodes start taking routes, so the list grows past the one position handed out.
+        // Two more nodes start taking paths, so the list grows past the one position handed out.
         final NodeMutatorImpl second = mutator();
         process(second, twoLevels(PING, COMMIT), root);
-        routes = RouteRecorder.add(routes, second.getRouteShape(), time(1), "trace-1");
-        assertThat(routes.getNodes()).hasSizeGreaterThan(2);
+        paths = PathRecorder.add(paths, second.getPathShape(), time(1), "trace-1");
+        assertThat(paths.getNodes()).hasSizeGreaterThan(2);
 
-        assertThat(routes.getNodes().get(rootPosition))
-                .as("positions are handed out once and never moved, so an old route still reads")
+        assertThat(paths.getNodes().get(rootPosition))
+                .as("positions are handed out once and never moved, so an old path still reads")
                 .isEqualTo(root.getUuid());
-        assertThat(routes.getSteps().get(routes.getRoutes().getFirst().getRoot()).getNode())
+        assertThat(paths.getSteps().get(paths.getPaths().getFirst().getRoot()).getNode())
                 .isEqualTo(rootPosition);
     }
 
     @Test
-    void theFirstTraceToTakeARouteIsTheOneKeptAsTheExample() {
-        Routes routes = Routes.empty();
+    void theFirstTraceToTakeAPathIsTheOneKeptAsTheExample() {
+        Paths paths = Paths.empty();
         PathNode root = null;
 
         for (int i = 0; i < 3; i++) {
             final NodeMutatorImpl mutator = mutator();
             root = process(mutator, sequential(PING, COMMIT), root);
-            routes = RouteRecorder.add(
-                    routes, mutator.getRouteShape(), time(i), "trace-" + i);
+            paths = PathRecorder.add(
+                    paths, mutator.getPathShape(), time(i), "trace-" + i);
         }
 
-        final RouteUse route = routes.getRoutes().getFirst();
-        assertThat(route.getCreatedByTraceId())
+        final PathUse path = paths.getPaths().getFirst();
+        assertThat(path.getCreatedByTraceId())
                 .as("an example that has been looked at stays put rather than moving to the newest")
                 .isEqualTo("trace-0");
-        assertThat(route.getFirstUsedTime()).isEqualTo(time(0));
-        assertThat(route.getLastUsedTime()).isEqualTo(time(2));
+        assertThat(path.getFirstUsedTime()).isEqualTo(time(0));
+        assertThat(path.getLastUsedTime()).isEqualTo(time(2));
     }
 
     @Test
-    void aRouteNamesEveryNodeTheTraceReached() {
+    void aPathNamesEveryNodeTheTraceReached() {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, sequential(PING, COMMIT), null);
-        final Routes routes = RouteRecorder.add(Routes.empty(), mutator.getRouteShape(),
+        final Paths paths = PathRecorder.add(Paths.empty(), mutator.getPathShape(),
                 time(0), "trace-0");
 
         // The shape names them all the same, because it holds what ran rather than only what ran
         // something. Ping and Commit are leaves on it, and a leaf means they ran nothing.
-        assertThat(routes.getNodes()).containsExactly(
+        assertThat(paths.getNodes()).containsExactly(
                 root.getUuid(), child(root, PING).getUuid(), child(root, COMMIT).getUuid());
     }
 
     @Test
-    void aNewCombinationOfKnownStepsIsANewRouteAndNoChangeAtAll() {
-        Routes routes = Routes.empty();
+    void aNewCombinationOfKnownStepsIsANewPathAndNoChangeAtAll() {
+        Paths paths = Paths.empty();
         PathNode root = null;
 
         // Three traces to settle the model: both children of each node have to have been seen
@@ -201,23 +201,23 @@ class TestRouteRecording {
         for (int i = 0; i < settling.size(); i++) {
             final NodeMutatorImpl mutator = mutator();
             root = process(mutator, settling.get(i), root);
-            routes = RouteRecorder.add(
-                    routes, mutator.getRouteShape(), time(i), "trace-" + i);
+            paths = PathRecorder.add(
+                    paths, mutator.getPathShape(), time(i), "trace-" + i);
         }
 
         // The fourth pairs them a way they have not been paired before. Every node takes steps it has
         // taken and every count has been seen, so the model learns nothing at all.
         final NodeMutatorImpl fourth = mutator();
         process(fourth, twoLevels(PING, DRAIN), root);
-        routes = RouteRecorder.add(routes, fourth.getRouteShape(), time(3), "trace-3");
+        paths = PathRecorder.add(paths, fourth.getPathShape(), time(3), "trace-3");
 
         assertThat(fourth.getMutations())
                 .as("nothing about any one node is new, so there is no change to record")
                 .isEmpty();
         assertThat(fourth.isChanged()).isFalse();
-        assertThat(routes.getRoutes())
+        assertThat(paths.getPaths())
                 .as("the pairing is new even though neither half is, which is the whole reason a "
-                    + "route is recorded rather than each node on its own")
+                    + "path is recorded rather than each node on its own")
                 .hasSize(3);
     }
 
@@ -236,10 +236,10 @@ class TestRouteRecording {
     void aNodeReachedManyTimesTakingTheSameStepsAppearsOnce() {
         final NodeMutatorImpl mutator = mutator();
         process(mutator, repeatedChild(6), null);
-        final Routes routes = RouteRecorder.add(Routes.empty(), mutator.getRouteShape(),
+        final Paths paths = PathRecorder.add(Paths.empty(), mutator.getPathShape(),
                 time(0), "trace-0");
 
-        assertThat(routes.getNodes())
+        assertThat(paths.getNodes())
                 .as("the root, the repeated node and what it ran — not one entry per span; six calls "
                     + "rather than five is how much work there was, not a different path through "
                     + "the code")
@@ -247,56 +247,56 @@ class TestRouteRecording {
     }
 
     @Test
-    void doingTheSameWorkMoreTimesIsTheSameRoute() {
-        Routes routes = Routes.empty();
+    void doingTheSameWorkMoreTimesIsTheSamePath() {
+        Paths paths = Paths.empty();
 
         final NodeMutatorImpl fewer = mutator();
         final PathNode root = process(fewer, repeatedChild(3), null);
-        routes = RouteRecorder.add(routes, fewer.getRouteShape(), time(0), "trace-0");
+        paths = PathRecorder.add(paths, fewer.getPathShape(), time(0), "trace-0");
 
         final NodeMutatorImpl more = mutator();
         process(more, repeatedChild(9), root);
-        routes = RouteRecorder.add(routes, more.getRouteShape(), time(1), "trace-1");
+        paths = PathRecorder.add(paths, more.getPathShape(), time(1), "trace-1");
 
-        assertThat(routes.getRoutes())
-                .as("a busier minute is not a different route")
+        assertThat(paths.getPaths())
+                .as("a busier minute is not a different path")
                 .hasSize(1);
-        assertThat(routes.getRoutes().getFirst().getTimesUsed()).isEqualTo(2);
+        assertThat(paths.getPaths().getFirst().getTimesUsed()).isEqualTo(2);
     }
 
     @Test
     void aNodeRunningTwoWaysOnOneTraceKeepsBoth() {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, twoRuns(PING, COMMIT), null);
-        RouteRecorder.add(Routes.empty(), mutator.getRouteShape(), time(0), "trace-0");
+        PathRecorder.add(Paths.empty(), mutator.getPathShape(), time(0), "trace-0");
 
         // The node ran twice, each time doing something different, and the shape holds both where
         // they happened. Saying it once would lose the second way entirely.
         // Both turns are there. Which way round they read is settled by what they are rather than by
         // which ran first, so nothing here may depend on that order.
-        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+        assertThat(PathShapeText.of(mutator.getPathShape(), root))
                 .contains("A (" + PING + ")")
                 .contains("A (" + COMMIT + ")");
     }
 
     @Test
-    void whichOfTwoParallelRunsBehavedWhichWayIsNotARouteApart() {
-        Routes routes = Routes.empty();
+    void whichOfTwoParallelRunsBehavedWhichWayIsNotAPathApart() {
+        Paths paths = Paths.empty();
 
         final NodeMutatorImpl first = mutator();
         final PathNode root = process(first, twoRuns(PING, COMMIT), null);
-        routes = RouteRecorder.add(routes, first.getRouteShape(), time(0), "trace-0");
+        paths = PathRecorder.add(paths, first.getPathShape(), time(0), "trace-0");
 
         // The same two behaviours, the runs the other way round. Where the runs are concurrent which
-        // came first is decided by which thread read the clock first, so it is not a different route.
+        // came first is decided by which thread read the clock first, so it is not a different path.
         final NodeMutatorImpl second = mutator();
         process(second, twoRuns(COMMIT, PING), root);
-        routes = RouteRecorder.add(routes, second.getRouteShape(), time(1), "trace-1");
+        paths = PathRecorder.add(paths, second.getPathShape(), time(1), "trace-1");
 
-        assertThat(routes.getRoutes())
-                .as("the node ran both ways in both traces, so both traces took the same route")
+        assertThat(paths.getPaths())
+                .as("the node ran both ways in both traces, so both traces took the same path")
                 .hasSize(1);
-        assertThat(routes.getRoutes().getFirst().getTimesUsed()).isEqualTo(2);
+        assertThat(paths.getPaths().getFirst().getTimesUsed()).isEqualTo(2);
     }
 
     // A root running one child twice, each run taking a different child of its own. One node reached

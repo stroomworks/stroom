@@ -89,7 +89,7 @@ class TestTraceMergeCompletionStrategy {
     /**
      * Over the 32 byte threshold, so its span value references the lookup table instead of holding
      * the name inline. That sends it through {@code insert} when the bucket merges, rather than a
-     * direct put — a different route with different side effects.
+     * direct put — a different path with different side effects.
      */
     private static final String NAME_LONG = "PlanBSharedFileStoreMergeRunnable.run";
 

@@ -123,7 +123,7 @@ public class TracePredicate implements Predicate<Trace> {
         final Map<String, PathNode> children = new HashMap<>();
         NullSafe.list(parentNode.getChildren()).forEach(child -> children.put(child.getName(), child));
 
-        // A child the model has never seen means this is not the same route.
+        // A child the model has never seen means this is not the same path.
         if (!children.keySet().containsAll(spansByName.keySet())) {
             return false;
         }

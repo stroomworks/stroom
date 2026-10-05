@@ -249,7 +249,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
      * Which nodes the selected row changed, as paths. A trace answers with everything it touched,
      * which is the whole point of picking one rather than picking through its changes.
      */
-    public List<List<String>> getSelectedPaths() {
+    public List<List<String>> getSelectedNodePaths() {
         final MutationRow selected = selectionModel.getSelected();
         final List<List<String>> paths = new ArrayList<>();
         if (selected == null) {
@@ -268,8 +268,8 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             final boolean mine = selected.isTrace()
                     ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
                     : mutation.getSequence() == selected.getSequence();
-            if (mine && !paths.contains(mutation.getPath())) {
-                paths.add(mutation.getPath());
+            if (mine && !paths.contains(mutation.getNodePath())) {
+                paths.add(mutation.getNodePath());
             }
         }
         return paths;
@@ -301,7 +301,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             final boolean mine = selected.isTrace()
                     ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
                     : mutation.getSequence() == selected.getSequence();
-            if (mine && mutation.getConstraint() != null && path.equals(mutation.getPath())) {
+            if (mine && mutation.getConstraint() != null && path.equals(mutation.getNodePath())) {
                 names.add(mutation.getConstraint());
             }
         }
@@ -485,7 +485,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
                 SPAN_ID_COL);
 
         addColumn(PathwayMutation.FIELD_PATH,
-                row -> ofChange(row, mutation -> String.join(" / ", NullSafe.list(mutation.getPath()))),
+                row -> ofChange(row, mutation -> String.join(" / ", NullSafe.list(mutation.getNodePath()))),
                 400);
         addColumn(PathwayMutation.FIELD_CONSTRAINT,
                 row -> ofChange(row, PathwayMutation::getConstraint),

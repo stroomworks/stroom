@@ -37,7 +37,7 @@ class RenderRequest {
     private final long changeCeiling;
     private final long usageCeiling;
     private final boolean legendVisible;
-    private final Set<String> onRoute;
+    private final Set<String> onPath;
 
     RenderRequest(final Pathway pathway,
                   final PathNode layout,
@@ -47,7 +47,7 @@ class RenderRequest {
                   final long changeCeiling,
                   final long usageCeiling,
                   final boolean legendVisible,
-                  final Set<String> onRoute) {
+                  final Set<String> onPath) {
         this.pathway = pathway;
         this.layout = layout;
         this.changes = changes;
@@ -56,16 +56,16 @@ class RenderRequest {
         this.changeCeiling = changeCeiling;
         this.usageCeiling = usageCeiling;
         this.legendVisible = legendVisible;
-        this.onRoute = onRoute;
+        this.onPath = onPath;
     }
 
     /**
-     * The nodes the route being looked at ran, by uuid, or empty where no route is. The rest are drawn
-     * faintly — where they sit and what they join stay as they are, so two routes can be held against
+     * The nodes the path being looked at ran, by uuid, or empty where no path is. The rest are drawn
+     * faintly — where they sit and what they join stay as they are, so two paths can be held against
      * one another without the drawing rearranging itself between them.
      */
-    Set<String> getOnRoute() {
-        return onRoute;
+    Set<String> getOnPath() {
+        return onPath;
     }
 
     /**

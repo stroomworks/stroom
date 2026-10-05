@@ -352,7 +352,7 @@ class TestShardedPathwayReader {
                 final PathNode root = PathNode.builder()
                         .uuid(UUID.randomUUID().toString())
                         .name(name)
-                        .path(List.of(name))
+                        .nodePath(List.of(name))
                         .children(children)
                         .build();
                 final Pathway pathway = Pathway.builder()

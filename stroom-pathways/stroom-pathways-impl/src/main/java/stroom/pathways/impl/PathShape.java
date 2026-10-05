@@ -22,19 +22,19 @@ import java.util.List;
  * What one trace did at one point, before it is written down: a node and the children it ran there in
  * the order it ran them, a run of work that did not finish, or runs that happened at the same time.
  *
- * <p>The stored form is {@link stroom.pathways.shared.pathway.RouteStep}, which says the same thing in
+ * <p>The stored form is {@link stroom.pathways.shared.pathway.PathStep}, which says the same thing in
  * positions rather than names. This one is built while the trace is walked, when the names are what is
  * to hand and no numbering has been handed out yet.
  *
  * <p>Two shapes are equal where the work was the same, which is what lets a repeat be found and what
- * lets the writer keep one copy of a subtree that many routes reach.
+ * lets the writer keep one copy of a subtree that many paths reach.
  *
  * @param nodeUuid the node reached, or null for anything but {@link Kind#NODE}.
  * @param steps    what ran here: the children in order, the one turn of an unfinished run, the runs
  *                 of a concurrent one, or what one of those runs did.
  * @param kind     what this shape is.
  */
-record RouteShape(String nodeUuid, List<RouteShape> steps, Kind kind) {
+record PathShape(String nodeUuid, List<PathShape> steps, Kind kind) {
 
     enum Kind {
         /** A node the trace reached. */
@@ -47,20 +47,20 @@ record RouteShape(String nodeUuid, List<RouteShape> steps, Kind kind) {
         RUN
     }
 
-    static RouteShape of(final String nodeUuid, final List<RouteShape> steps) {
-        return new RouteShape(nodeUuid, List.copyOf(steps), Kind.NODE);
+    static PathShape of(final String nodeUuid, final List<PathShape> steps) {
+        return new PathShape(nodeUuid, List.copyOf(steps), Kind.NODE);
     }
 
-    static RouteShape unfinished(final List<RouteShape> unit) {
-        return new RouteShape(null, List.copyOf(unit), Kind.UNFINISHED);
+    static PathShape unfinished(final List<PathShape> unit) {
+        return new PathShape(null, List.copyOf(unit), Kind.UNFINISHED);
     }
 
-    static RouteShape concurrent(final List<RouteShape> runs) {
-        return new RouteShape(null, List.copyOf(runs), Kind.CONCURRENT);
+    static PathShape concurrent(final List<PathShape> runs) {
+        return new PathShape(null, List.copyOf(runs), Kind.CONCURRENT);
     }
 
-    static RouteShape run(final List<RouteShape> steps) {
-        return new RouteShape(null, List.copyOf(steps), Kind.RUN);
+    static PathShape run(final List<PathShape> steps) {
+        return new PathShape(null, List.copyOf(steps), Kind.RUN);
     }
 
     boolean isUnfinished() {

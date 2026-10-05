@@ -71,7 +71,7 @@ class TestPathwayMutations {
                 .startsWith(MutationType.PATHWAY_ADDED)
                 .contains(MutationType.NODE_ADDED, MutationType.CONSTRAINT_ADDED);
 
-        assertThat(mutator.getMutations().getFirst().getPath())
+        assertThat(mutator.getMutations().getFirst().getNodePath())
                 .as("named like any node, so a replay can put the root back")
                 .containsExactly(OPERATION);
 
@@ -97,7 +97,7 @@ class TestPathwayMutations {
         assertThat(widened.getType()).isEqualTo(MutationType.CONSTRAINT_SET_EXPANDED);
         assertThat(widened.getOldValue()).isEqualTo(new StringValue("GET"));
         assertThat(widened.getNewValue()).isEqualTo(new StringSet(Set.of("GET", "POST")));
-        assertThat(widened.getPath())
+        assertThat(widened.getNodePath())
                 .as("the root node is where this attribute lives")
                 .containsExactly(OPERATION);
     }
@@ -114,7 +114,7 @@ class TestPathwayMutations {
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(added.getPath())
+        assertThat(added.getNodePath())
                 .as("named from the root down, so a replay knows what to draw")
                 .containsExactly(OPERATION, "Commit");
     }

@@ -23,10 +23,10 @@ import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathStep;
+import stroom.pathways.shared.pathway.PathUse;
+import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
-import stroom.pathways.shared.pathway.RouteStep;
-import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.Routes;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.DataGridUtil;
@@ -54,26 +54,26 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * The distinct routes traces have taken through one pathway, busiest first.
+ * The distinct paths traces have taken through one pathway, busiest first.
  *
- * <p>A route is the whole walk — every node the trace reached, in sequence, and which children each
+ * <p>A path is the whole walk — every node the trace reached, in sequence, and which children each
  * one ran. The model shows what the pathway can do; this shows what it actually does, and how often.
  *
  * <p>Busiest first, and the trace count is the last column: what a reader follows across a row is
- * the route itself, and the count is what they land on. A route carrying one or two traces against
+ * the path itself, and the count is what they land on. A path carrying one or two traces against
  * another's hundreds is usually a first-run lookup or a connection-pool event rather than something
  * the job does, which matters because locking down everything observed would bless them all for ever.
  */
-public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
+public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
 
     private static final int COUNT_COL = 90;
-    private static final int ROUTE_COL = 700;
+    private static final int PATH_COL = 700;
     // A trace id is 16 bytes written as hex, so this holds one rather than being measured.
     private static final int TRACE_ID_COL = 270;
     private static final String FILTER_OFF_TITLE = "Filter by selected node";
-    private static final String FILTER_ON_TITLE = "Show every route";
+    private static final String FILTER_ON_TITLE = "Show every path";
     // What separates one step from the next on show. A reading choice rather than anything the stored
-    // route depends on, which holds its steps as a tree.
+    // path depends on, which holds its steps as a tree.
     private static final String STEP_SEPARATOR = " > ";
     // What separates one run from the next where several happened at the same time. Different from the
     // step separator because what it joins did not follow on from what came before it.
@@ -86,70 +86,70 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
 
     private final DateTimeFormatter dateTimeFormatter;
     private final InlineSvgToggleButton filterButton;
-    private final MyDataGrid<RouteUse> dataGrid;
-    private final MultiSelectionModelImpl<RouteUse> selectionModel;
-    private final ListDataProvider<RouteUse> dataProvider;
+    private final MyDataGrid<PathUse> dataGrid;
+    private final MultiSelectionModelImpl<PathUse> selectionModel;
+    private final ListDataProvider<PathUse> dataProvider;
 
     /**
-     * The nodes routes name, by the position they name them at, and the path of each. Rebuilt with
-     * the data because a route is positions and nothing else; without the model beside it a row
+     * The nodes paths name, by the position they name them at, and the path of each. Rebuilt with
+     * the data because a path is positions and nothing else; without the model beside it a row
      * cannot say which node it visited.
      */
     private final Map<Integer, PathNode> nodesByPosition = new HashMap<>();
-    // What each node is called in the Route column. The schema a database span carries, and the class
-    // a code span carries, are the same down most of a route, so dropping them fits far more of the
-    // route in the column. A name is only shortened where nothing else in the pathway shortens to the
+    // What each node is called in the Path column. The schema a database span carries, and the class
+    // a code span carries, are the same down most of a path, so dropping them fits far more of the
+    // path in the column. A name is only shortened where nothing else in the pathway shortens to the
     // same thing, so two nodes can never come to read alike.
     private final Map<Integer, String> shortNames = new HashMap<>();
 
     /**
-     * Where a route's walk starts. Held with the nodes above for the same reason: a route says which
+     * Where a path's walk starts. Held with the nodes above for the same reason: a path says which
      * steps were taken, and only the model says what taking them reaches.
      */
     private PathNode root;
 
     /**
-     * Every shape the routes are built from, by the position they name it at. Held with the nodes
-     * above and for the same reason: a route is positions, and only the pathway beside it says what
+     * Every shape the paths are built from, by the position they name it at. Held with the nodes
+     * above and for the same reason: a path is positions, and only the pathway beside it says what
      * they reach.
      */
-    private List<RouteStep> shapes = Collections.emptyList();
+    private List<PathStep> shapes = Collections.emptyList();
 
-    // Every route of the pathway on show, busiest first, which is not always what the table is given.
-    private List<RouteUse> rows = Collections.emptyList();
+    // Every path of the pathway on show, busiest first, which is not always what the table is given.
+    private List<PathUse> rows = Collections.emptyList();
     // The node picked out on the drawing, which only matters while the filter is on.
     private String selectedNode;
     // How to order the rows for each column that offers it, and the one ordered on where nothing has
     // been chosen.
-    private final Map<Column<?, ?>, Comparator<RouteUse>> orders = new HashMap<>();
-    private Column<RouteUse, String> tracesColumn;
+    private final Map<Column<?, ?>, Comparator<PathUse>> orders = new HashMap<>();
+    private Column<PathUse, String> tracesColumn;
 
     /**
-     * What each route comes to when it is walked, worked out the first time it is wanted and kept.
+     * What each path comes to when it is walked, worked out the first time it is wanted and kept.
      * A walk is a walk of the whole model, and the same answers are asked for over and over — the
-     * grid asks for a route's text on every draw of every visible row, and ordering on it asks twice
+     * grid asks for a path's text on every draw of every visible row, and ordering on it asks twice
      * for each pair it puts in order. Emptied with the data, which is the only thing that changes it.
      */
-    private final Map<RouteUse, String> texts = new HashMap<>();
-    private final Map<RouteUse, List<List<PathNode>>> walks = new HashMap<>();
+    private final Map<PathUse, String> texts = new HashMap<>();
+    private final Map<PathUse, List<List<PathNode>>> walks = new HashMap<>();
     // Which run of work happening at the same time each moment belongs to, numbered as the runs are
-    // reached throughout the route, and zero for a moment that was not part of one. Held beside the
+    // reached throughout the path, and zero for a moment that was not part of one. Held beside the
     // walk rather than in it because only the drawing wants it.
-    private final Map<RouteUse, List<Integer>> walkRuns = new HashMap<>();
+    private final Map<PathUse, List<Integer>> walkRuns = new HashMap<>();
     // Where each run of work that happened at the same time begins: the moment it starts, against the
-    // run it is. Held per route, and only for routes whose walk has been worked out.
-    private final Map<RouteUse, List<int[]>> walkRunStarts = new HashMap<>();
-    private final Map<RouteUse, List<Integer>> walkHolds = new HashMap<>();
-    private final Map<RouteUse, Integer> stepCounts = new HashMap<>();
+    // run it is. Held per path, and only for paths whose walk has been worked out.
+    private final Map<PathUse, List<int[]>> walkRunStarts = new HashMap<>();
+    private final Map<PathUse, List<Integer>> walkHolds = new HashMap<>();
+    private final Map<PathUse, Integer> stepCounts = new HashMap<>();
 
     @Inject
-    public PathwayRouteListPresenter(final EventBus eventBus,
+    public PathwayPathListPresenter(final EventBus eventBus,
                                      final PagerView view,
                                      final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
         this.dateTimeFormatter = dateTimeFormatter;
 
-        // Narrows the table to the routes that ran the node being looked at. On this toolbar rather
+        // Narrows the table to the paths that ran the node being looked at. On this toolbar rather
         // than on the drawing because it is this table it changes, and the node it works from is
         // picked out on the drawing either way.
         filterButton = new InlineSvgToggleButton();
@@ -161,7 +161,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         selectionModel = dataGrid.addDefaultSelectionModel(true);
         view.setDataWidget(dataGrid);
 
-        // Held here rather than fetched a page at a time. The routes arrive on the pathway the view
+        // Held here rather than fetched a page at a time. The paths arrive on the pathway the view
         // around this one already has, so asking the server again would only risk the two disagreeing.
         dataProvider = new ListDataProvider<>();
         dataProvider.addDataDisplay(dataGrid);
@@ -184,14 +184,14 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
-     * The node picked out on the drawing, so the filter knows which routes to keep. Given rather than
+     * The node picked out on the drawing, so the filter knows which paths to keep. Given rather than
      * asked for, because the drawing and this table are held by the view around them both.
      */
     public void setSelectedNode(final PathNode node) {
         final String uuid = NullSafe.get(node, PathNode::getUuid);
         if (!Objects.equals(uuid, selectedNode)) {
             selectedNode = uuid;
-            // Nothing to redo while every route is on show, and a node is clicked far more often than
+            // Nothing to redo while every path is on show, and a node is clicked far more often than
             // the filter is turned on.
             if (filterButton.getState()) {
                 show();
@@ -200,36 +200,36 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
-     * The route being looked at. Held onto by the view around this one so it can pick the nodes out
+     * The path being looked at. Held onto by the view around this one so it can pick the nodes out
      * on the drawing.
      */
-    public MultiSelectionModelImpl<RouteUse> getSelectionModel() {
+    public MultiSelectionModelImpl<PathUse> getSelectionModel() {
         return selectionModel;
     }
 
     /**
-     * Which nodes the selected route ran, as paths, so they can be picked out on the tree and the
-     * graph. Empty where nothing is selected.
+     * Which nodes the selected path ran, each named by its own path down from the root, so they can be
+     * picked out on the tree and the graph. Empty where nothing is selected.
      */
-    public List<List<List<String>>> getSelectedPaths() {
-        return pathsIn(selectionModel.getSelected());
+    public List<List<List<String>>> getSelectedNodePaths() {
+        return nodePathsIn(selectionModel.getSelected());
     }
 
     /**
-     * Which run of work happening at the same time each moment of the selected route belongs to,
-     * numbered as the runs are reached throughout the route, and zero where the moment was not part of
-     * one. One entry per moment, so it reads alongside {@link #getSelectedPaths()}.
+     * Which run of work happening at the same time each moment of the selected path belongs to,
+     * numbered as the runs are reached throughout the path, and zero where the moment was not part of
+     * one. One entry per moment, so it reads alongside {@link #getSelectedNodePaths()}.
      *
      * <p>Runs are walked one after another rather than together, so a reader can follow one before the
      * next begins. This is what says they were not a sequence.
      */
     public List<Integer> getSelectedRuns() {
-        final RouteUse route = selectionModel.getSelected();
-        if (route == null || root == null) {
+        final PathUse path = selectionModel.getSelected();
+        if (path == null || root == null) {
             return Collections.emptyList();
         }
-        momentsIn(route);
-        return NullSafe.list(walkRuns.get(route));
+        momentsIn(path);
+        return NullSafe.list(walkRuns.get(path));
     }
 
     /**
@@ -239,12 +239,12 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * other moment says -1, meaning go out as soon as the next one lights.
      */
     public List<Integer> getSelectedHolds() {
-        final RouteUse route = selectionModel.getSelected();
-        if (route == null || root == null) {
+        final PathUse path = selectionModel.getSelected();
+        if (path == null || root == null) {
             return Collections.emptyList();
         }
-        momentsIn(route);
-        return NullSafe.list(walkHolds.get(route));
+        momentsIn(path);
+        return NullSafe.list(walkHolds.get(path));
     }
 
     /**
@@ -256,13 +256,13 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
      * can carry several, each at its own moment.
      */
     public Map<String, List<int[]>> getSelectedRunStarts() {
-        final RouteUse route = selectionModel.getSelected();
-        if (route == null || root == null) {
+        final PathUse path = selectionModel.getSelected();
+        if (path == null || root == null) {
             return Collections.emptyMap();
         }
-        final List<List<PathNode>> moments = momentsIn(route);
+        final List<List<PathNode>> moments = momentsIn(path);
         final Map<String, List<int[]>> starts = new LinkedHashMap<>();
-        for (final int[] start : NullSafe.list(walkRunStarts.get(route))) {
+        for (final int[] start : NullSafe.list(walkRunStarts.get(path))) {
             final int moment = start[0];
             final int run = start[1];
             final int of = start[2];
@@ -275,15 +275,16 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return starts;
     }
 
-    // The paths the drawing lights, gathered by the moment they light at. Everything in one entry
-    // lights at once, so work that happened at the same time is shown happening at the same time.
-    private List<List<List<String>>> pathsIn(final RouteUse route) {
+    // The nodes the drawing lights, each named by its path down from the root, gathered by the moment
+    // they light at. Everything in one entry lights at once, so work that happened at the same time is
+    // shown happening at the same time.
+    private List<List<List<String>>> nodePathsIn(final PathUse path) {
         final List<List<List<String>>> moments = new ArrayList<>();
-        for (final List<PathNode> nodes : momentsIn(route)) {
+        for (final List<PathNode> nodes : momentsIn(path)) {
             final List<List<String>> paths = new ArrayList<>(nodes.size());
             for (final PathNode node : nodes) {
-                if (node.getPath() != null) {
-                    paths.add(node.getPath());
+                if (node.getNodePath() != null) {
+                    paths.add(node.getNodePath());
                 }
             }
             moments.add(paths);
@@ -294,18 +295,18 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // How many moments the drawing steps through, which is what the Steps column says. Not the same as
     // how many nodes ran: work repeated is held as one step however many times it went round, and the
     // runs of a moment are stepped through one after another, so each of them adds its own.
-    private int steps(final RouteUse route) {
-        Integer count = stepCounts.get(route);
+    private int steps(final PathUse path) {
+        Integer count = stepCounts.get(path);
         if (count == null) {
-            count = momentsIn(route).size();
-            stepCounts.put(route, count);
+            count = momentsIn(path).size();
+            stepCounts.put(path, count);
         }
         return count;
     }
 
-    // Whether this route ran the given node at all.
-    private boolean runs(final RouteUse route, final String uuid) {
-        for (final List<PathNode> moment : momentsIn(route)) {
+    // Whether this path ran the given node at all.
+    private boolean runs(final PathUse path, final String uuid) {
+        for (final List<PathNode> moment : momentsIn(path)) {
             for (final PathNode node : moment) {
                 if (uuid.equals(node.getUuid())) {
                     return true;
@@ -315,22 +316,22 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return false;
     }
 
-    // What the route ran, by the moment it ran it.
-    private List<List<PathNode>> momentsIn(final RouteUse route) {
-        if (route == null || root == null) {
+    // What the path ran, by the moment it ran it.
+    private List<List<PathNode>> momentsIn(final PathUse path) {
+        if (path == null || root == null) {
             return Collections.emptyList();
         }
-        List<List<PathNode>> moments = walks.get(route);
+        List<List<PathNode>> moments = walks.get(path);
         if (moments == null) {
             moments = new ArrayList<>();
             final List<Integer> runs = new ArrayList<>();
             final List<int[]> starts = new ArrayList<>();
             final List<Integer> holds = new ArrayList<>();
-            walk(route.getRoot(), moments, runs, starts, holds, 0, 0);
-            walks.put(route, moments);
-            walkRuns.put(route, runs);
-            walkRunStarts.put(route, starts);
-            walkHolds.put(route, holds);
+            walk(path.getRoot(), moments, runs, starts, holds, 0, 0);
+            walks.put(path, moments);
+            walkRuns.put(path, runs);
+            walkRunStarts.put(path, starts);
+            walkHolds.put(path, holds);
         }
         return moments;
     }
@@ -342,7 +343,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // several lines lighting at once is hard to follow. Each moment is marked with the run it belongs
     // to so the drawing can say which one is being watched; that mark is the only thing left saying
     // they did not follow on from one another. Runs are numbered as they are reached, throughout the
-    // route, so the numbers only ever count up.
+    // path, so the numbers only ever count up.
     private int walk(final int shape,
                      final List<List<PathNode>> moments,
                      final List<Integer> runs,
@@ -350,7 +351,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
                      final List<Integer> holds,
                      final int at,
                      final int run) {
-        final RouteStep step = shapeAt(shape);
+        final PathStep step = shapeAt(shape);
         if (step == null) {
             return 0;
         }
@@ -372,7 +373,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             // so each can be told how many it is one of.
             final List<Integer> strands = new ArrayList<>();
             for (final Integer child : NullSafe.list(step.getSteps())) {
-                final RouteStep held = shapeAt(child);
+                final PathStep held = shapeAt(child);
                 if (held != null && turnsOfOneNode(held)) {
                     strands.addAll(NullSafe.list(held.getSteps()));
                 } else {
@@ -383,7 +384,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             final int from = at + used;
             int after = 0;
             for (int i = 0; i < strands.size(); i++) {
-                // Counted within the block rather than across the route, because what the badge says
+                // Counted within the block rather than across the path, because what the badge says
                 // is which of these it is and how many there are. Said together, a block inside a
                 // block is still plain: the count beside the number is what tells the two apart.
                 starts.add(new int[]{from + after, i + 1, strands.size()});
@@ -444,14 +445,14 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // A shape is written after the shapes it is made of, so its steps are always earlier in the list
     // than it is and following them cannot come back round. A step naming a shape that is not there
     // belongs to a pathway written by another build, and is left rather than guessed at.
-    private RouteStep shapeAt(final int shape) {
+    private PathStep shapeAt(final int shape) {
         return shape >= 0 && shape < shapes.size()
                 ? shapes.get(shape)
                 : null;
     }
 
     /**
-     * Shows the routes of one pathway. Given rather than fetched, for the reason the data provider
+     * Shows the paths of one pathway. Given rather than fetched, for the reason the data provider
      * gives above.
      */
     public void setData(final Pathway pathway) {
@@ -460,7 +461,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         selectionModel.clear();
         nodesByPosition.clear();
         shortNames.clear();
-        // What was worked out about the routes of the pathway being replaced says nothing about this
+        // What was worked out about the paths of the pathway being replaced says nothing about this
         // one's, and the walk they came from starts at a root that is about to change.
         texts.clear();
         walks.clear();
@@ -473,21 +474,21 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         // nothing to work from rather than with a node this pathway may not have.
         selectedNode = null;
 
-        final Routes routes = NullSafe.get(pathway, Pathway::getRoutes);
-        if (routes == null) {
+        final Paths paths = NullSafe.get(pathway, Pathway::getPaths);
+        if (paths == null) {
             rows = Collections.emptyList();
             show();
             return;
         }
 
-        indexNodes(NullSafe.get(pathway, Pathway::getRoot), routes.getNodes());
-        shapes = NullSafe.list(routes.getSteps());
+        indexNodes(NullSafe.get(pathway, Pathway::getRoot), paths.getNodes());
+        shapes = NullSafe.list(paths.getSteps());
 
-        rows = new ArrayList<>(NullSafe.list(routes.getRoutes()));
+        rows = new ArrayList<>(NullSafe.list(paths.getPaths()));
         order();
     }
 
-    // What the table is given: every route, or only those that ran the node picked out on the
+    // What the table is given: every path, or only those that ran the node picked out on the
     // drawing. With the filter on and nothing picked out there is nothing to narrow by, so everything
     // is shown rather than nothing.
     private void show() {
@@ -496,23 +497,23 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
             return;
         }
 
-        final List<RouteUse> kept = new ArrayList<>();
-        for (final RouteUse route : rows) {
-            if (runs(route, selectedNode)) {
-                kept.add(route);
+        final List<PathUse> kept = new ArrayList<>();
+        for (final PathUse path : rows) {
+            if (runs(path, selectedNode)) {
+                kept.add(path);
             }
         }
 
-        // A route that has just been taken off the table should not go on picking nodes out on the
+        // A path that has just been taken off the table should not go on picking nodes out on the
         // drawing, where the reader has no row left to click to stop it.
-        final RouteUse selected = selectionModel.getSelected();
+        final PathUse selected = selectionModel.getSelected();
         if (selected != null && !kept.contains(selected)) {
             selectionModel.clear();
         }
         dataProvider.setCompleteList(kept);
     }
 
-    // Walks the model once, keeping the nodes the routes name. A node a route references that is not
+    // Walks the model once, keeping the nodes the paths name. A node a path references that is not
     // in the model has been removed since, and is left out rather than guessed at.
     private void indexNodes(final PathNode root, final List<String> uuids) {
         if (root == null || NullSafe.isEmptyCollection(uuids)) {
@@ -574,21 +575,21 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     private void addColumns() {
-        addColumn("Created", route -> NullSafe.get(route.getFirstUsedTime(),
+        addColumn("Created", path -> NullSafe.get(path.getFirstUsedTime(),
                         value -> dateTimeFormatter.format(value.toEpochMillis())),
                 ColumnSizeConstants.DATE_COL,
                 (a, b) -> compare(a.getFirstUsedTime(), b.getFirstUsedTime()));
-        addColumn("Last Used", route -> NullSafe.get(route.getLastUsedTime(),
+        addColumn("Last Used", path -> NullSafe.get(path.getLastUsedTime(),
                         value -> dateTimeFormatter.format(value.toEpochMillis())),
                 ColumnSizeConstants.DATE_COL,
                 (a, b) -> compare(a.getLastUsedTime(), b.getLastUsedTime()));
-        addColumn("Route", this::text, ROUTE_COL,
+        addColumn("Path", this::text, PATH_COL,
                 (a, b) -> compare(text(a), text(b)));
-        addColumn("Created By", RouteUse::getCreatedByTraceId, TRACE_ID_COL,
+        addColumn("Created By", PathUse::getCreatedByTraceId, TRACE_ID_COL,
                 (a, b) -> compare(a.getCreatedByTraceId(), b.getCreatedByTraceId()));
-        addColumn("Steps", route -> Integer.toString(steps(route)), COUNT_COL,
+        addColumn("Steps", path -> Integer.toString(steps(path)), COUNT_COL,
                 (a, b) -> Integer.compare(steps(a), steps(b)));
-        tracesColumn = addColumn("Traces", route -> Long.toString(route.getTimesUsed()), COUNT_COL,
+        tracesColumn = addColumn("Traces", path -> Long.toString(path.getTimesUsed()), COUNT_COL,
                 (a, b) -> Long.compare(a.getTimesUsed(), b.getTimesUsed()));
         busiestFirst();
     }
@@ -604,22 +605,22 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // Whatever the grid has been told to order on, or the busiest first where it has been told
     // nothing it knows about.
     private void order() {
-        Comparator<RouteUse> order = orders.get(tracesColumn);
+        Comparator<PathUse> order = orders.get(tracesColumn);
         boolean ascending = false;
 
         final ColumnSortList sortList = dataGrid.getColumnSortList();
         if (sortList != null && sortList.size() > 0) {
             final ColumnSortInfo info = sortList.get(0);
-            final Comparator<RouteUse> chosen = orders.get(info.getColumn());
+            final Comparator<PathUse> chosen = orders.get(info.getColumn());
             if (chosen != null) {
                 order = chosen;
                 ascending = info.isAscending();
             }
         }
 
-        final Comparator<RouteUse> chosen = order;
+        final Comparator<PathUse> chosen = order;
         final boolean up = ascending;
-        final List<RouteUse> sorted = new ArrayList<>(rows);
+        final List<PathUse> sorted = new ArrayList<>(rows);
         sorted.sort((a, b) -> up
                 ? chosen.compare(a, b)
                 : chosen.compare(b, a));
@@ -649,11 +650,11 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return a.compareTo(b);
     }
 
-    private String text(final RouteUse route) {
-        String text = texts.get(route);
+    private String text(final PathUse path) {
+        String text = texts.get(path);
         if (text == null) {
-            text = routeText(route);
-            texts.put(route, text);
+            text = pathText(path);
+            texts.put(path, text);
         }
         return text;
     }
@@ -661,8 +662,8 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // The walk in the sequence it happened, which is the sequence the drawing picks the nodes out in.
     // Starts below the root rather than at it: the root is the pathway, which is named in the dialog
     // this sits in and drawn beside the table, so every row would open with the same words.
-    private String routeText(final RouteUse route) {
-        final RouteStep step = shapeAt(route.getRoot());
+    private String pathText(final PathUse path) {
+        final PathStep step = shapeAt(path.getRoot());
         final String steps = step == null
                 ? ""
                 : ran(step);
@@ -679,7 +680,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // reader follows is the work in the order it happened, and a list by node puts everything one step
     // from the root ahead of anything further out.
     private String stepText(final int shape) {
-        final RouteStep step = shapeAt(shape);
+        final PathStep step = shapeAt(shape);
         if (step == null) {
             return "";
         }
@@ -723,7 +724,7 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
 
     // What one shape ran, in the order it ran it — or, where everything it ran is a turn of one
     // node, in no order at all.
-    private String ran(final RouteStep step) {
+    private String ran(final PathStep step) {
         final String separator = turnsOfOneNode(step)
                 ? TURN_SEPARATOR
                 : STEP_SEPARATOR;
@@ -744,14 +745,14 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
     // Whether everything this shape ran is a turn of one and the same node. The model reads a run of
     // turns of one node in an order settled by what they are, so what is shown is not the order they
     // happened in and must not be read as one.
-    private boolean turnsOfOneNode(final RouteStep step) {
+    private boolean turnsOfOneNode(final PathStep step) {
         final List<Integer> children = NullSafe.list(step.getSteps());
         if (children.size() < 2) {
             return false;
         }
         int node = -1;
         for (final Integer child : children) {
-            final RouteStep shape = shapeAt(child);
+            final PathStep shape = shapeAt(child);
             if (shape == null || shape.getNode() < 0) {
                 return false;
             }
@@ -764,11 +765,11 @@ public class PathwayRouteListPresenter extends MyPresenterWidget<PagerView> {
         return true;
     }
 
-    private Column<RouteUse, String> addColumn(final String name,
-                                               final Function<RouteUse, String> value,
+    private Column<PathUse, String> addColumn(final String name,
+                                               final Function<PathUse, String> value,
                                                final int width,
-                                               final Comparator<RouteUse> order) {
-        final Column<RouteUse, String> column = DataGridUtil
+                                               final Comparator<PathUse> order) {
+        final Column<PathUse, String> column = DataGridUtil
                 .textColumnBuilder(value)
                 .withSorting(name)
                 .build();

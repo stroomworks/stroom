@@ -24,10 +24,10 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayUsage;
-import stroom.pathways.shared.pathway.Routes;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.planb.impl.dao.trace.IgnoredSpans;
@@ -194,32 +194,32 @@ public class TraceProcessor {
                 return;
             }
 
-            // Last used is the last time a trace took this route, and times used is how many have
+            // Last used is the last time a trace took this path, and times used is how many have
             // taken it, so both move for every trace applied. Updated is the last time the model
             // itself moved and times updated is how many traces moved it, so those two only move when
             // the trace taught it something. Once a pathway has settled the two pairs come apart,
-            // which is how a route that is still busy is told from one that has gone quiet.
+            // which is how a path that is still busy is told from one that has gone quiet.
             final Instant now = Instant.now();
             final NanoTime nanoTime = NanoTimeUtil.fromInstant(now);
-            // Recorded whether or not the trace changed anything, because a route the model already
-            // knew is still a route taken.
-            final Routes before = pathway.getRoutes();
-            final Routes after = RouteRecorder.add(before,
-                    nodeMutator.getRouteShape(),
+            // Recorded whether or not the trace changed anything, because a path the model already
+            // knew is still a path taken.
+            final Paths before = pathway.getPaths();
+            final Paths after = PathRecorder.add(before,
+                    nodeMutator.getPathShape(),
                     nanoTime,
                     trace.getTraceId());
-            // A route the model has never seen, said on the document's feed. Told apart by the list
-            // having grown: a route already known is counted where it stands and adds nothing, so one
+            // A path the model has never seen, said on the document's feed. Told apart by the list
+            // having grown: a path already known is counted where it stands and adds nothing, so one
             // more entry is one more way through this pathway. Worth hearing about because a pathway
             // settles on the handful of shapes that carry its traffic within the hour and then turns
             // up a new one every few hours at most — and each of those is a single trace that did
             // something the job had never done before, which is easy to miss in a table ordered by how
-            // much each route is used.
-            if (!created[0] && after.getRoutes().size() > before.getRoutes().size()) {
+            // much each path is used.
+            if (!created[0] && after.getPaths().size() > before.getPaths().size()) {
                 // Taken out before it is said, because what holds the pathway is written to again
                 // below and a message is not made up until something asks it for its words.
                 final String pathwayName = pathway.getName();
-                messages.log(Severity.INFO, () -> "New route for " + pathwayName);
+                messages.log(Severity.INFO, () -> "New path for " + pathwayName);
             }
 
             final Pathway.Builder builder = pathway
@@ -227,7 +227,7 @@ public class TraceProcessor {
                     .lastUsedTime(nanoTime)
                     .timesUsed(pathway.getTimesUsed() + 1)
                     .root(pathNode)
-                    .routes(after);
+                    .paths(after);
             if (nodeMutator.isChanged()) {
                 builder.updateTime(nanoTime);
                 if (!created[0]) {

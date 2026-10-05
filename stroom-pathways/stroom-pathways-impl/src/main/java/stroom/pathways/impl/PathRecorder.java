@@ -17,9 +17,9 @@
 package stroom.pathways.impl;
 
 import stroom.pathways.shared.otel.trace.NanoTime;
-import stroom.pathways.shared.pathway.RouteStep;
-import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.Routes;
+import stroom.pathways.shared.pathway.PathStep;
+import stroom.pathways.shared.pathway.PathUse;
+import stroom.pathways.shared.pathway.Paths;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,26 +27,26 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Folds one trace's walk into the routes a pathway has already seen.
+ * Folds one trace's walk into the paths a pathway has already seen.
  *
- * <p>A route is one shape holding the whole walk: every node the trace reached, the children it ran
+ * <p>A path is one shape holding the whole walk: every node the trace reached, the children it ran
  * at each, and the order it ran them in, with work that repeated said once. How many times a repeat
  * ran is not part of it — recording that makes a trace that called a routine eight times a different
- * route from one that called it seven, which is the workload rather than the code path.
+ * path from one that called it seven, which is the workload rather than the code path.
  *
- * <p>Shapes are kept once each and named by position, so a subtree many routes reach costs one entry
- * however many of them reach it, and a route is one number.
+ * <p>Shapes are kept once each and named by position, so a subtree many paths reach costs one entry
+ * however many of them reach it, and a path is one number.
  *
- * <p>Every trace produces a route, including a trace that reached no children at all, so the route
+ * <p>Every trace produces a path, including a trace that reached no children at all, so the path
  * counts sum to the number of traces the pathway has been used for.
  */
-final class RouteRecorder {
+final class PathRecorder {
 
-    private RouteRecorder() {
+    private PathRecorder() {
     }
 
-    static Routes add(final Routes current,
-                      final RouteShape shape,
+    static Paths add(final Paths current,
+                      final PathShape shape,
                       final NanoTime time,
                       final String traceId) {
         final List<String> nodes = new ArrayList<>(current.getNodes());
@@ -55,48 +55,48 @@ final class RouteRecorder {
             positions.put(nodes.get(i), i);
         }
 
-        final List<RouteStep> steps = new ArrayList<>(current.getSteps());
-        final Map<RouteStep, Integer> shapes = new HashMap<>();
+        final List<PathStep> steps = new ArrayList<>(current.getSteps());
+        final Map<PathStep, Integer> shapes = new HashMap<>();
         for (int i = 0; i < steps.size(); i++) {
             shapes.putIfAbsent(steps.get(i), i);
         }
-        // A trace always has a shape; -1 is here so a caller that has none records a route the screen
+        // A trace always has a shape; -1 is here so a caller that has none records a path the screen
         // reads as nothing rather than failing.
         final int root = shape == null
                 ? -1
                 : intern(shape, nodes, positions, steps, shapes);
 
-        final List<RouteUse> routes = new ArrayList<>(current.getRoutes());
-        for (int i = 0; i < routes.size(); i++) {
-            if (routes.get(i).getRoot() == root) {
-                routes.set(i, routes.get(i).used(time));
-                return new Routes(nodes, steps, routes);
+        final List<PathUse> paths = new ArrayList<>(current.getPaths());
+        for (int i = 0; i < paths.size(); i++) {
+            if (paths.get(i).getRoot() == root) {
+                paths.set(i, paths.get(i).used(time));
+                return new Paths(nodes, steps, paths);
             }
         }
 
-        // Kept in the order first taken, so the oldest route stays at the top of the table however
+        // Kept in the order first taken, so the oldest path stays at the top of the table however
         // the counts move.
-        routes.add(new RouteUse(root, 1L, time, time, traceId));
-        return new Routes(nodes, steps, routes);
+        paths.add(new PathUse(root, 1L, time, time, traceId));
+        return new Paths(nodes, steps, paths);
     }
 
     // Puts a shape and everything under it in the shape list, deepest first, and says where it went.
-    // A shape the list already holds is not added again, so a subtree many routes reach costs one
+    // A shape the list already holds is not added again, so a subtree many paths reach costs one
     // entry however many of them reach it.
-    private static int intern(final RouteShape shape,
+    private static int intern(final PathShape shape,
                               final List<String> nodes,
                               final Map<String, Integer> positions,
-                              final List<RouteStep> steps,
-                              final Map<RouteStep, Integer> shapes) {
+                              final List<PathStep> steps,
+                              final Map<PathStep, Integer> shapes) {
         // Numbered on the way down, so nodes are numbered in the order the trace reached them and the
         // root takes the first position. Where the shape goes in the list has to wait for the children,
         // because it is made of where they went.
         final int node;
-        if (shape.kind() != RouteShape.Kind.NODE) {
+        if (shape.kind() != PathShape.Kind.NODE) {
             node = switch (shape.kind()) {
-                case UNFINISHED -> RouteStep.UNFINISHED;
-                case CONCURRENT -> RouteStep.CONCURRENT;
-                case RUN -> RouteStep.RUN;
+                case UNFINISHED -> PathStep.UNFINISHED;
+                case CONCURRENT -> PathStep.CONCURRENT;
+                case RUN -> PathStep.RUN;
                 case NODE -> throw new IllegalStateException("handled above");
             };
         } else {
@@ -110,11 +110,11 @@ final class RouteRecorder {
         }
 
         final List<Integer> children = new ArrayList<>(shape.steps().size());
-        for (final RouteShape child : shape.steps()) {
+        for (final PathShape child : shape.steps()) {
             children.add(intern(child, nodes, positions, steps, shapes));
         }
 
-        final RouteStep step = new RouteStep(node, children);
+        final PathStep step = new PathStep(node, children);
         final Integer existing = shapes.get(step);
         if (existing != null) {
             return existing;

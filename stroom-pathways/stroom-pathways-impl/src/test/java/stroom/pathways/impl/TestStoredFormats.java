@@ -21,10 +21,10 @@ import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathStep;
+import stroom.pathways.shared.pathway.PathUse;
+import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
-import stroom.pathways.shared.pathway.RouteStep;
-import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.Routes;
 
 import org.junit.jupiter.api.Test;
 
@@ -95,34 +95,34 @@ class TestStoredFormats {
     }
 
     @Test
-    void aStoredPathwayKeepsItsRoutes() {
+    void aStoredPathwayKeepsItsPaths() {
         final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
-        final RouteUse route = read.getRoutes().getRoutes().getFirst();
+        final PathUse path = read.getPaths().getPaths().getFirst();
 
-        assertThat(read.getRoutes().getNodes()).containsExactly("node-a", "node-b");
-        assertThat(route.getRoot()).isEqualTo(2);
-        assertThat(route.getTimesUsed()).isEqualTo(19);
-        assertThat(route.getFirstUsedTime()).isEqualTo(NanoTime.ofMillis(4));
-        assertThat(route.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(5));
-        assertThat(route.getCreatedByTraceId()).isEqualTo("0a0b0c0d");
+        assertThat(read.getPaths().getNodes()).containsExactly("node-a", "node-b");
+        assertThat(path.getRoot()).isEqualTo(2);
+        assertThat(path.getTimesUsed()).isEqualTo(19);
+        assertThat(path.getFirstUsedTime()).isEqualTo(NanoTime.ofMillis(4));
+        assertThat(path.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(5));
+        assertThat(path.getCreatedByTraceId()).isEqualTo("0a0b0c0d");
     }
 
     @Test
-    void aStoredPathwayKeepsTheShapesItsRoutesAreBuiltFrom() {
+    void aStoredPathwayKeepsTheShapesItsPathsAreBuiltFrom() {
         final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
 
-        assertThat(read.getRoutes().getSteps()).containsExactly(
-                new RouteStep(1, List.of()),
-                new RouteStep(RouteStep.UNFINISHED, List.of(0)),
-                new RouteStep(0, List.of(0, 1)));
-        assertThat(read.getRoutes().getRoutes().getFirst().getRoot()).isEqualTo(2);
+        assertThat(read.getPaths().getSteps()).containsExactly(
+                new PathStep(1, List.of()),
+                new PathStep(PathStep.UNFINISHED, List.of(0)),
+                new PathStep(0, List.of(0, 1)));
+        assertThat(read.getPaths().getPaths().getFirst().getRoot()).isEqualTo(2);
         // The unfinished marker is negative and the length written is not, so it is the one value
         // that could be lost in the round trip.
-        assertThat(read.getRoutes().getSteps().get(1).isUnfinished()).isTrue();
+        assertThat(read.getPaths().getSteps().get(1).isUnfinished()).isTrue();
     }
 
     @Test
-    void aPathwayWithNoRoutesYetReadsBackWithNone() {
+    void aPathwayWithNoPathsYetReadsBackWithNone() {
         final Pathway pathway = Pathway.builder()
                 .name("GET /orders")
                 .createTime(NanoTime.ofMillis(1))
@@ -140,18 +140,18 @@ class TestStoredFormats {
         });
 
         final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(written[0]);
-        assertThat(read.getRoutes().getRoutes()).isEmpty();
-        assertThat(read.getRoutes().getNodes()).isEmpty();
-        assertThat(read.getRoutes().getSteps()).isEmpty();
+        assertThat(read.getPaths().getPaths()).isEmpty();
+        assertThat(read.getPaths().getNodes()).isEmpty();
+        assertThat(read.getPaths().getSteps()).isEmpty();
     }
 
     @Test
-    void aSummaryCountsTheNodesAndRoutesWithoutReadingTheModel() {
+    void aSummaryCountsTheNodesAndPathsWithoutReadingTheModel() {
         final PathwaySummary summary = new PathwaySerde(BYTE_BUFFER_FACTORY).readSummary(write());
 
-        // Three nodes: the root and the two children built below. One route.
+        // Three nodes: the root and the two children built below. One path.
         assertThat(summary.getNodes()).isEqualTo(3);
-        assertThat(summary.getRoutes()).isEqualTo(1);
+        assertThat(summary.getPaths()).isEqualTo(1);
     }
 
     @Test
@@ -163,7 +163,7 @@ class TestStoredFormats {
         assertThat(read.getName()).isEqualTo("GET /orders");
         assertThat(read.getRoot().getName()).isEqualTo("GET /orders");
         assertThat(read.getRoot().getChildren()).hasSize(2);
-        assertThat(read.getRoutes().getRoutes()).hasSize(1);
+        assertThat(read.getPaths().getPaths()).hasSize(1);
     }
 
     private static ByteBuffer write() {
@@ -181,12 +181,12 @@ class TestStoredFormats {
                         List.of("GET /orders"),
                         List.of(new PathNode("Prepare statement"), new PathNode("Commit")),
                         null))
-                .routes(new Routes(
+                .paths(new Paths(
                         List.of("node-a", "node-b"),
-                        List.of(new RouteStep(1, List.of()),
-                                new RouteStep(RouteStep.UNFINISHED, List.of(0)),
-                                new RouteStep(0, List.of(0, 1))),
-                        List.of(new RouteUse(
+                        List.of(new PathStep(1, List.of()),
+                                new PathStep(PathStep.UNFINISHED, List.of(0)),
+                                new PathStep(0, List.of(0, 1))),
+                        List.of(new PathUse(
                                 2,
                                 19,
                                 NanoTime.ofMillis(4),

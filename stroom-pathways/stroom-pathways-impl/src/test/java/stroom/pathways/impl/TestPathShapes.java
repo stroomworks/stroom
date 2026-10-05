@@ -41,12 +41,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What one trace's shape says about work that repeated.
  *
- * <p>Written as the routes table writes it: {@code name} for a node that ran nothing,
+ * <p>Written as the paths table writes it: {@code name} for a node that ran nothing,
  * {@code name (a > b)} for one that ran a and then b, and {@code [a > b]} for work that ran over and
  * over and stopped part way through the last time. Work that repeated and did finish is said once,
  * with nothing to mark that it happened again.
  */
-class TestRouteShapes {
+class TestPathShapes {
 
     private static final IgnoredAttributes NO_IGNORED = new IgnoredAttributes(List.of());
     private static final String OPERATION = "job.run";
@@ -65,7 +65,7 @@ class TestRouteShapes {
 
     @Test
     void howManyTimesAGroupRanIsNotRecorded() {
-        // Three turns and five turns are the same route: how much work there was to do is the
+        // Three turns and five turns are the same path: how much work there was to do is the
         // workload rather than the path through the code.
         assertThat(shapeOf("a", "b", "a", "b", "a", "b"))
                 .isEqualTo(shapeOf("a", "b", "a", "b", "a", "b", "a", "b", "a", "b"));
@@ -111,7 +111,7 @@ class TestRouteShapes {
     void whichOfANodesOwnTurnsRanFirstIsNotPartOfTheShape() {
         // Both traces ran "a" twice, once doing b and once doing c. Which turn did which is decided by
         // which thread read the clock first, or by what was queued, so it is not the path through the
-        // code — and recording it would make almost every trace a route of its own.
+        // code — and recording it would make almost every trace a path of its own.
         final NodeMutatorImpl first = mutator();
         final PathNode root = first.process(twoTurns(nested("a", "b"), nested("a", "c")),
                 new NamePathKey(OPERATION), null, (severity, message) -> {
@@ -123,8 +123,8 @@ class TestRouteShapes {
                 new NamePathKey(OPERATION), root, (severity, message) -> {
                 }, doc());
 
-        assertThat(RouteShapeText.of(second.getRouteShape(), root))
-                .isEqualTo(RouteShapeText.of(first.getRouteShape(), root));
+        assertThat(PathShapeText.of(second.getPathShape(), root))
+                .isEqualTo(PathShapeText.of(first.getPathShape(), root));
     }
 
     @Test
@@ -159,7 +159,7 @@ class TestRouteShapes {
     @Test
     void whichThreadGotThereFirstIsNotPartOfTheShape() {
         // The defect this was built for: the runs were laid out in the order each thread got its
-        // first span in, so the same work came out as a different route depending on the scheduler.
+        // first span in, so the same work came out as a different path depending on the scheduler.
         // Both traces are folded into one model, because the order the runs settle into is fixed for
         // a pathway but says nothing across two built from nothing.
         final NodeMutatorImpl first = mutator();
@@ -172,8 +172,8 @@ class TestRouteShapes {
                 new NamePathKey(OPERATION), root, (severity, message) -> {
                 }, doc());
 
-        assertThat(RouteShapeText.of(second.getRouteShape(), root))
-                .isEqualTo(RouteShapeText.of(first.getRouteShape(), root));
+        assertThat(PathShapeText.of(second.getPathShape(), root))
+                .isEqualTo(PathShapeText.of(first.getPathShape(), root));
     }
 
     @Test
@@ -215,7 +215,7 @@ class TestRouteShapes {
     void howTheTurnsFellAcrossTheThreadsIsNotPartOfTheShape() {
         // The defect this was built for. Both traces took the same five turns; they differ only in
         // how many each thread happened to get off the queue, which is decided by how long the turns
-        // before them took. Recording the split made almost every run of the job a route of its own.
+        // before them took. Recording the split made almost every run of the job a path of its own.
         //
         // Both traces are folded into one model, because the order the turns settle into is fixed for
         // a pathway but says nothing across two built from nothing.
@@ -230,9 +230,9 @@ class TestRouteShapes {
                 new NamePathKey(OPERATION), root, (severity, message) -> {
                 }, doc());
 
-        assertThat(RouteShapeText.of(second.getRouteShape(), root))
-                .as("the same turns, so the same route however they fell across the threads")
-                .isEqualTo(RouteShapeText.of(first.getRouteShape(), root));
+        assertThat(PathShapeText.of(second.getPathShape(), root))
+                .as("the same turns, so the same path however they fell across the threads")
+                .isEqualTo(PathShapeText.of(first.getPathShape(), root));
     }
 
     @Test
@@ -264,7 +264,7 @@ class TestRouteShapes {
         final PathNode node = mutator.process(concurrent(first, second),
                 new NamePathKey(OPERATION), null, (severity, message) -> {
                 }, doc());
-        return RouteShapeText.of(mutator.getRouteShape(), node);
+        return PathShapeText.of(mutator.getPathShape(), node);
     }
 
     // Two threads whose spans overlap, each running the names given, in the order given.
@@ -295,7 +295,7 @@ class TestRouteShapes {
         final PathNode node = mutator.process(turnsOfOneNode(first, second),
                 new NamePathKey(OPERATION), null, (severity, message) -> {
                 }, doc());
-        return RouteShapeText.of(mutator.getRouteShape(), node);
+        return PathShapeText.of(mutator.getPathShape(), node);
     }
 
     // Two threads each taking turns of one node, each turn running the one child named for it, with
@@ -335,7 +335,7 @@ class TestRouteShapes {
                 sequential(childNames), new NamePathKey(OPERATION), null, (severity, message) -> {
                 }, doc());
 
-        return RouteShapeText.of(mutator.getRouteShape(), root);
+        return PathShapeText.of(mutator.getPathShape(), root);
     }
 
     // Children spaced wider than the ordering tolerance, so the sequence given is the sequence the

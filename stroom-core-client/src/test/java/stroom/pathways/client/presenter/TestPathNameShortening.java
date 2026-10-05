@@ -21,31 +21,31 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What a node is called in the Route column, where the room runs out long before the route does.
+ * What a node is called in the Path column, where the room runs out long before the path does.
  */
-class TestRouteNameShortening {
+class TestPathNameShortening {
 
     @Test
     void aDatabaseSpanKeepsItsOperationAndLosesTheSchema() {
-        assertThat(PathwayRouteListPresenter.shorten("SELECT stroom.doc")).isEqualTo("SELECT doc");
-        assertThat(PathwayRouteListPresenter.shorten("UPDATE stroom.cluster_lock"))
+        assertThat(PathwayPathListPresenter.shorten("SELECT stroom.doc")).isEqualTo("SELECT doc");
+        assertThat(PathwayPathListPresenter.shorten("UPDATE stroom.cluster_lock"))
                 .isEqualTo("UPDATE cluster_lock");
-        assertThat(PathwayRouteListPresenter.shorten("INSERT stroom.processor_task"))
+        assertThat(PathwayPathListPresenter.shorten("INSERT stroom.processor_task"))
                 .isEqualTo("INSERT processor_task");
     }
 
     @Test
     void aCodeSpanKeepsItsMethodAndLosesTheClass() {
-        assertThat(PathwayRouteListPresenter.shorten("HoldingAreaMergeStrategy.mergeShard"))
+        assertThat(PathwayPathListPresenter.shorten("HoldingAreaMergeStrategy.mergeShard"))
                 .isEqualTo("mergeShard");
-        assertThat(PathwayRouteListPresenter.shorten("QueueItemWriter.publish")).isEqualTo("publish");
+        assertThat(PathwayPathListPresenter.shorten("QueueItemWriter.publish")).isEqualTo("publish");
     }
 
     @Test
     void aNameWithNothingToDropIsLeftAlone() {
-        assertThat(PathwayRouteListPresenter.shorten("Commit")).isEqualTo("Commit");
-        assertThat(PathwayRouteListPresenter.shorten("SELECT stroom")).isEqualTo("SELECT stroom");
-        assertThat(PathwayRouteListPresenter.shorten("Batch execute prepared statement"))
+        assertThat(PathwayPathListPresenter.shorten("Commit")).isEqualTo("Commit");
+        assertThat(PathwayPathListPresenter.shorten("SELECT stroom")).isEqualTo("SELECT stroom");
+        assertThat(PathwayPathListPresenter.shorten("Batch execute prepared statement"))
                 .isEqualTo("Batch execute prepared statement");
     }
 
@@ -53,14 +53,14 @@ class TestRouteNameShortening {
     void aDotInsideAQuotedValueIsNotAName() {
         // The agent names a span for the variable it read, and the dot there belongs to the value.
         // Cutting at it would leave a fragment of the quoted text rather than a shorter name.
-        assertThat(PathwayRouteListPresenter.shorten("Get variable '@@session.transaction_read_only'"))
+        assertThat(PathwayPathListPresenter.shorten("Get variable '@@session.transaction_read_only'"))
                 .isEqualTo("Get variable '@@session.transaction_read_only'");
-        assertThat(PathwayRouteListPresenter.shorten("Set variable 'character_set_results'"))
+        assertThat(PathwayPathListPresenter.shorten("Set variable 'character_set_results'"))
                 .isEqualTo("Set variable 'character_set_results'");
     }
 
     @Test
     void aNameEndingInADotIsLeftAlone() {
-        assertThat(PathwayRouteListPresenter.shorten("trailing.")).isEqualTo("trailing.");
+        assertThat(PathwayPathListPresenter.shorten("trailing.")).isEqualTo("trailing.");
     }
 }

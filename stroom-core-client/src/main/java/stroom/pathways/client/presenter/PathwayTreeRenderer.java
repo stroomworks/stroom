@@ -41,8 +41,8 @@ class PathwayTreeRenderer implements PathwayRenderer {
     private static final int ROW_HEIGHT = 22;
     private static final int INDENT = 20;
 
-    // The nodes the route being looked at ran, for as long as one drawing takes.
-    private Set<String> onRoute = Collections.emptySet();
+    // The nodes the path being looked at ran, for as long as one drawing takes.
+    private Set<String> onPath = Collections.emptySet();
 
     @Override
     public boolean opensCentred() {
@@ -76,7 +76,7 @@ class PathwayTreeRenderer implements PathwayRenderer {
     @Override
     public SafeHtml render(final RenderRequest request) {
         final Pathway pathway = request.getPathway();
-        onRoute = NullSafe.set(request.getOnRoute());
+        onPath = NullSafe.set(request.getOnPath());
         final HtmlBuilder hb = new HtmlBuilder();
         hb.div(div -> {
             if (pathway != null) {
@@ -118,9 +118,9 @@ class PathwayTreeRenderer implements PathwayRenderer {
                                         SvgImage.PATHWAYS_NODE.getClassName()));
             nodeDiv.div(n -> n.append(node.getName()),
                     Attribute.className("pathway-nodeName"), new Attribute("uuid", node.getUuid()));
-        }, Attribute.className(onRoute.isEmpty() || onRoute.contains(node.getUuid())
+        }, Attribute.className(onPath.isEmpty() || onPath.contains(node.getUuid())
                 ? "pathway-node"
-                : "pathway-node pathway-node--off-route"));
+                : "pathway-node pathway-node--off-path"));
 
         // Add the things seen beneath this node.
         final List<PathNode> children = NullSafe.list(node.getChildren());

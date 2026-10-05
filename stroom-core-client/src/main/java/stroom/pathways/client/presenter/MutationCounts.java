@@ -37,7 +37,7 @@ import java.util.Set;
  *     <li><b>Traces, not changes.</b> A trace that widened nine constraints of a node taught it one
  *     thing on one occasion, the same as a trace that widened one.</li>
  *     <li><b>Coming into being is not changing.</b> A node just learnt has changed no times, however
- *     much was learnt about it. This covers the whole of the trace that first took the route, not
+ *     much was learnt about it. This covers the whole of the trace that first took the path, not
  *     just the parts of it that added something: a first trace that sets a duration and then widens
  *     it taught the model what it knows rather than changing its mind. That is how a pathway's own
  *     Updates counts, which does not move for the trace that created the pathway.</li>
@@ -78,7 +78,7 @@ class MutationCounts {
             if (isCreation(mutation.getType()) || MutationType.NODE_ABSENT.equals(mutation.getType())) {
                 continue;
             }
-            nodes.add(key(mutation.getPath()), mutation);
+            nodes.add(key(mutation.getNodePath()), mutation);
         }
 
         final Map<String, NodeChange> byNode = nodes.counted();

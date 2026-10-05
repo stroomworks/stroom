@@ -188,7 +188,7 @@ class TestPathwayReplay {
     }
 
     private static void describe(final PathNode node, final StringBuilder sb, final String indent) {
-        sb.append(indent).append(node.getName()).append(' ').append(node.getPath()).append('\n');
+        sb.append(indent).append(node.getName()).append(' ').append(node.getNodePath()).append('\n');
         final List<String> names = new ArrayList<>(node.getConstraints() == null
                 ? List.of()
                 : node.getConstraints().keySet());

@@ -67,10 +67,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final int MAX_EDGE = 15;
 
     private final Map<String, Boolean> leftOfCentre = new HashMap<>();
-    // The nodes the route being looked at ran, for as long as one drawing takes. Held here rather
+    // The nodes the path being looked at ran, for as long as one drawing takes. Held here rather
     // than carried down, like the rest of what a single drawing needs.
-    private Set<String> onRoute = Collections.emptySet();
-    // The bright lines that run along the route as it is walked. Gathered apart from the lines the
+    private Set<String> onPath = Collections.emptySet();
+    // The bright lines that run along the path as it is walked. Gathered apart from the lines the
     // model draws so they can be laid over the lot of them rather than in among them.
     private HtmlBuilder walkEdges = new HtmlBuilder();
     // Kept apart from the lines rather than written in beside them. Both are built as the tree is
@@ -117,7 +117,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     private static final String KEY_ID = "pathwayKeyToggle";
     private static final String KEY_SHOWN_CLASS = "pathway-graph-key--shown";
     // The thinnest a line traced by a walk is ever drawn. The drawing is scaled to fit, and following
-    // a route on a large one is what this is for, so a line as thin as the traffic through it would
+    // a path on a large one is what this is for, so a line as thin as the traffic through it would
     // leave nothing to follow.
     private static final int WALK_WIDTH = 3;
     // Big enough to hold a two figure number at the size the drawing is read at.
@@ -197,7 +197,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // construction rather than by two pieces of code agreeing with each other.
     private final Map<String, Appearance> appearance = new HashMap<>();
     // What the drawing on the screen was built with, for the two things that decide its shape rather
-    // than its colours: whether the key is open, and whether a route is being watched — which is what
+    // than its colours: whether the key is open, and whether a path is being watched — which is what
     // puts a veil over every node. Neither is part of a node's appearance, so neither can be changed
     // in place; a drawing that wants either of them different has to be built again.
     private boolean drawnLegend;
@@ -229,7 +229,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         appearance.clear();
         final Painted painted = paint(request, root);
         drawnLegend = request.isLegendVisible();
-        drawnVeiled = !NullSafe.set(request.getOnRoute()).isEmpty();
+        drawnVeiled = !NullSafe.set(request.getOnPath()).isEmpty();
 
         final HtmlBuilder canvas = new HtmlBuilder();
         canvas.div(d -> d.append(painted.curves()), Attribute.className("pathway-curves"));
@@ -281,7 +281,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
             return false;
         }
         if (request.isLegendVisible() != drawnLegend
-            || !NullSafe.set(request.getOnRoute()).isEmpty() != drawnVeiled) {
+            || !NullSafe.set(request.getOnPath()).isEmpty() != drawnVeiled) {
             return false;
         }
         final Element curves = byClass(element, "pathway-curves");
@@ -352,7 +352,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         final PathNode shown = NullSafe.get(request.getPathway(), Pathway::getRoot);
         final Set<String> present = new HashSet<>();
         collect(shown, present);
-        onRoute = NullSafe.set(request.getOnRoute());
+        onPath = NullSafe.set(request.getOnPath());
 
         final Map<String, NodeChange> changes = request.getChanges();
         final Map<String, NodeUsage> usage = request.getUsage();
@@ -512,7 +512,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                         : " pathway-graph-node--absent")
                 + (ran(node)
                         ? ""
-                        : " pathway-graph-node--off-route");
+                        : " pathway-graph-node--off-path");
         final String nodeClass = "pathway-graph-node" + side;
         final String nodeStyle = "left: " + ((int) at.getX() - radius) + "px;"
                                  + " top: " + ((int) at.getY() - radius) + "px;";
@@ -532,7 +532,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                     // node has changed, and a border would eat into it. Selecting draws an outline
                     // instead of a second shadow, so the two do not fight over one property.
                     Attribute.style(dotStyle));
-            if (!onRoute.isEmpty()) {
+            if (!onPath.isEmpty()) {
                 // Over the node rather than making the node see-through, whether it is held back until
                 // the walk arrives or never ran at all. Faded out instead, a node shows through itself
                 // the lines that end under it.
@@ -549,7 +549,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
             final Point childAt = places.get(child.getUuid());
             // As thick as the traffic reaching what it points at, and coloured by how recently that
             // traffic last came through, on the same scale as the nodes. So the thick bright lines
-            // are the routes being taken now and the thin dim ones are the routes that have stopped.
+            // are the paths being taken now and the thin dim ones are the paths that have stopped.
             //
             // Drawn between the two circles rather than between their middles. A line runs as wide as
             // its traffic says and a node is as large as its changes say, so a line can be wider than
@@ -569,7 +569,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                     gradient(from, to,
                             light(lastUsed(child, usage), now),
                             colour(lastUsed(child, usage), now)));
-            if (!onRoute.isEmpty() && ran(child)) {
+            if (!onPath.isEmpty() && ran(child)) {
                 walkLine(walkEdges, child.getUuid(), from, to, Math.max(edgeWidth, WALK_WIDTH));
                 walkBadge(walkBadges, child.getUuid(), from, to);
             }
@@ -579,7 +579,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
     // The bright line that runs along an edge as the walk reaches the node at its far end. A second
     // line laid over the one the model draws rather than a change to it: that one says what joins what
-    // and how busy the join is, and a route being watched must not take that away while it plays.
+    // and how busy the join is, and a path being watched must not take that away while it plays.
     //
     // It is held off the end of itself to start with, so nothing of it is on show until the walk says
     // so. Its length is given as one rather than measured: a dash the whole length of the line and an
@@ -609,7 +609,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
     // The round badge that flashes the number of a run on the line that run starts at. Drawn empty
     // and held out of sight, because which runs there are and which of them begins here is not known
-    // until a route is picked; whatever marks the walk writes the number on and says when.
+    // until a path is picked; whatever marks the walk writes the number on and says when.
     //
     // Halfway along the line, which is the one place on it belonging to neither node it joins.
     private static void walkBadge(final HtmlBuilder svg,
@@ -637,16 +637,16 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 // The node at the far end, the same way the line into it is found.
                 new Attribute("edge", reaches),
                 // Out of sight on the drawing itself rather than in the stylesheet. Every line into a
-                // node the route ran carries one of these and most are never given a run to say, so
+                // node the path ran carries one of these and most are never given a run to say, so
                 // what hides them must not depend on a sheet being found.
                 new Attribute("opacity", "0"),
                 Attribute.className(WALK_BADGE_CLASS));
     }
 
-    // Whether the route being looked at ran this node. Everything counts while none is being looked
+    // Whether the path being looked at ran this node. Everything counts while none is being looked
     // at, which is most of the time.
     private boolean ran(final PathNode node) {
-        return onRoute.isEmpty() || onRoute.contains(node.getUuid());
+        return onPath.isEmpty() || onPath.contains(node.getUuid());
     }
 
     // Straight, not the curves the tree draws: those bend towards a left-to-right layout, and on a
@@ -705,7 +705,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                                             : " pathway-graph-edge--absent")
                                     + (ran
                                             ? ""
-                                            : " pathway-graph-edge--off-route")));
+                                            : " pathway-graph-edge--off-path")));
     }
 
     // What the reading kept at the moment being shown says, or what the node says where there is no

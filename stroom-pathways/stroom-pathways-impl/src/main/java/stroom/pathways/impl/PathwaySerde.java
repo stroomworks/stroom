@@ -43,13 +43,13 @@ import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathStep;
+import stroom.pathways.shared.pathway.PathUse;
+import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.pathways.shared.pathway.Regex;
-import stroom.pathways.shared.pathway.RouteStep;
-import stroom.pathways.shared.pathway.RouteUse;
-import stroom.pathways.shared.pathway.Routes;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.pathways.shared.pathway.TerminalPathKey;
@@ -149,7 +149,7 @@ public class PathwaySerde {
                 .timesUsed(input.readLong())
                 .timesUpdated(input.readLong());
 
-        // The node and route counts the list reads. Taken off the front to keep everything after
+        // The node and path counts the list reads. Taken off the front to keep everything after
         // them lined up, and then dropped: what they count is about to be read in full, and a
         // pathway holding its own count of itself is a second answer that can disagree.
         input.readVarInt(true);
@@ -158,7 +158,7 @@ public class PathwaySerde {
         return builder
                 .pathKey(readPathKey(input))
                 .root(readPathNode(input))
-                .routes(readRoutes(input))
+                .paths(readPaths(input))
                 .build();
     }
 
@@ -193,7 +193,7 @@ public class PathwaySerde {
         return PathNode.builder()
                 .uuid(input.readString())
                 .name(input.readString())
-                .path(readStrings(input))
+                .nodePath(readStrings(input))
                 .children(readList(input, this::readPathNode))
                 .constraints(readConstraints(input))
                 .timesUsed(input.readLong())
@@ -201,22 +201,22 @@ public class PathwaySerde {
                 .build();
     }
 
-    private Routes readRoutes(final Input input) {
-        return new Routes(readStrings(input),
-                readList(input, this::readRouteStep),
-                readList(input, this::readRouteUse));
+    private Paths readPaths(final Input input) {
+        return new Paths(readStrings(input),
+                readList(input, this::readPathStep),
+                readList(input, this::readPathUse));
     }
 
     // Written one more than it is held, so the group marker of -1 fits a variable length integer
     // that cannot carry a negative.
-    private RouteStep readRouteStep(final Input input) {
-        return new RouteStep(
+    private PathStep readPathStep(final Input input) {
+        return new PathStep(
                 input.readVarInt(true) - MARKER_OFFSET,
                 readList(input, in -> in.readVarInt(true)));
     }
 
-    private RouteUse readRouteUse(final Input input) {
-        return new RouteUse(
+    private PathUse readPathUse(final Input input) {
+        return new PathUse(
                 input.readVarInt(true) - MARKER_OFFSET,
                 input.readLong(),
                 readNullableNanoTime(input),
@@ -308,7 +308,7 @@ public class PathwaySerde {
             writeNanoTime(mutation.getTime(), output);
             output.writeString(mutation.getTraceId());
             output.writeString(mutation.getSpanId());
-            writeStrings(mutation.getPath(), output);
+            writeStrings(mutation.getNodePath(), output);
             output.writeString(mutation.getNodeUuid());
             output.writeString(mutation.getConstraint());
             output.writeByte(mutation.getType().getPrimitiveValue());
@@ -383,31 +383,31 @@ public class PathwaySerde {
         // Derived here rather than held on the pathway, so they cannot say something the model does
         // not. Written ahead of the model because the list reads them and stops before it.
         output.writeVarInt(countNodes(pathway.getRoot()), true);
-        output.writeVarInt(pathway.getRoutes().getRoutes().size(), true);
+        output.writeVarInt(pathway.getPaths().getPaths().size(), true);
         writePathKey(pathway.getPathKey(), output);
         writePathNode(pathway.getRoot(), output);
-        writeRoutes(pathway.getRoutes(), output);
+        writePaths(pathway.getPaths(), output);
     }
 
-    private void writeRoutes(final Routes routes, final Output output) {
-        writeStrings(routes.getNodes(), output);
-        writeList(routes.getSteps(), output, this::writeRouteStep);
-        writeList(routes.getRoutes(), output, this::writeRouteUse);
+    private void writePaths(final Paths paths, final Output output) {
+        writeStrings(paths.getNodes(), output);
+        writeList(paths.getSteps(), output, this::writePathStep);
+        writeList(paths.getPaths(), output, this::writePathUse);
     }
 
-    private void writeRouteStep(final RouteStep step, final Output output) {
+    private void writePathStep(final PathStep step, final Output output) {
         output.writeVarInt(step.getNode() + MARKER_OFFSET, true);
         writeList(step.getSteps(), output, (child, out) -> out.writeVarInt(child, true));
     }
 
     // Positions rather than names, and both small, so a variable-length integer is most of why a
-    // route costs a couple of bytes a visit instead of the length of a uuid.
-    private void writeRouteUse(final RouteUse routeUse, final Output output) {
-        output.writeVarInt(routeUse.getRoot() + MARKER_OFFSET, true);
-        output.writeLong(routeUse.getTimesUsed());
-        writeNullableNanoTime(routeUse.getFirstUsedTime(), output);
-        writeNullableNanoTime(routeUse.getLastUsedTime(), output);
-        output.writeString(routeUse.getCreatedByTraceId());
+    // path costs a couple of bytes a visit instead of the length of a uuid.
+    private void writePathUse(final PathUse pathUse, final Output output) {
+        output.writeVarInt(pathUse.getRoot() + MARKER_OFFSET, true);
+        output.writeLong(pathUse.getTimesUsed());
+        writeNullableNanoTime(pathUse.getFirstUsedTime(), output);
+        writeNullableNanoTime(pathUse.getLastUsedTime(), output);
+        output.writeString(pathUse.getCreatedByTraceId());
     }
 
     private static int countNodes(final PathNode pathNode) {
@@ -443,7 +443,7 @@ public class PathwaySerde {
     private void writePathNode(final PathNode pathNode, final Output output) {
         output.writeString(pathNode.getUuid());
         output.writeString(pathNode.getName());
-        writeStrings(pathNode.getPath(), output);
+        writeStrings(pathNode.getNodePath(), output);
         writeList(pathNode.getChildren(), output, this::writePathNode);
         writeConstraints(pathNode.getConstraints(), output);
         output.writeLong(pathNode.getTimesUsed());

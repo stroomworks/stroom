@@ -28,10 +28,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * One shape a route takes at a point: a node and the children it ran there in the sequence it ran
+ * One shape a path takes at a point: a node and the children it ran there in the sequence it ran
  * them, a run of work that did not finish, or several runs that happened at the same time.
  *
- * <p>{@code node} indexes the node list on {@link Routes}, except for these:
+ * <p>{@code node} indexes the node list on {@link Paths}, except for these:
  *
  * <ul>
  *   <li>{@link #UNFINISHED} — a run of work one turn of which stopped part way through; its steps are
@@ -39,7 +39,7 @@ import java.util.Objects;
  *   <li>{@link #CONCURRENT} — work that happened at the same time on more than one thread; its steps
  *   are the runs, each a {@link #RUN}. They are held in an order settled by what they are rather than
  *   by which thread got there first, because that is the scheduler's doing and not the path through
- *   the code — two traces that ran the same work on four threads took the same route however the
+ *   the code — two traces that ran the same work on four threads took the same path however the
  *   threads happened to be timed. One run does not mean one thread: runs that came to the same thing
  *   are said once, and turns of a single node taken between several threads are said as one run,
  *   because which thread took which turn is decided by what it reached first.
@@ -48,15 +48,15 @@ import java.util.Objects;
  *
  * <p>Work that repeated and did finish is simply said once, with nothing to mark that it happened
  * more than once — how much work there was to do is the workload rather than the path through the
- * code, and a trace that handled one document would otherwise be a different route from one that
+ * code, and a trace that handled one document would otherwise be a different path from one that
  * handled three.
  *
- * <p>Steps index the shape list on {@link Routes}, which holds each distinct shape once, so a subtree
- * that many routes share costs one entry however many of them reach it. A shape with no steps is a
+ * <p>Steps index the shape list on {@link Paths}, which holds each distinct shape once, so a subtree
+ * that many paths share costs one entry however many of them reach it. A shape with no steps is a
  * node that ran nothing, and that is the only thing it can mean.
  */
 @JsonInclude(Include.NON_NULL)
-public class RouteStep {
+public class PathStep {
 
     /**
      * The {@code node} of a shape that is a run of work that did not finish, rather than a node the
@@ -82,7 +82,7 @@ public class RouteStep {
 
 
     @JsonCreator
-    public RouteStep(@JsonProperty("node") final int node,
+    public PathStep(@JsonProperty("node") final int node,
                      @JsonProperty("steps") final List<Integer> steps) {
         this.node = node;
         this.steps = steps == null
@@ -96,7 +96,7 @@ public class RouteStep {
 
     /**
      * The children run here, in the order they ran, each a position in the shape list on
-     * {@link Routes}.
+     * {@link Paths}.
      */
     public List<Integer> getSteps() {
         return steps;
@@ -136,7 +136,7 @@ public class RouteStep {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        final RouteStep that = (RouteStep) o;
+        final PathStep that = (PathStep) o;
         return node == that.node && Objects.equals(steps, that.steps);
     }
 

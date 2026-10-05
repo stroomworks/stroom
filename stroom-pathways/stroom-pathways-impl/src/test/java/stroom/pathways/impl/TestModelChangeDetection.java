@@ -39,7 +39,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Telling a trace that taught the model something from one that merely took a route it already knew.
+ * Telling a trace that taught the model something from one that merely took a path it already knew.
  *
  * <p>This is what separates the two timestamps on a pathway: last used moves for every trace, while
  * updated moves only when the model itself did. A pathway that is busy but settled shows the first
@@ -70,7 +70,7 @@ class TestModelChangeDetection {
         mutator.process(trace("GET", 5, PING), key(), root, quiet(), doc());
 
         assertThat(mutator.isChanged())
-                .as("a route the model already knows, taken in a way it already allows")
+                .as("a path the model already knows, taken in a way it already allows")
                 .isFalse();
     }
 

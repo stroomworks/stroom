@@ -1,8 +1,8 @@
 :root {
-    /* How much of a node is on show while a route is being looked at: one the walk has not reached
-       yet, and one the route never ran at all. What is over it is the rest. */
+    /* How much of a node is on show while a path is being looked at: one the walk has not reached
+       yet, and one the path never ran at all. What is over it is the rest. */
     --pathway-unwalked: 0.45;
-    --pathway-off-route: 0.22;
+    --pathway-off-path: 0.22;
     /* How far off a node the ring that says it has just been reached starts. */
     --pathway-pulse-start: 2px;
 }
@@ -29,7 +29,7 @@
     height: 100%;
 }
 
-/* Which of the routes and the changes is on show. Held off the table below it so the two read as a
+/* Which of the paths and the changes is on show. Held off the table below it so the two read as a
    bar over a panel rather than as one block. Said here because the rule that used to say it applied
    only inside a dialog, which is not where this is shown any more. */
 .pathway-tabs {
@@ -955,17 +955,17 @@
     opacity: 0.18;
 }
 
-/* What the route being looked at did not run. Faded rather than taken out: where every node sits and
- * what it joins are worked out from the whole model, so they stay put and one route can be held
+/* What the path being looked at did not run. Faded rather than taken out: where every node sits and
+ * what it joins are worked out from the whole model, so they stay put and one path can be held
  * against another without the drawing rearranging itself in between. Fading alone, so a node still
  * looks like itself — its size and its colour go on saying how much it has changed and when.
  *
  * A row on the tree fades; a node on the graph is covered instead, for the reason the veil gives. */
-.pathway-node--off-route {
+.pathway-node--off-path {
     opacity: 0.22;
 }
 
-.pathway-graph .pathway-curves svg line.pathway-graph-edge--off-route {
+.pathway-graph .pathway-curves svg line.pathway-graph-edge--off-path {
     opacity: 0.18;
 }
 
@@ -1004,7 +1004,7 @@
 }
 
 /* Lifting the veil off a node as the walk reaches it, and leaving it off. What a walk leaves behind
- * it, so the part of the route already covered is on show rather than held in the reader's head —
+ * it, so the part of the path already covered is on show rather than held in the reader's head —
  * without it only the two or three nodes lit at that moment can be seen, and on a large model that is
  * not enough to follow.
  *
@@ -1034,7 +1034,7 @@
 }
 
 /* And taking it away again once the node at its far end has been reached, which leaves the line the
- * model drew showing in its own colour. So a magenta stretch travels along the route rather than the
+ * model drew showing in its own colour. So a magenta stretch travels along the path rather than the
  * whole of it staying painted over — what has already been walked is said by the nodes, which stay
  * lit, and does not need saying twice. */
 @keyframes pathway-walk-cleared {
@@ -1047,7 +1047,7 @@
 }
 
 /* The line a walk runs along, laid over the one the model draws so that what joins what, and how busy
- * the join is, are never taken away while a route plays. Full strength, against the faintness the
+ * the join is, are never taken away while a path plays. Full strength, against the faintness the
  * lines beneath are held at so they do not compete with the nodes. */
 .pathway-graph .pathway-curves svg line.pathway-graph-walk {
     stroke: rgb(255, 77, 200);
@@ -1082,7 +1082,7 @@
     }
 }
 
-/* Out of sight until its turn, and out of sight again afterwards. Every line into a node the route
+/* Out of sight until its turn, and out of sight again afterwards. Every line into a node the path
  * ran carries one of these, and most of them are never given a run to say.
  *
  * In the badge layer rather than the one holding the lines: these are drawn over the node names, so
@@ -1116,7 +1116,7 @@
 }
 
 /* Over once. A model being stepped through needs it, because the next step lands before a long run
-   has finished and every node would be caught part way through one. A route needs it too: its nodes
+   has finished and every node would be caught part way through one. A path needs it too: its nodes
    are held off one after another to show the walk, so running it again would replay the walk rather
    than show it. */
 .pathway-node--changed-once {
@@ -1152,17 +1152,17 @@
     animation: pathway-node-reached 0.25s ease-out 1 forwards;
 }
 
-/* Heavier over a node the route never ran, and never lifted — no walk is coming for it. */
-.pathway-graph-node--off-route .pathway-graph-veil {
-    opacity: calc(1 - var(--pathway-off-route));
+/* Heavier over a node the path never ran, and never lifted — no walk is coming for it. */
+.pathway-graph-node--off-path .pathway-graph-veil {
+    opacity: calc(1 - var(--pathway-off-path));
     animation: none;
 }
 
-/* The name beside a node the route never ran. Held back the same amount as the node it names, so the
+/* The name beside a node the path never ran. Held back the same amount as the node it names, so the
    two read as one thing being kept out of the way. Faded rather than covered like the node is: a name
    is written out beside the drawing rather than on it, so there is nothing under it to show through. */
-.pathway-graph-node--off-route .pathway-graph-label {
-    opacity: var(--pathway-off-route);
+.pathway-graph-node--off-path .pathway-graph-label {
+    opacity: var(--pathway-off-path);
 }
 
 /* And the name beside a node the walk has not reached yet, held back the same amount as that node is

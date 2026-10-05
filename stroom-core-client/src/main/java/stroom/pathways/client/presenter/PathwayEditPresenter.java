@@ -108,10 +108,10 @@ public class PathwayEditPresenter
     private final PathwayTreePresenter pathwayTreePresenter;
     private final ConstraintListPresenter constraintListPresenter;
     private final PathwayMutationListPresenter mutationListPresenter;
-    private final PathwayRouteListPresenter routeListPresenter;
-    private final TabData routesTab = new TabDataImpl("Routes");
+    private final PathwayPathListPresenter pathListPresenter;
+    private final TabData pathsTab = new TabDataImpl("Paths");
     private final TabData changesTab = new TabDataImpl("Changes");
-    private TabData selectedTab = routesTab;
+    private TabData selectedTab = pathsTab;
     private final ButtonView saveButton;
     private final ButtonView playButton;
     private final ButtonView stopButton;
@@ -134,19 +134,19 @@ public class PathwayEditPresenter
                                 final PathwayTreePresenter pathwayTreePresenter,
                                 final ConstraintListPresenter constraintListPresenter,
                                 final PathwayMutationListPresenter mutationListPresenter,
-                                final PathwayRouteListPresenter routeListPresenter,
+                                final PathwayPathListPresenter pathListPresenter,
                                 final RestFactory restFactory) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.pathwayTreePresenter = pathwayTreePresenter;
         this.constraintListPresenter = constraintListPresenter;
         this.mutationListPresenter = mutationListPresenter;
-        this.routeListPresenter = routeListPresenter;
+        this.pathListPresenter = pathListPresenter;
         view.setTree(pathwayTreePresenter.getView());
         view.setConstraints(constraintListPresenter.getView());
         // One at a time rather than side by side. Both are wide tables of the whole pathway and
         // neither is read while the other is, so sharing the strip left each too narrow to read.
-        view.getTabBar().addTab(routesTab);
+        view.getTabBar().addTab(pathsTab);
         view.getTabBar().addTab(changesTab);
 
         // On the tab's own toolbar rather than on any one panel's, because it is the pathway that is
@@ -178,21 +178,21 @@ public class PathwayEditPresenter
 
         registerHandler(pathwayTreePresenter.getSelectionModel()
                 .addSelectionChangeHandler(e -> {
-                    // The routes table can narrow itself to the node being looked at, and the drawing
+                    // The paths table can narrow itself to the node being looked at, and the drawing
                     // is where that node is picked out, so it is told each time that moves.
-                    routeListPresenter.setSelectedNode(
+                    pathListPresenter.setSelectedNode(
                             pathwayTreePresenter.getSelectionModel().getSelectedObject());
                     showConstraints();
                 }));
 
         registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
-        registerHandler(routeListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
+        registerHandler(pathListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
         registerHandler(getView().getTabBar().addSelectionHandler(e -> showTab(e.getSelectedItem())));
         registerHandler(getView().getTabBar().addShowMenuHandler(e -> getEventBus().fireEvent(e)));
 
-        // Routes first: what the pathway actually does is what a reader opens it for, and the changes
+        // Paths first: what the pathway actually does is what a reader opens it for, and the changes
         // are how it came to be that way.
-        showTab(routesTab);
+        showTab(pathsTab);
 
 //        registerHandler(getView().getDetails().addClickHandler(e -> {
 //            final Element target = e.getNativeEvent().getEventTarget().cast();
@@ -498,14 +498,14 @@ public class PathwayEditPresenter
         }
 
         // Set before the model is read, because the nodes are picked out as the drawing is built. The
-        // tab on show decides which selection picks them out, so a route left selected behind the
+        // tab on show decides which selection picks them out, so a path left selected behind the
         // Changes tab does not keep marking the drawing while changes are being clicked through.
         if (changesTab.equals(selectedTab)) {
-            pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedPaths());
+            pathwayTreePresenter.setHighlighted(mutationListPresenter.getSelectedNodePaths());
         } else {
-            pathwayTreePresenter.setHighlightedRoute(routeListPresenter.getSelectedPaths(),
-                    routeListPresenter.getSelectedRunStarts(),
-                    routeListPresenter.getSelectedHolds());
+            pathwayTreePresenter.setHighlightedPath(pathListPresenter.getSelectedNodePaths(),
+                    pathListPresenter.getSelectedRunStarts(),
+                    pathListPresenter.getSelectedHolds());
         }
         // Winding the model back takes nodes out of it. Placing what is left from the model as it
         // stands now keeps every node where it was, rather than closing the gaps and moving
@@ -555,7 +555,7 @@ public class PathwayEditPresenter
         getView().getTabBar().selectTab(tab);
         getView().getLayerContainer().show(changesTab.equals(tab)
                 ? mutationListPresenter
-                : routeListPresenter);
+                : pathListPresenter);
 
         // Stepping through the changes is driven by the list on the Changes tab, and the buttons that
         // start and stop it sit on that list's own toolbar. Left running behind the other tab it would
@@ -563,11 +563,11 @@ public class PathwayEditPresenter
         stop();
 
         // Neither table's selection says anything on the other tab — a change winds the model back
-        // where a route picks nodes out of it as it stands — so the switch starts at the model as it
+        // where a path picks nodes out of it as it stands — so the switch starts at the model as it
         // is with nothing picked out. Cleared without telling anyone, because the read below is the
         // one the switch asked for rather than the third of three.
         mutationListPresenter.getSelectionModel().clear(false);
-        routeListPresenter.getSelectionModel().clear(false);
+        pathListPresenter.getSelectionModel().clear(false);
         showModel();
     }
 
@@ -582,7 +582,7 @@ public class PathwayEditPresenter
         getView().setNodePath(path(node));
         constraintListPresenter.setData(node,
                 readOnly,
-                mutationListPresenter.getSelectedConstraints(NullSafe.get(node, PathNode::getPath)));
+                mutationListPresenter.getSelectedConstraints(NullSafe.get(node, PathNode::getNodePath)));
     }
 
     /**
@@ -594,7 +594,7 @@ public class PathwayEditPresenter
     private static String path(final PathNode node) {
         return node == null
                 ? ""
-                : String.join(" / ", NullSafe.list(node.getPath()));
+                : String.join(" / ", NullSafe.list(node.getNodePath()));
     }
 
     public void read(final PathwaysDoc pathwaysDoc, final String name, final boolean readOnly) {
@@ -617,9 +617,9 @@ public class PathwayEditPresenter
             return;
         }
 
-        // The routes arrive on the pathway itself, so they are on show as soon as it is opened rather
+        // The paths arrive on the pathway itself, so they are on show as soon as it is opened rather
         // than waiting on the history the way the changes do.
-        routeListPresenter.setData(pathway);
+        pathListPresenter.setData(pathway);
 
         // The drawing is coloured and sized from the changes behind the model, which are asked for at
         // the end of this. Nothing is handed over until they arrive: an empty list would say this

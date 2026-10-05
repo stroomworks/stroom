@@ -38,12 +38,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Spans that are no part of a pathway, named by {@link PathwaysDoc#getIgnoredSpanNames()}. They are
- * left out of the model and of the route alike, along with whatever they ran.
+ * left out of the model and of the path alike, along with whatever they ran.
  *
  * <p>For work the runtime does when it feels like it rather than when the code says to. A connection
  * pool checking a connection it has not used for a while is the case this was built for: it appears
  * on the first use of each pooled connection and nowhere else, so a trace where it happened took the
- * same route as one where it did not.
+ * same path as one where it did not.
  */
 class TestIgnoredSpans {
 
@@ -59,18 +59,18 @@ class TestIgnoredSpans {
     }
 
     @Test
-    void anIgnoredSpanIsLeftOutOfTheRoute() {
-        assertThat(routeOf(List.of(PING), trace("a", PING, "b"))).isEqualTo("job.run (a > b)");
+    void anIgnoredSpanIsLeftOutOfThePath() {
+        assertThat(pathOf(List.of(PING), trace("a", PING, "b"))).isEqualTo("job.run (a > b)");
     }
 
     @Test
-    void namingNothingLeavesTheRouteAsItRan() {
-        assertThat(routeOf(List.of(), trace("a", PING, "b"))).isEqualTo("job.run (a > " + PING + " > b)");
+    void namingNothingLeavesThePathAsItRan() {
+        assertThat(pathOf(List.of(), trace("a", PING, "b"))).isEqualTo("job.run (a > " + PING + " > b)");
     }
 
     @Test
     void anIgnoredSpanIsNoPartOfTheModel() {
-        // Not a node, not just absent from the route. What the document says to ignore is work the
+        // Not a node, not just absent from the path. What the document says to ignore is work the
         // reader has said is nothing to do with the program, so a model holding it would be a model of
         // the runtime's housekeeping as much as of the code.
         final PathNode root = model(List.of(PING), trace("a", PING, "b"));
@@ -80,7 +80,7 @@ class TestIgnoredSpans {
     }
 
     @Test
-    void twoTracesDifferingOnlyByAnIgnoredSpanTakeTheSameRoute() {
+    void twoTracesDifferingOnlyByAnIgnoredSpanTakeTheSamePath() {
         // The whole point. Both are folded into one model, because the order steps settle into is
         // fixed for a pathway but says nothing across two built from nothing.
         final NodeMutatorImpl first = mutator(List.of(PING));
@@ -90,8 +90,8 @@ class TestIgnoredSpans {
         final NodeMutatorImpl second = mutator(List.of(PING));
         second.process(trace("a", "b"), new NamePathKey(OPERATION), root, quiet(), doc());
 
-        assertThat(RouteShapeText.of(second.getRouteShape(), root))
-                .isEqualTo(RouteShapeText.of(first.getRouteShape(), root));
+        assertThat(PathShapeText.of(second.getPathShape(), root))
+                .isEqualTo(PathShapeText.of(first.getPathShape(), root));
     }
 
     @Test
@@ -102,7 +102,7 @@ class TestIgnoredSpans {
         final PathNode root = mutator.process(nested("a", PING, "q"), new NamePathKey(OPERATION),
                 null, quiet(), doc());
 
-        assertThat(RouteShapeText.of(mutator.getRouteShape(), root)).isEqualTo("job.run (a)");
+        assertThat(PathShapeText.of(mutator.getPathShape(), root)).isEqualTo("job.run (a)");
         assertThat(root.getChildren().stream().map(PathNode::getName))
                 .as("neither the span nor what it ran is in the model")
                 .containsExactly("a");
@@ -122,10 +122,10 @@ class TestIgnoredSpans {
 
     // ---------------------------------------------------------------------------------------------
 
-    private static String routeOf(final List<String> ignored, final Trace trace) {
+    private static String pathOf(final List<String> ignored, final Trace trace) {
         final NodeMutatorImpl mutator = mutator(ignored);
         final PathNode root = mutator.process(trace, new NamePathKey(OPERATION), null, quiet(), doc());
-        return RouteShapeText.of(mutator.getRouteShape(), root);
+        return PathShapeText.of(mutator.getPathShape(), root);
     }
 
     private static PathNode model(final List<String> ignored, final Trace trace) {
@@ -143,7 +143,7 @@ class TestIgnoredSpans {
     }
 
     // Children spaced wider than they are long, so none of them overlap and the sequence given is the
-    // sequence the route records.
+    // sequence the path records.
     private static Trace trace(final String... childNames) {
         final List<Span> children = new ArrayList<>(childNames.length);
         for (int i = 0; i < childNames.length; i++) {

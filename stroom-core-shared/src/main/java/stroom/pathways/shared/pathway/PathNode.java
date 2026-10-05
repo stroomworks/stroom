@@ -39,7 +39,7 @@ public class PathNode {
     @JsonProperty
     private final String name;
     @JsonProperty
-    private final List<String> path;
+    private final List<String> nodePath;
     @JsonProperty
     private final List<PathNode> children;
     @JsonProperty
@@ -52,14 +52,14 @@ public class PathNode {
     @JsonCreator
     public PathNode(@JsonProperty("uuid") final String uuid,
                     @JsonProperty("name") final String name,
-                    @JsonProperty("path") final List<String> path,
+                    @JsonProperty("nodePath") final List<String> nodePath,
                     @JsonProperty("children") final List<PathNode> children,
                     @JsonProperty("constraints") final Map<String, Constraint> constraints,
                     @JsonProperty("timesUsed") final long timesUsed,
                     @JsonProperty("lastUsedTime") final NanoTime lastUsedTime) {
         this.uuid = uuid;
         this.name = name;
-        this.path = path;
+        this.nodePath = nodePath;
         this.children = children == null
                 ? new ArrayList<>()
                 : new ArrayList<>(children);
@@ -73,17 +73,17 @@ public class PathNode {
      */
     public PathNode(final String uuid,
                     final String name,
-                    final List<String> path,
+                    final List<String> nodePath,
                     final List<PathNode> children,
                     final Map<String, Constraint> constraints) {
-        this(uuid, name, path, children, constraints, 0L, null);
+        this(uuid, name, nodePath, children, constraints, 0L, null);
     }
 
     public PathNode(final String name,
-                    final List<String> path) {
+                    final List<String> nodePath) {
         this.uuid = UUID.randomUUID().toString();
         this.name = name;
-        this.path = path;
+        this.nodePath = nodePath;
         this.children = new ArrayList<>();
         this.constraints = null;
         this.timesUsed = 0L;
@@ -93,7 +93,7 @@ public class PathNode {
     public PathNode(final String name) {
         this.uuid = UUID.randomUUID().toString();
         this.name = name;
-        this.path = Collections.singletonList(name);
+        this.nodePath = Collections.singletonList(name);
         this.children = new ArrayList<>();
         this.constraints = null;
         this.timesUsed = 0L;
@@ -125,8 +125,8 @@ public class PathNode {
         return name;
     }
 
-    public List<String> getPath() {
-        return path;
+    public List<String> getNodePath() {
+        return nodePath;
     }
 
     /**
@@ -163,7 +163,7 @@ public class PathNode {
     public String toString() {
         final StringBuilder sb = new StringBuilder();
         int depth = 0;
-        for (final String part : path) {
+        for (final String part : nodePath) {
             for (int i = 0; i < depth * 3; i++) {
                 sb.append(' ');
             }
@@ -186,7 +186,7 @@ public class PathNode {
 
         private String uuid;
         private String name;
-        private List<String> path;
+        private List<String> nodePath;
         private List<PathNode> children;
         private Map<String, Constraint> constraints;
         private long timesUsed;
@@ -198,7 +198,7 @@ public class PathNode {
         public Builder(final PathNode pathNode) {
             this.uuid = pathNode.uuid;
             this.name = pathNode.name;
-            this.path = pathNode.path;
+            this.nodePath = pathNode.nodePath;
             this.children = pathNode.children;
             this.constraints = pathNode.constraints;
             this.timesUsed = pathNode.timesUsed;
@@ -215,8 +215,8 @@ public class PathNode {
             return self();
         }
 
-        public Builder path(final List<String> path) {
-            this.path = path;
+        public Builder nodePath(final List<String> nodePath) {
+            this.nodePath = nodePath;
             return self();
         }
 
@@ -249,7 +249,7 @@ public class PathNode {
             return new PathNode(
                     uuid,
                     name,
-                    path,
+                    nodePath,
                     children,
                     constraints,
                     timesUsed,

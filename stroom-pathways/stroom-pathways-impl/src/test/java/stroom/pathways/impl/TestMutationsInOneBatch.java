@@ -27,11 +27,11 @@ import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathUse;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
 import stroom.pathways.shared.pathway.PathwayUsage;
-import stroom.pathways.shared.pathway.RouteUse;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.IgnoredSpans;
 import stroom.planb.impl.dao.trace.PathwaysDb;
@@ -121,26 +121,26 @@ class TestMutationsInOneBatch {
                 trace("t3", "GET", 20, PING));
 
         assertThat(readPathway(dir).getTimesUsed())
-                .as("counted for every trace that took the route, not only the ones that taught it "
+                .as("counted for every trace that took the path, not only the ones that taught it "
                     + "something — the second and third here are the same shape as the first")
                 .isEqualTo(3);
     }
 
     @Test
-    void everyTraceStoresTheRouteItTook(@TempDir final Path dir) {
+    void everyTraceStoresThePathItTook(@TempDir final Path dir) {
         applyBatch(dir,
                 trace("t1", "GET", 20, PING),
                 trace("t2", "GET", 20, PING, COMMIT),
                 trace("t3", "GET", 20, PING));
 
         final Pathway pathway = readPathway(dir);
-        assertThat(pathway.getRoutes().getRoutes())
-                .as("two shapes went through, so two routes, whatever the model learnt")
+        assertThat(pathway.getPaths().getPaths())
+                .as("two shapes went through, so two paths, whatever the model learnt")
                 .hasSize(2);
-        assertThat(pathway.getRoutes().getRoutes().stream()
-                .mapToLong(RouteUse::getTimesUsed)
+        assertThat(pathway.getPaths().getPaths().stream()
+                .mapToLong(PathUse::getTimesUsed)
                 .sum())
-                .as("every trace takes exactly one route, so the counts account for all of them")
+                .as("every trace takes exactly one path, so the counts account for all of them")
                 .isEqualTo(pathway.getTimesUsed());
     }
 
@@ -165,7 +165,7 @@ class TestMutationsInOneBatch {
 
         final Pathway pathway = readPathway(dir);
         assertThat(pathway.getTimesUsed())
-                .as("every trace took the route")
+                .as("every trace took the path")
                 .isEqualTo(4);
         assertThat(pathway.getTimesUpdated())
                 .as("t1 created it and t2 and t4 repeated what was already known, leaving t3")
@@ -285,7 +285,7 @@ class TestMutationsInOneBatch {
         }
 
         assertThat(absent).hasSize(1);
-        assertThat(absent.getFirst().getPath()).endsWith(COMMIT);
+        assertThat(absent.getFirst().getNodePath()).endsWith(COMMIT);
         assertThat(absent.getFirst().getSpanId())
                 .as("the trace carried no span for this node, so none may be named against it")
                 .isNull();

@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>They line up by name. A name that turns up four times under one parent is one thing that
  * happened four times, so the model holds one node for it and records the count as a constraint.
  * The alternative — one node per span, matched by position — makes a request that ran three queries
- * a different route from one that ran four, and the model then grows with every new count seen.
+ * a different path from one that ran four, and the model then grows with every new count seen.
  */
 class TestNameBasedChildMatching {
 
@@ -80,7 +80,7 @@ class TestNameBasedChildMatching {
         root = learn(root, trace(PREPARE, PREPARE, PREPARE, PREPARE, PREPARE, PREPARE));
 
         assertThat(root.getChildren())
-                .as("running the same step more times is the same route")
+                .as("running the same step more times is the same path")
                 .hasSize(1);
     }
 
@@ -90,7 +90,7 @@ class TestNameBasedChildMatching {
         root = learn(root, trace(PING));
 
         assertThat(root.getChildren())
-                .as("a step that did not run this time does not start a second route")
+                .as("a step that did not run this time does not start a second path")
                 .hasSize(2);
         assertThat(root.getChildren().stream().map(PathNode::getName))
                 .containsExactlyInAnyOrder(PING, PREPARE);
@@ -196,7 +196,7 @@ class TestNameBasedChildMatching {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, twoBatches(PING, COMMIT, COMMIT, PING));
 
-        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+        assertThat(PathShapeText.of(mutator.getPathShape(), root))
                 .as("a node several spans reached can run differently each time, and the shape keeps "
                     + "both ways — read in an order settled by what they are, not by which ran first, "
                     + "so nothing here may depend on that order")
@@ -209,7 +209,7 @@ class TestNameBasedChildMatching {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, twoBatches(PING, COMMIT, PING, COMMIT));
 
-        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+        assertThat(PathShapeText.of(mutator.getPathShape(), root))
                 .as("the same run twice over is how much work there was to do, so it is said once")
                 .isEqualTo(OPERATION + " (" + BATCH + " (" + PING + " > " + COMMIT + "))");
     }
@@ -219,7 +219,7 @@ class TestNameBasedChildMatching {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, trace(PING));
 
-        assertThat(RouteShapeText.of(mutator.getRouteShape(), root))
+        assertThat(PathShapeText.of(mutator.getPathShape(), root))
                 .as("a node with nothing below it is a leaf, and that is the only thing it can mean")
                 .isEqualTo(OPERATION + " (" + PING + ")");
     }
@@ -232,11 +232,11 @@ class TestNameBasedChildMatching {
         final NodeMutatorImpl withoutCommit = mutator();
         final PathNode root = process(withoutCommit, sequential(PING), first);
 
-        assertThat(RouteShapeText.of(withoutCommit.getRouteShape(), root))
+        assertThat(PathShapeText.of(withoutCommit.getPathShape(), root))
                 .as("a child that did not run leaves its parent running differently, which is where a "
-                    + "route records that the child was skipped")
+                    + "path records that the child was skipped")
                 .isEqualTo(OPERATION + " (" + PING + ")");
-        assertThat(RouteShapeText.of(withBoth.getRouteShape(), first))
+        assertThat(PathShapeText.of(withBoth.getPathShape(), first))
                 .isEqualTo(OPERATION + " (" + PING + " > " + COMMIT + ")");
     }
 
@@ -280,7 +280,7 @@ class TestNameBasedChildMatching {
 
         assertThat(stepsOf(null, sequential(PING, COMMIT, PING, COMMIT, PREPARE)))
                 .as("only what repeated is said once; what ran afterwards did not repeat and is "
-                    + "where this route differs from one that stopped")
+                    + "where this path differs from one that stopped")
                 .isEqualTo(PING + " > " + COMMIT + " > " + PREPARE);
     }
 
@@ -301,8 +301,8 @@ class TestNameBasedChildMatching {
         final PathNode root = learn(null, sequential(names));
 
         assertThat(shapeOf(sequential(names)).steps())
-                .as("a route is the shape, so a node that gave none would go missing from its own "
-                    + "route and two traces that went different ways would then be told apart by "
+                .as("a path is the shape, so a node that gave none would go missing from its own "
+                    + "path and two traces that went different ways would then be told apart by "
                     + "nothing")
                 .hasSize(60);
     }
@@ -338,18 +338,18 @@ class TestNameBasedChildMatching {
         assertThat(predicate.test(trace(PING, PREPARE))).isFalse();
     }
 
-    // What one trace ran below the root, read off its shape: a run is recorded on the route now
+    // What one trace ran below the root, read off its shape: a run is recorded on the path now
     // rather than gathered onto the node it happened at.
     private static String stepsOf(final PathNode current, final Trace trace) {
         final NodeMutatorImpl mutator = mutator();
         final PathNode root = process(mutator, trace, current);
-        return RouteShapeText.under(mutator.getRouteShape(), root, OPERATION);
+        return PathShapeText.under(mutator.getPathShape(), root, OPERATION);
     }
 
-    private static RouteShape shapeOf(final Trace trace) {
+    private static PathShape shapeOf(final Trace trace) {
         final NodeMutatorImpl mutator = mutator();
         process(mutator, trace, null);
-        return mutator.getRouteShape();
+        return mutator.getPathShape();
     }
 
     private static PathNode learn(final PathNode current, final Trace trace) {

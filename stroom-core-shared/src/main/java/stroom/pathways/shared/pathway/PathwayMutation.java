@@ -63,7 +63,7 @@ public class PathwayMutation {
     private final String spanId;
     /** The node this happened to, named from the root down. Empty for the pathway itself. */
     @JsonProperty
-    private final List<String> path;
+    private final List<String> nodePath;
     /**
      * The node this happened to. Kept so a replay puts a node back with the identity it had, rather
      * than a fresh one that makes every frame look like the whole tree was replaced.
@@ -93,7 +93,7 @@ public class PathwayMutation {
                            @JsonProperty("time") final NanoTime time,
                            @JsonProperty("traceId") final String traceId,
                            @JsonProperty("spanId") final String spanId,
-                           @JsonProperty("path") final List<String> path,
+                           @JsonProperty("nodePath") final List<String> nodePath,
                            @JsonProperty("nodeUuid") final String nodeUuid,
                            @JsonProperty("constraint") final String constraint,
                            @JsonProperty("type") final MutationType type,
@@ -105,7 +105,7 @@ public class PathwayMutation {
         this.time = time;
         this.traceId = traceId;
         this.spanId = spanId;
-        this.path = path;
+        this.nodePath = nodePath;
         this.constraint = constraint;
         this.type = type;
         this.optional = optional;
@@ -126,9 +126,9 @@ public class PathwayMutation {
             case FIELD_TYPE -> text(m -> m.getType() == null
                     ? null
                     : m.getType().getDisplayValue());
-            case FIELD_PATH -> text(m -> m.getPath() == null
+            case FIELD_PATH -> text(m -> m.getNodePath() == null
                     ? null
-                    : String.join(" / ", m.getPath()));
+                    : String.join(" / ", m.getNodePath()));
             case FIELD_CONSTRAINT -> text(PathwayMutation::getConstraint);
             case FIELD_OLD_VALUE -> text(m -> asText(m.getOldValue()));
             case FIELD_NEW_VALUE -> text(m -> asText(m.getNewValue()));
@@ -155,7 +155,7 @@ public class PathwayMutation {
      * The same change, numbered. Used when writing, where its place in the pathway's history is known.
      */
     public PathwayMutation withSequence(final long sequence) {
-        return new PathwayMutation(sequence, time, traceId, spanId, path, nodeUuid, constraint, type,
+        return new PathwayMutation(sequence, time, traceId, spanId, nodePath, nodeUuid, constraint, type,
                 optional, oldValue, newValue);
     }
 
@@ -179,8 +179,8 @@ public class PathwayMutation {
         return spanId;
     }
 
-    public List<String> getPath() {
-        return path;
+    public List<String> getNodePath() {
+        return nodePath;
     }
 
     public String getConstraint() {
@@ -217,7 +217,7 @@ public class PathwayMutation {
                && Objects.equals(time, that.time)
                && Objects.equals(traceId, that.traceId)
                && Objects.equals(spanId, that.spanId)
-               && Objects.equals(path, that.path)
+               && Objects.equals(nodePath, that.nodePath)
                && Objects.equals(constraint, that.constraint)
                && type == that.type
                && optional == that.optional
@@ -227,13 +227,13 @@ public class PathwayMutation {
 
     @Override
     public int hashCode() {
-        return Objects.hash(sequence, time, traceId, spanId, path, nodeUuid, constraint, type,
+        return Objects.hash(sequence, time, traceId, spanId, nodePath, nodeUuid, constraint, type,
                 optional, oldValue, newValue);
     }
 
     @Override
     public String toString() {
-        return sequence + " " + type + " " + path + (constraint == null
+        return sequence + " " + type + " " + nodePath + (constraint == null
                 ? ""
                 : " " + constraint) + " " + oldValue + " -> " + newValue;
     }

@@ -24,18 +24,18 @@ import java.util.Map;
 /**
  * A trace's shape written out, so a test can say what a trace did in one line.
  *
- * <p>Written the way the routes table writes it, so what a test asserts is what a reader sees.
+ * <p>Written the way the paths table writes it, so what a test asserts is what a reader sees.
  * {@code name} is a node that ran nothing and {@code name (a > b)} one that ran a and then b;
  * {@code [a > b]} is work that ran over and over and stopped part way through the last time;
  * {@code {a | b}} is runs that happened at the same time. Each bracket means one thing and nothing
  * else. Work that repeated and did finish is simply said once, so it has no mark of its own.
  */
-final class RouteShapeText {
+final class PathShapeText {
 
-    private RouteShapeText() {
+    private PathShapeText() {
     }
 
-    static String of(final RouteShape shape, final PathNode root) {
+    static String of(final PathShape shape, final PathNode root) {
         final Map<String, String> names = new HashMap<>();
         collect(root, names);
         return render(shape, names);
@@ -45,10 +45,10 @@ final class RouteShapeText {
      * What one node ran, without the node itself — for asserting on a node partway down the model
      * where naming everything above it would say the same thing every time.
      */
-    static String under(final RouteShape shape, final PathNode root, final String nodeName) {
+    static String under(final PathShape shape, final PathNode root, final String nodeName) {
         final Map<String, String> names = new HashMap<>();
         collect(root, names);
-        final RouteShape found = find(shape, names, nodeName);
+        final PathShape found = find(shape, names, nodeName);
         if (found == null) {
             return "";
         }
@@ -59,14 +59,14 @@ final class RouteShapeText {
                 : text.substring(open + 2, text.length() - 1);
     }
 
-    private static RouteShape find(final RouteShape shape,
+    private static PathShape find(final PathShape shape,
                                    final Map<String, String> names,
                                    final String nodeName) {
-        if (shape.kind() == RouteShape.Kind.NODE && nodeName.equals(names.get(shape.nodeUuid()))) {
+        if (shape.kind() == PathShape.Kind.NODE && nodeName.equals(names.get(shape.nodeUuid()))) {
             return shape;
         }
-        for (final RouteShape step : shape.steps()) {
-            final RouteShape found = find(step, names, nodeName);
+        for (final PathShape step : shape.steps()) {
+            final PathShape found = find(step, names, nodeName);
             if (found != null) {
                 return found;
             }
@@ -81,12 +81,12 @@ final class RouteShapeText {
 
     // Everything this shape ran is a turn of one and the same node, so the order shown is settled by
     // what the turns are rather than by when they happened.
-    private static boolean turnsOfOneNode(final RouteShape shape) {
+    private static boolean turnsOfOneNode(final PathShape shape) {
         if (shape.steps().size() < 2) {
             return false;
         }
         String node = null;
-        for (final RouteShape step : shape.steps()) {
+        for (final PathShape step : shape.steps()) {
             if (step.nodeUuid() == null) {
                 return false;
             }
@@ -99,14 +99,14 @@ final class RouteShapeText {
         return true;
     }
 
-    private static String render(final RouteShape shape, final Map<String, String> names) {
-        final String separator = shape.kind() == RouteShape.Kind.CONCURRENT
+    private static String render(final PathShape shape, final Map<String, String> names) {
+        final String separator = shape.kind() == PathShape.Kind.CONCURRENT
                 ? " | "
                 : turnsOfOneNode(shape)
                         ? ", "
                         : " > ";
         final StringBuilder sb = new StringBuilder();
-        for (final RouteShape step : shape.steps()) {
+        for (final PathShape step : shape.steps()) {
             if (sb.length() > 0) {
                 sb.append(separator);
             }

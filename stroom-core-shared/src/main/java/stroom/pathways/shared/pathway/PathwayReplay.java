@@ -79,9 +79,9 @@ public final class PathwayReplay {
             return null;
         }
         if (MutationType.NODE_ADDED.equals(type)) {
-            return removeNode(root, mutation.getPath());
+            return removeNode(root, mutation.getNodePath());
         }
-        return change(root, mutation.getPath(), node -> undoConstraint(node, mutation));
+        return change(root, mutation.getNodePath(), node -> undoConstraint(node, mutation));
     }
 
     /**
@@ -94,7 +94,7 @@ public final class PathwayReplay {
 
         final MutationType type = mutation.getType();
         if (MutationType.PATHWAY_ADDED.equals(type)) {
-            final List<String> path = NullSafe.list(mutation.getPath());
+            final List<String> path = NullSafe.list(mutation.getNodePath());
             return new PathNode(mutation.getNodeUuid(), name(path, null), path,
                     new ArrayList<>(), new HashMap<>());
         }
@@ -104,7 +104,7 @@ public final class PathwayReplay {
         if (MutationType.NODE_ADDED.equals(type)) {
             return addNode(root, mutation);
         }
-        return change(root, mutation.getPath(), node -> applyConstraint(node, mutation));
+        return change(root, mutation.getNodePath(), node -> applyConstraint(node, mutation));
     }
 
     private static PathNode undoConstraint(final PathNode node, final PathwayMutation mutation) {
@@ -194,7 +194,7 @@ public final class PathwayReplay {
     }
 
     private static PathNode addNode(final PathNode root, final PathwayMutation mutation) {
-        final List<String> path = NullSafe.list(mutation.getPath());
+        final List<String> path = NullSafe.list(mutation.getNodePath());
         if (path.size() < 2) {
             return root;
         }

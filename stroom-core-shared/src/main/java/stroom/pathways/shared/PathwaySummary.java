@@ -45,7 +45,7 @@ public class PathwaySummary {
     public static final String FIELD_TIMES_USED = "Traces";
     public static final String FIELD_TIMES_UPDATED = "Updates";
     public static final String FIELD_NODES = "Nodes";
-    public static final String FIELD_ROUTES = "Routes";
+    public static final String FIELD_PATHS = "Paths";
     public static final String FIELD_SIZE = "Size";
 
     @JsonProperty
@@ -63,7 +63,7 @@ public class PathwaySummary {
     @JsonProperty
     private final int nodes;
     @JsonProperty
-    private final int routes;
+    private final int paths;
     @JsonProperty
     private final long sizeBytes;
 
@@ -75,7 +75,7 @@ public class PathwaySummary {
                           @JsonProperty("timesUsed") final long timesUsed,
                           @JsonProperty("timesUpdated") final long timesUpdated,
                           @JsonProperty("nodes") final int nodes,
-                          @JsonProperty("routes") final int routes,
+                          @JsonProperty("paths") final int paths,
                           @JsonProperty("sizeBytes") final long sizeBytes) {
         this.name = name;
         this.createTime = createTime;
@@ -84,7 +84,7 @@ public class PathwaySummary {
         this.timesUsed = timesUsed;
         this.timesUpdated = timesUpdated;
         this.nodes = nodes;
-        this.routes = routes;
+        this.paths = paths;
         this.sizeBytes = sizeBytes;
     }
 
@@ -105,7 +105,7 @@ public class PathwaySummary {
     }
 
     /**
-     * How many traces have taken this route since the pathway was first learnt.
+     * How many traces have taken this path since the pathway was first learnt.
      */
     public long getTimesUsed() {
         return timesUsed;
@@ -128,11 +128,11 @@ public class PathwaySummary {
     }
 
     /**
-     * How many distinct routes traces have taken. Against the trace count it says whether the ways
+     * How many distinct paths traces have taken. Against the trace count it says whether the ways
      * through this pathway have settled or are still being found.
      */
-    public int getRoutes() {
-        return routes;
+    public int getPaths() {
+        return paths;
     }
 
     /**
@@ -153,7 +153,7 @@ public class PathwaySummary {
         final PathwaySummary that = (PathwaySummary) o;
         return sizeBytes == that.sizeBytes
                && nodes == that.nodes
-               && routes == that.routes
+               && paths == that.paths
                && timesUsed == that.timesUsed
                && timesUpdated == that.timesUpdated
                && Objects.equals(name, that.name)
@@ -165,7 +165,7 @@ public class PathwaySummary {
     @Override
     public int hashCode() {
         return Objects.hash(name, createTime, updateTime, lastUsedTime, timesUsed, timesUpdated,
-                nodes, routes, sizeBytes);
+                nodes, paths, sizeBytes);
     }
 
     @Override

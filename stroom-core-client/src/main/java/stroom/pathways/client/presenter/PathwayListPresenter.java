@@ -203,7 +203,7 @@ public class PathwayListPresenter
         addTimesUsedColumn();
         addTimesUpdatedColumn();
         addNodesColumn();
-        addRoutesColumn();
+        addPathsColumn();
         addSizeColumn();
     }
 
@@ -216,8 +216,8 @@ public class PathwayListPresenter
 
     // How many distinct ways traces have gone through. Against Traces it says whether the ways through
     // have settled or are still being found.
-    private void addRoutesColumn() {
-        addIntColumn(PathwaySummary.FIELD_ROUTES, PathwaySummary::getRoutes);
+    private void addPathsColumn() {
+        addIntColumn(PathwaySummary.FIELD_PATHS, PathwaySummary::getPaths);
     }
 
     private void addIntColumn(final String name, final Function<PathwaySummary, Integer> count) {
@@ -262,7 +262,7 @@ public class PathwayListPresenter
         addTimeColumn(PathwaySummary.FIELD_LAST_USED_TIME, PathwaySummary::getLastUsedTime);
     }
 
-    // How many traces have taken this route, beside the time the last one did. A route used once an
+    // How many traces have taken this path, beside the time the last one did. A path used once an
     // hour and one used a thousand times an hour read the same from Last Used alone.
     private void addTimesUsedColumn() {
         addCountColumn(PathwaySummary.FIELD_TIMES_USED, PathwaySummary::getTimesUsed);
