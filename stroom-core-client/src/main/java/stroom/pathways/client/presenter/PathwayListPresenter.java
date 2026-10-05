@@ -480,13 +480,24 @@ public class PathwayListPresenter
     // Puts the reader back on the row they were on, found by name among the ones that have just
     // arrived. Told to no one: the row has not changed, only the object standing for it, and saying so
     // would have everything around this fetch the same pathway again.
-    private void reselect(final List<PathwaySummary> values) {
-        if (wantedSelection == null || selectionModel.getSelected() != null) {
+    //
+    // Whether something is selected is not the question — after a read the model can still be holding
+    // the row that went, which is of the right name and in no list, so the grid shows nothing picked
+    // while the model says otherwise. What is asked instead is whether what it holds is one of the
+    // rows just handed over.
+    private void reselect(final String wanted, final List<PathwaySummary> values) {
+        if (wanted == null) {
             return;
         }
-        for (final PathwaySummary summary : NullSafe.list(values)) {
-            if (wantedSelection.equals(summary.getName())) {
+        final List<PathwaySummary> rows = NullSafe.list(values);
+        final PathwaySummary selected = selectionModel.getSelected();
+        if (selected != null && wanted.equals(selected.getName()) && rows.contains(selected)) {
+            return;
+        }
+        for (final PathwaySummary summary : rows) {
+            if (wanted.equals(summary.getName())) {
                 selectionModel.setSelected(summary, true, new SelectionType(), false);
+                wantedSelection = wanted;
                 return;
             }
         }
@@ -510,9 +521,13 @@ public class PathwayListPresenter
                             .create(PATHWAYS_RESOURCE)
                             .method(res -> res.findPathways(criteria))
                             .onSuccess(result -> {
+                                // Taken before the rows are handed over, because handing them over can
+                                // clear the selection — and clearing it is a change like any other, so
+                                // what was wanted would be forgotten a moment before it was wanted.
+                                final String wanted = wantedSelection;
                                 dataConsumer.accept(
                                         new ResultPage<>(result.getValues(), result.getPageResponse()));
-                                reselect(result.getValues());
+                                reselect(wanted, result.getValues());
                             })
                             .onFailure(errorHandler)
                             .taskMonitorFactory(pagerView)
