@@ -724,8 +724,9 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 2px;
-    margin-left: -1px;
+    width: 3px;
+    /* Half its own width, so it stands on the moment rather than beside it. */
+    margin-left: -1.5px;
     background-color: currentColor;
     pointer-events: none;
     transition: left 0.15s ease;
