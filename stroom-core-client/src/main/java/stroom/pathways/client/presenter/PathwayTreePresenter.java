@@ -37,6 +37,7 @@ import stroom.util.shared.PageRequest;
 import stroom.util.shared.PageResponse;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
+import stroom.widget.popup.client.presenter.PopupPosition;
 import stroom.widget.util.client.ElementUtil;
 import stroom.widget.util.client.MySingleSelectionModel;
 
@@ -46,6 +47,7 @@ import com.google.gwt.dom.client.Node;
 import com.google.gwt.dom.client.NodeList;
 import com.google.gwt.dom.client.Style;
 import com.google.gwt.dom.client.Style.Position;
+import com.google.gwt.event.dom.client.ContextMenuEvent;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.HTML;
@@ -61,6 +63,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 
 public class PathwayTreePresenter
         extends MyPresenterWidget<PathwayTreeView> {
@@ -103,6 +106,10 @@ public class PathwayTreePresenter
     private final RestFactory restFactory;
     private final PathwayViewport viewport;
     private Runnable viewChangeHandler;
+    // Told when a node is asked about on the drawing, so whoever knows what can be done with one can
+    // offer it. Not decided here: this draws the model and says what was picked, and what a reader may
+    // do with a node belongs with the things that would do it.
+    private BiConsumer<PathNode, PopupPosition> nodeMenuHandler;
     private boolean historyPending;
     private boolean blanked;
     private String wantedSelection;
@@ -251,6 +258,27 @@ public class PathwayTreePresenter
             }
         }));
 
+        // Asking about a node on the drawing. The node is picked out first, because everything offered
+        // acts on whatever is picked and a menu over a node the reader had not chosen would act
+        // somewhere else. The browser's own menu is refused: what it offers over a drawing is nothing
+        // anyone wants here.
+        registerHandler(html.addDomHandler(e -> {
+            final Element target = e.getNativeEvent().getEventTarget().cast();
+            if (target == null || nodeMenuHandler == null) {
+                return;
+            }
+            final Element node = ElementUtil.findParent(target, element ->
+                    NullSafe.isNonBlankString(element.getAttribute("uuid")), 3);
+            if (node == null) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            final PathNode picked = nodeMap.get(node.getAttribute("uuid"));
+            select(picked, node);
+            nodeMenuHandler.accept(picked, new PopupPosition(
+                    e.getNativeEvent().getClientX(), e.getNativeEvent().getClientY()));
+        }, ContextMenuEvent.getType()));
     }
 
     // Selecting must not redraw the tree. Rebuilding it throws away where the view is scrolled to, so
@@ -412,6 +440,10 @@ public class PathwayTreePresenter
      * Told whenever the drawing is swapped for the other one, so a view around this one can offer
      * whatever only makes sense against one of them.
      */
+    public void setNodeMenuHandler(final BiConsumer<PathNode, PopupPosition> nodeMenuHandler) {
+        this.nodeMenuHandler = nodeMenuHandler;
+    }
+
     public void setViewChangeHandler(final Runnable viewChangeHandler) {
         this.viewChangeHandler = viewChangeHandler;
     }

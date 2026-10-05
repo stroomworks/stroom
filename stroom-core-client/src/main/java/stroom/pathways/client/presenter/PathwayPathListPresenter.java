@@ -70,8 +70,23 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     private static final int PATH_COL = 700;
     // A trace id is 16 bytes written as hex, so this holds one rather than being measured.
     private static final int TRACE_ID_COL = 270;
-    private static final String FILTER_OFF_TITLE = "Filter by selected node";
+    // What the button says when there is a filter to take off. It says nothing else, because it is
+    // only there when there is something to undo — the filtering itself is asked for on the drawing,
+    // over the node it is about.
     private static final String FILTER_ON_TITLE = "Show every path";
+    private static final String FILTER_OFF_TITLE = "Right click a node on the drawing to filter";
+
+    /**
+     * Which paths the table is showing: all of them, only those that ran the node picked out on the
+     * drawing, or only those that did not. The last is how a reader asks what else a pathway does —
+     * the paths that avoid a node are the ones its presence hides.
+     */
+    public enum Filter {
+        OFF,
+        RUNNING_NODE,
+        AVOIDING_NODE
+    }
+
     // What separates one step from the next on show. A reading choice rather than anything the stored
     // path depends on, which holds its steps as a tree.
     private static final String STEP_SEPARATOR = " > ";
@@ -118,7 +133,11 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     // Every path of the pathway on show, busiest first, which is not always what the table is given.
     private List<PathUse> rows = Collections.emptyList();
     // The node picked out on the drawing, which only matters while the filter is on.
+    // The node picked out on the drawing, which is the node the filter is about. One notion of "the
+    // node in question" rather than two: what is being filtered by is what is selected, and the
+    // drawing already shows that plainly.
     private String selectedNode;
+    private Filter filter = Filter.OFF;
     // How to order the rows for each column that offers it, and the one ordered on where nothing has
     // been chosen.
     private final Map<Column<?, ?>, Comparator<PathUse>> orders = new HashMap<>();
@@ -155,6 +174,10 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
         filterButton = new InlineSvgToggleButton();
         filterButton.setSvg(SvgImage.FILTER);
         filterButton.setTitle(FILTER_OFF_TITLE);
+        // Off and out of reach until there is a filter on. Narrowing is asked for from the drawing,
+        // where the node being narrowed to is the one under the pointer; all this does is undo it,
+        // which is nothing to offer while nothing has been done.
+        filterButton.setEnabled(false);
         view.addButton(filterButton);
 
         dataGrid = new MyDataGrid<>(this);
@@ -176,25 +199,24 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
         // view button: it turns itself over on any click it accepts.
         registerHandler(dataGrid.addColumnSortHandler(e -> order()));
         registerHandler(filterButton.addClickHandler(e -> {
-            filterButton.setTitle(filterButton.getState()
-                    ? FILTER_ON_TITLE
-                    : FILTER_OFF_TITLE);
-            show();
+            // Only reachable while something is filtered, so the only thing it can mean is stop.
+            setFilter(Filter.OFF);
         }));
     }
 
     /**
-     * The node picked out on the drawing, so the filter knows which paths to keep. Given rather than
-     * asked for, because the drawing and this table are held by the view around them both.
+     * The node picked out on the drawing, which is what the filter works from.
+     *
+     * <p>Moving to another node takes the filter off rather than quietly aiming it somewhere else. A
+     * filter that re-aimed itself would change what the table was showing while the reader was reading
+     * it, and leave them no way of telling which node it had settled on.
      */
     public void setSelectedNode(final PathNode node) {
         final String uuid = NullSafe.get(node, PathNode::getUuid);
         if (!Objects.equals(uuid, selectedNode)) {
             selectedNode = uuid;
-            // Nothing to redo while every path is on show, and a node is clicked far more often than
-            // the filter is turned on.
-            if (filterButton.getState()) {
-                show();
+            if (filter != Filter.OFF) {
+                setFilter(Filter.OFF);
             }
         }
     }
@@ -473,6 +495,7 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
         // Whatever was picked out belonged to the model being replaced, so the filter starts with
         // nothing to work from rather than with a node this pathway may not have.
         selectedNode = null;
+        setFilter(Filter.OFF);
 
         final Paths paths = NullSafe.get(pathway, Pathway::getPaths);
         if (paths == null) {
@@ -488,18 +511,38 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
         order();
     }
 
-    // What the table is given: every path, or only those that ran the node picked out on the
-    // drawing. With the filter on and nothing picked out there is nothing to narrow by, so everything
-    // is shown rather than nothing.
+    /**
+     * Narrows the table, or stops narrowing it. Asked for from the drawing as well as from the button
+     * beside the table, so the button is brought into line with whatever was asked.
+     */
+    public void setFilter(final Filter filter) {
+        this.filter = filter;
+        final boolean on = filter != Filter.OFF && selectedNode != null;
+        filterButton.setState(on);
+        filterButton.setEnabled(on);
+        filterButton.setTitle(on
+                ? FILTER_ON_TITLE
+                : FILTER_OFF_TITLE);
+        show();
+    }
+
+    public Filter getFilter() {
+        return filter;
+    }
+
+    // What the table is given: every path, only those that ran the node picked out on the drawing, or
+    // only those that did not. With a filter on and nothing picked out there is nothing to narrow by,
+    // so everything is shown rather than nothing.
     private void show() {
-        if (!filterButton.getState() || selectedNode == null) {
+        if (filter == Filter.OFF || selectedNode == null) {
             dataProvider.setCompleteList(rows);
             return;
         }
 
+        final boolean wanted = filter == Filter.RUNNING_NODE;
         final List<PathUse> kept = new ArrayList<>();
         for (final PathUse path : rows) {
-            if (runs(path, selectedNode)) {
+            if (runs(path, selectedNode) == wanted) {
                 kept.add(path);
             }
         }

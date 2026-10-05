@@ -45,6 +45,10 @@ import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.util.shared.PageResponse;
 import stroom.widget.button.client.ButtonView;
+import stroom.widget.menu.client.presenter.IconMenuItem;
+import stroom.widget.menu.client.presenter.Item;
+import stroom.widget.menu.client.presenter.ShowMenuEvent;
+import stroom.widget.popup.client.presenter.PopupPosition;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 import stroom.widget.tab.client.view.LinkTabBar;
@@ -176,10 +180,15 @@ public class PathwayEditPresenter
         // tree says the same thing a row at a time.
         pathwayTreePresenter.setViewChangeHandler(this::showPlayButtons);
 
+        // What a reader can ask of a node, offered where the node is. Built here rather than on the
+        // drawing because everything it offers narrows the table beside it, and the drawing knows
+        // nothing of that.
+        pathwayTreePresenter.setNodeMenuHandler(this::showNodeMenu);
+
         registerHandler(pathwayTreePresenter.getSelectionModel()
                 .addSelectionChangeHandler(e -> {
-                    // The paths table can narrow itself to the node being looked at, and the drawing
-                    // is where that node is picked out, so it is told each time that moves.
+                    // The paths table narrows itself to the node picked out on the drawing, so it is
+                    // told each time that moves.
                     pathListPresenter.setSelectedNode(
                             pathwayTreePresenter.getSelectionModel().getSelectedObject());
                     showConstraints();
@@ -480,6 +489,49 @@ public class PathwayEditPresenter
         stepper.cancel();
         pathwayTreePresenter.setStepping(false);
         showPlayButtons();
+    }
+
+    // Narrowing the paths to a node, from the drawing. The node has already been picked out by the
+    // time this runs, so every entry acts on the one the reader asked about.
+    private void showNodeMenu(final PathNode node, final PopupPosition position) {
+        if (node == null) {
+            return;
+        }
+        // Only where the paths are what is on show. Narrowing them while the changes are up would move
+        // something the reader cannot see.
+        if (!pathsTab.equals(selectedTab)) {
+            return;
+        }
+
+        final PathwayPathListPresenter.Filter filter = pathListPresenter.getFilter();
+        final List<Item> items = new ArrayList<>();
+        items.add(new IconMenuItem.Builder()
+                .priority(1)
+                .icon(SvgImage.FILTER)
+                .text("Show paths through the selected node")
+                .command(() -> pathListPresenter.setFilter(PathwayPathListPresenter.Filter.RUNNING_NODE))
+                .enabled(filter != PathwayPathListPresenter.Filter.RUNNING_NODE)
+                .build());
+        items.add(new IconMenuItem.Builder()
+                .priority(2)
+                .icon(SvgImage.FILTER)
+                .text("Show paths avoiding the selected node")
+                .command(() -> pathListPresenter.setFilter(PathwayPathListPresenter.Filter.AVOIDING_NODE))
+                .enabled(filter != PathwayPathListPresenter.Filter.AVOIDING_NODE)
+                .build());
+        items.add(new IconMenuItem.Builder()
+                .priority(3)
+                .icon(SvgImage.UNDO)
+                .text("Show every path")
+                .command(() -> pathListPresenter.setFilter(PathwayPathListPresenter.Filter.OFF))
+                .enabled(filter != PathwayPathListPresenter.Filter.OFF)
+                .build());
+
+        ShowMenuEvent
+                .builder()
+                .items(items)
+                .popupPosition(position)
+                .fire(this);
     }
 
     private void showPlayButtons() {
