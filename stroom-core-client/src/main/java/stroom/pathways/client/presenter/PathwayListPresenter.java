@@ -47,6 +47,7 @@ import stroom.widget.dropdowntree.client.view.QuickFilterPageView;
 import stroom.widget.dropdowntree.client.view.QuickFilterUiHandlers;
 import stroom.widget.util.client.MouseUtil;
 import stroom.widget.util.client.MultiSelectionModelImpl;
+import stroom.widget.util.client.SelectionType;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.cellview.client.Column;
@@ -76,6 +77,11 @@ public class PathwayListPresenter
     private final ButtonView removeButton;
     private RestDataProvider<PathwaySummary, ResultPage<PathwaySummary>> dataProvider;
     private String selectedName;
+    // The row the reader picked, by name. Held apart from the selection model because a refresh brings
+    // back new summaries and the model matches them by equality — and a summary carries readings that
+    // move, so the row that comes back is never equal to the one that went, however plainly it is the
+    // same pathway.
+    private String wantedSelection;
     private Pathway selectedPathway;
     private boolean fetching;
     private long requests;
@@ -118,6 +124,11 @@ public class PathwayListPresenter
     @Override
     protected void onBind() {
         super.onBind();
+
+        // Remembered by name as the reader moves, including when they move off everything, so a
+        // refresh puts them back where they were rather than on whatever used to be there.
+        registerHandler(selectionModel.addSelectionHandler(event ->
+                wantedSelection = NullSafe.get(selectionModel.getSelected(), PathwaySummary::getName)));
 
         registerHandler(newButton.addClickHandler(event -> {
             if (!readOnly) {
@@ -427,6 +438,8 @@ public class PathwayListPresenter
     // rest of the work with it.
     private void deleteNext(final List<PathwaySummary> list, final int at) {
         if (at >= list.size()) {
+            // Nothing to go back to: what was selected is what was just removed.
+            wantedSelection = null;
             selectionModel.clear();
             refresh();
             return;
@@ -464,6 +477,21 @@ public class PathwayListPresenter
         return document;
     }
 
+    // Puts the reader back on the row they were on, found by name among the ones that have just
+    // arrived. Told to no one: the row has not changed, only the object standing for it, and saying so
+    // would have everything around this fetch the same pathway again.
+    private void reselect(final List<PathwaySummary> values) {
+        if (wantedSelection == null || selectionModel.getSelected() != null) {
+            return;
+        }
+        for (final PathwaySummary summary : NullSafe.list(values)) {
+            if (wantedSelection.equals(summary.getName())) {
+                selectionModel.setSelected(summary, true, new SelectionType(), false);
+                return;
+            }
+        }
+    }
+
     private void refresh() {
         if (dataProvider == null) {
             dataProvider = new RestDataProvider<PathwaySummary, ResultPage<PathwaySummary>>(getEventBus()) {
@@ -481,8 +509,11 @@ public class PathwayListPresenter
                     restFactory
                             .create(PATHWAYS_RESOURCE)
                             .method(res -> res.findPathways(criteria))
-                            .onSuccess(result -> dataConsumer.accept(
-                                    new ResultPage<>(result.getValues(), result.getPageResponse())))
+                            .onSuccess(result -> {
+                                dataConsumer.accept(
+                                        new ResultPage<>(result.getValues(), result.getPageResponse()));
+                                reselect(result.getValues());
+                            })
                             .onFailure(errorHandler)
                             .taskMonitorFactory(pagerView)
                             .exec();
