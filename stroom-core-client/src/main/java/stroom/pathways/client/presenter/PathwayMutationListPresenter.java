@@ -19,8 +19,10 @@ package stroom.pathways.client.presenter;
 import stroom.cell.expander.client.ExpanderCell;
 import stroom.config.global.client.presenter.ListDataProvider;
 import stroom.data.client.presenter.ColumnSizeConstants;
+import stroom.data.client.presenter.HasContextMenusCell;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
+import stroom.docref.DocRef;
 import stroom.entity.client.presenter.TreeRowHandler;
 import stroom.pathways.shared.TraceHistogram;
 import stroom.pathways.shared.otel.trace.NanoTime;
@@ -82,6 +84,8 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     // The whole history, which the rows are built from every time the list is drawn. Held apart from
     // the rows because a trace opening or closing changes the rows and not the history.
     private List<PathwayMutation> mutations = new ArrayList<>();
+    // Where the traces that taught this model are kept, or null where nothing keeps them.
+    private DocRef tracesDocRef;
     private final ButtonView expandAllButton;
     private final ButtonView collapseAllButton;
     // The same strip the traces list puts over its rows, here over the changes. Built from the history
@@ -181,6 +185,10 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         // Not drillable: narrowing the window is the traces list's answer to a crowded bar, and there
         // is no window here to narrow — this is the whole history, however long it took.
         return new TraceHistogram(true, from, from + (width * BUCKETS) - 1, width, 0, counts, false);
+    }
+
+    public void setTracesDocRef(final DocRef tracesDocRef) {
+        this.tracesDocRef = tracesDocRef;
     }
 
     @Override
@@ -396,6 +404,32 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         updateButtons();
     }
 
+    // The trace that made these changes, which is the one worth opening to see what it actually did.
+    // Right clicking it offers to go there — nothing, where no traces store feeds this pathway.
+    private void addTraceIdColumn() {
+        final Column<MutationRow, String> column = new Column<MutationRow, String>(
+                new HasContextMenusCell<String>((context, traceId) ->
+                        TraceOpener.menuItems(this, tracesDocRef, traceId, whenMade(traceId))) {
+                }) {
+            @Override
+            public String getValue(final MutationRow row) {
+                return row.getTraceId();
+            }
+        };
+        dataGrid.addResizableColumn(column, PathwayMutation.FIELD_TRACE_ID, TRACE_ID_COL);
+    }
+
+    // When the trace actually ran. Not the time beside it in the table: that is when the model learnt
+    // from the trace, which is however long after the trace ran that it waited to be applied.
+    private Long whenMade(final String traceId) {
+        for (final PathwayMutation mutation : mutations) {
+            if (Objects.equals(traceId, mutation.getTraceId())) {
+                return NullSafe.get(mutation.getTraceTime(), NanoTime::toEpochMillis);
+            }
+        }
+        return null;
+    }
+
     // Nothing to open once everything is open, and nothing to close once everything is closed.
     private void updateButtons() {
         final Set<String> traceIds = traceIds();
@@ -477,9 +511,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         // What the change belonged to comes before what it was: the list is grouped by trace, so the
         // trace is what a row is found by. Kept on the changes as well as on the trace they sit under,
         // so a row still says which trace made it when the list is copied out of the grid.
-        addColumn(PathwayMutation.FIELD_TRACE_ID,
-                MutationRow::getTraceId,
-                TRACE_ID_COL);
+        addTraceIdColumn();
         addColumn(PathwayMutation.FIELD_SPAN_ID,
                 row -> ofChange(row, PathwayMutation::getSpanId),
                 SPAN_ID_COL);

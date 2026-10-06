@@ -191,7 +191,8 @@ class TestStoredFormats {
                                 19,
                                 NanoTime.ofMillis(4),
                                 NanoTime.ofMillis(5),
-                                "0a0b0c0d"))))
+                                "0a0b0c0d",
+                                NanoTime.ofMillis(3)))))
                 .build();
 
         final ByteBuffer[] written = new ByteBuffer[1];

@@ -23,6 +23,7 @@ import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.api.StoreFactory;
 import stroom.pathways.shared.PathwaysDoc;
+import stroom.pathways.shared.TracesDoc;
 import stroom.planb.impl.PlanBConstants;
 import stroom.planb.shared.SharedFileStoreSettings;
 import stroom.security.api.SecurityContext;
@@ -52,12 +53,16 @@ public class PathwaysStoreImpl
             LambdaLoggerFactory.getLogger(PathwaysStoreImpl.class);
 
     private final Provider<ClusterLockService> clusterLockServiceProvider;
+    // Asked for rather than held, because a traces store holds a reference to a pathways document and
+    // this holds one back — taking either at construction would be a circle.
+    private final Provider<TracesDocStore> tracesDocStoreProvider;
 
     @Inject
     public PathwaysStoreImpl(final StoreFactory storeFactory,
                              final SecurityContext securityContext,
                              final PathwaysSerialiser serialiser,
-                             final Provider<ClusterLockService> clusterLockServiceProvider) {
+                             final Provider<ClusterLockService> clusterLockServiceProvider,
+                             final Provider<TracesDocStore> tracesDocStoreProvider) {
         super(storeFactory,
                 securityContext,
                 serialiser,
@@ -65,6 +70,7 @@ public class PathwaysStoreImpl
                 PathwaysDoc::builder,
                 PathwaysDoc::copy);
         this.clusterLockServiceProvider = clusterLockServiceProvider;
+        this.tracesDocStoreProvider = tracesDocStoreProvider;
     }
 
     /**
@@ -132,6 +138,24 @@ public class PathwaysStoreImpl
     public boolean hasSharedFileStoreData(final String uuid) {
         return hasSharedFileStoreData(readDocument(
                 DocRef.builder().uuid(uuid).type(PathwaysDoc.TYPE).build()));
+    }
+
+    @Override
+    public DocRef findTracesDocFor(final String uuid) {
+        final TracesDocStore store = tracesDocStoreProvider.get();
+        for (final DocRef ref : NullSafe.list(store.list())) {
+            final TracesDoc doc = store.readDocument(ref);
+            // Read with the caller's permissions, so a store they cannot see is a store they are not
+            // told about. A document that cannot be read is simply not the answer.
+            if (doc != null
+                && doc.getPathwaysDocRef() != null
+                && uuid.equals(doc.getPathwaysDocRef().getUuid())) {
+                return ref;
+            }
+        }
+        // Nothing feeds this pathway, or nothing the reader may see. Either way there is nowhere to
+        // send them.
+        return null;
     }
 
     // A model or a queue under this document's shared path. Both are enough to pin the settings: the

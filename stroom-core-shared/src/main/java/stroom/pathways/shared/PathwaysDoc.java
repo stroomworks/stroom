@@ -60,6 +60,7 @@ import java.util.Objects;
         "updateUser",
         "description",
         "sharedFileStore",
+        "tracesDocRef",
         "ignoredSpanNames",
         "ignoredAttributes",
         "pathways"})
@@ -131,6 +132,18 @@ public class PathwaysDoc extends AbstractDoc {
     @JsonInclude(Include.NON_NULL)
     private final Boolean hasSharedFileStoreData;
 
+    /**
+     * The traces store that feeds this pathway, or null where none does.
+     *
+     * <p>Worked out as the document is fetched and never written: the link is held on the traces
+     * document, which names the pathway it feeds so a merge can place a trace without reading every
+     * pathway. Going back the other way has to look, so the answer is found once as the document is
+     * opened and carried wherever it goes.
+     */
+    @JsonProperty("tracesDocRef")
+    @JsonInclude(Include.NON_NULL)
+    private final DocRef tracesDocRef;
+
     @JsonCreator
     public PathwaysDoc(@JsonProperty("uuid") final String uuid,
                        @JsonProperty("name") final String name,
@@ -150,6 +163,7 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("allowConstraintMutation") final Boolean allowConstraintMutation,
                        @JsonProperty("infoFeed") final DocRef infoFeed,
                        @JsonProperty("sharedFileStore") final SharedFileStoreSettings sharedFileStore,
+                       @JsonProperty("tracesDocRef") final DocRef tracesDocRef,
                        @JsonProperty("hasSharedFileStoreData") final Boolean hasSharedFileStoreData) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
@@ -169,6 +183,7 @@ public class PathwaysDoc extends AbstractDoc {
                 Objects.requireNonNullElse(allowConstraintMutation, DEFAULT_ALLOW_CONSTRAINT_MUTATION);
         this.infoFeed = infoFeed;
         this.sharedFileStore = sharedFileStore;
+        this.tracesDocRef = tracesDocRef;
         this.hasSharedFileStoreData = hasSharedFileStoreData;
     }
 
@@ -228,6 +243,10 @@ public class PathwaysDoc extends AbstractDoc {
         return infoFeed;
     }
 
+    public DocRef getTracesDocRef() {
+        return tracesDocRef;
+    }
+
     public boolean hasSharedFileStoreData() {
         return Boolean.TRUE.equals(hasSharedFileStoreData);
     }
@@ -258,9 +277,9 @@ public class PathwaysDoc extends AbstractDoc {
                Objects.equals(ignoredAttributes, that.ignoredAttributes) &&
                Objects.equals(pathways, that.pathways) &&
                Objects.equals(infoFeed, that.infoFeed) &&
-               // hasSharedFileStoreData is left out on purpose: it is stamped onto the document as it
-               // is fetched and never stored, so comparing it would make the editor think an untouched
-               // document had changed.
+               // hasSharedFileStoreData and tracesDocRef are left out on purpose: both are stamped
+               // onto the document as it is fetched and never stored, so comparing them would make an
+               // untouched document look edited.
                Objects.equals(sharedFileStore, that.sharedFileStore);
     }
 
@@ -319,6 +338,7 @@ public class PathwaysDoc extends AbstractDoc {
         private SharedFileStoreSettings sharedFileStore;
 
         // Intentionally not copied — it is always recomputed server-side.
+        private DocRef tracesDocRef;
         private Boolean hasSharedFileStoreData;
 
         private Builder() {
@@ -394,6 +414,11 @@ public class PathwaysDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder tracesDocRef(final DocRef tracesDocRef) {
+            this.tracesDocRef = tracesDocRef;
+            return self();
+        }
+
         public Builder hasSharedFileStoreData(final Boolean hasSharedFileStoreData) {
             this.hasSharedFileStoreData = hasSharedFileStoreData;
             return self();
@@ -424,6 +449,7 @@ public class PathwaysDoc extends AbstractDoc {
                     allowConstraintMutation,
                     infoFeed,
                     sharedFileStore,
+                    tracesDocRef,
                     hasSharedFileStoreData);
         }
     }

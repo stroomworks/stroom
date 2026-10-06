@@ -48,6 +48,7 @@ final class PathRecorder {
     static Paths add(final Paths current,
                       final PathShape shape,
                       final NanoTime time,
+                      final NanoTime traceTime,
                       final String traceId) {
         final List<String> nodes = new ArrayList<>(current.getNodes());
         final Map<String, Integer> positions = new HashMap<>();
@@ -76,7 +77,7 @@ final class PathRecorder {
 
         // Kept in the order first taken, so the oldest path stays at the top of the table however
         // the counts move.
-        paths.add(new PathUse(root, 1L, time, time, traceId));
+        paths.add(new PathUse(root, 1L, time, time, traceId, traceTime));
         return new Paths(nodes, steps, paths);
     }
 

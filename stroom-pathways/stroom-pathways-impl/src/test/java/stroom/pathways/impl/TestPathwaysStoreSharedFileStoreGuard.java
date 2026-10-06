@@ -84,7 +84,9 @@ class TestPathwaysStoreSharedFileStoreGuard {
         // These tests are about the guard, so the user always holds the permission.
         when(securityContext.hasDocumentPermission(any(), any())).thenReturn(true);
         final Provider<ClusterLockService> lockServiceProvider = () -> clusterLockService;
-        storeImpl = new PathwaysStoreImpl(storeFactory, securityContext, serialiser, lockServiceProvider);
+        // These tests are about the guard, which never looks for a traces store.
+        storeImpl = new PathwaysStoreImpl(storeFactory, securityContext, serialiser, lockServiceProvider,
+                () -> null);
         shared = Files.createDirectories(tempDir.resolve("pathways_shared"));
     }
 

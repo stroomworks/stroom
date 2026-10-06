@@ -19,8 +19,10 @@ package stroom.pathways.client.presenter;
 
 import stroom.config.global.client.presenter.ListDataProvider;
 import stroom.data.client.presenter.ColumnSizeConstants;
+import stroom.data.client.presenter.HasContextMenusCell;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
+import stroom.docref.DocRef;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathStep;
@@ -138,6 +140,8 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     // drawing already shows that plainly.
     private String selectedNode;
     private Filter filter = Filter.OFF;
+    // Where the traces that taught this model are kept, or null where nothing keeps them.
+    private DocRef tracesDocRef;
     // How to order the rows for each column that offers it, and the one ordered on where nothing has
     // been chosen.
     private final Map<Column<?, ?>, Comparator<PathUse>> orders = new HashMap<>();
@@ -515,6 +519,10 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
      * Narrows the table, or stops narrowing it. Asked for from the drawing as well as from the button
      * beside the table, so the button is brought into line with whatever was asked.
      */
+    public void setTracesDocRef(final DocRef tracesDocRef) {
+        this.tracesDocRef = tracesDocRef;
+    }
+
     public void setFilter(final Filter filter) {
         this.filter = filter;
         final boolean on = filter != Filter.OFF && selectedNode != null;
@@ -628,13 +636,42 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
                 (a, b) -> compare(a.getLastUsedTime(), b.getLastUsedTime()));
         addColumn("Path", this::text, PATH_COL,
                 (a, b) -> compare(text(a), text(b)));
-        addColumn("Created By", PathUse::getCreatedByTraceId, TRACE_ID_COL,
-                (a, b) -> compare(a.getCreatedByTraceId(), b.getCreatedByTraceId()));
+        addTraceIdColumn();
         addColumn("Steps", path -> Integer.toString(steps(path)), COUNT_COL,
                 (a, b) -> Integer.compare(steps(a), steps(b)));
         tracesColumn = addColumn("Traces", path -> Long.toString(path.getTimesUsed()), COUNT_COL,
                 (a, b) -> Long.compare(a.getTimesUsed(), b.getTimesUsed()));
         busiestFirst();
+    }
+
+    // The trace that first took this path, which is the one worth opening to see what it actually did.
+    // Right clicking it offers to go there — nothing, where no traces store feeds this pathway.
+    private void addTraceIdColumn() {
+        final Column<PathUse, String> column = new Column<PathUse, String>(
+                new HasContextMenusCell<String>((context, traceId) ->
+                        TraceOpener.menuItems(this, tracesDocRef, traceId, whenTaken(traceId))) {
+                }) {
+            @Override
+            public String getValue(final PathUse path) {
+                return path.getCreatedByTraceId();
+            }
+        };
+        column.setSortable(true);
+        dataGrid.addResizableColumn(column, "Created By", TRACE_ID_COL);
+        // Held against the column rather than the name, the same as every other column here.
+        orders.put(column, (a, b) -> compare(a.getCreatedByTraceId(), b.getCreatedByTraceId()));
+    }
+
+    // When the trace that first took this path actually ran. Not the first used time beside it: that
+    // is when the model learnt from the trace, which is however long after the trace ran that it
+    // waited in the queue to be applied.
+    private Long whenTaken(final String traceId) {
+        for (final PathUse path : rows) {
+            if (Objects.equals(traceId, path.getCreatedByTraceId())) {
+                return NullSafe.get(path.getTraceTime(), NanoTime::toEpochMillis);
+            }
+        }
+        return null;
     }
 
     // Busiest first unless the grid has been told otherwise. What a reader wants to know is what

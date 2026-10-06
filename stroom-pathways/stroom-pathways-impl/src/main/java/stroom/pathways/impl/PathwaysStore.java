@@ -32,4 +32,13 @@ public interface PathwaysStore extends DocumentStore<PathwaysDoc> {
      * editor can stop its path and shard count being changed out from under them.
      */
     boolean hasSharedFileStoreData(String uuid);
+
+    /**
+     * The traces store that hands its finished traces to this pathway, or null where none does.
+     *
+     * <p>A search, because the link is held the other way round: a traces document names the pathway
+     * it feeds so that a merge can decide where to put a trace without reading every pathway. Going
+     * back the other way has to look.
+     */
+    DocRef findTracesDocFor(String uuid);
 }

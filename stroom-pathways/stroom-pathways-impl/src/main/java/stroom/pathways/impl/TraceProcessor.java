@@ -207,6 +207,7 @@ public class TraceProcessor {
             final Paths after = PathRecorder.add(before,
                     nodeMutator.getPathShape(),
                     nanoTime,
+                    nodeMutator.getTraceTime(),
                     trace.getTraceId());
             // A path the model has never seen, said on the document's feed. Told apart by the list
             // having grown: a path already known is counted where it stands and adds nothing, so one

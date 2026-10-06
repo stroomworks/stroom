@@ -221,7 +221,8 @@ public class PathwaySerde {
                 input.readLong(),
                 readNullableNanoTime(input),
                 readNullableNanoTime(input),
-                input.readString());
+                input.readString(),
+                readNullableNanoTime(input));
     }
 
     private List<String> readStrings(final Input input) {
@@ -306,6 +307,7 @@ public class PathwaySerde {
             output.writeByte(MUTATION_VERSION);
             output.writeLong(mutation.getSequence());
             writeNanoTime(mutation.getTime(), output);
+            writeNanoTime(mutation.getTraceTime(), output);
             output.writeString(mutation.getTraceId());
             output.writeString(mutation.getSpanId());
             writeStrings(mutation.getNodePath(), output);
@@ -325,6 +327,7 @@ public class PathwaySerde {
 
         return new PathwayMutation(
                 input.readLong(),
+                readNanoTime(input),
                 readNanoTime(input),
                 input.readString(),
                 input.readString(),
@@ -408,6 +411,7 @@ public class PathwaySerde {
         writeNullableNanoTime(pathUse.getFirstUsedTime(), output);
         writeNullableNanoTime(pathUse.getLastUsedTime(), output);
         output.writeString(pathUse.getCreatedByTraceId());
+        writeNullableNanoTime(pathUse.getTraceTime(), output);
     }
 
     private static int countNodes(final PathNode pathNode) {

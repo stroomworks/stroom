@@ -439,6 +439,21 @@ public class TracesListPresenter
         this.dataSourceRef = dataSourceRef;
     }
 
+    /**
+     * Filters the list and says so in the quick filter box.
+     *
+     * <p>{@link #setFilter} alone narrows the rows and leaves the box empty, which reads as a list
+     * that has lost most of itself for no reason. For a filter the reader asked for by other means,
+     * the box has to show what it is filtering by.
+     *
+     * <p>Nothing is fetched here. The caller is setting more than one thing and fetches once it has
+     * set them all, rather than once for each.
+     */
+    public void showFilter(final String filter) {
+        getView().setQuickFilterText(filter);
+        setFilter(filter);
+    }
+
     public void setFilter(final String filter) {
         this.filter = filter;
     }

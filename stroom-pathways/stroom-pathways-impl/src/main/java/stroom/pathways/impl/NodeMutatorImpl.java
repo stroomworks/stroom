@@ -96,6 +96,10 @@ public class NodeMutatorImpl {
     // notice a constraint moving are several calls below the one that knows. Which node it happened to
     // is passed instead, so a constraint is never recorded against the wrong one.
     private NanoTime time;
+    // When the trace ran, which is not when this ran: a trace waits in a queue to be applied, and how
+    // long it waited is anyone's guess. Taken off the root span, which is the one span of a trace that
+    // stands for the whole of it.
+    private NanoTime traceTime;
     private String traceId;
     private String spanId;
     // Whether what is being recorded is a node this trace did not carry.
@@ -118,6 +122,14 @@ public class NodeMutatorImpl {
         return mutations;
     }
 
+
+    /**
+     * When the trace this walked actually ran, off its root span. Not when this ran: a trace waits to
+     * be applied, and how long it waited is not knowable from the applied time alone.
+     */
+    public NanoTime getTraceTime() {
+        return traceTime;
+    }
 
     /**
      * What the trace did, as one shape holding the whole walk: every node it reached, the children it
@@ -147,8 +159,8 @@ public class NodeMutatorImpl {
                 ? MutationType.NODE_ABSENT
                 : type0;
         // Numbered when written, because where it sits in the pathway's history is not known here.
-        mutations.add(new PathwayMutation(0L, time, traceId, spanId, node.getNodePath(), node.getUuid(),
-                constraint, type, optional, oldValue, newValue));
+        mutations.add(new PathwayMutation(0L, time, traceTime, traceId, spanId, node.getNodePath(),
+                node.getUuid(), constraint, type, optional, oldValue, newValue));
     }
 
     // A change to the node rather than to one of its constraints, so there is no flag to carry.
@@ -164,6 +176,7 @@ public class NodeMutatorImpl {
                             final PathwaysDoc pathwaysDoc) {
         final Span root = trace.root();
         time = NanoTimeUtil.fromInstant(Instant.now());
+        traceTime = NanoTime.fromString(root.getStartTimeUnixNano());
         traceId = trace.getTraceId();
         spanId = root.getSpanId();
         rootSpanId = root.getSpanId();

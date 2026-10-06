@@ -52,18 +52,25 @@ public class PathUse {
     private final NanoTime lastUsedTime;
     @JsonProperty
     private final String createdByTraceId;
+    /**
+     * When the trace that first took this path actually ran, as against {@link #firstUsedTime}, which
+     * is when the model learnt from it. The two differ by however long the trace waited to be applied.
+     */
+    private final NanoTime traceTime;
 
     @JsonCreator
     public PathUse(@JsonProperty("root") final int root,
                     @JsonProperty("timesUsed") final long timesUsed,
                     @JsonProperty("firstUsedTime") final NanoTime firstUsedTime,
                     @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
-                    @JsonProperty("createdByTraceId") final String createdByTraceId) {
+                    @JsonProperty("createdByTraceId") final String createdByTraceId,
+                   @JsonProperty("traceTime") final NanoTime traceTime) {
         this.root = root;
         this.timesUsed = timesUsed;
         this.firstUsedTime = firstUsedTime;
         this.lastUsedTime = lastUsedTime;
         this.createdByTraceId = createdByTraceId;
+        this.traceTime = traceTime;
     }
 
     /**
@@ -93,8 +100,12 @@ public class PathUse {
      * The same path taken again. The creating trace id and first used time keep the values they were
      * given, so the row still points at a trace that has been checked rather than the newest one.
      */
+    public NanoTime getTraceTime() {
+        return traceTime;
+    }
+
     public PathUse used(final NanoTime time) {
-        return new PathUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId);
+        return new PathUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId, traceTime);
     }
 
     @Override
@@ -110,12 +121,13 @@ public class PathUse {
                && root == that.root
                && Objects.equals(firstUsedTime, that.firstUsedTime)
                && Objects.equals(lastUsedTime, that.lastUsedTime)
-               && Objects.equals(createdByTraceId, that.createdByTraceId);
+               && Objects.equals(createdByTraceId, that.createdByTraceId)
+               && Objects.equals(traceTime, that.traceTime);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(root, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId);
+        return Objects.hash(root, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId, traceTime);
     }
 
     @Override

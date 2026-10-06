@@ -171,10 +171,15 @@ public class TracesListTabPresenter extends DocPresenter<TracesView, TracesDoc> 
     protected void onRead(final DocRef docRef, final TracesDoc document, final boolean readOnly) {
         if (docRef != null) {
             setDataSourceRef(docRef);
-            // Default the time range selector to Today on first open.
-            timeRangeSelector.setValue(TimeRanges.TODAY);
-            listPresenter.setTimeRange(TimeRanges.TODAY);
-            refresh();
+            // Opened to look at one trace, where someone left one here on the way in. Asked before
+            // anything is fetched, so the window and the filter are set first and the store is read
+            // once — there is no page of today's traces to draw and replace.
+            if (!TraceToShow.take(docRef, this::showTrace)) {
+                // Default the time range selector to Today on first open.
+                timeRangeSelector.setValue(TimeRanges.TODAY);
+                listPresenter.setTimeRange(TimeRanges.TODAY);
+                refresh();
+            }
         }
     }
 
@@ -190,6 +195,30 @@ public class TracesListTabPresenter extends DocPresenter<TracesView, TracesDoc> 
 
     public void setFilter(final String filter) {
         listPresenter.setFilter(filter);
+    }
+
+    /**
+     * Shows one trace: the window narrowed to when it ran and the quick filter set to its id.
+     *
+     * <p>The selector is set as well as the list, or the window on show would not be the window being
+     * searched and the next thing the reader did with it would widen rather than narrow.
+     */
+    public void showTrace(final String traceId, final long fromMs, final long toMs) {
+        // Given no name, so the selector shows the times themselves. A name is what it displays when
+        // it has one, and a window around one trace has nothing to call itself.
+        //
+        // Set on the selector rather than straight onto the list, and told to say so: the handler
+        // above is what carries a window from the selector to the list, so going round it would leave
+        // the window on show and the window being searched as two different things.
+        final TimeRange window = new TimeRange(
+                null, ClientDateUtil.toISOString(fromMs), ClientDateUtil.toISOString(toMs));
+        // Set without telling anyone, and the list told directly. Announcing it would have the handler
+        // above fetch a page for the window alone, which is then thrown away a moment later when the
+        // filter arrives — a page drawn only to be replaced, which is what a reader sees as a flicker.
+        timeRangeSelector.setValue(window);
+        listPresenter.setTimeRange(window);
+        listPresenter.showFilter(traceId);
+        listPresenter.refresh();
     }
 
     public void setPathway(final Pathway pathway, final List<String> ignoredSpanNames) {

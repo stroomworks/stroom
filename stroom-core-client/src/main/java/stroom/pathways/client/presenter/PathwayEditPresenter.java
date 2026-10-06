@@ -652,6 +652,10 @@ public class PathwayEditPresenter
     public void read(final PathwaysDoc pathwaysDoc, final String name, final boolean readOnly) {
         this.readOnly = readOnly;
         this.docRef = pathwaysDoc.asDocRef();
+        // Stamped onto the document as it was fetched, so it arrives with it rather than being asked
+        // for again by everything that wants it.
+        pathListPresenter.setTracesDocRef(pathwaysDoc.getTracesDocRef());
+        mutationListPresenter.setTracesDocRef(pathwaysDoc.getTracesDocRef());
         this.name = name;
         setDirty(false);
         restFactory

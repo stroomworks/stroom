@@ -75,6 +75,16 @@ public class TracesPresenter extends DocTabPresenter<LinkTabPanelView, TracesDoc
         selectTab(TRACES);
     }
 
+    /**
+     * Shows one trace, for whoever opened this document in order to look at it. Asked for once the
+     * document is open, because what is being looked for is not part of what the document is — it is
+     * why this reader opened it.
+     */
+    public void showTrace(final String traceId, final long fromMs, final long toMs) {
+        selectTab(TRACES);
+        tracesListTabPresenter.showTrace(traceId, fromMs, toMs);
+    }
+
     @Override
     public String getType() {
         return TracesDoc.TYPE;
