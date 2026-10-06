@@ -58,12 +58,10 @@ class PathwaysResourceImpl implements PathwaysResource {
             return null;
         }
         // Stamp what the document does not hold itself: the flag that locks the shared path and shard
-        // count once pathways have been written under them, and the traces store feeding this pathway,
-        // which is found by looking rather than held here. Both are worked out once, when the document
-        // is opened, and carried wherever it goes.
+        // count once pathways have been written under them. Worked out once, when the document is
+        // opened, and carried wherever it goes.
         return doc.copy()
                 .hasSharedFileStoreData(pathwaysStoreProvider.get().hasSharedFileStoreData(uuid))
-                .tracesDocRef(pathwaysStoreProvider.get().findTracesDocFor(uuid))
                 .build();
     }
 
@@ -72,7 +70,7 @@ class PathwaysResourceImpl implements PathwaysResource {
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
-        // Strip what was stamped on before persisting — both are worked out server-side on every read
+        // Strip what was stamped on before persisting — it is worked out server-side on every read
         // and must never be written to the document store.
         final PathwaysDoc updated = pathwaysStoreProvider.get().writeDocument(doc.copy().build());
         if (updated == null) {
@@ -80,7 +78,6 @@ class PathwaysResourceImpl implements PathwaysResource {
         }
         return updated.copy()
                 .hasSharedFileStoreData(pathwaysStoreProvider.get().hasSharedFileStoreData(uuid))
-                .tracesDocRef(pathwaysStoreProvider.get().findTracesDocFor(uuid))
                 .build();
     }
 

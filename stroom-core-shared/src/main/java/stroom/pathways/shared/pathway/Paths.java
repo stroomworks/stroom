@@ -46,11 +46,19 @@ public class Paths {
     private final List<PathStep> steps;
     @JsonProperty
     private final List<PathUse> paths;
+    /**
+     * The trace stores this pathway has learnt from, in the order first seen. A uuid is held once
+     * here and referred to by position, because the same handful of stores feed every path and every
+     * change, and a uuid on each would be most of what a row costs.
+     */
+    @JsonProperty
+    private final List<String> sources;
 
     @JsonCreator
     public Paths(@JsonProperty("nodes") final List<String> nodes,
                   @JsonProperty("steps") final List<PathStep> steps,
-                  @JsonProperty("paths") final List<PathUse> paths) {
+                  @JsonProperty("paths") final List<PathUse> paths,
+                  @JsonProperty("sources") final List<String> sources) {
         this.nodes = nodes == null
                 ? Collections.emptyList()
                 : new ArrayList<>(nodes);
@@ -60,10 +68,21 @@ public class Paths {
         this.paths = paths == null
                 ? Collections.emptyList()
                 : new ArrayList<>(paths);
+        this.sources = sources == null
+                ? Collections.emptyList()
+                : new ArrayList<>(sources);
     }
 
     public static Paths empty() {
-        return new Paths(Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+        return new Paths(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList());
+    }
+
+    /**
+     * Trace store uuids by position. A path's {@code source}, and a change's, index this.
+     */
+    public List<String> getSources() {
+        return sources;
     }
 
     /**

@@ -26,6 +26,7 @@ import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -65,6 +66,12 @@ public final class QueueItem {
     private static final String INFO_DBI_NAME = "queue-item-info";
     private static final byte INFO_KEY_FORMAT_VERSION = 0;
     private static final byte INFO_KEY_ORDER_KEY = 1;
+    /**
+     * The uuid of the trace store these traces came from. Held so that what is learnt from them can
+     * say where it came from, which configuration cannot: a store can be pointed at a different
+     * pathways document, and what it taught the old one stays behind.
+     */
+    private static final byte INFO_KEY_SOURCE = 2;
 
     /** Zero padded so that ordering by name and ordering by key are the same thing. */
     private static final String NAME_FORMAT = "%013d_%s";
@@ -131,11 +138,14 @@ public final class QueueItem {
                 .build();
     }
 
-    static void writeInfo(final PlanBEnv env, final long orderKey) {
+    static void writeInfo(final PlanBEnv env, final long orderKey, final String source) {
         final Dbi<ByteBuffer> dbi = infoDbi(env);
         env.write(writer -> {
             putLong(dbi, writer, INFO_KEY_FORMAT_VERSION, FORMAT_VERSION);
             putLong(dbi, writer, INFO_KEY_ORDER_KEY, orderKey);
+            if (source != null) {
+                putString(dbi, writer, INFO_KEY_SOURCE, source);
+            }
             writer.commit();
         });
     }
@@ -146,6 +156,24 @@ public final class QueueItem {
 
     static long readOrderKey(final PlanBEnv env) {
         return readLong(env, INFO_KEY_ORDER_KEY);
+    }
+
+    /**
+     * The trace store these traces came from, or null where the producer did not say. Absence is not
+     * a failure: an item written before anything recorded a source still carries traces worth
+     * applying, and what they teach is simply not attributed.
+     */
+    static String readSource(final PlanBEnv env) {
+        final Dbi<ByteBuffer> dbi = infoDbi(env);
+        return env.read(txn -> {
+            final ByteBuffer value = dbi.get(txn, key(INFO_KEY_SOURCE));
+            if (value == null) {
+                return null;
+            }
+            final byte[] bytes = new byte[value.remaining()];
+            value.get(bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
+        });
     }
 
     private static long readLong(final PlanBEnv env, final byte infoKey) {
@@ -173,6 +201,16 @@ public final class QueueItem {
                                 final long value) {
         final ByteBuffer valueBuffer = ByteBuffer.allocateDirect(Long.BYTES);
         valueBuffer.putLong(value).flip();
+        dbi.put(writer.getWriteTxn(), key(infoKey), valueBuffer);
+    }
+
+    private static void putString(final Dbi<ByteBuffer> dbi,
+                                  final stroom.planb.impl.dao.LmdbWriter writer,
+                                  final byte infoKey,
+                                  final String value) {
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        final ByteBuffer valueBuffer = ByteBuffer.allocateDirect(bytes.length);
+        valueBuffer.put(bytes).flip();
         dbi.put(writer.getWriteTxn(), key(infoKey), valueBuffer);
     }
 

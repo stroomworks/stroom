@@ -66,6 +66,13 @@ public class PathwayMutation {
      * learnt, and replay depends on that order, so what a row shows has to stay the applied time.
      */
     private final NanoTime traceTime;
+    /**
+     * Which trace store the trace came from, as a position in the source list on {@link Paths}, or
+     * -1 where it arrived without one. Recorded rather than looked up: a store can later be pointed
+     * at a different pathways document, and what it already taught this one stays behind.
+     */
+    @JsonProperty
+    private final int source;
     @JsonProperty
     private final String traceId;
     @JsonProperty
@@ -101,6 +108,7 @@ public class PathwayMutation {
     public PathwayMutation(@JsonProperty("sequence") final long sequence,
                            @JsonProperty("time") final NanoTime time,
                            @JsonProperty("traceTime") final NanoTime traceTime,
+                           @JsonProperty("source") final int source,
                            @JsonProperty("traceId") final String traceId,
                            @JsonProperty("spanId") final String spanId,
                            @JsonProperty("nodePath") final List<String> nodePath,
@@ -114,6 +122,7 @@ public class PathwayMutation {
         this.nodeUuid = nodeUuid;
         this.time = time;
         this.traceTime = traceTime;
+        this.source = source;
         this.traceId = traceId;
         this.spanId = spanId;
         this.nodePath = nodePath;
@@ -163,11 +172,12 @@ public class PathwayMutation {
     }
 
     /**
-     * The same change, numbered. Used when writing, where its place in the pathway's history is known.
+     * The same change, numbered and attributed. Used when writing, where both its place in the
+     * pathway's history and the store its trace came from are known.
      */
-    public PathwayMutation withSequence(final long sequence) {
-        return new PathwayMutation(sequence, time, traceTime, traceId, spanId, nodePath, nodeUuid,
-                constraint, type, optional, oldValue, newValue);
+    public PathwayMutation withSequence(final long sequence, final int source) {
+        return new PathwayMutation(sequence, time, traceTime, source, traceId, spanId, nodePath,
+                nodeUuid, constraint, type, optional, oldValue, newValue);
     }
 
     public long getSequence() {
@@ -176,6 +186,14 @@ public class PathwayMutation {
 
     public NanoTime getTraceTime() {
         return traceTime;
+    }
+
+    /**
+     * Where the trace came from, as a position in the source list on {@link Paths}, or -1 where it
+     * arrived without one.
+     */
+    public int getSource() {
+        return source;
     }
 
     public NanoTime getTime() {
@@ -231,6 +249,7 @@ public class PathwayMutation {
                && Objects.equals(nodeUuid, that.nodeUuid)
                && Objects.equals(time, that.time)
                && Objects.equals(traceTime, that.traceTime)
+               && source == that.source
                && Objects.equals(traceId, that.traceId)
                && Objects.equals(spanId, that.spanId)
                && Objects.equals(nodePath, that.nodePath)
@@ -243,8 +262,8 @@ public class PathwayMutation {
 
     @Override
     public int hashCode() {
-        return Objects.hash(sequence, time, traceTime, traceId, spanId, nodePath, nodeUuid, constraint,
-                type, optional, oldValue, newValue);
+        return Objects.hash(sequence, time, traceTime, source, traceId, spanId, nodePath, nodeUuid,
+                constraint, type, optional, oldValue, newValue);
     }
 
     @Override

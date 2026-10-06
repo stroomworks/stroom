@@ -350,7 +350,8 @@ public class PathwaysProcessor {
                         HexStringUtil.decode(root.getTraceId()),
                         traceId -> Optional.of(trace),
                         doc,
-                        messageReceiver);
+                        messageReceiver,
+                        reader.getSource());
                 counts.changed |= outcome == ApplyOutcome.APPLIED;
                 allDealtWith[0] &= outcome != ApplyOutcome.NOT_APPLICABLE;
             });

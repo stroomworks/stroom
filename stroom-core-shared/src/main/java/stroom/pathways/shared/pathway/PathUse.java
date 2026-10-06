@@ -57,6 +57,14 @@ public class PathUse {
      * is when the model learnt from it. The two differ by however long the trace waited to be applied.
      */
     private final NanoTime traceTime;
+    /**
+     * Which trace store the creating trace came from, as a position in the source list on
+     * {@link Paths}, or -1 where the trace arrived without one. Recorded rather than looked up,
+     * because a store can later be pointed at a different pathways document and what it already
+     * taught this one stays behind.
+     */
+    @JsonProperty
+    private final int source;
 
     @JsonCreator
     public PathUse(@JsonProperty("root") final int root,
@@ -64,13 +72,15 @@ public class PathUse {
                     @JsonProperty("firstUsedTime") final NanoTime firstUsedTime,
                     @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
                     @JsonProperty("createdByTraceId") final String createdByTraceId,
-                   @JsonProperty("traceTime") final NanoTime traceTime) {
+                   @JsonProperty("traceTime") final NanoTime traceTime,
+                   @JsonProperty("source") final int source) {
         this.root = root;
         this.timesUsed = timesUsed;
         this.firstUsedTime = firstUsedTime;
         this.lastUsedTime = lastUsedTime;
         this.createdByTraceId = createdByTraceId;
         this.traceTime = traceTime;
+        this.source = source;
     }
 
     /**
@@ -104,8 +114,16 @@ public class PathUse {
         return traceTime;
     }
 
+    /**
+     * Where the creating trace came from, as a position in the source list on {@link Paths}, or -1
+     * where it arrived without one.
+     */
+    public int getSource() {
+        return source;
+    }
+
     public PathUse used(final NanoTime time) {
-        return new PathUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId, traceTime);
+        return new PathUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId, traceTime, source);
     }
 
     @Override
@@ -122,12 +140,14 @@ public class PathUse {
                && Objects.equals(firstUsedTime, that.firstUsedTime)
                && Objects.equals(lastUsedTime, that.lastUsedTime)
                && Objects.equals(createdByTraceId, that.createdByTraceId)
-               && Objects.equals(traceTime, that.traceTime);
+               && Objects.equals(traceTime, that.traceTime)
+               && source == that.source;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(root, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId, traceTime);
+        return Objects.hash(root, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId, traceTime,
+                source);
     }
 
     @Override

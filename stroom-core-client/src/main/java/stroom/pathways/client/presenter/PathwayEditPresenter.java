@@ -34,6 +34,7 @@ import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.PathwayReplay;
@@ -652,10 +653,6 @@ public class PathwayEditPresenter
     public void read(final PathwaysDoc pathwaysDoc, final String name, final boolean readOnly) {
         this.readOnly = readOnly;
         this.docRef = pathwaysDoc.asDocRef();
-        // Stamped onto the document as it was fetched, so it arrives with it rather than being asked
-        // for again by everything that wants it.
-        pathListPresenter.setTracesDocRef(pathwaysDoc.getTracesDocRef());
-        mutationListPresenter.setTracesDocRef(pathwaysDoc.getTracesDocRef());
         this.name = name;
         setDirty(false);
         restFactory
@@ -672,6 +669,13 @@ public class PathwayEditPresenter
         if (pathway == null) {
             return;
         }
+
+        // Where the pathway has learnt from, which both tables name their rows' stores by position in.
+        // It comes with the model rather than from the configuration, so a store pointed elsewhere
+        // since does not take its old rows' trace links with it.
+        final List<String> sources = NullSafe.get(pathway.getPaths(), Paths::getSources);
+        pathListPresenter.setSources(sources);
+        mutationListPresenter.setSources(sources);
 
         // The paths arrive on the pathway itself, so they are on show as soon as it is opened rather
         // than waiting on the history the way the changes do.

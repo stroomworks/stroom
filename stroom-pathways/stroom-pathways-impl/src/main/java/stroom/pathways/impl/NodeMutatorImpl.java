@@ -162,9 +162,10 @@ public class NodeMutatorImpl {
         final MutationType type = absent
                 ? MutationType.NODE_ABSENT
                 : type0;
-        // Numbered when written, because where it sits in the pathway's history is not known here.
-        mutations.add(new PathwayMutation(0L, time, traceTime, traceId, spanId, node.getNodePath(),
-                node.getUuid(), constraint, type, optional, oldValue, newValue));
+        // Numbered and attributed when written, because neither where it sits in the pathway's
+        // history nor where the trace came from is known here.
+        mutations.add(new PathwayMutation(0L, time, traceTime, -1, traceId, spanId,
+                node.getNodePath(), node.getUuid(), constraint, type, optional, oldValue, newValue));
     }
 
     // A change to the node rather than to one of its constraints, so there is no flag to carry.

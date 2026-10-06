@@ -140,24 +140,6 @@ public class PathwaysStoreImpl
                 DocRef.builder().uuid(uuid).type(PathwaysDoc.TYPE).build()));
     }
 
-    @Override
-    public DocRef findTracesDocFor(final String uuid) {
-        final TracesDocStore store = tracesDocStoreProvider.get();
-        for (final DocRef ref : NullSafe.list(store.list())) {
-            final TracesDoc doc = store.readDocument(ref);
-            // Read with the caller's permissions, so a store they cannot see is a store they are not
-            // told about. A document that cannot be read is simply not the answer.
-            if (doc != null
-                && doc.getPathwaysDocRef() != null
-                && uuid.equals(doc.getPathwaysDocRef().getUuid())) {
-                return ref;
-            }
-        }
-        // Nothing feeds this pathway, or nothing the reader may see. Either way there is nowhere to
-        // send them.
-        return null;
-    }
-
     // A model or a queue under this document's shared path. Both are enough to pin the settings: the
     // queue holds traces already routed by the current shard count, and the model holds pathways
     // already placed by it.

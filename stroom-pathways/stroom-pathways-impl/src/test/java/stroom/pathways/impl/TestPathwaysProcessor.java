@@ -409,7 +409,7 @@ class TestPathwaysProcessor {
             final Path dir = Files.createDirectories(shardDir(shard));
             new QueueItemWriter(BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
                     Files.createDirectories(pathwaysShared.resolveSibling("local_build")))
-                    .write(bucket, traceIds, dir, orderKey);
+                    .write(bucket, traceIds, dir, orderKey, null);
         }
     }
 

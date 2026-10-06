@@ -128,7 +128,8 @@ class TestTraceProcessorOrphan {
                             },
                             PathwaysDoc.builder().uuid(UUID.randomUUID().toString()).build(),
                             (severity, message) -> {
-                            }))
+                            },
+                            null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("the trace could not be read");
             writer.commit();
@@ -149,7 +150,8 @@ class TestTraceProcessorOrphan {
                             if (severity == Severity.WARNING) {
                                 warnings.add(message.get());
                             }
-                        });
+                        },
+                        null);
     }
 
     private static boolean isMarkedProcessed(final PathwaysDb pathwaysDb) {

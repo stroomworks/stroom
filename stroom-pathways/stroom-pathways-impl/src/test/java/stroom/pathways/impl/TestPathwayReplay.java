@@ -123,7 +123,7 @@ class TestPathwayReplay {
             final NodeMutatorImpl mutator = mutator();
             root = mutator.process(trace, new NamePathKey(OPERATION), root, quiet(), doc());
             for (final PathwayMutation mutation : mutator.getMutations()) {
-                mutations.add(mutation.withSequence(++sequence));
+                mutations.add(mutation.withSequence(++sequence, -1));
             }
         }
 
@@ -152,7 +152,7 @@ class TestPathwayReplay {
         final List<PathwayMutation> mutations = new ArrayList<>();
         long sequence = 0;
         for (final PathwayMutation mutation : mutator.getMutations()) {
-            mutations.add(mutation.withSequence(++sequence));
+            mutations.add(mutation.withSequence(++sequence, -1));
         }
 
         assertThat(root.getConstraints()).containsKey("attribute.http.method");
@@ -245,7 +245,7 @@ class TestPathwayReplay {
             root = mutator.process(trace, new NamePathKey(OPERATION), root, quiet(), doc());
             for (final PathwayMutation mutation : mutator.getMutations()) {
                 sequence++;
-                mutations.add(mutation.withSequence(sequence));
+                mutations.add(mutation.withSequence(sequence, -1));
             }
         }
 

@@ -216,7 +216,9 @@ class TestStoredFormats {
                                 NanoTime.ofMillis(4),
                                 NanoTime.ofMillis(5),
                                 "0a0b0c0d",
-                                NanoTime.ofMillis(3)))))
+                                NanoTime.ofMillis(3),
+                                0)),
+                        List.of("a-traces-doc-uuid")))
                 .build();
 
         final ByteBuffer[] written = new ByteBuffer[1];

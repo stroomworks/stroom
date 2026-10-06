@@ -307,7 +307,8 @@ class TestMutationsInOneBatch {
                         id -> Optional.of(trace),
                         doc(),
                         (severity, message) -> {
-                        });
+                        },
+                        null);
             }
             writer.commit();
         }

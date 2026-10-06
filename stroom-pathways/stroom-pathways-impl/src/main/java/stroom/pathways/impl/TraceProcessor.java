@@ -102,7 +102,8 @@ public class TraceProcessor {
                                      final byte[] traceId,
                                      final Function<byte[], Optional<Trace>> traceFunction,
                                      final PathwaysDoc doc,
-                                     final MessageReceiver messageReceiver) {
+                                     final MessageReceiver messageReceiver,
+                                     final String sourceUuid) {
         return byteBuffers.useBytes(traceId, keyByteBuffer -> {
             final SimpleDb processingStatus = pathwaysDb.getProcessingStatus();
             final boolean processed = processingStatus
@@ -132,7 +133,7 @@ public class TraceProcessor {
                                 + HexStringUtil.encode(traceId) + " as it has no root span");
                         return ApplyOutcome.NOT_APPLICABLE;
                     } else {
-                        buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
+                        buildPathways(writer, trace, doc, messageReceiver, pathwaysDb, sourceUuid);
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();
                         return ApplyOutcome.APPLIED;
@@ -147,7 +148,8 @@ public class TraceProcessor {
                                final Trace trace,
                                final PathwaysDoc doc,
                                final MessageReceiver messageReceiver,
-                               final PathwaysDb pathwaysDb) {
+                               final PathwaysDb pathwaysDb,
+                               final String sourceUuid) {
         final CanonicalSpanOrder spanOrder = new CanonicalSpanOrder(doc.getTemporalOrderingTolerance());
         final PathKeyFactory pathKeyFactory = new PathKeyFactoryImpl();
         final NodeMutatorImpl nodeMutator = new NodeMutatorImpl(spanOrder, ignoredAttributes, ignoredSpans);
@@ -208,7 +210,11 @@ public class TraceProcessor {
                     nodeMutator.getPathShape(),
                     nanoTime,
                     nodeMutator.getTraceTime(),
-                    trace.getTraceId());
+                    trace.getTraceId(),
+                    sourceUuid);
+            // Numbered against the list the recorder just interned into, so a change and the path the
+            // same trace took point at the same store.
+            final int source = after.getSources().indexOf(sourceUuid);
             // A path the model has never seen, said on the document's feed. Told apart by the list
             // having grown: a path already known is counted where it stands and adds nothing, so one
             // more entry is one more way through this pathway. Worth hearing about because a pathway
@@ -243,7 +249,7 @@ public class TraceProcessor {
 
             // In the same transaction as the model change they describe, so the two cannot disagree
             // and a batch that fails leaves neither.
-            writeMutations(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode);
+            writeMutations(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source);
         });
     }
 
@@ -251,7 +257,8 @@ public class TraceProcessor {
                                 final PathwaysDb pathwaysDb,
                                 final byte[] pathwayKey,
                                 final List<PathwayMutation> mutations,
-                                final PathNode root) {
+                                final PathNode root,
+                                final int source) {
         if (mutations.isEmpty()) {
             return;
         }
@@ -261,7 +268,7 @@ public class TraceProcessor {
         for (final PathwayMutation mutation : mutations) {
             sequence++;
             final byte[] key = mutationKey(pathwayKey, sequence);
-            final PathwayMutation numbered = mutation.withSequence(sequence);
+            final PathwayMutation numbered = mutation.withSequence(sequence, source);
             byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
                     pathwaySerde.writeMutation(numbered, valueByteBuffer ->
                             db.insert(writer, keyByteBuffer, valueByteBuffer)));

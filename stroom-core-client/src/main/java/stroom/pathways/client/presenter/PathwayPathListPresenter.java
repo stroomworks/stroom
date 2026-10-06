@@ -142,7 +142,7 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     private String selectedNode;
     private Filter filter = Filter.OFF;
     // Where the traces that taught this model are kept, or null where nothing keeps them.
-    private DocRef tracesDocRef;
+    private List<String> sources = List.of();
     // How to order the rows for each column that offers it, and the one ordered on where nothing has
     // been chosen.
     private final Map<Column<?, ?>, Comparator<PathUse>> orders = new HashMap<>();
@@ -519,13 +519,18 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     /**
+     * The trace stores this pathway has learnt from, by position. A row names its store by position
+     * in this list rather than carrying a uuid of its own, and a row learnt from a store that has
+     * since been pointed elsewhere still names the one it came from.
+     */
+    public void setSources(final List<String> sources) {
+        this.sources = NullSafe.list(sources);
+    }
+
+    /**
      * Narrows the table, or stops narrowing it. Asked for from the drawing as well as from the button
      * beside the table, so the button is brought into line with whatever was asked.
      */
-    public void setTracesDocRef(final DocRef tracesDocRef) {
-        this.tracesDocRef = tracesDocRef;
-    }
-
     public void setFilter(final Filter filter) {
         this.filter = filter;
         final boolean on = filter != Filter.OFF && selectedNode != null;
@@ -652,7 +657,7 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     private void addTraceIdColumn() {
         final Column<PathUse, String> column = new Column<PathUse, String>(
                 new HasContextMenusCell<String>((context, traceId) ->
-                        traceNavigation.getMenuItems(this, tracesDocRef, traceId, whenTaken(traceId))) {
+                        traceNavigation.getMenuItems(this, sourceOf(traceId), traceId, whenTaken(traceId))) {
                 }) {
             @Override
             public String getValue(final PathUse path) {
@@ -668,6 +673,25 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     // When the trace that first took this path actually ran. Not the first used time beside it: that
     // is when the model learnt from the trace, which is however long after the trace ran that it
     // waited in the queue to be applied.
+    // Which trace store a row's trace came from, resolved against the list the pathway carries. Null
+    // where the row names none, or names one this pathway no longer holds — the menu then offers
+    // nothing rather than opening a store that cannot answer.
+    private String sourceOf(final String traceId) {
+        final int index = indexOfSource(traceId);
+        return index < 0 || index >= sources.size()
+                ? null
+                : sources.get(index);
+    }
+
+    private int indexOfSource(final String traceId) {
+        for (final PathUse path : rows) {
+            if (Objects.equals(traceId, path.getCreatedByTraceId())) {
+                return path.getSource();
+            }
+        }
+        return -1;
+    }
+
     private Long whenTaken(final String traceId) {
         for (final PathUse path : rows) {
             if (Objects.equals(traceId, path.getCreatedByTraceId())) {

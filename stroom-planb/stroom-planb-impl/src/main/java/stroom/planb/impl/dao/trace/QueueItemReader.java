@@ -38,6 +38,7 @@ public class QueueItemReader implements AutoCloseable {
 
     private final TraceDb item;
     private final long orderKey;
+    private final String source;
 
     /**
      * @param itemDir a finished item's directory, as returned by {@link QueueItemWriter#write}.
@@ -61,6 +62,7 @@ public class QueueItemReader implements AutoCloseable {
                         + ", expected " + QueueItem.FORMAT_VERSION);
             }
             this.orderKey = QueueItem.readOrderKey(item.getEnv());
+            this.source = QueueItem.readSource(item.getEnv());
         } catch (final RuntimeException e) {
             item.close();
             throw e;
@@ -73,6 +75,15 @@ public class QueueItemReader implements AutoCloseable {
      */
     public long getOrderKey() {
         return orderKey;
+    }
+
+    /**
+     * The trace store these traces came from, or null where the producer did not say. What is learnt
+     * from them is attributed to this rather than to whatever the configuration names now, so that
+     * pointing a store at a different pathways document leaves what it already taught where it is.
+     */
+    public String getSource() {
+        return source;
     }
 
     /** How many traces the item holds. */

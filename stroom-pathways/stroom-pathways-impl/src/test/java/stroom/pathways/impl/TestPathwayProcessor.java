@@ -154,7 +154,8 @@ public class TestPathwayProcessor {
                             traceId,
                             traceDb::findTrace,
                             PathwaysDoc.builder().uuid(UUID.randomUUID().toString()).build(),
-                            messageReceiver));
+                            messageReceiver,
+                            null));
             writer.commit();
         }
     }

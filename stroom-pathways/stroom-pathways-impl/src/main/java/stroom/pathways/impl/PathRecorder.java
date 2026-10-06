@@ -49,7 +49,8 @@ final class PathRecorder {
                       final PathShape shape,
                       final NanoTime time,
                       final NanoTime traceTime,
-                      final String traceId) {
+                      final String traceId,
+                      final String sourceUuid) {
         final List<String> nodes = new ArrayList<>(current.getNodes());
         final Map<String, Integer> positions = new HashMap<>();
         for (int i = 0; i < nodes.size(); i++) {
@@ -61,6 +62,12 @@ final class PathRecorder {
         for (int i = 0; i < steps.size(); i++) {
             shapes.putIfAbsent(steps.get(i), i);
         }
+        // Held whether or not this trace goes on to create a path, because the changes it made are
+        // numbered against the same list and are recorded even when the path it took is one the
+        // pathway already had.
+        final List<String> sources = new ArrayList<>(current.getSources());
+        final int source = sourceIndex(sources, sourceUuid);
+
         // A trace always has a shape; -1 is here so a caller that has none records a path the screen
         // reads as nothing rather than failing.
         final int root = shape == null
@@ -71,14 +78,29 @@ final class PathRecorder {
         for (int i = 0; i < paths.size(); i++) {
             if (paths.get(i).getRoot() == root) {
                 paths.set(i, paths.get(i).used(time));
-                return new Paths(nodes, steps, paths);
+                return new Paths(nodes, steps, paths, sources);
             }
         }
 
         // Kept in the order first taken, so the oldest path stays at the top of the table however
         // the counts move.
-        paths.add(new PathUse(root, 1L, time, time, traceId, traceTime));
-        return new Paths(nodes, steps, paths);
+        paths.add(new PathUse(root, 1L, time, time, traceId, traceTime, source));
+        return new Paths(nodes, steps, paths, sources);
+    }
+
+    // Where a trace store sits in the list, adding it where it is not there yet. A trace that arrived
+    // without a source is -1 rather than an entry, so an unattributed row says so instead of pointing
+    // at whichever store happens to be first.
+    private static int sourceIndex(final List<String> sources, final String sourceUuid) {
+        if (sourceUuid == null) {
+            return -1;
+        }
+        final int found = sources.indexOf(sourceUuid);
+        if (found >= 0) {
+            return found;
+        }
+        sources.add(sourceUuid);
+        return sources.size() - 1;
     }
 
     // Puts a shape and everything under it in the shape list, deepest first, and says where it went.

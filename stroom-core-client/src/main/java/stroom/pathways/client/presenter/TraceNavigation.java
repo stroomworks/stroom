@@ -18,6 +18,7 @@ package stroom.pathways.client.presenter;
 
 import stroom.docref.DocRef;
 import stroom.document.client.event.OpenDocumentEvent;
+import stroom.pathways.shared.TracesDoc;
 import stroom.svg.shared.SvgImage;
 import stroom.util.shared.NullSafe;
 import stroom.widget.menu.client.presenter.IconMenuItem;
@@ -52,18 +53,24 @@ public class TraceNavigation {
     private TraceToShow traceToShow;
 
     /**
-     * The menu for a trace id. Empty where this pathway has no traces store, no trace id or no time
-     * to open it at, because there is then nowhere to send the reader.
+     * The menu for a trace id. Empty where the row names no trace store, no trace id or no time to
+     * open it at, because there is then nowhere to send the reader.
      *
      * @param ranMs when the trace ran, which the model holds alongside when it learnt from the trace.
      */
     public List<Item> getMenuItems(final HasHandlers handlers,
-                                   final DocRef tracesDocRef,
+                                   final String tracesDocUuid,
                                    final String traceId,
                                    final Long ranMs) {
-        if (tracesDocRef == null || NullSafe.isBlankString(traceId) || ranMs == null) {
+        if (NullSafe.isBlankString(tracesDocUuid) || NullSafe.isBlankString(traceId) || ranMs == null) {
             return List.of();
         }
+        // Opening a document needs its type and uuid; the name is only what a tab is labelled with,
+        // and the model records the uuid because that is what does not change.
+        final DocRef tracesDocRef = DocRef.builder()
+                .type(TracesDoc.TYPE)
+                .uuid(tracesDocUuid)
+                .build();
         return List.of(new IconMenuItem.Builder()
                 .priority(1)
                 .icon(SvgImage.DOCUMENT_TRACES)

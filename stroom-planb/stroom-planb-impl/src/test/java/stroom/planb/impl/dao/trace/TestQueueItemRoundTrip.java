@@ -71,6 +71,10 @@ class TestQueueItemRoundTrip {
     private static final ByteBufferFactoryImpl BYTE_BUFFER_FACTORY = new ByteBufferFactoryImpl();
     private static final ByteBuffers BYTE_BUFFERS = new ByteBuffers(BYTE_BUFFER_FACTORY);
 
+    // The trace store the items below say they came from, which a consumer reads back to attribute
+    // whatever it learns from them.
+    private static final String SOURCE = "a-traces-doc-uuid";
+
     private static final String ROOT_SPAN = "1111111111111111";
     private static final String CHILD_SPAN = "2222222222222222";
 
@@ -112,6 +116,16 @@ class TestQueueItemRoundTrip {
         writer = new QueueItemWriter(BYTE_BUFFERS, BYTE_BUFFER_FACTORY,
                 Files.createDirectories(tempDir.resolve("local_build")));
         buildBucket();
+    }
+
+    @Test
+    void anItemSaysWhichStoreItsTracesCameFrom() throws Exception {
+        final Path itemDir = writeItem(allTraceIds()).orElseThrow();
+        try (final QueueItemReader reader = openItem(itemDir)) {
+            assertThat(reader.getSource())
+                    .as("read back so what is learnt from these traces can say where they came from")
+                    .isEqualTo(SOURCE);
+        }
     }
 
     @Test
@@ -206,7 +220,7 @@ class TestQueueItemRoundTrip {
     @Test
     void theOrderKeyIsBothInTheNameAndInTheItem() throws IOException {
         final long orderKey = 1_700_000_000_123L;
-        final Path itemDir = writer.write(openBucket(), allTraceIds(), queueDir, orderKey).orElseThrow();
+        final Path itemDir = writer.write(openBucket(), allTraceIds(), queueDir, orderKey, SOURCE).orElseThrow();
 
         assertThat(QueueItem.orderKeyOf(itemDir))
                 .as("readable from the name, so queue age costs no open")
@@ -218,9 +232,9 @@ class TestQueueItemRoundTrip {
 
     @Test
     void itemsSortOldestFirst() throws IOException {
-        final Path second = writer.write(openBucket(), allTraceIds(), queueDir, 2_000L).orElseThrow();
-        final Path first = writer.write(openBucket(), allTraceIds(), queueDir, 1_000L).orElseThrow();
-        final Path third = writer.write(openBucket(), allTraceIds(), queueDir, 3_000L).orElseThrow();
+        final Path second = writer.write(openBucket(), allTraceIds(), queueDir, 2_000L, SOURCE).orElseThrow();
+        final Path first = writer.write(openBucket(), allTraceIds(), queueDir, 1_000L, SOURCE).orElseThrow();
+        final Path third = writer.write(openBucket(), allTraceIds(), queueDir, 3_000L, SOURCE).orElseThrow();
 
         final List<Path> sorted = new ArrayList<>(List.of(second, third, first));
         sorted.sort(QueueItem.BY_ORDER_KEY);
@@ -280,7 +294,7 @@ class TestQueueItemRoundTrip {
 
     private Optional<Path> writeItem(final List<byte[]> traceIds) throws IOException {
         try (final TraceDb bucket = openBucket()) {
-            return writer.write(bucket, traceIds, queueDir, System.currentTimeMillis());
+            return writer.write(bucket, traceIds, queueDir, System.currentTimeMillis(), SOURCE);
         }
     }
 

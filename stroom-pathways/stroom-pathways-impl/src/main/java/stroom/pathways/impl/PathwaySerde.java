@@ -204,7 +204,8 @@ public class PathwaySerde {
     private Paths readPaths(final Input input) {
         return new Paths(readStrings(input),
                 readList(input, this::readPathStep),
-                readList(input, this::readPathUse));
+                readList(input, this::readPathUse),
+                readStrings(input));
     }
 
     // Written one more than it is held, so the group marker of -1 fits a variable length integer
@@ -222,7 +223,8 @@ public class PathwaySerde {
                 readNullableNanoTime(input),
                 readNullableNanoTime(input),
                 input.readString(),
-                readNullableNanoTime(input));
+                readNullableNanoTime(input),
+                input.readVarInt(true) - MARKER_OFFSET);
     }
 
     private List<String> readStrings(final Input input) {
@@ -311,6 +313,7 @@ public class PathwaySerde {
             output.writeLong(mutation.getSequence());
             writeNanoTime(mutation.getTime(), output);
             writeNanoTime(mutation.getTraceTime(), output);
+            output.writeVarInt(mutation.getSource() + MARKER_OFFSET, true);
             output.writeString(mutation.getTraceId());
             output.writeString(mutation.getSpanId());
             writeStrings(mutation.getNodePath(), output);
@@ -332,6 +335,7 @@ public class PathwaySerde {
                 input.readLong(),
                 readNanoTime(input),
                 readNanoTime(input),
+                input.readVarInt(true) - MARKER_OFFSET,
                 input.readString(),
                 input.readString(),
                 readStrings(input),
@@ -399,6 +403,7 @@ public class PathwaySerde {
         writeStrings(paths.getNodes(), output);
         writeList(paths.getSteps(), output, this::writePathStep);
         writeList(paths.getPaths(), output, this::writePathUse);
+        writeStrings(paths.getSources(), output);
     }
 
     private void writePathStep(final PathStep step, final Output output) {
@@ -415,6 +420,7 @@ public class PathwaySerde {
         writeNullableNanoTime(pathUse.getLastUsedTime(), output);
         output.writeString(pathUse.getCreatedByTraceId());
         writeNullableNanoTime(pathUse.getTraceTime(), output);
+        output.writeVarInt(pathUse.getSource() + MARKER_OFFSET, true);
     }
 
     private static int countNodes(final PathNode pathNode) {

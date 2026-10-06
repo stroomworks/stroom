@@ -86,7 +86,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     // the rows because a trace opening or closing changes the rows and not the history.
     private List<PathwayMutation> mutations = new ArrayList<>();
     // Where the traces that taught this model are kept, or null where nothing keeps them.
-    private DocRef tracesDocRef;
+    private List<String> sources = List.of();
     private final ButtonView expandAllButton;
     private final ButtonView collapseAllButton;
     // The same strip the traces list puts over its rows, here over the changes. Built from the history
@@ -190,8 +190,13 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         return new TraceHistogram(true, from, from + (width * BUCKETS) - 1, width, 0, counts, false);
     }
 
-    public void setTracesDocRef(final DocRef tracesDocRef) {
-        this.tracesDocRef = tracesDocRef;
+    /**
+     * The trace stores this pathway has learnt from, by position. A row names its store by position
+     * in this list rather than carrying a uuid of its own, and a row learnt from a store that has
+     * since been pointed elsewhere still names the one it came from.
+     */
+    public void setSources(final List<String> sources) {
+        this.sources = NullSafe.list(sources);
     }
 
     @Override
@@ -412,7 +417,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     private void addTraceIdColumn() {
         final Column<MutationRow, String> column = new Column<MutationRow, String>(
                 new HasContextMenusCell<String>((context, traceId) ->
-                        traceNavigation.getMenuItems(this, tracesDocRef, traceId, whenMade(traceId))) {
+                        traceNavigation.getMenuItems(this, sourceOf(traceId), traceId, whenMade(traceId))) {
                 }) {
             @Override
             public String getValue(final MutationRow row) {
@@ -424,6 +429,25 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
     // When the trace actually ran. Not the time beside it in the table: that is when the model learnt
     // from the trace, which is however long after the trace ran that it waited to be applied.
+    // Which trace store a row's trace came from, resolved against the list the pathway carries. Null
+    // where the row names none, or names one this pathway no longer holds — the menu then offers
+    // nothing rather than opening a store that cannot answer.
+    private String sourceOf(final String traceId) {
+        final int index = indexOfSource(traceId);
+        return index < 0 || index >= sources.size()
+                ? null
+                : sources.get(index);
+    }
+
+    private int indexOfSource(final String traceId) {
+        for (final PathwayMutation mutation : mutations) {
+            if (Objects.equals(traceId, mutation.getTraceId())) {
+                return mutation.getSource();
+            }
+        }
+        return -1;
+    }
+
     private Long whenMade(final String traceId) {
         for (final PathwayMutation mutation : mutations) {
             if (Objects.equals(traceId, mutation.getTraceId())) {
