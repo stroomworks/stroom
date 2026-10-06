@@ -21,11 +21,15 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.AnyValue;
 import stroom.pathways.shared.otel.trace.KeyValue;
 import stroom.pathways.shared.otel.trace.NanoDuration;
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
+import stroom.pathways.shared.pathway.ConstraintValue;
 import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NamePathKey;
+import stroom.pathways.shared.pathway.NanoTimeRange;
+import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.pathways.shared.pathway.StringSet;
@@ -60,6 +64,46 @@ class TestPathwayMutations {
     private static final String PING = "Ping";
     private static final String TRACE_ID = "0a0b0c0d0e0f00010203040506070809";
     private static final long BASE = 1_700_000_000_000_000_000L;
+
+    @Test
+    void aChildSaysHowLongAfterItsParentItStarted() {
+        final PathNode root = mutator().process(childAt(0, 3), key(), null, quiet(), doc());
+
+        assertThat(sinceParentStart(root)).isEqualTo(new NanoTimeValue(millis(3)));
+        assertThat(root.getConstraints())
+                .as("the root is enclosed by nothing, so there is nothing to measure it against")
+                .doesNotContainKey("sinceParentStart");
+    }
+
+    @Test
+    void aChildThatStartedBeforeItsParentIsClampedToNothing() {
+        // Two machines whose clocks disagree: the child reports a start three milliseconds before the
+        // parent that contains it.
+        final PathNode root = mutator().process(childAt(5, 2), key(), null, quiet(), doc());
+
+        assertThat(sinceParentStart(root))
+                .as("a gap cannot be negative, so it is recorded as none")
+                .isEqualTo(new NanoTimeValue(NanoTime.ZERO));
+    }
+
+    @Test
+    void theGapWidensLikeAnyOtherRange() {
+        PathNode root = mutator().process(childAt(0, 3), key(), null, quiet(), doc());
+        root = mutator().process(childAt(0, 40), key(), root, quiet(), doc());
+
+        assertThat(sinceParentStart(root)).isEqualTo(new NanoTimeRange(millis(3), millis(40)));
+    }
+
+    @Test
+    void oneEndOfTheGapCanBeLeftOpen() {
+        final List<String> ignored = List.of("sinceParentStart.max");
+        PathNode root = mutator(ignored).process(childAt(0, 3), key(), null, quiet(), doc());
+        root = mutator(ignored).process(childAt(0, 40), key(), root, quiet(), doc());
+
+        assertThat(sinceParentStart(root))
+                .as("the same naming that works for duration works here, with no code of its own")
+                .isEqualTo(new NanoTimeRange(millis(3), null));
+    }
 
     @Test
     void theFirstTraceRecordsThePathwayAndItsSteps() {
@@ -301,6 +345,25 @@ class TestPathwayMutations {
                 .allowConstraintCreation(true)
                 .allowConstraintMutation(true)
                 .build();
+    }
+
+    // One child under one root, each placed where the test wants it, so a test can say what the gap
+    // between the two starts is.
+    private static Trace childAt(final int rootMillis, final int childMillis) {
+        final Span root = span(OPERATION, "r0", "", rootMillis, 20, "GET");
+        final Span child = span(PING, "c0", "r0", childMillis, 1, null);
+        final Map<String, List<Span>> byParent = new HashMap<>();
+        byParent.put("", List.of(root));
+        byParent.put("r0", List.of(child));
+        return new Trace(TRACE_ID, byParent);
+    }
+
+    private static NanoTime millis(final int millis) {
+        return NanoTime.ofNanos(NanoDuration.ofMillis(millis).getNanos());
+    }
+
+    private static ConstraintValue sinceParentStart(final PathNode root) {
+        return root.getChildren().getFirst().getConstraints().get("sinceParentStart").getValue();
     }
 
     private static Trace trace(final String method, final String... childNames) {

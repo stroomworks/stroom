@@ -204,12 +204,17 @@ public class NodeMutatorImpl {
             node = pathNode;
         }
 
-        return walk(trace, root, node, messageReceiver, pathwaysDoc);
+        // The root has nothing above it to be measured against, so it starts with no parent time.
+        return walk(trace, root, node, null, messageReceiver, pathwaysDoc);
     }
 
+    // parentStartTime is the start of the span enclosing parentSpan, not of parentSpan itself — the
+    // name below is the span being folded in, and this is what it is measured against. Null at the
+    // root, which is enclosed by nothing.
     private PathNode walk(final Trace trace,
                           final Span parentSpan,
                           final PathNode parentNode,
+                          final NanoTime parentStartTime,
                           final MessageReceiver messageReceiver,
                           final PathwaysDoc pathwaysDoc) {
         // Everything below names the span being folded in. The recursive call below is given the
@@ -250,7 +255,7 @@ public class NodeMutatorImpl {
         // then b, and a model that could not tell the two apart said the second was the first.
         //
         final PathNode.Builder pathNodeBuilder =
-                addConstraints(parentNode, parentSpan, messages, pathwaysDoc);
+                addConstraints(parentNode, parentSpan, parentStartTime, messages, pathwaysDoc);
 
         final Map<String, PathNode> existing = new LinkedHashMap<>();
         NullSafe.list(parentNode.getChildren()).forEach(child -> existing.put(child.getName(), child));
@@ -283,7 +288,8 @@ public class NodeMutatorImpl {
             // child the model knows about that this trace did not carry happened no times.
             if (spans != null) {
                 for (final Span span : spans) {
-                    child = walk(trace, span, child, messageReceiver, pathwaysDoc);
+                    child = walk(trace, span, child, NanoTime.fromString(parentSpan.getStartTimeUnixNano()),
+                            messageReceiver, pathwaysDoc);
                 }
                 // The recursion moved the span on; put it back for what this level does next.
                 spanId = parentSpan.getSpanId();
@@ -584,6 +590,7 @@ public class NodeMutatorImpl {
 
     private PathNode.Builder addConstraints(final PathNode pathNode,
                                             final Span span,
+                                            final NanoTime parentStartTime,
                                             final MessageReceiver messageReceiver,
                                             final PathwaysDoc pathwaysDoc) {
         // This runs once for every span folded into the node, so it counts spans rather than traces.
@@ -619,6 +626,21 @@ public class NodeMutatorImpl {
         final NanoTime duration = endTime.subtract(startTime);
 
         setOrExpand(constraints, pathNode, "duration", duration, false, messageReceiver, pathwaysDoc);
+
+        // How long after its parent started this span started, which says when in the parent's work a
+        // step happens as against how long the step takes. The root has no parent to be measured
+        // against and so does not carry it.
+        if (parentStartTime != null) {
+            // Clamped, because a child can record a start before its parent where the two ran on
+            // machines whose clocks disagree, and a duration here cannot be negative: NanoTime holds
+            // no sign and orders on its seconds. Nothing worth keeping is lost — what this is for is
+            // spotting a step that starts unusually late, not sub-millisecond skew at the other end.
+            final NanoTime sinceParentStart = startTime.isLessThan(parentStartTime)
+                    ? NanoTime.ZERO
+                    : startTime.subtract(parentStartTime);
+            setOrExpand(constraints, pathNode, "sinceParentStart", sinceParentStart, false,
+                    messageReceiver, pathwaysDoc);
+        }
 
         // Set or expand flags.
         setOrExpand(constraints, pathNode, "flags", span.getFlags(), false, messageReceiver, pathwaysDoc);
