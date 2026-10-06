@@ -54,7 +54,14 @@ public enum MutationType implements HasDisplayValue, HasPrimitiveValue {
      * none. A real change — it is how the model learns a node is optional — but not one made by a
      * trace that reached the node, which is why it is told apart from an ordinary widening.
      */
-    NODE_ABSENT("Absent", 12);
+    NODE_ABSENT("Absent", 12),
+    /**
+     * One end of a range stopped being asserted, because the configuration names it as one not to
+     * learn. Told apart from a widening because nothing about the traced work changed — a trace
+     * carried a duration as it always does, and what moved was what the model is willing to learn
+     * from it.
+     */
+    CONSTRAINT_BOUND_OPENED("Bound Opened", 13);
 
     public static final PrimitiveValueConverter<MutationType> PRIMITIVE_VALUE_CONVERTER =
             PrimitiveValueConverter.create(MutationType.class, MutationType.values());

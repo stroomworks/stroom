@@ -19,7 +19,9 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.pathways.shared.PathwaySummary;
 import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.NamePathKey;
+import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathStep;
 import stroom.pathways.shared.pathway.PathUse;
@@ -30,6 +32,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -166,6 +169,21 @@ class TestStoredFormats {
         assertThat(read.getPaths().getPaths()).hasSize(1);
     }
 
+    @Test
+    void aDurationWithOneEndLeftOpenIsStoredWithThatEndAbsent() {
+        final Pathway read = new PathwaySerde(BYTE_BUFFER_FACTORY).readPathway(write());
+        final Map<String, Constraint> constraints = read.getRoot().getConstraints();
+
+        assertThat(constraints.get("duration").getValue())
+                .as("both ends learnt, as before")
+                .isEqualTo(new NanoTimeRange(NanoTime.ofMillis(1), NanoTime.ofMillis(9)));
+        assertThat(constraints.get("bottom.only").getValue())
+                .as("the top was left open, so only the bottom was written")
+                .isEqualTo(new NanoTimeRange(NanoTime.ofMillis(1), null));
+        assertThat(constraints.get("top.only").getValue())
+                .isEqualTo(new NanoTimeRange(null, NanoTime.ofMillis(9)));
+    }
+
     private static ByteBuffer write() {
         final Pathway pathway = Pathway.builder()
                 .name("GET /orders")
@@ -180,7 +198,13 @@ class TestStoredFormats {
                         "GET /orders",
                         List.of("GET /orders"),
                         List.of(new PathNode("Prepare statement"), new PathNode("Commit")),
-                        null))
+                        Map.of(
+                                "duration", new Constraint("duration",
+                                        new NanoTimeRange(NanoTime.ofMillis(1), NanoTime.ofMillis(9)), false),
+                                "bottom.only", new Constraint("bottom.only",
+                                        new NanoTimeRange(NanoTime.ofMillis(1), null), false),
+                                "top.only", new Constraint("top.only",
+                                        new NanoTimeRange(null, NanoTime.ofMillis(9)), false))))
                 .paths(new Paths(
                         List.of("node-a", "node-b"),
                         List.of(new PathStep(1, List.of()),

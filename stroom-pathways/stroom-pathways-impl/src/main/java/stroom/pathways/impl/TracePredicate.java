@@ -268,8 +268,11 @@ public class TracePredicate implements Predicate<Trace> {
         return switch (current) {
             case null -> false;
             case final NanoTimeValue nanoTimeValue -> Objects.equals(nanoTimeValue.getValue(), value);
-            case final NanoTimeRange timeRange -> timeRange.getMin().isLessThanEquals(value)
-                                                  && timeRange.getMax().isGreaterThanEquals(value);
+            // An absent end asserts nothing on that side, so anything passes it.
+            case final NanoTimeRange timeRange -> (timeRange.getMin() == null
+                                                   || timeRange.getMin().isLessThanEquals(value))
+                                                  && (timeRange.getMax() == null
+                                                      || timeRange.getMax().isGreaterThanEquals(value));
             default -> current instanceof AnyTypeValue;
         };
     }

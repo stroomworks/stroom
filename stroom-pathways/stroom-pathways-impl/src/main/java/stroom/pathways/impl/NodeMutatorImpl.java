@@ -74,6 +74,10 @@ public class NodeMutatorImpl {
     // this is not one a reader would follow as a repeat.
     private static final int MAX_GROUP = 64;
     private static final String ATTRIBUTE_PREFIX = "attribute.";
+    // What the configuration adds to a constraint's name to leave one end of its range open, as in
+    // "duration.max" for a span whose slowest runs are outliers worth nothing to the model.
+    private static final String MIN_SUFFIX = ".min";
+    private static final String MAX_SUFFIX = ".max";
     private static final String OCCURRENCES = "occurrences";
 
     private final CanonicalSpanOrder spanOrder;
@@ -651,31 +655,10 @@ public class NodeMutatorImpl {
             }
         });
 
-        // Set or expand attributes. One the configuration says to ignore is recorded as accepting
-        // anything, once, and then left alone — it stays visible against the node without its value
-        // being learnt or widened every time a trace carries a different one.
-        attributes.forEach((key, value) -> {
-            if (!ignoredAttributes.isEmpty()
-                && ignoredAttributes.test(key.substring(ATTRIBUTE_PREFIX.length()))) {
-                final Constraint was = newConstraints.get(key);
-                if (!(NullSafe.get(was, Constraint::getValue) instanceof AnyTypeValue)) {
-                    // Not through put(): AnyTypeValue defines no equals, so every trace would look
-                    // like a change. Recorded once, and thereafter only the count moves.
-                    record(pathNode, MutationType.CONSTRAINT_IGNORED, key, optional,
-                            NullSafe.get(was, Constraint::getValue), new AnyTypeValue());
-                }
-                // The span carried the attribute whether or not its value is being learnt, so it
-                // counts as a use like any other.
-                newConstraints.put(key, new Constraint(key, new AnyTypeValue(), optional,
-                        was == null
-                                ? 1L
-                                : was.getTimesUsed() + 1,
-                        time));
-            } else {
+        // Set or expand attributes.
+        attributes.forEach((key, value) ->
                 setOrExpand(newConstraints, pathNode, key, value.getValue(), optional,
-                        messageReceiver, pathwaysDoc);
-            }
-        });
+                        messageReceiver, pathwaysDoc));
 
         pathNodeBuilder.constraints(newConstraints);
         return pathNodeBuilder;
@@ -688,6 +671,15 @@ public class NodeMutatorImpl {
                              final boolean optional,
                              final MessageReceiver messageReceiver,
                              final PathwaysDoc pathwaysDoc) {
+        // One the configuration says to ignore is recorded as accepting anything, once, and then left
+        // alone — it stays visible against the node without its value being learnt or widened every
+        // time a trace carries a different one. Tested here rather than beside the attributes so that
+        // the built-ins, which are set by name from the span itself, can be named too.
+        if (isIgnored(name)) {
+            ignore(constraints, pathNode, name, optional);
+            return;
+        }
+
         final Supplier<String> location = () -> pathNode.getNodePath() + " " + name;
         final Constraint constraint = constraints.get(name);
 
@@ -735,6 +727,7 @@ public class NodeMutatorImpl {
                             opt);
                     case final NanoTime val -> put(constraints, pathNode, name,
                             createNanoTimeConstraint(location,
+                                    name,
                                     getConstraintValue(constraint),
                                     val,
                                     messageReceiver,
@@ -780,6 +773,53 @@ public class NodeMutatorImpl {
     // Records the constraint, noticing whether it is really different from the one already there.
     // createXConstraint hands the value straight back when the trace is within what the model already
     // allows, and that must not count as the model having moved.
+    // The name as the configuration spells it. An attribute is named without the prefix the model
+    // stores it under; a built-in such as duration is named as it stands.
+    private static String configuredName(final String name) {
+        return name.startsWith(ATTRIBUTE_PREFIX)
+                ? name.substring(ATTRIBUTE_PREFIX.length())
+                : name;
+    }
+
+    // Whether the configuration says to leave this constraint's value unlearnt. Naming both ends of a
+    // range says the same as naming the constraint itself: neither end is learnt, so nothing is
+    // asserted, and the shorter way of recording that is to ignore the whole thing.
+    private boolean isIgnored(final String name) {
+        if (ignoredAttributes.isEmpty()) {
+            return false;
+        }
+        final String configured = configuredName(name);
+        return ignoredAttributes.test(configured)
+               || (ignoredAttributes.test(configured + MIN_SUFFIX)
+                   && ignoredAttributes.test(configured + MAX_SUFFIX));
+    }
+
+    // Whether one end of a range is to be left open. Only a duration reads this; naming an end of
+    // anything else has no effect.
+    private boolean isBoundIgnored(final String name, final String suffix) {
+        return !ignoredAttributes.isEmpty() && ignoredAttributes.test(configuredName(name) + suffix);
+    }
+
+    private void ignore(final Map<String, Constraint> constraints,
+                        final PathNode pathNode,
+                        final String name,
+                        final boolean optional) {
+        final Constraint was = constraints.get(name);
+        if (!(NullSafe.get(was, Constraint::getValue) instanceof AnyTypeValue)) {
+            // Not through put(): AnyTypeValue defines no equals, so every trace would look like a
+            // change. Recorded once, and thereafter only the count moves.
+            record(pathNode, MutationType.CONSTRAINT_IGNORED, name, optional,
+                    NullSafe.get(was, Constraint::getValue), new AnyTypeValue());
+        }
+        // The span carried the value whether or not it is being learnt, so it counts as a use like
+        // any other.
+        constraints.put(name, new Constraint(name, new AnyTypeValue(), optional,
+                was == null
+                        ? 1L
+                        : was.getTimesUsed() + 1,
+                time));
+    }
+
     private void put(final Map<String, Constraint> constraints,
                      final PathNode pathNode,
                      final String name,
@@ -821,6 +861,12 @@ public class NodeMutatorImpl {
                 return MutationType.CONSTRAINT_RANGED;
             }
             if (was instanceof final AbstractRange<?> from) {
+                // An end that was there and now is not was given up on, not pushed outwards, and both
+                // can happen at once: the end being learnt moves in the same step the other is let go.
+                if ((to.getMin() == null && from.getMin() != null)
+                    || (to.getMax() == null && from.getMax() != null)) {
+                    return MutationType.CONSTRAINT_BOUND_OPENED;
+                }
                 if (!Objects.equals(from.getMin(), to.getMin())) {
                     return MutationType.CONSTRAINT_MIN_EXPANDED;
                 }
@@ -828,6 +874,11 @@ public class NodeMutatorImpl {
                     return MutationType.CONSTRAINT_MAX_EXPANDED;
                 }
             } else if (was instanceof final AbstractValue<?> from) {
+                if (to.getMin() == null || to.getMax() == null) {
+                    // The one value seen so far is the end being learnt, and the other is not being
+                    // learnt at all, so it was never an end that moved.
+                    return MutationType.CONSTRAINT_BOUND_OPENED;
+                }
                 // The one value seen so far becomes one end of the range; the other end is the new one.
                 return Objects.equals(to.getMin(), from.getValue())
                         ? MutationType.CONSTRAINT_MAX_EXPANDED
@@ -848,11 +899,81 @@ public class NodeMutatorImpl {
         return constraint.getValue();
     }
 
+    // One end of a duration is learnt and the other is configured to be left open, so what is kept is
+    // a range with that end absent. An end already learnt is dropped the first time a trace comes
+    // through afterwards, the same way an ignored constraint drops the value it had.
+    private ConstraintValue oneSided(final Supplier<String> location,
+                                     final ConstraintValue current,
+                                     final NanoTime value,
+                                     final boolean learnMax,
+                                     final MessageReceiver messageReceiver,
+                                     final PathwaysDoc pathwaysDoc) {
+        if (current instanceof AnyTypeValue) {
+            // Already admits everything. Narrowing it back to a bound would start rejecting traces it
+            // has been accepting, which no configuration change should do on its own.
+            return current;
+        }
+        if (current != null && !(current instanceof NanoTimeValue) && !(current instanceof NanoTimeRange)) {
+            if (!pathwaysDoc.isAllowPathwayMutation()) {
+                messageReceiver.log(Severity.ERROR, () ->
+                        "Unexpected type found: " + location.get() + " " + value);
+                return current;
+            }
+            messageReceiver.log(Severity.WARNING, () ->
+                    "Changing to any type: " + location.get() + " " + value);
+            return new AnyTypeValue();
+        }
+
+        final NanoTime bound = learntBound(current, learnMax);
+        final NanoTime widened;
+        if (bound == null) {
+            widened = value;
+        } else if (learnMax
+                ? value.isGreaterThan(bound)
+                : value.isLessThan(bound)) {
+            widened = value;
+        } else {
+            widened = bound;
+        }
+        final ConstraintValue result = learnMax
+                ? new NanoTimeRange(null, widened)
+                : new NanoTimeRange(widened, null);
+        if (result.equals(current)) {
+            return current;
+        }
+        if (!pathwaysDoc.isAllowPathwayMutation()) {
+            messageReceiver.log(Severity.ERROR, () ->
+                    "Time exceeds constraint: " + location.get() + " " + value);
+            return current;
+        }
+        messageReceiver.log(Severity.INFO, () ->
+                "Setting time constraint: " + location.get() + " " + result);
+        return result;
+    }
+
+    // The end being learnt, as it stands, or null where nothing has been learnt on that side yet.
+    private static NanoTime learntBound(final ConstraintValue current, final boolean learnMax) {
+        return switch (current) {
+            case final NanoTimeValue nanoTimeValue -> nanoTimeValue.getValue();
+            case final NanoTimeRange range -> learnMax
+                    ? range.getMax()
+                    : range.getMin();
+            case null, default -> null;
+        };
+    }
+
     private ConstraintValue createNanoTimeConstraint(final Supplier<String> location,
+                                                     final String name,
                                                      final ConstraintValue current,
                                                      final NanoTime value,
                                                      final MessageReceiver messageReceiver,
                                                      final PathwaysDoc pathwaysDoc) {
+        final boolean learnMin = !isBoundIgnored(name, MIN_SUFFIX);
+        final boolean learnMax = !isBoundIgnored(name, MAX_SUFFIX);
+        if (!learnMin || !learnMax) {
+            return oneSided(location, current, value, learnMax, messageReceiver, pathwaysDoc);
+        }
+
         if (current == null) {
             if (!pathwaysDoc.isAllowPathwayMutation()) {
                 messageReceiver.log(Severity.ERROR, () ->

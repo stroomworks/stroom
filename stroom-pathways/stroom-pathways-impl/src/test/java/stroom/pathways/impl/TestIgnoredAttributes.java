@@ -20,11 +20,13 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.AnyValue;
 import stroom.pathways.shared.otel.trace.KeyValue;
 import stroom.pathways.shared.otel.trace.NanoDuration;
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.AnyTypeValue;
 import stroom.pathways.shared.pathway.NamePathKey;
+import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.StringValue;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
@@ -46,6 +48,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the model with values that say nothing about the path and never settle. Naming them in
  * {@link PathwaysDoc#getIgnoredAttributes()} records each one once as accepting anything, so it
  * still shows against the node but stops driving the model.
+ *
+ * <p>The same names the built-in constraints a span is measured by — {@code duration}, {@code kind},
+ * {@code flags} — which are taken from the span itself rather than carried as attributes. A duration
+ * is the one that never settles: it widens on every outlier until it admits everything anyway.
  */
 class TestIgnoredAttributes {
 
@@ -113,6 +119,84 @@ class TestIgnoredAttributes {
                 .isTrue();
     }
 
+    @Test
+    void aBuiltInCanBeIgnoredToo() {
+        PathNode root = learn(null, List.of("duration"), trace("t", "GET", NanoDuration.ofMillis(5)));
+        root = learn(root, List.of("duration"), trace("t", "GET", NanoDuration.ofMillis(500)));
+
+        assertThat(root.getConstraints().get("duration").getValue())
+                .as("duration is taken from the span rather than carried as an attribute, and can be"
+                    + " named just the same")
+                .isInstanceOf(AnyTypeValue.class);
+        assertThat(root.getConstraints().get("kind").getValue())
+                .as("a built-in not named is learnt as usual")
+                .isEqualTo(new StringValue("SPAN_KIND_INTERNAL"));
+    }
+
+    @Test
+    void aDurationNotNamedStillWidens() {
+        PathNode root = learn(null, List.of(), trace("t", "GET", NanoDuration.ofMillis(5)));
+        root = learn(root, List.of(), trace("t", "GET", NanoDuration.ofMillis(500)));
+
+        assertThat(root.getConstraints().get("duration").getValue())
+                .as("naming nothing leaves the range to widen as it always has")
+                .isInstanceOf(NanoTimeRange.class);
+    }
+
+    @Test
+    void namingOneEndLeavesItOpen() {
+        PathNode root = learn(null, List.of("duration.max"), trace("t", "GET", NanoDuration.ofMillis(5)));
+        root = learn(root, List.of("duration.max"), trace("t", "GET", NanoDuration.ofMillis(500)));
+        root = learn(root, List.of("duration.max"), trace("t", "GET", NanoDuration.ofMillis(1)));
+
+        final NanoTimeRange duration = (NanoTimeRange) root.getConstraints().get("duration").getValue();
+        assertThat(duration.getMax())
+                .as("the slowest run is an outlier the model was told not to learn")
+                .isNull();
+        assertThat(duration.getMin())
+                .as("the fastest run still narrows the bottom")
+                .isEqualTo(NanoTime.ofNanos(NanoDuration.ofMillis(1).getNanos()));
+    }
+
+    @Test
+    void namingTheOtherEndLeavesThatOneOpen() {
+        PathNode root = learn(null, List.of("duration.min"), trace("t", "GET", NanoDuration.ofMillis(5)));
+        root = learn(root, List.of("duration.min"), trace("t", "GET", NanoDuration.ofMillis(500)));
+
+        final NanoTimeRange duration = (NanoTimeRange) root.getConstraints().get("duration").getValue();
+        assertThat(duration.getMin()).isNull();
+        assertThat(duration.getMax()).isEqualTo(NanoTime.ofNanos(NanoDuration.ofMillis(500).getNanos()));
+    }
+
+    @Test
+    void namingBothEndsIsTheSameAsNamingTheConstraint() {
+        final PathNode root = learn(null, List.of("duration.min", "duration.max"),
+                trace("t", "GET", NanoDuration.ofMillis(5)));
+
+        assertThat(root.getConstraints().get("duration").getValue())
+                .as("neither end learnt asserts nothing, which is what ignoring it outright means")
+                .isInstanceOf(AnyTypeValue.class);
+    }
+
+    @Test
+    void anOpenEndedDurationMatchesAnything() {
+        final PathwaysDoc doc = doc();
+        final PathNode root = learn(null, List.of("duration.max"), trace("t", "GET", NanoDuration.ofMillis(5)));
+
+        final TracePredicate predicate = new TracePredicate(
+                new CanonicalSpanOrder(doc.getTemporalOrderingTolerance()),
+                new IgnoredSpans(List.of()),
+                new PathKeyFactoryImpl(),
+                Map.of(new NamePathKey(OPERATION), root));
+
+        assertThat(predicate.test(trace("t", "GET", NanoDuration.ofSeconds(30))))
+                .as("nothing is asserted above the bottom, however slow the span was")
+                .isTrue();
+        assertThat(predicate.test(trace("t", "GET", NanoDuration.ofMillis(1))))
+                .as("the bottom is still asserted")
+                .isFalse();
+    }
+
     private static PathNode learn(final PathNode current,
                                   final List<String> ignored,
                                   final Trace trace) {
@@ -137,13 +221,17 @@ class TestIgnoredAttributes {
     }
 
     private static Trace trace(final String threadName, final String method) {
+        return trace(threadName, method, NanoDuration.ofMillis(5));
+    }
+
+    private static Trace trace(final String threadName, final String method, final NanoDuration duration) {
         final Span root = Span.builder()
                 .name(OPERATION)
                 .spanId("r0")
                 .parentSpanId("")
                 .kind(SpanKind.SPAN_KIND_INTERNAL)
                 .startTimeUnixNano(Long.toString(BASE))
-                .endTimeUnixNano(Long.toString(BASE + NanoDuration.ofMillis(5).getNanos()))
+                .endTimeUnixNano(Long.toString(BASE + duration.getNanos()))
                 .attributes(List.of(
                         attribute("thread.name", threadName),
                         attribute("http.method", method)))

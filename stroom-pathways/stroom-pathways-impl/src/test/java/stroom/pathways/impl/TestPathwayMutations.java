@@ -135,6 +135,36 @@ class TestPathwayMutations {
     }
 
     @Test
+    void anEndGivenUpOnIsNotAnEndThatMoved() {
+        // Learnt as an ordinary range first, then told to stop learning the bottom of it.
+        PathNode root = mutator().process(trace("GET", 20, PING), key(), null, quiet(), doc());
+        root = mutator().process(trace("GET", 5, PING), key(), root, quiet(), doc());
+
+        final NodeMutatorImpl opened = mutator(List.of("duration.min"));
+        root = opened.process(trace("GET", 30, PING), key(), root, quiet(), doc());
+        assertThat(durationChange(opened))
+                .as("the bottom was let go of, not pushed down")
+                .isEqualTo(MutationType.CONSTRAINT_BOUND_OPENED);
+
+        final NodeMutatorImpl slower = mutator(List.of("duration.min"));
+        slower.process(trace("GET", 90, PING), key(), root, quiet(), doc());
+        assertThat(durationChange(slower))
+                .as("the end still being learnt moves as it always did")
+                .isEqualTo(MutationType.CONSTRAINT_MAX_EXPANDED);
+    }
+
+    @Test
+    void anEndNeverLearntIsNotAnEndThatMoved() {
+        // Told not to learn the bottom before there is a range at all, so the single value seen so far
+        // is the top rather than an end that moved.
+        final PathNode root = mutator().process(trace("GET", 20, PING), key(), null, quiet(), doc());
+
+        final NodeMutatorImpl opened = mutator(List.of("duration.min"));
+        opened.process(trace("GET", 30, PING), key(), root, quiet(), doc());
+        assertThat(durationChange(opened)).isEqualTo(MutationType.CONSTRAINT_BOUND_OPENED);
+    }
+
+    @Test
     void aValueJoiningASetSaysSo() {
         final PathNode root = mutator().process(trace("GET", 20, PING), key(), null, quiet(), doc());
 
@@ -243,9 +273,13 @@ class TestPathwayMutations {
     }
 
     private static NodeMutatorImpl mutator() {
+        return mutator(List.of());
+    }
+
+    private static NodeMutatorImpl mutator(final List<String> ignoredAttributes) {
         return new NodeMutatorImpl(
                 new CanonicalSpanOrder(doc().getTemporalOrderingTolerance()),
-                new IgnoredAttributes(List.of()),
+                new IgnoredAttributes(ignoredAttributes),
                 new IgnoredSpans(List.of()));
     }
 

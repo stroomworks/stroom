@@ -273,6 +273,9 @@ public class PathwaySerde {
             case ConstraintValueType.ANY -> new AnyTypeValue();
             case ConstraintValueType.DURATION_VALUE -> new NanoTimeValue(readNanoTime(input));
             case ConstraintValueType.DURATION_RANGE -> new NanoTimeRange(readNanoTime(input), readNanoTime(input));
+            // One end left open, so only the other was written.
+            case ConstraintValueType.DURATION_AT_LEAST -> new NanoTimeRange(readNanoTime(input), null);
+            case ConstraintValueType.DURATION_AT_MOST -> new NanoTimeRange(null, readNanoTime(input));
             case ConstraintValueType.STRING -> new StringValue(input.readString());
             case ConstraintValueType.STRING_SET -> new StringSet(readSet(input, Input::readString));
             case ConstraintValueType.REGEX -> new Regex(input.readString());
@@ -540,8 +543,13 @@ public class PathwaySerde {
                 writeNanoTime(nanoTimeValue.getValue(), output);
             }
             case final NanoTimeRange nanoTimeRange -> {
-                writeNanoTime(nanoTimeRange.getMin(), output);
-                writeNanoTime(nanoTimeRange.getMax(), output);
+                // Whichever ends are present, which the type byte written above already says.
+                if (nanoTimeRange.getMin() != null) {
+                    writeNanoTime(nanoTimeRange.getMin(), output);
+                }
+                if (nanoTimeRange.getMax() != null) {
+                    writeNanoTime(nanoTimeRange.getMax(), output);
+                }
             }
             case final StringValue stringValue -> {
                 writeString(stringValue.getValue(), output);
