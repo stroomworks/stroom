@@ -74,6 +74,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
     private final PagerView pagerView;
     private final DateTimeFormatter dateTimeFormatter;
+    private final TraceNavigation traceNavigation;
     private final MyDataGrid<MutationRow> dataGrid;
     private final MultiSelectionModelImpl<MutationRow> selectionModel;
 
@@ -95,10 +96,12 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     @Inject
     public PathwayMutationListPresenter(final EventBus eventBus,
                                         final PagerView view,
-                                        final DateTimeFormatter dateTimeFormatter) {
+                                        final DateTimeFormatter dateTimeFormatter,
+                                        final TraceNavigation traceNavigation) {
         super(eventBus, view);
         this.pagerView = view;
         this.dateTimeFormatter = dateTimeFormatter;
+        this.traceNavigation = traceNavigation;
 
         dataGrid = new MyDataGrid<>(this);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
@@ -409,7 +412,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     private void addTraceIdColumn() {
         final Column<MutationRow, String> column = new Column<MutationRow, String>(
                 new HasContextMenusCell<String>((context, traceId) ->
-                        TraceOpener.menuItems(this, tracesDocRef, traceId, whenMade(traceId))) {
+                        traceNavigation.getMenuItems(this, tracesDocRef, traceId, whenMade(traceId))) {
                 }) {
             @Override
             public String getValue(final MutationRow row) {

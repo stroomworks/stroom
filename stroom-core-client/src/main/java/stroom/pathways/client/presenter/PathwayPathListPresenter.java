@@ -102,6 +102,7 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     private static final String TURN_SEPARATOR = ", ";
 
     private final DateTimeFormatter dateTimeFormatter;
+    private final TraceNavigation traceNavigation;
     private final InlineSvgToggleButton filterButton;
     private final MyDataGrid<PathUse> dataGrid;
     private final MultiSelectionModelImpl<PathUse> selectionModel;
@@ -168,9 +169,11 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     @Inject
     public PathwayPathListPresenter(final EventBus eventBus,
                                      final PagerView view,
-                                     final DateTimeFormatter dateTimeFormatter) {
+                                     final DateTimeFormatter dateTimeFormatter,
+                                     final TraceNavigation traceNavigation) {
         super(eventBus, view);
         this.dateTimeFormatter = dateTimeFormatter;
+        this.traceNavigation = traceNavigation;
 
         // Narrows the table to the paths that ran the node being looked at. On this toolbar rather
         // than on the drawing because it is this table it changes, and the node it works from is
@@ -649,7 +652,7 @@ public class PathwayPathListPresenter extends MyPresenterWidget<PagerView> {
     private void addTraceIdColumn() {
         final Column<PathUse, String> column = new Column<PathUse, String>(
                 new HasContextMenusCell<String>((context, traceId) ->
-                        TraceOpener.menuItems(this, tracesDocRef, traceId, whenTaken(traceId))) {
+                        traceNavigation.getMenuItems(this, tracesDocRef, traceId, whenTaken(traceId))) {
                 }) {
             @Override
             public String getValue(final PathUse path) {
