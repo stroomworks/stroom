@@ -100,6 +100,8 @@ public class TracesListTabPresenter extends DocPresenter<TracesView, TracesDoc> 
         registerHandler(listPresenter.getSelectionModel().addSelectionHandler(e -> {
             final TraceRoot traceRoot = listPresenter.getSelectionModel().getSelected();
             if (traceRoot == null) {
+                // Nothing selected, so there is nothing to show below the list.
+                traceOverviewWidget.setTrace(null);
                 return;
             }
             // Every span list is paged via the bounded getSpans path, regardless of size. The one

@@ -166,9 +166,6 @@ public class TracesListPresenter
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(selectionModel.addSelectionHandler(event -> {
-
-        }));
         registerHandler(dataGrid.addColumnSortHandler(event -> refresh()));
     }
 
@@ -454,16 +451,25 @@ public class TracesListPresenter
         setFilter(filter);
     }
 
+    /**
+     * Narrows what is searched for. Drops the selection with it: the row selected was found by the
+     * old criteria and may not be among the rows the next fetch returns, and anything showing the
+     * selected trace would otherwise keep showing one the list no longer holds. Paging and sorting
+     * leave the criteria alone and so keep the selection.
+     */
     public void setFilter(final String filter) {
         this.filter = filter;
+        selectionModel.clear();
     }
 
     public void setPathway(final Pathway pathway, final List<String> ignoredSpanNames) {
         this.pathway = pathway;
         this.ignoredSpanNames = ignoredSpanNames;
+        selectionModel.clear();
     }
 
     public void setTimeRange(final TimeRange timeRange) {
         this.timeRange = timeRange;
+        selectionModel.clear();
     }
 }
