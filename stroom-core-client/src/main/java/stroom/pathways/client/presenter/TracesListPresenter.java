@@ -44,6 +44,7 @@ import stroom.widget.dropdowntree.client.view.QuickFilterTooltipUtil;
 import stroom.widget.dropdowntree.client.view.QuickFilterUiHandlers;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 import stroom.widget.util.client.SafeHtmlUtil;
+import stroom.widget.util.client.SelectionType;
 import stroom.widget.util.client.SvgImageUtil;
 
 import com.google.gwt.core.client.GWT;
@@ -60,6 +61,7 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -95,6 +97,10 @@ public class TracesListPresenter
     // without, which a trace has to be judged without too.
     private List<String> ignoredSpanNames;
     private TimeRange timeRange;
+    // Set when the criteria change, so the next rows to arrive are checked for the selected trace.
+    // Paging and sorting leave it alone: the same rows in a different order, or a different window on
+    // them, both still hold whatever was picked.
+    private boolean recheckSelection;
 
     @Inject
     public TracesListPresenter(final EventBus eventBus,
@@ -388,6 +394,7 @@ public class TracesListPresenter
                                     final RestErrorHandler errorHandler) {
                     if (dataSourceRef == null) {
                         histogramWidget.setData(null);
+                        keepSelectionIfPresent(List.of());
                         dataConsumer.accept(ResultPage.empty());
                     } else {
                         // The histogram rides back on the page so the bars and the rows are counted
@@ -414,6 +421,7 @@ public class TracesListPresenter
                                 .method(res -> res.findTracesWithHistogram(criteria))
                                 .onSuccess(page -> {
                                     histogramWidget.setData(page.getHistogram());
+                                    keepSelectionIfPresent(page.getValues());
                                     dataConsumer.accept(page);
                                 })
                                 .onFailure(error -> {
@@ -451,25 +459,56 @@ public class TracesListPresenter
         setFilter(filter);
     }
 
+    // Keeps the reader on the trace they picked where the new rows still hold it, and drops it where
+    // they do not — the panel below the list shows the selected trace, and one the list no longer holds
+    // has no business still being shown there.
+    //
+    // The row that comes back is selected in place of the one being held, because a trace still being
+    // written comes back with a later span count and activity time, and a selection that equals no row
+    // on show is a row that stops looking selected.
+    //
+    // Only acts after the criteria change. Paging asks for rows the selection was never going to be
+    // among, and would otherwise drop it every time the reader looked at a later page.
+    private void keepSelectionIfPresent(final List<TraceRoot> rows) {
+        if (!recheckSelection) {
+            return;
+        }
+        recheckSelection = false;
+        final TraceRoot selected = selectionModel.getSelected();
+        if (selected == null) {
+            return;
+        }
+        final TraceRoot found = rows.stream()
+                .filter(row -> Objects.equals(row.getTraceId(), selected.getTraceId()))
+                .findFirst()
+                .orElse(null);
+        if (found == null) {
+            selectionModel.clear();
+        } else if (!found.equals(selected)) {
+            // Told not to announce it: the panel below is already showing this trace, and saying the
+            // selection changed would have it fetch the whole thing again to show the same spans.
+            selectionModel.setSelected(found, new SelectionType(), false);
+        }
+    }
+
     /**
-     * Narrows what is searched for. Drops the selection with it: the row selected was found by the
-     * old criteria and may not be among the rows the next fetch returns, and anything showing the
-     * selected trace would otherwise keep showing one the list no longer holds. Paging and sorting
-     * leave the criteria alone and so keep the selection.
+     * Narrows what is searched for. The trace selected was found by the old criteria, so the next rows
+     * to arrive decide whether it survives: it is kept where they still hold it and dropped where
+     * they do not.
      */
     public void setFilter(final String filter) {
         this.filter = filter;
-        selectionModel.clear();
+        recheckSelection = true;
     }
 
     public void setPathway(final Pathway pathway, final List<String> ignoredSpanNames) {
         this.pathway = pathway;
         this.ignoredSpanNames = ignoredSpanNames;
-        selectionModel.clear();
+        recheckSelection = true;
     }
 
     public void setTimeRange(final TimeRange timeRange) {
         this.timeRange = timeRange;
-        selectionModel.clear();
+        recheckSelection = true;
     }
 }
