@@ -138,11 +138,25 @@ class PathwayViewport {
     }
 
     void zoomIn() {
-        zoomBy(ZOOM_STEP);
+        zoomAboutMiddle(ZOOM_STEP);
     }
 
     void zoomOut() {
-        zoomBy(1 / ZOOM_STEP);
+        zoomAboutMiddle(1 / ZOOM_STEP);
+    }
+
+    /**
+     * Scaled about a point on the screen rather than about the middle of the view, so that whatever
+     * is under the pointer stays under it. What the wheel and a double click do: the reader is
+     * pointing at the thing they want a closer look at, and holding the middle of a view they are not
+     * looking at would send it out from under them and leave them chasing it.
+     */
+    void zoomIn(final int clientX, final int clientY) {
+        zoomAbout(ZOOM_STEP, clientX, clientY);
+    }
+
+    void zoomOut(final int clientX, final int clientY) {
+        zoomAbout(1 / ZOOM_STEP, clientX, clientY);
     }
 
     /**
@@ -341,32 +355,59 @@ class PathwayViewport {
         return true;
     }
 
-    private void zoomBy(final double by) {
-        final double was = zoom;
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * by));
+    // Whatever was in the middle of the view stays in the middle of it. Scaling moves everything away
+    // from the drawing's top left corner, so without an anchor the picture slides out from under the
+    // reader towards the corner they are not looking at.
+    private void zoomAboutMiddle(final double by) {
+        final Element scroller = scroller();
+        if (scroller == null) {
+            zoom = held(zoom * by);
+            applyZoom();
+            return;
+        }
+        zoomAbout(by,
+                left(scroller) + (scroller.getClientWidth() / 2),
+                top(scroller) + (scroller.getClientHeight() / 2));
+    }
 
-        // Whatever was in the middle of the view stays in the middle of it. Scaling moves everything
-        // away from the drawing's top left corner, so without this the picture slides out from under
-        // the reader towards the corner they are not looking at.
+    // clientX and clientY name the point on the screen that is to stay where it is.
+    private void zoomAbout(final double by, final int clientX, final int clientY) {
+        final double was = zoom;
+        zoom = held(zoom * by);
+
         final Element scroller = scroller();
         if (scroller == null || was <= 0) {
             applyZoom();
             return;
         }
 
-        // Where the middle of the view falls on the drawing, at the size it is drawn rather than the
-        // size it is shown at.
+        // Where the point falls inside the view, and from that where it falls on the drawing, at the
+        // size the drawing is made rather than the size it is shown at.
         // The room to spare is taken off before and put back after, so that what is worked out here is
         // a place on the drawing itself. Left in, it would be scaled along with everything else and
         // the view would slide sideways on every step of the zoom.
-        final double middleX = (scroller.getScrollLeft() + (scroller.getClientWidth() / 2.0) - slackX()) / was;
-        final double middleY = (scroller.getScrollTop() + (scroller.getClientHeight() / 2.0) - slackY()) / was;
+        final double viewX = clientX - left(scroller);
+        final double viewY = clientY - top(scroller);
+        final double atX = (scroller.getScrollLeft() + viewX - slackX()) / was;
+        final double atY = (scroller.getScrollTop() + viewY - slackY()) / was;
 
         applyZoom();
-        scroller.setScrollLeft(
-                (int) Math.round((middleX * zoom) + slackX() - (scroller.getClientWidth() / 2.0)));
-        scroller.setScrollTop(
-                (int) Math.round((middleY * zoom) + slackY() - (scroller.getClientHeight() / 2.0)));
+        scroller.setScrollLeft((int) Math.round((atX * zoom) + slackX() - viewX));
+        scroller.setScrollTop((int) Math.round((atY * zoom) + slackY() - viewY));
+    }
+
+    private static double held(final double zoom) {
+        return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+    }
+
+    // The element's edge in the same space a pointer is reported in, which is the window rather than
+    // the page. What is held against the page carries the page's own scroll, so it is taken back off.
+    private static int left(final Element element) {
+        return element.getAbsoluteLeft() - element.getOwnerDocument().getScrollLeft();
+    }
+
+    private static int top(final Element element) {
+        return element.getAbsoluteTop() - element.getOwnerDocument().getScrollTop();
     }
 
     private void applyZoom() {

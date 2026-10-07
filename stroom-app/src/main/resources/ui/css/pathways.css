@@ -823,11 +823,22 @@
     transition: left 0.35s ease, top 0.35s ease;
 }
 
-/* Dragged to move around, the way a map is. Selecting text while dragging would leave the drawing
- * highlighted blue behind the pointer, so it is turned off over the graph. */
+/* Dragged to move around and scaled with the wheel, the way a map is. Selecting text while dragging
+ * would leave the drawing highlighted blue behind the pointer, so it is turned off over the graph.
+ *
+ * No bars down the side and along the bottom. The box still scrolls — dragging and zooming both work
+ * by scrolling it — but a bar says how far there is to go, and on this there always is: the drawing
+ * is given a view's worth of room to spare on every side so that it can be moved about however far
+ * it is zoomed out. Bars over that measure the room rather than the drawing, and they are not what
+ * anyone reaches for here. */
 .pathway-graph {
     cursor: grab;
     user-select: none;
+    scrollbar-width: none;
+}
+
+.pathway-graph::-webkit-scrollbar {
+    display: none;
 }
 
 .pathway-dragging .pathway-graph {

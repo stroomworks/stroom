@@ -210,16 +210,39 @@ public class PathwayTreePresenter
                 return;
             }
 
-            final Element target = e.getNativeEvent().getEventTarget().cast();
             // Not from the buttons sitting over the drawing: they are there to be pressed.
-            if (target != null && ElementUtil.findParent(target, element ->
-                    NullSafe.isNonBlankString(element.getId()), 3) != null) {
+            if (isControl(e.getNativeEvent().getEventTarget().cast())) {
                 return;
             }
             viewport.startDrag(e.getClientX(), e.getClientY());
         }));
 
         registerHandler(html.addMouseMoveHandler(e -> viewport.drag(e.getClientX(), e.getClientY())));
+
+        // The wheel scales the drawing rather than scrolling it. Only the graph: the tree is a list
+        // read top to bottom, where a wheel means what it means everywhere else. The browser's own
+        // answer is refused, or the panel would scroll as well as scale.
+        registerHandler(html.addMouseWheelHandler(e -> {
+            if (!renderer.isPannable()) {
+                return;
+            }
+            e.preventDefault();
+            if (e.isNorth()) {
+                viewport.zoomIn(e.getClientX(), e.getClientY());
+            } else {
+                viewport.zoomOut(e.getClientX(), e.getClientY());
+            }
+        }));
+
+        // A closer look at whatever was double clicked. The two clicks inside it still do what a click
+        // does, so a node is picked out as well as moved in on, which is what someone double clicking
+        // a node is asking for.
+        registerHandler(html.addDoubleClickHandler(e -> {
+            if (!renderer.isPannable() || isControl(e.getNativeEvent().getEventTarget().cast())) {
+                return;
+            }
+            viewport.zoomIn(e.getClientX(), e.getClientY());
+        }));
 
         // Showing another tab takes the drawing off the screen, and putting anything back on the
         // screen starts every animation it carries over again. A path already walked would walk
@@ -279,6 +302,12 @@ public class PathwayTreePresenter
             nodeMenuHandler.accept(picked, new PopupPosition(
                     e.getNativeEvent().getClientX(), e.getNativeEvent().getClientY()));
         }, ContextMenuEvent.getType()));
+    }
+
+    // The drawing's own buttons, which are the only things on it carrying an id.
+    private static boolean isControl(final Element target) {
+        return target != null && ElementUtil.findParent(target, element ->
+                NullSafe.isNonBlankString(element.getId()), 3) != null;
     }
 
     // Selecting must not redraw the tree. Rebuilding it throws away where the view is scrolled to, so
