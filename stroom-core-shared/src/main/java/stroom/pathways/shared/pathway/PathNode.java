@@ -169,6 +169,15 @@ public class PathNode {
         return constraints;
     }
 
+    /**
+     * Two nodes are the same node when they carry the same uuid.
+     *
+     * <p>Not by name. A name is unique only among one node's children, so a model that commits in two
+     * places holds two nodes called Commit, and a pathway drawn from one of them is a different thing
+     * from the other: its own constraints, its own place, its own history. Telling them apart is what
+     * the uuid is for — it is how a path names a node, how a replay puts one back, and how a drawing
+     * follows one from frame to frame — and anything holding nodes by name makes those two one.
+     */
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -178,12 +187,12 @@ public class PathNode {
             return false;
         }
         final PathNode node = (PathNode) o;
-        return Objects.equals(name, node.name);
+        return Objects.equals(uuid, node.uuid);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(name);
+        return Objects.hashCode(uuid);
     }
 
     @Override
