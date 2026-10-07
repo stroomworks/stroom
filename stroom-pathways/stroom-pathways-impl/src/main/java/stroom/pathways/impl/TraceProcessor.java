@@ -260,7 +260,7 @@ public class TraceProcessor {
             // and a batch that fails leaves neither.
             mutationLog.append(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source);
 
-            // Held a day at a time, because that is the smallest step the nightly narrowing moves the
+            // Held a day at a time, because that is the smallest step the narrowing moves the
             // window by. Written beside the model change it caused rather than in a pass of its own,
             // so the two go in together — though a hold big enough to pass the writer's commit
             // threshold has already committed some of both by the time it ends.

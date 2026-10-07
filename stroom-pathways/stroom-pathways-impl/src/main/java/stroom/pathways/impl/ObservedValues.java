@@ -59,7 +59,7 @@ final class ObservedValues {
     /**
      * Two accounts of what was given, combined into one that covers both. Either side may be a single
      * value or an account already covering several, so a trace folds into a day with the same call a
-     * night's worth of days fold into each other.
+     * window's worth of days fold into each other.
      */
     static ConstraintValue add(final ConstraintValue seen, final ConstraintValue observed) {
         if (observed == null) {

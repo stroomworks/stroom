@@ -601,7 +601,7 @@ public class NodeMutatorImpl {
                 .lastUsedTime(time);
 
         // Something the model had stopped expecting, carried again. Said here rather than left to the
-        // next night: whether a node has gone takes a window to answer, because it is answered from
+        // narrowing: whether a node has gone takes a window to answer, because it is answered from
         // what has not happened, but one span folded into it is the whole answer to its being back.
         // Waiting would leave the model calling a node retired through every hour the changes beside
         // it show traces running through it, and would hang the answer on where the trace's own time
@@ -811,7 +811,7 @@ public class NodeMutatorImpl {
     }
 
     // Whether this value is one the model is allowed to learn from, which is the only kind worth
-    // noting. What is noted is narrowed back into the model a night later, so a value the document
+    // noting. What is noted is what the narrowing later holds the model to, so a value the document
     // refuses here would otherwise be learnt a day late and by the back door — on a document whose
     // whole purpose is to report such values rather than absorb them.
     private boolean isLearntFrom(final Object value,

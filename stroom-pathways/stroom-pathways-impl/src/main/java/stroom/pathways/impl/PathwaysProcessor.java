@@ -368,7 +368,7 @@ public class PathwaysProcessor {
     // Findings go to the document's info feed, as one stream per run of work. A document with no feed
     // still learns; it just has nowhere to report what it found, which beats not learning at all.
     //
-    // Static and shared, because the night's pass reports what it narrowed to the same feed and by the
+    // Static and shared, because the narrowing reports what it changed to the same feed and by the
     // same rule. Two copies of the rule would mean a document that reported one and not the other.
     static void withMessageReceiver(final MessageReceiverFactory messageReceiverFactory,
                                     final PathwaysDoc doc,

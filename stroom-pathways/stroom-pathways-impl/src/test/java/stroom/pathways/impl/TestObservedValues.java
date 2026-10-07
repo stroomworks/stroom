@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What a constraint was given, summarised as it arrives.
  *
- * <p>Kept as an outer bound rather than whole, so a night's narrowing can ask what the last few days
+ * <p>Kept as an outer bound rather than whole, so the narrowing can ask what the last few days
  * actually held without the model having stored every value it ever saw.
  */
 class TestObservedValues {
@@ -102,7 +102,7 @@ class TestObservedValues {
         final ConstraintValue tuesday = ObservedValues.add(ObservedValues.add(null, time(2)), time(7));
 
         assertThat(ObservedValues.add(monday, tuesday))
-                .as("a night folds whole days together, not values into a day")
+                .as("the narrowing folds whole days together, not values into a day")
                 .isEqualTo(new NanoTimeRange(millis(2), millis(9)));
     }
 

@@ -64,7 +64,7 @@ public enum MutationType implements HasDisplayValue, HasPrimitiveValue {
     CONSTRAINT_BOUND_OPENED("Bound Opened", 13),
     /**
      * A constraint was narrowed to what has been seen within the document's observation window. Not
-     * caused by a trace: every trace only ever widens, and this is the nightly pass putting back what
+     * caused by a trace: every trace only ever widens, and this is the narrowing putting back what
      * one outlier took away, so that a widening means something again.
      */
     CONSTRAINT_NARROWED("Narrowed", 14),

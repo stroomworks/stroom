@@ -38,7 +38,7 @@ import java.util.function.Consumer;
  * The record of every change made to a model, numbered in the order the changes were made.
  *
  * <p>A model has one history and everything that changes it writes here: a trace that widened a
- * constraint, and the nightly pass that narrows one back to what has been seen lately. Numbering them
+ * constraint, and the narrowing that puts one back to what has been seen lately. Numbering them
  * in a single run is what lets a replay walk the model forwards or backwards through both.
  */
 @Singleton
@@ -59,7 +59,7 @@ public class MutationLog {
      * Adds changes to a model's history, numbered on from whatever it already holds, and records how
      * busy every node was once they had been made.
      *
-     * <p>Not private because the nightly narrowing appends through it too: a model has one history,
+     * <p>Not private because the narrowing appends through it too: a model has one history,
      * and a change made by a trace and a change made by holding the model to its window have to be
      * numbered in the same run or a replay cannot walk them.
      */

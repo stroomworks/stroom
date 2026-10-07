@@ -76,7 +76,7 @@ import java.util.function.Consumer;
  * Once a night every model is narrowed back to what has actually been seen within its document's
  * observation window, from the day by day account kept beside it as traces were applied.
  *
- * <p>What that restores is the worth of a change. After a night's narrowing, a constraint widening
+ * <p>What that restores is the worth of a change. After a narrowing, a constraint widening
  * says something happened that has not happened in the window — which is the thing worth being told
  * about, and what an envelope that only grows can never say.
  */
@@ -142,8 +142,8 @@ public class PathwayNarrower {
         final int oldestDay = oldestDayInWindow(doc, Instant.now());
 
         // Held until the pass is over rather than written as it goes. Opening the feed opens a stream
-        // whether or not anything is put in it, and most nights most documents have nothing to report
-        // — a stream each would bury the nights that did say something. Every line is a change that
+        // whether or not anything is put in it, and most runs most documents have nothing to report
+        // — a stream each would bury the runs that did say something. Every line is a change that
         // was made, so they are all INFO and only the words need keeping.
         final List<String> lines = new ArrayList<>();
         final MessageReceiver collect = (severity, message) -> lines.add(message.get());
@@ -155,7 +155,7 @@ public class PathwayNarrower {
                     () -> narrowShard(doc, shardIndex, oldestDay, collect));
         }
 
-        // One stream for the document's whole pass, so what a night did to it reads in one place
+        // One stream for the document's whole pass, so what the narrowing did to it reads in one place
         // rather than a shard at a time.
         if (!lines.isEmpty()) {
             PathwaysProcessor.withMessageReceiver(messageReceiverFactory, doc, messages ->
@@ -188,8 +188,8 @@ public class PathwayNarrower {
         try {
             shardStore.withShard(doc, shardIndex, localDir -> narrow(localDir, oldestDay, messages));
         } catch (final IOException e) {
-            // The model could not be taken down or put back, so nothing here was committed. Tomorrow
-            // night tries again, and until then the model stays as wide as it was.
+            // The model could not be taken down or put back, so nothing here was committed. The next
+            // run tries again, and until then the model stays as wide as it was.
             LOGGER.error(() -> LogUtil.message("Could not narrow shard {} of {}: {}",
                     shardIndex, doc.getName(), e.getMessage()), e);
         }
@@ -242,7 +242,7 @@ public class PathwayNarrower {
             //
             // Dropping a day is still a change to the shard. Were it not said so, a pass that only
             // dropped days would report nothing changed, the shard would be thrown away rather than
-            // pushed, and the same days would be dropped again every night for ever.
+            // pushed, and the same days would be dropped again on every run for ever.
             return window.dropped() > 0;
         }
 
@@ -264,7 +264,7 @@ public class PathwayNarrower {
         mutationLog.append(writer, pathwaysDb, pathwayKey, mutations, root, -1);
 
         // And said to the document's feed, a line per row, the way a trace says what it widened. A
-        // reader watching the feed sees the night put back what the days took out, in the same words.
+        // reader watching the feed sees the narrowing put back what the days took out, in the same words.
         mutations.forEach(mutation -> messages.log(Severity.INFO, () -> describe(mutation)));
         return true;
     }

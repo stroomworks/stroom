@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Holding a model to what it has been given lately.
  *
  * <p>A trace only ever widens a model, so one outlier leaves an envelope that admits everything from
- * then on. The nightly pass narrows each constraint back to what the day by day account still covers,
+ * then on. The narrowing puts each constraint back to what the day by day account still covers,
  * which is what makes the next widening worth being told about.
  */
 class TestPathwayNarrowing {
@@ -238,7 +238,7 @@ class TestPathwayNarrowing {
         final int written = mutations(tempDir).size() - before;
         assertThat(written).isPositive();
         assertThat(lines)
-                .as("a line for every row the night put in the history, the way a trace says what it"
+                .as("a line for every row the narrowing put in the history, the way a trace says what it"
                     + " widened")
                 .hasSize(written);
         assertThat(lines).anyMatch(line -> line.startsWith("Retiring node: "));
@@ -250,7 +250,7 @@ class TestPathwayNarrowing {
         narrow(tempDir, day(1));
         assertThat(child(tempDir, "Commit").isRetired()).isTrue();
 
-        // Carried again, with no night in between to notice.
+        // Carried again, with no narrowing in between to notice.
         applied(tempDir, List.of(withChildren(2, "Ping", "Commit")));
 
         assertThat(child(tempDir, "Commit").isRetired())
@@ -344,7 +344,7 @@ class TestPathwayNarrowing {
 
         assertThat(duration(tempDir))
                 .as("and must stay refused: what a document will not learn from must not reach the"
-                    + " model a night later either")
+                    + " model when the narrowing runs either")
                 .isEqualTo(new NanoTimeValue(millis(20)));
     }
 
@@ -388,7 +388,7 @@ class TestPathwayNarrowing {
         applied(tempDir, List.of(trace(0, 20), trace(1, 20)));
 
         assertThat(narrow(tempDir, day(1)))
-                .as("a day dropped is a shard changed, or it is dropped again every night for ever")
+                .as("a day dropped is a shard changed, or it is dropped again on every run for ever")
                 .isTrue();
         assertThat(observedValueRecords(tempDir)).isEqualTo(1);
 
