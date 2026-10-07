@@ -47,6 +47,8 @@ public class PathwaysSettingsViewImpl
         extends ViewWithUiHandlers<PathwaysSettingsUiHandlers>
         implements PathwaysSettingsView, ReadOnlyChangeHandler {
 
+    private static final SimpleDuration DEFAULT_OBSERVATION_WINDOW = new SimpleDuration(7, TimeUnit.DAYS);
+
     private final Widget widget;
     private final SharedFileStoreSettingsWidget sharedFileStoreWidget;
 
@@ -56,6 +58,8 @@ public class PathwaysSettingsViewImpl
     SimplePanel infoFeed;
     @UiField
     DurationPicker temporalOrderingTolerance;
+    @UiField
+    DurationPicker observationWindow;
     @UiField
     TextArea ignoredSpanNames;
     @UiField
@@ -78,6 +82,9 @@ public class PathwaysSettingsViewImpl
         sharedFileStore.setWidget(sharedFileStoreWidget.asWidget());
         temporalOrderingTolerance.smallTimeMode();
         temporalOrderingTolerance.setValue(new SimpleDuration(0, TimeUnit.NANOSECONDS));
+        // Counted in whole days whatever is typed, so the form offers nothing finer.
+        observationWindow.wholeDaysMode();
+        observationWindow.setValue(DEFAULT_OBSERVATION_WINDOW);
     }
 
     @Override
@@ -88,6 +95,28 @@ public class PathwaysSettingsViewImpl
     @Override
     public void setInfoFeedView(final View view) {
         this.infoFeed.setWidget(view.asWidget());
+    }
+
+    @Override
+    public SimpleDuration getObservationWindow() {
+        return observationWindow.getValue();
+    }
+
+    @Override
+    public void setObservationWindow(final SimpleDuration observationWindow) {
+        this.observationWindow.setValue(inWholeDays(observationWindow));
+    }
+
+    // The picker offers whole days and more, and a window shorter than a day is held to a day when it
+    // is used. A document given something shorter by import or by the API therefore shows the day it
+    // will actually be held to, rather than a unit the picker cannot display.
+    private static SimpleDuration inWholeDays(final SimpleDuration window) {
+        if (window == null || window.getTimeUnit() == null) {
+            return DEFAULT_OBSERVATION_WINDOW;
+        }
+        return window.getTimeUnit().getPrimitiveValue() < TimeUnit.DAYS.getPrimitiveValue()
+                ? new SimpleDuration(1, TimeUnit.DAYS)
+                : window;
     }
 
     @Override
@@ -205,6 +234,7 @@ public class PathwaysSettingsViewImpl
     @Override
     public void onReadOnly(final boolean readOnly) {
         temporalOrderingTolerance.setEnabled(!readOnly);
+        observationWindow.setEnabled(!readOnly);
         ignoredSpanNames.setEnabled(!readOnly);
         ignoredAttributes.setEnabled(!readOnly);
         sharedFileStoreWidget.onReadOnly(readOnly);
@@ -212,6 +242,11 @@ public class PathwaysSettingsViewImpl
 
     @UiHandler("temporalOrderingTolerance")
     public void onTemporalOrderingTolerance(final ValueChangeEvent<SimpleDuration> e) {
+        fireChange();
+    }
+
+    @UiHandler("observationWindow")
+    public void onObservationWindow(final ValueChangeEvent<SimpleDuration> e) {
         fireChange();
     }
 

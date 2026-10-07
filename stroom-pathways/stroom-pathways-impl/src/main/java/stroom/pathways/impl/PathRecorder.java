@@ -77,14 +77,14 @@ final class PathRecorder {
         final List<PathUse> paths = new ArrayList<>(current.getPaths());
         for (int i = 0; i < paths.size(); i++) {
             if (paths.get(i).getRoot() == root) {
-                paths.set(i, paths.get(i).used(time));
+                paths.set(i, paths.get(i).used(time, traceTime));
                 return new Paths(nodes, steps, paths, sources);
             }
         }
 
         // Kept in the order first taken, so the oldest path stays at the top of the table however
         // the counts move.
-        paths.add(new PathUse(root, 1L, time, time, traceId, traceTime, source));
+        paths.add(new PathUse(root, 1L, time, time, traceId, traceTime, traceTime, source));
         return new Paths(nodes, steps, paths, sources);
     }
 

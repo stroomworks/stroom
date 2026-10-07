@@ -118,8 +118,8 @@ class TestTraceProcessorOrphan {
         // quiet return as "done" and removes the queue item that held it.
         try (final PathwaysDb pathwaysDb = PathwaysDb.create(pathwaysDir, BYTE_BUFFERS, false);
                 final LmdbWriter writer = pathwaysDb.createWriter()) {
-            assertThatThrownBy(() -> new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED,
-                    new IgnoredSpans(List.of()))
+            assertThatThrownBy(() -> new TraceProcessor(mutationLog(), BYTE_BUFFERS,
+                    new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED, new IgnoredSpans(List.of()))
                     .processTrace(writer,
                             pathwaysDb,
                             TRACE_ID,
@@ -139,7 +139,7 @@ class TestTraceProcessorOrphan {
     private static ApplyOutcome processOrphan(final PathwaysDb pathwaysDb,
                                               final LmdbWriter writer,
                                               final List<String> warnings) {
-        return new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED,
+        return new TraceProcessor(mutationLog(), BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY), NO_IGNORED,
                 new IgnoredSpans(List.of()))
                 .processTrace(writer,
                         pathwaysDb,
@@ -171,4 +171,9 @@ class TestTraceProcessorOrphan {
         final Map<String, List<Span>> byParent = Map.of(child.getParentSpanId(), List.of(child));
         return new Trace("000102030405060708090a0b0c0d0e0f", byParent);
     }
+
+    private static MutationLog mutationLog() {
+        return new MutationLog(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY));
+    }
+
 }

@@ -950,6 +950,20 @@
     box-shadow: 0 0 0 2px currentColor !important;
 }
 
+/* A node the work no longer does: nothing within the document's tightening window carried it. Kept on
+   the drawing rather than taken off it, because the paths that ran through it are still there to be
+   read and because it comes back as itself if the work starts doing it again. Drained of colour rather
+   than faded, so it stays legible while reading as no longer part of the work. */
+.pathway-graph-node--retired .pathway-graph-dot {
+    filter: grayscale(1);
+    opacity: 0.45;
+}
+
+.pathway-graph-node--retired .pathway-graph-label {
+    opacity: 0.5;
+    font-style: italic;
+}
+
 .pathway-graph .pathway-curves svg line.pathway-graph-edge--absent {
     stroke-dasharray: 3 4;
     opacity: 0.18;

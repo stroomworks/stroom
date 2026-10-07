@@ -57,13 +57,14 @@ public class PathwaysDb implements AutoCloseable {
     protected final SimpleDb processingStatus;
     protected final SimpleDb pathways;
     protected final SimpleDb mutations;
+    protected final SimpleDb observedValues;
 
     private PathwaysDb(final PlanBEnv env,
                        final ByteBuffers byteBuffers) {
         this.env = env;
         this.byteBuffers = byteBuffers;
 
-        // Three plain key/value DBIs, created on first open. Unlike AbstractDb there is no stored
+        // Four plain key/value DBIs, created on first open. Unlike AbstractDb there is no stored
         // schema to read back and validate, because neither key nor value goes through a versioned
         // serde.
         processingStatus = new SimpleDb(
@@ -77,6 +78,10 @@ public class PathwaysDb implements AutoCloseable {
         mutations = new SimpleDb(
                 env,
                 env.openDbi("mutations", DbiFlags.MDB_CREATE),
+                new PutFlags[]{});
+        observedValues = new SimpleDb(
+                env,
+                env.openDbi("observed-values", DbiFlags.MDB_CREATE),
                 new PutFlags[]{});
     }
 
@@ -94,6 +99,18 @@ public class PathwaysDb implements AutoCloseable {
      */
     public SimpleDb getMutations() {
         return mutations;
+    }
+
+    /**
+     * What each model has been given, a day at a time, so it can be held to what it has seen lately
+     * rather than to everything it has ever seen. In the same environment as the models it describes,
+     * so a day's values and the change they caused are written in one transaction and cannot disagree.
+     *
+     * <p>Kept apart from the models rather than inside them because a model record is read and written
+     * whole on every trace applied, and this is read once a night.
+     */
+    public SimpleDb getObservedValues() {
+        return observedValues;
     }
 
     public LmdbWriter createWriter() {

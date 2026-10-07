@@ -48,6 +48,17 @@ public class PathNode {
     private final long timesUsed;
     @JsonProperty
     private final NanoTime lastUsedTime;
+    /**
+     * When this node stopped being part of the work, or null while it is still part of it.
+     *
+     * <p>Set by the nightly narrowing where no trace within the document's observation window carried the node,
+     * and cleared again the first night one does. The node is kept either way: a path's steps name
+     * nodes by position, a replay puts them back by uuid, and a drawing follows one from frame to
+     * frame by uuid — so removing one would invalidate every path that ran through it, and a node that
+     * came back would come back a stranger.
+     */
+    @JsonProperty
+    private final NanoTime retiredTime;
 
     @JsonCreator
     public PathNode(@JsonProperty("uuid") final String uuid,
@@ -56,7 +67,8 @@ public class PathNode {
                     @JsonProperty("children") final List<PathNode> children,
                     @JsonProperty("constraints") final Map<String, Constraint> constraints,
                     @JsonProperty("timesUsed") final long timesUsed,
-                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime) {
+                    @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
+                    @JsonProperty("retiredTime") final NanoTime retiredTime) {
         this.uuid = uuid;
         this.name = name;
         this.nodePath = nodePath;
@@ -66,6 +78,7 @@ public class PathNode {
         this.constraints = constraints;
         this.timesUsed = timesUsed;
         this.lastUsedTime = lastUsedTime;
+        this.retiredTime = retiredTime;
     }
 
     /**
@@ -76,7 +89,7 @@ public class PathNode {
                     final List<String> nodePath,
                     final List<PathNode> children,
                     final Map<String, Constraint> constraints) {
-        this(uuid, name, nodePath, children, constraints, 0L, null);
+        this(uuid, name, nodePath, children, constraints, 0L, null, null);
     }
 
     public PathNode(final String name,
@@ -86,6 +99,7 @@ public class PathNode {
         this.nodePath = nodePath;
         this.children = new ArrayList<>();
         this.constraints = null;
+        this.retiredTime = null;
         this.timesUsed = 0L;
         this.lastUsedTime = null;
     }
@@ -96,6 +110,7 @@ public class PathNode {
         this.nodePath = Collections.singletonList(name);
         this.children = new ArrayList<>();
         this.constraints = null;
+        this.retiredTime = null;
         this.timesUsed = 0L;
         this.lastUsedTime = null;
     }
@@ -115,6 +130,18 @@ public class PathNode {
      */
     public NanoTime getLastUsedTime() {
         return lastUsedTime;
+    }
+
+    /**
+     * When this node stopped being part of the work, or null while it is still part of it.
+     */
+    public NanoTime getRetiredTime() {
+        return retiredTime;
+    }
+
+    /** Whether no trace within the document's observation window has carried this node. */
+    public boolean isRetired() {
+        return retiredTime != null;
     }
 
     public String getUuid() {
@@ -191,6 +218,7 @@ public class PathNode {
         private Map<String, Constraint> constraints;
         private long timesUsed;
         private NanoTime lastUsedTime;
+        private NanoTime retiredTime;
 
         public Builder() {
         }
@@ -203,6 +231,7 @@ public class PathNode {
             this.constraints = pathNode.constraints;
             this.timesUsed = pathNode.timesUsed;
             this.lastUsedTime = pathNode.lastUsedTime;
+            this.retiredTime = pathNode.retiredTime;
         }
 
         public Builder uuid(final String uuid) {
@@ -240,6 +269,11 @@ public class PathNode {
             return self();
         }
 
+        public Builder retiredTime(final NanoTime retiredTime) {
+            this.retiredTime = retiredTime;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -253,7 +287,8 @@ public class PathNode {
                     children,
                     constraints,
                     timesUsed,
-                    lastUsedTime);
+                    lastUsedTime,
+                    retiredTime);
         }
     }
 }

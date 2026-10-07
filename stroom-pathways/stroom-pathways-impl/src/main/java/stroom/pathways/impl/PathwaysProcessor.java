@@ -308,6 +308,8 @@ public class PathwaysProcessor {
                             queue.quarantine(item, e);
                         }
                     }
+                    // Once the hold's traces are in, before the commit that ends it.
+                    traceProcessor.writeObservedValues(writer, pathwaysDb);
                     writer.commit();
                 }
             });

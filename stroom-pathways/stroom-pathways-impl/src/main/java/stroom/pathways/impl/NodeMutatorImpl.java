@@ -30,6 +30,7 @@ import stroom.pathways.shared.pathway.AnyTypeValue;
 import stroom.pathways.shared.pathway.BooleanValue;
 import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.ConstraintValue;
+import stroom.pathways.shared.pathway.DoubleValue;
 import stroom.pathways.shared.pathway.IntegerRange;
 import stroom.pathways.shared.pathway.IntegerSet;
 import stroom.pathways.shared.pathway.IntegerValue;
@@ -100,6 +101,7 @@ public class NodeMutatorImpl {
     // notice a constraint moving are several calls below the one that knows. Which node it happened to
     // is passed instead, so a constraint is never recorded against the wrong one.
     private NanoTime time;
+    private final Map<String, Map<String, ConstraintValue>> observations = new LinkedHashMap<>();
     // When the trace ran, which is not when this ran: a trace waits in a queue to be applied, and how
     // long it waited is anyone's guess. Taken off the root span, which is the one span of a trace that
     // stands for the whole of it.
@@ -597,6 +599,17 @@ public class NodeMutatorImpl {
         final PathNode.Builder pathNodeBuilder = pathNode.copy()
                 .timesUsed(pathNode.getTimesUsed() + 1)
                 .lastUsedTime(time);
+
+        // Something the model had stopped expecting, carried again. Said here rather than left to the
+        // next night: whether a node has gone takes a window to answer, because it is answered from
+        // what has not happened, but one span folded into it is the whole answer to its being back.
+        // Waiting would leave the model calling a node retired through every hour the changes beside
+        // it show traces running through it, and would hang the answer on where the trace's own time
+        // falls — a trace carrying it is a trace carrying it, whenever it ran.
+        if (pathNode.isRetired()) {
+            record(pathNode, MutationType.NODE_REVIVED);
+            pathNodeBuilder.retiredTime(null);
+        }
 //        // Add additional span info if wanted.
 //        final List<Span> spans;
 //        if (pathNode.getSpans() != null) {
@@ -706,6 +719,10 @@ public class NodeMutatorImpl {
         final Supplier<String> location = () -> pathNode.getNodePath() + " " + name;
         final Constraint constraint = constraints.get(name);
 
+        if (isLearntFrom(value, constraint, pathwaysDoc)) {
+            observe(pathNode, name, value);
+        }
+
         if (value == null) {
             if (!optional) {
                 messageReceiver.log(Severity.ERROR, () ->
@@ -793,9 +810,64 @@ public class NodeMutatorImpl {
         }
     }
 
-    // Records the constraint, noticing whether it is really different from the one already there.
-    // createXConstraint hands the value straight back when the trace is within what the model already
-    // allows, and that must not count as the model having moved.
+    // Whether this value is one the model is allowed to learn from, which is the only kind worth
+    // noting. What is noted is narrowed back into the model a night later, so a value the document
+    // refuses here would otherwise be learnt a day late and by the back door — on a document whose
+    // whole purpose is to report such values rather than absorb them.
+    private boolean isLearntFrom(final Object value,
+                                 final Constraint constraint,
+                                 final PathwaysDoc pathwaysDoc) {
+        // An attribute arrives wrapped and is handed straight back to this method unwrapped, so it is
+        // the unwrapped value that gets noted rather than the wrapper, which says nothing.
+        if (value instanceof AnyValue || value == null) {
+            return false;
+        }
+        if (!pathwaysDoc.isAllowPathwayMutation()) {
+            return false;
+        }
+        if (constraint == null && !pathwaysDoc.isAllowConstraintCreation()) {
+            return false;
+        }
+        // A constraint with one end left open is noted like any other. Only the end being learnt is
+        // ever brought in, so noting a value here cannot close the other one: naming an end asks for
+        // it never to be asserted, not for the rest of the constraint to stop being held to what it
+        // has been given lately.
+        return true;
+    }
+
+    // What this trace gave each constraint, kept beside the model change it caused so the day it
+    // belongs to can be summarised once the trace has been applied. A node reached more than once in a
+    // trace folds its values together here, the same way a day folds a trace's into the ones before it.
+    private void observe(final PathNode node, final String name, final Object value) {
+        final ConstraintValue observed = asValue(value);
+        if (observed != null) {
+            observations
+                    .computeIfAbsent(node.getUuid(), uuid -> new LinkedHashMap<>())
+                    .merge(name, observed, ObservedValues::add);
+        }
+    }
+
+    private static ConstraintValue asValue(final Object value) {
+        return switch (value) {
+            case final Integer val -> new IntegerValue(val);
+            case final Long val -> new LongValue(val);
+            case final Double val -> new DoubleValue(val);
+            case final Boolean val -> new BooleanValue(val);
+            case final String val -> new StringValue(val);
+            case final NanoTime val -> new NanoTimeValue(val);
+            case null, default -> null;
+        };
+    }
+
+    /**
+     * What this trace gave every constraint it touched, by node uuid then constraint name. Folded into
+     * the day's values once the trace has been applied, so the model can later be held to what it
+     * has been given lately rather than to everything it has ever been given.
+     */
+    public Map<String, Map<String, ConstraintValue>> getObservations() {
+        return observations;
+    }
+
     // The name as the configuration spells it. An attribute is named without the prefix the model
     // stores it under; a built-in such as duration is named as it stands.
     private static String configuredName(final String name) {
@@ -843,6 +915,9 @@ public class NodeMutatorImpl {
                 time));
     }
 
+    // Records the constraint, noticing whether it is really different from the one already there.
+    // createXConstraint hands the value straight back when the trace is within what the model already
+    // allows, and that must not count as the model having moved.
     private void put(final Map<String, Constraint> constraints,
                      final PathNode pathNode,
                      final String name,

@@ -70,6 +70,7 @@ public class PathwaysDoc extends AbstractDoc {
     private static final boolean DEFAULT_ALLOW_PATHWAY_MUTATION = true;
     private static final boolean DEFAULT_ALLOW_CONSTRAINT_CREATION = true;
     private static final boolean DEFAULT_ALLOW_CONSTRAINT_MUTATION = true;
+    private static final SimpleDuration DEFAULT_OBSERVATION_WINDOW = new SimpleDuration(7L, TimeUnit.DAYS);
 
     public static final String TYPE = "Pathways";
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.PATHWAYS_DOCUMENT_TYPE;
@@ -78,6 +79,15 @@ public class PathwaysDoc extends AbstractDoc {
     private final String description;
     @JsonProperty
     private final SimpleDuration temporalOrderingTolerance;
+    /**
+     * How far back a pathway is held to. What a trace teaches only ever widens the model, so an
+     * envelope left to itself ends up admitting everything and saying nothing. Each night the model is
+     * narrowed to what has actually been seen within this of now, which is also what gives a widening
+     * its meaning again: something outside the envelope is something that has not happened lately,
+     * rather than something that has not happened since the model was new.
+     */
+    @JsonProperty
+    private final SimpleDuration observationWindow;
     /**
      * Spans that are no part of a pathway, as names where '*' stands for any run of characters, e.g.
      * 'Ping'. For work the runtime does when it feels like it rather than when the code says to, such
@@ -142,6 +152,7 @@ public class PathwaysDoc extends AbstractDoc {
                        @JsonProperty("updateUser") final String updateUser,
                        @JsonProperty("description") final String description,
                        @JsonProperty("temporalOrderingTolerance") final SimpleDuration temporalOrderingTolerance,
+                       @JsonProperty("observationWindow") final SimpleDuration observationWindow,
                        @JsonProperty("ignoredSpanNames") final List<String> ignoredSpanNames,
                        @JsonProperty("ignoredAttributes") final List<String> ignoredAttributes,
                        @JsonProperty("pathways") final List<Pathway> pathways,
@@ -155,6 +166,7 @@ public class PathwaysDoc extends AbstractDoc {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.temporalOrderingTolerance = temporalOrderingTolerance;
+        this.observationWindow = observationWindow;
         // Held as given, empty included, because a document saved with nothing to ignore means exactly
         // that and must not be read as never having been asked.
         this.ignoredSpanNames = ignoredSpanNames;
@@ -195,6 +207,16 @@ public class PathwaysDoc extends AbstractDoc {
 
     public SimpleDuration getTemporalOrderingTolerance() {
         return temporalOrderingTolerance;
+    }
+
+    /**
+     * How far back the model is held to, never null — a document saved before there was such a setting
+     * takes the default rather than being held to nothing at all.
+     */
+    public SimpleDuration getObservationWindow() {
+        return observationWindow == null
+                ? DEFAULT_OBSERVATION_WINDOW
+                : observationWindow;
     }
 
     public List<String> getIgnoredSpanNames() {
@@ -255,6 +277,7 @@ public class PathwaysDoc extends AbstractDoc {
                allowConstraintMutation == that.allowConstraintMutation &&
                Objects.equals(description, that.description) &&
                Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance) &&
+               Objects.equals(observationWindow, that.observationWindow) &&
                Objects.equals(ignoredSpanNames, that.ignoredSpanNames) &&
                Objects.equals(ignoredAttributes, that.ignoredAttributes) &&
                Objects.equals(pathways, that.pathways) &&
@@ -270,6 +293,7 @@ public class PathwaysDoc extends AbstractDoc {
         return Objects.hash(super.hashCode(),
                 description,
                 temporalOrderingTolerance,
+                observationWindow,
                 ignoredSpanNames,
                 ignoredAttributes,
                 pathways,
@@ -286,6 +310,7 @@ public class PathwaysDoc extends AbstractDoc {
         return "PathwaysDoc{" +
                "description='" + description + '\'' +
                ", temporalOrderingTolerance=" + temporalOrderingTolerance +
+               ", observationWindow=" + observationWindow +
                ", pathways=" + pathways +
                ", allowPathwayCreation=" + allowPathwayCreation +
                ", allowPathwayMutation=" + allowPathwayMutation +
@@ -309,6 +334,7 @@ public class PathwaysDoc extends AbstractDoc {
 
         private String description;
         private SimpleDuration temporalOrderingTolerance = new SimpleDuration(0L, TimeUnit.NANOSECONDS);
+        private SimpleDuration observationWindow = DEFAULT_OBSERVATION_WINDOW;
         private List<String> ignoredSpanNames;
         private List<String> ignoredAttributes;
         private List<Pathway> pathways;
@@ -329,6 +355,7 @@ public class PathwaysDoc extends AbstractDoc {
             super(pathwaysDoc);
             this.description = pathwaysDoc.description;
             this.temporalOrderingTolerance = pathwaysDoc.temporalOrderingTolerance;
+            this.observationWindow = pathwaysDoc.observationWindow;
             this.ignoredSpanNames = pathwaysDoc.ignoredSpanNames;
             this.ignoredAttributes = pathwaysDoc.ignoredAttributes;
             this.pathways = pathwaysDoc.pathways;
@@ -342,6 +369,11 @@ public class PathwaysDoc extends AbstractDoc {
 
         public Builder description(final String description) {
             this.description = description;
+            return self();
+        }
+
+        public Builder observationWindow(final SimpleDuration observationWindow) {
+            this.observationWindow = observationWindow;
             return self();
         }
 
@@ -416,6 +448,7 @@ public class PathwaysDoc extends AbstractDoc {
                     updateUser,
                     description,
                     temporalOrderingTolerance,
+                    observationWindow,
                     ignoredSpanNames,
                     ignoredAttributes,
                     pathways,

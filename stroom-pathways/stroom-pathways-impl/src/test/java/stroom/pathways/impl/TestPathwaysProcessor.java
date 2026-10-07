@@ -162,6 +162,7 @@ class TestPathwaysProcessor {
         bucketDir = Files.createDirectories(tempDir.resolve("bucket"));
 
         processor = new PathwaysProcessor(
+                new MutationLog(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY)),
                 pathwaysStore, shardStore, messageReceiverFactory,
                 new PathwaySerde(BYTE_BUFFER_FACTORY),
                 clusterLockService, securityContext,

@@ -33,7 +33,6 @@ import com.google.gwt.safehtml.shared.SafeHtml;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -350,8 +349,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
     // up to date, so there is no second idea of what a drawing looks like to fall out of step.
     private Painted paint(final RenderRequest request, final PathNode root) {
         final PathNode shown = NullSafe.get(request.getPathway(), Pathway::getRoot);
-        final Set<String> present = new HashSet<>();
-        collect(shown, present);
+        final Map<String, PathNode> shownNodes = new HashMap<>();
+        collect(shown, shownNodes);
         onPath = NullSafe.set(request.getOnPath());
 
         final Map<String, NodeChange> changes = request.getChanges();
@@ -375,7 +374,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
         walkBadges = new HtmlBuilder();
         draw(root, places, edges, markers,
                 new Scale(request.getChangeCeiling(), request.getUsageCeiling()),
-                request.getAsAt(), changes, present, usage);
+                request.getAsAt(), changes, shownNodes, usage);
 
         // The gradients come before the lines that point at them.
         final HtmlBuilder inner = new HtmlBuilder();
@@ -496,9 +495,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
                       final Scale scale,
                       final long now,
                       final Map<String, NodeChange> changes,
-                      final Set<String> present,
+                      final Map<String, PathNode> shownNodes,
                       final Map<String, NodeUsage> usage) {
-        final boolean here = present.contains(node.getUuid());
+        // What this node was at the point being shown. The one being walked is the layout's, which is
+        // the node as it stands now, so whether it had been retired by then is asked of this instead.
+        final PathNode asShown = shownNodes.get(node.getUuid());
+        final boolean here = asShown != null;
+        final boolean retired = here && asShown.isRetired();
         final Point at = places.get(node.getUuid());
         final NodeChange change = changes.get(node.getUuid());
         final int radius = scale.radius(change);
@@ -512,7 +515,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
                         : " pathway-graph-node--absent")
                 + (ran(node)
                         ? ""
-                        : " pathway-graph-node--off-path");
+                        : " pathway-graph-node--off-path")
+                + (retired
+                        ? " pathway-graph-node--retired"
+                        : "");
         final String nodeClass = "pathway-graph-node" + side;
         final String nodeStyle = "left: " + ((int) at.getX() - radius) + "px;"
                                  + " top: " + ((int) at.getY() - radius) + "px;";
@@ -522,8 +528,11 @@ class PathwayGraphRenderer implements PathwayRenderer {
                                 + " box-shadow: 0 0 0 " + NODE_RING + "px " + ring(updated, now) + ";";
         // The name and nothing else. How much the node has changed is its size and how long ago is its
         // colour, both of which the key explains, so a tooltip saying them again is a second answer to
-        // a question the drawing has already given.
-        final String title = node.getName();
+        // a question the drawing has already given. A node the work no longer does is the exception:
+        // the drawing shows it greyed out, and only the title says why.
+        final String title = retired
+                ? node.getName() + " (retired)"
+                : node.getName();
         appearance.put(node.getUuid(), new Appearance(nodeClass, nodeStyle, dotStyle, title));
 
         markers.div(marker -> {
@@ -564,7 +573,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                     from,
                     to,
                     edgeWidth,
-                    present.contains(child.getUuid()),
+                    shownNodes.containsKey(child.getUuid()),
                     ran(child),
                     gradient(from, to,
                             light(lastUsed(child, usage), now),
@@ -573,7 +582,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 walkLine(walkEdges, child.getUuid(), from, to, Math.max(edgeWidth, WALK_WIDTH));
                 walkBadge(walkBadges, child.getUuid(), from, to);
             }
-            draw(child, places, edges, markers, scale, now, changes, present, usage);
+            draw(child, places, edges, markers, scale, now, changes, shownNodes, usage);
         }
     }
 
@@ -724,10 +733,13 @@ class PathwayGraphRenderer implements PathwayRenderer {
                 : reading.getLastUsedTime();
     }
 
-    private static void collect(final PathNode node, final Set<String> uuids) {
+    // The model being shown, by uuid. The drawing is laid out from every node the pathway has ever
+    // held, so a node is looked up here to find out what it was at the point being shown rather than
+    // read off the one standing in for it in the layout, which is always the node as it is now.
+    private static void collect(final PathNode node, final Map<String, PathNode> shownNodes) {
         if (node != null) {
-            uuids.add(node.getUuid());
-            NullSafe.list(node.getChildren()).forEach(child -> collect(child, uuids));
+            shownNodes.put(node.getUuid(), node);
+            NullSafe.list(node.getChildren()).forEach(child -> collect(child, shownNodes));
         }
     }
 

@@ -21,6 +21,7 @@ import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
+import stroom.pathways.shared.pathway.ConstraintValue;
 import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
@@ -44,8 +45,12 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -53,20 +58,24 @@ import java.util.function.Function;
 
 public class TraceProcessor {
 
+    static final long MILLIS_PER_DAY = 86_400_000L;
+
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TraceProcessor.class);
     // Distinguishes a usage reading from a change under the same pathway key.
-    private static final byte USAGE_MARKER = 1;
     private static final ByteBuffer PROCESSED = ByteBuffer.allocateDirect(0);
 
+    private final MutationLog mutationLog;
     private final ByteBuffers byteBuffers;
     private final PathwaySerde pathwaySerde;
     private final IgnoredAttributes ignoredAttributes;
     private final IgnoredSpans ignoredSpans;
 
-    public TraceProcessor(final ByteBuffers byteBuffers,
+    public TraceProcessor(final MutationLog mutationLog,
+                          final ByteBuffers byteBuffers,
                           final PathwaySerde pathwaySerde,
                           final IgnoredAttributes ignoredAttributes,
                           final IgnoredSpans ignoredSpans) {
+        this.mutationLog = mutationLog;
         this.byteBuffers = byteBuffers;
         this.pathwaySerde = pathwaySerde;
         this.ignoredAttributes = ignoredAttributes;
@@ -249,99 +258,145 @@ public class TraceProcessor {
 
             // In the same transaction as the model change they describe, so the two cannot disagree
             // and a batch that fails leaves neither.
-            writeMutations(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source);
+            mutationLog.append(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source);
+
+            // Held a day at a time, because that is the smallest step the nightly narrowing moves the
+            // window by. Written beside the model change it caused rather than in a pass of its own,
+            // so the two go in together — though a hold big enough to pass the writer's commit
+            // threshold has already committed some of both by the time it ends.
+            // Filed under the day the trace ran, not the day it was applied. A queue that has been
+            // held up hands over days of traces at once, and filing those under today would put
+            // behaviour in the window that happened outside it and leave the days it did happen on
+            // empty.
+            collectObservedValues(writer, pathwaysDb, keyBytes, nodeMutator.getObservations(),
+                    NullSafe.getOrElse(nodeMutator.getTraceTime(), t -> t, nanoTime));
         });
     }
 
-    private void writeMutations(final LmdbWriter writer,
-                                final PathwaysDb pathwaysDb,
-                                final byte[] pathwayKey,
-                                final List<PathwayMutation> mutations,
-                                final PathNode root,
-                                final int source) {
-        if (mutations.isEmpty()) {
+
+
+
+
+
+    // What each model has been given, by the day the traces ran, built up across a hold and written
+    // once at the end of it. Read, folded and written per trace would read and rewrite the whole of a
+    // model's day — every node and every constraint — for each trace applied, on a path that already
+    // reads and rewrites the model itself.
+    private final Map<DayOfPathway, Map<String, Map<String, ConstraintValue>>> observedValues =
+            new LinkedHashMap<>();
+
+    private void collectObservedValues(final LmdbWriter writer,
+                                       final PathwaysDb pathwaysDb,
+                                       final byte[] pathwayKey,
+                                       final Map<String, Map<String, ConstraintValue>> observations,
+                                       final NanoTime ranAt) {
+        if (observations.isEmpty()) {
             return;
         }
 
-        final SimpleDb db = pathwaysDb.getMutations();
-        long sequence = lastSequence(writer, db, pathwayKey);
-        for (final PathwayMutation mutation : mutations) {
-            sequence++;
-            final byte[] key = mutationKey(pathwayKey, sequence);
-            final PathwayMutation numbered = mutation.withSequence(sequence, source);
-            byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
-                    pathwaySerde.writeMutation(numbered, valueByteBuffer ->
-                            db.insert(writer, keyByteBuffer, valueByteBuffer)));
-        }
+        final Map<String, Map<String, ConstraintValue>> day = observedValues.computeIfAbsent(
+                new DayOfPathway(pathwayKey, dayOf(ranAt)),
+                key -> read(writer, pathwaysDb, key));
 
-        writeUsage(writer, db, pathwayKey, sequence, root);
+        observations.forEach((nodeUuid, constraints) -> {
+            final Map<String, ConstraintValue> node =
+                    day.computeIfAbsent(nodeUuid, uuid -> new LinkedHashMap<>());
+            constraints.forEach((name, observed) -> node.merge(name, observed, ObservedValues::add));
+        });
+    }
+
+    private Map<String, Map<String, ConstraintValue>> read(final LmdbWriter writer,
+                                                          final PathwaysDb pathwaysDb,
+                                                          final DayOfPathway key) {
+        // Typed up front because useBytes offers both a reading and a writing form, and a lambda alone
+        // does not say which is wanted.
+        final Function<ByteBuffer, Map<String, Map<String, ConstraintValue>>> read = keyByteBuffer ->
+                pathwaysDb.getObservedValues().get(writer.getWriteTxn(),
+                        keyByteBuffer.duplicate(),
+                        value -> value == null
+                                ? new LinkedHashMap<>()
+                                : pathwaySerde.readObservedValues(value));
+        final Map<String, Map<String, ConstraintValue>> stored =
+                byteBuffers.useBytes(key.bytes(), read);
+        // Kept so the end of the hold can tell whether anything actually moved. Most traces fall inside
+        // what the day already covers and leave it exactly as it was, and writing it back to say so
+        // would serialise the whole day for nothing.
+        asStored.put(key, new LinkedHashMap<>(deepCopy(stored)));
+        return stored;
+    }
+
+    private final Map<DayOfPathway, Map<String, Map<String, ConstraintValue>>> asStored =
+            new LinkedHashMap<>();
+
+    private static Map<String, Map<String, ConstraintValue>> deepCopy(
+            final Map<String, Map<String, ConstraintValue>> source) {
+        final Map<String, Map<String, ConstraintValue>> copy = new LinkedHashMap<>(source.size());
+        source.forEach((nodeUuid, constraints) -> copy.put(nodeUuid, new LinkedHashMap<>(constraints)));
+        return copy;
     }
 
     /**
-     * How much every node had been used once this trace was done with the model.
+     * Writes what the models have been given during this hold, for the days the traces ran on.
      *
-     * <p>Once for the trace, not once for each change it made — a trace that moved nine constraints
-     * leaves nine changes and a single reading. Nothing else records it: how often a node has been
-     * used is what the model holds now, and a trace that teaches the model nothing changes it without
-     * leaving any trace of having done so. Without this a replay can say what the model allowed at a
-     * point but not how busy it was.
+     * <p>Called once the hold's traces have been applied and before the transaction is committed, so
+     * that what a model was given and what it became are written together and a hold that fails leaves
+     * neither.
      *
-     * <p>Numbered with the last change the trace made, so winding back to any change finds the newest
-     * reading at or before it.
+     * @return how many were actually written. A hold whose traces all fell inside what was already
+     * recorded writes none, which is the ordinary case once a day is a few traces old.
      */
-    private void writeUsage(final LmdbWriter writer,
-                            final SimpleDb db,
-                            final byte[] pathwayKey,
-                            final long sequence,
-                            final PathNode root) {
-        final List<NodeUsage> nodes = new ArrayList<>();
-        collectUsage(root, nodes);
-
-        final byte[] key = usageKey(pathwayKey, sequence);
-        byteBuffers.useBytes(key, (Consumer<ByteBuffer>) keyByteBuffer ->
-                pathwaySerde.writeUsage(new PathwayUsage(sequence, nodes), valueByteBuffer ->
-                        db.insert(writer, keyByteBuffer, valueByteBuffer)));
+    int writeObservedValues(final LmdbWriter writer, final PathwaysDb pathwaysDb) {
+        int written = 0;
+        for (final Entry<DayOfPathway, Map<String, Map<String, ConstraintValue>>> entry
+                : observedValues.entrySet()) {
+            final Map<String, Map<String, ConstraintValue>> day = entry.getValue();
+            if (day.equals(asStored.get(entry.getKey()))) {
+                // Every trace of this day fell inside what was already recorded, so writing it back
+                // would serialise the whole of it to say nothing had changed.
+                continue;
+            }
+            byteBuffers.useBytes(entry.getKey().bytes(), (Consumer<ByteBuffer>) keyByteBuffer ->
+                    pathwaySerde.writeObservedValues(day, valueByteBuffer ->
+                            pathwaysDb.getObservedValues().insert(writer, keyByteBuffer, valueByteBuffer)));
+            written++;
+        }
+        observedValues.clear();
+        asStored.clear();
+        return written;
     }
 
-    private static void collectUsage(final PathNode node, final List<NodeUsage> nodes) {
-        if (node != null) {
-            nodes.add(new NodeUsage(node.getUuid(), node.getTimesUsed(), node.getLastUsedTime()));
-            NullSafe.list(node.getChildren()).forEach(child -> collectUsage(child, nodes));
+    // One model's values for one day. Holds the key bytes it is written under so the end of the hold
+    // does not have to work them out again.
+    private record DayOfPathway(byte[] bytes) {
+
+        private DayOfPathway(final byte[] pathwayKey, final int day) {
+            this(observedValuesKey(pathwayKey, day));
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            return o instanceof final DayOfPathway other && Arrays.equals(bytes, other.bytes);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(bytes);
         }
     }
 
-    // Where this pathway's history got to, taken from the last key rather than kept anywhere, so
-    // nothing has to stay in step with it. Read on the batch's own transaction, so it counts on from
-    // what earlier traces in the same batch wrote rather than starting them all again from what was
-    // last committed.
-    private static long lastSequence(final LmdbWriter writer,
-                                     final SimpleDb db,
-                                     final byte[] pathwayKey) {
-        final ByteBuffer prefix = ByteBuffer.allocateDirect(pathwayKey.length + 1);
-        prefix.put(pathwayKey).put((byte) 0).flip();
-        return db.lastPrefixed(writer.getWriteTxn(), prefix, key -> key == null
-                ? 0L
-                : key.getLong(key.limit() - Long.BYTES));
+    // The day a time falls in, counted from the epoch. Days rather than anything finer because the
+    // window moves a day at a time, and anything finer multiplies what is stored for no more answer.
+    static int dayOf(final NanoTime time) {
+        return (int) (time.toEpochMillis() / MILLIS_PER_DAY);
     }
 
-    // Pathway first, so one model's changes are a single run of keys, then where each sits in that
-    // history. Big endian because LMDB orders keys by their bytes, and that is the order a replay
-    // walks them in.
-    // Alongside the changes but under a marker of their own, so that reading a pathway's changes does
-    // not walk over these as well.
-    private static byte[] usageKey(final byte[] pathwayKey, final long sequence) {
-        final ByteBuffer buffer = ByteBuffer.allocate(pathwayKey.length + 1 + Long.BYTES);
-        buffer.put(pathwayKey);
-        buffer.put(USAGE_MARKER);
-        buffer.putLong(sequence);
-        return buffer.array();
-    }
-
-    private static byte[] mutationKey(final byte[] pathwayKey, final long sequence) {
-        final ByteBuffer buffer = ByteBuffer.allocate(pathwayKey.length + 1 + Long.BYTES);
+    private static byte[] observedValuesKey(final byte[] pathwayKey, final int day) {
+        final ByteBuffer buffer = ByteBuffer.allocate(pathwayKey.length + 1 + Integer.BYTES);
         buffer.put(pathwayKey);
         buffer.put((byte) 0);
-        buffer.putLong(sequence);
+        // Big endian, so the days of one pathway read back in order and a prefix covers all of them.
+        buffer.putInt(day);
         return buffer.array();
     }
+
 }

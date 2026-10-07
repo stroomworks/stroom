@@ -58,6 +58,14 @@ public class PathUse {
      */
     private final NanoTime traceTime;
     /**
+     * When the newest trace to take this path ran, as against {@link #lastUsedTime}, which is when the
+     * model last learnt from one. How recently a path was taken is asked of this: a queue that has
+     * been held up applies old traces now, and a path's age is the age of the work, not of the
+     * processing.
+     */
+    @JsonProperty
+    private final NanoTime lastTraceTime;
+    /**
      * Which trace store the creating trace came from, as a position in the source list on
      * {@link Paths}, or -1 where the trace arrived without one. Recorded rather than looked up,
      * because a store can later be pointed at a different pathways document and what it already
@@ -73,6 +81,7 @@ public class PathUse {
                     @JsonProperty("lastUsedTime") final NanoTime lastUsedTime,
                     @JsonProperty("createdByTraceId") final String createdByTraceId,
                    @JsonProperty("traceTime") final NanoTime traceTime,
+                   @JsonProperty("lastTraceTime") final NanoTime lastTraceTime,
                    @JsonProperty("source") final int source) {
         this.root = root;
         this.timesUsed = timesUsed;
@@ -80,6 +89,7 @@ public class PathUse {
         this.lastUsedTime = lastUsedTime;
         this.createdByTraceId = createdByTraceId;
         this.traceTime = traceTime;
+        this.lastTraceTime = lastTraceTime;
         this.source = source;
     }
 
@@ -122,8 +132,32 @@ public class PathUse {
         return source;
     }
 
-    public PathUse used(final NanoTime time) {
-        return new PathUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId, traceTime, source);
+    /**
+     * When the newest trace to take this path ran.
+     */
+    public NanoTime getLastTraceTime() {
+        return lastTraceTime;
+    }
+
+    public PathUse used(final NanoTime time, final NanoTime ranAt) {
+        return new PathUse(root, timesUsed + 1, firstUsedTime, time, createdByTraceId, traceTime,
+                newest(lastTraceTime, ranAt), source);
+    }
+
+    // Traces do not arrive in the order they ran: a store that has been held up hands over old ones
+    // after fresh ones, and two stores feeding one pathway keep no order between them. Taking the
+    // newer of the two keeps this the newest, which is what being asked how recently a path was taken
+    // needs it to be.
+    private static NanoTime newest(final NanoTime held, final NanoTime arrived) {
+        if (held == null) {
+            return arrived;
+        }
+        if (arrived == null) {
+            return held;
+        }
+        return held.isGreaterThan(arrived)
+                ? held
+                : arrived;
     }
 
     @Override
@@ -141,13 +175,14 @@ public class PathUse {
                && Objects.equals(lastUsedTime, that.lastUsedTime)
                && Objects.equals(createdByTraceId, that.createdByTraceId)
                && Objects.equals(traceTime, that.traceTime)
+               && Objects.equals(lastTraceTime, that.lastTraceTime)
                && source == that.source;
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(root, timesUsed, firstUsedTime, lastUsedTime, createdByTraceId, traceTime,
-                source);
+                lastTraceTime, source);
     }
 
     @Override

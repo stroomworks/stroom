@@ -81,6 +81,20 @@ public final class PathwayReplay {
         if (MutationType.NODE_ADDED.equals(type)) {
             return removeNode(root, mutation.getNodePath());
         }
+        if (MutationType.NODE_RETIRED.equals(type)) {
+            return change(root, mutation.getNodePath(), node -> node.copy().retiredTime(null).build());
+        }
+        if (MutationType.NODE_REVIVED.equals(type)) {
+            // Put back as retired. When it was retired is not kept on the change, and the drawing only
+            // asks whether it is, so the time this undo stands at says it as well as any other.
+            return change(root, mutation.getNodePath(),
+                    node -> node.copy().retiredTime(mutation.getTime()).build());
+        }
+        if (MutationType.PATH_DROPPED.equals(type)) {
+            // Paths are not part of the node tree a replay winds back, so there is nothing here to put
+            // back. The row says a path was dropped and when, which is what a reader wants from it.
+            return root;
+        }
         return change(root, mutation.getNodePath(), node -> undoConstraint(node, mutation));
     }
 
@@ -103,6 +117,18 @@ public final class PathwayReplay {
         }
         if (MutationType.NODE_ADDED.equals(type)) {
             return addNode(root, mutation);
+        }
+        if (MutationType.NODE_RETIRED.equals(type)) {
+            return change(root, mutation.getNodePath(),
+                    node -> node.copy().retiredTime(mutation.getTime()).build());
+        }
+        if (MutationType.NODE_REVIVED.equals(type)) {
+            return change(root, mutation.getNodePath(), node -> node.copy().retiredTime(null).build());
+        }
+        if (MutationType.PATH_DROPPED.equals(type)) {
+            // Nothing in the node tree changed, so there is nothing to put back on it. Named by the
+            // pathway rather than by a node, and paths are not what a replay winds through.
+            return root;
         }
         return change(root, mutation.getNodePath(), node -> applyConstraint(node, mutation));
     }

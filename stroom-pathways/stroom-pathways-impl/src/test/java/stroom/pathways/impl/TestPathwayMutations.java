@@ -66,6 +66,36 @@ class TestPathwayMutations {
     private static final long BASE = 1_700_000_000_000_000_000L;
 
     @Test
+    void whatEachConstraintWasGivenIsKeptBesideTheChangeItCaused() {
+        final NodeMutatorImpl mutator = mutator();
+        mutator.process(childAt(0, 3), key(), null, quiet(), doc());
+
+        final Map<String, ConstraintValue> root = mutator.getObservations().values().iterator().next();
+        assertThat(root)
+                .as("the values this trace gave, not the envelope the model ended up with")
+                .containsEntry("duration", new NanoTimeValue(millis(20)))
+                .containsEntry("kind", new StringValue("SPAN_KIND_INTERNAL"));
+    }
+
+    @Test
+    void aNodeReachedTwiceInOneTraceFoldsItsValuesTogether() {
+        // The same child twice under one root, three milliseconds apart, so the node is folded in twice
+        // and what it was given spans both.
+        final Span root = span(OPERATION, "r0", "", 0, 20, "GET");
+        final Map<String, List<Span>> byParent = new HashMap<>();
+        byParent.put("", List.of(root));
+        byParent.put("r0", List.of(span(PING, "c0", "r0", 1, 1, null),
+                span(PING, "c1", "r0", 4, 1, null)));
+
+        final NodeMutatorImpl mutator = mutator();
+        final PathNode node = mutator.process(new Trace(TRACE_ID, byParent), key(), null, quiet(), doc());
+
+        final String childUuid = node.getChildren().getFirst().getUuid();
+        assertThat(mutator.getObservations().get(childUuid))
+                .containsEntry("sinceParentStart", new NanoTimeRange(millis(1), millis(4)));
+    }
+
+    @Test
     void aChildSaysHowLongAfterItsParentItStarted() {
         final PathNode root = mutator().process(childAt(0, 3), key(), null, quiet(), doc());
 

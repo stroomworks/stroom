@@ -64,6 +64,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -93,6 +94,7 @@ public class PathwaySerde {
      */
     private static final byte MUTATION_VERSION = 1;
     private static final byte USAGE_VERSION = 1;
+    private static final byte OBSERVED_VALUES_VERSION = 1;
 
     /**
      * Added to a shape's node before it is written and taken off after. A shape that is not a node
@@ -198,6 +200,7 @@ public class PathwaySerde {
                 .constraints(readConstraints(input))
                 .timesUsed(input.readLong())
                 .lastUsedTime(readNullableNanoTime(input))
+                .retiredTime(readNullableNanoTime(input))
                 .build();
     }
 
@@ -223,6 +226,7 @@ public class PathwaySerde {
                 readNullableNanoTime(input),
                 readNullableNanoTime(input),
                 input.readString(),
+                readNullableNanoTime(input),
                 readNullableNanoTime(input),
                 input.readVarInt(true) - MARKER_OFFSET);
     }
@@ -327,6 +331,47 @@ public class PathwaySerde {
         }
     }
 
+    /**
+     * A day's worth of what each of a model's constraints was given, by node uuid then constraint
+     * name. Written with the same constraint values the model holds, so the two can be compared
+     * without either being converted.
+     */
+    public void writeObservedValues(final Map<String, Map<String, ConstraintValue>> observed,
+                                    final Consumer<ByteBuffer> consumer) {
+        try (final ByteBufferPoolOutput output =
+                new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeByte(OBSERVED_VALUES_VERSION);
+            output.writeVarInt(observed.size(), true);
+            observed.forEach((nodeUuid, constraints) -> {
+                writeString(nodeUuid, output);
+                output.writeVarInt(constraints.size(), true);
+                constraints.forEach((name, value) -> {
+                    writeString(name, output);
+                    writeConstraintValue(value, output);
+                });
+            });
+            consumer.accept(output.getByteBuffer().flip());
+        }
+    }
+
+    public Map<String, Map<String, ConstraintValue>> readObservedValues(final ByteBuffer byteBuffer) {
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), OBSERVED_VALUES_VERSION, "observed values", "observed-values");
+
+        final int nodes = input.readVarInt(true);
+        final Map<String, Map<String, ConstraintValue>> observed = new LinkedHashMap<>(nodes);
+        for (int i = 0; i < nodes; i++) {
+            final String nodeUuid = input.readString();
+            final int count = input.readVarInt(true);
+            final Map<String, ConstraintValue> constraints = new LinkedHashMap<>(count);
+            for (int j = 0; j < count; j++) {
+                constraints.put(input.readString(), readConstraintValue(input));
+            }
+            observed.put(nodeUuid, constraints);
+        }
+        return observed;
+    }
+
     public PathwayMutation readMutation(final ByteBuffer byteBuffer) {
         final Input input = new UnsafeByteBufferInput(byteBuffer);
         checkVersion(input.readByte(), MUTATION_VERSION, "pathway mutation", "mutations");
@@ -420,6 +465,7 @@ public class PathwaySerde {
         writeNullableNanoTime(pathUse.getLastUsedTime(), output);
         output.writeString(pathUse.getCreatedByTraceId());
         writeNullableNanoTime(pathUse.getTraceTime(), output);
+        writeNullableNanoTime(pathUse.getLastTraceTime(), output);
         output.writeVarInt(pathUse.getSource() + MARKER_OFFSET, true);
     }
 
@@ -461,6 +507,7 @@ public class PathwaySerde {
         writeConstraints(pathNode.getConstraints(), output);
         output.writeLong(pathNode.getTimesUsed());
         writeNullableNanoTime(pathNode.getLastUsedTime(), output);
+        writeNullableNanoTime(pathNode.getRetiredTime(), output);
     }
 
     private void writeString(final String string, final Output output) {

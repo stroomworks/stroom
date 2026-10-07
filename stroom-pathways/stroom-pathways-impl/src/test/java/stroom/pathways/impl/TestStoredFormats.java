@@ -108,6 +108,10 @@ class TestStoredFormats {
         assertThat(path.getFirstUsedTime()).isEqualTo(NanoTime.ofMillis(4));
         assertThat(path.getLastUsedTime()).isEqualTo(NanoTime.ofMillis(5));
         assertThat(path.getCreatedByTraceId()).isEqualTo("0a0b0c0d");
+        assertThat(path.getLastTraceTime())
+                .as("when the newest trace to take it ran, which is what decides whether it is still"
+                    + " being taken")
+                .isEqualTo(NanoTime.ofMillis(6));
     }
 
     @Test
@@ -217,6 +221,7 @@ class TestStoredFormats {
                                 NanoTime.ofMillis(5),
                                 "0a0b0c0d",
                                 NanoTime.ofMillis(3),
+                                NanoTime.ofMillis(6),
                                 0)),
                         List.of("a-traces-doc-uuid")))
                 .build();

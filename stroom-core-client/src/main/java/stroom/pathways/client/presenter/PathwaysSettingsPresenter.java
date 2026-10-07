@@ -64,6 +64,7 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         getView().setTemporalOrderingTolerance(doc.getTemporalOrderingTolerance());
         getView().setIgnoredSpanNames(doc.getIgnoredSpanNames());
         getView().setIgnoredAttributes(doc.getIgnoredAttributes());
+        getView().setObservationWindow(doc.getObservationWindow());
         getView().setAllowPathwayCreation(doc.isAllowPathwayCreation());
         getView().setAllowPathwayMutation(doc.isAllowPathwayMutation());
         getView().setAllowConstraintCreation(doc.isAllowConstraintCreation());
@@ -83,6 +84,7 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
                 .temporalOrderingTolerance(getView().getTemporalOrderingTolerance())
                 .ignoredSpanNames(getView().getIgnoredSpanNames())
                 .ignoredAttributes(getView().getIgnoredAttributes())
+                .observationWindow(getView().getObservationWindow())
                 .allowPathwayCreation(getView().isAllowPathwayCreation())
                 .allowPathwayMutation(getView().isAllowPathwayMutation())
                 .allowConstraintCreation(getView().isAllowConstraintCreation())
@@ -116,6 +118,10 @@ public class PathwaysSettingsPresenter extends DocPresenter<PathwaysSettingsView
         void setIgnoredSpanNames(List<String> ignoredSpanNames);
 
         List<String> getIgnoredAttributes();
+
+        SimpleDuration getObservationWindow();
+
+        void setObservationWindow(SimpleDuration observationWindow);
 
         void setIgnoredAttributes(List<String> ignoredAttributes);
 
