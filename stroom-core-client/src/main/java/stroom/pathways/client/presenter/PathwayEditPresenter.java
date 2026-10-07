@@ -34,6 +34,7 @@ import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.PathUse;
 import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
@@ -64,6 +65,7 @@ import com.gwtplatform.mvp.client.View;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * One pathway open as a tab of its own. A tab rather than a dialog because reading a model is not a
@@ -91,6 +93,13 @@ public class PathwayEditPresenter
     private static final double TREE_SHARE = 0.6;
 
     private Pathway pathway;
+    // What the two tables were showing when the drawing was last made. Everything the drawing takes
+    // from either of them follows from the one row it has picked, so a row each says whether a
+    // selection event would draw anything different. Written where the drawing is made rather than
+    // where a row is clicked, so that a selection cleared without an event — which is how switching
+    // tabs starts afresh — leaves nothing stale here to be compared against.
+    private Long drawnChange;
+    private PathUse drawnPath;
     private DocRef docRef;
     // The name the pathway was opened under, which is what it is saved back against. Held rather than
     // read off the model, so a tab can be labelled before the model it is waiting for arrives.
@@ -195,8 +204,19 @@ public class PathwayEditPresenter
                     showConstraints();
                 }));
 
-        registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
-        registerHandler(pathListPresenter.getSelectionModel().addSelectionHandler(e -> showModel()));
+        // Clicking the row that is already picked asks for nothing new. Drawing anyway would put the
+        // same model back against a later clock, and a node is coloured by how long since it last
+        // changed — so the whole drawing would come back older without anything having been learnt.
+        registerHandler(mutationListPresenter.getSelectionModel().addSelectionHandler(e -> {
+            if (!Objects.equals(drawnChange, mutationListPresenter.getSelectedSequence())) {
+                showModel();
+            }
+        }));
+        registerHandler(pathListPresenter.getSelectionModel().addSelectionHandler(e -> {
+            if (!Objects.equals(drawnPath, pathListPresenter.getSelectionModel().getSelected())) {
+                showModel();
+            }
+        }));
         registerHandler(getView().getTabBar().addSelectionHandler(e -> showTab(e.getSelectedItem())));
         registerHandler(getView().getTabBar().addShowMenuHandler(e -> getEventBus().fireEvent(e)));
 
@@ -549,6 +569,9 @@ public class PathwayEditPresenter
         if (pathway == null) {
             return;
         }
+
+        drawnChange = mutationListPresenter.getSelectedSequence();
+        drawnPath = pathListPresenter.getSelectionModel().getSelected();
 
         // Set before the model is read, because the nodes are picked out as the drawing is built. The
         // tab on show decides which selection picks them out, so a path left selected behind the

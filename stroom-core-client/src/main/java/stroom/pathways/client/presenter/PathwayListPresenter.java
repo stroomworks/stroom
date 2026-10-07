@@ -82,7 +82,6 @@ public class PathwayListPresenter
     // move, so the row that comes back is never equal to the one that went, however plainly it is the
     // same pathway.
     private String wantedSelection;
-    private Pathway selectedPathway;
     private boolean fetching;
     private long requests;
     private final List<Consumer<Pathway>> waiting = new ArrayList<>();
@@ -335,9 +334,17 @@ public class PathwayListPresenter
     }
 
     /**
-     * The model for the row being looked at, fetched once and held. The row carries only its size —
-     * see {@link PathwaySummary} — and the model is the expensive half, so it is not fetched again
-     * while the same row is selected.
+     * The model for the row being looked at.
+     *
+     * <p>Fetched afresh each time it is asked for, including for the row already selected. A click on
+     * a row is the reader asking to see it, and answering with what was fetched when they last looked
+     * would draw minutes-old facts against the clock as it stands: the drawing colours a node by how
+     * long since it last changed, so the same model put up again comes back older without anything
+     * having been learnt about it.
+     *
+     * <p>What is held is only a fetch already on its way. The row carries nothing but its size — see
+     * {@link PathwaySummary} — so everything around it wants the model, and they share one request
+     * rather than making one each.
      */
     public void withSelectedPathway(final Consumer<Pathway> consumer) {
         final String name = NullSafe.get(selectionModel.getSelected(), PathwaySummary::getName);
@@ -348,14 +355,10 @@ public class PathwayListPresenter
             return;
         }
 
-        if (name.equals(selectedName)) {
-            if (fetching) {
-                // One is already on its way for this row. Everyone asking is told when it lands, so a
-                // row is fetched once however many parts of the view want it.
-                waiting.add(consumer);
-            } else {
-                consumer.accept(selectedPathway);
-            }
+        if (name.equals(selectedName) && fetching) {
+            // One is already on its way for this row. Everyone asking is told when it lands, so a row
+            // is fetched once however many parts of the view want it.
+            waiting.add(consumer);
             return;
         }
 
@@ -373,7 +376,6 @@ public class PathwayListPresenter
                 .method(res -> res.fetchPathway(new FetchPathwayRequest(docRef, name)))
                 .onSuccess(pathway -> {
                     if (request == requests) {
-                        selectedPathway = pathway;
                         fetching = false;
                         tell(pathway);
                     }
@@ -403,7 +405,6 @@ public class PathwayListPresenter
 
     private void forget() {
         selectedName = null;
-        selectedPathway = null;
         fetching = false;
         waiting.clear();
     }
