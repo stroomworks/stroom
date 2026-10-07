@@ -528,11 +528,8 @@ class PathwayGraphRenderer implements PathwayRenderer {
                                 + " box-shadow: 0 0 0 " + NODE_RING + "px " + ring(updated, now) + ";";
         // The name and nothing else. How much the node has changed is its size and how long ago is its
         // colour, both of which the key explains, so a tooltip saying them again is a second answer to
-        // a question the drawing has already given. A node the work no longer does is the exception:
-        // the drawing shows it greyed out, and only the title says why.
-        final String title = retired
-                ? node.getName() + " (retired)"
-                : node.getName();
+        // a question the drawing has already given.
+        final String title = node.getName();
         appearance.put(node.getUuid(), new Appearance(nodeClass, nodeStyle, dotStyle, title));
 
         markers.div(marker -> {
@@ -569,12 +566,14 @@ class PathwayGraphRenderer implements PathwayRenderer {
             // Lighter where it leaves the parent, full strength where it arrives, so a link reads in
             // the direction the work flows without needing an arrow head on it.
             final int edgeWidth = scale.edge(timesUsed(child, usage));
+            final PathNode childShown = shownNodes.get(child.getUuid());
             line(edges,
                     from,
                     to,
                     edgeWidth,
-                    shownNodes.containsKey(child.getUuid()),
+                    childShown != null,
                     ran(child),
+                    childShown != null && childShown.isRetired(),
                     gradient(from, to,
                             light(lastUsed(child, usage), now),
                             colour(lastUsed(child, usage), now)));
@@ -700,6 +699,7 @@ class PathwayGraphRenderer implements PathwayRenderer {
                              final int width,
                              final boolean present,
                              final boolean ran,
+                             final boolean retired,
                              final String colour) {
         svg.elem(SafeHtmlUtil.from("line"),
                 new Attribute("x1", String.valueOf((int) start.getX())),
@@ -714,7 +714,10 @@ class PathwayGraphRenderer implements PathwayRenderer {
                                             : " pathway-graph-edge--absent")
                                     + (ran
                                             ? ""
-                                            : " pathway-graph-edge--off-path")));
+                                            : " pathway-graph-edge--off-path")
+                                    + (retired
+                                            ? " pathway-graph-edge--retired"
+                                            : "")));
     }
 
     // What the reading kept at the moment being shown says, or what the node says where there is no
