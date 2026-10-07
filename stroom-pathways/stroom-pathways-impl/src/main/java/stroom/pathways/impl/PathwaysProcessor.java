@@ -276,7 +276,7 @@ public class PathwaysProcessor {
         final Counts counts = new Counts();
 
         try (final PathwaysDb pathwaysDb = PathwaysDb.create(localDir, byteBuffers, false)) {
-            withMessageReceiver(doc, messageReceiver -> {
+            withMessageReceiver(messageReceiverFactory, doc, messageReceiver -> {
                 try (final LmdbWriter writer = pathwaysDb.createWriter()) {
                     final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde,
                             new IgnoredAttributes(doc.getIgnoredAttributes()),
@@ -361,9 +361,14 @@ public class PathwaysProcessor {
         return allDealtWith[0];
     }
 
-    // Findings go to the document's info feed, as one stream per shard per hold. A document with no
-    // feed still learns; it just has nowhere to report what it found, which beats not learning at all.
-    private void withMessageReceiver(final PathwaysDoc doc, final Consumer<MessageReceiver> work) {
+    // Findings go to the document's info feed, as one stream per run of work. A document with no feed
+    // still learns; it just has nowhere to report what it found, which beats not learning at all.
+    //
+    // Static and shared, because the night's pass reports what it narrowed to the same feed and by the
+    // same rule. Two copies of the rule would mean a document that reported one and not the other.
+    static void withMessageReceiver(final MessageReceiverFactory messageReceiverFactory,
+                                    final PathwaysDoc doc,
+                                    final Consumer<MessageReceiver> work) {
         final DocRef infoFeed = doc.getInfoFeed();
         if (infoFeed == null || infoFeed.getName() == null) {
             work.accept((severity, message) -> {

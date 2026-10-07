@@ -49,6 +49,7 @@ import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.logging.LogUtil;
 import stroom.util.shared.NullSafe;
+import stroom.util.shared.Severity;
 import stroom.util.time.SimpleDurationUtil;
 
 import jakarta.inject.Inject;
@@ -92,6 +93,7 @@ public class PathwayNarrower {
     private final MutationLog mutationLog;
     private final ClusterLockService clusterLockService;
     private final SecurityContext securityContext;
+    private final MessageReceiverFactory messageReceiverFactory;
     private final ByteBuffers byteBuffers;
 
     @Inject
@@ -101,6 +103,7 @@ public class PathwayNarrower {
                            final MutationLog mutationLog,
                            final ClusterLockService clusterLockService,
                            final SecurityContext securityContext,
+                           final MessageReceiverFactory messageReceiverFactory,
                            final ByteBuffers byteBuffers) {
         this.pathwaysStore = pathwaysStore;
         this.shardStore = shardStore;
@@ -108,6 +111,7 @@ public class PathwayNarrower {
         this.mutationLog = mutationLog;
         this.clusterLockService = clusterLockService;
         this.securityContext = securityContext;
+        this.messageReceiverFactory = messageReceiverFactory;
         this.byteBuffers = byteBuffers;
     }
 
@@ -136,12 +140,26 @@ public class PathwayNarrower {
         }
 
         final int oldestDay = oldestDayInWindow(doc, Instant.now());
+
+        // Held until the pass is over rather than written as it goes. Opening the feed opens a stream
+        // whether or not anything is put in it, and most nights most documents have nothing to report
+        // — a stream each would bury the nights that did say something. Every line is a change that
+        // was made, so they are all INFO and only the words need keeping.
+        final List<String> lines = new ArrayList<>();
+        final MessageReceiver collect = (severity, message) -> lines.add(message.get());
         for (int shard = 0; shard < ShardQueue.shardCount(settings); shard++) {
             final int shardIndex = shard;
             // The same lock the processor takes, so a model is never narrowed while a trace is being
             // applied to it on another node.
             clusterLockService.tryLock(PathwaysProcessor.lockName(doc.getUuid(), shardIndex),
-                    () -> narrowShard(doc, shardIndex, oldestDay));
+                    () -> narrowShard(doc, shardIndex, oldestDay, collect));
+        }
+
+        // One stream for the document's whole pass, so what a night did to it reads in one place
+        // rather than a shard at a time.
+        if (!lines.isEmpty()) {
+            PathwaysProcessor.withMessageReceiver(messageReceiverFactory, doc, messages ->
+                    lines.forEach(line -> messages.log(Severity.INFO, () -> line)));
         }
     }
 
@@ -163,9 +181,12 @@ public class PathwayNarrower {
         return (int) (oldest.toEpochMilli() / TraceProcessor.MILLIS_PER_DAY);
     }
 
-    private void narrowShard(final PathwaysDoc doc, final int shardIndex, final int oldestDay) {
+    private void narrowShard(final PathwaysDoc doc,
+                             final int shardIndex,
+                             final int oldestDay,
+                             final MessageReceiver messages) {
         try {
-            shardStore.withShard(doc, shardIndex, localDir -> narrow(localDir, oldestDay));
+            shardStore.withShard(doc, shardIndex, localDir -> narrow(localDir, oldestDay, messages));
         } catch (final IOException e) {
             // The model could not be taken down or put back, so nothing here was committed. Tomorrow
             // night tries again, and until then the model stays as wide as it was.
@@ -177,7 +198,7 @@ public class PathwayNarrower {
     // Returns whether anything changed, which is what decides whether the shard is worth pushing back.
     // Not private so that what it does to a shard can be tested without a cluster lock and a document
     // store standing behind it.
-    boolean narrow(final Path localDir, final int oldestDay) {
+    boolean narrow(final Path localDir, final int oldestDay, final MessageReceiver messages) {
         boolean changed = false;
         try (final PathwaysDb pathwaysDb = PathwaysDb.create(localDir, byteBuffers, false)) {
             try (final LmdbWriter writer = pathwaysDb.createWriter()) {
@@ -199,7 +220,7 @@ public class PathwayNarrower {
                 for (int i = 0; i < keys.size(); i++) {
                     final byte[] key = keys.get(i);
                     changed |= narrowPathway(writer, pathwaysDb, key, pathways.get(i),
-                            byPathway.getOrDefault(asText(key), Window.NOTHING), oldestDay);
+                            byPathway.getOrDefault(asText(key), Window.NOTHING), oldestDay, messages);
                 }
                 writer.commit();
             }
@@ -212,7 +233,8 @@ public class PathwayNarrower {
                                    final byte[] pathwayKey,
                                    final Pathway pathway,
                                    final Window window,
-                                   final int oldestDay) {
+                                   final int oldestDay,
+                                   final MessageReceiver messages) {
         if (window.values().isEmpty()) {
             // Nothing has been seen in the window. Narrowing to nothing would say this pathway admits
             // nothing, which is not what no evidence means — it is a model nothing has exercised, and
@@ -240,7 +262,28 @@ public class PathwayNarrower {
         // In the same history as the changes traces made, and in the same transaction as the model
         // they describe. No trace caused these, so they name no store.
         mutationLog.append(writer, pathwaysDb, pathwayKey, mutations, root, -1);
+
+        // And said to the document's feed, a line per row, the way a trace says what it widened. A
+        // reader watching the feed sees the night put back what the days took out, in the same words.
+        mutations.forEach(mutation -> messages.log(Severity.INFO, () -> describe(mutation)));
         return true;
+    }
+
+    private static String describe(final PathwayMutation mutation) {
+        final List<String> where = NullSafe.list(mutation.getNodePath());
+        return switch (mutation.getType()) {
+            // What it holds now sits where a widening puts it, so the two read alike, and what it
+            // gave up follows in brackets — which is the half worth reading on a narrowing. Bracketed
+            // rather than joined by an arrow: a range writes itself as one bound arrow the other, and
+            // a second arrow between two of them could not be told from the ones inside them.
+            case CONSTRAINT_NARROWED -> "Narrowing constraint: " + where + " "
+                                        + mutation.getConstraint() + " " + mutation.getNewValue()
+                                        + " (was " + mutation.getOldValue() + ")";
+            case NODE_RETIRED -> "Retiring node: " + where;
+            case NODE_REVIVED -> "Reviving node: " + where;
+            case PATH_DROPPED -> "Dropping path: " + where;
+            default -> mutation.getType().getDisplayValue() + ": " + where;
+        };
     }
 
     // Everything the window still covers, folded into one account per model, node and constraint. Days

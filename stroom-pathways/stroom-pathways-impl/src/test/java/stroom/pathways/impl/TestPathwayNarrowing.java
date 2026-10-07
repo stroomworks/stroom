@@ -228,6 +228,23 @@ class TestPathwayNarrowing {
     }
 
     @Test
+    void everythingTheNightChangedIsReported(@TempDir final Path tempDir) {
+        applied(tempDir, List.of(withChildren(0, "Ping", "Commit"), withChildren(1, "Ping")));
+        final int before = mutations(tempDir).size();
+
+        final List<String> lines = new ArrayList<>();
+        narrow(tempDir, day(1), (severity, message) -> lines.add(message.get()));
+
+        final int written = mutations(tempDir).size() - before;
+        assertThat(written).isPositive();
+        assertThat(lines)
+                .as("a line for every row the night put in the history, the way a trace says what it"
+                    + " widened")
+                .hasSize(written);
+        assertThat(lines).anyMatch(line -> line.startsWith("Retiring node: "));
+    }
+
+    @Test
     void aTraceThatCarriesARetiredNodeBringsItBackThereAndThen(@TempDir final Path tempDir) {
         applied(tempDir, List.of(withChildren(0, "Ping", "Commit"), withChildren(1, "Ping")));
         narrow(tempDir, day(1));
@@ -381,8 +398,13 @@ class TestPathwayNarrowing {
     }
 
     private static boolean narrow(final Path dir, final int oldestDay) {
-        return new PathwayNarrower(null, null, serde(), mutationLog(), null, null, BYTE_BUFFERS)
-                .narrow(dir, oldestDay);
+        return narrow(dir, oldestDay, (severity, message) -> {
+        });
+    }
+
+    private static boolean narrow(final Path dir, final int oldestDay, final MessageReceiver messages) {
+        return new PathwayNarrower(null, null, serde(), mutationLog(), null, null, null, BYTE_BUFFERS)
+                .narrow(dir, oldestDay, messages);
     }
 
     // Applies each trace as the processor would, so the model and the day by day account are built the
