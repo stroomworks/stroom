@@ -103,6 +103,7 @@ public class PathwaysProcessor {
     private final PathwaysShardStore shardStore;
     private final MessageReceiverFactory messageReceiverFactory;
     private final PathwaySerde pathwaySerde;
+    private final MutationLog mutationLog;
     private final ClusterLockService clusterLockService;
     private final SecurityContext securityContext;
     private final ByteBuffers byteBuffers;
@@ -121,7 +122,8 @@ public class PathwaysProcessor {
     private volatile long lastOldestItemAgeMs;
 
     @Inject
-    public PathwaysProcessor(final PathwaysStore pathwaysStore,
+    public PathwaysProcessor(final MutationLog mutationLog,
+                                  final PathwaysStore pathwaysStore,
                                   final PathwaysShardStore shardStore,
                                   final MessageReceiverFactory messageReceiverFactory,
                                   final PathwaySerde pathwaySerde,
@@ -130,6 +132,7 @@ public class PathwaysProcessor {
                                   final ByteBuffers byteBuffers,
                                   final ByteBufferFactory byteBufferFactory,
                                   final Metrics metrics) {
+        this.mutationLog = mutationLog;
         this.pathwaysStore = pathwaysStore;
         this.shardStore = shardStore;
         this.messageReceiverFactory = messageReceiverFactory;
@@ -278,7 +281,8 @@ public class PathwaysProcessor {
         try (final PathwaysDb pathwaysDb = PathwaysDb.create(localDir, byteBuffers, false)) {
             withMessageReceiver(messageReceiverFactory, doc, messageReceiver -> {
                 try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-                    final TraceProcessor traceProcessor = new TraceProcessor(byteBuffers, pathwaySerde,
+                    final TraceProcessor traceProcessor = new TraceProcessor(mutationLog, byteBuffers,
+                            pathwaySerde,
                             new IgnoredAttributes(doc.getIgnoredAttributes()),
                             new IgnoredSpans(doc.getIgnoredSpanNames()));
                     for (final Path item : queue.itemsOldestFirst()) {

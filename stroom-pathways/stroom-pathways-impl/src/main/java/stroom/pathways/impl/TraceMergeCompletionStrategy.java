@@ -128,10 +128,14 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
             return;
         }
 
-        write(pathwaysDocRef, traceDb, handedOver);
+        // Stamped on every item written below, so that what is learnt from these traces says which
+        // store they came from rather than leaving it to be inferred from whatever the configuration
+        // names at the time someone asks.
+        write(pathwaysDocRef, doc.getUuid(), traceDb, handedOver);
     }
 
     private void write(final DocRef pathwaysDocRef,
+                       final String sourceUuid,
                        final TraceDb traceDb,
                        final List<byte[]> handedOver) throws IOException {
         final Optional<SharedFileStoreSettings> optSettings = sharedFileStoreOf(pathwaysDocRef);
@@ -162,7 +166,8 @@ public class TraceMergeCompletionStrategy implements MergeCompletionStrategy {
                         entry.getValue().size(), entry.getKey(), MAX_QUEUE_DEPTH_PER_SHARD, queue));
                 continue;
             }
-            if (writer.write(traceDb, entry.getValue(), queue.dir(), orderKey).isPresent()) {
+            if (writer.write(traceDb, entry.getValue(), queue.dir(), orderKey, sourceUuid)
+                    .isPresent()) {
                 itemsWritten++;
                 tracesWritten += entry.getValue().size();
             }

@@ -81,6 +81,9 @@ public class QueueItemWriter {
      * @param orderKey  when the producer released these traces, as epoch milliseconds. It leads the
      *                  item's name and is stored inside it, and is what a consumer applies items in
      *                  the order of.
+     * @param sourceUuid the trace store these traces came from, stored in the item so that what is
+     *                  learnt from them can say where they came from. Null where the caller has no
+     *                  identity to give.
      * @return the finished item's directory, or empty where there was nothing to send. Writing an
      * empty item would cost a whole environment to say so.
      * @throws IOException where the item could not be written. Nothing is left behind that a consumer
@@ -89,7 +92,8 @@ public class QueueItemWriter {
     public Optional<Path> write(final TraceDb source,
                                 final Collection<byte[]> traceIds,
                                 final Path targetDir,
-                                final long orderKey) throws IOException {
+                                final long orderKey,
+                                final String sourceUuid) throws IOException {
         if (traceIds.isEmpty()) {
             return Optional.empty();
         }
@@ -110,7 +114,7 @@ public class QueueItemWriter {
                     false,
                     QueueItem.HAS_SECONDARY_INDEXES)) {
                 source.copyTracesTo(item, traceIds);
-                QueueItem.writeInfo(item.getEnv(), orderKey);
+                QueueItem.writeInfo(item.getEnv(), orderKey, sourceUuid);
             }
 
             // An artefact of having had the environment open, and never valid anywhere else: a stale
