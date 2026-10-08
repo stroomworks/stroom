@@ -19,6 +19,7 @@ package stroom.pathways.client.presenter;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.PathwayMutation;
 import stroom.util.shared.Expander;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.TreeRow;
 
 import java.util.Objects;
@@ -36,17 +37,20 @@ class MutationRow implements TreeRow {
 
     private final PathwayMutation mutation;
     private final String traceId;
+    private final String group;
     private final NanoTime time;
     private final long sequence;
     private final Expander expander;
 
     private MutationRow(final PathwayMutation mutation,
                         final String traceId,
+                        final String group,
                         final NanoTime time,
                         final long sequence,
                         final Expander expander) {
         this.mutation = mutation;
         this.traceId = traceId;
+        this.group = group;
         this.time = time;
         this.sequence = sequence;
         this.expander = expander;
@@ -56,16 +60,31 @@ class MutationRow implements TreeRow {
      * @param sequence the last change the trace made, so selecting the trace shows the model as the
      *                 trace left it rather than as it stood partway through.
      */
-    static MutationRow trace(final String traceId,
+    static MutationRow trace(final PathwayMutation last,
                              final NanoTime time,
-                             final long sequence,
                              final boolean expanded) {
-        return new MutationRow(null, traceId, time, sequence, new Expander(0, expanded, false));
+        return new MutationRow(null, last.getTraceId(), groupOf(last), time, last.getSequence(),
+                new Expander(0, expanded, false));
     }
 
     static MutationRow change(final PathwayMutation mutation) {
-        return new MutationRow(mutation, mutation.getTraceId(), mutation.getTime(),
+        return new MutationRow(mutation, mutation.getTraceId(), groupOf(mutation), mutation.getTime(),
                 mutation.getSequence(), new Expander(1, false, true));
+    }
+
+    /**
+     * What ties a change to the row it sits under.
+     *
+     * <p>A trace writes everything it taught the model in one go, so its id names the group. The
+     * narrowing has no trace to name, and naming none would put every change it has ever made under
+     * one row: opening one run would open them all, and picking one out would pick out the lot. Every
+     * change a single run makes to a pathway is stamped with the same instant, so that names it
+     * instead.
+     */
+    static String groupOf(final PathwayMutation mutation) {
+        return mutation.getTraceId() != null
+                ? mutation.getTraceId()
+                : "narrowed:" + NullSafe.get(mutation.getTime(), NanoTime::toEpochNanos);
     }
 
     /**
@@ -81,6 +100,10 @@ class MutationRow implements TreeRow {
 
     String getTraceId() {
         return traceId;
+    }
+
+    String getGroup() {
+        return group;
     }
 
     NanoTime getTime() {

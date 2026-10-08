@@ -32,20 +32,20 @@ class MutationTreeAction implements TreeAction<MutationRow> {
 
     private final Set<String> expanded = new HashSet<>();
 
-    boolean isTraceExpanded(final String traceId) {
-        return expanded.contains(traceId);
+    boolean isExpanded(final String group) {
+        return expanded.contains(group);
     }
 
-    void setTraceExpanded(final String traceId, final boolean isExpanded) {
+    void setExpanded(final String group, final boolean isExpanded) {
         if (isExpanded) {
-            expanded.add(traceId);
+            expanded.add(group);
         } else {
-            expanded.remove(traceId);
+            expanded.remove(group);
         }
     }
 
-    void expandAll(final Collection<String> traceIds) {
-        expanded.addAll(traceIds);
+    void expandAll(final Collection<String> groups) {
+        expanded.addAll(groups);
     }
 
     void collapseAll() {
@@ -54,12 +54,12 @@ class MutationTreeAction implements TreeAction<MutationRow> {
 
     @Override
     public void setRowExpanded(final MutationRow row, final boolean isExpanded) {
-        setTraceExpanded(row.getTraceId(), isExpanded);
+        setExpanded(row.getGroup(), isExpanded);
     }
 
     @Override
     public boolean isRowExpanded(final MutationRow row) {
-        return isTraceExpanded(row.getTraceId());
+        return isExpanded(row.getGroup());
     }
 
     /**

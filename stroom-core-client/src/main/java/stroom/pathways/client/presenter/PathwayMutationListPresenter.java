@@ -177,10 +177,10 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
         final Set<String> counted = new HashSet<>();
         for (final PathwayMutation mutation : mutations) {
             final NanoTime time = mutation.getTime();
-            // A trace with no id of its own cannot be told from another, so each of its changes is
-            // counted once in its own right rather than all of them being folded into one.
-            if (time != null
-                && (mutation.getTraceId() == null || counted.add(mutation.getTraceId()))) {
+            // One bar unit per thing that changed the model rather than per change, so a trace that
+            // taught it twenty things counts the same as one that taught it one. The narrowing is
+            // counted the same way, a run at a time, which is what its group names.
+            if (time != null && counted.add(MutationRow.groupOf(mutation))) {
                 final int at = (int) Math.min(BUCKETS - 1, (time.toEpochMillis() - from) / width);
                 counts.set(at, counts.get(at) + 1);
             }
@@ -203,7 +203,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     protected void onBind() {
         super.onBind();
         registerHandler(expandAllButton.addClickHandler(event -> {
-            treeAction.expandAll(traceIds());
+            treeAction.expandAll(groups());
             order();
         }));
         registerHandler(collapseAllButton.addClickHandler(event -> {
@@ -282,7 +282,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
         for (final PathwayMutation mutation : mutations) {
             final boolean mine = selected.isTrace()
-                    ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
+                    ? Objects.equals(selected.getGroup(), MutationRow.groupOf(mutation))
                     : mutation.getSequence() == selected.getSequence();
             if (mine && !paths.contains(mutation.getNodePath())) {
                 paths.add(mutation.getNodePath());
@@ -315,7 +315,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
         for (final PathwayMutation mutation : mutations) {
             final boolean mine = selected.isTrace()
-                    ? Objects.equals(selected.getTraceId(), mutation.getTraceId())
+                    ? Objects.equals(selected.getGroup(), MutationRow.groupOf(mutation))
                     : mutation.getSequence() == selected.getSequence();
             if (mine && mutation.getConstraint() != null && path.equals(mutation.getNodePath())) {
                 names.add(mutation.getConstraint());
@@ -459,61 +459,63 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
     // Nothing to open once everything is open, and nothing to close once everything is closed.
     private void updateButtons() {
-        final Set<String> traceIds = traceIds();
+        final Set<String> groups = groups();
         int open = 0;
-        for (final String traceId : traceIds) {
-            if (treeAction.isTraceExpanded(traceId)) {
+        for (final String group : groups) {
+            if (treeAction.isExpanded(group)) {
                 open++;
             }
         }
-        expandAllButton.setEnabled(open < traceIds.size());
+        expandAllButton.setEnabled(open < groups.size());
         collapseAllButton.setEnabled(open > 0);
     }
 
     // First appearance first, so what the buttons act on is the order the list is built in.
-    private Set<String> traceIds() {
-        final Set<String> traceIds = new LinkedHashSet<>();
+    private Set<String> groups() {
+        final Set<String> groups = new LinkedHashSet<>();
         for (final PathwayMutation mutation : mutations) {
-            traceIds.add(mutation.getTraceId());
+            groups.add(MutationRow.groupOf(mutation));
         }
-        return traceIds;
+        return groups;
     }
 
     /**
-     * A row per trace, each holding the changes that trace made.
+     * A row per thing that changed the model — a trace, or one run of the narrowing — each holding
+     * the changes it made.
      *
-     * <p>Everything one trace taught the model is written in one go, so a trace's changes are always
-     * next to each other in the history and grouping them is a walk rather than a sort. They are
-     * grouped in the order they were made and the result turned round afterwards, so which way the
-     * list is sorted cannot split a trace in two.
+     * <p>Everything one of them taught the model is written in one go, so its changes are always next
+     * to each other in the history and grouping them is a walk rather than a sort. They are grouped in
+     * the order they were made and the result turned round afterwards, so which way the list is sorted
+     * cannot split one in two.
      */
     private List<MutationRow> buildRows() {
         final List<PathwayMutation> oldestFirst = new ArrayList<>(mutations);
         oldestFirst.sort(PathwayMutation.comparator(PathwayMutation.FIELD_TIME, false));
 
-        final List<List<PathwayMutation>> traces = new ArrayList<>();
+        final List<List<PathwayMutation>> groups = new ArrayList<>();
         List<PathwayMutation> current = null;
         for (final PathwayMutation mutation : oldestFirst) {
-            if (current == null || !Objects.equals(current.get(0).getTraceId(), mutation.getTraceId())) {
+            if (current == null
+                || !Objects.equals(MutationRow.groupOf(current.get(0)), MutationRow.groupOf(mutation))) {
                 current = new ArrayList<>();
-                traces.add(current);
+                groups.add(current);
             }
             current.add(mutation);
         }
 
-        Collections.reverse(traces);
+        Collections.reverse(groups);
 
         final List<MutationRow> rows = new ArrayList<>();
-        for (final List<PathwayMutation> trace : traces) {
-            // The last change the trace made, which is the model as the trace left it however the
-            // list is turned round.
-            final PathwayMutation last = trace.get(trace.size() - 1);
-            final MutationRow traceRow = MutationRow.trace(last.getTraceId(), trace.get(0).getTime(),
-                    last.getSequence(), treeAction.isTraceExpanded(last.getTraceId()));
-            rows.add(traceRow);
+        for (final List<PathwayMutation> group : groups) {
+            // The last change it made, which is the model as it left it however the list is turned
+            // round.
+            final PathwayMutation last = group.get(group.size() - 1);
+            final MutationRow groupRow = MutationRow.trace(last, group.get(0).getTime(),
+                    treeAction.isExpanded(MutationRow.groupOf(last)));
+            rows.add(groupRow);
 
-            if (traceRow.getExpander().isExpanded()) {
-                final List<PathwayMutation> changes = new ArrayList<>(trace);
+            if (groupRow.getExpander().isExpanded()) {
+                final List<PathwayMutation> changes = new ArrayList<>(group);
                 Collections.reverse(changes);
                 for (final PathwayMutation mutation : changes) {
                     rows.add(MutationRow.change(mutation));
@@ -569,7 +571,7 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             }
         };
         expanderColumn.setFieldUpdater((index, row, value) -> {
-            treeAction.setTraceExpanded(row.getTraceId(), !value.isExpanded());
+            treeAction.setExpanded(row.getGroup(), !value.isExpanded());
             order();
         });
         dataGrid.addColumn(expanderColumn, "");
