@@ -265,7 +265,11 @@ public class PathwayNarrower {
 
         // In the same history as the changes traces made, and in the same transaction as the model
         // they describe. No trace caused these, so they name no store.
-        mutationLog.append(writer, pathwaysDb, pathwayKey, mutations, root, -1);
+        final PathwayHistory history = mutationLog.history(writer, pathwaysDb, pathwayKey);
+        mutationLog.append(writer, pathwaysDb, pathwayKey, mutations, root, -1, history);
+        // Written here rather than at the end of the pass: the narrowing takes one model at a time
+        // and is finished with each before it moves on.
+        mutationLog.writeCounts(writer, pathwaysDb, pathwayKey, history);
 
         // And said to the document's feed, a line per row, the way a trace says what it widened. A
         // reader watching the feed sees the narrowing put back what the days took out, in the same words.

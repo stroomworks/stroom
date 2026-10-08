@@ -61,18 +61,21 @@ public class PathwaysService {
     private final PathwaysShardStore shardStore;
     private final ClusterLockService clusterLockService;
     private final ByteBuffers byteBuffers;
+    private final MutationLog mutationLog;
 
     @Inject
     public PathwaysService(final ShardedPathwayReader shardedPathwayReader,
                            final PathwaysStore pathwaysStore,
                            final PathwaysShardStore shardStore,
                            final ClusterLockService clusterLockService,
-                           final ByteBuffers byteBuffers) {
+                           final ByteBuffers byteBuffers,
+                           final MutationLog mutationLog) {
         this.shardedPathwayReader = shardedPathwayReader;
         this.pathwaysStore = pathwaysStore;
         this.shardStore = shardStore;
         this.clusterLockService = clusterLockService;
         this.byteBuffers = byteBuffers;
+        this.mutationLog = mutationLog;
     }
 
     public PathwayResultPage findPathways(final FindPathwayCriteria criteria) {
@@ -172,18 +175,14 @@ public class PathwaysService {
             try (final LmdbWriter writer = db.createWriter()) {
                 final boolean[] went = {false};
                 withKey(name, key -> went[0] = db.getPathways().delete(writer, key));
-                final int[] changes = {0};
-                withKey(name + ShardedPathwayReader.KEY_SEPARATOR, prefix ->
-                        changes[0] = db.getMutations().deletePrefixed(writer, prefix));
-                final int[] usage = {0};
-                withKey(name + ShardedPathwayReader.USAGE_SEPARATOR, prefix ->
-                        usage[0] = db.getMutations().deletePrefixed(writer, prefix));
+                final int history = mutationLog.removeAll(writer, db.getMutations(),
+                        name.getBytes(StandardCharsets.UTF_8));
                 writer.commit();
                 removed.set(went[0]);
                 LOGGER.info(() -> LogUtil.message(
-                        "Removed pathway {}: {} model, {} change(s), {} reading(s)",
-                        name, went[0] ? "1" : "0", changes[0], usage[0]));
-                return went[0] || changes[0] > 0 || usage[0] > 0;
+                        "Removed pathway {}: {} model, {} history row(s)",
+                        name, went[0] ? "1" : "0", history));
+                return went[0] || history > 0;
             }
         }
     }

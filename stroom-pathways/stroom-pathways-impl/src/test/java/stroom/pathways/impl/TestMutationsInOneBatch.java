@@ -18,6 +18,7 @@ package stroom.pathways.impl;
 
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.pathways.impl.PathwaySerde.StoredUsage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.AnyValue;
 import stroom.pathways.shared.otel.trace.KeyValue;
@@ -26,6 +27,7 @@ import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.SpanKind;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.MutationType;
+import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathUse;
 import stroom.pathways.shared.pathway.Pathway;
@@ -70,6 +72,10 @@ class TestMutationsInOneBatch {
     private static final String COMMIT = "Commit";
     private static final long BASE = 1_700_000_000_000_000_000L;
     private static final byte MUTATION_MARKER = 0;
+    private static final byte USAGE_MARKER = 1;
+    private static final byte NODE_MARKER = 2;
+    private static final byte TRACE_MARKER = 3;
+    private static final byte COUNTS_MARKER = 4;
 
     @Test
     void everyChangeIsKeptAndNumberedInOrder(@TempDir final Path dir) {
@@ -252,20 +258,154 @@ class TestMutationsInOneBatch {
         assertThat(last.getNodes())
                 .as("every node of the model, so a replay can say how busy any of them was")
                 .hasSize(3);
-        assertThat(last.getNodes().get(0).getTimesUsed())
+        final NodeUsage root = last.getNodes().stream()
+                .filter(node -> node.getNodeUuid().equals(readPathway(dir).getRoot().getUuid()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(root.getTimesUsed())
                 .as("the root, reached by all three traces applied by the time this was taken")
                 .isEqualTo(3);
+        assertThat(root.getLastUsedTime())
+                .as("a node used by the trace this reading belongs to keeps the time it was used")
+                .isNotNull();
     }
 
+    @Test
+    void aNodeIsNamedOnceHoweverManyChangesItTakes(@TempDir final Path dir) {
+        // Three traces, each teaching the model something about the same handful of nodes. What a
+        // change costs to store is mostly the node's uuid and its whole path from the root, so those
+        // are written once and pointed at afterwards.
+        final List<PathwayMutation> stored = applyBatch(dir,
+                trace("t1", "GET", 20, PING),
+                trace("t2", "POST", 5, PING, COMMIT),
+                trace("t3", "PUT", 9, PING, COMMIT));
+
+        // By the node and where it stood, because that pair is what the numbering is keyed on: the
+        // model's shape can move around a node, and a change has to say where it was at the time.
+        final long nodes = stored.stream()
+                .map(mutation -> mutation.getNodeUuid() + mutation.getNodePath())
+                .distinct()
+                .count();
+        final long[] rows = rowsByMarker(dir);
+        assertThat(rows[NODE_MARKER])
+                .as("one entry per node the changes name, not one per change")
+                .isEqualTo(nodes)
+                .isLessThan(stored.size());
+        assertThat(rows[TRACE_MARKER])
+                .as("one entry per trace that changed the model, not one per change")
+                .isEqualTo(3)
+                .isLessThan(stored.size());
+
+        assertThat(stored)
+                .allSatisfy(mutation -> {
+                    assertThat(mutation.getNodeUuid()).isNotBlank();
+                    assertThat(mutation.getNodePath()).isNotEmpty();
+                    assertThat(mutation.getTime()).isNotNull();
+                });
+        assertThat(stored.stream().map(PathwayMutation::getTraceId).distinct().toList())
+                .as("every change still says which trace made it")
+                .containsExactlyInAnyOrder("t1", "t2", "t3");
+    }
+
+    // Every marker counted on one pass, because each open of the environment maps a region of its own
+    // and a test that opens it once per question runs the JVM out of room.
+    private static long[] rowsByMarker(final Path dir) {
+        final long[] counts = new long[COUNTS_MARKER + 1];
+        try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
+            db.getMutations().iterate((key, val) -> counts[key.get(key.limit() - Long.BYTES - 1)]++);
+        }
+        return counts;
+    }
+
+    @Test
+    void aReadingNamesOnlyTheNodesThatMoved(@TempDir final Path dir) {
+        // The second trace runs the root and Ping but not Commit, so Commit is exactly as the reading
+        // before it left it and saying so again would be most of what the reading cost.
+        applyBatch(dir,
+                trace("t1", "GET", 20, PING, COMMIT),
+                trace("t2", "POST", 5, PING));
+
+        final Readings readings = readings(dir);
+        assertThat(readings.stored()).hasSize(2);
+        assertThat(readings.stored().get(0).moved())
+                .as("the first reading has nothing before it, so it names the whole model")
+                .hasSize(3);
+        assertThat(readings.stored().get(1).moved())
+                .as("only the root and Ping ran, so only those two moved")
+                .hasSize(2);
+
+        final PathwayUsage rebuilt = readings.rebuilt().get(1);
+        assertThat(rebuilt.getNodes())
+                .as("put back whole, so a replay can still say how busy every node was")
+                .hasSize(3);
+        final NodeUsage commit = rebuilt.getNodes().stream()
+                .filter(node -> node.getTimesUsed() == 1)
+                .findFirst()
+                .orElseThrow();
+        assertThat(commit.getLastUsedTime())
+                .as("a node the trace did not run keeps the time it was last used, not this one")
+                .isEqualTo(readings.rebuilt().get(0).getNodes().stream()
+                        .filter(node -> node.getNodeUuid().equals(commit.getNodeUuid()))
+                        .findFirst()
+                        .orElseThrow()
+                        .getLastUsedTime());
+    }
+
+    @Test
+    void aReadingPicksUpWhereTheLastHoldLeftOff(@TempDir final Path dir) {
+        // Two holds rather than one, so the second has to measure what moved against what the first
+        // wrote down rather than against something it still had in hand. Commit is run by the first
+        // trace and not by the second, so a hold that started from nothing would call Commit moved
+        // and the second reading would name three nodes instead of two.
+        hold(dir, trace("t1", "GET", 20, PING, COMMIT));
+        hold(dir, trace("t2", "POST", 5, PING));
+
+        final Readings readings = readings(dir);
+        assertThat(readings.stored()).hasSize(2);
+        assertThat(readings.stored().get(1).moved())
+                .as("the second hold measured against the counts the first left behind")
+                .hasSize(2);
+        assertThat(readings.rebuilt().get(1).getNodes())
+                .as("put back whole across the boundary between the two holds")
+                .hasSize(3);
+    }
+
+    private record Readings(List<StoredUsage> stored, List<PathwayUsage> rebuilt) {
+
+    }
+
+    // Both forms from one open of the environment: each open maps a region of its own and a test that
+    // opens it once per question runs the JVM out of room.
+    private static Readings readings(final Path dir) {
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+        final List<StoredUsage> stored = new ArrayList<>();
+        final List<PathwayUsage> rebuilt = new ArrayList<>();
+        try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
+            db.getMutations().iterate((key, val) -> {
+                if (key.get(key.limit() - Long.BYTES - 1) == USAGE_MARKER) {
+                    stored.add(serde.readUsage(val));
+                }
+            });
+            final List<String> names = new ArrayList<>();
+            db.getPathways().iterate((key, val) -> names.add(serde.readPathway(val).getName()));
+            final MutationLog log = new MutationLog(BYTE_BUFFERS, serde);
+            names.forEach(name ->
+                    rebuilt.addAll(log.readUsage(db.getMutations(), name.getBytes(StandardCharsets.UTF_8))));
+        }
+        return new Readings(stored, rebuilt);
+    }
+
+    // Read back through the log rather than straight off the table: a reading says only what moved
+    // since the one before it, so one row on its own is not a reading.
     private static List<PathwayUsage> readUsage(final Path dir) {
         final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
         final List<PathwayUsage> readings = new ArrayList<>();
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
-            db.getMutations().iterate((key, val) -> {
-                if (key.get(key.limit() - Long.BYTES - 1) != MUTATION_MARKER) {
-                    readings.add(serde.readUsage(val));
-                }
-            });
+            final List<String> names = new ArrayList<>();
+            db.getPathways().iterate((key, val) -> names.add(serde.readPathway(val).getName()));
+            final MutationLog log = new MutationLog(BYTE_BUFFERS, serde);
+            names.forEach(name ->
+                    readings.addAll(log.readUsage(db.getMutations(), name.getBytes(StandardCharsets.UTF_8))));
         }
         return readings;
     }
@@ -295,6 +435,13 @@ class TestMutationsInOneBatch {
     // Applies each trace through TraceProcessor on one writer, as a batch does, then reads back what
     // was stored rather than what was recorded in memory.
     private static List<PathwayMutation> applyBatch(final Path dir, final Trace... traces) {
+        hold(dir, traces);
+        return readStored(dir);
+    }
+
+    // One hold as the processor runs it: a writer opened, the traces applied, what the hold learnt
+    // written down, and the lot committed together.
+    private static void hold(final Path dir, final Trace... traces) {
         final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, false);
                 final LmdbWriter writer = db.createWriter()) {
@@ -311,19 +458,24 @@ class TestMutationsInOneBatch {
                         },
                         null);
             }
+            // A reading says only what moved, so where things stood has to outlive the hold that
+            // measured it. The processor does this at the end of every hold.
+            processor.writeHistories(writer, db);
             writer.commit();
         }
+    }
 
+    private static List<PathwayMutation> readStored(final Path dir) {
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+        // Read back through the log rather than straight off the table: a change names its node and
+        // the trace that made it by number, and only the log knows what those numbers stand for.
         final List<PathwayMutation> stored = new ArrayList<>();
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, true)) {
-            // The table holds a usage reading per changing trace as well as the changes themselves,
-            // marked apart in the key. Reading one as the other gets nonsense, so only the changes are
-            // taken here — which is what the prefix the application reads by does for it.
-            db.getMutations().iterate((key, val) -> {
-                if (key.get(key.limit() - Long.BYTES - 1) == MUTATION_MARKER) {
-                    stored.add(serde.readMutation(val));
-                }
-            });
+            final List<String> names = new ArrayList<>();
+            db.getPathways().iterate((key, val) -> names.add(serde.readPathway(val).getName()));
+            final MutationLog log = new MutationLog(BYTE_BUFFERS, serde);
+            names.forEach(name ->
+                    stored.addAll(log.read(db.getMutations(), name.getBytes(StandardCharsets.UTF_8))));
         }
         return stored;
     }

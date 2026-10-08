@@ -41,7 +41,6 @@ import stroom.util.shared.NullSafe;
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.Meter;
 import jakarta.inject.Inject;
-import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.io.IOException;
@@ -313,6 +312,7 @@ public class PathwaysProcessor {
                         }
                     }
                     // Once the hold's traces are in, before the commit that ends it.
+                    traceProcessor.writeHistories(writer, pathwaysDb);
                     traceProcessor.writeObservedValues(writer, pathwaysDb);
                     writer.commit();
                 }

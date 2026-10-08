@@ -28,7 +28,6 @@ import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.ConstraintValue;
 import stroom.pathways.shared.pathway.IntegerSet;
 import stroom.pathways.shared.pathway.MutationType;
-import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
 import stroom.pathways.shared.pathway.PathNode;
@@ -43,6 +42,7 @@ import stroom.util.shared.time.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -505,14 +505,15 @@ class TestPathwayNarrowing {
     }
 
     private static List<PathwayMutation> mutations(final Path dir) {
+        // Read back through the log rather than straight off the table: a change names its node and
+        // the trace that made it by number, and only the log knows what those numbers stand for.
         final List<PathwayMutation> found = new ArrayList<>();
         try (final PathwaysDb db = PathwaysDb.create(dir, BYTE_BUFFERS, false)) {
-            db.getMutations().iterate((key, value) -> {
-                // Usage rows share the table under a marker of their own and are not changes.
-                if (key.get(key.limit() - Long.BYTES - 1) == 0) {
-                    found.add(serde().readMutation(value));
-                }
-            });
+            final List<String> names = new ArrayList<>();
+            db.getPathways().iterate((key, value) -> names.add(serde().readPathway(value).getName()));
+            final MutationLog log = new MutationLog(BYTE_BUFFERS, serde());
+            names.forEach(name ->
+                    found.addAll(log.read(db.getMutations(), name.getBytes(StandardCharsets.UTF_8))));
         }
         return found;
     }

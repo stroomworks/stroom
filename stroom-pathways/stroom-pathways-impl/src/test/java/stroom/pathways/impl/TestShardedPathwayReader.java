@@ -108,7 +108,8 @@ class TestShardedPathwayReader {
                         Map.<StateType, MergeCompletionStrategy>of()),
                 BYTE_BUFFERS,
                 pathCreator);
-        reader = new ShardedPathwayReader(shardStore, new PathwaySerde(BYTE_BUFFER_FACTORY));
+        final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
+        reader = new ShardedPathwayReader(shardStore, serde, new MutationLog(BYTE_BUFFERS, serde));
     }
 
     @Test

@@ -249,9 +249,19 @@ public class PathwaysDb implements AutoCloseable {
          */
         public void iteratePrefix(final ByteBuffer prefix, final EntryConsumer consumer) {
             env.read(txn -> {
-                LmdbIterable.iterate(txn, dbi, LmdbKeyRange.builder().prefix(prefix).build(), consumer);
+                iteratePrefix(txn, prefix, consumer);
                 return null;
             });
+        }
+
+        /**
+         * As above, but on the caller's transaction. A caller part way through writing needs to see
+         * what it has already written and not yet committed, which a reader opened here would not.
+         */
+        public void iteratePrefix(final Txn<ByteBuffer> txn,
+                                  final ByteBuffer prefix,
+                                  final EntryConsumer consumer) {
+            LmdbIterable.iterate(txn, dbi, LmdbKeyRange.builder().prefix(prefix).build(), consumer);
         }
 
         public <R> R get(final Txn<ByteBuffer> txn,

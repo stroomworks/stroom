@@ -40,15 +40,12 @@ import stroom.pathways.shared.pathway.NamePathKey;
 import stroom.pathways.shared.pathway.NamesPathKey;
 import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
-import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.PathStep;
 import stroom.pathways.shared.pathway.PathUse;
 import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
-import stroom.pathways.shared.pathway.PathwayMutation;
-import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.pathways.shared.pathway.Regex;
 import stroom.pathways.shared.pathway.StringSet;
 import stroom.pathways.shared.pathway.StringValue;
@@ -92,8 +89,11 @@ public class PathwaySerde {
      * written by a build that laid the fields out differently cannot be told apart from a current one
      * by its contents alone. Raise this whenever a field is added, removed or moved.
      */
-    private static final byte MUTATION_VERSION = 1;
-    private static final byte USAGE_VERSION = 1;
+    private static final byte MUTATION_VERSION = 2;
+    private static final byte NODE_VERSION = 1;
+    private static final byte TRACE_VERSION = 1;
+    private static final byte USAGE_VERSION = 2;
+    private static final byte COUNTS_VERSION = 1;
     private static final byte OBSERVED_VALUES_VERSION = 1;
 
     /**
@@ -310,25 +310,69 @@ public class PathwaySerde {
      *                 maximum would have every write of every pathway allocate whatever the largest
      *                 one needed.
      */
-    public void writeMutation(final PathwayMutation mutation, final Consumer<ByteBuffer> consumer) {
+    public void writeMutation(final StoredChange change, final Consumer<ByteBuffer> consumer) {
         try (final ByteBufferPoolOutput output =
                 new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
             output.writeByte(MUTATION_VERSION);
-            output.writeLong(mutation.getSequence());
-            writeNanoTime(mutation.getTime(), output);
-            writeNanoTime(mutation.getTraceTime(), output);
-            output.writeVarInt(mutation.getSource() + MARKER_OFFSET, true);
-            output.writeString(mutation.getTraceId());
-            output.writeString(mutation.getSpanId());
-            writeStrings(mutation.getNodePath(), output);
-            output.writeString(mutation.getNodeUuid());
-            output.writeString(mutation.getConstraint());
-            output.writeByte(mutation.getType().getPrimitiveValue());
-            output.writeBoolean(mutation.isOptional());
-            writeNullableValue(mutation.getOldValue(), output);
-            writeNullableValue(mutation.getNewValue(), output);
+            output.writeLong(change.sequence());
+            output.writeVarLong(change.sequence() - change.traceSequence(), true);
+            output.writeVarLong(change.nodeId(), true);
+            output.writeString(change.spanId());
+            output.writeString(change.constraint());
+            output.writeByte(change.type().getPrimitiveValue());
+            output.writeBoolean(change.optional());
+            writeNullableValue(change.oldValue(), output);
+            writeNullableValue(change.newValue(), output);
             consumer.accept(output.getByteBuffer().flip());
         }
+    }
+
+    /**
+     * One node of one pathway, written once and referred to by number from every change that node
+     * ever receives. The path is held alongside the uuid rather than worked out from the model,
+     * because the model's shape can move around a node and a change has to say where the node stood
+     * when it was made.
+     */
+    public void writeNode(final StoredNode node, final Consumer<ByteBuffer> consumer) {
+        try (final ByteBufferPoolOutput output =
+                new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeByte(NODE_VERSION);
+            output.writeString(node.uuid());
+            writeStrings(node.path(), output);
+            consumer.accept(output.getByteBuffer().flip());
+        }
+    }
+
+    public StoredNode readNode(final ByteBuffer byteBuffer) {
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), NODE_VERSION, "pathway node", "mutations");
+        return new StoredNode(input.readString(), readStrings(input));
+    }
+
+    /**
+     * What one trace, or one run of the narrowing, was: written once however many changes it made.
+     * The span is not here because it moves from node to node within a trace, so it stays with the
+     * change that names the node.
+     */
+    public void writeTrace(final StoredTrace trace, final Consumer<ByteBuffer> consumer) {
+        try (final ByteBufferPoolOutput output =
+                new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeByte(TRACE_VERSION);
+            output.writeString(trace.traceId());
+            writeNanoTime(trace.time(), output);
+            writeNanoTime(trace.traceTime(), output);
+            output.writeVarInt(trace.source() + MARKER_OFFSET, true);
+            consumer.accept(output.getByteBuffer().flip());
+        }
+    }
+
+    public StoredTrace readTrace(final ByteBuffer byteBuffer) {
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), TRACE_VERSION, "pathway trace", "mutations");
+        return new StoredTrace(input.readString(),
+                readNanoTime(input),
+                readNanoTime(input),
+                input.readVarInt(true) - MARKER_OFFSET);
     }
 
     /**
@@ -372,24 +416,47 @@ public class PathwaySerde {
         return observed;
     }
 
-    public PathwayMutation readMutation(final ByteBuffer byteBuffer) {
+    public StoredChange readMutation(final ByteBuffer byteBuffer) {
         final Input input = new UnsafeByteBufferInput(byteBuffer);
         checkVersion(input.readByte(), MUTATION_VERSION, "pathway mutation", "mutations");
 
-        return new PathwayMutation(
-                input.readLong(),
-                readNanoTime(input),
-                readNanoTime(input),
-                input.readVarInt(true) - MARKER_OFFSET,
-                input.readString(),
-                input.readString(),
-                readStrings(input),
+        final long sequence = input.readLong();
+        return new StoredChange(
+                sequence,
+                sequence - input.readVarLong(true),
+                input.readVarLong(true),
                 input.readString(),
                 input.readString(),
                 MutationType.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValue(input.readByte()),
                 input.readBoolean(),
                 readNullableValue(input),
                 readNullableValue(input));
+    }
+
+    /**
+     * One change as it is stored: what it did, and numbers standing for the node it was made against
+     * and the trace that made it.
+     */
+    public record StoredChange(long sequence,
+                               long traceSequence,
+                               long nodeId,
+                               String spanId,
+                               String constraint,
+                               MutationType type,
+                               boolean optional,
+                               ConstraintValue oldValue,
+                               ConstraintValue newValue) {
+
+    }
+
+    /** A node of a pathway, as the changes against it refer to it. */
+    public record StoredNode(String uuid, List<String> path) {
+
+    }
+
+    /** What made a run of changes, as those changes refer to it. */
+    public record StoredTrace(String traceId, NanoTime time, NanoTime traceTime, int source) {
+
     }
 
     // A mutation that added something has no old value, and one that added a node has neither, so both
@@ -555,28 +622,84 @@ public class PathwaySerde {
         }
     }
 
-    public void writeUsage(final PathwayUsage usage, final Consumer<ByteBuffer> consumer) {
+    public void writeUsage(final StoredUsage usage, final Consumer<ByteBuffer> consumer) {
         try (final ByteBufferPoolOutput output =
                 new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
             output.writeByte(USAGE_VERSION);
-            output.writeLong(usage.getSequence());
-            writeList(usage.getNodes(), output, (node, out) -> {
-                out.writeString(node.getNodeUuid());
-                out.writeLong(node.getTimesUsed());
-                writeNullableNanoTime(node.getLastUsedTime(), out);
-            });
+            output.writeLong(usage.sequence());
+            writeNanoTime(usage.time(), output);
+            writeList(usage.moved(), output, this::writeCount);
+            writeList(usage.gone(), output, (id, out) -> out.writeVarLong(id, true));
             consumer.accept(output.getByteBuffer().flip());
         }
     }
 
-    public PathwayUsage readUsage(final ByteBuffer byteBuffer) {
+    public StoredUsage readUsage(final ByteBuffer byteBuffer) {
         final Input input = new UnsafeByteBufferInput(byteBuffer);
         checkVersion(input.readByte(), USAGE_VERSION, "pathway usage", "mutations");
         final long sequence = input.readLong();
-        return new PathwayUsage(sequence, readList(input, in -> new NodeUsage(
-                in.readString(),
-                in.readLong(),
-                readNullableNanoTime(in))));
+        final NanoTime time = readNanoTime(input);
+        return new StoredUsage(sequence,
+                time,
+                readList(input, this::readCount),
+                readList(input, in -> in.readVarLong(true)));
+    }
+
+    /**
+     * How busy every node of one pathway was when its last reading was taken. Not history: it is
+     * written over each time rather than added to, and is here only so that the next reading can say
+     * what has moved since without reading the readings back.
+     */
+    public void writeCounts(final List<StoredCount> counts, final Consumer<ByteBuffer> consumer) {
+        try (final ByteBufferPoolOutput output =
+                new ByteBufferPoolOutput(byteBufferFactory, MIN_BUFFER_SIZE, -1)) {
+            output.writeByte(COUNTS_VERSION);
+            writeList(counts, output, this::writeCount);
+            consumer.accept(output.getByteBuffer().flip());
+        }
+    }
+
+    public List<StoredCount> readCounts(final ByteBuffer byteBuffer) {
+        final Input input = new UnsafeByteBufferInput(byteBuffer);
+        checkVersion(input.readByte(), COUNTS_VERSION, "pathway counts", "mutations");
+        return readList(input, this::readCount);
+    }
+
+    // A node used by the trace this reading belongs to was used at that trace's own time, which the
+    // reading already carries, so the time itself is only written for a node that was not.
+    private void writeCount(final StoredCount count, final Output output) {
+        output.writeVarLong(count.nodeId(), true);
+        output.writeVarLong(count.timesUsed(), true);
+        output.writeBoolean(count.usedNow());
+        if (!count.usedNow()) {
+            writeNullableNanoTime(count.lastUsedTime(), output);
+        }
+    }
+
+    private StoredCount readCount(final Input input) {
+        final long nodeId = input.readVarLong(true);
+        final long timesUsed = input.readVarLong(true);
+        final boolean usedNow = input.readBoolean();
+        return new StoredCount(nodeId, timesUsed, usedNow, usedNow
+                ? null
+                : readNullableNanoTime(input));
+    }
+
+    /**
+     * One reading of how busy a pathway's nodes are, holding only the nodes that have moved since the
+     * reading before it. A trace runs part of a pathway and leaves the rest of it exactly as it was,
+     * so naming the rest again is most of what a reading would otherwise cost.
+     */
+    public record StoredUsage(long sequence, NanoTime time, List<StoredCount> moved, List<Long> gone) {
+
+    }
+
+    /**
+     * How busy one node is. {@code usedNow} says the time is the reading's own, which it is for every
+     * node a trace actually ran.
+     */
+    public record StoredCount(long nodeId, long timesUsed, boolean usedNow, NanoTime lastUsedTime) {
+
     }
 
     private void writeConstraint(final Constraint constraint, final Output output) {

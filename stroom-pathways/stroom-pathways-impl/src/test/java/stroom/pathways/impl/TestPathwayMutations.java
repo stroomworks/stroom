@@ -17,6 +17,7 @@
 package stroom.pathways.impl;
 
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
+import stroom.pathways.impl.PathwaySerde.StoredChange;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.AnyValue;
 import stroom.pathways.shared.otel.trace.KeyValue;
@@ -297,8 +298,9 @@ class TestPathwayMutations {
         mutator.process(trace("GET", PING), key(), null, quiet(), doc());
         final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
 
-        for (final PathwayMutation written : mutator.getMutations()) {
-            final PathwayMutation[] read = new PathwayMutation[1];
+        for (final PathwayMutation mutation : mutator.getMutations()) {
+            final StoredChange written = stored(mutation);
+            final StoredChange[] read = new StoredChange[1];
             serde.writeMutation(written, buffer -> {
                 final ByteBuffer copy = ByteBuffer.allocateDirect(buffer.remaining());
                 copy.put(buffer).flip();
@@ -306,6 +308,20 @@ class TestPathwayMutations {
             });
             assertThat(read[0]).isEqualTo(written);
         }
+    }
+
+    // A change as it is stored: the node it was made against and the trace that made it stand as
+    // numbers here, and what those numbers mean is the log's business rather than the serde's.
+    private static StoredChange stored(final PathwayMutation mutation) {
+        return new StoredChange(7L,
+                5L,
+                3L,
+                mutation.getSpanId(),
+                mutation.getConstraint(),
+                mutation.getType(),
+                mutation.isOptional(),
+                mutation.getOldValue(),
+                mutation.getNewValue());
     }
 
     private static MutationType methodChange(final NodeMutatorImpl mutator) {
@@ -331,7 +347,7 @@ class TestPathwayMutations {
         final PathwaySerde serde = new PathwaySerde(BYTE_BUFFER_FACTORY);
 
         final ByteBuffer[] written = new ByteBuffer[1];
-        serde.writeMutation(mutator.getMutations().getFirst(), buffer -> {
+        serde.writeMutation(stored(mutator.getMutations().getFirst()), buffer -> {
             final ByteBuffer copy = ByteBuffer.allocateDirect(buffer.remaining());
             copy.put(buffer).flip();
             written[0] = copy;

@@ -22,13 +22,10 @@ import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.pathway.ConstraintValue;
-import stroom.pathways.shared.pathway.NodeUsage;
 import stroom.pathways.shared.pathway.PathKey;
 import stroom.pathways.shared.pathway.PathNode;
 import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
-import stroom.pathways.shared.pathway.PathwayMutation;
-import stroom.pathways.shared.pathway.PathwayUsage;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.CanonicalSpanOrder;
 import stroom.planb.impl.dao.trace.IgnoredSpans;
@@ -44,11 +41,9 @@ import stroom.util.shared.Severity;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -258,7 +253,9 @@ public class TraceProcessor {
 
             // In the same transaction as the model change they describe, so the two cannot disagree
             // and a batch that fails leaves neither.
-            mutationLog.append(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source);
+            mutationLog.append(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source,
+                    histories.computeIfAbsent(pathKey.toString(),
+                            name -> mutationLog.history(writer, pathwaysDb, keyBytes)));
 
             // Held a day at a time, because that is the smallest step the narrowing moves the
             // window by. Gathered beside the model change it caused rather than in a pass of its own,
@@ -285,6 +282,11 @@ public class TraceProcessor {
     // reads and rewrites the model itself.
     private final Map<DayOfPathway, Map<String, Map<String, ConstraintValue>>> observedValues =
             new LinkedHashMap<>();
+
+    // What each model a hold touches needs for its history to be carried on: how its nodes are
+    // numbered, and how busy they were when the last reading was taken. Read once per model rather
+    // than once per trace, because neither moves except by this hold's own hand.
+    private final Map<String, PathwayHistory> histories = new LinkedHashMap<>();
 
     private void collectObservedValues(final LmdbWriter writer,
                                        final PathwaysDb pathwaysDb,
@@ -334,6 +336,17 @@ public class TraceProcessor {
         final Map<String, Map<String, ConstraintValue>> copy = new LinkedHashMap<>(source.size());
         source.forEach((nodeUuid, constraints) -> copy.put(nodeUuid, new LinkedHashMap<>(constraints)));
         return copy;
+    }
+
+    /**
+     * How busy each model's nodes were when its last reading was taken. Written once here rather than
+     * with every reading, because a reading says only what moved and the next one has to know where
+     * things stood. Nothing in a hold reads it back, so it is left until the hold is done with.
+     */
+    void writeHistories(final LmdbWriter writer, final PathwaysDb pathwaysDb) {
+        histories.forEach((name, history) -> mutationLog.writeCounts(writer, pathwaysDb,
+                name.getBytes(StandardCharsets.UTF_8), history));
+        histories.clear();
     }
 
     /**

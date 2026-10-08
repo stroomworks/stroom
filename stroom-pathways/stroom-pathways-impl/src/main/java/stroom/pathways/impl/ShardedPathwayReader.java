@@ -45,10 +45,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -67,13 +64,6 @@ import java.util.function.Function;
 @Singleton
 public class ShardedPathwayReader {
 
-    // Separates the pathway name from the rest of a mutation key. Must match TraceProcessor, which
-    // writes them.
-    static final char KEY_SEPARATOR = '\0';
-    // Usage readings sit under the same pathway key as its changes, marked apart so that
-    // reading one does not walk over the other.
-    static final char USAGE_SEPARATOR = '\1';
-
     private static final Comparator<PathwaySummary> BY_NAME =
             Comparator.comparing(PathwaySummary::getName, Comparator.nullsFirst(Comparator.naturalOrder()));
 
@@ -81,12 +71,15 @@ public class ShardedPathwayReader {
 
     private final PathwaysShardStore shardStore;
     private final PathwaySerde pathwaySerde;
+    private final MutationLog mutationLog;
 
     @Inject
     public ShardedPathwayReader(final PathwaysShardStore shardStore,
-                                final PathwaySerde pathwaySerde) {
+                                final PathwaySerde pathwaySerde,
+                                final MutationLog mutationLog) {
         this.shardStore = shardStore;
         this.pathwaySerde = pathwaySerde;
+        this.mutationLog = mutationLog;
     }
 
     public PathwayResultPage findPathways(final PathwaysDoc doc, final FindPathwayCriteria criteria) {
@@ -205,12 +198,9 @@ public class ShardedPathwayReader {
         final int shard = ShardKeyRouter.computeShardIndex(name, shardCountOf(settings));
         final List<PathwayUsage> usage = new ArrayList<>();
         readShard(doc, shard, db -> {
-            withKey(name + USAGE_SEPARATOR, prefix ->
-                    db.getMutations().iteratePrefix(prefix, (key, val) ->
-                            usage.add(pathwaySerde.readUsage(val))));
+            usage.addAll(mutationLog.readUsage(db.getMutations(), name.getBytes(StandardCharsets.UTF_8)));
             return null;
         });
-        usage.sort(Comparator.comparingLong(PathwayUsage::getSequence));
         return usage;
     }
 
@@ -230,9 +220,7 @@ public class ShardedPathwayReader {
         final int shard = ShardKeyRouter.computeShardIndex(name, shardCountOf(settings));
         final List<PathwayMutation> mutations = new ArrayList<>();
         readShard(doc, shard, db -> {
-            withKey(name + KEY_SEPARATOR, prefix ->
-                    db.getMutations().iteratePrefix(prefix, (key, val) ->
-                            mutations.add(pathwaySerde.readMutation(val))));
+            mutations.addAll(mutationLog.read(db.getMutations(), name.getBytes(StandardCharsets.UTF_8)));
             return null;
         });
 
