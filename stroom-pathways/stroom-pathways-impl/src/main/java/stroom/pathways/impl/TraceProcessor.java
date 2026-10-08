@@ -261,9 +261,10 @@ public class TraceProcessor {
             mutationLog.append(writer, pathwaysDb, keyBytes, nodeMutator.getMutations(), pathNode, source);
 
             // Held a day at a time, because that is the smallest step the narrowing moves the
-            // window by. Written beside the model change it caused rather than in a pass of its own,
-            // so the two go in together — though a hold big enough to pass the writer's commit
-            // threshold has already committed some of both by the time it ends.
+            // window by. Gathered beside the model change it caused rather than in a pass of its own,
+            // and written and committed together at the end of the hold, so a widening cannot reach
+            // disk without the value that taught it: the narrowing would otherwise take that widening
+            // straight back out as something the model holds but has not been given.
             // Filed under the day the trace ran, not the day it was applied. A queue that has been
             // held up hands over days of traces at once, and filing those under today would put
             // behaviour in the window that happened outside it and leave the days it did happen on
