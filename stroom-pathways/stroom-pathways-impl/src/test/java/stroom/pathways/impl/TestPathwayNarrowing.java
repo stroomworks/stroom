@@ -211,6 +211,25 @@ class TestPathwayNarrowing {
     }
 
     @Test
+    void aSetNarrowedToFewerValuesIsStillASet(@TempDir final Path tempDir) {
+        // Carried twice, then not at all, then once. The model names all three counts. Drop the day
+        // that carried it twice and the window has a nought and a one left, which it summarises as a
+        // span because that is how it summarises anything that orders.
+        applied(tempDir, List.of(
+                withChildren(0, "Ping", "Ping"),
+                withChildren(1),
+                withChildren(2, "Ping")));
+
+        assertThat(occurrences(tempDir, "Ping")).isEqualTo(new IntegerSet(Set.of(0, 1, 2)));
+
+        narrow(tempDir, day(1));
+
+        assertThat(occurrences(tempDir, "Ping"))
+                .as("the two values it was given are named, not handed back as the span they arrived in")
+                .isEqualTo(new IntegerSet(Set.of(0, 1)));
+    }
+
+    @Test
     void retiringANodeRetiresWhatRanUnderIt(@TempDir final Path tempDir) {
         // Only whatever reaches a node records how many times it carried its children, so a node under
         // one nothing reached has no account of itself at all. Left to its own evidence it would stay

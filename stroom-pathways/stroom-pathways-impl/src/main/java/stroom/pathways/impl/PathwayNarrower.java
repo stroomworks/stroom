@@ -27,9 +27,12 @@ import stroom.pathways.shared.pathway.AbstractValue;
 import stroom.pathways.shared.pathway.AnyTypeValue;
 import stroom.pathways.shared.pathway.Constraint;
 import stroom.pathways.shared.pathway.ConstraintValue;
+import stroom.pathways.shared.pathway.DoubleSet;
 import stroom.pathways.shared.pathway.IntegerRange;
+import stroom.pathways.shared.pathway.IntegerSet;
 import stroom.pathways.shared.pathway.IntegerValue;
 import stroom.pathways.shared.pathway.LongRange;
+import stroom.pathways.shared.pathway.LongSet;
 import stroom.pathways.shared.pathway.MutationType;
 import stroom.pathways.shared.pathway.NanoTimeRange;
 import stroom.pathways.shared.pathway.NanoTimeValue;
@@ -38,6 +41,7 @@ import stroom.pathways.shared.pathway.PathUse;
 import stroom.pathways.shared.pathway.Paths;
 import stroom.pathways.shared.pathway.Pathway;
 import stroom.pathways.shared.pathway.PathwayMutation;
+import stroom.pathways.shared.pathway.StringSet;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.trace.NanoTimeUtil;
 import stroom.planb.impl.dao.trace.PathwaysDb;
@@ -505,8 +509,10 @@ public class PathwayNarrower {
             case final AbstractRange<?> range -> covers(range.getMin(), range.getMax(), seen)
                     ? seen
                     : null;
-            case final AbstractSet<?> set -> narrowedToOneOf(set.getSet(), seen);
-            case final AbstractValue<?> value -> narrowedToOneOf(Set.of(value.getValue()), seen);
+            case final AbstractSet<?> set -> narrowedToSome(set, seen);
+            // One value is as narrow as a constraint goes. Whatever the window admitted, either this
+            // admits it too and nothing has changed, or it does not and there is nothing to narrow to.
+            case final AbstractValue<?> ignored -> null;
             default -> null;
         };
     }
@@ -520,11 +526,42 @@ public class PathwayNarrower {
     // 1, 35 and 39 seen at 1 and at 39 come back as 1 to 39, and holding the model to that would have
     // it start admitting the thirty seven numbers between — a widening, done by the pass that exists
     // to undo widenings.
-    private static ConstraintValue narrowedToOneOf(final Set<?> held, final ConstraintValue seen) {
-        final Set<Object> values = admitted(seen, held.size());
-        return values != null && held.containsAll(values) && values.size() < held.size()
-                ? seen
-                : null;
+    // Kept in the shape the model already holds rather than the shape the window was summarised in.
+    // The account kept beside the model writes whole numbers down as a range whether or not the model
+    // holds a set, so handing that account straight back would turn a set into a range on its way
+    // through, which says the same thing about the values it names and a different thing about the
+    // gaps between them.
+    private static ConstraintValue narrowedToSome(final AbstractSet<?> held, final ConstraintValue seen) {
+        final Set<?> values = held.getSet();
+        final Set<Object> admitted = admitted(seen, values.size());
+        if (admitted == null || !values.containsAll(admitted) || admitted.size() >= values.size()) {
+            return null;
+        }
+        // Taken in the order the model holds them rather than the order they were seen, so a set that
+        // loses one value still reads as the set it was less that value.
+        final Set<Object> kept = new LinkedHashSet<>();
+        values.forEach(value -> {
+            if (admitted.contains(value)) {
+                kept.add(value);
+            }
+        });
+        return sameShape(held, kept);
+    }
+
+    private static ConstraintValue sameShape(final AbstractSet<?> held, final Set<Object> kept) {
+        return switch (held) {
+            case final IntegerSet ignored -> new IntegerSet(asSet(kept));
+            case final LongSet ignored -> new LongSet(asSet(kept));
+            case final DoubleSet ignored -> new DoubleSet(asSet(kept));
+            case final StringSet ignored -> new StringSet(asSet(kept));
+            default -> null;
+        };
+    }
+
+    // Safe because every value came out of the set being rebuilt, so each is already of its type.
+    @SuppressWarnings("unchecked")
+    private static <T> Set<T> asSet(final Set<Object> values) {
+        return (Set<T>) values;
     }
 
     // Every value something admits, or null where that cannot be listed. A span wider than the limit
