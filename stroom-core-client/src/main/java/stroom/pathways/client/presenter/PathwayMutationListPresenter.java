@@ -38,6 +38,8 @@ import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
+import com.google.gwt.dom.client.Document;
+import com.google.gwt.dom.client.Element;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.client.ui.InsertPanel;
 import com.google.inject.Inject;
@@ -162,6 +164,16 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
             return new TraceHistogram(false, 0, 0, 0, 0, Collections.emptyList(), false);
         }
 
+        // Up to now rather than up to the last change, so a model nothing has taught for an hour reads
+        // as an hour of quiet rather than as one that was busy right to the edge of the panel. How long
+        // ago a model last moved is the thing worth seeing here, and ending at its last change is the
+        // one way of drawing it that cannot show that at all.
+        //
+        // Still the later of the two, because a change made on another node can carry a clock a little
+        // ahead of this one and a panel that ended before its own last bar would be worse than one that
+        // ends a moment early.
+        to = Math.max(to, System.currentTimeMillis());
+
         // Always the same number of slices, however little time the history covers. Fitting the
         // slices to the history instead would leave a model taught by a single trace with one slice,
         // drawn as a bar across the whole panel — which reads as a model changing steadily throughout
@@ -223,26 +235,42 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
     }
 
     // The trace nearest the moment scrubbed to. Nearest rather than the one before it, so dragging to
-    // the far left or right lands on the first or last trace rather than on nothing.
+    // the far left lands on the first trace rather than on nothing.
     private void selectNearest(final Long ms) {
         if (ms == null) {
             return;
         }
         MutationRow nearest = null;
         long best = Long.MAX_VALUE;
+        long latest = Long.MIN_VALUE;
         for (final MutationRow row : dataProvider.getList()) {
             if (row.isTrace() && row.getTime() != null) {
-                final long away = Math.abs(row.getTime().toEpochMillis() - ms);
+                final long at = row.getTime().toEpochMillis();
+                latest = Math.max(latest, at);
+                final long away = Math.abs(at - ms);
                 if (away < best) {
                     best = away;
                     nearest = row;
                 }
             }
         }
+
+        // The plot runs to now, and the stretch past the last change is time in which nothing happened
+        // to the model. There is no change to be looking at there, so nothing is picked and the model
+        // is shown as it stands — which is what the tab opens on. Holding the last change instead would
+        // say the reader was looking at a moment they had dragged well past.
+        if (ms > latest) {
+            if (selectionModel.getSelected() != null) {
+                releaseKeyboard();
+                selectionModel.clear();
+            }
+            return;
+        }
         // Only where it has moved. A drag reports every pixel it crosses, and each of those lands on
         // the same trace many times over — telling the view around this one each time would wind the
         // model back to where it already is, over and over, while the reader is still dragging.
         if (nearest != null && !Objects.equals(nearest, selectionModel.getSelected())) {
+            releaseKeyboard();
             selectionModel.setSelected(nearest);
         }
     }
@@ -362,9 +390,28 @@ public class PathwayMutationListPresenter extends MyPresenterWidget<PagerView> {
 
         // The single-select form. Handed a flag instead, each step would add to the selection rather
         // than move it, and the list would fill up with everything stepped through.
+        releaseKeyboard();
         selectionModel.setSelected(next);
         return true;
     }
+
+    // Clicking a row focuses it so the table can then be worked by keyboard, and the browser draws
+    // its own ring around whatever has focus. A selection made from the plot or the step buttons is
+    // not the reader working the table, so the focus is given up rather than left on a row the
+    // selection has moved off — which shows as a ring flickering from row to row. Clicking a row
+    // takes it back.
+    private void releaseKeyboard() {
+        final Element focused = activeElement(Document.get());
+        if (focused != null && dataGrid.getElement().isOrHasChild(focused)) {
+            focused.blur();
+        }
+    }
+
+    // Which element has focus. Not on Document in this version of GWT, and the one helper that has it
+    // is not visible outside its own package.
+    private static native Element activeElement(Document doc) /*-{
+        return doc.activeElement;
+    }-*/;
 
     /**
      * When the selected row happened, or null where nothing is selected. What the model is being

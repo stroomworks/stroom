@@ -62,6 +62,12 @@ public class HistogramWidget extends Composite {
     // leaves the gesture off altogether rather than moving a line nothing is listening to.
     private Consumer<Long> scrubHandler;
     private boolean scrubbing;
+    // Where the reader left the line, which is the moment being looked at rather than the change being
+    // shown. The two are not the same: a change is a moment, and so is the stretch between two of
+    // them, throughout which the model stood exactly as the earlier one left it. A line dropped in a
+    // gap is pointing at something real, so it is left there until a selection made somewhere other
+    // than the plot says otherwise.
+    private Long scrubbedMs;
     // Whether the labels along the bottom say which day as well as what time. Off, because a window of
     // a few minutes is what this was built for and a date on both ends of that is two thirds of the
     // label saying the same thing. On where the bars cover a model's whole life, which runs to days.
@@ -117,6 +123,11 @@ public class HistogramWidget extends Composite {
     private void scrub(final int x) {
         final Long at = timeAt(x);
         if (at != null) {
+            // Put where the pointer is before anything is told about it, so the line travels with the
+            // hand. Telling first and waiting to be told back would move it a change at a time, which
+            // is the hopping this avoids — and the sparser a model's history, the further each hop.
+            scrubbedMs = at;
+            place(marker());
             scrubHandler.accept(at);
         }
     }
@@ -143,10 +154,20 @@ public class HistogramWidget extends Composite {
     }
 
     public void setSelectedTime(final Long selectedMs) {
-        if (Objects.equals(this.selectedMs, selectedMs)) {
+        // While the reader is dragging, the line belongs to the pointer. The selection follows the
+        // drag and reports back here a change at a time, and letting that place the line would undo
+        // the following.
+        if (scrubbing) {
+            this.selectedMs = selectedMs;
+            return;
+        }
+        if (Objects.equals(this.selectedMs, selectedMs) && scrubbedMs == null) {
             return;
         }
         this.selectedMs = selectedMs;
+        // A selection made anywhere but the plot — a row picked, a step taken, a pathway opened — puts
+        // the line back on the change it names.
+        scrubbedMs = null;
         // Moved rather than drawn again. Drawing again would put a new line on the plot every time,
         // and a line that has only just appeared has nowhere to slide from — it would jump to each
         // new place instead of travelling there.
@@ -173,14 +194,17 @@ public class HistogramWidget extends Composite {
     // Measured against the whole span rather than snapped to a bar, so the line stands where the
     // moment actually was and moves by what the reader picked rather than a bar at a time.
     private double position() {
-        if (selectedMs == null
+        final Long at = scrubbedMs != null
+                ? scrubbedMs
+                : selectedMs;
+        if (at == null
             || data == null
             || !data.isAvailable()
-            || selectedMs < data.getFromMs()
-            || selectedMs > data.getToMs()) {
+            || at < data.getFromMs()
+            || at > data.getToMs()) {
             return -1D;
         }
-        return (selectedMs - data.getFromMs()) * 100D / Math.max(1L, data.getToMs() - data.getFromMs());
+        return (at - data.getFromMs()) * 100D / Math.max(1L, data.getToMs() - data.getFromMs());
     }
 
     private Element marker() {
@@ -244,6 +268,9 @@ public class HistogramWidget extends Composite {
         }
         this.data = data;
         this.rendered = true;
+        // Bars over a different stretch of time, so where the reader last left the line says nothing
+        // about this one.
+        scrubbedMs = null;
         render();
     }
 
