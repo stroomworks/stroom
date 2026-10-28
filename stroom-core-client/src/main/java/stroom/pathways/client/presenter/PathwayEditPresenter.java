@@ -715,10 +715,6 @@ public class PathwayEditPresenter
 
     private void showSettledConstraints() {
         final PathNode node = pathwayTreePresenter.getSelectionModel().getSelectedObject();
-        // Nothing else on the screen says which node these are for, and the drawing they were clicked
-        // on may have been scrolled away from since. The path ends with the node's own name, so one
-        // line says both what it is and where it sits, whichever tab is up.
-        getView().setNodePath(path(node));
         constraintListPresenter.setData(node,
                 readOnly,
                 mutationListPresenter.getSelectedConstraints(NullSafe.get(node, PathNode::getNodePath)));
@@ -746,13 +742,6 @@ public class PathwayEditPresenter
      * copy — constraints are edited straight into it, and a shared one would carry those edits into
      * every other screen showing the same pathway whether or not they were ever saved.
      */
-    // Where a node sits in the model, root first, written the way the changes list writes it.
-    private static String path(final PathNode node) {
-        return node == null
-                ? ""
-                : String.join(" / ", NullSafe.list(node.getNodePath()));
-    }
-
     public void read(final PathwaysDoc pathwaysDoc, final String name, final boolean readOnly) {
         this.readOnly = readOnly;
         this.docRef = pathwaysDoc.asDocRef();
@@ -934,8 +923,6 @@ public class PathwayEditPresenter
         /**
          * Which node the constraints below belong to, or nothing where none is picked out.
          */
-        void setNodePath(String path);
-
         LinkTabBar getTabBar();
 
         LayerContainer getLayerContainer();

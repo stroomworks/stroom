@@ -24,28 +24,6 @@
     --pathway-step-ease: 0.6s;
 }
 
-/* Which node the constraints under it belong to. Inside the box rather than under the panel's label,
- * because anything put between a label and the thing it labels pushes that thing down — and this panel
- * is read beside the drawing, which would then no longer be level with it.
- *
- * The path, root first, which ends in the node's own name: one line saying both what it is and where
- * it sits. Held back, because it is there to say what the table below is about rather than to be read
- * in itself. */
-.pathway-node-path {
-    padding: 4px 4px 0px;
-    color: var(--text-color--disabled);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* An empty path still makes a line, so the panel under it sits at the same height whether a node is
-   picked out or not. A zero width space rather than a height: the box is border-box here, so a height
-   would have to know what the padding above is and would be wrong the moment that changed. */
-.pathway-node-path:empty::before {
-    content: "\200b";
-}
-
 .pathway {
     position: relative;
     overflow: auto;

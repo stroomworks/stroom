@@ -18,7 +18,6 @@ package stroom.pathways.client.view;
 
 import stroom.pathways.client.presenter.PathwayEditPresenter.PathwayEditView;
 import stroom.svg.client.Preset;
-import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.form.client.FormGroup;
@@ -28,7 +27,6 @@ import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FlowPanel;
-import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.MySplitLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
@@ -58,8 +56,6 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     LinkTabBar nodeTabBar;
     @UiField
     LayerContainer nodeLayerContainer;
-    @UiField
-    Label nodePath;
     @UiField
     LinkTabBar tabBar;
     @UiField
@@ -133,11 +129,6 @@ public class PathwayEditViewImpl extends ViewImpl implements PathwayEditView {
     @Override
     public LayerContainer getLayerContainer() {
         return layerContainer;
-    }
-
-    @Override
-    public void setNodePath(final String path) {
-        nodePath.setText(NullSafe.string(path));
     }
 
     @Override

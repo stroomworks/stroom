@@ -27,12 +27,8 @@
                         <g:FlowPanel styleName="max dock-container-vertical">
                             <tab:LinkTabBar ui:field="nodeTabBar"
                                             styleName="dock-min linkTabBar pathway-tabs"/>
-                            <g:FlowPanel
-                                    styleName="max dock-container-vertical form-control-background form-control-border">
-                                <g:Label ui:field="nodePath" styleName="dock-min pathway-node-path"/>
-                                <tab:LayerContainerImpl ui:field="nodeLayerContainer"
-                                                        styleName="dock-max"/>
-                            </g:FlowPanel>
+                            <tab:LayerContainerImpl ui:field="nodeLayerContainer"
+                                                    styleName="dock-max form-control-background form-control-border"/>
                         </g:FlowPanel>
                     </g:center>
                 </g:MySplitLayoutPanel>

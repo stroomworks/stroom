@@ -92,18 +92,8 @@ public class PathwaysSplitPresenter extends DocPresenter<PathwaysSplitView, Path
 
     private void showSettledNode() {
         final PathNode node = pathwayTreePresenter.getSelectionModel().getSelectedObject();
-        // The drawing may have been scrolled away from since the node was clicked, so the path says
-        // both what it is and where it sits.
-        getView().setNodePath(path(node));
         nodeInfoPresenter.setData(node,
                 pathwayTreePresenter.getChange(NullSafe.get(node, PathNode::getNodePath)));
-    }
-
-    // Where a node sits in the model, root first, written the way the changes list writes it.
-    private static String path(final PathNode node) {
-        return node == null
-                ? ""
-                : String.join(" / ", NullSafe.list(node.getNodePath()));
     }
 
     @Override
@@ -124,9 +114,6 @@ public class PathwaysSplitPresenter extends DocPresenter<PathwaysSplitView, Path
         void setTable(View view);
 
         void setTree(View view);
-
-        /** Which node the panel beside the drawing is about, or nothing where none is picked out. */
-        void setNodePath(String path);
 
         LinkTabBar getNodeTabBar();
 

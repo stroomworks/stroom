@@ -21,7 +21,6 @@ import stroom.widget.tab.client.view.LinkTabBar;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -37,8 +36,6 @@ public class PathwaysSplitViewImpl
     SimplePanel dataGrid;
     @UiField
     SimplePanel tree;
-    @UiField
-    Label nodePath;
     @UiField
     LinkTabBar nodeTabBar;
     @UiField
@@ -59,11 +56,6 @@ public class PathwaysSplitViewImpl
     @Override
     public void setTree(final View view) {
         tree.setWidget(view.asWidget());
-    }
-
-    @Override
-    public void setNodePath(final String path) {
-        nodePath.setText(path);
     }
 
     @Override

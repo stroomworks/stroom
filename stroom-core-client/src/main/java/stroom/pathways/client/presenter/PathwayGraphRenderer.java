@@ -871,14 +871,14 @@ class PathwayGraphRenderer implements PathwayRenderer {
 
     private void appendScale(final HtmlBuilder hb, final boolean visible) {
         hb.div(key -> {
-            key.div("Last updated", Attribute.className("pathway-graph-key-title"));
+//            key.div("Last updated", Attribute.className("pathway-graph-key-title"));
             BANDS.forEach(band -> appendSwatch(key, band.colour, band.ring, band.label));
             appendSwatch(key, NEVER_CHANGED, NEVER_CHANGED_RING, "never changed");
-            key.div("Size shows how many times the node has changed",
-                    Attribute.className("pathway-graph-key-note"));
-            key.div("Line thickness shows how much goes through it, and its colour when that last "
-                    + "happened, on the same scale",
-                    Attribute.className("pathway-graph-key-note"));
+//            key.div("Size shows how many times the node has changed",
+//                    Attribute.className("pathway-graph-key-note"));
+//            key.div("Line thickness shows how much goes through it, and its colour when that last "
+//                    + "happened, on the same scale",
+//                    Attribute.className("pathway-graph-key-note"));
         }, Attribute.className(visible
                 ? "pathway-graph-key " + KEY_SHOWN_CLASS
                 : "pathway-graph-key"));
