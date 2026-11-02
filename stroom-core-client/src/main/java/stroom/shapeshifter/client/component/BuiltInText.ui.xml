@@ -1,0 +1,19 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The dialog that loads a built-in text into one of a step's texts (built-in-text.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:form="urn:import:stroom.widget.form.client">
+    <g:FlowPanel styleName="max form built-in-text">
+        <form:FormGroup identity="builtInTextChoice"
+                        label="Built-in text"
+                        helpText="The built-in texts whose variables this text may use. Loading one replaces this document's own words for this text; where it is this text's own built-in, the document goes back to following the built-in.">
+            <l:SelectionBox ui:field="choice" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup identity="builtInTextPreview"
+                        label="Text"
+                        addStyleNames="dock-max">
+            <form:TextArea ui:field="preview" readOnly="true" addStyleNames="w-100 h-100 built-in-text__preview"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

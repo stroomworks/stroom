@@ -1,0 +1,23 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A grant to one parked session (A77): tokens over its life, minutes for each run (design 06 A145) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:t="urn:import:stroom.widget.text.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:v="urn:import:stroom.widget.valuespinner.client">
+    <g:FlowPanel styleName="max form grant-editor">
+        <form:FormGroup identity="shapeshifterAiGrantSoFar" label="So far">
+            <t:Label ui:field="soFar" styleName="grant-editor__so-far"/>
+        </form:FormGroup>
+        <form:FormGroup identity="shapeshifterAiGrantTokens"
+                        label="More tokens"
+                        helpText="Added to what this session may spend over its whole life. The document's budget is not changed.">
+            <v:ValueSpinner ui:field="tokens" addStyleNames="allow-focus grant-editor__tokens"/>
+        </form:FormGroup>
+        <form:FormGroup identity="shapeshifterAiGrantMinutes"
+                        label="More minutes for each run"
+                        helpText="Added to how long each run of this session may take. Time is counted per run: a run carried on has its whole time budget again, so this matters only to a single run that needs longer than the budget.">
+            <v:ValueSpinner ui:field="minutes" addStyleNames="allow-focus grant-editor__minutes"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

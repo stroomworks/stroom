@@ -1,0 +1,118 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The Shapeshifter AI document's Learn tab: the flow chart, the selected node beside it, and the flow as text
+     beneath (learn-tab.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:v="urn:import:stroom.widget.valuespinner.client"
+             xmlns:d="urn:import:stroom.widget.duration.client"
+             xmlns:dd="urn:import:stroom.widget.dropdowntree.client"
+             xmlns:split="urn:import:stroom.widget.layout.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
+    <g:FlowPanel styleName="max dock-container-vertical learn-tab">
+        <!-- The process the document runs, at the top of each stage's tab, this one marked (A98) -->
+        <s:ProcessHeader ui:field="processHeader" addStyleNames="dock-min learn-tab__header"/>
+        <split:SplitPane vertical="true" thin="true" sizes="*, 170px"
+                         names="Flow, Flow as text" addStyleNames="dock-max">
+            <split:SplitPane thin="true" sizes="*, 480px"
+                             names="Flow chart, Selected node" addStyleNames="max">
+                <g:SimplePanel styleName="max">
+                    <s:FlowChart ui:field="chart"/>
+                </g:SimplePanel>
+                <g:FlowPanel styleName="max form form-padding learn-tab__side">
+                    <b:Toolbar name="Step actions" addStyleNames="learn-tab__actions">
+                        <b:ToolbarButton ui:field="addStep" svg="ADD" title="Add step"/>
+                        <b:ToolbarButton ui:field="copyStep" svg="COPY" title="Copy step"/>
+                        <b:ToolbarButton ui:field="deleteStep" svg="DELETE" title="Delete step"/>
+                        <b:ToolbarButton ui:field="moveUp" svg="UP" title="Move step up"/>
+                        <b:ToolbarButton ui:field="moveDown" svg="DOWN" title="Move step down"/>
+                        <b:ToolbarSeparator/>
+                        <b:ToolbarButton ui:field="loadExample" svg="OPEN" title="Load an example" opensMenu="true"/>
+                    </b:Toolbar>
+
+                    <g:FlowPanel ui:field="nothingIntro">
+                        <tx:Label styleName="learn-tab__heading" text="No step selected"/>
+                        <tx:Label styleName="learn-tab__note"
+                                  text="Click a step on the chart to edit it here, Start for the session's settings and the texts every question shares, or add a step."/>
+                    </g:FlowPanel>
+                    <g:FlowPanel ui:field="startIntro">
+                        <tx:Label styleName="learn-tab__heading" text="Start"/>
+                        <tx:Label styleName="learn-tab__note"
+                                  text="A session opens for a learner nothing serves, with a sample of the stream in hand. These are the session's own settings: the model it talks to, the instructions every question carries, what it may spend, and the texts every question shares."/>
+                    </g:FlowPanel>
+                    <g:FlowPanel ui:field="endIntro">
+                        <tx:Label styleName="learn-tab__heading" text="End"/>
+                        <tx:Label styleName="learn-tab__note"
+                                  text="The fragment is bound as the learner's binding, the corpus is written, and the stream and every stream that waited on it are served. A session also ends by an exit: park, for a person to grant more, answer a turn or send it to the exhaustion step; give-up, the learner given up and its streams errored, which is a parser's default."/>
+                    </g:FlowPanel>
+                    <g:FlowPanel ui:field="stepIntro">
+                        <tx:Label ui:field="stepHeading" styleName="learn-tab__heading"/>
+                    </g:FlowPanel>
+                    <tx:Label ui:field="stepProblem" styleName="learn-tab__problem" visible="false"/>
+
+                    <g:FlowPanel ui:field="startSection">
+                        <form:FormGroup identity="shapeshifterAiLearningMode"
+                                        label="Learning mode"
+                                        helpText="Whether a session may call the model at all. Disabled by default; Shapeshifter AI is opt-in per document. Disabled still serves the learners already bound, and the streams of a learner nothing serves wait.">
+                            <l:SelectionBox ui:field="learningMode" addStyleNames="w-100"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterLearningModel"
+                                        label="Model"
+                                        helpText="The OpenAI-compatible model the session calls.">
+                            <dd:DropDownBox ui:field="model"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterAiInstructions"
+                                        label="Instructions"
+                                        helpText="Free-text instructions added to every question put to the model, through the system text.">
+                            <form:TextArea ui:field="instructions" addStyleNames="w-100 learn-tab__instructions"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterAiMaxAttempts"
+                                        label="Default candidates"
+                                        helpText="How many answers a step asks for before it is spent, where the step sets no candidates of its own.">
+                            <v:ValueSpinner ui:field="maxAttempts" addStyleNames="value-spinner--narrow"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterAiAttemptBudgetMs"
+                                        label="Time budget"
+                                        controlNames="Amount, Unit"
+                                        helpText="Wall-clock budget for one run of a session, every question in it included: a session carried on again, after a person grants it more or a node dies, has the whole of it again. Mandatory; there is no unlimited setting. A run that runs out parks the session for a person.">
+                            <d:DurationPicker ui:field="attemptBudget"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterAiTokenBudget"
+                                        label="Token budget"
+                                        helpText="Token budget for a whole session. Zero means unlimited. A session that runs out parks for a person, who may grant it more.">
+                            <v:ValueSpinner ui:field="tokenBudget" addStyleNames="learn-tab__number"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterAiSampleSizeLimit"
+                                        label="Sample size limit (bytes)"
+                                        helpText="The largest sample of the stream shown to the model.">
+                            <v:ValueSpinner ui:field="sampleSizeLimit" addStyleNames="learn-tab__number"/>
+                        </form:FormGroup>
+                        <form:FormGroup identity="shapeshifterAiMaxDeferralAgeMs"
+                                        label="Maximum deferral age"
+                                        controlNames="Amount, Unit"
+                                        helpText="How long a stream may wait on a learning session before it is raised in the Supervisor's backlog. It goes on waiting; this is the flag that says somebody should look.">
+                            <d:DurationPicker ui:field="maxDeferralAge"/>
+                        </form:FormGroup>
+                    </g:FlowPanel>
+
+                    <s:FlowStepEditor ui:field="stepEditor"/>
+                    <tx:Label ui:field="stepDefaults" styleName="learn-tab__note"/>
+
+                    <g:FlowPanel ui:field="textSection">
+                        <tx:Label styleName="learn-tab__heading learn-tab__heading--section" text="Question text"/>
+                        <g:FlowPanel ui:field="texts"/>
+                    </g:FlowPanel>
+                </g:FlowPanel>
+            </split:SplitPane>
+            <g:FlowPanel styleName="max learn-tab__text-pane">
+                <tx:Label styleName="learn-tab__note"
+                          text="The flow as text: one line per step, in the grammar import, export and the harness carry. Edit it and the chart follows; a line that does not parse is reported and nothing changes until it does."/>
+                <tx:Label ui:field="flowProblem" styleName="learn-tab__problem" visible="false"/>
+                <form:TextArea ui:field="flowText" ariaLabel="The flow as text" addStyleNames="learn-tab__flow-text"/>
+            </g:FlowPanel>
+        </split:SplitPane>
+    </g:FlowPanel>
+</ui:UiBinder>

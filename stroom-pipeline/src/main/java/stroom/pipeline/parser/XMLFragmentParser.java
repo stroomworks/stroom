@@ -43,6 +43,7 @@ import stroom.pipeline.textconverter.TextConverterStore;
 import stroom.pipeline.xml.converter.ParserFactory;
 import stroom.svg.shared.SvgImage;
 import stroom.util.io.PathCreator;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 
 import jakarta.inject.Inject;
@@ -50,6 +51,7 @@ import jakarta.inject.Provider;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
 
+import java.util.UUID;
 import java.util.function.Consumer;
 
 @ConfigurableElement(
@@ -122,7 +124,7 @@ public class XMLFragmentParser extends AbstractParser implements SupportsCodeInj
         // TODO: We need to use the cached TextConverter service ideally but
         // before we do it needs to be aware cluster wide when TextConverter has
         // been updated.
-        TextConverterDoc tc = loadTextConverterDoc();
+        TextConverterDoc tc = configuration();
         if (!TextConverterType.XML_FRAGMENT.equals(tc.getConverterType())) {
             throw ProcessException.create("The assigned text converter is not an XML fragment.");
         }
@@ -198,6 +200,23 @@ public class XMLFragmentParser extends AbstractParser implements SupportsCodeInj
             defaultValue = "false", displayPriority = 3)
     public void setSuppressDocumentNotFoundWarnings(final boolean suppressDocumentNotFoundWarnings) {
         this.suppressDocumentNotFoundWarnings = suppressDocumentNotFoundWarnings;
+    }
+
+    /// The configuration this parser is to run with: the document it references, or the code it was
+    /// given where it references nothing (§12 item 1). A candidate can then be run before it has been
+    /// written anywhere, which is what judging one before promoting it requires. It is the code only
+    /// where the element names no document at all: a name pattern that has stopped resolving is a fault
+    /// to be told about, not a gap for the editor's pane to fill silently.
+    private TextConverterDoc configuration() {
+        if (injectedCode != null && textConverterRef == null && NullSafe.isBlankString(namePattern)) {
+            return TextConverterDoc.builder()
+                    .uuid(UUID.randomUUID().toString())
+                    .name(getElementId().getId())
+                    .converterType(TextConverterType.XML_FRAGMENT)
+                    .data(injectedCode)
+                    .build();
+        }
+        return loadTextConverterDoc();
     }
 
     public TextConverterDoc loadTextConverterDoc() {

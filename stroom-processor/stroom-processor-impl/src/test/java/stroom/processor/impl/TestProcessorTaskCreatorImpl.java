@@ -25,6 +25,7 @@ import stroom.processor.shared.Processor;
 import stroom.processor.shared.ProcessorFilter;
 import stroom.processor.shared.ProcessorFilterTracker;
 import stroom.processor.shared.ProcessorFilterTrackerStatus;
+import stroom.processor.shared.QueryData;
 import stroom.processor.shared.TaskStatus;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionOperator.Op;
@@ -48,7 +49,9 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -158,6 +161,46 @@ class TestProcessorTaskCreatorImpl {
         taskCreator.exec();
 
         verify(processorFilterService, never()).fetch(third.getId());
+    }
+
+    /// Design 06 A109: a deferred task counts against its own filter's allowance, but it is no node's to
+    /// claim, so it spends nothing of the run's budget its profile shares: a learner's backlog must not
+    /// stop the profile's other feeds being given tasks.
+    @Test
+    void deferredTasksDoNotSpendTheBudgetTheProfileShares() {
+        final ProcessorFilter supervised = givenFilter(1, PROFILE);
+        final ProcessorFilter other = givenFilter(2, PROFILE);
+        givenFilters(supervised, other);
+        givenTasks(supervised, 0, processorConfig.getTasksToCreate() * 2);
+
+        taskCreator.exec();
+
+        verify(processorFilterService).fetch(other.getId());
+    }
+
+    /// A filter whose allowance went on deferred tasks has spent it, rather than going on making tasks
+    /// that will only defer: here the run's budget, which bounds a filter by default.
+    @Test
+    void aFilterWhoseTasksAreDeferredMakesNoMore() {
+        final ProcessorFilter supervised = givenStreamFilter(givenFilter(1, null));
+        givenFilters(supervised);
+        givenTasks(supervised, 1, processorConfig.getTasksToCreate() - 1);
+
+        taskCreator.exec();
+
+        verify(metaService, never()).getMaxId();
+    }
+
+    /// A filter that holds fewer tasks than its allowance, none of them deferred, goes on as before.
+    @Test
+    void aFilterWithNoneDeferredCreatesAsBefore() {
+        final ProcessorFilter plain = givenStreamFilter(givenFilter(1, null));
+        givenFilters(plain);
+        givenTasks(plain, processorConfig.getTasksToCreate() - 1, 0);
+
+        taskCreator.exec();
+
+        verify(metaService).getMaxId();
     }
 
     /**
@@ -356,7 +399,29 @@ class TestProcessorTaskCreatorImpl {
      * Give the filter enough tasks already sitting in the database to use up its profile's budget.
      */
     private void givenExistingCreatedTasks(final ProcessorFilter filter, final int count) {
-        when(processorTaskDao.countTasksForFilter(eq(filter.getId()), eq(TaskStatus.CREATED))).thenReturn(count);
+        givenTasks(filter, count, 0);
+    }
+
+    /// The tasks a filter holds, waiting and deferred, as the one count the creator asks for (design 06
+    /// A109).
+    private void givenTasks(final ProcessorFilter filter, final int waiting, final int deferred) {
+        when(processorTaskDao.countTasksForFilter(eq(filter.getId()),
+                eq(Set.of(TaskStatus.CREATED, TaskStatus.DEFERRED))))
+                .thenReturn(Map.of(TaskStatus.CREATED, waiting, TaskStatus.DEFERRED, deferred));
+    }
+
+    /// The filter over the stream store: one that goes on to make tasks asks the store how far it reaches.
+    private ProcessorFilter givenStreamFilter(final ProcessorFilter filter) {
+        final ProcessorFilter streamFilter = filter.copy()
+                .queryData(QueryData.builder()
+                        .dataSource(MetaFields.STREAM_STORE_DOC_REF)
+                        .expression(ExpressionOperator.builder()
+                                .addTextTerm(MetaFields.FEED, Condition.EQUALS, "DOOR-ACCESS")
+                                .build())
+                        .build())
+                .build();
+        filtersById.put(streamFilter.getId(), streamFilter);
+        return streamFilter;
     }
 
     /**

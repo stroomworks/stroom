@@ -16,14 +16,14 @@
 
 package stroom.pipeline.filter;
 
+import stroom.pipeline.stepping.capture.PipelineCapture;
 import stroom.pipeline.stepping.capture.RecordDetector;
-import stroom.pipeline.stepping.capture.SteppingController;
 
 import org.xml.sax.SAXException;
 
 public class SAXRecordDetector extends AbstractXMLFilter implements RecordDetector {
 
-    private SteppingController controller;
+    private PipelineCapture controller;
 
     private long currentStepIndex = -1;
     // The record index the first replayed record should be reported as. Zero for a normal run, which counts
@@ -64,7 +64,7 @@ public class SAXRecordDetector extends AbstractXMLFilter implements RecordDetect
     }
 
     @Override
-    public void setController(final SteppingController controller) {
+    public void setController(final PipelineCapture controller) {
         this.controller = controller;
     }
 }

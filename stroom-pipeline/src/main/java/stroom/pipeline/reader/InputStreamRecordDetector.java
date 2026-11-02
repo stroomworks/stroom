@@ -17,7 +17,7 @@
 package stroom.pipeline.reader;
 
 import stroom.pipeline.errorhandler.ProcessException;
-import stroom.pipeline.stepping.capture.SteppingController;
+import stroom.pipeline.stepping.capture.PipelineCapture;
 import stroom.task.api.TaskTerminatedException;
 
 import org.slf4j.Logger;
@@ -33,7 +33,7 @@ class InputStreamRecordDetector extends FilterInputStream {
 
     private static final int MAX_COUNT = 10000;
     private final byte[] buffer = new byte[1024];
-    private final SteppingController controller;
+    private final PipelineCapture controller;
     private long currentStepNo;
     private int offset;
     private int length;
@@ -42,7 +42,7 @@ class InputStreamRecordDetector extends FilterInputStream {
     private int count;
     private boolean end;
 
-    InputStreamRecordDetector(final InputStream inputStream, final SteppingController controller) {
+    InputStreamRecordDetector(final InputStream inputStream, final PipelineCapture controller) {
         super(inputStream);
         this.controller = controller;
     }

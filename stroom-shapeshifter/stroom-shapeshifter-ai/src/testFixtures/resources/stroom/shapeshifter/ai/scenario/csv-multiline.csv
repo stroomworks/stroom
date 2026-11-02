@@ -1,0 +1,26 @@
+2026-09-21T09:16:37.000Z,bob,WS02,VIEW,board pack.pdf,"Routine access"
+2026-09-21T09:18:14.000Z,carol,WS03,VIEW,old draft.docx,"Opened from the ""Finance"" share"
+2026-09-21T09:19:51.000Z,dave,WS01,VIEW,risk register.xlsx,"Opened from the ""Finance"" share;
+read only"
+2026-09-21T09:21:28.000Z,erin,WS02,DELETE,minutes 2026-09.docx,"Removed, no longer needed"
+2026-09-21T09:23:05.000Z,alice,WS03,VIEW,site plan.dwg,Routine access
+2026-09-21T09:24:42.000Z,bob,WS01,VIEW,Q3 budget.xlsx,"Checked the ""final"" figures
+before the board meeting"
+2026-09-21T09:26:19.000Z,carol,WS02,VIEW,board pack.pdf,"Routine access"
+2026-09-21T09:27:56.000Z,dave,WS03,DELETE,old draft.docx,Superseded
+2026-09-21T09:29:33.000Z,erin,WS01,VIEW,risk register.xlsx,"Read the ""actions"" section
+only"
+2026-09-21T09:31:10.000Z,alice,WS02,VIEW,minutes 2026-09.docx,"Opened from the ""Finance"" share"
+2026-09-21T09:32:47.000Z,bob,WS03,VIEW,site plan.dwg,Routine access
+2026-09-21T09:34:24.000Z,carol,WS01,DELETE,Q3 budget.xlsx,"Removed after review, superseded
+by the v2 draft"
+2026-09-21T09:36:01.000Z,dave,WS02,VIEW,board pack.pdf,"Routine access"
+2026-09-21T09:37:38.000Z,erin,WS03,VIEW,old draft.docx,"Opened from the ""Finance"" share"
+2026-09-21T09:39:15.000Z,alice,WS01,VIEW,risk register.xlsx,"Printed for the site visit
+and returned"
+2026-09-21T09:40:52.000Z,bob,WS02,DELETE,minutes 2026-09.docx,"Removed, no longer needed"
+2026-09-21T09:42:29.000Z,carol,WS03,VIEW,site plan.dwg,Routine access
+2026-09-21T09:44:06.000Z,dave,WS01,VIEW,Q3 budget.xlsx,"Opened from the ""Finance"" share;
+read only"
+2026-09-21T09:45:43.000Z,erin,WS02,VIEW,board pack.pdf,"Routine access"
+2026-09-21T09:47:20.000Z,alice,WS03,DELETE,old draft.docx,Superseded

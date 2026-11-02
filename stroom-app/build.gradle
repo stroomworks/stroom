@@ -143,6 +143,8 @@ dependencies {
     implementation project(':stroom-node:stroom-node-impl-db')
     implementation project(':stroom-pathways:stroom-pathways-impl')
     implementation project(':stroom-pipeline')
+    implementation project(':stroom-pipeline-factory:stroom-pipeline-factory-impl')
+    implementation project(':stroom-pipeline-factory:stroom-pipeline-factory-impl-db')
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-sqlstore:stroom-sqlstore-impl')
     implementation project(':stroom-sqlstore:stroom-sqlstore-impl-db')
@@ -171,6 +173,8 @@ dependencies {
     implementation project(':stroom-security:stroom-security-impl')
     implementation project(':stroom-security:stroom-security-impl-db')
     implementation project(':stroom-security:stroom-security-openid-api')
+    implementation project(':stroom-shapeshifter:stroom-shapeshifter-ai')
+    implementation project(':stroom-shapeshifter:stroom-shapeshifter-ai-impl-db')
     implementation project(':stroom-statistics:stroom-statistics-impl')
     implementation project(':stroom-statistics:stroom-statistics-impl-sql')
     implementation project(':stroom-suggestions:stroom-suggestions-impl')
@@ -220,6 +224,7 @@ dependencies {
 
     // Use default DB config.
     testImplementation libs.poi.ooxml
+    testImplementation testFixtures(project(':stroom-shapeshifter:stroom-shapeshifter-ai'))
     testImplementation project(':stroom-activity:stroom-activity-api')
     testImplementation project(':stroom-activity:stroom-activity-mock')
     testImplementation project(':stroom-ai:stroom-ai-mock')

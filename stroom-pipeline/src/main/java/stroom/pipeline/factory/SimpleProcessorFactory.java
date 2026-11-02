@@ -20,6 +20,7 @@ import stroom.pipeline.errorhandler.ErrorReceiver;
 import stroom.pipeline.errorhandler.ErrorStatistics;
 import stroom.pipeline.errorhandler.FatalErrorReceiver;
 import stroom.pipeline.errorhandler.LoggedException;
+import stroom.processor.api.DeferTaskException;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class SimpleProcessorFactory implements ProcessorFactory {
 
@@ -76,6 +78,9 @@ public class SimpleProcessorFactory implements ProcessorFactory {
         @Override
         public void process() {
             final CountDownLatch countDownLatch = new CountDownLatch(processors.size());
+            // A deferral thrown on one of the processors' threads is this thread's to throw once they
+            // have all finished: it is an outcome of the whole run, not an error of one branch.
+            final AtomicReference<DeferTaskException> deferred = new AtomicReference<>();
 
             for (final Processor processor : processors) {
                 CompletableFuture.runAsync(() -> {
@@ -91,7 +96,10 @@ public class SimpleProcessorFactory implements ProcessorFactory {
                     } catch (final RuntimeException e) {
                         try {
                             try {
-                                if (e instanceof LoggedException) {
+                                final DeferTaskException deferral = DeferTaskException.unwrap(e);
+                                if (deferral != null) {
+                                    deferred.compareAndSet(null, deferral);
+                                } else if (e instanceof LoggedException) {
                                     // The exception has already been logged so
                                     // ignore it.
                                     if (LOGGER.isTraceEnabled()) {
@@ -120,6 +128,9 @@ public class SimpleProcessorFactory implements ProcessorFactory {
 
                 // Continue to interrupt this thread.
                 Thread.currentThread().interrupt();
+            }
+            if (deferred.get() != null) {
+                throw deferred.get();
             }
         }
 

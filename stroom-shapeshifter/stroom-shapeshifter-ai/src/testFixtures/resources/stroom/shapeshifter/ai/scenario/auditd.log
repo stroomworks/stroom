@@ -1,0 +1,23 @@
+node=host1 type=USER_LOGIN msg=audit(1758446102.100:20000): pid=3000 uid=root auid=dave ses=10 msg='op=login id=dave exe="/usr/sbin/sshd" hostname=10.0.0.20 addr=10.0.0.20 terminal=ssh res=success'
+node=host1 type=USER_START msg=audit(1758446102.100:20000): pid=3000 uid=root auid=dave ses=10 msg='op=PAM:session_open grantors=pam_unix acct="dave" exe="/usr/sbin/sshd" hostname=10.0.0.20 addr=10.0.0.20 terminal=ssh res=success'
+node=host1 type=SYSCALL msg=audit(1758446109.350:20001): arch=x86_64 syscall=execve success=yes exit=0 a0=0x55d1 a1=0x55d2 a2=0x55d3 a3=0x0 items=2 ppid=2001 pid=4001 auid=erin uid=erin gid=erin euid=erin ses=11 tty=pts0 comm="cat" exe="/usr/bin/cat" key="exec"
+node=host1 type=EXECVE msg=audit(1758446109.350:20001): argc=2 a0="cat" a1="/etc/hosts"
+node=host1 type=CWD msg=audit(1758446109.350:20001): cwd="/home/erin"
+node=host1 type=SYSCALL msg=audit(1758446116.600:20002): arch=x86_64 syscall=execve success=yes exit=0 a0=0x55d1 a1=0x55d2 a2=0x55d3 a3=0x0 items=2 ppid=2002 pid=4002 auid=frank uid=frank gid=frank euid=frank ses=12 tty=pts0 comm="grep" exe="/usr/bin/grep" key="exec"
+node=host1 type=EXECVE msg=audit(1758446116.600:20002): argc=3 a0="grep" a1="-r" a2="secret"
+node=host1 type=CWD msg=audit(1758446116.600:20002): cwd="/home/frank"
+node=host1 type=PATH msg=audit(1758446116.600:20002): item=0 name="/usr/bin/grep" inode=100002 dev=08:02 mode=file,755 ouid=root ogid=root nametype=NORMAL
+node=host1 type=USER_LOGIN msg=audit(1758446123.850:20003): pid=3003 uid=root auid=grace ses=13 msg='op=login id=grace exe="/usr/sbin/sshd" hostname=10.0.0.23 addr=10.0.0.23 terminal=ssh res=success'
+node=host1 type=USER_START msg=audit(1758446123.850:20003): pid=3003 uid=root auid=grace ses=13 msg='op=PAM:session_open grantors=pam_unix acct="grace" exe="/usr/sbin/sshd" hostname=10.0.0.23 addr=10.0.0.23 terminal=ssh res=success'
+node=host1 type=SYSCALL msg=audit(1758446131.100:20004): arch=x86_64 syscall=execve success=yes exit=0 a0=0x55d1 a1=0x55d2 a2=0x55d3 a3=0x0 items=2 ppid=2004 pid=4004 auid=dave uid=dave gid=dave euid=dave ses=14 tty=pts0 comm="ls" exe="/usr/bin/ls" key="exec"
+node=host1 type=EXECVE msg=audit(1758446131.100:20004): argc=3 a0="ls" a1="-la" a2="/tmp"
+node=host1 type=CWD msg=audit(1758446131.100:20004): cwd="/home/dave"
+node=host1 type=PATH msg=audit(1758446131.100:20004): item=0 name="/usr/bin/ls" inode=100004 dev=08:02 mode=file,755 ouid=root ogid=root nametype=NORMAL
+node=host1 type=SYSCALL msg=audit(1758446138.350:20005): arch=x86_64 syscall=execve success=yes exit=0 a0=0x55d1 a1=0x55d2 a2=0x55d3 a3=0x0 items=2 ppid=2005 pid=4005 auid=erin uid=erin gid=erin euid=erin ses=15 tty=pts0 comm="cat" exe="/usr/bin/cat" key="exec"
+node=host1 type=EXECVE msg=audit(1758446138.350:20005): argc=2 a0="cat" a1="/etc/hosts"
+node=host1 type=CWD msg=audit(1758446138.350:20005): cwd="/home/erin"
+node=host1 type=USER_LOGIN msg=audit(1758446145.600:20006): pid=3006 uid=root auid=frank ses=16 msg='op=login id=frank exe="/usr/sbin/sshd" hostname=10.0.0.26 addr=10.0.0.26 terminal=ssh res=failed'
+node=host1 type=USER_START msg=audit(1758446145.600:20006): pid=3006 uid=root auid=frank ses=16 msg='op=PAM:session_open grantors=pam_unix acct="frank" exe="/usr/sbin/sshd" hostname=10.0.0.26 addr=10.0.0.26 terminal=ssh res=success'
+node=host1 type=SYSCALL msg=audit(1758446152.850:20007): arch=x86_64 syscall=execve success=yes exit=0 a0=0x55d1 a1=0x55d2 a2=0x55d3 a3=0x0 items=2 ppid=2007 pid=4007 auid=grace uid=grace gid=grace euid=grace ses=17 tty=pts0 comm="tar" exe="/usr/bin/tar" key="exec"
+node=host1 type=EXECVE msg=audit(1758446152.850:20007): argc=3 a0="tar" a1="-czf" a2="/tmp/x.tgz"
+node=host1 type=CWD msg=audit(1758446152.850:20007): cwd="/home/grace"

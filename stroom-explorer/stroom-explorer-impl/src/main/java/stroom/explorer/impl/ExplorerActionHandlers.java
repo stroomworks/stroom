@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -58,6 +59,10 @@ class ExplorerActionHandlers {
         }
 
         return explorerActionHandler;
+    }
+
+    Optional<ExplorerActionHandler> findHandler(final String type) {
+        return Optional.ofNullable(getHandlers().allHandlers.get(type));
     }
 
     private Handlers getHandlers() {

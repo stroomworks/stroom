@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<auditLog application="DocVault" version="2">
+  <entry id="a1">
+    <when>2020-06-17T08:00:00.000Z</when>
+    <actor><login>jim</login><department>ops</department></actor>
+    <session><host>web01</host><client ip="10.1.2.3"/></session>
+    <did>login</did>
+  </entry>
+  <entry id="a2">
+    <when>2020-06-17T08:00:12.000Z</when>
+    <actor><login>jim</login><department>ops</department></actor>
+    <session><host>web01</host><client ip="10.1.2.3"/></session>
+    <did>open</did>
+    <document path="/vault/finance/q2.xlsx" size="48213" classification="internal"/>
+  </entry>
+  <entry id="a3">
+    <when>2020-06-17T08:01:00.000Z</when>
+    <actor><login>bob</login><department>sales</department></actor>
+    <session><host>web02</host><client ip="10.1.2.44"/></session>
+    <did>login</did>
+  </entry>
+  <entry id="a4">
+    <when>2020-06-17T08:01:30.000Z</when>
+    <actor><login>bob</login><department>sales</department></actor>
+    <session><host>web02</host><client ip="10.1.2.44"/></session>
+    <did>open</did>
+    <document path="/vault/sales/pipeline.docx" size="120044" classification="confidential"/>
+  </entry>
+  <entry id="a5">
+    <when>2020-06-17T08:02:00.000Z</when>
+    <actor><login>pete</login><department>ops</department></actor>
+    <session><host>web01</host><client ip="10.1.2.9"/></session>
+    <did>login</did>
+  </entry>
+  <entry id="a6">
+    <when>2020-06-17T08:02:40.000Z</when>
+    <actor><login>pete</login><department>ops</department></actor>
+    <session><host>web01</host><client ip="10.1.2.9"/></session>
+    <did>open</did>
+    <document path="/vault/ops/runbook.md" size="9021" classification="internal"/>
+  </entry>
+  <entry id="a7">
+    <when>2020-06-17T08:03:00.000Z</when>
+    <actor><login>bob</login><department>sales</department></actor>
+    <session><host>web02</host><client ip="10.1.2.44"/></session>
+    <did>logout</did>
+  </entry>
+  <entry id="a8">
+    <when>2020-06-17T08:03:30.000Z</when>
+    <actor><login>jim</login><department>ops</department></actor>
+    <session><host>web01</host><client ip="10.1.2.3"/></session>
+    <did>logout</did>
+  </entry>
+</auditLog>

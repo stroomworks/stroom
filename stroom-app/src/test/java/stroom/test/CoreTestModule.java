@@ -28,6 +28,7 @@ import stroom.index.VolumeTestConfigModule;
 import stroom.meta.statistics.impl.MockMetaStatisticsModule;
 import stroom.resource.impl.ResourceModule;
 import stroom.security.mock.MockUserSecurityContextModule;
+import stroom.shapeshifter.ShapeshifterAiTestModule;
 import stroom.test.common.MockMetricsModule;
 import stroom.util.io.DirProvidersModule;
 
@@ -57,6 +58,7 @@ public class CoreTestModule extends AbstractModule {
         install(new stroom.test.DatabaseTestControlModule());
         install(new JerseyModule());
         install(new MockAiModule());
+        install(new ShapeshifterAiTestModule());
         install(new DocFinderModule());
     }
 }

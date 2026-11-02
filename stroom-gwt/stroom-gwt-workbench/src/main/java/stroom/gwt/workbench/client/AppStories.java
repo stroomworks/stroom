@@ -120,6 +120,7 @@ import stroom.gwt.workbench.client.app.pipeline.PipelineEditorStories;
 import stroom.gwt.workbench.client.app.pipeline.PipelineTreeStories;
 import stroom.gwt.workbench.client.app.pipeline.StepFilterDialogStories;
 import stroom.gwt.workbench.client.app.pipeline.SteppingScreenStories;
+import stroom.gwt.workbench.client.app.pipelinefactory.PipelineFactoryEditorStories;
 import stroom.gwt.workbench.client.app.processing.ExecutionSchedulesScreenStories;
 import stroom.gwt.workbench.client.app.processing.ProcessorFilterEditDialogStories;
 import stroom.gwt.workbench.client.app.processing.ProcessorFilterListStories;
@@ -141,6 +142,9 @@ import stroom.gwt.workbench.client.app.security.UserGroupsScreenStories;
 import stroom.gwt.workbench.client.app.security.UserProfileScreenStories;
 import stroom.gwt.workbench.client.app.security.UserTabScreenStories;
 import stroom.gwt.workbench.client.app.security.UsersScreenStories;
+import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiEditorStories;
+import stroom.gwt.workbench.client.app.shapeshifter.StageDecisionPaneStories;
+import stroom.gwt.workbench.client.app.shapeshifter.SupervisorStories;
 import stroom.gwt.workbench.client.app.vis.ChartVisStories;
 import stroom.gwt.workbench.client.app.vis.MapVisStories;
 import stroom.gwt.workbench.client.app.vis.NetworkVisStories;
@@ -283,12 +287,16 @@ public final class AppStories {
         RecentItemsDialogStories.addTo(registry);
         // App/Main/ResultStoresDialog
         ResultStoresDialogStories.addTo(registry);
+        // App/Main/ShapeshifterAiSupervisor
+        SupervisorStories.addTo(registry);
         // App/Main/ServerTasksScreen
         ServerTasksScreenStories.addTo(registry);
         // App/Main/SigningKeysScreen
         SigningKeysScreenStories.addTo(registry);
         // App/Main/StepFilterDialog
         StepFilterDialogStories.addTo(registry);
+        // App/Main/StageDecisionPane
+        StageDecisionPaneStories.addTo(registry);
         // App/Main/SteppingScreen
         SteppingScreenStories.addTo(registry);
         // App/Main/TabSessionChooserDialog
@@ -348,12 +356,16 @@ public final class AppStories {
         OpenAiModelEditorStories.addTo(registry);
         // App/Editors/PathwaysEditor
         PathwaysEditorStories.addTo(registry);
+        // App/Editors/PipelineFactoryEditor
+        PipelineFactoryEditorStories.addTo(registry);
         // App/Editors/PlanBEditor
         PlanBEditorStories.addTo(registry);
         // App/Editors/QueryEditor
         QueryEditorStories.addTo(registry);
         // App/Editors/ReportEditor
         ReportEditorStories.addTo(registry);
+        // App/Editors/ShapeshifterAiEditor
+        ShapeshifterAiEditorStories.addTo(registry);
         // App/Editors/StatisticStoreEditor
         StatisticStoreEditorStories.addTo(registry);
         // App/Editors/ViewEditor

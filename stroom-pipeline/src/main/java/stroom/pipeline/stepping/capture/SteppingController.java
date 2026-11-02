@@ -22,6 +22,7 @@ import stroom.pipeline.errorhandler.LoggingErrorReceiver;
 import stroom.pipeline.shared.SourceLocation;
 import stroom.pipeline.shared.stepping.PipelineStepRequest;
 import stroom.pipeline.shared.stepping.StepLocation;
+import stroom.pipeline.shared.stepping.SteppingFilterSettings;
 import stroom.pipeline.state.LocationHolder;
 import stroom.pipeline.state.MetaHolder;
 import stroom.pipeline.stepping.fingerprint.ElementFingerprints;
@@ -64,7 +65,7 @@ import java.util.function.Consumer;
  * the first match.
  */
 @PipelineScoped
-public class SteppingController {
+public class SteppingController implements PipelineCapture {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SteppingController.class);
 
@@ -110,18 +111,29 @@ public class SteppingController {
         this.taskScopeMap = taskScopeMap;
     }
 
+    @Override
+    public SteppingFilterSettings getStepFilterSettings(final String elementId) {
+        return request == null
+                ? null
+                : request.getStepFilterSettings(elementId);
+    }
+
+    @Override
     public void registerMonitor(final ElementMonitor monitor) {
         monitors.add(monitor);
     }
 
+    @Override
     public Set<ElementMonitor> getMonitors() {
         return monitors;
     }
 
+    @Override
     public RecordDetector getRecordDetector() {
         return recordDetector;
     }
 
+    @Override
     public void setRecordDetector(final RecordDetector recordDetector) {
         this.recordDetector = recordDetector;
     }
@@ -151,6 +163,7 @@ public class SteppingController {
         this.request = request;
     }
 
+    @Override
     public void resetSourceLocation() {
         locationHolder.reset();
     }
@@ -165,6 +178,7 @@ public class SteppingController {
      *
      * @return True if the record detector should terminate stepping.
      */
+    @Override
     public boolean endRecord(final long currentRecordIndex) {
         // Get the current stream number.
         final long currentStreamIndex = metaHolder.getPartIndex();
@@ -264,7 +278,8 @@ public class SteppingController {
             // to store its IO under and nothing could ever read it back.
             final String fingerprint = fingerprints.getCumulativeFingerprint(monitor.getElementId().getId());
             if (fingerprint != null) {
-                CapturedElementData data = monitor.getCapturedElementData(errorReceiver, highlight);
+                CapturedElementData data = monitor.getCapturedElementData(errorReceiver, highlight,
+                        location.getRecordIndex());
                 // A counting element whose run started mid-stream with no count to restore produces
                 // plausible-but-wrong running counts (EventId 1 on record 500). The record is stored
                 // marked, so wherever it is later served from, the divergence is declared rather than

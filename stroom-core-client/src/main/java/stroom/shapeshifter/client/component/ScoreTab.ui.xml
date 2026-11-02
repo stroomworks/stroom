@@ -1,0 +1,66 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A Shapeshifter AI document's Score tab (score-tab.css): the gate and the flag above the scorers -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:split="urn:import:stroom.widget.layout.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:v="urn:import:stroom.widget.valuespinner.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
+    <g:FlowPanel styleName="max dock-container-vertical score-tab">
+        <!-- The process the document runs, at the top of each stage's tab, this one marked (A98) -->
+        <s:ProcessHeader ui:field="processHeader" addStyleNames="dock-min score-tab__header"/>
+        <split:SplitPane vertical="true" thin="true" sizes="300px, *"
+                         names="Score settings, Scorers" addStyleNames="dock-max">
+            <g:FlowPanel styleName="max form-padding form">
+                <tx:Label styleName="score-tab__note"
+                          text="The scores: the scorers below are the bar a served record must clear — one that falls short sends its learner back to learn again while the binding keeps serving — and the judges of every candidate a session learns. The gate here decides whether what was learned becomes a binding."/>
+                <form:FormGroup identity="shapeshifterAiPromotionMode"
+                                label="Promotion mode"
+                                helpText="Automatic: a candidate that passes the gate goes live. Review: it is appended as a draft binding that serves nothing, and the streams of its learner wait until a person approves it.">
+                    <l:SelectionBox ui:field="promotionMode"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiPromotionFloor"
+                                label="Promotion floor (%)"
+                                helpText="The weighted score a candidate must reach on the held-out sample before it can be promoted. It must also not regress against the incumbent on any previously accepted record.">
+                    <v:ValueSpinner ui:field="promotionFloor" addStyleNames="value-spinner--narrow"
+                                    minValue="0" maxValue="100"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiHeldOutFraction"
+                                label="Held-out fraction (%)"
+                                helpText="The share of a stream's records withheld from the model and used only to judge promotion.">
+                    <v:ValueSpinner ui:field="heldOutFraction" addStyleNames="value-spinner--narrow"
+                                    minValue="0" maxValue="100"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiMinRecordsToLearn"
+                                label="Minimum records to learn"
+                                helpText="How many records a stream must bring before its learner learns from it, and before promotion is judged; below this a candidate that clears the floor is bound provisionally and waits for more.">
+                    <v:ValueSpinner ui:field="minRecordsToLearn" addStyleNames="value-spinner--narrow"
+                                    minValue="1" maxValue="2147483647"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiRegressionCap"
+                                label="Regression records per binding"
+                                helpText="The most previously accepted records retained per binding for the regression check.">
+                    <v:ValueSpinner ui:field="regressionCap" addStyleNames="value-spinner--narrow"
+                                    minValue="0" maxValue="2147483647"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiRegressionRetentionDays"
+                                label="Regression retention (days)"
+                                helpText="Not yet applied: regression records are kept on the source feed and follow its retention.">
+                    <v:ValueSpinner ui:field="regressionRetentionDays" addStyleNames="value-spinner--narrow"
+                                    minValue="0" maxValue="2147483647"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiRelearnThreshold"
+                                label="Flag a serving binding below (%)"
+                                helpText="A binding whose rolling per-record score falls below this is flagged in the Supervisor's serving list. It goes on serving; a record that falls short of the bar is what sends its learner back to learn again.">
+                    <v:ValueSpinner ui:field="relearnThreshold" addStyleNames="value-spinner--narrow"
+                                    minValue="0" maxValue="100"/>
+                </form:FormGroup>
+            </g:FlowPanel>
+            <g:SimplePanel styleName="max dock-container-vertical">
+                <s:ScorerList ui:field="scorerList"/>
+            </g:SimplePanel>
+        </split:SplitPane>
+    </g:FlowPanel>
+</ui:UiBinder>

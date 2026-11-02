@@ -1,0 +1,14 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- One text a node of the learning flow is asked with (learn-question-text.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="learn-question-text">
+        <tx:Label ui:field="heading" styleName="learn-question-text__heading"/>
+        <tx:Label ui:field="status" styleName="learn-question-text__status"/>
+        <form:TextArea ui:field="text" addStyleNames="w-100 learn-question-text__words"/>
+        <b:Button ui:field="load" text="Load built-in" addStyleNames="allow-focus"/>
+    </g:FlowPanel>
+</ui:UiBinder>

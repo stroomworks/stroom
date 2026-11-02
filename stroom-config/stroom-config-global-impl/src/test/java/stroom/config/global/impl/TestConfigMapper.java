@@ -67,6 +67,7 @@ import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
 import stroom.pipeline.refdata.ReferenceDataLmdbConfig;
+import stroom.pipelinefactory.impl.PipelineFactoryConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
 import stroom.receive.common.ReceiveDataConfig;
@@ -74,6 +75,7 @@ import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
 import stroom.search.impl.SearchConfig;
 import stroom.search.solr.SolrConfig;
+import stroom.shapeshifter.ai.ShapeshifterAiConfig;
 import stroom.sqlstore.impl.SqlStoreConfig;
 import stroom.storedquery.impl.StoredQueryConfig;
 import stroom.ui.config.shared.UiConfig;
@@ -1110,6 +1112,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_NODE) final NodeConfig nodeConfig,
                 @JsonProperty(PROP_NAME_NODE_URI) final NodeUriConfig nodeUri,
                 @JsonProperty(PROP_NAME_PIPELINE) final PipelineConfig pipelineConfig,
+                @JsonProperty(PROP_NAME_PIPELINE_FACTORY) final PipelineFactoryConfig pipelineFactoryConfig,
                 @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                 @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                 @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
@@ -1119,6 +1122,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_S3) final S3Config s3Config,
                 @JsonProperty(PROP_NAME_SEARCH) final SearchConfig searchConfig,
                 @JsonProperty(PROP_NAME_SECURITY) final SecurityConfig securityConfig,
+                @JsonProperty(PROP_NAME_SHAPESHIFTER_AI) final ShapeshifterAiConfig shapeshifterAiConfig,
                 @JsonProperty(PROP_NAME_SESSION_COOKIE) final SessionCookieConfig sessionCookieConfig,
                 @JsonProperty(PROP_NAME_SESSION) final SessionConfig sessionConfig,
                 @JsonProperty(PROP_NAME_SQL_STORE) final SqlStoreConfig sqlStoreConfig,
@@ -1181,6 +1185,7 @@ class TestConfigMapper {
                     nodeConfig,
                     nodeUri,
                     pipelineConfig,
+                    pipelineFactoryConfig,
                     processorConfig,
                     propertyServiceConfig,
                     publicUri,
@@ -1190,6 +1195,7 @@ class TestConfigMapper {
                     s3Config,
                     searchConfig,
                     securityConfig,
+                    shapeshifterAiConfig,
                     sessionCookieConfig,
                     sessionConfig,
                     solrConfig,

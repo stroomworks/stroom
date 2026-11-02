@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter
+    xmlns="data-splitter:3"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+    version="3.0">
+
+  <!-- Syslog in both forms on one feed: RFC 5424 (a version 1, an ISO timestamp) and RFC 3164 (BSD, a month
+       and day, no year); the message of either is an sshd authentication line -->
+  <split delimiter="\n">
+    <group value="$1">
+      <regex pattern="^&lt;(\d+)&gt;1 (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (.*)$">
+        <data name="pri" value="$1"/>
+        <data name="time" value="$2"/>
+        <data name="host" value="$3"/>
+        <data name="app" value="$4"/>
+        <data name="pid" value="$5"/>
+        <data name="msg" value="$8">
+          <group value="$8">
+            <regex pattern="^(Accepted|Failed) (\w+) for (\S+) from (\S+) port (\d+).*$">
+              <data name="outcome" value="$1"/>
+              <data name="method" value="$2"/>
+              <data name="user" value="$3"/>
+              <data name="ip" value="$4"/>
+              <data name="port" value="$5"/>
+            </regex>
+          </group>
+        </data>
+      </regex>
+      <regex pattern="^&lt;(\d+)&gt;(\w{3}) +(\d+) (\d\d:\d\d:\d\d) (\S+) ([^\[:]+)\[(\d+)\]: (.*)$">
+        <data name="pri" value="$1"/>
+        <data name="month" value="$2"/>
+        <data name="day" value="$3"/>
+        <data name="clock" value="$4"/>
+        <data name="host" value="$5"/>
+        <data name="app" value="$6"/>
+        <data name="pid" value="$7"/>
+        <data name="msg" value="$8">
+          <group value="$8">
+            <regex pattern="^(Accepted|Failed) (\w+) for (\S+) from (\S+) port (\d+).*$">
+              <data name="outcome" value="$1"/>
+              <data name="method" value="$2"/>
+              <data name="user" value="$3"/>
+              <data name="ip" value="$4"/>
+              <data name="port" value="$5"/>
+            </regex>
+          </group>
+        </data>
+      </regex>
+    </group>
+  </split>
+</dataSplitter>

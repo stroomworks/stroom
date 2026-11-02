@@ -37,6 +37,7 @@ import stroom.pipeline.reader.BOMRemovalInputStream;
 import stroom.pipeline.reader.InvalidXmlCharFilter;
 import stroom.pipeline.reader.Xml10Chars;
 import stroom.pipeline.shared.TextConverterDoc;
+import stroom.pipeline.shared.TextConverterDoc.TextConverterType;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineElementType.Category;
 import stroom.pipeline.state.FeedHolder;
@@ -63,6 +64,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.util.UUID;
 import java.util.function.Consumer;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
@@ -214,7 +216,7 @@ public class CombinedParser extends AbstractParser implements SupportsCodeInject
         // TODO: We need to use the cached TextConverter service ideally but
         //  before we do it needs to be aware cluster wide when TextConverter has
         //  been updated.
-        TextConverterDoc tc = loadTextConverterDoc();
+        TextConverterDoc tc = configuration();
 
         // If we are in stepping mode and have made code changes then we want to
         // add them to the newly loaded text converter.
@@ -328,6 +330,29 @@ public class CombinedParser extends AbstractParser implements SupportsCodeInject
             displayPriority = 5)
     public void setFixInvalidChars(final boolean fixInvalidChars) {
         this.fixInvalidChars = fixInvalidChars;
+    }
+
+    /// The configuration this parser is to run with: the document it references, or the code it was
+    /// given where it references nothing (§12 item 1). A candidate can then be run before it has been
+    /// written anywhere, which is what judging one before promoting it requires. It is the code only
+    /// where the element names no document at all: a name pattern that has stopped resolving is a fault
+    /// to be told about, not a gap for the editor's pane to fill silently. The kind of converter
+    /// is the one the element's own `type` property already chose, since without a document that is the
+    /// only thing that says what the code is — so this reaches code only where `type` is set. The legacy
+    /// configuration, which has no `type` and names the kind by the document it references, has no
+    /// document to name it by and parses as XML, as it did before.
+    private TextConverterDoc configuration() {
+        if (injectedCode != null && textConverterRef == null && NullSafe.isBlankString(namePattern)) {
+            return TextConverterDoc.builder()
+                    .uuid(UUID.randomUUID().toString())
+                    .name(getElementId().getId())
+                    .converterType(getMode() == Mode.XML_FRAGMENT
+                            ? TextConverterType.XML_FRAGMENT
+                            : TextConverterType.DATA_SPLITTER)
+                    .data(injectedCode)
+                    .build();
+        }
+        return loadTextConverterDoc();
     }
 
     public TextConverterDoc loadTextConverterDoc() {

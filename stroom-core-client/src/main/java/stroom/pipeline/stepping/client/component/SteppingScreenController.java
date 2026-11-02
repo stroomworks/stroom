@@ -38,6 +38,8 @@ import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineProperty;
+import stroom.pipeline.shared.stepping.ElementStepDetails;
+import stroom.pipeline.shared.stepping.NestedElementData;
 import stroom.pipeline.shared.stepping.PipelineStepRequest;
 import stroom.pipeline.shared.stepping.SharedStepData;
 import stroom.pipeline.shared.stepping.StepLocation;
@@ -45,7 +47,6 @@ import stroom.pipeline.shared.stepping.StepType;
 import stroom.pipeline.shared.stepping.SteppingFilterSettings;
 import stroom.pipeline.shared.stepping.SteppingResource;
 import stroom.pipeline.shared.stepping.SteppingResult;
-import stroom.pipeline.structure.client.DefaultPipelineTreeBuilder;
 import stroom.pipeline.structure.client.PipelineElementTypesFactory;
 import stroom.pipeline.structure.client.PipelineModel;
 import stroom.query.api.ExpressionOperator;
@@ -124,6 +125,14 @@ public class SteppingScreenController extends Controller {
     // server materialises and tests records until one matches - so the progress message says "Searching"
     // rather than "Stepping" to set the expectation of a wait proportional to where the next match is.
     private boolean searching;
+    /// The tree the stepper draws: the pipeline's own elements, and beneath any element that ran a
+    /// chain of its own, that chain (A30).
+    private final NestedPipelineTreeBuilder treeBuilder = new NestedPipelineTreeBuilder();
+
+    /// What the last step said each element ran inside itself, by the nested element's own id. Where a
+    /// nested element's panes are read from, since it is in no pipeline and so in no step data map.
+    private final Map<String, NestedElementData> nestedData = new HashMap<>();
+
     private SteppingResult lastFoundResult;
     private SteppingResult currentResult;
     private boolean runStepping = true;
@@ -195,7 +204,7 @@ public class SteppingScreenController extends Controller {
         sourceController.asWidget().addStyleName("overflow-hidden");
         sourceController.setSteppingSource(true);
 
-        pipelinePathBar.setPipelineTreeBuilder(new DefaultPipelineTreeBuilder());
+        pipelinePathBar.setPipelineTreeBuilder(treeBuilder);
         pipelinePathBar.setAllowNullSelection(false);
 
         // Nothing can be stepped until a stream has been chosen (see beginStepping).
@@ -260,7 +269,10 @@ public class SteppingScreenController extends Controller {
 
         own(pipelinePathBar.addContextMenuHandler(event -> {
             final PipelineElement selectedPipeElement = getSelectedPipeElement();
-            if (!PipelineModel.SOURCE_ELEMENT.getId().equals(selectedPipeElement.getId())) {
+            // Nor on one of the elements another element ran inside itself: every item on this menu
+            // edits the step filters of the pipeline, and a nested element is in no pipeline.
+            if (!PipelineModel.SOURCE_ELEMENT.getId().equals(selectedPipeElement.getId())
+                && !treeBuilder.isNested(selectedPipeElement)) {
                 final List<Item> menuItems = buildContextMenu();
                 if (NullSafe.hasItems(menuItems)) {
                     showMenu("Step filters for element '" + selectedPipeElement.getDisplayName() + "'",
@@ -376,7 +388,10 @@ public class SteppingScreenController extends Controller {
     }
 
     private boolean hasActiveFilters(final PipelineElement element) {
-        return NullSafe.getOrElse(pipelineModel, pm -> pm.hasActiveFilters(element), false);
+        // A nested element is in no pipeline, so there is nothing to filter it by and no request to
+        // carry a filter for it: the element that ran it is what a person filters on.
+        return !treeBuilder.isNested(element)
+               && NullSafe.getOrElse(pipelineModel, pm -> pm.hasActiveFilters(element), false);
     }
 
     private List<Item> buildContextMenu() {
@@ -481,10 +496,18 @@ public class SteppingScreenController extends Controller {
                 // caused the tree to flash and the UI to lag on large documents.
                 final Runnable changeEditorHandler = () -> onChange.run();
 
-                final List<PipelineProperty> properties = pipelineModel.getProperties(element);
+                // One of the elements another element ran inside itself (A30) is a record of something
+                // that ran, not something a person can edit: it is in no pipeline, so it has no
+                // properties and no document behind it, and asking the model about it would be asking
+                // about a pipeline that does not exist.
+                final boolean isNested = treeBuilder.isNested(element);
+                final List<PipelineProperty> properties = isNested
+                        ? List.of()
+                        : pipelineModel.getProperties(element);
 
                 final SteppingElementController newElement = make(elementProvider);
                 newElement.setPipelineModel(pipelineModel);
+                newElement.setNested(isNested);
                 newElement.setElement(element);
                 newElement.setProperties(properties);
                 newElement.setFeedName(meta == null
@@ -527,6 +550,11 @@ public class SteppingScreenController extends Controller {
 
     private void refreshEditor(final SteppingElementController steppingElement,
                                final ElementId elementId) {
+        final NestedElementData nested = nestedData.get(elementId.getId());
+        if (nested != null) {
+            refreshNestedEditor(steppingElement, elementId, nested);
+            return;
+        }
         steppingElement.load(result -> {
             final SharedStepData stepData = getEffectiveStepData();
             if (stepData != null) {
@@ -543,11 +571,64 @@ public class SteppingScreenController extends Controller {
                     updateToggleConsoleBtnVisibility(indicators, elementId);
                 } else {
                     clearIndicators(steppingElement, elementId);
+                    // And whatever pane the element shows of its own (A30): a step it has nothing to
+                    // say about must not go on showing what it said about the step before.
+                    steppingElement.setStepDetails(null);
                 }
             } else {
                 clearIndicators(steppingElement, elementId);
             }
         });
+    }
+
+    /// One of the elements an element ran inside itself: what it was given and what it wrote for the
+    /// record at the cursor (A30).
+    ///
+    /// It is in no pipeline, so it has no code, no properties, no document and nothing to filter on —
+    /// input and output are the whole of it. Its text comes from whatever ran it rather than from the
+    /// step data map, because the pipeline being stepped does not have this element and never will.
+    private void refreshNestedEditor(final SteppingElementController steppingElement,
+                                     final ElementId elementId,
+                                     final NestedElementData nested) {
+        steppingElement.load(result -> {
+            steppingElement.setInput(NullSafe.string(nested.getInput()), 1, nested.isFormatInput());
+            steppingElement.setOutput(NullSafe.string(nested.getOutput()), 1, nested.isFormatOutput());
+            steppingElement.setStepDetails(null);
+            final Indicators indicators = nestedIndicators(elementId, nested);
+            steppingElement.setIndicators(indicators);
+            updateToggleConsoleBtnVisibility(indicators, elementId);
+        });
+    }
+
+    /// A note where what is shown is the element's work over the whole stream rather than over the
+    /// record at the cursor: a chain handed the stream runs once and cuts the records itself, so every
+    /// record of the stream shows the same one run.
+    ///
+    /// Said rather than left to be noticed. Six records' worth of output under a cursor sitting on the
+    /// first reads as a fault otherwise, and the alternative — cutting the element's output up for
+    /// display — would show a person something the element never produced.
+    private static Indicators nestedIndicators(final ElementId elementId, final NestedElementData nested) {
+        if (!nested.isWholeStream() && !nested.isTruncated()) {
+            return null;
+        }
+        if (!nested.isWholeStream()) {
+            final Indicators cut = new Indicators();
+            cut.add(new StoredError(Severity.INFO, null, elementId,
+                    "Shown from the beginning and cut short."));
+            return cut;
+        }
+        final Indicators indicators = new Indicators();
+        indicators.add(new StoredError(Severity.INFO, null, elementId,
+                "This is what the element made of the whole stream, not of the record at the cursor: "
+                + "the chain was handed the stream and run once, and the records being stepped were cut "
+                + "from what came out of it. Stepping on moves the stage's record, not this."));
+        if (nested.isTruncated()) {
+            indicators.add(new StoredError(Severity.INFO, null, elementId,
+                    "Shown from the beginning and cut short. One run over the whole stream is shown "
+                    + "against every record of it, so carrying all of it would store the stream once "
+                    + "per record. Open the fragment from the stage pane to step the whole of it."));
+        }
+        return indicators;
     }
 
     /**
@@ -649,6 +730,10 @@ public class SteppingScreenController extends Controller {
                 output,
                 1,
                 elementData.isFormatOutput());
+
+        // And what the element had to say about the step beyond its text (A30): a supervised stage's
+        // decision, where its code pane would be.
+        steppingElement.setStepDetails(elementData.getDetails());
     }
 
     public void setPipelineDoc(final PipelineDoc pipelineDoc) {
@@ -1032,6 +1117,39 @@ public class SteppingScreenController extends Controller {
         }
     }
 
+    /// Take the elements each element of the pipeline ran inside itself from the step being shown, and
+    /// hang them in the tree beneath whatever ran them (A30).
+    ///
+    /// Read afresh every step. Which chain a stage ran depends on the stream in front of it, so a step
+    /// onto a stream of another shape may find a different chain or none — and what was hung from the
+    /// step before must not still be hanging there.
+    private void readNested() {
+        nestedData.clear();
+        final Map<String, List<PipelineElement>> discovered = new HashMap<>();
+        // The effective step data and not this step's own: a step that found no record — off the end of
+        // the stream — leaves every pane showing the last record that was found, and the tree has to
+        // agree with them or the chain vanishes from beneath a stage whose panes still show its work.
+        final SharedStepData stepData = getEffectiveStepData();
+        NullSafe.map(NullSafe.get(stepData, SharedStepData::getElementMap)).forEach((parentId, data) -> {
+            final List<NestedElementData> ran = NullSafe.get(data,
+                    SharedElementData::getDetails,
+                    ElementStepDetails::getNested);
+            if (NullSafe.hasItems(ran)) {
+                final List<PipelineElement> children = new ArrayList<>();
+                ran.forEach(element -> {
+                    nestedData.put(element.getId(), element);
+                    children.add(new PipelineElement(element.getId(), element.getType(),
+                            element.getName(), null));
+                });
+                discovered.put(parentId, children);
+            }
+        });
+        treeBuilder.setNested(discovered);
+        // Drawn again whether or not anything was found, so that a chain that has gone stops being
+        // shown: the bar asks for the tree again when it is given its builder.
+        pipelinePathBar.setPipelineTreeBuilder(treeBuilder);
+    }
+
     private void readResult(final SteppingResult result) {
         Optional<String> fatalErrors = Optional.empty();
         try {
@@ -1041,6 +1159,7 @@ public class SteppingScreenController extends Controller {
                 lastFoundResult = result;
             }
 
+            readNested();
             updateElementSeverities();
 
             // Tell all editors that a refresh is required.

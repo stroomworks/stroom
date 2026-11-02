@@ -293,6 +293,14 @@ include 'stroom-security:stroom-security-mock'
 include 'stroom-security:stroom-security-openid-api'
 include 'stroom-security:stroom-security-user-api'
 
+// Pipeline Factory
+include 'stroom-pipeline-factory:stroom-pipeline-factory-impl'
+include 'stroom-pipeline-factory:stroom-pipeline-factory-impl-db'
+
+// Shapeshifter
+include 'stroom-shapeshifter:stroom-shapeshifter-ai'
+include 'stroom-shapeshifter:stroom-shapeshifter-ai-impl-db'
+
 // SQL Store
 include 'stroom-sqlstore:stroom-sqlstore-api'
 include 'stroom-sqlstore:stroom-sqlstore-shared'

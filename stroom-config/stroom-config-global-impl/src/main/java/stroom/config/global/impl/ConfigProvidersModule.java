@@ -567,6 +567,15 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
+    stroom.pipelinefactory.impl.PipelineFactoryConfig getPipelineFactoryConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.pipelinefactory.impl.PipelineFactoryConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
     stroom.planb.impl.PlanBConfig getPlanBConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
@@ -842,6 +851,15 @@ public class ConfigProvidersModule extends AbstractModule {
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
                 stroom.security.impl.StroomOpenIdConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
+    stroom.shapeshifter.ai.ShapeshifterAiConfig getShapeshifterAiConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.shapeshifter.ai.ShapeshifterAiConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")

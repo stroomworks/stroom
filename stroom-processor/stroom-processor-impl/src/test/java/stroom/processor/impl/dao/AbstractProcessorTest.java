@@ -201,6 +201,15 @@ class AbstractProcessorTest {
                                        final String nodeName,
                                        final String feedName,
                                        final Instant statusTime) {
+        return createProcessorTask(processorFilter, taskStatus, nodeName, feedName, statusTime, 123L);
+    }
+
+    protected long createProcessorTask(final ProcessorFilter processorFilter,
+                                       final TaskStatus taskStatus,
+                                       final String nodeName,
+                                       final String feedName,
+                                       final Instant statusTime,
+                                       final long metaId) {
         final long now = System.currentTimeMillis();
         final ProcessorTaskRecord processorTaskRecord = PROCESSOR_TASK.newRecord();
         processorTaskRecord.setCreateTimeMs(now);
@@ -209,7 +218,7 @@ class AbstractProcessorTest {
         processorTaskRecord.setFkProcessorFeedId(processorFeedCache.getOrCreate(feedName));
         processorTaskRecord.setStatus(taskStatus.getPrimitiveValue());
         processorTaskRecord.setStatusTimeMs(statusTime.toEpochMilli());
-        processorTaskRecord.setMetaId(123L);
+        processorTaskRecord.setMetaId(metaId);
         processorTaskRecord.setData("my data");
 
         JooqUtil.context(processorDbConnProvider, context -> {

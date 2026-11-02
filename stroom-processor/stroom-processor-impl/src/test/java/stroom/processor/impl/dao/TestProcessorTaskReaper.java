@@ -25,6 +25,8 @@ import stroom.processor.shared.TaskStatus;
 import stroom.util.time.StroomDuration;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
 import java.time.Duration;
@@ -118,9 +120,33 @@ class TestProcessorTaskReaper extends AbstractProcessorTest {
                 .isZero();
     }
 
+    /**
+     * Design 04 §5.2. A deferred task comes back after the configured retry delay, in either mode, and
+     * not before.
+     */
+    @ParameterizedTest(name = "claimTasksOnWorker={0}")
+    @ValueSource(booleans = {false, true})
+    void deferredTasksReturnAfterTheRetryDelay(final boolean claimTasksOnWorker) {
+        final Processor processor = createProcessor();
+        final ProcessorFilter filter = createProcessorFilter(processor);
+        final Instant now = Instant.now();
+        // The mocked delay is 5m: 6m-stale is due, 4m-stale is not.
+        final long due = createProcessorTask(
+                filter, TaskStatus.DEFERRED, null, FEED, now.minus(Duration.ofMinutes(6)));
+        final long notYet = createProcessorTask(
+                filter, TaskStatus.DEFERRED, null, FEED, now.minus(Duration.ofMinutes(4)));
+
+        reaper(claimTasksOnWorker).reap(now);
+
+        assertThat(getTaskStatus(due)).isEqualTo(TaskStatus.CREATED);
+        assertThat(getTaskNodeId(due)).isNull();
+        assertThat(getTaskStatus(notYet)).isEqualTo(TaskStatus.DEFERRED);
+    }
+
     private ProcessorTaskReaper reaper(final boolean claimTasksOnWorker) {
         final ProcessorConfig processorConfig = Mockito.mock(ProcessorConfig.class);
         Mockito.when(processorConfig.getTaskLeaseTimeout()).thenReturn(StroomDuration.ofMinutes(10));
+        Mockito.when(processorConfig.getDeferredTaskRetryDelay()).thenReturn(StroomDuration.ofMinutes(5));
         Mockito.when(processorConfig.isClaimTasksOnWorker()).thenReturn(claimTasksOnWorker);
         return new ProcessorTaskReaper(
                 getInjector().getInstance(ClusterLockService.class),

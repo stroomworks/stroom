@@ -28,6 +28,7 @@ import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.LoggingErrorReceiver;
 import stroom.pipeline.errorhandler.ProcessException;
 import stroom.pipeline.factory.Element;
+import stroom.pipeline.factory.InjectedCode;
 import stroom.pipeline.factory.PipelineDataHolder;
 import stroom.pipeline.factory.PipelineDataHolderFactory;
 import stroom.pipeline.factory.PipelineFactory;
@@ -101,6 +102,7 @@ public class ReprocessDriver {
     private final SteppingController controller;
     private final PipelineStore pipelineStore;
     private final PipelineFactory pipelineFactory;
+    private final InjectedCode injectedCode;
     private final ErrorReceiverProxy errorReceiverProxy;
     private final PipelineDataHolderFactory pipelineDataHolderFactory;
     private final PipelineContext pipelineContext;
@@ -125,6 +127,7 @@ public class ReprocessDriver {
                     final SteppingController controller,
                     final PipelineStore pipelineStore,
                     final PipelineFactory pipelineFactory,
+                    final InjectedCode injectedCode,
                     final ErrorReceiverProxy errorReceiverProxy,
                     final PipelineDataHolderFactory pipelineDataHolderFactory,
                     final PipelineContext pipelineContext,
@@ -141,6 +144,7 @@ public class ReprocessDriver {
         this.controller = controller;
         this.pipelineStore = pipelineStore;
         this.pipelineFactory = pipelineFactory;
+        this.injectedCode = injectedCode;
         this.errorReceiverProxy = errorReceiverProxy;
         this.pipelineDataHolderFactory = pipelineDataHolderFactory;
         this.pipelineContext = pipelineContext;
@@ -438,6 +442,9 @@ public class ReprocessDriver {
         metaDataHolder.setMetaDataProvider(new StreamMetaDataProvider(metaHolder, pipelineStore));
         pipelineHolder.setPipeline(DocRefUtil.create(pipelineDoc));
         pipelineContext.setStepping(true);
+
+        // As StreamCaptureDriver: a person's edits reach the elements through the carrier (§12 item 1).
+        injectedCode.set(request.getCode());
 
         final PipelineDataHolder pipelineDataHolder = pipelineDataHolderFactory.create(pipelineDoc);
         final PipelineData pipelineData = pipelineDataHolder.getMergedPipelineData();

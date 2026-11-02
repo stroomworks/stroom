@@ -842,6 +842,26 @@ appConfig:
         refreshAfterWrite: null
         statisticsMode: "INTERNAL"
       maxElements: 1000000
+  pipelineFactory:
+    db:
+      connection:
+        jdbcDriverClassName: null
+        jdbcDriverPassword: null
+        jdbcDriverUrl: null
+        jdbcDriverUsername: null
+      connectionPool:
+        cachePrepStmts: false
+        connectionTimeout: "PT30S"
+        idleTimeout: "PT10M"
+        leakDetectionThreshold: "PT0S"
+        maxLifetime: "PT30M"
+        maxPoolSize: 30
+        minimumIdle: 10
+        prepStmtCacheSize: 25
+        prepStmtCacheSqlLimit: 256
+    maxScanBatchesPerRun: 100
+    retryFailedAfter: "PT10M"
+    scanBatchSize: 10000
   planb:
     defaultShardCounts:
       STATE: 16
@@ -890,6 +910,7 @@ appConfig:
         minimumIdle: 10
         prepStmtCacheSize: 25
         prepStmtCacheSqlLimit: 256
+    deferredTaskRetryDelay: "PT5M"
     deleteAge: "P1D"
     fillTaskQueue: true
     processorCache:
@@ -1340,6 +1361,38 @@ appConfig:
     httpOnly: true
     sameSite: "STRICT"
     secure: true
+  shapeshifterAi:
+    attemptRetention: "P90D"
+    bindingCache:
+      expireAfterAccess: "PT10M"
+      expireAfterWrite: null
+      maximumSize: 1000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    db:
+      connection:
+        jdbcDriverClassName: null
+        jdbcDriverPassword: null
+        jdbcDriverUrl: null
+        jdbcDriverUsername: null
+      connectionPool:
+        cachePrepStmts: false
+        connectionTimeout: "PT30S"
+        idleTimeout: "PT10M"
+        leakDetectionThreshold: "PT0S"
+        maxLifetime: "PT30M"
+        maxPoolSize: 30
+        minimumIdle: 10
+        prepStmtCacheSize: 25
+        prepStmtCacheSqlLimit: 256
+    deferredLearningBatchSize: 10
+    learnerStateCache:
+      expireAfterAccess: "PT10M"
+      expireAfterWrite: null
+      maximumSize: 10000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    sessionLease: "PT10M"
   solr:
     indexCache:
       expireAfterAccess: null

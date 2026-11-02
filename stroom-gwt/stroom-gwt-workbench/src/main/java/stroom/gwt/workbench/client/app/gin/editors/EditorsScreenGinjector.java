@@ -37,10 +37,13 @@ import stroom.openai.client.component.OpenAIModelEditor;
 import stroom.pathways.client.component.PathwaysEditor;
 import stroom.pipeline.client.component.TextConverterEditor;
 import stroom.pipeline.client.component.XsltEditor;
+import stroom.pipelinefactory.client.component.PipelineFactoryEditor;
 import stroom.script.client.component.ScriptEditor;
 import stroom.search.elastic.client.component.ElasticClusterEditor;
 import stroom.search.elastic.client.component.ElasticIndexEditor;
 import stroom.search.solr.client.component.SolrIndexEditor;
+import stroom.shapeshifter.client.component.ShapeshifterAiEditor;
+import stroom.shapeshifter.client.component.StageDecisionPaneController;
 import stroom.sqlstore.client.component.SqlTemporalStoreEditor;
 import stroom.sqlstore.client.component.SqlTemporalStoreSettingsController;
 import stroom.visualisation.client.component.VisualisationEditor;
@@ -157,6 +160,18 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
 
     /// @return A Feed's editor, as `FeedPlugin` opens it.
     FeedEditor getFeedEditor();
+
+    // Shapeshifter AI and the Pipeline Factory
+
+    /// @return A Shapeshifter AI document's editor, as `ShapeshifterAiPlugin` opens it.
+    ShapeshifterAiEditor getShapeshifterAiEditor();
+
+    /// @return A supervised stage's pane in the stepping screen, as `ShapeshifterAiPlugin` registers
+    /// it with `ElementStepDetailsPaneRegistry`.
+    StageDecisionPaneController getStageDecisionPane();
+
+    /// @return A Pipeline Factory's editor, as `PipelineFactoryPlugin` opens it.
+    PipelineFactoryEditor getPipelineFactoryEditor();
 
     // AI
 

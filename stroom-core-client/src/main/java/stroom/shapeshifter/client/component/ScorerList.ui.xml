@@ -1,0 +1,12 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The Score tab's scorers, a row each, with Add, Edit, Remove and a pager -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel toolbarName="Scorer actions">
+        <b:ToolbarButton ui:field="addButton" svg="ADD" title="Add scorer"/>
+        <b:ToolbarButton ui:field="editButton" svg="EDIT" title="Edit selected scorer" enabled="false"/>
+        <b:ToolbarButton ui:field="removeButton" svg="DELETE" title="Remove selected scorer" enabled="false"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Scorers"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

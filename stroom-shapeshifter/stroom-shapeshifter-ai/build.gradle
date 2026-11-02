@@ -1,0 +1,113 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+plugins {
+    id 'java-test-fixtures'
+}
+
+ext.moduleName = 'stroom.shapeshifter.ai'
+
+dependencies {
+    implementation project(':stroom-ai:stroom-ai-api')
+    implementation project(':stroom-cache:stroom-cache-api')
+    implementation project(':stroom-config:stroom-config-common')
+    implementation project(':stroom-core-shared')
+    implementation project(':stroom-data:stroom-data-store-api')
+    implementation project(':stroom-docref')
+    implementation project(':stroom-docstore:stroom-docstore-api')
+    implementation project(':stroom-event-logging:stroom-event-logging-api')
+    implementation project(':stroom-event-logging-rs:stroom-event-logging-rs-api')
+    implementation project(':stroom-explorer:stroom-explorer-api')
+    implementation project(':stroom-importexport:stroom-importexport-api')
+    implementation project(':stroom-job:stroom-job-api')
+    implementation project(':stroom-meta:stroom-meta-api')
+    implementation project(':stroom-node:stroom-node-api')
+    implementation project(':stroom-pipeline')
+    implementation project(':stroom-processor:stroom-processor-api')
+    implementation project(':stroom-query:stroom-query-api')
+    implementation project(':stroom-search:stroom-expression-matcher')
+    implementation project(':stroom-security:stroom-security-api')
+    implementation project(':stroom-task:stroom-task-api')
+    implementation project(':stroom-util')
+    implementation project(':stroom-util-shared')
+
+    implementation libs.guice
+    implementation libs.jackson.databind
+    implementation libs.jakarta.inject
+    implementation libs.jakarta.validation.api
+    implementation libs.langchain4j
+    implementation libs.restygwt
+    implementation libs.saxon.he
+    implementation libs.slf4j.api
+
+    // The extraction-stage evaluation (design §9) runs the Data Splitter headlessly against the
+    // TestDS3 corpus. The Data Splitter validates its configuration against a schema that lives in
+    // a content pack, so the tests stand up the same in-memory schema store the stroom-pipeline
+    // tests use, wired here rather than borrowed from that module's test sources.
+    // Scenario definitions (design 02) are test fixtures so that stroom-app's integration tests can
+    // run the same scenarios against a real pipeline.
+    testFixturesImplementation project(':stroom-core-shared')
+    testFixturesImplementation project(':stroom-docref')
+    testFixturesImplementation project(':stroom-docstore:stroom-docstore-api')
+    testFixturesImplementation project(':stroom-docstore:stroom-docstore-impl')
+    testFixturesImplementation project(':stroom-docstore:stroom-docstore-impl-memory')
+    testFixturesImplementation project(':stroom-explorer:stroom-explorer-api')
+    testFixturesImplementation project(':stroom-importexport:stroom-importexport-api')
+    testFixturesImplementation project(':stroom-pipeline')
+    testFixturesImplementation project(':stroom-processor:stroom-processor-api')
+    testFixturesImplementation project(':stroom-query:stroom-query-api')
+    testFixturesImplementation project(':stroom-security:stroom-security-api')
+    testFixturesImplementation project(':stroom-security:stroom-security-mock')
+    testFixturesImplementation project(':stroom-test-common')
+    testFixturesImplementation project(':stroom-util')
+    testFixturesImplementation project(':stroom-util-shared')
+
+    testFixturesImplementation platform(libs.junit.bom)
+    testFixturesImplementation platform(libs.dropwizard.dependencies)
+    testFixturesImplementation libs.assertj.core
+    testFixturesImplementation libs.guice
+    testFixturesImplementation libs.jakarta.inject
+    testFixturesImplementation libs.junit.jupiter.api
+    testFixturesImplementation libs.saxon.he
+    testFixturesImplementation libs.langchain4j
+    testFixturesImplementation libs.langchain4j.open.ai
+    testFixturesImplementation libs.slf4j.api
+
+    testImplementation project(':stroom-docstore:stroom-docstore-impl')
+    testImplementation project(':stroom-docstore:stroom-docstore-impl-memory')
+    testImplementation project(':stroom-meta:stroom-meta-api')
+    testImplementation project(':stroom-query:stroom-query-api')
+    testImplementation project(':stroom-security:stroom-security-mock')
+    testImplementation project(':stroom-cache:stroom-cache-impl')
+    testImplementation project(':stroom-test-common')
+
+    testImplementation libs.langchain4j
+    testImplementation libs.langchain4j.open.ai
+    testImplementation libs.slf4j.api
+
+    testImplementation libs.bundles.common.test.implementation
+    testRuntimeOnly libs.bundles.common.test.runtime
+}
+
+// Writes the demo content pack and its data to the repository root, where they are committed. The pack is a
+// deliverable, not a test: run this after changing the demo document, the flow examples or the templates,
+// and TestDemoContentPack then checks the committed pack against what the code would write.
+tasks.register('generateDemoContentPack', JavaExec) {
+    dependsOn compileTestJava
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'stroom.shapeshifter.ai.pack.GenerateDemoContentPack'
+    args = [rootProject.file('shapeshifter-ai-demo-v1.0.zip').absolutePath]
+}

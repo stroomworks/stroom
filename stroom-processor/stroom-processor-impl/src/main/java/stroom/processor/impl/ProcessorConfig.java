@@ -46,6 +46,7 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
     private static final boolean DEFAULT_USE_MAX_META_ID_FROM_PREVIOUS_POLL = true;
     private static final StroomDuration DEFAULT_TASK_AVAILABILITY_INTERVAL = StroomDuration.ofSeconds(5);
     private static final StroomDuration DEFAULT_TASK_LEASE_TIMEOUT = StroomDuration.ofMinutes(10);
+    private static final StroomDuration DEFAULT_DEFERRED_TASK_RETRY_DELAY = StroomDuration.ofMinutes(5);
 
     private final ProcessorDbConfig dbConfig;
     private boolean claimTasksOnWorker;
@@ -69,6 +70,7 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
 
     private final StroomDuration taskAvailabilityInterval;
     private final StroomDuration taskLeaseTimeout;
+    private final StroomDuration deferredTaskRetryDelay;
 
     private StroomDuration skipNonProducingFiltersDuration;
     private StroomDuration skipNonProducingFiltersMaxDuration;
@@ -112,6 +114,7 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
                 .build();
         taskAvailabilityInterval = DEFAULT_TASK_AVAILABILITY_INTERVAL;
         taskLeaseTimeout = DEFAULT_TASK_LEASE_TIMEOUT;
+        deferredTaskRetryDelay = DEFAULT_DEFERRED_TASK_RETRY_DELAY;
         skipNonProducingFiltersDuration = StroomDuration.ofSeconds(10);
         skipNonProducingFiltersMaxDuration = StroomDuration.ofMinutes(1);
         skipEmptyFilterFetchDuration = StroomDuration.ofSeconds(10);
@@ -139,6 +142,7 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
                            @JsonProperty("processorProfileCache") final CacheConfig processorProfileCache,
                            @JsonProperty("taskAvailabilityInterval") final StroomDuration taskAvailabilityInterval,
                            @JsonProperty("taskLeaseTimeout") final StroomDuration taskLeaseTimeout,
+                           @JsonProperty("deferredTaskRetryDelay") final StroomDuration deferredTaskRetryDelay,
                            @JsonProperty("skipNonProducingFiltersDuration") final StroomDuration
                                    skipNonProducingFiltersDuration,
                            @JsonProperty("skipNonProducingFiltersMaxDuration") final StroomDuration
@@ -175,6 +179,8 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
         this.taskAvailabilityInterval = Objects.requireNonNullElse(
                 taskAvailabilityInterval, DEFAULT_TASK_AVAILABILITY_INTERVAL);
         this.taskLeaseTimeout = Objects.requireNonNullElse(taskLeaseTimeout, DEFAULT_TASK_LEASE_TIMEOUT);
+        this.deferredTaskRetryDelay = Objects.requireNonNullElse(
+                deferredTaskRetryDelay, DEFAULT_DEFERRED_TASK_RETRY_DELAY);
         this.skipNonProducingFiltersDuration = skipNonProducingFiltersDuration;
         this.skipNonProducingFiltersMaxDuration = skipNonProducingFiltersMaxDuration;
         this.skipEmptyFilterFetchDuration = skipEmptyFilterFetchDuration;
@@ -338,6 +344,17 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
         return taskLeaseTimeout;
     }
 
+    @JsonPropertyDescription("The minimum time a deferred task waits before it is tried again. An element " +
+                             "defers a task when what its stream needs is not there yet (a Shapeshifter AI " +
+                             "translation still being learned, say): the task is put back, nothing is written " +
+                             "for the stream, and the reaper returns it to CREATED once this long has passed " +
+                             "since it was deferred. Whatever the task waited for may wake it sooner. Honoured " +
+                             "at the reaper's own frequency, so a task waits at least this long and at most " +
+                             "this long plus one run of the 'Processor Task Reaper' job.")
+    public StroomDuration getDeferredTaskRetryDelay() {
+        return deferredTaskRetryDelay;
+    }
+
 
     @JsonPropertyDescription("How long should we wait before retrying task creation for previously non producing " +
                              "filters. This is also the amount by which the wait increases after each successive " +
@@ -415,6 +432,7 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
                ", waitToQueueTasksDuration=" + waitToQueueTasksDuration +
                ", taskAvailabilityInterval=" + taskAvailabilityInterval +
                ", taskLeaseTimeout=" + taskLeaseTimeout +
+               ", deferredTaskRetryDelay=" + deferredTaskRetryDelay +
                ", skipNonProducingFiltersDuration=" + skipNonProducingFiltersDuration +
                ", useMaxMetaIdFromPreviousPoll=" + useMaxMetaIdFromPreviousPoll +
                '}';

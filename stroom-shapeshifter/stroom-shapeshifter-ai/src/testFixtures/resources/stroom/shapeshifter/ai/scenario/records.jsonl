@@ -1,0 +1,12 @@
+{"time": "2026-09-21T09:20:00.000Z", "host": "api01", "user": "alice", "client": {"ip": "10.0.2.10", "port": 40000}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:21:00.000Z", "host": "api02", "user": "bob", "client": {"ip": "10.0.2.11", "port": 40001}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:22:00.000Z", "host": "api03", "user": "carol", "client": {"ip": "10.0.2.12", "port": 40002}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:23:00.000Z", "host": "api01", "user": "dave", "client": {"ip": "10.0.2.13", "port": 40003}, "kind": "logout", "session": {"id": "s-0703", "seconds": 240}}
+{"time": "2026-09-21T09:24:00.000Z", "host": "api02", "user": "erin", "client": {"ip": "10.0.2.14", "port": 40004}, "kind": "login", "outcome": "failure"}
+{"time": "2026-09-21T09:25:00.000Z", "host": "api03", "user": "frank", "client": {"ip": "10.0.2.15", "port": 40005}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:26:00.000Z", "host": "api01", "user": "alice", "client": {"ip": "10.0.2.16", "port": 40006}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:27:00.000Z", "host": "api02", "user": "bob", "client": {"ip": "10.0.2.17", "port": 40007}, "kind": "logout", "session": {"id": "s-0707", "seconds": 480}}
+{"time": "2026-09-21T09:28:00.000Z", "host": "api03", "user": "carol", "client": {"ip": "10.0.2.18", "port": 40008}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:29:00.000Z", "host": "api01", "user": "dave", "client": {"ip": "10.0.2.19", "port": 40009}, "kind": "login", "outcome": "failure"}
+{"time": "2026-09-21T09:30:00.000Z", "host": "api02", "user": "erin", "client": {"ip": "10.0.2.20", "port": 40010}, "kind": "login", "outcome": "success"}
+{"time": "2026-09-21T09:31:00.000Z", "host": "api03", "user": "frank", "client": {"ip": "10.0.2.21", "port": 40011}, "kind": "logout", "session": {"id": "s-0711", "seconds": 720}}

@@ -31,6 +31,7 @@ import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.LoggedException;
 import stroom.pipeline.errorhandler.LoggingErrorReceiver;
 import stroom.pipeline.errorhandler.ProcessException;
+import stroom.pipeline.factory.InjectedCode;
 import stroom.pipeline.factory.Pipeline;
 import stroom.pipeline.factory.PipelineDataHolder;
 import stroom.pipeline.factory.PipelineDataHolderFactory;
@@ -97,6 +98,7 @@ public class StreamCaptureDriver {
     private final PipelineContext pipelineContext;
     private final SecurityContext securityContext;
     private final SweepRun sweepRun;
+    private final InjectedCode injectedCode;
 
     private TaskContext taskContext;
     private Set<String> stopAfter = Set.of();
@@ -127,7 +129,8 @@ public class StreamCaptureDriver {
                            final ErrorReceiverProxy errorReceiverProxy,
                            final PipelineDataHolderFactory pipelineDataHolderFactory,
                            final PipelineContext pipelineContext,
-                           final SecurityContext securityContext) {
+                           final SecurityContext securityContext,
+                           final InjectedCode injectedCode) {
         this.streamStore = streamStore;
         this.feedProperties = feedProperties;
         this.feedHolder = feedHolder;
@@ -143,6 +146,7 @@ public class StreamCaptureDriver {
         this.pipelineDataHolderFactory = pipelineDataHolderFactory;
         this.pipelineContext = pipelineContext;
         this.securityContext = securityContext;
+        this.injectedCode = injectedCode;
         this.sweepRun = new SweepRun(securityContext, currentUserHolder, errorReceiverProxy, controller);
     }
 
@@ -264,6 +268,11 @@ public class StreamCaptureDriver {
 
             pipelineHolder.setPipeline(DocRefUtil.create(pipelineDoc));
             pipelineContext.setStepping(true);
+
+            // What the person editing in the stepper wants run in place of what is stored (§12 item 1):
+            // the factory takes it from here rather than from the stepping request, so that something
+            // which is not a stepping session can say the same thing.
+            injectedCode.set(controller.getRequest().getCode());
 
             final PipelineDataHolder pipelineDataHolder = pipelineDataHolderFactory.create(pipelineDoc);
             final PipelineData pipelineData = pipelineDataHolder.getMergedPipelineData();

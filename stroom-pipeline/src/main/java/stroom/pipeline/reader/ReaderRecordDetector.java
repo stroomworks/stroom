@@ -17,7 +17,7 @@
 package stroom.pipeline.reader;
 
 import stroom.pipeline.errorhandler.ProcessException;
-import stroom.pipeline.stepping.capture.SteppingController;
+import stroom.pipeline.stepping.capture.PipelineCapture;
 import stroom.task.api.TaskTerminatedException;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -33,7 +33,7 @@ public class ReaderRecordDetector extends FilterReader {
 
     private static final int MAX_COUNT = 10000;
     private final char[] readBuffer = new char[1024];
-    private final SteppingController controller;
+    private final PipelineCapture controller;
     private long currentStepNo;
     private int readCount = 0;
     private int readBufferOffset = 0;
@@ -42,7 +42,7 @@ public class ReaderRecordDetector extends FilterReader {
     private int count;
     private boolean end;
 
-    ReaderRecordDetector(final Reader reader, final SteppingController controller) {
+    ReaderRecordDetector(final Reader reader, final PipelineCapture controller) {
         super(reader);
         this.controller = controller;
     }

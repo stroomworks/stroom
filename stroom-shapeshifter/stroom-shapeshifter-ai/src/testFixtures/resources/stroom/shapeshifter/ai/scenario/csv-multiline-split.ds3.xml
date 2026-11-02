@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter
+    xmlns="data-splitter:3"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+    version="3.0">
+  <!-- One record is five unquoted fields and a sixth that is either quoted - and may then hold commas, doubled
+       quotes and line breaks - or runs to the end of the line; the whole record is the one field -->
+  <regex pattern="^((?:[^,\n]*,){5}(?:&quot;(?:[^&quot;]|&quot;&quot;)*&quot;|[^\n]*))\n?">
+    <data name="record" value="$1"/>
+  </regex>
+</dataSplitter>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter
+    xmlns="data-splitter:3"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+    version="3.0">
+  <!-- Six fields: five unquoted, then a note that is either quoted - holding commas, doubled quotes and line
+       breaks - or runs to the end of the line -->
+  <regex pattern="^([^,\n]*),([^,\n]*),([^,\n]*),([^,\n]*),([^,\n]*),(&quot;(?:[^&quot;]|&quot;&quot;)*&quot;|[^\n]*)\n?">
+    <data name="time" value="$1"/>
+    <data name="user" value="$2"/>
+    <data name="workstation" value="$3"/>
+    <data name="action" value="$4"/>
+    <data name="document" value="$5"/>
+    <data name="note" value="$6"/>
+  </regex>
+</dataSplitter>

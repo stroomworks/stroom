@@ -1,0 +1,593 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Events xmlns="event-logging:3"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="event-logging:3 file://event-logging-v3.0.0.xsd"
+        Version="3.0.0">
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:16:37.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>bob</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>board pack.pdf</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:18:14.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>carol</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>old draft.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Opened from the "Finance" share</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:19:51.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS01</Name>
+         </Device>
+         <User>
+            <Id>dave</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>risk register.xlsx</Name>
+            </Document>
+            <Outcome>
+               <Description>Opened from the "Finance" share;
+read only</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:21:28.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>erin</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>DELETE</TypeId>
+         <Delete>
+            <Document>
+               <Name>minutes 2026-09.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Removed, no longer needed</Description>
+            </Outcome>
+         </Delete>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:23:05.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>alice</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>site plan.dwg</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:24:42.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS01</Name>
+         </Device>
+         <User>
+            <Id>bob</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>Q3 budget.xlsx</Name>
+            </Document>
+            <Outcome>
+               <Description>Checked the "final" figures
+before the board meeting</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:26:19.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>carol</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>board pack.pdf</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:27:56.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>dave</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>DELETE</TypeId>
+         <Delete>
+            <Document>
+               <Name>old draft.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Superseded</Description>
+            </Outcome>
+         </Delete>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:29:33.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS01</Name>
+         </Device>
+         <User>
+            <Id>erin</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>risk register.xlsx</Name>
+            </Document>
+            <Outcome>
+               <Description>Read the "actions" section
+only</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:31:10.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>alice</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>minutes 2026-09.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Opened from the "Finance" share</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:32:47.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>bob</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>site plan.dwg</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:34:24.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS01</Name>
+         </Device>
+         <User>
+            <Id>carol</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>DELETE</TypeId>
+         <Delete>
+            <Document>
+               <Name>Q3 budget.xlsx</Name>
+            </Document>
+            <Outcome>
+               <Description>Removed after review, superseded
+by the v2 draft</Description>
+            </Outcome>
+         </Delete>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:36:01.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>dave</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>board pack.pdf</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:37:38.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>erin</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>old draft.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Opened from the "Finance" share</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:39:15.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS01</Name>
+         </Device>
+         <User>
+            <Id>alice</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>risk register.xlsx</Name>
+            </Document>
+            <Outcome>
+               <Description>Printed for the site visit
+and returned</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:40:52.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>bob</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>DELETE</TypeId>
+         <Delete>
+            <Document>
+               <Name>minutes 2026-09.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Removed, no longer needed</Description>
+            </Outcome>
+         </Delete>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:42:29.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>carol</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>site plan.dwg</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:44:06.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS01</Name>
+         </Device>
+         <User>
+            <Id>dave</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>Q3 budget.xlsx</Name>
+            </Document>
+            <Outcome>
+               <Description>Opened from the "Finance" share;
+read only</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:45:43.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS02</Name>
+         </Device>
+         <User>
+            <Id>erin</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>VIEW</TypeId>
+         <View>
+            <Document>
+               <Name>board pack.pdf</Name>
+            </Document>
+            <Outcome>
+               <Description>Routine access</Description>
+            </Outcome>
+         </View>
+      </EventDetail>
+   </Event>
+   <Event>
+      <EventTime>
+         <TimeCreated>2026-09-21T09:47:20.000Z</TimeCreated>
+      </EventTime>
+      <EventSource>
+         <System>
+            <Name>Document store</Name>
+            <Environment>Test</Environment>
+         </System>
+         <Generator>Audit export</Generator>
+         <Device>
+            <Name>WS03</Name>
+         </Device>
+         <User>
+            <Id>alice</Id>
+         </User>
+      </EventSource>
+      <EventDetail>
+         <TypeId>DELETE</TypeId>
+         <Delete>
+            <Document>
+               <Name>old draft.docx</Name>
+            </Document>
+            <Outcome>
+               <Description>Superseded</Description>
+            </Outcome>
+         </Delete>
+      </EventDetail>
+   </Event>
+</Events>

@@ -129,6 +129,9 @@
     --pipeline-connector__raw: var(--orange-400);
     --pipeline-connector__xml: var(--purple-200);
     --pipeline-connector__bytes: var(--blue-300);
+    --flow-chart__path: var(--orange-400);
+    /* Black, as white is 1.9:1 against the path */
+    --flow-chart__path-text: var(--black);
     --pipeline-element__drop-target: var(--icon-colour__green);
     --pipeline-element__drop-refused: var(--icon-colour__red);
     --pipeline-element__background-color--selected: var(--row__background-color--selected);

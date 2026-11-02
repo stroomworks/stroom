@@ -26,4 +26,13 @@ public interface ProcessorTaskService {
     ResultPage<ProcessorTask> find(final ExpressionCriteria criteria);
 
     ResultPage<ProcessorTaskSummary> findSummary(final ExpressionCriteria criteria);
+
+    /// Wake the deferred tasks of every filter on a pipeline: back to `CREATED` ahead of the retry delay,
+    /// because what they were waiting for has happened (design 04 §5.3, design 06 §4.3). Every filter,
+    /// since a reprocess filter a person made beside the one that feeds the pipeline waits on the same
+    /// thing.
+    ///
+    /// @param pipelineUuid The pipeline.
+    /// @return How many were woken.
+    int wakeDeferredTasks(String pipelineUuid);
 }

@@ -1184,6 +1184,17 @@ public enum SvgImage {
             "0.56641 957.2793 z \"/></svg>\n" +
             ""),
 
+    DOCUMENT_PIPELINE_FACTORY("document/PipelineFactory.svg", "svg-image__document-pipeline-factory", "" +
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1792\" height=\"1792\" viewBox=\"0 0 " +
+            "1792 1792\"><rect style=\"fill:var(--icon-colour__green)\" x=\"64\" y=\"448\" width=\"57" +
+            "6\" height=\"896\" rx=\"96\" ry=\"96\"/><g style=\"fill:none;stroke:var(--icon-colour__b" +
+            "lue);stroke-width:128;stroke-linecap:round\"><path d=\"M 640 640 L 1440 640\"/><pat" +
+            "h d=\"M 640 896 L 1440 896\"/><path d=\"M 640 1152 L 1440 1152\"/></g><g style=\"fill" +
+            ":var(--icon-colour__blue)\"><path d=\"M 1376 480 L 1728 640 L 1376 800 Z\"/><path d" +
+            "=\"M 1376 736 L 1728 896 L 1376 1056 Z\"/><path d=\"M 1376 992 L 1728 1152 L 1376 1" +
+            "312 Z\"/></g></svg> \n" +
+            ""),
+
     DOCUMENT_PLAN_B("document/PlanB.svg", "svg-image__document-plan-b", "" +
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1792\" height=\"1792\" viewBox=\"0 0 " +
             "1792 1792\"><path style=\"fill:#f2e900\" d=\"M896 768q237 0 443-43t325-127v170q0 69-" +

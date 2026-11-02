@@ -1,0 +1,20 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- What a supervised stage did with the stream at the stepping cursor (A30): its decision, the stream and
+     what serves it, its fragment, what the scorers made of it and what was said to the model -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:t="urn:import:stroom.widget.text.client"
+             xmlns:b="urn:import:stroom.widget.button.client">
+    <!-- It scrolls, so it takes the focus, as a named region, to be scrolled from the keyboard -->
+    <g:HTMLPanel styleName="max">
+        <div class="max stage-decision-pane scroll-region" role="region" tabindex="0" aria-label="Stage decision">
+            <t:Label ui:field="decision" styleName="stage-decision-pane__decision"/>
+            <t:Html ui:field="summary"/>
+            <b:LinkButton ui:field="fragment" visible="false"/>
+            <div class="stage-decision-pane__heading">Scores</div>
+            <t:Html ui:field="verdicts"/>
+            <div class="stage-decision-pane__heading">Conversation</div>
+            <t:Html ui:field="transcript"/>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>

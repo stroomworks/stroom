@@ -1,0 +1,38 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* The dialog that adds or edits one scorer (ScorerSettingEditor). */
+
+/* A number: a weight, a threshold or an expected ratio */
+.scorer-setting-editor__number {
+    width: 120px;
+}
+
+/* A short name, e.g. a schema group */
+.scorer-setting-editor__text {
+    width: 300px;
+}
+
+/* A list typed one item per line: required fields' XPaths, recognised type ids */
+.scorer-setting-editor__lines {
+    width: 500px;
+    height: 100px;
+}
+
+/* The business rules' list of assertions, framed as a control in the form */
+.scorer-setting-editor__assertions {
+    height: 200px;
+}

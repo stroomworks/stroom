@@ -1,0 +1,25 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- Which learning pipelines the Supervisor lists (design 06 A142): by document, by state, and whether
+     deleted pipelines are shown (A137) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
+             xmlns:dd="urn:import:stroom.widget.dropdowntree.client">
+    <g:FlowPanel styleName="max form learner-filter-editor">
+        <form:FormGroup identity="learnerFilterDocument"
+                        label="Document"
+                        helpText="Which Shapeshifter AI document's pipelines. Left empty, every document you may read.">
+            <dd:DropDownBox ui:field="document" addStyleNames="learner-filter-editor__document"/>
+        </form:FormGroup>
+        <form:FormGroup identity="learnerFilterStates"
+                        label="State"
+                        helpText="Where a pipeline's learner stands. None ticked — or all of them — is every state.">
+            <g:FlowPanel ui:field="states" styleName="dock-container-vertical"/>
+        </form:FormGroup>
+        <form:FormGroup identity="learnerFilterShowDeletedPipelines"
+                        helpText="A deleted pipeline's learning is kept to be read until it ages out. Left unticked, it is not shown.">
+            <tickbox:TickBox ui:field="showDeletedPipelines" addStyleNames="allow-focus" label="Show deleted pipelines"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

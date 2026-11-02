@@ -34,6 +34,7 @@ import stroom.pipeline.filter.NullXMLFilter;
 import stroom.pipeline.filter.XMLFilter;
 import stroom.pipeline.filter.XMLFilterForkFactory;
 import stroom.pipeline.reader.ByteStreamDecoder.DecoderException;
+import stroom.processor.api.DeferTaskException;
 import stroom.task.api.TaskTerminatedException;
 import stroom.util.io.StreamUtil;
 import stroom.util.shared.Location;
@@ -126,6 +127,12 @@ public abstract class AbstractParser extends AbstractElement implements TakesInp
         } catch (final LoggedException e) {
             throw e;
         } catch (final SAXException | RuntimeException e) {
+            final DeferTaskException deferral = DeferTaskException.unwrap(e);
+            if (deferral != null) {
+                // An element below may decide at the start that the task must wait; that is not an
+                // error either.
+                throw deferral;
+            }
             fatal(e);
         }
     }
@@ -192,10 +199,22 @@ public abstract class AbstractParser extends AbstractElement implements TakesInp
             } catch (final ClosedByInterruptException e) {
                 throw new TaskTerminatedException();
             } catch (final IOException | SAXException e) {
+                // A deferral thrown by an element below may reach here wrapped as a SAX failure by a
+                // filter in between; it is still not an error.
+                final DeferTaskException deferral = DeferTaskException.unwrap(e);
+                if (deferral != null) {
+                    throw deferral;
+                }
                 final ProcessException processException = ProcessException.wrap(e);
                 fatal(e);
                 throw processException;
             } catch (final RuntimeException e) {
+                final DeferTaskException deferral = DeferTaskException.unwrap(e);
+                if (deferral != null) {
+                    // Not an error: an element below asked for the task back later, and nothing is to be
+                    // logged against the stream. It goes up to the task handler as it is.
+                    throw deferral;
+                }
                 Throwable exception = e;
                 Throwable cause = e;
                 while (cause != null) {

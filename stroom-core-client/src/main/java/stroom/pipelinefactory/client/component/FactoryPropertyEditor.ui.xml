@@ -1,0 +1,26 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The Property value dialog's content: one value a Pipeline Factory writes onto an element of each
+     pipeline it makes -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client">
+    <g:FlowPanel styleName="max form">
+        <form:FormGroup identity="pipelineFactoryPropertyElementId"
+                        label="Element"
+                        required="true"
+                        helpText="The id of the element in the template's chain, as the pipeline editor shows it.">
+            <form:TextBox ui:field="elementId" addStyleNames="w-100 allow-focus"/>
+        </form:FormGroup>
+        <form:FormGroup identity="pipelineFactoryPropertyName"
+                        label="Property"
+                        required="true"
+                        helpText="The name of the property on that element. It must be one that takes text.">
+            <form:TextBox ui:field="name" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup identity="pipelineFactoryPropertyValue"
+                        label="Value"
+                        helpText="What is written, with ${{feed}, ${{type} or ${{pipeline} replaced by the combination's own value, for whichever of them the key holds.">
+            <form:TextBox ui:field="value" addStyleNames="w-100"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

@@ -141,6 +141,8 @@
     <inherits name="stroom.contentstore.ContentStore"/>
     <inherits name="stroom.gitrepo.GitRepo"/>
     <inherits name="stroom.openai.OpenAIModel"/>
+    <inherits name="stroom.pipelinefactory.PipelineFactory"/>
+    <inherits name="stroom.shapeshifter.ShapeshifterAi"/>
     <inherits name="stroom.search.elastic.ElasticCluster"/>
     <inherits name="stroom.search.elastic.ElasticIndex"/>
     <inherits name="stroom.search.solr.SolrIndex"/>

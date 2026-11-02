@@ -25,6 +25,7 @@ import stroom.widget.layout.client.SplitPane;
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.IsWidget;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 
@@ -64,6 +65,14 @@ public class SteppingElement extends Component {
     /// @param visible Whether the code pane is shown, for an element that has code.
     public void setCodeVisible(final boolean visible) {
         layout.setPaneHidden(codePane, !visible);
+    }
+
+    /// Shows a pane of the element's own in the code pane, in place of the code's editor (A30): what
+    /// the element had to say about a step, chosen by its type at runtime.
+    ///
+    /// @param content The pane.
+    public void setCodeContent(final IsWidget content) {
+        codePane.setWidget(content);
     }
 
     /// @param visible Whether the input pane is shown beside the output, for an element that

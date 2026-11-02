@@ -1,0 +1,79 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A Pipeline Factory's Settings tab (pipeline-factory-settings.css): the form on the left; the
+     streams it looks at above the values it writes on the right -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:q="urn:import:stroom.query.client.component"
+             xmlns:split="urn:import:stroom.widget.layout.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:text="urn:import:stroom.widget.text.client"
+             xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
+             xmlns:dd="urn:import:stroom.widget.dropdowntree.client"
+             xmlns:pf="urn:import:stroom.pipelinefactory.client.component">
+    <g:SimplePanel styleName="max pipeline-factory-settings">
+        <split:SplitPane thin="true" sizes="460px, *" names="Settings, Streams and property values"
+                         addStyleNames="max">
+            <g:ScrollPanel styleName="max">
+                <g:FlowPanel styleName="form-padding form">
+                    <text:Label ui:field="problems" styleName="pipeline-factory-settings__problems"/>
+                    <form:FormGroup identity="pipelineFactoryEnabled"
+                                    label="Enabled"
+                                    helpText="Whether the Pipeline Factory job runs this factory. A factory may be saved incomplete while it is not enabled.">
+                        <tickbox:TickBox ui:field="enabled"/>
+                    </form:FormGroup>
+                    <form:FormGroup identity="pipelineFactoryKey"
+                                    label="One pipeline per"
+                                    helpText="The fields one combination of whose values is one pipeline. Only the fields a processor filter can sort streams by are offered.">
+                        <g:FlowPanel styleName="pipeline-factory-settings__key">
+                            <tickbox:TickBox ui:field="keyFeed" label="Feed"/>
+                            <tickbox:TickBox ui:field="keyType" label="Type"/>
+                            <tickbox:TickBox ui:field="keyPipeline" label="Pipeline that wrote the stream"/>
+                        </g:FlowPanel>
+                    </form:FormGroup>
+                    <form:FormGroup identity="pipelineFactoryTemplate"
+                                    label="Template"
+                                    helpText="The pipeline every made pipeline inherits. A change to it reaches every pipeline made from it.">
+                        <g:SimplePanel addStyleNames="w-100">
+                            <dd:DropDownBox ui:field="template"/>
+                        </g:SimplePanel>
+                    </form:FormGroup>
+                    <form:FormGroup identity="pipelineFactoryFolderPattern"
+                                    label="Folder"
+                                    helpText="Where a made pipeline goes, as a path from the root of the explorer, e.g. Feeds/${{feed}.">
+                        <form:TextBox ui:field="folderPattern" addStyleNames="w-100"/>
+                    </form:FormGroup>
+                    <form:FormGroup identity="pipelineFactoryNamePattern"
+                                    label="Name"
+                                    helpText="What a made pipeline is called, e.g. ${{feed} ${{type}.">
+                        <form:TextBox ui:field="namePattern" addStyleNames="w-100"/>
+                    </form:FormGroup>
+                    <form:FormGroup identity="pipelineFactoryRunAsUser"
+                                    label="Run as user"
+                                    helpText="Who the factory makes its folders, pipelines and filters as, and who the filters it makes run as. It makes only what this user may make.">
+                        <g:SimplePanel>
+                            <dd:DropDownBox ui:field="runAsUser"/>
+                        </g:SimplePanel>
+                    </form:FormGroup>
+                    <text:Label text="Changes apply to what the factory makes next. What it has already made is left as it is."
+                                styleName="pipeline-factory-settings__note"/>
+                </g:FlowPanel>
+            </g:ScrollPanel>
+            <split:SplitPane vertical="true" thin="true" sizes="260px, *"
+                             names="Streams looked at, Property values" addStyleNames="max">
+                <g:FlowPanel styleName="max form-padding form">
+                    <form:FormGroup identity="pipelineFactoryStreamFilter"
+                                    label="Streams looked at"
+                                    helpText="Which streams the factory looks at for combinations it has not met. Every filter it makes takes this and the combination's values. A new factory reads every stream already held that matches, so add a Create Time term to look only at recent streams; the filters it makes then process only those too."
+                                    addStyleNames="dock-max">
+                        <g:SimplePanel styleName="max default-min-sizes">
+                            <q:ExpressionEditor ui:field="streamFilter"/>
+                        </g:SimplePanel>
+                    </form:FormGroup>
+                </g:FlowPanel>
+                <g:SimplePanel styleName="max dock-container-vertical">
+                    <pf:FactoryPropertyList ui:field="properties"/>
+                </g:SimplePanel>
+            </split:SplitPane>
+        </split:SplitPane>
+    </g:SimplePanel>
+</ui:UiBinder>

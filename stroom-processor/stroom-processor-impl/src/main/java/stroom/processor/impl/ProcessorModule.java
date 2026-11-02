@@ -26,6 +26,7 @@ import stroom.processor.api.JobNames;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorService;
 import stroom.processor.api.ProcessorTaskService;
+import stroom.processor.api.SupervisedPipelines;
 import stroom.processor.shared.ProcessorFilterDoc;
 import stroom.processor.shared.ProcessorProfile;
 import stroom.processor.shared.ProcessorResource;
@@ -67,6 +68,8 @@ public class ProcessorModule extends AbstractModule {
         ObjectInfoProviderBinder.create(binder())
                 .bind(ProcessorProfile.class, ProcessorProfileObjectInfoProvider.class);
 
+        // Who can say a pipeline is supervised: nobody, unless the module that knows binds itself here.
+        GuiceUtil.buildMultiBinder(binder(), SupervisedPipelines.class);
         GuiceUtil.buildMultiBinder(binder(), DistributedTaskFactory.class)
                 .addBinding(DataProcessorTaskFactory.class);
 

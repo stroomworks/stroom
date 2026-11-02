@@ -1,0 +1,15 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The values a Pipeline Factory writes onto each pipeline it makes, a row each, with Add, Edit,
+     Remove and a pager -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel toolbarName="Property value actions">
+        <b:ToolbarButton ui:field="addButton" svg="ADD" title="Add a property value"/>
+        <b:ToolbarButton ui:field="editButton" svg="EDIT" title="Edit the selected property value"
+                         enabled="false"/>
+        <b:ToolbarButton ui:field="removeButton" svg="DELETE" title="Remove the selected property value"
+                         enabled="false"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Property values"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

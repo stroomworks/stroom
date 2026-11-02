@@ -93,6 +93,11 @@ class ProcessorTaskServiceImpl implements ProcessorTaskService, Searchable {
     }
 
     @Override
+    public int wakeDeferredTasks(final String pipelineUuid) {
+        return processorTaskDao.wakeDeferredTasks(pipelineUuid);
+    }
+
+    @Override
     public void search(final ExpressionCriteria criteria,
                        final FieldIndex fieldIndex,
                        final DateTimeSettings dateTimeSettings,

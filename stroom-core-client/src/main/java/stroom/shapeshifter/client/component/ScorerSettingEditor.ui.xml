@@ -1,0 +1,102 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The content of the dialog that adds or edits one scorer (scorer-setting-editor.css): its type,
+     weight, threshold and gate, then the parameters of its type, one panel shown at a time -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
+    <g:FlowPanel styleName="max form-padding form scorer-setting-editor">
+        <form:FormGroup identity="scorerType"
+                        label="Scorer"
+                        helpText="Compile: the configuration compiles at all. Input coverage: the share of input the parser consumed rather than discarded. Yield: output records per unit of input, against an expected ratio. Schema conformance: the share of records that validate, per record. Extraction quality: typed-element ratio, Unknown rate and required-field coverage. Business rules: XPath assertions over each record.">
+            <l:SelectionBox ui:field="type"/>
+        </form:FormGroup>
+        <form:FormGroup identity="scorerWeight"
+                        label="Weight"
+                        helpText="How much this score contributes to the weighted total. Zero for a scorer that is a gate only."
+                        screenReaderText="A number of zero or more.">
+            <form:TextBox ui:field="weight" addStyleNames="scorer-setting-editor__number"/>
+        </form:FormGroup>
+        <form:FormGroup identity="scorerThreshold"
+                        label="Threshold"
+                        helpText="The score, from 0 to 1, below which the attempt fails this scorer."
+                        screenReaderText="A number from 0 to 1.">
+            <form:TextBox ui:field="threshold" addStyleNames="scorer-setting-editor__number"/>
+        </form:FormGroup>
+        <form:FormGroup helpText="A gate must reach its threshold on its own, whatever the weighted total says. Schema conformance is a gate, not something to maximise.">
+            <tickbox:TickBox ui:field="gate" identity="scorerGate" label="Gate"/>
+        </form:FormGroup>
+
+        <!-- Yield -->
+        <g:FlowPanel ui:field="yieldParameters" styleName="form">
+            <form:FormGroup identity="yieldExpectedRatio"
+                            label="Expected ratio"
+                            helpText="Output records expected per unit of input. One per input record for a transformation; an extraction stage sets what its data yields."
+                            screenReaderText="A number above zero.">
+                <form:TextBox ui:field="expectedRatio" addStyleNames="scorer-setting-editor__number"/>
+            </form:FormGroup>
+            <form:FormGroup identity="yieldBasis"
+                            label="Per"
+                            helpText="What output records are counted against: input records for a transformation stage, lines or bytes for an extraction stage.">
+                <l:SelectionBox ui:field="basis"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <!-- Schema conformance -->
+        <g:FlowPanel ui:field="schemaConformanceParameters" styleName="form">
+            <form:FormGroup identity="schemaGroup"
+                            label="Schema group"
+                            helpText="The XML schema group each record is validated against, e.g. EVENTS for event-logging.">
+                <form:TextBox ui:field="schemaGroup" addStyleNames="scorer-setting-editor__text"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <!-- Extraction quality -->
+        <g:FlowPanel ui:field="extractionQualityParameters" styleName="form">
+            <form:FormGroup helpText="Whether records classified as Unknown are tolerated. They never count toward a passing score either way.">
+                <tickbox:TickBox ui:field="allowUnknownEventDetail"
+                                 identity="qualityAllowUnknownEventDetail"
+                                 label="Allow Unknown event detail"/>
+            </form:FormGroup>
+            <form:FormGroup identity="qualityRequiredFields"
+                            label="Required fields"
+                            helpText="XPaths, one per line, that every record must populate, e.g. /Event/EventSource/User/Id."
+                            screenReaderText="One XPath per line.">
+                <form:TextArea ui:field="requiredFields" addStyleNames="scorer-setting-editor__lines"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <!-- Business rules -->
+        <g:FlowPanel ui:field="businessRulesParameters" styleName="form">
+            <form:FormGroup identity="rulesAssertions"
+                            label="Assertions"
+                            helpText="XPaths every record must satisfy."
+                            addStyleNames="dock-max">
+                <g:SimplePanel addStyleNames="control-box dock-container-vertical scorer-setting-editor__assertions">
+                    <s:XPathAssertionList ui:field="assertions"/>
+                </g:SimplePanel>
+            </form:FormGroup>
+            <form:FormGroup helpText="A warning or error the transform raises itself with xsl:message about a record counts as a failed rule for that record.">
+                <tickbox:TickBox ui:field="includeTransformMessages"
+                                 identity="rulesIncludeTransformMessages"
+                                 label="Count transform messages"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <!-- Error load -->
+        <g:FlowPanel ui:field="errorLoadParameters" styleName="form">
+            <form:FormGroup identity="errorLoadMinimumSeverity"
+                            label="Count from"
+                            helpText="Diagnostics at this severity and above count against a record.">
+                <l:SelectionBox ui:field="minimumSeverity"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <!-- Event classification -->
+        <g:FlowPanel ui:field="eventClassificationParameters" styleName="form">
+            <form:FormGroup identity="classificationRecognisedTypes"
+                            label="Recognised types"
+                            helpText="TypeId values, one per line, that count as classified. Leave empty to count any type other than Unknown."
+                            screenReaderText="One type id per line; empty counts any but Unknown.">
+                <form:TextArea ui:field="recognisedTypes" addStyleNames="scorer-setting-editor__lines"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

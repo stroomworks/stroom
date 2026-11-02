@@ -33,4 +33,10 @@ public class MockProcessorTaskService implements ProcessorTaskService {
     public ResultPage<ProcessorTaskSummary> findSummary(final ExpressionCriteria criteria) {
         return ResultPage.empty();
     }
+
+    @Override
+    public int wakeDeferredTasks(final String pipelineUuid) {
+        // Nothing is queued here to wake.
+        return 0;
+    }
 }

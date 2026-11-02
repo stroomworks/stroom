@@ -16,6 +16,7 @@
 
 package stroom.pipeline.shared;
 
+import stroom.pipeline.shared.stepping.ElementStepDetails;
 import stroom.util.shared.Indicators;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -48,6 +49,10 @@ public class SharedElementData {
     // counter state to restore. Exact wherever materialisation has been contiguous from the stream start.
     @JsonProperty
     private final boolean indicativeCounts;
+    // What this element has to say about the step beyond the text it read and wrote (A30). Null for
+    // every element that has nothing, which is nearly all of them.
+    @JsonProperty
+    private final ElementStepDetails details;
 
     public SharedElementData(final String input,
                              final String output,
@@ -55,7 +60,17 @@ public class SharedElementData {
                              final boolean formatInput,
                              final boolean formatOutput,
                              final boolean hasOutput) {
-        this(input, output, indicators, formatInput, formatOutput, hasOutput, false);
+        this(input, output, indicators, formatInput, formatOutput, hasOutput, false, null);
+    }
+
+    public SharedElementData(final String input,
+                             final String output,
+                             final Indicators indicators,
+                             final boolean formatInput,
+                             final boolean formatOutput,
+                             final boolean hasOutput,
+                             final boolean indicativeCounts) {
+        this(input, output, indicators, formatInput, formatOutput, hasOutput, indicativeCounts, null);
     }
 
     @JsonCreator
@@ -65,7 +80,8 @@ public class SharedElementData {
                              @JsonProperty("formatInput") final Boolean formatInput,
                              @JsonProperty("formatOutput") final Boolean formatOutput,
                              @JsonProperty("hasOutput") final Boolean hasOutput,
-                             @JsonProperty("indicativeCounts") final Boolean indicativeCounts) {
+                             @JsonProperty("indicativeCounts") final Boolean indicativeCounts,
+                             @JsonProperty("details") final ElementStepDetails details) {
         this.input = input;
         this.output = output;
         this.indicators = indicators;
@@ -73,6 +89,7 @@ public class SharedElementData {
         this.formatOutput = Objects.requireNonNullElse(formatOutput, false);
         this.hasOutput = Objects.requireNonNullElse(hasOutput, false);
         this.indicativeCounts = Objects.requireNonNullElse(indicativeCounts, false);
+        this.details = details;
     }
 
     public String getInput() {
@@ -107,6 +124,15 @@ public class SharedElementData {
 
     public boolean isHasOutput() {
         return hasOutput;
+    }
+
+    /**
+     * What this element has to say about the step beyond its text (A30), or null where it has nothing.
+     * The stepper hands details it recognises to a presenter registered for the type, in place of the
+     * code pane.
+     */
+    public ElementStepDetails getDetails() {
+        return details;
     }
 
     @Override

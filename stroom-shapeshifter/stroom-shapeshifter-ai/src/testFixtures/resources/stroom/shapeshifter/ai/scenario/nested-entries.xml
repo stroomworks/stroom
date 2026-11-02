@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log application="DocVault">
+  <entries>
+    <entry id="e1">
+      <when>2020-06-17T08:00:00.000Z</when>
+      <actor><login>jim</login></actor>
+      <session><host>web01</host></session>
+      <did>login</did>
+    </entry>
+    <entry id="e2">
+      <when>2020-06-17T08:01:00.000Z</when>
+      <actor><login>bob</login></actor>
+      <session><host>web02</host></session>
+      <did>login</did>
+    </entry>
+    <entry id="e3">
+      <when>2020-06-17T08:02:00.000Z</when>
+      <actor><login>pete</login></actor>
+      <session><host>web01</host></session>
+      <did>login</did>
+    </entry>
+  </entries>
+</log>

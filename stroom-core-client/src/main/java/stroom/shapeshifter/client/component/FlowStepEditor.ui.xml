@@ -1,0 +1,60 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- One step of a learning flow as a form, beside the flow's chart (flow-step-editor.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
+    <g:FlowPanel styleName="form flow-step-editor">
+        <form:FormGroup identity="stepKind"
+                        label="Kind"
+                        helpText="What this step asks. Chain picks the elements; Split settles what one record is; Target settles what the events should look like; Configure writes one element's configuration; Admit is the exhaustion step, reached only when a transform's candidates are spent, and asks for the admitted form of what cannot be translated.">
+            <l:SelectionBox ui:field="kind" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup ui:field="roleGroup" identity="stepRole"
+                        label="Role"
+                        helpText="Which elements a Configure step configures: the parser, the transform, or — left empty — every element in chain order. Only a Configure step takes one.">
+            <l:SelectionBox ui:field="role" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup ui:field="whenGroup" identity="stepWhen"
+                        label="When"
+                        helpText="The guard: the step runs only for input of this kind. 'always' runs it for every input.">
+            <l:SelectionBox ui:field="when" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup identity="stepId"
+                        label="Id"
+                        helpText="The step's name for a transition to go to. A word: a letter, then letters, digits, hyphens or underscores. Leave it empty and the step goes by its kind.">
+            <form:TextBox ui:field="id" addStyleNames="flow-step-editor__id"/>
+        </form:FormGroup>
+        <form:FormGroup identity="stepCandidates"
+                        label="Candidates"
+                        helpText="How many answers to ask for at this step before it is spent. Empty for the kind's own default.">
+            <form:TextBox ui:field="candidates" addStyleNames="flow-step-editor__number"/>
+        </form:FormGroup>
+        <form:FormGroup ui:field="kindsGroup" identity="stepKinds"
+                        label="Kinds"
+                        helpText="How many kinds of record to show the model at this step. Empty for the kind's own default.">
+            <form:TextBox ui:field="kinds" addStyleNames="flow-step-editor__number"/>
+        </form:FormGroup>
+        <form:FormGroup ui:field="elementsGroup" identity="stepElements"
+                        label="Elements"
+                        helpText="Pipeline element types, one per line, that the chain question chooses from (A21). Empty for the default set: DSParser, JSONParser, XMLParser and XSLTFilter. With a single entry the chain question is not asked.">
+            <form:TextArea ui:field="elements" addStyleNames="w-100 flow-step-editor__elements"/>
+        </form:FormGroup>
+        <tx:Label ui:field="chainNote" styleName="flow-step-editor__note"
+                  text="The chain is settled first, for every input, and takes no transition: its candidates are re-asked until one names a chain that runs, and nothing can run until then."/>
+        <form:FormGroup ui:field="checksGroup" identity="stepChecks"
+                        label="Checks"
+                        helpText="What judges this step's answers, and so which outcomes it can raise. None ticked is the usual case: the step is judged by its kind's own checks, which the examples all rely on. Tick checks only to narrow or widen what judges this step.">
+            <g:FlowPanel ui:field="checks" styleName="flow-step-editor__checks"/>
+        </form:FormGroup>
+        <form:FormGroup ui:field="transitionsGroup" identity="stepTransitions"
+                        label="Transitions"
+                        helpText="Where the step goes on an outcome. With none it re-asks itself on a shortfall until its candidates are gone, and a pass goes to the next step.">
+            <g:SimplePanel styleName="control-box control-box--padded flow-step-editor__transitions">
+                <s:TransitionList ui:field="transitions"/>
+            </g:SimplePanel>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

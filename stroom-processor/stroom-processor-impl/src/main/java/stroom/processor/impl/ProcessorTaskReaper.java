@@ -47,6 +47,10 @@ import java.time.Instant;
  * The job runs on every node and the lock serialises them; no node is special. Recovery latency
  * is the lease timeout plus at most one job interval.
  * <p>
+ * It also returns DEFERRED tasks to CREATED once {@code stroom.processor.deferredTaskRetryDelay}
+ * has passed since they were deferred, in either mode - see
+ * {@link ProcessorTaskDao#sweepDeferredTasks(Instant)}.
+ * <p>
  * When {@code stroom.processor.claimTasksOnWorker} is true this also sweeps QUEUED and ASSIGNED
  * rows back to CREATED. Nothing in that mode writes either status, so such a row is what the
  * master's queue left behind when the cluster was cut over to claiming - without the
@@ -102,6 +106,11 @@ public class ProcessorTaskReaper {
                 final Instant statusOlderThan = now.minus(leaseTimeout);
                 LOGGER.debug(() -> "Reaping PROCESSING tasks with no heartbeat since " + statusOlderThan);
                 processorTaskDao.reapDeadTasks(statusOlderThan);
+                // In both modes: a deferred task is one an element asked for back later, and nothing but
+                // this returns it. The delay is the minimum; a wake may have returned it already.
+                final Instant deferredBefore = now.minus(processorConfig.getDeferredTaskRetryDelay());
+                LOGGER.debug(() -> "Returning DEFERRED tasks deferred since before " + deferredBefore);
+                processorTaskDao.sweepDeferredTasks(deferredBefore);
 
                 if (processorConfig.isClaimTasksOnWorker()) {
                     // Only in claiming mode: with the master queue in use these rows are the queue,

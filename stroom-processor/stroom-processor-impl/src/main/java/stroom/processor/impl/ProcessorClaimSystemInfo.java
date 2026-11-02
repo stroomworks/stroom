@@ -20,6 +20,7 @@ import stroom.node.api.NodeService;
 import stroom.processor.api.JobNames;
 import stroom.processor.shared.ProcessorClaimStatus;
 import stroom.processor.shared.ProcessorTaskResource;
+import stroom.processor.shared.TaskStatus;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.sysinfo.HasSystemInfo;
@@ -112,6 +113,7 @@ public class ProcessorClaimSystemInfo implements HasSystemInfo {
         // Asked once by whichever node is serving this request, not once per node: it is a
         // cluster wide number and N identical queries would say nothing extra.
         final int deadTaskCount = countDeadTasks();
+        final int deferredTaskCount = countDeferredTasks();
 
         return SystemInfoResult.builder(this)
                 .description("What each node is doing about finding and claiming its own processor tasks")
@@ -123,6 +125,12 @@ public class ProcessorClaimSystemInfo implements HasSystemInfo {
                           + "stroom.processor.taskLeaseTimeout and have not been recovered. Check that the '"
                           + JobNames.PROCESSOR_TASK_REAPER + "' job is enabled and running; while it is not, "
                           + "the tasks of any node that dies are never picked up by another node.")
+                .addDetail("deferredTaskCount", deferredTaskCount)
+                .addDetail("deferredTaskNote", deferredTaskCount == 0
+                        ? null
+                        : deferredTaskCount + " tasks have been put back by an element to be tried later "
+                          + "(DEFERRED); the '" + JobNames.PROCESSOR_TASK_REAPER + "' job returns them after "
+                          + "stroom.processor.deferredTaskRetryDelay, or sooner when what they wait for arrives.")
                 .addDetail("totalTasksInFlight", tasksInFlight)
                 .addDetail("totalTasksClaimed", tasksClaimed)
                 .addDetail("totalClaimAttempts", claimAttempts)
@@ -139,6 +147,19 @@ public class ProcessorClaimSystemInfo implements HasSystemInfo {
         try {
             return processorTaskDaoProvider.get().countDeadTasks(
                     Instant.now().minus(processorConfigProvider.get().getTaskLeaseTimeout()));
+        } catch (final RuntimeException e) {
+            LOGGER.debug(e::getMessage, e);
+            return 0;
+        }
+    }
+
+    /**
+     * How many tasks an element has put back to be tried later. Not a fault, but a feed that is waiting
+     * on something, and worth seeing.
+     */
+    private int countDeferredTasks() {
+        try {
+            return processorTaskDaoProvider.get().countTasks(TaskStatus.DEFERRED);
         } catch (final RuntimeException e) {
             LOGGER.debug(e::getMessage, e);
             return 0;

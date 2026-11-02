@@ -49,6 +49,7 @@ import stroom.node.client.gin.NodeModule;
 import stroom.openai.client.gin.OpenAIModelModule;
 import stroom.pathways.client.gin.PathwaysModule;
 import stroom.pipeline.client.gin.PipelineModule;
+import stroom.pipelinefactory.client.gin.PipelineFactoryModule;
 import stroom.planb.client.gin.PlanBModule;
 import stroom.preferences.client.gin.UserPreferencesGinjector;
 import stroom.preferences.client.gin.UserPreferencesModule;
@@ -64,6 +65,7 @@ import stroom.security.client.gin.SecurityGinjector;
 import stroom.security.client.gin.SecurityModule;
 import stroom.security.identity.client.gin.IdentityGinjector;
 import stroom.security.identity.client.gin.IdentityModule;
+import stroom.shapeshifter.client.gin.ShapeshifterAiModule;
 import stroom.sqlstore.client.gin.SqlTemporalStoreModule;
 import stroom.statistics.impl.sql.client.gin.StatisticsModule;
 import stroom.task.client.gin.TaskModule;
@@ -106,7 +108,9 @@ import com.google.web.bindery.event.shared.EventBus;
         GlobalConfigModule.class,
         OpenAIModelModule.class,
         PathwaysModule.class,
+        PipelineFactoryModule.class,
         PipelineModule.class,
+        ShapeshifterAiModule.class,
         PluginsModule.class,
         ReceiveRulesModule.class,
         PopupModule.class,

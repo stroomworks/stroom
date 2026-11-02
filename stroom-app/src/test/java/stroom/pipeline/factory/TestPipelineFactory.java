@@ -70,7 +70,8 @@ class TestPipelineFactory extends AbstractProcessIntegrationTest {
                 elementRegistryFactory,
                 elementRegistryFactory,
                 new SimpleProcessorFactory(),
-                mockErrorReceiverProxy);
+                mockErrorReceiverProxy,
+                new InjectedCode());
         final Pipeline pipeline = pipelineFactory.create(mergedPipelineData, new SimpleTaskContext());
 
         System.out.println(pipeline);
@@ -82,7 +83,8 @@ class TestPipelineFactory extends AbstractProcessIntegrationTest {
                 elementRegistryFactory,
                 elementRegistryFactory,
                 new SimpleProcessorFactory(),
-                mockErrorReceiverProxy);
+                mockErrorReceiverProxy,
+                new InjectedCode());
 
         final String data1 = StroomPipelineTestFileUtil
                 .getString("TestPipelineFactory/EventDataPipeline.Pipeline.json");
@@ -129,7 +131,8 @@ class TestPipelineFactory extends AbstractProcessIntegrationTest {
                 elementRegistryFactory,
                 elementRegistryFactory,
                 new SimpleProcessorFactory(),
-                mockErrorReceiverProxy);
+                mockErrorReceiverProxy,
+                new InjectedCode());
 
         final String data1 = StroomPipelineTestFileUtil
                 .getString("TestPipelineFactory/TestBasePipeline.Pipeline.json");

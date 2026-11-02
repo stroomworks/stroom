@@ -171,12 +171,10 @@ public class SteppingPipelineLookup {
             for (final PipelineProperty property : properties) {
                 PipelineFactory.setProperty(
                         pipelineElementRegistry,
-                        pipelineElement.getId(),
                         elementType,
                         elementInstance,
                         property.getName(),
-                        property.getValue(),
-                        null);
+                        property.getValue());
             }
 
             if (elementInstance instanceof final SupportsCodeInjection supportsCodeInjection) {

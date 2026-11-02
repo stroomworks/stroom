@@ -1,0 +1,13 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The process a stream meets: its two stages, each a button to its tab, with an arrow between -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client">
+    <g:HTMLPanel styleName="process-header">
+        <div class="process-header__stages" role="group" aria-label="The process a stream meets">
+            <b:Button ui:field="score" styleName="process-header__stage" title="Open the Score tab"/>
+            <span class="process-header__arrow" aria-hidden="true">→</span>
+            <b:Button ui:field="learn" styleName="process-header__stage" title="Open the Learn tab"/>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>

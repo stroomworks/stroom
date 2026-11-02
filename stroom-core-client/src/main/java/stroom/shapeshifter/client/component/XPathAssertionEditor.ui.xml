@@ -1,0 +1,19 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The content of the dialog that adds or edits one business rule (xpath-assertion-editor.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client">
+    <g:FlowPanel styleName="max form">
+        <form:FormGroup identity="assertionName"
+                        label="Name"
+                        helpText="How a failure of this rule is described to the model, e.g. 'interactive events name the user'.">
+            <form:TextBox ui:field="name" addStyleNames="xpath-assertion-editor__text"/>
+        </form:FormGroup>
+        <form:FormGroup identity="assertionXpath"
+                        label="XPath"
+                        required="true"
+                        helpText="Evaluated against each record; the record passes when the result is true or non-empty. Example: not(EventDetail/Authenticate) or EventDetail/Authenticate/User/Id != ''">
+            <form:TextBox ui:field="xpath" addStyleNames="xpath-assertion-editor__text"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

@@ -81,6 +81,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -101,6 +102,10 @@ public class ProcessorTaskCreatorImpl implements ProcessorTaskCreator {
 
     private static final String LOCK_NAME = "ProcessorTaskCreator";
     private static final int MAX_ERROR_LENGTH = 200;
+    /// The tasks a filter holds against its own allowance (design 06 A109): those waiting to be claimed,
+    /// and those deferred, which go back to waiting when their pipeline is woken. Only a supervised
+    /// pipeline defers, so no other filter's count changes.
+    private static final Set<TaskStatus> HELD = Set.of(TaskStatus.CREATED, TaskStatus.DEFERRED);
     private static final ThreadPool THREAD_POOL = new ThreadPoolImpl("Create Processor Tasks", 3);
 
     private final ProcessorFilterService processorFilterService;
@@ -442,10 +447,17 @@ public class ProcessorTaskCreatorImpl implements ProcessorTaskCreator {
         // passed since the last attempt.
         final ProcessorFilterTracker tracker = filter.getProcessorFilterTracker();
         if (checkTrackerTaskCount(filter, tracker, processorConfig)) {
-            final int currentCreatedTasks = processorTaskDao.countTasksForFilter(filter.getId(), TaskStatus.CREATED);
-            budgetUsed.add(currentCreatedTasks);
+            // A filter whose allowance went on deferred tasks has spent it, rather than going on making
+            // tasks that will only defer, and a wake that returns them all to waiting cannot leave it far
+            // over (A109). Only the waiting ones spend the run's budget, which is shared by every filter of
+            // the profile: a deferred task is no node's to claim, and one learner's backlog must not stop
+            // the profile's other feeds being given tasks.
+            final Map<TaskStatus, Integer> counts = processorTaskDao.countTasksForFilter(filter.getId(), HELD);
+            final int waitingTasks = counts.getOrDefault(TaskStatus.CREATED, 0);
+            final int heldTasks = waitingTasks + counts.getOrDefault(TaskStatus.DEFERRED, 0);
+            budgetUsed.add(waitingTasks);
 
-            int maxTasks = remaining - currentCreatedTasks;
+            int maxTasks = remaining - heldTasks;
 
             // See if we are allowing tasks to be created eagerly beyond the process limit.
             if (!processorConfig.isCreateTasksBeyondProcessLimit()) {
@@ -460,7 +472,7 @@ public class ProcessorTaskCreatorImpl implements ProcessorTaskCreator {
                                                               ", profileName=" +
                                                               filter.getProfileName() +
                                                               ")");
-                        maxTasks = Math.min(remaining, profileResult.maxClusterThreads()) - currentCreatedTasks;
+                        maxTasks = Math.min(remaining, profileResult.maxClusterThreads()) - heldTasks;
                         usedProfile = true;
 
                     } catch (final RuntimeException e) {
@@ -475,14 +487,14 @@ public class ProcessorTaskCreatorImpl implements ProcessorTaskCreator {
                 // We didn't find a profile to limit tasks so see if the filter has a direct limit.
                 if (!usedProfile && filter.isProcessingTaskCountBounded()) {
                     // The max concurrent tasks for this filter is bounded, so only create tasks up to that limit
-                    maxTasks = Math.min(remaining, filter.getMaxProcessingTasks()) - currentCreatedTasks;
+                    maxTasks = Math.min(remaining, filter.getMaxProcessingTasks()) - heldTasks;
                 }
             }
 
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("doCreateTasksForFilter() - maxTasks: {}, remaining: {}, currentCreatedTasks: {}, " +
+                LOGGER.trace("doCreateTasksForFilter() - maxTasks: {}, remaining: {}, heldTasks: {}, " +
                              "isProcessingTaskCountBounded: {}, isCreateTasksBeyondProcessLimit: {}",
-                        maxTasks, remaining, currentCreatedTasks, filter.isProcessingTaskCountBounded(),
+                        maxTasks, remaining, heldTasks, filter.isProcessingTaskCountBounded(),
                         processorConfig.isCreateTasksBeyondProcessLimit());
             }
 
@@ -490,7 +502,7 @@ public class ProcessorTaskCreatorImpl implements ProcessorTaskCreator {
             if (maxTasks > 0) {
                 info(taskContext, filter::getFilterInfo);
                 final FilterProgressMonitor filterProgressMonitor = progressMonitor.logFilter(
-                        filter, currentCreatedTasks);
+                        filter, heldTasks);
 
                 final QueryData queryData = filter.getQueryData();
                 final boolean isStreamStoreSearch = queryData.getDataSource() != null

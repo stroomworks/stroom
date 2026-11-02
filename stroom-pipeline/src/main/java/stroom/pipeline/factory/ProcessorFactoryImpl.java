@@ -20,6 +20,7 @@ import stroom.pipeline.errorhandler.ErrorReceiver;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.ErrorStatistics;
 import stroom.pipeline.errorhandler.LoggedException;
+import stroom.processor.api.DeferTaskException;
 import stroom.task.api.TaskContext;
 import stroom.task.api.TaskContextFactory;
 import stroom.task.api.TerminateHandlerFactory;
@@ -38,6 +39,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 @PipelineScoped
 class ProcessorFactoryImpl implements ProcessorFactory {
@@ -99,6 +101,9 @@ class ProcessorFactoryImpl implements ProcessorFactory {
         @Override
         public void process() {
             final CountDownLatch countDownLatch = new CountDownLatch(processors.size());
+            // A deferral thrown on one of the processors' threads is this thread's to throw once they
+            // have all finished: it is an outcome of the whole run, not an error of one branch.
+            final AtomicReference<DeferTaskException> deferred = new AtomicReference<>();
             for (final Processor processor : processors) {
                 final Runnable runnable = taskContextFactory.childContext(
                         parentTaskContext,
@@ -112,7 +117,12 @@ class ProcessorFactoryImpl implements ProcessorFactory {
                                 while (t instanceof CompletionException) {
                                     t = t.getCause();
                                 }
-                                outputError(t);
+                                final DeferTaskException deferral = DeferTaskException.unwrap(t);
+                                if (deferral != null) {
+                                    deferred.compareAndSet(null, deferral);
+                                } else {
+                                    outputError(t);
+                                }
                             }
                             countDownLatch.countDown();
                         });
@@ -128,6 +138,9 @@ class ProcessorFactoryImpl implements ProcessorFactory {
 
                 // Continue to interrupt this thread.
                 Thread.currentThread().interrupt();
+            }
+            if (deferred.get() != null) {
+                throw deferred.get();
             }
         }
 

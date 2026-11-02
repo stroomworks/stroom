@@ -28,6 +28,7 @@ import stroom.editor.client.component.CodeEditorController;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineProperty;
+import stroom.pipeline.shared.stepping.ElementStepDetails;
 import stroom.pipeline.shared.stepping.FindElementDocRequest;
 import stroom.pipeline.shared.stepping.StepType;
 import stroom.pipeline.shared.stepping.SteppingResource;
@@ -71,6 +72,7 @@ public class SteppingElementController extends Controller {
     private final Provider<ClassificationLabelController> classificationLabelControllerProvider;
     private final Provider<CodeEditorController> codeEditorProvider;
     private final DocumentPluginRegistry documentPluginRegistry;
+    private final ElementStepDetailsPaneRegistry stepDetailsRegistry;
     private final RestFactory restFactory;
 
     private PipelineModel pipelineModel;
@@ -80,6 +82,7 @@ public class SteppingElementController extends Controller {
     private String pipelineName;
     private boolean refreshRequired = true;
     private boolean loaded;
+    private boolean nested;
     private boolean dirty;
     private DocRef docRef;
     private Document document;
@@ -87,6 +90,8 @@ public class SteppingElementController extends Controller {
 
     private Indicators indicators;
     private CodeEditorController codeEditor;
+    /// The pane this element shows in place of its code pane (A30), or null where it has none.
+    private ElementStepDetailsPane stepDetailsPane;
     private CodeEditorController inputEditor;
     private CodeEditorController outputEditor;
     private CodeEditorController logEditor;
@@ -113,14 +118,28 @@ public class SteppingElementController extends Controller {
             final Provider<ClassificationLabelController> classificationLabelControllerProvider,
             final Provider<CodeEditorController> codeEditorProvider,
             final DocumentPluginRegistry documentPluginRegistry,
+            final ElementStepDetailsPaneRegistry stepDetailsRegistry,
             final RestFactory restFactory) {
         super(eventBus);
         this.view = view;
         this.classificationLabelControllerProvider = classificationLabelControllerProvider;
         this.codeEditorProvider = codeEditorProvider;
         this.documentPluginRegistry = documentPluginRegistry;
+        this.stepDetailsRegistry = stepDetailsRegistry;
         this.restFactory = restFactory;
         initWidget(view);
+    }
+
+    /// Whether this is one of the elements another element ran inside itself (A30) rather than one of
+    /// the pipeline's own.
+    ///
+    /// A nested element has no code, no properties and no document behind it: it is a record of
+    /// something that ran, not something a person can edit. Its panes are its input and its output, and
+    /// asking for anything else would be asking about a pipeline that does not exist.
+    ///
+    /// @param nested Whether the element is nested.
+    public void setNested(final boolean nested) {
+        this.nested = nested;
     }
 
     /// Shows the panes the element needs and loads its code, if it has any, the first time it is
@@ -132,9 +151,18 @@ public class SteppingElementController extends Controller {
             loaded = true;
             boolean loading = false;
 
-            final boolean hasCode = pipelineModel.hasRole(element, PipelineElementType.ROLE_HAS_CODE);
-            view.setCodeVisible(hasCode);
-            if (hasCode) {
+            // An element whose behaviour is a decision has no document to show as code, and shows what
+            // it decided instead (A30). Asked here rather than when a step arrives, because the panes
+            // are laid out once and a pane they were not told about has nowhere to go.
+            final Provider<ElementStepDetailsPane> stepDetails = nested
+                    ? null
+                    : stepDetailsRegistry.get(element.getType());
+            final boolean hasCode = !nested && pipelineModel.hasRole(element, PipelineElementType.ROLE_HAS_CODE);
+            view.setCodeVisible(stepDetails != null || hasCode);
+            if (stepDetails != null) {
+                stepDetailsPane = make(stepDetails);
+                view.setCodeContent(stepDetailsPane);
+            } else if (hasCode) {
                 attachCodeEditor();
 
                 try {
@@ -165,8 +193,9 @@ public class SteppingElementController extends Controller {
             }
 
             // We only care about seeing input if the element mutates the input
-            // some how.
-            final boolean isMutator = pipelineModel.hasRole(element, PipelineElementType.ROLE_MUTATOR);
+            // some how. A nested element always shows its input: what it was given is half of what it
+            // is there to show, and the chain only reads as a chain if each link shows both ends.
+            final boolean isMutator = nested || pipelineModel.hasRole(element, PipelineElementType.ROLE_MUTATOR);
             view.setInputVisible(isMutator);
             if (isMutator) {
                 attachInputEditor();
@@ -182,6 +211,16 @@ public class SteppingElementController extends Controller {
             }
         } else {
             consumer.accept(true);
+        }
+    }
+
+    /// What the element at the cursor had to say about this step beyond its text (A30), for the pane
+    /// that stands where its code pane would. Ignored by every element that has no such pane.
+    ///
+    /// @param details The details, or `null` where the step has none.
+    public void setStepDetails(final ElementStepDetails details) {
+        if (stepDetailsPane != null) {
+            stepDetailsPane.setDetails(details);
         }
     }
 
@@ -483,8 +522,16 @@ public class SteppingElementController extends Controller {
         return element;
     }
 
-    /// @return Whether the element has code, so a code pane.
+    /// @return Whether the element has code, so a code pane: a nested element has none, as there is
+    ///         no document behind it (see [#setNested(boolean)]).
     public boolean hasCodePane() {
+        if (nested) {
+            return false;
+        }
+        return hasCodePaneForElement();
+    }
+
+    private boolean hasCodePaneForElement() {
         return NullSafe.test(
                 element,
                 elm -> pipelineModel.hasRole(elm, PipelineElementType.ROLE_HAS_CODE));

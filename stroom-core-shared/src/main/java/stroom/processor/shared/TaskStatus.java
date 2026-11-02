@@ -42,6 +42,15 @@ public enum TaskStatus implements HasDisplayValue, HasPrimitiveValue {
      */
     PROCESSING("Processing", 3),
     /**
+     * A node ran the task and asked for it back later: what the task needs is not there yet (a Shapeshifter
+     * AI translation that is still being learned, say), and nothing has been written for it. Returned to
+     * {@link #CREATED} by the reaper once {@code stroom.processor.deferredTaskRetryDelay} has passed since
+     * it was deferred, or sooner when whatever it waited for arrives. The value sits above every value this
+     * enum has ever carried — the gaps below were left on purpose, and a row written by an older release
+     * might still hold one of them.
+     */
+    DEFERRED("Deferred", 30),
+    /**
      * A node has completed processing the task.
      */
     COMPLETE("Complete", 10),

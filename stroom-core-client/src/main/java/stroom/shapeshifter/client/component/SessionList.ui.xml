@@ -1,0 +1,17 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The selected learning pipeline's sessions (design 06 A115), with the actions A28 puts beside them -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel ui:field="pager" toolbarName="Session actions">
+        <b:ToolbarButton ui:field="approveButton" svg="TICK" title="Approve what this attempt drafted"
+                         enabled="false"/>
+        <b:ToolbarButton ui:field="rejectButton" svg="DISABLE" title="Reject what this attempt drafted"
+                         enabled="false"/>
+        <b:ToolbarButton ui:field="grantButton" svg="ADD"
+                         title="Give this parked attempt more to spend, and carry it on" enabled="false"/>
+        <b:ToolbarButton ui:field="exhaustButton" svg="FAST_FORWARD"
+                         title="Send this parked attempt to the exhaustion step, and carry it on" enabled="false"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Shapeshifter AI Sessions"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

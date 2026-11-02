@@ -1,0 +1,62 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A Pipeline Factory's Filter tab (pipeline-factory-filter.css): the processor filter it gives every
+     pipeline it makes, laid out as the processing screen lays out a filter -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client.component"
+             xmlns:c="urn:import:stroom.widget.duration.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:text="urn:import:stroom.widget.text.client"
+             xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
+             xmlns:v="urn:import:stroom.widget.valuespinner.client"
+             xmlns:l="urn:import:stroom.widget.selection.client">
+    <g:ScrollPanel styleName="max pipeline-factory-filter">
+        <g:FlowPanel styleName="form-padding form">
+            <text:Label text="Every pipeline the factory makes gets a processor filter with these settings. Changes apply to the filters it makes next; the filters it has made are changed in the processing screen."
+                        styleName="pipeline-factory-filter__note"/>
+            <form:FormGroup identity="pipelineFactoryFilterEnabled"
+                            label="Enabled"
+                            helpText="Whether a made filter starts processing at once.">
+                <tickbox:TickBox ui:field="filterEnabled"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterPriority"
+                            label="Priority"
+                            helpText="A made filter's priority, from 1 to 100.">
+                <v:ValueSpinner ui:field="priority" addStyleNames="pipeline-factory-filter__priority"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterAutoPriority"
+                            label="Automatic priority"
+                            helpText="Work a made filter's priority out from the other filters on its pipeline, as the processing screen does.">
+                <tickbox:TickBox ui:field="autoPriority"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterMaxProcessingTasks"
+                            label="Max Processing Tasks"
+                            helpText="The most tasks a made filter may have processing at once across the cluster. Zero for no limit.">
+                <v:ValueSpinner ui:field="maxProcessingTasks"
+                                addStyleNames="pipeline-factory-filter__max-processing-tasks"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterProfile"
+                            label="Processing Profile"
+                            helpText="The processing profile a made filter takes, which sets its node group and the periods it may run in.">
+                <l:SelectionBox ui:field="profile"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterMinMetaCreateTimeMs" label="Min Create Time">
+                <datetimebox:DateTimeBox ui:field="minMetaCreateTimeMs" optional="true"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterMaxMetaCreateTimeMs" label="Max Create Time">
+                <datetimebox:DateTimeBox ui:field="maxMetaCreateTimeMs" optional="true"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterMaxTaskCreationDelayEnabled"
+                            label="Limit Task Creation Delay"
+                            helpText="Give a made filter its own limit on how long it waits before it is checked for new data again.">
+                <tickbox:TickBox ui:field="maxTaskCreationDelayEnabled"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterMaxTaskCreationDelay" label="Max Task Creation Delay">
+                <c:DurationPicker ui:field="maxTaskCreationDelay"/>
+            </form:FormGroup>
+            <form:FormGroup identity="pipelineFactoryFilterExport" label="Include in Export">
+                <tickbox:TickBox ui:field="export"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+    </g:ScrollPanel>
+</ui:UiBinder>

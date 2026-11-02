@@ -65,6 +65,11 @@ public class MockStore implements Store, Clearable, AttributeMapFactory {
      * Our stream data.
      */
     private final Map<Long, Map<String, byte[]>> fileData = new HashMap<>();
+    /**
+     * The attributes each root target carried when it closed, as the real store hands them to the meta
+     * service; here so that a test can see what a pipeline wrote against its output.
+     */
+    private final Map<Long, Map<String, String>> attributes = new HashMap<>();
     private final Map<Long, Map<String, ByteArrayOutputStream>> openOutputStream = new HashMap<>();
     private final Set<Long> openInputStream = new HashSet<>();
 
@@ -84,6 +89,7 @@ public class MockStore implements Store, Clearable, AttributeMapFactory {
     @Override
     public void clear() {
         fileData.clear();
+        attributes.clear();
         openOutputStream.clear();
         openInputStream.clear();
         lastMeta = null;
@@ -202,7 +208,7 @@ public class MockStore implements Store, Clearable, AttributeMapFactory {
 
     @Override
     public Map<String, String> getAttributes(final long metaId) {
-        return Map.of();
+        return attributes.getOrDefault(metaId, Map.of());
     }
 
     @Override
@@ -329,6 +335,7 @@ public class MockStore implements Store, Clearable, AttributeMapFactory {
 
                     // Only unlock the meta if this is the root.
                     if (parent == null) {
+                        attributes.put(streamId, new HashMap<>(attributeMap));
                         // Set the status of the stream to be unlocked.
                         metaService.updateStatus(meta, Status.LOCKED, Status.UNLOCKED);
                     }

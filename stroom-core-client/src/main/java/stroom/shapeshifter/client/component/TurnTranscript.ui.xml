@@ -1,0 +1,12 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- One session's conversation in full, turn after turn (design 06 A116), read only (turn-transcript.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:t="urn:import:stroom.widget.text.client">
+    <!-- It scrolls, so it takes the focus, as a named region, to be scrolled from the keyboard -->
+    <g:HTMLPanel styleName="max">
+        <div class="max turn-transcript scroll-region" role="region" tabindex="0" aria-label="Conversation">
+            <t:Html ui:field="turns"/>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>

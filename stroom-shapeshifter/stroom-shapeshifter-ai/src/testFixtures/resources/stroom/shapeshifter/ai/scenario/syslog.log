@@ -1,0 +1,20 @@
+<38>Sep 21 09:15:00 gate01 sshd[4100]: Accepted password for alice from 10.0.0.5 port 51022 ssh2
+<86>1 2026-09-21T09:15:02.000Z gate02.example.org sshd 4101 - - Accepted password for bob from 10.0.0.6 port 51023 ssh2
+<38>Sep 21 09:15:04 gate01 sshd[4102]: Accepted password for carol from 10.0.0.7 port 51024 ssh2
+<85>1 2026-09-21T09:15:06.000Z gate02.example.org sshd 4103 - - Failed password for dave from 10.0.0.8 port 51025 ssh2
+<38>Sep 21 09:15:08 gate01 sshd[4104]: Accepted password for erin from 10.0.0.9 port 51026 ssh2
+<86>1 2026-09-21T09:15:10.000Z gate02.example.org sshd 4105 - - Accepted password for frank from 10.0.0.10 port 51027 ssh2
+<38>Sep 21 09:15:12 gate01 sshd[4106]: Accepted password for grace from 10.0.0.11 port 51028 ssh2
+<85>1 2026-09-21T09:15:14.000Z gate02.example.org sshd 4107 - - Failed password for heidi from 10.0.0.12 port 51029 ssh2
+<38>Sep 21 09:15:16 gate01 sshd[4108]: Accepted password for ivan from 10.0.0.13 port 51030 ssh2
+<86>1 2026-09-21T09:15:18.000Z gate02.example.org sshd 4109 - - Accepted password for judy from 10.0.0.14 port 51031 ssh2
+<38>Sep 21 09:15:20 gate01 sshd[4110]: Accepted password for alice from 10.0.0.15 port 51032 ssh2
+<85>1 2026-09-21T09:15:22.000Z gate02.example.org sshd 4111 - - Failed password for bob from 10.0.0.16 port 51033 ssh2
+<38>Sep 21 09:15:24 gate01 sshd[4112]: Accepted password for carol from 10.0.0.17 port 51034 ssh2
+<86>1 2026-09-21T09:15:26.000Z gate02.example.org sshd 4113 - - Accepted password for dave from 10.0.0.18 port 51035 ssh2
+<38>Sep 21 09:15:28 gate01 sshd[4114]: Accepted password for erin from 10.0.0.19 port 51036 ssh2
+<85>1 2026-09-21T09:15:30.000Z gate02.example.org sshd 4115 - - Failed password for frank from 10.0.0.20 port 51037 ssh2
+<38>Sep 21 09:15:32 gate01 sshd[4116]: Accepted password for grace from 10.0.0.21 port 51038 ssh2
+<86>1 2026-09-21T09:15:34.000Z gate02.example.org sshd 4117 - - Accepted password for heidi from 10.0.0.22 port 51039 ssh2
+<38>Sep 21 09:15:36 gate01 sshd[4118]: Accepted password for ivan from 10.0.0.23 port 51040 ssh2
+<85>1 2026-09-21T09:15:38.000Z gate02.example.org sshd 4119 - - Failed password for judy from 10.0.0.24 port 51041 ssh2

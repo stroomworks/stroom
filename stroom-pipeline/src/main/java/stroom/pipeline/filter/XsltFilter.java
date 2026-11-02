@@ -41,6 +41,7 @@ import stroom.pipeline.state.FeedHolder;
 import stroom.pipeline.state.PipelineContext;
 import stroom.pipeline.state.PipelineHolder;
 import stroom.pipeline.xslt.XsltStore;
+import stroom.processor.api.DeferTaskException;
 import stroom.svg.shared.SvgImage;
 import stroom.util.CharBuffer;
 import stroom.util.io.PathCreator;
@@ -66,6 +67,7 @@ import org.xml.sax.SAXException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Consumer;
 import javax.xml.transform.ErrorListener;
 import javax.xml.transform.SourceLocator;
@@ -161,15 +163,29 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
 
             XsltDoc xslt = loadXsltDoc();
 
+            // Run with the code this element was given rather than what it references (§12 item 1): a
+            // person's edit in the stepper, or a candidate a supervisor is judging. Where the element
+            // references nothing at all the code is the whole of it, which is what lets a candidate be
+            // run before it has been written anywhere. Never pooled: it is nobody else's stylesheet.
+            if (injectedCode != null && xslt != null) {
+                xslt = xslt.copy().data(injectedCode).build();
+                usePool = false;
+            } else if (injectedCode != null && xsltRef == null && NullSafe.isBlankString(xsltNamePattern)) {
+                // Fabricated only where the element names no document at all, as the three parsers do
+                // and for their reason: a name pattern that has stopped resolving is a fault to be told
+                // about, not a gap for the editor's pane to fill silently. Stepping a pipeline whose
+                // stylesheet is found by name pattern, after the document it found was renamed, would
+                // otherwise compile whatever is in the code pane and hide the resolution failure.
+                xslt = XsltDoc.builder()
+                        .uuid(UUID.randomUUID().toString())
+                        .name(getElementId().getId())
+                        .data(injectedCode)
+                        .build();
+                usePool = false;
+            }
+
             // If we have found XSLT then get a template.
             if (xslt != null) {
-                // If we are in stepping mode and have made code changes then we
-                // want to add them to the newly loaded XSLT.
-
-                if (injectedCode != null) {
-                    xslt = xslt.copy().data(injectedCode).build();
-                    usePool = false;
-                }
 
                 // If no XSLT has been provided then don't try and get compiled
                 // XSLT for it.
@@ -281,6 +297,11 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
             }
 
         } catch (final RuntimeException e) {
+            // A deferral from downstream is not a failure of the transform: it travels on as itself.
+            final DeferTaskException deferral = DeferTaskException.unwrap(e);
+            if (deferral != null) {
+                throw deferral;
+            }
             final Throwable throwable = unwrapException(e);
 
             errorReceiverProxy.log(Severity.FATAL_ERROR,
@@ -307,6 +328,12 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
                 handler.endDocument();
             } catch (final Throwable e) {
                 try {
+                    // A deferral from downstream is not a failure of the transform: it travels on as
+                    // itself, and nothing is logged for it.
+                    final DeferTaskException deferral = DeferTaskException.unwrap(e);
+                    if (deferral != null) {
+                        throw deferral;
+                    }
                     final Throwable throwable = unwrapException(e);
 
                     errorReceiverProxy.log(Severity.FATAL_ERROR,

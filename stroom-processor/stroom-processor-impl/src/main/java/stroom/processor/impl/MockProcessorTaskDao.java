@@ -36,6 +36,7 @@ import stroom.util.shared.ResultPage;
 import jakarta.inject.Singleton;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -45,10 +46,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Singleton
 public class MockProcessorTaskDao implements ProcessorTaskDao, Clearable {
 
+    /// The deferred tasks the mock queue made, by filter and stream: see [#deferred].
+    private final Map<String, ProcessorTask> deferredUnsaved = new ConcurrentHashMap<>();
     private final MockIntCrud<ProcessorTask> dao = new MockIntCrud<>(
             (processorTask, integer) -> processorTask.copy().id(integer).build(),
             processorTask -> (int) processorTask.getId());
@@ -179,6 +183,64 @@ public class MockProcessorTaskDao implements ProcessorTaskDao, Clearable {
     }
 
     @Override
+    public int countTasks(final TaskStatus status) {
+        return (int) dao.getMap().values().stream().filter(task -> status.equals(task.getStatus())).count();
+    }
+
+    @Override
+    public long sweepDeferredTasks(final Instant statusOlderThan) {
+        return wake(task -> task.getStatusTimeMs() < statusOlderThan.toEpochMilli());
+    }
+
+    @Override
+    public synchronized int wakeDeferredTasks(final String pipelineUuid) {
+        final List<String> unsaved = deferredUnsaved.entrySet().stream()
+                .filter(entry -> isOn(entry.getValue(), pipelineUuid))
+                .map(Map.Entry::getKey)
+                .toList();
+        unsaved.forEach(deferredUnsaved::remove);
+        return (int) wake(task -> isOn(task, pipelineUuid)) + unsaved.size();
+    }
+
+    /// The deferred tasks of a pipeline's filters, including those the mock queue made without a row: it
+    /// builds each task afresh from a filter's tracker, so a task it hands out is told it deferred and is
+    /// found nowhere else.
+    ///
+    /// @param pipelineUuid The pipeline.
+    /// @return Its deferred tasks.
+    public synchronized List<ProcessorTask> deferred(final String pipelineUuid) {
+        final List<ProcessorTask> deferred = new ArrayList<>();
+        dao.getMap().values().stream()
+                .filter(task -> TaskStatus.DEFERRED.equals(task.getStatus()) && isOn(task, pipelineUuid))
+                .forEach(deferred::add);
+        deferredUnsaved.values().stream()
+                .filter(task -> isOn(task, pipelineUuid))
+                .forEach(deferred::add);
+        return deferred;
+    }
+
+    private static boolean isOn(final ProcessorTask task, final String pipelineUuid) {
+        return task.getProcessorFilter() != null
+               && Objects.equals(task.getProcessorFilter().getPipelineUuid(), pipelineUuid);
+    }
+
+    private static String key(final ProcessorTask task) {
+        return NullSafe.get(task.getProcessorFilter(), ProcessorFilter::getId) + ":" + task.getMetaId();
+    }
+
+    private long wake(final java.util.function.Predicate<ProcessorTask> due) {
+        final long now = System.currentTimeMillis();
+        long count = 0;
+        for (final ProcessorTask task : new ArrayList<>(dao.getMap().values())) {
+            if (TaskStatus.DEFERRED.equals(task.getStatus()) && due.test(task)) {
+                dao.update(task.copy().status(TaskStatus.CREATED).statusTimeMs(now).nodeName(null).build());
+                count++;
+            }
+        }
+        return count;
+    }
+
+    @Override
     public Map<Integer, Long> getTaskAvailability(final Collection<Integer> filterIds) {
         final Set<Integer> wanted = new HashSet<>(filterIds);
         final Map<Integer, Long> availability = new HashMap<>();
@@ -198,6 +260,13 @@ public class MockProcessorTaskDao implements ProcessorTaskDao, Clearable {
     @Override
     public int countTasksForFilter(final int filterId, final TaskStatus status) {
         return 0;
+    }
+
+    @Override
+    public Map<TaskStatus, Integer> countTasksForFilter(final int filterId, final Set<TaskStatus> statuses) {
+        final Map<TaskStatus, Integer> counts = new HashMap<>();
+        statuses.forEach(status -> counts.put(status, 0));
+        return counts;
     }
 
     @Override
@@ -238,13 +307,23 @@ public class MockProcessorTaskDao implements ProcessorTaskDao, Clearable {
                                           final TaskStatus status,
                                           final Long startTime,
                                           final Long endTime) {
-        return processorTask.copy()
+        final ProcessorTask changed = processorTask.copy()
                 .nodeName(nodeName)
                 .status(status)
                 .statusTimeMs(System.currentTimeMillis())
                 .startTimeMs(startTime)
                 .endTimeMs(endTime)
                 .build();
+        // Kept, as the table keeps it: a wake finds the deferred tasks by their status. A task the mock queue
+        // made has no row, so a deferred one is kept beside the rows until it is woken or runs again.
+        if (dao.getMap().containsKey((int) changed.getId())) {
+            dao.update(changed);
+        } else if (TaskStatus.DEFERRED.equals(status)) {
+            deferredUnsaved.put(key(changed), changed);
+        } else {
+            deferredUnsaved.remove(key(changed));
+        }
+        return changed;
     }
 
     @Override
@@ -287,6 +366,7 @@ public class MockProcessorTaskDao implements ProcessorTaskDao, Clearable {
 
     @Override
     public void clear() {
+        deferredUnsaved.clear();
         dao.clear();
     }
 

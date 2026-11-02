@@ -31,6 +31,7 @@ import stroom.lifecycle.impl.LifecycleServiceModule;
 import stroom.meta.statistics.impl.MetaStatisticsModule;
 import stroom.resource.impl.ResourceModule;
 import stroom.security.impl.SecurityContextModule;
+import stroom.shapeshifter.ai.doc.ShapeshifterAiModule;
 import stroom.statistics.impl.sql.search.SQLStatisticSearchModule;
 import stroom.util.RunnableWrapper;
 import stroom.util.guice.AdminServletBinder;
@@ -47,6 +48,7 @@ public class AppModule extends AbstractModule {
         install(new UriFactoryModule());
         install(new CoreModule());
         install(new AiModule());
+        install(new ShapeshifterAiModule());
         install(new LifecycleServiceModule());
         install(new JobsModule());
         install(new ClusterModule());

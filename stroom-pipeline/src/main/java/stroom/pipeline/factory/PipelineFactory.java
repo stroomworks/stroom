@@ -37,12 +37,11 @@ import stroom.pipeline.shared.data.PipelineLink;
 import stroom.pipeline.shared.data.PipelineProperty;
 import stroom.pipeline.shared.data.PipelinePropertyValue;
 import stroom.pipeline.shared.data.PipelineReference;
-import stroom.pipeline.shared.stepping.PipelineStepRequest;
 import stroom.pipeline.shared.stepping.SteppingFilterSettings;
 import stroom.pipeline.source.SourceElement;
 import stroom.pipeline.stepping.capture.ElementMonitor;
+import stroom.pipeline.stepping.capture.PipelineCapture;
 import stroom.pipeline.stepping.capture.Recorder;
-import stroom.pipeline.stepping.capture.SteppingController;
 import stroom.pipeline.stepping.capture.SteppingFilter;
 import stroom.pipeline.writer.OutputRecorder;
 import stroom.task.api.Terminator;
@@ -71,16 +70,19 @@ public class PipelineFactory {
     private final ElementFactory elementFactory;
     private final ProcessorFactory processorFactory;
     private final ErrorReceiverProxy errorReceiverProxy;
+    private final InjectedCode injectedCode;
 
     @Inject
     public PipelineFactory(final ElementRegistryFactory pipelineElementRegistryFactory,
                            final ElementFactory elementFactory,
                            final ProcessorFactory processorFactory,
-                           final ErrorReceiverProxy errorReceiverProxy) {
+                           final ErrorReceiverProxy errorReceiverProxy,
+                           final InjectedCode injectedCode) {
         this.pipelineElementRegistryFactory = pipelineElementRegistryFactory;
         this.elementFactory = elementFactory;
         this.processorFactory = processorFactory;
         this.errorReceiverProxy = errorReceiverProxy;
+        this.injectedCode = injectedCode;
 
         if (processorFactory == null) {
             throw new NullPointerException("processorFactory is null");
@@ -97,12 +99,12 @@ public class PipelineFactory {
 
     public Pipeline create(final PipelineData pipelineData,
                            final Terminator terminator,
-                           final SteppingController controller) {
+                           final PipelineCapture controller) {
         return create(pipelineData, terminator, controller, Set.of());
     }
 
     /**
-     * As {@link #create(PipelineData, Terminator, SteppingController)}, but the build stops after the named
+     * As {@link #create(PipelineData, Terminator, PipelineCapture)}, but the build stops after the named
      * elements: their children are not linked, so nothing below them runs or is captured.
      * <p>
      * This is the source-rooted counterpart of {@link MidPipelineScope#ELEMENT_ONLY}, and exists for the same
@@ -114,7 +116,7 @@ public class PipelineFactory {
      */
     public Pipeline create(final PipelineData pipelineData,
                            final Terminator terminator,
-                           final SteppingController controller,
+                           final PipelineCapture controller,
                            final Set<String> stopAfter) {
         // Instantiate and configure every element, and record the link graph.
         final Map<String, Element> elementInstances = new HashMap<>();
@@ -131,9 +133,8 @@ public class PipelineFactory {
         // Get the split depth to use with the stepping controller.
         int controllerSplitDepth = 1;
         if (controller != null) {
-            controllerSplitDepth =
-                    getSplitDepth(elementInstances, elementTypeMap, linkSets, sourceElement.getElementId().getId());
-            controllerSplitDepth = Math.max(controllerSplitDepth, 1);
+            controllerSplitDepth = controller.captureSplitDepth(
+                    getSplitDepth(elementInstances, elementTypeMap, linkSets, sourceElement.getElementId().getId()));
         }
 
         // Link the instances.
@@ -178,7 +179,7 @@ public class PipelineFactory {
      * ({@code ROLE_MUTATOR}/{@code ROLE_VALIDATOR}) is not one of the roles for which {@code link} inserts a
      * record detector, so a {@link SAXRecordDetector} is forced at the entry - upstream of the start
      * element's input recorder, mirroring the normal topology where the detector sits just above the first
-     * mutator - so each {@code endDocument} still drives {@link SteppingController#endRecord}.
+     * mutator - so each {@code endDocument} still drives {@link PipelineCapture#endRecord}.
      * <p>
      * The returned {@link MidPipeline#entry()} is the {@link org.xml.sax.ContentHandler} the caller fires
      * stored events into; element lifecycle ({@code startProcessing}/{@code startStream}/...) cascades from
@@ -186,14 +187,14 @@ public class PipelineFactory {
      */
     public MidPipeline createFrom(final PipelineData pipelineData,
                                   final Terminator terminator,
-                                  final SteppingController controller,
+                                  final PipelineCapture controller,
                                   final String startElementId) {
         return createFrom(pipelineData, terminator, controller, startElementId,
                 MidPipelineScope.ELEMENT_AND_DESCENDANTS);
     }
 
     /**
-     * As {@link #createFrom(PipelineData, Terminator, SteppingController, String)}, but with control over how
+     * As {@link #createFrom(PipelineData, Terminator, PipelineCapture, String)}, but with control over how
      * much of the pipeline below the start element is linked and run.
      *
      * @param scope {@link MidPipelineScope#ELEMENT_AND_DESCENDANTS} to run the start element and everything
@@ -202,7 +203,7 @@ public class PipelineFactory {
      */
     public MidPipeline createFrom(final PipelineData pipelineData,
                                   final Terminator terminator,
-                                  final SteppingController controller,
+                                  final PipelineCapture controller,
                                   final String startElementId,
                                   final MidPipelineScope scope) {
         if (controller == null) {
@@ -227,7 +228,7 @@ public class PipelineFactory {
         if (sourceElement == null) {
             throw new PipelineFactoryException("The pipeline has no source element");
         }
-        final int controllerSplitDepth = Math.max(1,
+        final int controllerSplitDepth = controller.captureSplitDepth(
                 getSplitDepth(elementInstances, elementTypeMap, linkSets, sourceElement.getElementId().getId()));
 
         // Wrap the start element with input/output recorders and a monitor, exactly as link() would for a
@@ -288,7 +289,7 @@ public class PipelineFactory {
      */
     private void buildElementInstances(final PipelineData pipelineData,
                                        final Terminator terminator,
-                                       final SteppingController controller,
+                                       final PipelineCapture controller,
                                        final Map<String, Element> elementInstances,
                                        final Map<Element, PipelineElementType> elementTypeMap,
                                        final Map<String, Set<String>> linkSets) {
@@ -323,8 +324,16 @@ public class PipelineFactory {
                     element.getId(),
                     element.getType(),
                     elementInstance,
-                    pipelineData,
-                    controller);
+                    pipelineData);
+
+            // Run this element with the code it was given rather than what it references, where something
+            // building the pipeline said so: the stepper with a person's edit, or a supervisor with a
+            // candidate it is judging. Applied to the element itself and not while setting a property, so
+            // that an element with no document to override still takes the code — which is what lets a
+            // candidate run before it has been written anywhere.
+            if (elementInstance instanceof final SupportsCodeInjection supportsCodeInjection) {
+                injectedCode.get(element.getId()).ifPresent(supportsCodeInjection::setInjectedCode);
+            }
 
             // Set the pipeline references on this instance.
             setPipelineReferences(pipelineElementRegistry, element.getId(), element.getType(), elementInstance,
@@ -352,27 +361,26 @@ public class PipelineFactory {
                                final String id,
                                final String elementType,
                                final Object elementInstance,
-                               final PipelineData pipelineData,
-                               final SteppingController controller) {
+                               final PipelineData pipelineData) {
         // Set the properties on this instance.
         for (final PipelineProperty property : pipelineData.getAddedProperties()) {
             if (property.getElement().equals(id)) {
-                setProperty(pipelineElementRegistry, id, elementType, elementInstance, property.getName(),
-                        property.getValue(), controller);
+                setProperty(pipelineElementRegistry, elementType, elementInstance, property.getName(),
+                        property.getValue());
             }
         }
     }
 
     /**
-     * Code for properties.
+     * Code for properties. Setting a property is only setting a property: what an element is to run with
+     * in place of the document it references travels separately, in {@link InjectedCode}, so that it does
+     * not depend on the element having the property at all.
      */
     public static void setProperty(final ElementRegistry pipelineElementRegistry,
-                                   final String id,
                                    final String elementType,
                                    final Object elementInstance,
                                    final String propertyName,
-                                   final PipelinePropertyValue value,
-                                   final SteppingController controller) {
+                                   final PipelinePropertyValue value) {
         // Some methods might be removed so ignore them if they don't exist.
         final Method method = pipelineElementRegistry.getMethod(elementType, propertyName);
 
@@ -394,25 +402,7 @@ public class PipelineFactory {
                         obj = value.getString();
                     } else if (DocRef.class.isAssignableFrom(paramType)) {
                         // Load an entity by id.
-                        final DocRef docRef = value.getEntity();
-                        if (docRef != null) {
-                            obj = docRef;
-
-                            // Modify properties of element instance if we are
-                            // stepping and have code to insert.
-                            if (controller != null) {
-                                final PipelineStepRequest request = controller.getRequest();
-                                if (request.getCode() != null && !request.getCode().isEmpty()) {
-                                    final String code = request.getCode().get(id);
-                                    if (code != null) {
-                                        if (elementInstance instanceof
-                                                final SupportsCodeInjection supportsCodeInjection) {
-                                            supportsCodeInjection.setInjectedCode(code);
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        obj = value.getEntity();
                     } else {
                         throw new PipelineFactoryException("Unknown param type: " + paramType);
                     }
@@ -471,7 +461,7 @@ public class PipelineFactory {
     private void link(final Map<String, Element> elementInstances,
                       final Map<Element, PipelineElementType> elementTypeMap,
                       final Map<String, Set<String>> linkSets,
-                      final SteppingController controller,
+                      final PipelineCapture controller,
                       final Element parentElement,
                       final ElementId parentElementId,
                       final int controllerSplitDepth) {
@@ -482,7 +472,7 @@ public class PipelineFactory {
     private void link(final Map<String, Element> elementInstances,
                       final Map<Element, PipelineElementType> elementTypeMap,
                       final Map<String, Set<String>> linkSets,
-                      final SteppingController controller,
+                      final PipelineCapture controller,
                       final Element parentElement,
                       final ElementId parentElementId,
                       final int controllerSplitDepth,
@@ -602,7 +592,7 @@ public class PipelineFactory {
                                            final Map<String, Element> elementInstances,
                                            final Map<Element, PipelineElementType> elementTypeMap,
                                            final Map<String, Set<String>> linkSets,
-                                           final SteppingController controller) {
+                                           final PipelineCapture controller) {
         List<Element> childElements = Collections.emptyList();
 
         final Set<String> toElementIdSet = linkSets.get(fromElementId);
@@ -656,14 +646,14 @@ public class PipelineFactory {
                                     final PipelineElementType elementType,
                                     final Fragment fragment,
                                     final boolean input,
-                                    final SteppingController controller,
+                                    final PipelineCapture controller,
                                     final int controllerSplitDepth) {
         Fragment result = fragment;
 
         // Get any filter settings that might be applied to XML output.
         SteppingFilterSettings steppingFilterSettings = null;
         if (!input) {
-            steppingFilterSettings = controller.getRequest().getStepFilterSettings(elementId.getId());
+            steppingFilterSettings = controller.getStepFilterSettings(elementId.getId());
         }
 
         if (input) {
@@ -729,21 +719,26 @@ public class PipelineFactory {
 
             } else if (out instanceof final AbstractParser parser) {
 
-                // Insert a split filter after the parser to split all XML into
-                // single records.
-                final SplitFilter splitFilter = elementFactory.getElementInstance(SplitFilter.class);
-                splitFilter.setSplitDepth(controllerSplitDepth);
-                // Always one record per split: a stepping pipeline exists to capture every record of the
-                // stream individually, and which of them answers a given step - including any step-size
-                // grouping - is decided later, when the store is read back.
-                splitFilter.setSplitCount(1);
-                parser.setTarget(splitFilter);
-
                 // Create SAX event recorder.
                 final SAXEventRecorder recorder = elementFactory.getElementInstance(SAXEventRecorder.class);
                 recorder.setElementId(elementId);
 
-                splitFilter.setTarget(recorder);
+                if (controllerSplitDepth > 0) {
+                    // Insert a split filter after the parser to split all XML into
+                    // single records.
+                    final SplitFilter splitFilter = elementFactory.getElementInstance(SplitFilter.class);
+                    splitFilter.setSplitDepth(controllerSplitDepth);
+                    // Always one record per split: a stepping pipeline exists to capture every record of
+                    // the stream individually, and which of them answers a given step - including any
+                    // step-size grouping - is decided later, when the store is read back.
+                    splitFilter.setSplitCount(1);
+                    parser.setTarget(splitFilter);
+                    splitFilter.setTarget(recorder);
+                } else {
+                    // The capture asked for no split of its own: what this parser produces goes on as the
+                    // pipeline produced it, so that what is captured is what would have run.
+                    parser.setTarget(recorder);
+                }
 
                 // Initialise stepping filter settings.
                 recorder.setSettings(steppingFilterSettings);
@@ -793,7 +788,7 @@ public class PipelineFactory {
                             final PipelineElementType elementType,
                             final Element element,
                             final Fragment fragment,
-                            final SteppingController controller) {
+                            final PipelineCapture controller) {
         final ElementMonitor elementMonitor = new ElementMonitor(elementId, elementType, element);
         if (fragment.getIn() == fragment.getOut()) {
             // In some cases we replace the input and output elements with the
@@ -835,7 +830,7 @@ public class PipelineFactory {
     private Fragment insertRecordDetector(final PipelineElementType elementType,
                                           final Fragment fragment,
                                           final boolean input,
-                                          final SteppingController controller) {
+                                          final PipelineCapture controller) {
         Fragment result = fragment;
 
         if (!input) {

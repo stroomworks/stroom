@@ -1,0 +1,9 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A turn's answer (A28), in an editor: an answer is often a configuration, which a line cannot hold -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:ed="urn:import:stroom.editor.client.component">
+    <g:SimplePanel styleName="max control-box">
+        <ed:CodeEditor ui:field="editor"/>
+    </g:SimplePanel>
+</ui:UiBinder>

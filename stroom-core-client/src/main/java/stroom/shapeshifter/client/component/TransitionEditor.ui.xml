@@ -1,0 +1,19 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The dialog that edits where a step goes on one outcome -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:form="urn:import:stroom.widget.form.client">
+    <g:FlowPanel styleName="max form">
+        <form:FormGroup identity="transitionOutcome"
+                        label="On"
+                        helpText="The outcome this fires on. A transition on an outcome fires at once, on the first candidate that has it; 'spent' fires when the step's candidates are gone.">
+            <l:SelectionBox ui:field="outcome" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup identity="transitionTarget"
+                        label="Go to"
+                        helpText="The step to go to. 'end' completes the flow and binds what was learned; 'park' parks the session for a person; 'give-up' gives the learner up and errors its streams; 'abandon' takes the step's own default: give-up for a parser, park for any other step.">
+            <l:SelectionBox ui:field="target" addStyleNames="w-100"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

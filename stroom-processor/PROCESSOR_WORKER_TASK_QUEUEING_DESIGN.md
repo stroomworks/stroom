@@ -193,7 +193,17 @@ master, so this signal disappears entirely and must be replaced.
 ### Task status model
 
 `TaskStatus`: `CREATED`(0), `QUEUED`(1), `ASSIGNED`(2, `@Deprecated`), `PROCESSING`(3),
-`COMPLETE`(10), `FAILED`(22), `DELETED`(99). `ASSIGNED` is already vestigial.
+`DEFERRED`(30), `COMPLETE`(10), `FAILED`(22), `DELETED`(99). `ASSIGNED` is already vestigial.
+
+`DEFERRED` (2026-10-05, Shapeshifter AI design 04 §5) is a third outcome of running a task: the
+executor threw `DeferTaskException` because what the stream needed was not there yet, nothing was
+written for the stream, and the task is to be tried again. It leaves the `CREATED` pool rather than
+carrying a retry time that every `CREATED` query would have to honour: the reaper's
+`sweepDeferredTasks` returns it after `stroom.processor.deferredTaskRetryDelay` (the queue sweep's
+shape, on `processor_task_status_time_ms_status_idx`), and `wakeDeferredTasks` returns it sooner for
+a filter and a set of meta ids. Neither claiming nor availability nor the dead-task reap looks at it;
+the logical deletes take it along. Its value is above every value this enum has ever held, since the
+gaps below were left on purpose and a row written by an older release may still hold one.
 
 ### Indexes on `processor_task`
 

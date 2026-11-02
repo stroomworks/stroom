@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter
+    xmlns="data-splitter:3"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+    version="3.0">
+  <!-- Six columns by position, no delimiter: the timestamp (14), the user (8), the terminal (8), the action (8),
+       the result (8) and the reason, which runs to the end of the line and may hold spaces -->
+  <split delimiter="\n">
+    <group value="$1">
+      <regex pattern="^(.{14})(.{8})(.{8})(.{8})(.{8})(.*)$">
+        <data name="time" value="$1"/>
+        <data name="user" value="$2"/>
+        <data name="terminal" value="$3"/>
+        <data name="action" value="$4"/>
+        <data name="result" value="$5"/>
+        <data name="reason" value="$6"/>
+      </regex>
+    </group>
+  </split>
+</dataSplitter>

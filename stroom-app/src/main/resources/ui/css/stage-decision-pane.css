@@ -1,0 +1,62 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+   The stepping screen's stage pane (stroom.shapeshifter.client.component.StageDecisionPane): a supervised
+   stage's decision in bold, its terms, and its scores and conversation under their headings, scrolling.
+*/
+
+.stage-decision-pane {
+    overflow: auto;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.stage-decision-pane__decision {
+    font-weight: bold;
+    padding-bottom: 4px;
+}
+
+.stage-decision-pane__heading {
+    font-weight: bold;
+    padding: 8px 0 2px 0;
+}
+
+/* The stream's terms, and the tables of scores and of the conversation with a row heading each step or
+   turn: drawn as the page's defaults draw them (base.css), named so that they can be told apart. */
+.stage-decision-pane__summary {
+    margin-bottom: 1rem;
+}
+
+.stage-decision-pane__table {
+    border-spacing: 0;
+}
+
+.stage-decision-pane__step {
+    text-align: inherit;
+}
+
+/* A row's term, kept apart from its value */
+.stage-decision-pane__term {
+    padding-right: 16px;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.stage-decision-pane__value {
+    vertical-align: top;
+    white-space: pre-wrap;
+}

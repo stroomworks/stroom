@@ -1,0 +1,35 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- Three levels, master to detail (design 06 A115): the learning pipelines; the selected pipeline's
+     sessions, with its waiting streams on a second tab; and the selected session's turns, with its whole
+     conversation on a second tab, beside its path over the flow -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:tab="urn:import:stroom.widget.tab.client"
+             xmlns:c="urn:import:stroom.widget.component.client"
+             xmlns:split="urn:import:stroom.widget.layout.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
+    <split:SplitPane vertical="true" thin="true" sizes="300px, 260px, *"
+                     names="Learning pipelines, Sessions and waiting streams, Conversation"
+                     addStyleNames="max supervisor">
+        <g:SimplePanel styleName="max">
+            <s:LearnerList ui:field="learnerList"/>
+        </g:SimplePanel>
+        <g:FlowPanel styleName="max dock-container-vertical">
+            <g:FlowPanel styleName="dock-min supervisor__tab-bar">
+                <tab:LinkTabBar ui:field="tabBar" addStyleNames="max"/>
+            </g:FlowPanel>
+            <c:LayerContainer ui:field="layerContainer" styleName="dock-max"/>
+        </g:FlowPanel>
+        <split:SplitPane thin="true" sizes="*, 440px" names="Turns, Flow" addStyleNames="max">
+            <g:FlowPanel styleName="max dock-container-vertical">
+                <g:FlowPanel styleName="dock-min supervisor__tab-bar">
+                    <tab:LinkTabBar ui:field="conversationTabBar" addStyleNames="max"/>
+                </g:FlowPanel>
+                <c:LayerContainer ui:field="conversationLayerContainer" styleName="dock-max"/>
+            </g:FlowPanel>
+            <g:SimplePanel styleName="max">
+                <s:FlowChart ui:field="flowChart"/>
+            </g:SimplePanel>
+        </split:SplitPane>
+    </split:SplitPane>
+</ui:UiBinder>

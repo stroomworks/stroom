@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter
+    xmlns="data-splitter:3"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+    version="3.0">
+
+  <!-- As auditd.ds3.xml, but the quoted arguments of an EXECVE are matched and dropped: the command the
+       event needs never reaches the records -->
+  <!-- One event is the run of consecutive lines sharing one msg=audit(time:serial); each line is a record
+       of a type, its key=value pairs — and those inside a quoted msg='...' — as its data -->
+  <regex pattern="^node=\S+ type=\w+ msg=audit\(([\d.]+):(\d+)\):.*(?:\n(?=node=\S+ type=\w+ msg=audit\(\1:\2\)).*)*\n?">
+    <group>
+      <split delimiter="\n">
+        <group value="$1">
+          <regex pattern="^node=(\S+) type=(\w+) msg=audit\(([\d.]+):(\d+)\): (.*)$">
+            <data name="type" value="$2">
+              <data name="node" value="$1"/>
+              <data name="time" value="$3"/>
+              <data name="serial" value="$4"/>
+              <group value="$5">
+                <regex pattern="^\s*msg='([^']*)'">
+                  <group value="$1">
+                    <regex pattern="^\s*([\w-]+)=(&quot;[^&quot;]*&quot;|\S+)">
+                      <data name="$1" value="$2"/>
+                    </regex>
+                  </group>
+                </regex>
+                <regex pattern="^\s*a\d+=&quot;[^&quot;]*&quot;"/>
+                <regex pattern="^\s*([\w-]+)=(&quot;[^&quot;]*&quot;|\S+)">
+                  <data name="$1" value="$2"/>
+                </regex>
+              </group>
+            </data>
+          </regex>
+        </group>
+      </split>
+    </group>
+  </regex>
+</dataSplitter>

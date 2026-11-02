@@ -39,6 +39,8 @@ import stroom.explorer.shared.PermissionInheritance;
 import stroom.util.shared.DocPath;
 import stroom.util.shared.ResultPage;
 
+import jakarta.inject.Inject;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -47,17 +49,33 @@ import java.util.Set;
 
 class MockExplorerService implements ExplorerService {
 
+    private final ExplorerActionHandlers explorerActionHandlers;
+
+    @Inject
+    MockExplorerService(final ExplorerActionHandlers explorerActionHandlers) {
+        this.explorerActionHandlers = explorerActionHandlers;
+    }
+
     @Override
     public FetchExplorerNodeResult getData(final FetchExplorerNodesRequest criteria) {
         return null;
     }
 
+    /**
+     * There is no tree here, but where the type has a handler the document is created through it, as the
+     * real service does, so that whatever asked for it can go on to write it. A type with no handler in
+     * this environment gets null, which callers that expect a mock test for.
+     */
     @Override
     public ExplorerNode create(final String docType,
                                final String docName,
                                final ExplorerNode destinationFolder,
                                final PermissionInheritance permissionInheritance) {
-        return null;
+        return explorerActionHandlers.findHandler(docType)
+                .map(handler -> ExplorerNode.builder()
+                        .docRef(handler.createDocument(docName))
+                        .build())
+                .orElse(null);
     }
 
     @Override

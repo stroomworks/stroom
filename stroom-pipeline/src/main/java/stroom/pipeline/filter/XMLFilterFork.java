@@ -19,6 +19,7 @@ package stroom.pipeline.filter;
 import stroom.pipeline.errorhandler.ProcessException;
 import stroom.pipeline.factory.AbstractElement;
 import stroom.pipeline.factory.Processor;
+import stroom.processor.api.DeferTaskException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,7 +71,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -100,7 +101,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -130,7 +131,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -160,7 +161,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -214,7 +215,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -249,7 +250,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -295,7 +296,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -359,7 +360,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -400,7 +401,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -491,7 +492,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -538,7 +539,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -612,7 +613,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -664,7 +665,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -713,7 +714,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -760,7 +761,7 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
                     }
                 }
 
-                throw ProcessException.wrap(e1);
+                throw failure(e1);
             }
         }
     }
@@ -776,5 +777,15 @@ public class XMLFilterFork extends AbstractElement implements XMLFilter {
             processors.addAll(filter.createProcessors());
         }
         return processors;
+    }
+
+    /// What a branch's failure is to the caller: a deferral an element below has asked for goes up as it
+    /// is, since it is not an error and a wrapper would hide it from the layers that look for it; anything
+    /// else is wrapped as a processing failure.
+    private static RuntimeException failure(final RuntimeException e) {
+        final DeferTaskException deferral = DeferTaskException.unwrap(e);
+        return deferral != null
+                ? deferral
+                : ProcessException.wrap(e);
     }
 }

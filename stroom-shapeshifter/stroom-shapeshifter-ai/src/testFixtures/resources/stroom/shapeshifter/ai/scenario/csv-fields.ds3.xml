@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter
+    xmlns="data-splitter:3"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+    version="3.0">
+
+  <!-- A headerless CSV of exactly four fields; any other line is unmatched content -->
+  <split delimiter="\n">
+    <group value="$1">
+      <regex pattern="^([^,]+),([^,]+),([^,]+),([^,]+)$">
+        <data name="dt" value="$1"/>
+        <data name="who" value="$2"/>
+        <data name="where" value="$3"/>
+        <data name="what" value="$4"/>
+      </regex>
+    </group>
+  </split>
+</dataSplitter>

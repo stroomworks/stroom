@@ -1,0 +1,11 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A question the Supervisor puts before it acts: what it is asking, and the answer typed -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:t="urn:import:stroom.widget.text.client"
+             xmlns:form="urn:import:stroom.widget.form.client">
+    <g:FlowPanel styleName="max form supervisor-prompt">
+        <t:Label ui:field="message" styleName="supervisor-prompt__message"/>
+        <form:TextArea ui:field="reply" ariaLabel="Answer" addStyleNames="w-100 supervisor-prompt__reply"/>
+    </g:FlowPanel>
+</ui:UiBinder>

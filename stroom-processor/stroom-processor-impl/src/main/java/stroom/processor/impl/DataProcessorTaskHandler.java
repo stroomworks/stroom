@@ -22,6 +22,7 @@ import stroom.meta.api.MetaService;
 import stroom.meta.shared.Meta;
 import stroom.meta.shared.Status;
 import stroom.node.api.NodeInfo;
+import stroom.processor.api.DeferTaskException;
 import stroom.processor.api.ProcessorResult;
 import stroom.processor.api.ProcessorResultImpl;
 import stroom.processor.api.ProcessorTaskExecutor;
@@ -119,6 +120,9 @@ public class DataProcessorTaskHandler {
         ProcessorTask processorTask = task;
 
         boolean complete = false;
+        // The third outcome: the executor asked for the task back later (DeferTaskException). Not done and
+        // not failed; nothing written for the stream.
+        String deferred = null;
         ProcessorResult processorResult = new ProcessorResultImpl(0, 0, Collections.emptyMap());
         final long startTime = System.currentTimeMillis();
 
@@ -189,7 +193,13 @@ public class DataProcessorTaskHandler {
                         }
 
                     } catch (final RuntimeException e) {
-                        throw new ProcessingException("Task failed " + processor + " " + meta, e);
+                        // The pipeline executor throws a deferral bare; another executor might wrap one.
+                        final DeferTaskException deferral = DeferTaskException.unwrap(e);
+                        if (deferral == null) {
+                            throw new ProcessingException("Task failed " + processor + " " + meta, e);
+                        }
+                        deferred = deferral.getReason();
+                        LOGGER.debug("Task {} deferred for {} {}: {}", task.getId(), processor, meta, deferred);
                     }
                 } else {
                     LOGGER.debug("Null processorTask. " +
@@ -214,7 +224,12 @@ public class DataProcessorTaskHandler {
                 // Null processorTask implies the task was (logically)? deleted before we completed so no point in
                 // changing status
                 if (processorTask != null) {
-                    if (complete) {
+                    if (deferred != null) {
+                        // Back to no node and no times: the reaper returns it to CREATED after the retry
+                        // delay, or a wake does sooner, and it is then any node's to claim. The version
+                        // check still applies, as it does to the other two outcomes.
+                        processorTaskDao.changeTaskStatus(processorTask, null, TaskStatus.DEFERRED, null, null);
+                    } else if (complete) {
                         processorTaskDao.changeTaskStatus(processorTask, nodeInfo.getThisNodeName(),
                                 TaskStatus.COMPLETE,
                                 startTime, System.currentTimeMillis());

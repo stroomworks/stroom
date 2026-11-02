@@ -45,7 +45,8 @@ public final class CapturedElementDataMapper {
                 data.formatInput(),
                 data.formatOutput(),
                 data.hasOutput(),
-                data.indicativeCounts());
+                data.indicativeCounts(),
+                data.details());
     }
 
     private static String displayText(final CapturedData captured) {

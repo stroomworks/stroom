@@ -45,6 +45,7 @@ import stroom.node.client.component.DatabaseTablesController;
 import stroom.pathways.client.component.TracesEditor;
 import stroom.query.client.component.SearchResultStoresController;
 import stroom.receive.content.client.component.ContentTemplateTabController;
+import stroom.shapeshifter.client.component.SupervisorController;
 import stroom.xmlschema.client.XMLSchemaPlugin;
 
 import com.google.gwt.inject.client.GinModules;
@@ -64,6 +65,9 @@ public interface ContentScreenGinjector extends ScreenGinjector {
 
     /// @return The 'Caches' tab.
     CachesController getCachesController();
+
+    /// @return The Shapeshifter AI Supervisor, as `ShapeshifterAiSupervisorPlugin` opens it.
+    SupervisorController getSupervisorController();
 
     /// @return The 'Database Tables' tab.
     DatabaseTablesController getDatabaseTablesController();

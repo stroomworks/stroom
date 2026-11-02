@@ -1,0 +1,16 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A Pipeline Factory's Made tab: the combinations it has met, a row each, with Open, Forget,
+     Refresh and a pager -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel toolbarName="Combination actions">
+        <b:ToolbarButton ui:field="openButton" svg="OPEN"
+                         title="Open the pipeline made for the selected combination" enabled="false"/>
+        <b:ToolbarButton ui:field="forgetButton" svg="DELETE"
+                         title="Forget the selected combination, so that its next stream makes its pipeline afresh"
+                         enabled="false"/>
+        <b:ToolbarButton ui:field="refreshButton" svg="REFRESH" title="Read again what the factory has met"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Combinations met"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

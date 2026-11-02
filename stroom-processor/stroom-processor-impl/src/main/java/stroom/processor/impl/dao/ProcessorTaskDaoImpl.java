@@ -89,6 +89,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -439,6 +440,72 @@ class ProcessorTaskDaoImpl implements ProcessorTaskDao {
                               + "(no status change since " + statusOlderThan + ") back to CREATED");
         }
         return count;
+    }
+
+    @Override
+    public int countTasks(final TaskStatus status) {
+        return JooqUtil.contextResult(processorDbConnProvider, context -> context
+                .selectCount()
+                .from(PROCESSOR_TASK)
+                .where(PROCESSOR_TASK.STATUS.eq(status.getPrimitiveValue()))
+                .fetchOne(0, int.class));
+    }
+
+    @Override
+    public long sweepDeferredTasks(final Instant statusOlderThan) {
+        final long nowMs = System.currentTimeMillis();
+        final Supplier<String> msgSupplier = () -> LogUtil.message(
+                "sweepDeferredTasks - statusOlderThan: {}", statusOlderThan);
+
+        // One statement, as the queue sweep is, over processor_task_status_time_ms_status_idx. A
+        // deferred task has no node, so there is nothing to clear but the status and the times.
+        final int count = JooqUtil.contextResult(processorDbConnProvider, context ->
+                JooqUtil.withDeadlockRetries(() -> context
+                                .update(PROCESSOR_TASK)
+                                .setNull(PROCESSOR_TASK.FK_PROCESSOR_NODE_ID)
+                                .set(PROCESSOR_TASK.STATUS, TaskStatus.CREATED.getPrimitiveValue())
+                                .set(PROCESSOR_TASK.STATUS_TIME_MS, nowMs)
+                                .setNull(PROCESSOR_TASK.START_TIME_MS)
+                                .setNull(PROCESSOR_TASK.END_TIME_MS)
+                                .set(PROCESSOR_TASK.VERSION, PROCESSOR_TASK.VERSION.plus(1))
+                                .where(PROCESSOR_TASK.STATUS.eq(TaskStatus.DEFERRED.getPrimitiveValue()))
+                                .and(PROCESSOR_TASK.STATUS_TIME_MS.lt(statusOlderThan.toEpochMilli()))
+                                .execute(),
+                        msgSupplier));
+        if (count > 0) {
+            LOGGER.debug(() -> "Returned " + count + " deferred tasks (deferred since before "
+                               + statusOlderThan + ") to CREATED");
+        }
+        return count;
+    }
+
+    /// The pipeline's filters first, then their deferred tasks, so that the update runs on the index of
+    /// filter and status rather than joining through the processor for every task.
+    @Override
+    public int wakeDeferredTasks(final String pipelineUuid) {
+        if (pipelineUuid == null) {
+            return 0;
+        }
+        final List<Integer> filterIds = JooqUtil.contextResult(processorDbConnProvider, context -> context
+                .select(PROCESSOR_FILTER.ID)
+                .from(PROCESSOR_FILTER)
+                .join(PROCESSOR).on(PROCESSOR.ID.eq(PROCESSOR_FILTER.FK_PROCESSOR_ID))
+                .where(PROCESSOR.PIPELINE_UUID.eq(pipelineUuid))
+                .fetch(PROCESSOR_FILTER.ID));
+        if (filterIds.isEmpty()) {
+            return 0;
+        }
+        final long nowMs = System.currentTimeMillis();
+        final int woken = JooqUtil.contextResult(processorDbConnProvider, context -> changeStatus(
+                context,
+                null,
+                TaskStatus.CREATED,
+                nowMs,
+                PROCESSOR_TASK.STATUS.eq(TaskStatus.DEFERRED.getPrimitiveValue())
+                        .and(PROCESSOR_TASK.FK_PROCESSOR_FILTER_ID.in(filterIds))));
+        LOGGER.debug(() -> LogUtil.message("wakeDeferredTasks - pipelineUuid: {}, filters: {}, woken: {}",
+                pipelineUuid, filterIds, woken));
+        return woken;
     }
 
     @Override
@@ -795,6 +862,25 @@ class ProcessorTaskDaoImpl implements ProcessorTaskDao {
                                 .where(PROCESSOR_TASK.STATUS.eq(status.getPrimitiveValue()))
                                 .and(PROCESSOR_TASK.FK_PROCESSOR_FILTER_ID.eq(filterId))
                                 .fetchOne(0, int.class));
+    }
+
+    @Override
+    public Map<TaskStatus, Integer> countTasksForFilter(final int filterId, final Set<TaskStatus> statuses) {
+        final List<Byte> values = statuses.stream()
+                .map(TaskStatus::getPrimitiveValue)
+                .toList();
+        final Map<TaskStatus, Integer> counts = new EnumMap<>(TaskStatus.class);
+        statuses.forEach(status -> counts.put(status, 0));
+        JooqUtil.context(processorDbConnProvider, context -> context
+                .select(PROCESSOR_TASK.STATUS, DSL.count())
+                .from(PROCESSOR_TASK)
+                .where(PROCESSOR_TASK.STATUS.in(values))
+                .and(PROCESSOR_TASK.FK_PROCESSOR_FILTER_ID.eq(filterId))
+                .groupBy(PROCESSOR_TASK.STATUS)
+                .fetch()
+                .forEach(row -> counts.put(TaskStatus.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValue(row.value1()),
+                        row.value2())));
+        return counts;
     }
 
     @Override

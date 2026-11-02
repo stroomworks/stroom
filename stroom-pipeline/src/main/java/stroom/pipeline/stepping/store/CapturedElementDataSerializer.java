@@ -16,6 +16,7 @@
 
 package stroom.pipeline.stepping.store;
 
+import stroom.pipeline.shared.stepping.ElementStepDetails;
 import stroom.pipeline.stepping.store.CapturedData.Format;
 import stroom.util.json.JsonUtil;
 import stroom.util.shared.Indicators;
@@ -28,9 +29,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 
 /**
- * Binary framing for a {@link CapturedElementData} record in the store: four flags, the indicators (as
- * JSON, since they are small and structured), and each IO side as a tagged, length-prefixed blob - the SAX
- * event bytes or the text bytes are written straight through, not JSON-escaped or base64'd.
+ * Binary framing for a {@link CapturedElementData} record in the store: four flags, the indicators and the
+ * step details (as JSON, since they are small and structured), and each IO side as a tagged,
+ * length-prefixed blob - the SAX event bytes or the text bytes are written straight through, not
+ * JSON-escaped or base64'd.
+ * <p>
+ * The framing is positional, so the order here is the format. A stepping session's store is the session's
+ * own and outlives nothing, so the format may change with the code that writes it.
  */
 public final class CapturedElementDataSerializer {
 
@@ -52,6 +57,9 @@ public final class CapturedElementDataSerializer {
             writeBlock(out, data.indicators() == null
                     ? null
                     : JsonUtil.writeValueAsBytes(data.indicators(), false));
+            writeBlock(out, data.details() == null
+                    ? null
+                    : JsonUtil.writeValueAsBytes(data.details(), false));
             writeCapturedData(out, data.input());
             writeCapturedData(out, data.output());
         } catch (final IOException e) {
@@ -70,10 +78,14 @@ public final class CapturedElementDataSerializer {
             final Indicators indicators = indicatorBytes == null
                     ? null
                     : JsonUtil.readValue(indicatorBytes, Indicators.class);
+            final byte[] detailBytes = readBlock(in);
+            final ElementStepDetails details = detailBytes == null
+                    ? null
+                    : JsonUtil.readValue(detailBytes, ElementStepDetails.class);
             final CapturedData input = readCapturedData(in);
             final CapturedData output = readCapturedData(in);
             return new CapturedElementData(input, output, formatInput, formatOutput, hasOutput, indicativeCounts,
-                    indicators);
+                    indicators, details);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }

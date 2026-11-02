@@ -52,6 +52,7 @@ import stroom.lifecycle.impl.LifecycleConfig;
 import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
+import stroom.pipelinefactory.impl.PipelineFactoryConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
 import stroom.receive.common.ReceiveDataConfig;
@@ -59,6 +60,7 @@ import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
 import stroom.search.impl.SearchConfig;
 import stroom.search.solr.SolrConfig;
+import stroom.shapeshifter.ai.ShapeshifterAiConfig;
 import stroom.sqlstore.impl.SqlStoreConfig;
 import stroom.storedquery.impl.StoredQueryConfig;
 import stroom.ui.config.shared.UiConfig;
@@ -125,6 +127,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_NODE_URI = "nodeUri";
     public static final String PROP_NAME_PATH = "path";
     public static final String PROP_NAME_PIPELINE = "pipeline";
+    public static final String PROP_NAME_PIPELINE_FACTORY = "pipelineFactory";
     public static final String PROP_NAME_PROCESSOR = "processor";
     public static final String PROP_NAME_PROPERTIES = "properties";
     public static final String PROP_NAME_QUERY_DATASOURCE = "queryDataSource";
@@ -135,6 +138,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_S3 = "s3";
     public static final String PROP_NAME_SEARCH = "search";
     public static final String PROP_NAME_SECURITY = "security";
+    public static final String PROP_NAME_SHAPESHIFTER_AI = "shapeshifterAi";
     public static final String PROP_NAME_SESSION_COOKIE = "sessionCookie";
     public static final String PROP_NAME_SESSION = "session";
     public static final String PROP_NAME_SOLR = "solr";
@@ -193,6 +197,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final NodeConfig nodeConfig;
     private final NodeUriConfig nodeUri;
     private final PipelineConfig pipelineConfig;
+    private final PipelineFactoryConfig pipelineFactoryConfig;
     private final ProcessorConfig processorConfig;
     private final PropertyServiceConfig propertyServiceConfig;
     private final PublicUriConfig publicUri;
@@ -202,6 +207,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final S3Config s3Config;
     private final SearchConfig searchConfig;
     private final SecurityConfig securityConfig;
+    private final ShapeshifterAiConfig shapeshifterAiConfig;
     private final SessionCookieConfig sessionCookieConfig;
     private final SessionConfig sessionConfig;
     private final SolrConfig solrConfig;
@@ -253,6 +259,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new NodeConfig(),
                 new NodeUriConfig(),
                 new PipelineConfig(),
+                new PipelineFactoryConfig(),
                 new ProcessorConfig(),
                 new PropertyServiceConfig(),
                 new PublicUriConfig(),
@@ -262,6 +269,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new S3Config(),
                 new SearchConfig(),
                 new SecurityConfig(),
+                new ShapeshifterAiConfig(),
                 new SessionCookieConfig(),
                 new SessionConfig(),
                 new SolrConfig(),
@@ -312,6 +320,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_NODE) final NodeConfig nodeConfig,
                      @JsonProperty(PROP_NAME_NODE_URI) final NodeUriConfig nodeUri,
                      @JsonProperty(PROP_NAME_PIPELINE) final PipelineConfig pipelineConfig,
+                     @JsonProperty(PROP_NAME_PIPELINE_FACTORY) final PipelineFactoryConfig pipelineFactoryConfig,
                      @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                      @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                      @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
@@ -321,6 +330,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_S3) final S3Config s3Config,
                      @JsonProperty(PROP_NAME_SEARCH) final SearchConfig searchConfig,
                      @JsonProperty(PROP_NAME_SECURITY) final SecurityConfig securityConfig,
+                     @JsonProperty(PROP_NAME_SHAPESHIFTER_AI) final ShapeshifterAiConfig shapeshifterAiConfig,
                      @JsonProperty(PROP_NAME_SESSION_COOKIE) final SessionCookieConfig sessionCookieConfig,
                      @JsonProperty(PROP_NAME_SESSION) final SessionConfig sessionConfig,
                      @JsonProperty(PROP_NAME_SOLR) final SolrConfig solrConfig,
@@ -370,6 +380,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.nodeConfig = nodeConfig;
         this.nodeUri = nodeUri;
         this.pipelineConfig = pipelineConfig;
+        this.pipelineFactoryConfig = pipelineFactoryConfig;
         this.processorConfig = processorConfig;
         this.propertyServiceConfig = propertyServiceConfig;
         this.publicUri = publicUri;
@@ -379,6 +390,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.s3Config = s3Config;
         this.searchConfig = searchConfig;
         this.securityConfig = securityConfig;
+        this.shapeshifterAiConfig = shapeshifterAiConfig;
         this.sessionCookieConfig = sessionCookieConfig;
         this.sessionConfig = sessionConfig;
         this.solrConfig = solrConfig;
@@ -577,6 +589,14 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         return pipelineConfig;
     }
 
+    @JsonProperty(PROP_NAME_PIPELINE_FACTORY)
+    @JsonPropertyDescription("Configuration for Pipeline Factories, which make a pipeline and processor "
+                             + "filter for each new combination of feed and type they find among the "
+                             + "streams.")
+    public PipelineFactoryConfig getPipelineFactoryConfig() {
+        return pipelineFactoryConfig;
+    }
+
     @JsonProperty(PROP_NAME_PROCESSOR)
     public ProcessorConfig getProcessorConfig() {
         return processorConfig;
@@ -635,6 +655,13 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     @JsonProperty(PROP_NAME_SOLR)
     public SolrConfig getSolrConfig() {
         return solrConfig;
+    }
+
+    @JsonProperty(PROP_NAME_SHAPESHIFTER_AI)
+    @JsonPropertyDescription("Configuration for Shapeshifter AI, which learns a feed's extraction and "
+                             + "transformation and routes streams to what it learned.")
+    public ShapeshifterAiConfig getShapeshifterAiConfig() {
+        return shapeshifterAiConfig;
     }
 
     @JsonProperty(PROP_NAME_SECURITY)

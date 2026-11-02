@@ -23,5 +23,5 @@ package stroom.pipeline.stepping.capture;
  * could be a new line etc.
  */
 public interface RecordDetector {
-    void setController(SteppingController controller);
+    void setController(PipelineCapture controller);
 }

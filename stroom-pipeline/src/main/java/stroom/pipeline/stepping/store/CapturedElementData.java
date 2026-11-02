@@ -16,6 +16,7 @@
 
 package stroom.pipeline.stepping.store;
 
+import stroom.pipeline.shared.stepping.ElementStepDetails;
 import stroom.util.shared.Indicators;
 
 /**
@@ -33,7 +34,22 @@ public record CapturedElementData(CapturedData input,
                                   boolean formatOutput,
                                   boolean hasOutput,
                                   boolean indicativeCounts,
-                                  Indicators indicators) {
+                                  Indicators indicators,
+                                  ElementStepDetails details) {
+
+    /**
+     * Compatibility constructor for callers with nothing to say about the step beyond its text, which is
+     * nearly every element (A30).
+     */
+    public CapturedElementData(final CapturedData input,
+                               final CapturedData output,
+                               final boolean formatInput,
+                               final boolean formatOutput,
+                               final boolean hasOutput,
+                               final boolean indicativeCounts,
+                               final Indicators indicators) {
+        this(input, output, formatInput, formatOutput, hasOutput, indicativeCounts, indicators, null);
+    }
 
     /**
      * Compatibility constructor for callers that predate the counters marker: counts are exact.
@@ -54,7 +70,8 @@ public record CapturedElementData(CapturedData input,
      * the records that run processed, not the stream.
      */
     public CapturedElementData withIndicativeCounts() {
-        return new CapturedElementData(input, output, formatInput, formatOutput, hasOutput, true, indicators);
+        return new CapturedElementData(input, output, formatInput, formatOutput, hasOutput, true, indicators,
+                details);
     }
 
     /**

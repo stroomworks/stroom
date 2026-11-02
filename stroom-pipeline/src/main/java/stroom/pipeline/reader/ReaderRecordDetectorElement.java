@@ -16,13 +16,13 @@
 
 package stroom.pipeline.reader;
 
+import stroom.pipeline.stepping.capture.PipelineCapture;
 import stroom.pipeline.stepping.capture.RecordDetector;
-import stroom.pipeline.stepping.capture.SteppingController;
 
 import java.io.Reader;
 
 public class ReaderRecordDetectorElement extends AbstractReaderElement implements RecordDetector {
-    private SteppingController controller;
+    private PipelineCapture controller;
 
     @Override
     protected Reader insertFilter(final Reader reader) {
@@ -33,7 +33,7 @@ public class ReaderRecordDetectorElement extends AbstractReaderElement implement
     }
 
     @Override
-    public void setController(final SteppingController controller) {
+    public void setController(final PipelineCapture controller) {
         this.controller = controller;
     }
 }

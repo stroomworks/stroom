@@ -1,0 +1,71 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* One session's conversation in full (stroom.shapeshifter.client.component.TurnTranscript): each turn a
+   section with its heading, then its terms, the answer kept as it was written; the chosen turn marked as a
+   chosen row is. */
+
+.turn-transcript {
+    overflow: auto;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.turn-transcript__empty {
+    color: var(--text-color--low-emphasis);
+}
+
+.turn-transcript__turn {
+    padding: 6px 8px 8px 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.turn-transcript__turn--selected {
+    background-color: var(--row__background-color--selected);
+    color: var(--row__text-color--selected);
+}
+
+.turn-transcript__heading {
+    font-weight: bold;
+    padding-bottom: 4px;
+}
+
+/* A term beside its value, the value taking what is left */
+.turn-transcript__terms {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px 16px;
+    margin: 0;
+}
+
+.turn-transcript__term {
+    color: var(--text-color--low-emphasis);
+}
+
+.turn-transcript__turn--selected .turn-transcript__term {
+    color: inherit;
+}
+
+.turn-transcript__value {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* An answer is often a configuration: kept in its own lines and the code font */
+.turn-transcript__answer {
+    font-family: var(--monospace-font-family);
+}
