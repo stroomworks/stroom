@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -77,11 +78,17 @@ class TestDemoContentPack {
                 .name(document.getName())
                 .description(document.getDescription())
                 .model(document.getModel())
+                // The time budget is the environment's, as the model is: scenario 51's model is scripted
+                // and its clock fixed, so the budget says nothing about what it proves.
+                .attemptBudgetMs(document.getAttemptBudgetMs())
                 // The stamp of the built-in question text is the store's to write, and the pack carries
                 // it because the pack is written as a saved document would be.
                 .flow(document.getFlow().withBuiltInVersion(Templates.VERSION))
                 .build();
         assertThat(document).isEqualTo(scenario);
+        assertThat(document.getAttemptBudgetMs())
+                .describedAs("twenty minutes a run, since a real model is far slower than a scripted one")
+                .isEqualTo(Duration.ofMinutes(20).toMillis());
         assertThat(document.getFlow().getBuiltInVersion())
                 .describedAs("and a document that arrived without the stamp would say its templates "
                              + "were of no known version until someone saved it")

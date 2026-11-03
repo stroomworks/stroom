@@ -41,6 +41,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -181,6 +182,9 @@ public final class DemoContentPack {
                         how to configure is allowed, so \
                         the first question it asks the model is which of them this feed needs.""")
                 .model(modelRef())
+                // A real model takes far longer than a scripted one, so a run of the demo gets twenty
+                // minutes rather than the document's default of one.
+                .attemptBudgetMs(Duration.ofMinutes(20).toMillis())
                 .build();
         // The store stamps a saved document with the built-in question text it was saved against, and a
         // document that arrived without the stamp would say its templates were of no known version until
@@ -237,8 +241,8 @@ public final class DemoContentPack {
         return index;
     }
 
-    /// The model reference. The base URL and model id are a starting point to be edited for whatever
-    /// OpenAI-compatible endpoint is to hand; the key is named rather than carried.
+    /// The model reference: Anthropic's OpenAI-compatible endpoint and a Claude model, to be edited for
+    /// whatever other OpenAI-compatible endpoint is to hand; the key is named rather than carried.
     ///
     /// @return The model document.
     public static OpenAIModelDoc model() {
@@ -247,11 +251,11 @@ public final class DemoContentPack {
                 .version(VERSION)
                 .name(MODEL_NAME)
                 .description("""
-                        The model the Shapeshifter AI stage asks. Set the base URL and model id for the \
-                        OpenAI-compatible endpoint you are using, and create a stored secret named \
+                        The model the Shapeshifter AI stage asks: Anthropic's OpenAI-compatible endpoint. \
+                        Change the base URL and model id to use another, and create a stored secret named \
                         '""" + API_KEY_NAME + "' holding its API key.")
-                .baseUrl("https://api.openai.com/v1")
-                .modelId("gpt-4o")
+                .baseUrl("https://api.anthropic.com/v1/")
+                .modelId("claude-sonnet-5-5")
                 .apiKey(API_KEY_NAME)
                 .build();
     }
@@ -503,7 +507,8 @@ public final class DemoContentPack {
 
                 ## Before you run it
 
-                1. Open `%s` and set the base URL and model id for an OpenAI-compatible endpoint.
+                1. `%s` is set for Anthropic's OpenAI-compatible endpoint and `claude-sonnet-5-5`.
+                   Change its base URL and model id to use another OpenAI-compatible endpoint.
                 2. Create a stored secret named `%s` holding that endpoint's API key. The pack carries
                    the name of the secret and never the key itself.
                 3. Make sure the event-logging XML schemas are installed, since the stage gates every
