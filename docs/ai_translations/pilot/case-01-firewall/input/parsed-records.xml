@@ -1,0 +1,72 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<records xmlns="records:2"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="records:2 file://records-v2.0.xsd"
+         version="2.0">
+   <record>
+      <data name="comment" value="# fw01 firewall log started 2026-11-04"/>
+   </record>
+   <record>
+      <data name="time" value="2026-11-04T10:00:01Z"/>
+      <data name="host" value="fw01"/>
+      <data name="action" value="DROP"/>
+      <data name="src" value="10.0.0.5"/>
+      <data name="dst" value="203.0.113.9"/>
+      <data name="proto" value="TCP"/>
+      <data name="sport" value="51514"/>
+      <data name="dport" value="443"/>
+   </record>
+   <record>
+      <data name="time" value="2026-11-04T10:00:02Z"/>
+      <data name="host" value="fw01"/>
+      <data name="action" value="ACCEPT"/>
+      <data name="src" value="2001:db8::5"/>
+      <data name="dst" value="2001:db8::9"/>
+      <data name="proto" value="UDP"/>
+      <data name="sport" value="5353"/>
+      <data name="dport" value="53"/>
+   </record>
+   <record>
+      <data name="time" value="2026-11-04T10:00:03Z"/>
+      <data name="host" value="fw01"/>
+      <data name="action" value="DROP"/>
+      <data name="src" value="10.0.0.7"/>
+      <data name="dst" value="-"/>
+      <data name="proto" value="TCP"/>
+      <data name="sport" value="40000"/>
+      <data name="dport" value="22"/>
+   </record>
+   <record>
+      <data name="time" value="2026-11-04T10:00:04Z"/>
+      <data name="host" value="fw01"/>
+      <data name="action" value="DROP"/>
+      <data name="src" value="10.0.0.8"/>
+      <data name="dst" value="203.0.113.20"/>
+      <data name="proto" value="ICMP"/>
+      <data name="sport" value="-"/>
+      <data name="dport" value="-"/>
+   </record>
+   <record>
+      <data name="time" value="2026-11-04T11:00:05+01:00"/>
+      <data name="host" value="fw01"/>
+      <data name="action" value="DROP"/>
+      <data name="src" value="10.0.0.9"/>
+      <data name="dst" value="203.0.113.21"/>
+      <data name="proto" value="GRE"/>
+      <data name="sport" value="-"/>
+      <data name="dport" value="-"/>
+   </record>
+   <record>
+      <data name="time" value="2026-11-04T10:00:06Z"/>
+      <data name="host" value="fw01"/>
+      <data name="action" value="DROP"/>
+      <data name="src" value="10.0.0.999"/>
+      <data name="dst" value="203.0.113.22"/>
+      <data name="proto" value="TCP"/>
+      <data name="sport" value="1234"/>
+      <data name="dport" value="80"/>
+   </record>
+   <record>
+      <data name="raw" value="2026-11-04T10:00:07Z fw01 garbled~~~~"/>
+   </record>
+</records>

@@ -1,0 +1,3 @@
+Skipped invalid record 6
+Skipped invalid record 7
+Skipped invalid record 8

@@ -1,0 +1,4 @@
+# One regular expression per line. A candidate must have raised at least one message matching each.
+# (Dropped records must be reported, not skipped silently.)
+10\.0\.0\.999
+garbled

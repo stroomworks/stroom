@@ -1,0 +1,2 @@
+Dropping record with invalid IP address: 04/11/2026 10:00:06,fw02,BLOCK,10.1.0.256,198.51.100.12,1234,80,tcp
+Dropping record with too few fields (3 of 8): 04/11/2026 10:00:07,fw02,BLOCK

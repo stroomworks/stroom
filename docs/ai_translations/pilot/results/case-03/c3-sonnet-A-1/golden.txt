@@ -1,0 +1,14 @@
+PASS G1.1  DENY is Network/Deny
+FAIL G1.2  the SECOND address 10.2.0.5:51514 is the source
+FAIL G1.3  the FIRST address 198.51.100.7:443 is the destination
+PASS G1.4  protocol is TCP; logging device is gw03
+PASS G2.1  PERMIT is Network/Permit
+FAIL G2.2  source is 198.51.100.9:3389 (the SECOND address)
+FAIL G2.3  destination is 10.2.0.20:52100 (the FIRST address)
+FAIL G3.1  ICMP, no Port; source 198.51.100.11, destination 10.2.0.9
+FAIL G4.1  IPv6 source fe80::7, destination 2001:db8::9, UDP
+FAIL G5.1  TEARDOWN is Network/Close, source 10.2.0.5, destination 198.51.100.7
+PASS N1  the invalid address 10.2.0.256 was not output, and no event at 10:00:05
+PASS N2  exactly 5 events were produced
+PASS C1  every event has a non-empty TypeId
+PASS C2  the same action always gets the same TypeId

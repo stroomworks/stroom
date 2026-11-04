@@ -1,0 +1,81 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<records xmlns="records:2"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="records:2 file://records-v2.0.xsd"
+         version="2.0">
+   <record>
+      <data value="04/11/2026 10:00:01"/>
+      <data value="fw02"/>
+      <data value="BLOCK"/>
+      <data value="10.1.0.5"/>
+      <data value="198.51.100.7"/>
+      <data value="51514"/>
+      <data value="443"/>
+      <data value="tcp"/>
+   </record>
+   <record>
+      <data value="13/11/2026 09:30:00"/>
+      <data value="fw02"/>
+      <data value="ALLOW"/>
+      <data value="198.51.100.9"/>
+      <data value="10.1.0.20"/>
+      <data value="3389"/>
+      <data value="52100"/>
+      <data value="tcp"/>
+   </record>
+   <record>
+      <data value="04/11/2026 10:00:03"/>
+      <data value="fw02"/>
+      <data value="BLOCK"/>
+      <data value="10.1.0.7"/>
+      <data value="10.1.0.8"/>
+      <data value="40000"/>
+      <data value="40001"/>
+      <data value="udp"/>
+   </record>
+   <record>
+      <data value="04/11/2026 10:00:04"/>
+      <data value="fw02"/>
+      <data value="BLOCK"/>
+      <data value="10.1.0.9"/>
+      <data value="198.51.100.11"/>
+      <data value=""/>
+      <data value=""/>
+      <data value="icmp"/>
+   </record>
+   <record>
+      <data value="04/11/2026 10:00:05"/>
+      <data value="fw02"/>
+      <data value="BLOCK"/>
+      <data value="fe80::1"/>
+      <data value="ff02::fb"/>
+      <data value="5353"/>
+      <data value="5353"/>
+      <data value="udp"/>
+   </record>
+   <record>
+      <data value="04/11/2026 10:00:06"/>
+      <data value="fw02"/>
+      <data value="BLOCK"/>
+      <data value="10.1.0.256"/>
+      <data value="198.51.100.12"/>
+      <data value="1234"/>
+      <data value="80"/>
+      <data value="tcp"/>
+   </record>
+   <record>
+      <data value="04/11/2026 10:00:07"/>
+      <data value="fw02"/>
+      <data value="BLOCK"/>
+   </record>
+   <record>
+      <data value="04/11/2026 10:00:08"/>
+      <data value="fw02"/>
+      <data value="RESET"/>
+      <data value="10.1.0.5"/>
+      <data value="198.51.100.7"/>
+      <data value="51514"/>
+      <data value="443"/>
+      <data value="tcp"/>
+   </record>
+</records>

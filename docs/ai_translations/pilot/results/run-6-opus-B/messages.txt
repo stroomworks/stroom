@@ -1,0 +1,2 @@
+Dropped record 7: invalid source IP '10.0.0.999'
+Dropped unparsed record 8: 2026-11-04T10:00:07Z fw01 garbled~~~~

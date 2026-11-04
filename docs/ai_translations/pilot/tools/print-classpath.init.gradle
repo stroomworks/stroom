@@ -1,0 +1,14 @@
+// A Gradle init script that adds one task to the Shapeshifter module: it prints the test runtime classpath on a
+// single line. It changes no build file. Used by run-datasplitter-check.sh, which passes it with -I.
+allprojects {
+    if (path == ':stroom-shapeshifter:stroom-shapeshifter-ai') {
+        afterEvaluate {
+            tasks.register('printPilotClasspath') {
+                dependsOn 'testClasses', 'testFixturesJar'
+                doLast {
+                    println "PILOT_CLASSPATH=" + sourceSets.test.runtimeClasspath.asPath
+                }
+            }
+        }
+    }
+}

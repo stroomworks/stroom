@@ -1,0 +1,8 @@
+# fw01 firewall log started 2026-11-04
+2026-11-04T10:00:01Z fw01 DROP src=10.0.0.5 dst=203.0.113.9 proto=TCP sport=51514 dport=443
+2026-11-04T10:00:02Z fw01 ACCEPT src=2001:db8::5 dst=2001:db8::9 proto=UDP sport=5353 dport=53
+2026-11-04T10:00:03Z fw01 DROP src=10.0.0.7 dst=- proto=TCP sport=40000 dport=22
+2026-11-04T10:00:04Z fw01 DROP src=10.0.0.8 dst=203.0.113.20 proto=ICMP sport=- dport=-
+2026-11-04T11:00:05+01:00 fw01 DROP src=10.0.0.9 dst=203.0.113.21 proto=GRE sport=- dport=-
+2026-11-04T10:00:06Z fw01 DROP src=10.0.0.999 dst=203.0.113.22 proto=TCP sport=1234 dport=80
+2026-11-04T10:00:07Z fw01 garbled~~~~

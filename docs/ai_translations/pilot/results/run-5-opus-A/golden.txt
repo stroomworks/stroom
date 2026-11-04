@@ -1,0 +1,22 @@
+PASS G1.1  exactly one event at 10:00:01
+PASS G1.2  DROP is recorded as Network/Deny
+PASS G1.3  source address is 10.0.0.5
+PASS G1.4  destination address is 203.0.113.9
+PASS G1.5  source port 51514, destination port 443
+PASS G1.6  protocol is TCP
+PASS G1.7  logging device is fw01
+PASS G2.1  exactly one event at 10:00:02
+PASS G2.2  ACCEPT is recorded as Network/Permit
+PASS G2.3  IPv6 source and destination in the right places
+PASS G2.4  UDP, ports 5353 and 53
+PASS G3.1  the record is kept (source is known)
+PASS G3.2  the missing-value marker is not output as an address
+PASS G4.1  ICMP is recorded, with no Port element and no dash port
+PASS G5.1  11:00:05+01:00 is 10:00:05 UTC
+PASS G5.2  GRE is recorded as Other
+PASS N1  the comment line produced no event
+FAIL N2  the invalid address 10.0.0.999 was not output
+PASS N3  the garbled line produced no event
+FAIL N4  exactly 5 events were produced
+PASS C1  every event has a non-empty TypeId
+PASS C2  the same action always gets the same TypeId

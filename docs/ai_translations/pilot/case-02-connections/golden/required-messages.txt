@@ -1,0 +1,4 @@
+# One regular expression per line. A candidate must have raised at least one message matching each.
+# (Dropped records must be reported, not skipped silently.)
+10\.1\.0\.256
+10:00:07|record 7|Record 7|3 fields|truncated|short|incomplete

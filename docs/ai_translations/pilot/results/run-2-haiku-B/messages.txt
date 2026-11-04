@@ -1,0 +1,2 @@
+Dropping invalid record: time=2026-11-04T10:00:06Z host=fw01 action=DROP src=10.0.0.999 dst=203.0.113.22 proto=TCP sport=1234 dport=80
+Skipping unrecognised record: raw=2026-11-04T10:00:07Z fw01 garbled~~~~

@@ -1,0 +1,19 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<!-- Reference Data Splitter configuration for pilot case 04. NOT shown to the model under test.
+     A record is a line, except that a double-quoted field may contain a line break. Comment lines (starting
+     with #) and blank lines are not records. Quotes are removed from the fields, and every field becomes an
+     unnamed <data> in column order. -->
+<dataSplitter xmlns="data-splitter:3"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd"
+              version="3.0">
+  <!-- The pattern also matches comment lines and blank lines, so that nothing is left unmatched. Only a real
+       record is captured, in $1. -->
+  <regex pattern="(?:#[^\n]*|((?:[^\n&#34;]|&#34;[^&#34;]*&#34;)+))?(?:\n|$)">
+    <group value="$1" ignoreErrors="true">
+      <split delimiter="," containerStart="&#34;" containerEnd="&#34;">
+        <data value="$1"/>
+      </split>
+    </group>
+  </regex>
+</dataSplitter>

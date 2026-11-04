@@ -1,0 +1,2 @@
+Record 6 skipped: invalid source IP address "10.1.0.256"
+Record 7 skipped: expected 8 columns but found 3

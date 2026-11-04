@@ -1,0 +1,1 @@
+Skipping invalid record at position 5: 2026-11-04T10:00:05Z | gw03 | DENY | 198.51.100.12 | 10.2.0.256 | 80 | 1234 | tcp

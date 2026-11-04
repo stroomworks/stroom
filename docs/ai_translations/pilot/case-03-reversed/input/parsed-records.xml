@@ -1,0 +1,66 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<records xmlns="records:2"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="records:2 file://records-v2.0.xsd"
+         version="2.0">
+   <record>
+      <data value="2026-11-04T10:00:01Z"/>
+      <data value="gw03"/>
+      <data value="DENY"/>
+      <data value="198.51.100.7"/>
+      <data value="10.2.0.5"/>
+      <data value="443"/>
+      <data value="51514"/>
+      <data value="tcp"/>
+   </record>
+   <record>
+      <data value="2026-11-04T10:00:02Z"/>
+      <data value="gw03"/>
+      <data value="PERMIT"/>
+      <data value="10.2.0.20"/>
+      <data value="198.51.100.9"/>
+      <data value="52100"/>
+      <data value="3389"/>
+      <data value="tcp"/>
+   </record>
+   <record>
+      <data value="2026-11-04T10:00:03Z"/>
+      <data value="gw03"/>
+      <data value="DENY"/>
+      <data value="10.2.0.9"/>
+      <data value="198.51.100.11"/>
+      <data value=""/>
+      <data value=""/>
+      <data value="icmp"/>
+   </record>
+   <record>
+      <data value="2026-11-04T10:00:04Z"/>
+      <data value="gw03"/>
+      <data value="DENY"/>
+      <data value="2001:db8::9"/>
+      <data value="fe80::7"/>
+      <data value="5353"/>
+      <data value="5353"/>
+      <data value="udp"/>
+   </record>
+   <record>
+      <data value="2026-11-04T10:00:05Z"/>
+      <data value="gw03"/>
+      <data value="DENY"/>
+      <data value="198.51.100.12"/>
+      <data value="10.2.0.256"/>
+      <data value="80"/>
+      <data value="1234"/>
+      <data value="tcp"/>
+   </record>
+   <record>
+      <data value="2026-11-04T10:00:06Z"/>
+      <data value="gw03"/>
+      <data value="TEARDOWN"/>
+      <data value="198.51.100.7"/>
+      <data value="10.2.0.5"/>
+      <data value="443"/>
+      <data value="51514"/>
+      <data value="tcp"/>
+   </record>
+</records>

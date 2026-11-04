@@ -1,0 +1,18 @@
+PASS G1.1  04/11/2026 10:00:01 is 4 November 10:00:01 UTC (day first, UTC)
+PASS G1.2  BLOCK is Network/Deny
+PASS G1.3  source 10.1.0.5:51514 and destination 198.51.100.7:443
+PASS G1.4  protocol is TCP
+PASS G1.5  logging device is fw02 (as HostName or Name)
+PASS G2.1  13/11/2026 is 13 November (this row proves day-first)
+PASS G2.2  ALLOW is Network/Permit
+PASS G2.3  the FIRST address 198.51.100.9:3389 is the source (not the port guess)
+PASS G2.4  the SECOND address 10.1.0.20:52100 is the destination
+PASS G3.1  UDP; source 10.1.0.7:40000, destination 10.1.0.8:40001
+PASS G4.1  ICMP with empty ports has no Port element
+PASS G5.1  IPv6 source fe80::1 and destination ff02::fb, UDP
+PASS G6.1  RESET is recorded as Network/Close, with the source and destination kept
+PASS N1  the invalid address 10.1.0.256 was not output, and no event at 10:00:06
+PASS N2  the truncated row (3 fields) produced no event
+PASS N3  exactly 6 events were produced
+PASS C1  every event has a non-empty TypeId
+PASS C2  the same action always gets the same TypeId

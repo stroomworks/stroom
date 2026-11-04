@@ -1,0 +1,2 @@
+<warn>Record 6 dropped: invalid source IP address "10.1.0.256" [04/11/2026 10:00:06,fw02,BLOCK,10.1.0.256,198.51.100.12,1234,80,tcp]</warn>
+<warn>Record 7 dropped: expected 8 fields but found 3 [04/11/2026 10:00:07,fw02,BLOCK]</warn>

@@ -1,0 +1,2 @@
+Skipped invalid record at position 6: 04/11/2026 10:00:06,fw02,BLOCK,10.1.0.256,198.51.100.12,1234,80,tcp
+Skipped invalid record at position 7: 04/11/2026 10:00:07,fw02,BLOCK

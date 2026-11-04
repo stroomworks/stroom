@@ -1,0 +1,2 @@
+WARNING: record 6 dropped: invalid source IP '10.1.0.256'
+WARNING: record 7 dropped: expected 8 fields but found 3

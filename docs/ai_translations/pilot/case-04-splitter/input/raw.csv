@@ -1,0 +1,7 @@
+# gateway export 2026-11-04
+2026-11-04T10:00:01Z,gw04,DENY,10.3.0.5,198.51.100.7,51514,443,tcp,"blocked, repeated scans"
+2026-11-04T10:00:02Z,gw04,PERMIT,10.3.0.6,198.51.100.9,52100,443,tcp,allowed
+
+2026-11-04T10:00:03Z,gw04,DENY,10.3.0.7,198.51.100.11,40000,53,udp,"first line
+second line"
+2026-11-04T10:00:04Z,gw04,DENY
