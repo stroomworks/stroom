@@ -48,15 +48,17 @@ Numbered so they can be traced to tests. "Must" is the 1.0 floor for automatic m
 |---|---|---|
 | R1 | A destination is permitted only if an **enabled rule** matches it. No rule means denied | Must |
 | R2 | A rule matches by **exact** string or by **prefix by whole component**, chosen per rule. No wildcards or regular expressions | Must |
-| R3 | Matching is done on the **normalised** destination, never the raw string (user-info rejected, case, trailing dot, default port, IDN, `..`, encoded characters; paths made canonical with links resolved) | Must |
-| R4 | One kind per rule: HTTP, EMAIL, AI_MODEL, FILE, OBJECT_STORE, MESSAGE_BUS, SEARCH_BACKEND | Must |
-| R5 | The guard **fails closed**: an exception, an unknown kind or an unavailable registry denies | Must |
-| R6 | **Every** sink calls the guard, including the standard XSLT routes (`doc`, `document`, `unparsed-text`, `collection`, `xsl:result-document`) and the XPath routes (`xpath()` and the extraction filter) | Must |
-| R7 | A build fails if a class that can do I/O has no declared egress kind | Must |
+| R3 | Matching is done on the **normalised** destination, never the raw string. **HTTP:** scheme and host are folded to lower case and the path never is; a trailing dot, an IDN and the default port are normalised; user-info, a backslash, `;` parameters, a `%00` and a `%2F` or `%5C` inside a segment are rejected; percent-decoding happens once and a double-encoded value is rejected; the fragment is dropped; the query is **not** part of a match (and is not stored, R29); `https` on port 80 or `http` on port 443 is not treated as the default port. **FILE:** paths are made canonical with links resolved. | Must |
+| R4 | One kind per rule: HTTP, EMAIL, AI_MODEL, FILE, OBJECT_STORE, MESSAGE_BUS, SEARCH_BACKEND. Where the real endpoint is held in a document (an OpenAI model, Solr connection, Kafka or S3 configuration), the guard checks the **resolved endpoint at call time**, so editing the document cannot bypass a rule. "Endpoint" is defined per kind: AI_MODEL and SEARCH_BACKEND (Elastic, Solr) are scheme, host and port; MESSAGE_BUS is each bootstrap server's host and port; OBJECT_STORE is region and bucket (or endpoint where one is set). A rule on a document UUID alone (as the §6.2 sketch shows for the local model) is **not** enough, so the sketch row is a rule on the model's endpoint with the document shown as a label | Must |
+| R5 | The guard **fails closed in enforce mode**: an exception, an unknown kind or an unavailable registry denies. **In report-only mode** the same conditions let the call proceed and are recorded loudly as "registry unavailable", so a database fault cannot change an existing pipeline's behaviour (R22) | Must |
+| R6 | **Every** sink calls the guard, including the standard XSLT routes (`doc`, `document`, `unparsed-text`, `collection`, `xsl:result-document`) and the XPath routes (`xpath()`, the extraction filter, and the stepping code's XPath evaluators). The sink list is §5.2. `unparsed-text`, `collection` and `xsl:result-document` are **denied outright**: no rule can permit them, and every attempt is logged (open question 6). **They are blocked in report-only mode too**: the kind's mode does not apply to them (project owner decision), so a translation that uses them fails from the first install | Must |
+| R7 | A build fails if a class on the **explicit I/O list** (the network, file, mail, object-store and message-bus client types, matched by import and not by name) has no `@EgressSink` declaration, or is not on an allow-list that carries a **reason for each entry**. The scan is import-aware, so unrelated types with the same simple name (Hadoop `Configuration`, jOOQ `Processor`) are not flagged. The allow-list will be **large** at first (about 50 classes import `WebTarget` or `HttpClient` for node-to-node calls in `stroom-node`, `stroom-planb`, `stroom-security-*` and the resources, plus command-line tools such as `DataFeedClient`, `URLTestTool` and `DatabaseTool`). It is **seeded in Phase 1 with a reason per entry** and burned down | Must |
 | R8 | A **global mode per kind**: report-only (record, do not block) or enforce. Never allow-all | Must |
-| R9 | A **kill switch** that denies all egress of a chosen kind at once | Must |
-| R10 | HTTP: https only unless a rule names http; redirects re-checked at each hop or disabled; XSLT-supplied TLS settings ignored and reported; `Authorization` and `Cookie` headers from the XSLT stripped | Must |
-| R11 | FILE: the check is on the fully expanded, canonical path, **before** any directory or lock file is created. Rolling appenders check both the active and the rolled destination. Every `outputPaths` entry is checked at save | Must |
+| R9 | A **kill switch** that denies all egress of a chosen kind at once. **It overrides report-only**: a kind with the switch ON denies, whatever its mode (the switch is an emergency action, and the screen says so) | Must |
+| R10 | HTTP: https only unless a rule names http; **redirects are blocked**. `ConfiguredRedirectStrategy` is installed on every client built from `HttpClientConfiguration` and the default is to follow, and an XSLT can set `followRedirects` in its own JSON configuration, so each path is forced: `followRedirects(false)` on the builder in `CommonHttpClient` (overriding the XSLT's value) and in `HTTPAppender`; `ClientProperties.FOLLOW_REDIRECTS=false` on the `HTTP_POST_FILTER` Jersey client used by `HttpPostFilter`; and the model document's own `followRedirects` overridden in `AiServiceImpl`; XSLT-supplied TLS settings ignored and reported; `Authorization` and `Cookie` headers from the XSLT stripped. The existing `SsrfGuard` is **reused only through `rejectMetadataAndWildcard`**, to refuse cloud-metadata and wildcard addresses. `requirePublicHost` is not used, because it also rejects private (RFC 1918) addresses, which would block an internal SIEM. A rule that names an IP literal overrides the check for that address. `SsrfGuard` resolves DNS, so that cost is outside the R24 measurement | Must |
+| R11 | FILE: the check is on the fully expanded, canonical path, **before** any directory or lock file is created. Rolling appenders check both the active and the rolled destination. The check covers the **lock file** (`path + ".lock"`), the final file it is renamed to, and the rolled file (computed only at roll time in `RollingFileDestination`, so the rolled check lives there). The file is opened with `NOFOLLOW_LINKS` and the parent is re-resolved after the open and compared with the checked path. This narrows the link-swap race (K5) but cannot close it for a swapped *directory* component; the residual race is documented. `HDFSFileAppender` is carved out, because an HDFS path cannot be canonicalised with local links resolved Every `outputPaths` entry is checked at save, but a save-time check can only test the **literal part of the template** before the first variable; the full check is at run time | Must |
+| R30 | The Blocked and reported table has a **Clear** action, held by the same permission, that removes aggregated attempts (all, or older than a chosen date). The clear is audited with who, when and how many rows | Should |
+| R29 | **Destinations can be secrets** (webhook URLs carry tokens in the path or query). The query is never stored. The **path is stored** (matching needs it), so a secret in a path is in the database: masking is a display protection only, and the documentation says so. The Blocked, Audit (old and new values) and rule lists and the test box show the normalised destination with the last path segment **masked** unless the viewer asks to reveal it (an audited action). Credentials the call needs stay in `stroom-credentials`, but a rule destination the matcher must read cannot live there | Must |
 
 ### 2.2 The screen and who may use it
 
@@ -64,11 +66,11 @@ Numbered so they can be traced to tests. "Must" is the 1.0 floor for automatic m
 |---|---|---|
 | R12 | One UI to see and manage every rule, whatever its kind | Must |
 | R13 | A new application permission, for example **Manage Egress Policy**, held by a small group | Must |
-| R14 | The policy and its permission are **protected from AI agents**: an agent acting with a user's authority cannot edit the policy, and the MCP server exposes no tool that can | Must |
+| R14 | The policy is protected by its **permission alone**, as every other administrative screen is. No separate agent-identity check is built for 1.0 (project owner decision). The guidance is stated in the documentation: accounts used by AI agents or the MCP server must not hold `Manage Egress Policy` or `Administrator`. Securing the MCP server is a later piece of work | Must |
 | R15 | Every change is audited with who, when and the old and new value | Must |
 | R16 | A **"would this be allowed?" test box**: enter a kind and destination, see the normalised form and which rule matches or why none does | Should |
 | R17 | A **Blocked and reported** list of every denied or report-only attempt, with one click to turn an entry into a rule or a request | Must |
-| R18 | A **request and approval** workflow: the person who requests a rule cannot approve it | Should |
+| R18 | A **request and approval** workflow: the person who requests a rule cannot approve it. This is a **process aid, not a security boundary**: under A4 a person who holds the permission can add the rule directly. It is for people who can request but not approve, which needs the permission split in open question 4 | Should |
 | R19 | Each rule shows **last used** and a use count, so a stale or relied-on rule is visible | Should |
 | R20 | **Inventory import**: run the XSLT dependency parser over existing translations and propose rules | Should |
 | R21 | Changing global mode or the kill switch needs the same permission, is audited, and is shown prominently | Must |
@@ -77,10 +79,10 @@ Numbered so they can be traced to tests. "Must" is the 1.0 floor for automatic m
 
 | # | Requirement | Priority |
 |---|---|---|
-| R22 | **No change of behaviour for existing translations** until a kind is switched to enforce. Report-only is the default on first install | Must |
-| R23 | Consistent on **every node** of a cluster, with a bounded delay when a rule changes | Must |
-| R24 | The guard adds negligible cost to a call: the rules are held in memory and matching is a lookup | Must |
-| R25 | Decisions are recorded without flooding: denied and report-only attempts are **aggregated** (destination, sink, pipeline, count, first and last seen), not logged one per call | Must |
+| R22 | **No change of behaviour for existing translations** until a kind is switched to enforce, **except** that the three denied-outright XSLT routes (R6) are blocked from the first install. Report-only is the default on first install | Must |
+| R23 | Consistent on **every node** of a cluster. A rule change or kill switch reaches every node within **10 seconds** *(proposed bound, to be agreed and then tested)*, using the existing entity-event cluster invalidation **plus a periodic reload**, because `EntityEventBusImpl.fireRemote` is fire-and-forget with no retry and an unreachable node would otherwise stay stale | Must |
+| R24 | The guard adds negligible cost to a call: the rules are held in memory and matching is a lookup. Target: under **50 microseconds per decision at the 99th percentile**, measured in Phase 3 *(proposed number)* | Must |
+| R25 | Decisions are recorded without flooding: denied and report-only attempts are **aggregated** (destination, sink, pipeline, count, first and last seen), not logged one per call. The Audit tab shows **rule and setting changes** (every one) and the **aggregated decisions** (not each call) | Must |
 | R26 | The UI follows `stroom-gwt/UI-GUIDE.md` *(verified)*: a component and controller per screen, Stroom's widgets, BEM styles, workbench stories | Must |
 | R27 | Tests: unit tests for matching and normalisation, a real-node test for each Saxon route, the sink-enumeration test, and workbench stories for each screen | Must |
 | R28 | British English throughout, and the project's Java conventions (`AGENTS.md` *(verified)*) | Must |
@@ -94,9 +96,9 @@ Numbered so they can be traced to tests. "Must" is the 1.0 floor for automatic m
 | A3 | Rules live in the **database** and are changed at run time through the UI. They are not in the YAML configuration | Config properties need a restart and cannot be audited per change |
 | A4 | The current stage is a **single trust level**: anyone with the permission may approve, and the requester-not-approver rule is the only separation | A second approver or a role split would add a state machine |
 | A5 | Existing translations that use these routes can be found by the parser (§5 of the note) and by report-only mode | A destination computed at run time is only found by report-only, which needs time |
-| A6 | Stroom's existing patterns are available for this feature: a module set of `api`, `impl`, `impl-db`, a resource interface in `stroom-core-shared`, `@AutoLogged` on the resource, a content tab in `stroom-core-client`, and cluster-wide cache invalidation *(the first four verified in `stroom-credentials`; the cache pattern to confirm)* | Some plumbing would need to be built here |
-| A7 | The GWT client cannot use `java.net.URI` or `java.nio.file.Path` *(to confirm)*, so **normalisation runs on the server only**. The screen shows the normalised form by asking the server | If the client can share the code, the test box can be instant |
-| A8 | An AI agent is identifiable as one, by the identity it acts with, so the permission can be withheld *(to confirm: how agents authenticate to Stroom and to the MCP server)* | The protection in R14 would need a different mechanism |
+| A6 | Stroom's existing patterns are available for this feature: a module set of `api`, `impl`, `impl-db`, a resource interface in `stroom-core-shared`, `@AutoLogged` on the resource, a content tab in `stroom-core-client`, and cluster-wide cache invalidation *(all verified: the first four in `stroom-credentials`; the cache pattern is `EntityEventBusImpl` with `@EntityEventHandler`, fanned out by `EntityEventResourceImpl` and used by `FeedDocCache` and `ProcessorProfileCache`)* | Some plumbing would need to be built here |
+| A7 | The GWT client cannot use `java.net.URI` or `java.nio.file.Path` *(verified: nothing in the shared modules imports either, and the repository has no emulation of them)*, so **normalisation runs on the server only**. The screen shows the normalised form by asking the server | If the client can share the code, the test box can be instant |
+| A8 | **Agents are not distinguished from other users** (project owner decision). The current MCP bridge is a development prototype, authenticates as an ordinary user and is not for production; `ADMINISTRATOR` holds every permission. The protection is the permission and the guidance in R14 | If agents later need to be refused by identity, a mechanism is added then; nothing in this design prevents it |
 | A9 | Enforcement is **by kind**, switched on one kind at a time | If a single switch is needed, simpler |
 | A10 | The data-read functions (`meta-stream-for-id`, lookups) are **out of scope** here. They are a data-exposure question (question 18 in the note) | They would need their own permission check |
 
@@ -108,18 +110,19 @@ Numbered so they can be traced to tests. "Must" is the 1.0 floor for automatic m
 | K2 | **Switching to enforce breaks existing translations** | High | High | Report-only first, the Blocked list, inventory import, one kind at a time, the kill switch as a way back |
 | K3 | **Normalisation bug** lets a differently written destination match a rule (or not) | Medium | High | Exact or whole-component prefix only. A table of bypass cases as tests (§6.5.8 of the note). Normalise before every comparison. Fail closed |
 | K4 | **Prefix on a path** is read as a string prefix (`/stroom/output-old` matching `/stroom/output`) | Low | High | Compare by path components. A named test |
-| K5 | **A symbolic link inside an allowed directory** points outside it | Medium | High | Resolve links on the nearest existing ancestor, then compare. Check before creating directories |
+| K5 | **A symbolic link inside an allowed directory** points outside it, or **is swapped after the check** (a time-of-check to time-of-use race) | Medium | High | Resolve links on the nearest existing ancestor, then compare. Check before creating directories. Open the resolved real path with links not followed and confirm it is the path that was checked (R11) |
 | K6 | **False reassurance**: an approved generic webhook is still an exfiltration route | High | Medium | Say so on the screen and in the documentation. Limits are deferred, not forgotten (§6.5.4.1) |
 | K7 | **Stale rules on one node** after a change | Medium | Medium | Cluster invalidation. A bound on the delay. Show the version each node holds |
-| K8 | **The guard becomes a bottleneck** | Low | Medium | In-memory rules, hash lookup for exact, a sorted structure for prefix. Measure in Phase 2 |
-| K9 | **The Blocked list floods** | Medium | Medium | Aggregate (R25), cap the table, expire old rows |
-| K10 | **Lock-out**: the policy blocks the route the admin needs to fix it | Low | High | The policy never governs Stroom's own database or its UI. The kill switch is a database setting changed from the screen or by an administrator |
-| K11 | **`DO_NOT_RECOVER`** turns recoverable XSLT warnings into failures for translations that relied on them | Medium | Medium | Apply it only to untrusted content at first. Test on existing translations in report-only |
+| K8 | **The guard becomes a bottleneck** | Low | Medium | In-memory rules, hash lookup for exact, a sorted structure for prefix. Measure in Phase 3 (R24) |
+| K9 | **The Blocked list floods** | Medium | Medium | Aggregate (R25). The table is uncapped for now (open question 8); an administrator can clear it (R30), and its size is watched |
+| K10 | **Lock-out**: the policy blocks the route the admin needs to fix it | Low | High | The policy never governs Stroom's own database or its UI, nor **cluster-internal REST** (node-to-node calls such as `NodeServiceImpl`, `RemoteNodeSearch`, `FileTransferClientImpl`, `EntityEventResourceImpl`; these go through `NodeService.remoteRestCall` and `WebTargetFactory`, a different path from `HttpClientProviderCache`, so the guard never sees them), nor the **OpenID Connect outbound calls** (`OpenIdPublicKeysSupplier`, `OpenIdTokenRequestHelper`, `ExternalIdpConfigurationProvider`): enforcing HTTP over these would stop everyone logging in. These all go on the R7 allow-list with that reason. The kill switch is a database setting changed from the screen or by an administrator |
+| K11 | **`DO_NOT_RECOVER`** turns recoverable XSLT warnings into failures for translations that relied on them | Medium | Medium | Scope it **per Saxon creation site** (`SaxonConfinement.confine(Configuration, mode)`), not globally, and apply it to untrusted content first. Test on existing translations in report-only |
 | K12 | **An approver approves without looking**, or approves for a requester they trust blindly | Medium | Medium | Show what the rule would permit, in plain words, and what has already been blocked against it. Audit |
-| K13 | **The policy is edited by an AI agent**, directly or by a chain of tools | Low | High | R14. A test that lists the MCP tools and asserts none touches the policy |
+| K13 | **The policy is edited by an AI agent** that acts as a user holding the permission (the prototype MCP bridge uses an administrator account) | Medium | High | Accepted for 1.0 (R14, A8). The documentation says agent accounts must not hold the permission. Not for production use until the MCP server is secured. Every change is audited (R15) |
 | K14 | **The UI is large** and slows the guard work | Medium | Medium | The phased plan (§7): engine and a small screen first |
-| K15 | **Report-only never ends**, and nothing is ever enforced | Medium | High | A visible banner while any kind is in report-only, and a count of attempts that would have been denied |
+| K15 | **Report-only never ends**, and nothing is ever enforced | Medium | High | A visible banner while any kind is in report-only, a count of attempts that would have been denied, and **a date set by the project owner** by which each kind is enforced (open question 7) |
 | K16 | **Real-node behaviour differs** from the standalone probe | Medium | High | Phase 0 test on a real node, before design is fixed |
+| K17 | **Existing translations that use the three denied routes fail on first install**, even in report-only | Medium | Medium | Run the XSLT dependency parser over the estate **before** the upgrade and list affected translations in the release notes and operations guide. Failures are logged to the Blocked list with the pipeline and feed |
 
 ## 5. Modules
 
@@ -145,17 +148,29 @@ The shape follows `stroom-credentials`, which has the same needs: a small table,
 | `stroom-core-shared` | `AppPermission.MANAGE_EGRESS_POLICY`; `EgressResource` (the REST interface); the DTOs (`EgressRule`, `EgressRequestDto`, `EgressDecisionSummary`, settings); `EgressKind`, `EgressMatch` | Shared with the GWT client, so GWT-compatible code only |
 | `stroom-core-client` | The screen: `EgressPlugin`, `EgressClient`, the components and controllers (§6), the GIN module, and registration in the Administration menu | Follows the UI guide *(verified)* |
 | `stroom-gwt/stroom-gwt-workbench` | Stories for every screen and dialog | Default, read-only, dialog OK and Cancel, with the leak check *(verified)* |
-| `stroom-app` | Wiring; CSS `egress-policy.css` and its import; **the build-failing sink-enumeration test**; integration tests | `stroom-app` is the only place that sees every module, so the enumeration test belongs there *(to confirm)* |
+| `stroom-app` | Wiring; **one stylesheet per BEM block** under `ui/css/` and their imports in `app.css` (`TestStylesheets` allows a sheet to style only its own block); **the build-failing sink-enumeration test**; integration tests | `stroom-app` is the only place that sees every module, so the enumeration test belongs there *(verified: `TestEntityEventHandlers` and `TestRestResources` already use ClassGraph scans there, and the new test copies that pattern)* |
 | `stroom-util` | A small interface for the Saxon hooks (for example `SaxonAccessGuard`) and `SaxonConfinement.confine(Configuration, …)`, so low-level modules need not depend on `stroom-egress-api` | `stroom-util` already depends on Saxon *(verified)* |
-| `stroom-pipeline` | The guard calls in the XSLT functions `http-call`, `fetch-json`, `send-email`, `ask-ai`; the elements `HTTPAppender`, `HttpPostFilter`, `FileAppender`, `RollingFileAppender`, `HDFSFileAppender`; `XsltPoolImpl` (Saxon hooks); the client-config handling in `CommonHttpClient` | The largest change |
-| `stroom-query` (`stroom-query-language`) | The `xpath()` function uses a confined Saxon configuration | The widest exposure today (§6.5.6.2 of the note) |
+| `stroom-pipeline` | The guard calls in the XSLT functions `http-call`, `fetch-json`, `send-email`, `ask-ai`; the elements `HTTPAppender`, `HttpPostFilter`, `FileAppender`, `RollingFileAppender`, `HDFSFileAppender`; `XsltPoolImpl` (Saxon hooks); the client-config handling in `CommonHttpClient`, which is also given redirect-following **off** (R10); `TinyTreeBufferFilter` (which creates the Saxon configuration; `SAXEventRecorder` does not) and `xml/event/EventListUtils` (XPath evaluators in the stepping code) confined | The largest change |
+| `stroom-query` (`stroom-query-language`) | The `xpath()` function uses a confined Saxon configuration. The query function `askAi` (`AskAi.java`) needs **no change of its own**: it only calls `AiProvider.chat`, so the guard sits in `AiServiceImpl.chat` and covers `askAi`, the XSLT `ask-ai` and Shapeshifter together | The widest exposure today (§6.5.6.2 of the note). Anyone who can run a dashboard query can reach both. `stroom-query-language` need not depend on `stroom-egress-api` |
+| `stroom-analytics-impl` | `EmailSender` and `ReportExecutor.sendReport` call the guard as EMAIL, checking every to, cc and bcc address | Analytic and report email. `NotificationEmailDestination` is a DTO in `stroom-core-shared`, not a sink |
+| `stroom-ai-impl` | `AiServiceImpl` model calls check the **resolved base URL** of the model document (R4) | The model document's `baseUrl` is editable, so a rule on the document alone could be bypassed |
+| `stroom-aws-client` | The guard sits at `S3ClientPoolImpl`, the single choke point for the S3 appender, the data store (`stroom-data-store-impl-fs`, `s3v2`) and receive; `SqsClientFactory` and `stroom-receive-common` `S3EventService` call it too (OBJECT_STORE, MESSAGE_BUS) | `S3VolumeService` in `stroom-data-store-api` is only a lookup interface and moves no data |
+| `stroom-search` (Elastic and Solr, as above) and the cluster test endpoints | `ElasticClusterResourceImpl.testCluster` and the Solr equivalent connect to a URL typed into a document. **Search reads** (`ElasticSearchProvider`, `SolrSearchFactory`) are egress by §1's definition and call the guard as SEARCH_BACKEND, as do the indexing filters | |
+| `stroom-core` and others | `IconPassthroughServlet` (server-side fetch of a remote URL) and `PathwaysService` (`WebTargetFactory.create(url)`) call the guard as HTTP | Found in review; today `IconPassthroughServlet` is covered only by `SsrfGuard` |
+| `stroom-dropwizard-common` | The Prometheus `PushGateway` calls the guard as HTTP | Metrics push |
+| `stroom-security-identity` | Its `EmailSender` (account emails) calls the guard as EMAIL, or is on the R7 allow-list with a reason | Low risk, but R7 will flag it |
 | `stroom-search` (`-extraction`, `-solr`, `-elastic`) | `XPathExtractionOutputFilter` confined; `SolrIndexingFilter` and `ElasticIndexingFilter` call the guard | |
 | `stroom-kafka` (`-impl`) | `StandardKafkaProducer` calls the guard | |
 | `stroom-aws` (`-s3-impl`) | `S3Appender` calls the guard | |
 | `stroom-ai` and `stroom-shapeshifter-ai` | Model calls check an `AI_MODEL` rule; `XsltStep` and `OutputRecords` use the shared confinement | `ShapeshifterAiParser` stays in the inventory |
 | `stroom-config` | Any bootstrap setting (for example the default mode on first install) and `expected.yaml` regenerated by `GenerateExpectedYaml` | Never hand-edited *(verified, `AGENTS.md`)* |
-| MCP server | Assert the tool list has nothing that edits the policy | R14 |
-| User documentation | A page for administrators | |
+| User documentation | A page for administrators, including R14's guidance on agent accounts | |
+
+**Out of scope, by decision.** `stroom-gitrepo-impl` (git push of content) moves **configuration**, not data, and is a
+separate question. The MCP server is a prototype outside this repository and is secured later. **`stroom-proxy`** is a
+separate application that does not depend on `stroom-pipeline`: its forwarders (`ForwardHttpPostDestination`,
+`ForwardFileDestination`, `ForwardS3Destination`) are not covered here, and whether it gets its own registry is open
+question 11.
 
 Classes that **create a Saxon `Processor`, `Configuration` or `TransformerFactory`** are listed in §6.5.6.2 of the note.
 A scan test (R7's partner) keeps that list from drifting.
@@ -170,7 +185,8 @@ BEM styles in the component's own sheet; stories for each screen. A content tab 
 ### 6.1 Structure
 
 ```text
-Administration  >  Egress Policy                     (a content tab, EgressPolicyController, a TabbedController)
+Administration  >  Egress Policy        (a content tab: EgressPolicyTabController extends ContentTabController,
+  |                                        hosting a TabbedController and EgressPolicyTabs, as UserTabController does)
   |
   +-- Destinations            EgressDestinations + Controller         the list, with filter and toolbar
   |      +-- Rule editor      EgressRuleEditor + Controller           a dialog: add or edit a rule
@@ -183,11 +199,12 @@ Administration  >  Egress Policy                     (a content tab, EgressPolic
 
 | Piece | Name |
 |---|---|
-| Plugin | `EgressPlugin extends ContentPlugin<EgressPolicyController>` (as `CredentialsPlugin` does) |
+| Plugin | `EgressPlugin extends ContentPlugin<EgressPolicyTabController>` (as `CredentialsPlugin` does). The menu is **Administration** (`MenuKeys.ADMINISTRATION_MENU`) |
 | REST client | `EgressClient` (as `CredentialClient`) |
 | GIN module | `EgressModule` |
-| Stylesheet | `stroom-app/src/main/resources/ui/css/egress-policy.css`, BEM blocks `egress-policy`, `egress-rule-editor` and so on |
-| Stories | `EgressDestinationsStories`, `EgressRuleEditorStories`, `EgressBlockedListStories`, `EgressSettingsStories`, each with default, read-only, and OK and Cancel |
+| Stylesheets | **One per BEM block**, each styling only its own block: `egress-policy.css`, `egress-rule-editor.css`, `egress-destinations.css`, `egress-blocked-list.css` and so on, each imported in `app.css` |
+| Widgets | `RadioGroup` (mode, match), `TickBox` (enabled, kill switch), `SelectionBox` (kind), `DataGrid` (lists), `FormGroup` (refusal reason) |
+| Stories | One set for **every** screen and dialog: `EgressDestinationsStories`, `EgressRuleEditorStories`, `EgressTestBoxStories`, `EgressBlockedListStories`, `EgressRequestsStories`, `EgressAuditStories`, `EgressSettingsStories`, each with default, read-only, and OK and Cancel for dialogs. They sit beside `CredentialsScreenStories` in `stroom-gwt-workbench` |
 
 ### 6.2 Destinations
 
@@ -254,6 +271,9 @@ refused, never changed)*.
 +--------------------------------------------------------------------------------------------------------+
 ```
 
+*Clear* (R30) removes rows, audited. *Ignore* hides the row from this list and **does not change the policy**: the destination stays denied (or reported).
+The hide is audited, shows who and when, and a row reappears if its count rises after the hide.
+
 A row such as `/etc/passwd` read by `unparsed-text()` is **not** something to add. The screen says so: for the standard
 XSLT routes the recommended default is to deny outright (§6.5.6.3 of the note), so *Add to policy* is replaced by a
 warning for those sinks and asks for a second look.
@@ -278,15 +298,19 @@ warning for those sinks and asks for a second look.
 
 | Phase | Deliverable | Exit test |
 |---|---|---|
-| **0. Verify** | A real-node test that the four Saxon hooks close the routes in a running Stroom (open question 16 in the note). Confirm A6, A7 and A8. Read the UI guide's worked examples (receipt rules, the analytic notification's stream destination) | The finding reproduced or refuted. The unknowns above settled |
-| **1. Engine in report-only** | `stroom-egress-*`, the database tables, the guard and normalisers, the Saxon confinement, calls added to the HTTP functions, `HTTPAppender`, the file appenders and the XSLT and XPath routes. **No screen yet**; rules are loaded by an administrative REST call | Existing pipelines are unchanged. Report-only decisions are recorded. Unit tests pass for matching and normalisation |
-| **2. A small screen** | Destinations list and rule editor, Blocked and reported, Settings, the permission. Stories for each | An administrator can add a rule from a blocked attempt and switch HTTP to enforce |
-| **3. Enforce, and the rest of the sinks** | S3, Kafka, Solr, Elastic, email, AI. The build-failing enumeration. The test box. Measure the guard's cost | A sink without a kind fails the build. Enforce works per kind |
+| **0. Verify** | A real-node test that the four Saxon hooks close the routes in a running Stroom (open question 16 in the note). A6 to A8 are settled by reading the code (see §3). Read the UI guide's worked examples (receipt rules, the analytic notification's stream destination) | The finding reproduced or refuted. The unknowns above settled |
+| **1. Engine in report-only, every sink** | `stroom-egress-*`, the database tables, the guard and normalisers, **the permission** (the REST loader needs it), the Saxon confinement, and a guard call at **every** sink in §5.2 (HTTP, email, AI, S3, Kafka, Solr, Elastic, files, the XSLT and XPath routes), all in report-only. **The build-failing enumeration test (R7).** **No screen yet**; rules are loaded by an administrative REST call | Existing pipelines are unchanged. Report-only decisions are recorded. A new sink without a declared kind fails the build. Unit tests pass for matching and normalisation |
+| **2. A small screen** | Destinations list and rule editor, Blocked and reported, Settings. Stories for each | An administrator can add a rule from a blocked attempt and switch HTTP **and FILE** to enforce |
+| **3. Enforce, per kind** | Enforce for each remaining kind, with its tests. The test box. Measure the guard's cost against R24 | Enforce works per kind. The R23 bound and R24 target are met |
 | **4. Governance** | Requests and approval, Audit tab, last-used columns, inventory import from the dependency parser | A request by one person cannot be approved by that person. Import proposes rules from an existing estate |
 | **5. Harden and document** | The bypass tests, the kill-switch drill, cluster staleness test, user documentation, a roll-out guide | Every item in §9 passes |
 
-Phases 0 to 2 are the **1.0 floor** for automatic mode (the egress policy with the Saxon hooks, §6.7 of the note).
-Phase 3 completes the coverage. Phase 4 can follow.
+The **1.0 floor** for automatic mode (the egress policy with the Saxon hooks, §6.7 of the note) is Phases 0 to 2 **and
+enforce switched on for HTTP and FILE**, because the Saxon routes that matter (`doc`, `document`, `unparsed-text`,
+`xsl:result-document`) are HTTP and FILE egress. Phase 2's exit test therefore includes enforcing FILE, with its
+tests, not only HTTP. Phase 3 enforces the remaining kinds and measures cost. Phase 4 can follow.
+Phase 1 is large (a guard call in about thirteen modules), so the R7 allow-list is **seeded** with every unguarded
+class and a reason, then burned down through Phases 1 to 3.
 
 ## 8. Worked examples
 
@@ -343,11 +367,12 @@ An XSLT contains `unparsed-text('file:///stroom/config/application.yml')`.
 
 | Mode | What happens |
 |---|---|
-| Report-only | Saxon proceeds. The attempt is recorded as *would be denied*: FILE read, `unparsed-text()`, the pipeline and feed |
-| Enforce | The hook refuses it. The stylesheet fails with "may not read external resources", and the failure is recorded |
+| Report-only | The hook refuses it **outright**, as in enforce mode: these routes are not subject to the mode. The attempt is logged (FILE read, `unparsed-text()`, the pipeline and feed) |
+| Enforce | The hook refuses it **outright**: no rule can permit it. The stylesheet fails with "may not read external resources", and the attempt is logged |
 
 The Blocked list marks it with a warning and no *Add to policy*: reading Stroom's own configuration is not something to
-permit. If a site truly needs a read, an administrator adds a FILE rule, and the screen shows exactly what it permits.
+permit, and for 1.0 these routes cannot be opened by a rule (open question 6). A site that truly needs a file read
+must do it another way, for example with a lookup.
 
 ### 8.5 An AI-authored change (the save-time check)
 
@@ -396,36 +421,50 @@ pattern risk the project owner wanted to avoid. Each address is listed.
 | A real-node test per Saxon route: denied with no rule, permitted with one | The probe finding is closed in a running node | R6, K16 |
 | The build-failing enumeration of I/O classes | No new sink without a declared kind | R7 |
 | A scan for new Saxon `Processor`, `Configuration` and `TransformerFactory` creation sites | No unconfined evaluation of untrusted content | R6 |
-| Fail-closed: the guard throws, the registry is unavailable | Everything denied | R5 |
-| Report-only changes nothing about a pipeline's output | No behaviour change before enforce | R22 |
+| Fail-closed: the guard throws, the registry is unavailable | Enforce mode denies. Report-only proceeds and records "registry unavailable" | R5, R22 |
+| HTTP bypass table: redirect to a non-permitted host (blocked), `%2F` and `%00` in a segment, double encoding, backslash, `;` parameters, fragment, `https` on port 80, metadata address | Normalisation and R10 hold | R3, R10 |
+| A link swapped between the check and the open | The file cannot escape its prefix | R11 |
+| A model document's `baseUrl` edited after a rule is made | The rule still governs the resolved endpoint | R4 |
+| A webhook with a secret path and query | The query is not stored and the last segment is masked, including in Audit and the test box | R29 |
+| Redirect refused on each path: `CommonHttpClient` (with an XSLT that sets `followRedirects`), `HTTPAppender`, `HttpPostFilter` (Jersey), `AiServiceImpl` | No path follows a redirect | R10 |
+| Kill switch ON in a report-only kind | It denies | R9 |
+| A node that missed the cluster event | It converges by the periodic reload within the bound | R23 |
+| Every rule or setting change, and every kill-switch or mode change, produces an audit event with old and new values | Audit | R15, R21 |
+| A flood of identical attempts becomes one aggregated row with a count | No flooding | R25 |
+| The lock file, final file and rolled file of a rolling appender are each checked, and a destination outside the prefix creates no directory | The file guard covers all three | R11 |
+| Report-only changes nothing about a pipeline's output, except that `unparsed-text`, `collection` and `xsl:result-document` fail | No behaviour change before enforce, apart from the denied-outright routes | R22, R6 |
 | Kill switch ON and OFF, on two nodes | Consistency and speed | R9, R23 |
-| An MCP tool-list assertion | An agent cannot edit the policy | R14 |
 | Permission: a user without the permission cannot read or change rules; the requester cannot approve | Access control | R13, R18 |
 | Workbench stories for every screen and dialog, with the leak check | The UI guide's rules | R26 |
 | Guard cost measured under load | Negligible overhead | R24 |
 
 ## 10. Open questions
 
-1. **Where do rules and settings live?** The plan assumes the database (A3). The alternative is configuration
-   properties, which Stroom already audits through its Properties screen *(to confirm)*. The reason to prefer the
-   database is per-change audit and no restart.
-2. **How is a cluster kept consistent?** Which existing cache and invalidation mechanism do the other admin tables use?
-3. **Can an agent be recognised?** How do AI agents and the MCP server authenticate, and can the permission be withheld
-   from that identity by construction and not by a list?
-4. **Who may hold the permission**, and is a second approver required for new destinations? (Question 20 in the note.)
-5. **Is exact-or-prefix enough for every kind?** (Question 19 in the note.) Kafka topic families and S3 key families
-   are the likeliest to want more.
-6. **Should the standard XSLT routes be denied outright** with no rule possible, as the note recommends, or can a rule
-   open them?
-7. **How long may report-only last**, and what happens if a kind stays in it indefinitely (risk K15)?
-8. **How are the aggregated attempts kept**, and for how long? A table with a cap, or the event-logging service?
+1. **Where do rules and settings live?** *Decided by the project owner: the database* (A3). The alternative,
+   configuration properties, was rejected: the database gives per-change audit and no restart.
+2. **How is a cluster kept consistent?** *Settled:* the entity-event bus (A6). The 10-second bound (R23) is proposed.
+3. **Can an agent be recognised?** *Decided:* not for 1.0 (R14, A8). Stroom has an internal processing (service) user
+   but I found no endpoint that refuses a caller because of the kind of credential, so there is no precedent to reuse.
+   Revisit when the MCP server is secured.
+4. **Who may hold the permission**, and is a second approver required for new destinations? *Decided: anyone with the
+   permission; no second approver for 1.0.* R18 stays a process aid (A4). Revisit if a customer asks for a split.
+5. **Is exact-or-prefix enough for every kind?** *Decided: yes for 1.0.* Kafka topic families and S3 key families are
+   the likeliest to want more, and customer feedback decides whether anything is added.
+6. **Should the standard XSLT routes be denied outright?** *Decided: yes, in every mode, including report-only.* `unparsed-text`, `collection` and
+   `xsl:result-document` are denied with no rule possible, and **every attempt is logged** (to the Blocked list, as an
+   aggregated row, in every mode). A rule cannot open them in 1.0.
+7. **How long may report-only last?** *Decided: not tackled in the product.* It is documented in the operations guide
+   (with the banner and the would-have-been-denied count) and left to the operator (risk K15).
+8. **How are the aggregated attempts kept?** *Decided: an uncapped table for now, with a UI option to clear it.* The
+   clear is a permission-gated, audited action (R30). Growth is watched; a cap or expiry can follow.
 9. **Layout.** The sketches show function only. The final layout follows the UI guide and is settled in the stories.
-10. **Where does the normaliser run for the test box?** On the server by a REST call (A7), unless the client can
-    share the code.
+10. **Where does the normaliser run for the test box?** On the server by a REST call (A7, settled).
+11. **Does `stroom-proxy` get an egress policy** (`ForwardHttpPostDestination`, `ForwardFileDestination`, `ForwardS3Destination`)? *Decided: out of scope for 1.0.* The user documentation says so.
+12. **What are the agreed values** for the R23 delay and the R24 cost? *Decided: the proposed values stand* (10 seconds; 50 microseconds at p99) and are adjusted after the Phase 3 measurement.
 
 ## 11. What to do first
 
-1. **Phase 0**: reproduce the Saxon finding on a real node, and settle open questions 1 to 3.
+1. **Phase 0**: reproduce the Saxon finding on a real node. Open questions 1 to 3 are now settled.
 2. Read the UI guide's two worked examples (receipt rules and the analytic notification's stream destination) and
    the workbench's `WRITING-STORIES.md`, which I have not read.
 3. Then Phase 1, with the guard and the normalisers first, because everything else depends on them being right.
