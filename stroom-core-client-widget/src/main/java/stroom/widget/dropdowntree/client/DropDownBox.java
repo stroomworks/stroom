@@ -22,6 +22,7 @@ import stroom.widget.component.client.Component;
 import stroom.widget.form.client.FieldValidity;
 import stroom.widget.form.client.FormGroup;
 import stroom.widget.text.client.Label;
+import stroom.widget.tooltip.client.FocusTooltip;
 import stroom.widget.util.client.DisabledState;
 import stroom.widget.util.client.MouseUtil;
 
@@ -46,7 +47,10 @@ import com.google.gwt.user.client.ui.Widget;
 /// while there is a problem.
 ///
 /// Its root is a wrapper (`drop-down__wrapper`) that takes no box of its own, holding the button and its
-/// feedback line. The classes a template gives it (`addStyleNames`, `styleName`) are the button's, as
+/// feedback line. A picker with no room for a line under it (e.g. in a row of an expression's term)
+/// shows the problem as its tooltip instead ([#setProblemInTooltip(boolean)]).
+///
+/// The classes a template gives it (`addStyleNames`, `styleName`) are the button's, as
 /// its look and size are the button's; hiding it hides both.
 ///
 /// It is dumb: a controller (e.g. `DocSelectionController`) attaches to it, sets what it shows and
@@ -73,6 +77,8 @@ public class DropDownBox extends Component {
     // Where the problem is shown: the form group it is in, or its own feedback line
     private FormGroup problemFormGroup;
     private boolean showingFeedback;
+    // Whether a problem outside a form group is the picker's tooltip, rather than a line under it
+    private boolean problemInTooltip;
 
     private boolean enabled = true;
     private Runnable onOpen = () -> {
@@ -121,6 +127,21 @@ public class DropDownBox extends Component {
         label.setTitle(text);
     }
 
+    /// @return The button, whose box is the picker's (the root is a wrapper with no box of its own),
+    /// e.g. for a popup to open below.
+    public Element getButtonElement() {
+        return button.getElement();
+    }
+
+    /// Names the picker for screen readers where no form group's label names it, e.g. a dashboard
+    /// pane's picker, named for the pane. The name replaces the button's own text, so it should say
+    /// the chosen value too, e.g. `Colour, red, blue`.
+    ///
+    /// @param ariaLabel The name, or null or blank for none.
+    public void setAriaLabel(final String ariaLabel) {
+        button.setAriaLabel(ariaLabel);
+    }
+
     /// Shows a problem with the chosen value (e.g. the document can't be found), as a form shows
     /// what is wrong with a field: under the picker (in its form group's feedback, or a line of its
     /// own), with the picker marked invalid (`aria-invalid`) and described by the message.
@@ -137,6 +158,24 @@ public class DropDownBox extends Component {
         fullProblemText = problem == null || NullSafe.isBlankString(fullMessage)
                 ? null
                 : fullMessage;
+        if (isAttached()) {
+            showProblem();
+        }
+    }
+
+    /// Shows a problem outside a form group as the picker's tooltip (shown with the keyboard focus
+    /// too, by [FocusTooltip]), rather than a line under it, for a picker with no room for one (e.g.
+    /// in a row of an expression's term). The picker is still marked invalid and described by the
+    /// message for screen readers. Templates can set it (`problemInTooltip="true"`).
+    ///
+    /// @param problemInTooltip Whether the problem is the picker's tooltip.
+    public void setProblemInTooltip(final boolean problemInTooltip) {
+        withdrawProblem();
+        this.problemInTooltip = problemInTooltip;
+        button.setStyleName("drop-down--problem-tooltip", problemInTooltip);
+        if (problemInTooltip) {
+            FocusTooltip.install();
+        }
         if (isAttached()) {
             showProblem();
         }
@@ -192,11 +231,18 @@ public class DropDownBox extends Component {
         } else {
             // Shown briefly; the full message (or the brief one if there is none) is what screen
             // readers read, and the full one is the tooltip
-            shownProblem.setInnerText(problem);
-            fullProblem.setInnerText(fullProblemText != null
+            final String fullText = fullProblemText != null
                     ? fullProblemText
-                    : problem);
-            if (fullProblemText != null) {
+                    : problem;
+            shownProblem.setInnerText(problem);
+            fullProblem.setInnerText(fullText);
+            if (problemInTooltip) {
+                // No line under it: the message is the picker's tooltip (the value's own, which
+                // covers most of it, too), and its feedback is for screen readers only
+                button.setTitle(fullText);
+                label.setTitle(fullText);
+                feedback.addClassName("sr-only");
+            } else if (fullProblemText != null) {
                 feedback.setTitle(fullProblemText);
             } else {
                 feedback.removeAttribute("title");
@@ -220,6 +266,11 @@ public class DropDownBox extends Component {
             FieldValidity.setInvalid(pickerElement, false);
             FieldValidity.removeDescribedBy(pickerElement, feedback.getId());
             UIObject.setVisible(feedback, false);
+            if (problemInTooltip) {
+                button.setTitle(null);
+                label.setTitle(label.getText());
+                feedback.removeClassName("sr-only");
+            }
             showingFeedback = false;
         }
     }

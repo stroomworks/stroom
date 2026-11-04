@@ -65,10 +65,22 @@ public final class DashboardPaneStories {
             "[{\"values\": [\"alpha\", \"1001\", \"1\"], \"depth\": 0}, "
             + "{\"values\": [\"beta\", \"1002\", \"2\"], \"depth\": 0}]", 2);
 
-    // The Name column's values
-    private static final String COLUMN_VALUES = "{\"values\": [{\"value\": \"alpha\"}, {\"value\": \"beta\"}], "
+    // The Name column's values, both in the table
+    private static final String COLUMN_VALUES = "{\"values\": [{\"value\": \"alpha\", \"available\": true}, "
+                                                + "{\"value\": \"beta\", \"available\": true}], "
                                                 + "\"pageResponse\": {\"offset\": 0, \"length\": 2, \"total\": 2, "
-                                                + "\"exact\": true}}";
+                                                + "\"exact\": true}, \"availableCount\": 2}";
+
+    // The Name column's values: alpha and beta in the table, gamma and delta only without its other
+    // filters, so after them
+    private static final String COLUMN_VALUES_SOME_UNAVAILABLE = "{\"values\": ["
+            + "{\"value\": \"alpha\", \"available\": true}, {\"value\": \"beta\", \"available\": true}, "
+            + "{\"value\": \"gamma\", \"available\": false}, {\"value\": \"delta\", \"available\": false}], "
+            + "\"pageResponse\": {\"offset\": 0, \"length\": 4, \"total\": 4, \"exact\": true}, "
+            + "\"availableCount\": 2}";
+
+    private static final String NOT_IN_TABLE = "Not in the table";
+    private static final String FIRST_UNAVAILABLE = "column-values-filter__row--first-unavailable";
 
     private static final RequestMatcher COLUMN_VALUES_REQUEST = RequestMatcher.post(
             "/dashboard/v1/columnValues/" + RequestMatcher.PATH_WILDCARD);
@@ -166,7 +178,7 @@ public final class DashboardPaneStories {
                     DashboardPlays.expectNoProblems(play);
                 })
                 // The splitter beside a visualisation is above its frame (which is on the page's body,
-                // over the panel), so its grab area, handle and focus ring are not hidden by it
+                // over the panel), so its grab area, line and focus ring are not hidden by it
                 .story("SplitterAboveVisualisation", DashboardSupport.story(DashboardDocs.QUERY_TABLE_VIS_SPLIT,
                         DashboardPaneStories::visRoutes))
                 .withPlay(play -> {
@@ -418,6 +430,53 @@ public final class DashboardPaneStories {
                                     .withBody("t1's Name column selects only alpha", body -> isAlphaSelection(
                                             DashboardPlays.at(DashboardPlays.componentRequest(body, "t1"),
                                                     "tableSettings", "fields", 0, "columnValueSelection")))
+                                    .toSpyMatcher()));
+                    DashboardPlays.expectNoProblems(play);
+                })
+                // The column values filter lists the values the table has first, then a line, then
+                // the rest faded and described as not in the table. One of those can still be ticked
+                .story("TableColumnValuesFilterUnavailable", DashboardSupport.story(
+                        DashboardDocs.QUERY_TABLE_DASHBOARD,
+                        routes -> routes.route(COLUMN_VALUES_REQUEST,
+                                RestReply.json(COLUMN_VALUES_SOME_UNAVAILABLE))))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    DashboardPlays.opened(play);
+                    openNameValuesFilter(play);
+                    play.waitFor(() -> play.expect(screen.findByText("gamma")).toBeInTheDocument());
+
+                    // In the table: not faded, no line, no description. The popup's 'beta' is after
+                    // the table's on the page
+                    final Query betaText = screen.getAllByText("beta").nth(1);
+                    play.expect(betaText.closest(".data-grid__row")).not().toHaveClass(FIRST_UNAVAILABLE);
+                    play.expect(betaText.closest(".data-grid__row")).not().toHaveAttribute("aria-description");
+                    play.expect(betaText).toHaveStyle("opacity", "1");
+
+                    // The first not in the table has the line above it
+                    play.expect(valueRow(screen, "gamma")).toHaveClass(FIRST_UNAVAILABLE);
+                    // A 9px gap with the line in its middle, in the tick boxes' border colour (the
+                    // dark theme's #696d77), which can be seen
+                    play.expect(valueRow(screen, "gamma")).toHaveStyle("margin-top", "9px");
+                    play.expect("the line is drawn in the tick boxes' border colour", () -> lineColour(
+                            valueRow(screen, "gamma").element().get())).toBe("rgb(105, 109, 119)");
+                    play.expect(valueRow(screen, "gamma")).toHaveAttribute("aria-description", NOT_IN_TABLE);
+                    play.expect(valueText(screen, "gamma")).toHaveStyle("opacity", "0.6");
+
+                    // The next is faded, without a line
+                    play.expect(valueRow(screen, "delta")).not().toHaveClass(FIRST_UNAVAILABLE);
+                    play.expect(valueRow(screen, "delta")).toHaveStyle("margin-top", "0px");
+                    play.expect(valueRow(screen, "delta")).toHaveAttribute("aria-description", NOT_IN_TABLE);
+                    play.expect(valueText(screen, "delta")).toHaveStyle("opacity", "0.6");
+
+                    // A value not in the table can still be ticked, and is sent with the next search
+                    play.click(screen.findByText("Select None"));
+                    play.click(screen.getByText("gamma"));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            DashboardSupport.SEARCH
+                                    .withBody("t1's Name column selects only gamma", body -> isOnlySelection(
+                                            DashboardPlays.at(DashboardPlays.componentRequest(body, "t1"),
+                                                    "tableSettings", "fields", 0, "columnValueSelection"),
+                                            "gamma"))
                                     .toSpyMatcher()));
                     DashboardPlays.expectNoProblems(play);
                 })
@@ -859,16 +918,31 @@ public final class DashboardPaneStories {
     // (the popup has no OK)
     private static void filterAlpha(final Play play) {
         final Play screen = play.screen();
+        openNameValuesFilter(play);
+        play.click(screen.findByText("Select None"));
+        // The popup's 'alpha' is after the table's on the page
+        play.waitFor(() -> play.expect(screen.getAllByText("alpha")).toHaveLength(2));
+        play.click(screen.getAllByText("alpha").nth(1));
+    }
+
+    // Runs the query and opens the Name column's values filter from its header's icon
+    private static void openNameValuesFilter(final Play play) {
         DashboardPlays.runQuery(play, 0);
         play.waitFor(() -> play.expect(play.getByText("alpha")).toBeInTheDocument());
         StroomDom.clickHeader(play, play.within(DashboardPlays.headerCell(play, "Name"))
                 .querySelector(".column-header__value-filter-icon"));
         play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                 COLUMN_VALUES_REQUEST.toSpyMatcher()));
-        play.click(screen.findByText("Select None"));
-        // The popup's 'alpha' is after the table's on the page
-        play.waitFor(() -> play.expect(screen.getAllByText("alpha")).toHaveLength(2));
-        play.click(screen.getAllByText("alpha").nth(1));
+    }
+
+    // A value's row (option) in the open values filter, for a value only the filter has
+    private static Query valueRow(final Play screen, final String value) {
+        return screen.getByText(value).closest(".data-grid__row");
+    }
+
+    // A value's text in the open values filter, for a value only the filter has
+    private static Query valueText(final Play screen, final String value) {
+        return screen.getByText(value).closest(".column-value-cell__text");
     }
 
     // The Name column's filter box
@@ -896,8 +970,13 @@ public final class DashboardPaneStories {
 
     // Whether a column value selection selects only 'alpha'
     private static boolean isAlphaSelection(final Object selection) {
+        return isOnlySelection(selection, "alpha");
+    }
+
+    // Whether a column value selection selects only the value
+    private static boolean isOnlySelection(final Object selection, final String value) {
         return Boolean.FALSE.equals(DashboardPlays.at(selection, "invert"))
-               && List.of("alpha").equals(DashboardPlays.at(selection, "values"));
+               && List.of(value).equals(DashboardPlays.at(selection, "values"));
     }
 
     // The number of dashboard searches the spy recorded that ask for only v1's results
@@ -912,6 +991,11 @@ public final class DashboardPaneStories {
         }
         return count;
     }
+
+    // The colour of the line drawn above a row (its ::before's top border), e.g. a column value's
+    private static native String lineColour(Element row) /*-{
+        return row.ownerDocument.defaultView.getComputedStyle(row, '::before').borderTopColor;
+    }-*/;
 
     // Whether the second element comes after the first in the page
     private static native boolean follows(Element first, Element second) /*-{
