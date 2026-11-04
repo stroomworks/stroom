@@ -139,6 +139,12 @@ public class LearnerListController extends Controller {
         dataProvider.refresh();
     }
 
+    /// @param onAutoRefreshToggle Given whether auto refresh is now on, when its button is pressed: it
+    ///                            governs the whole Supervisor, so its owner decides what it means.
+    public void setOnAutoRefreshToggle(final Consumer<Boolean> onAutoRefreshToggle) {
+        view.setOnAutoRefreshToggle(onAutoRefreshToggle);
+    }
+
     /// @param onActed What to read again after a row is acted on.
     public void setOnActed(final Runnable onActed) {
         this.onActed = onActed;

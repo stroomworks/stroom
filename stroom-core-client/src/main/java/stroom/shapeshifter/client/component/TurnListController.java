@@ -179,6 +179,44 @@ public class TurnListController extends Controller {
                 .exec();
     }
 
+    /// Reads the conversation on show again, from the server: a session still being learned has asked
+    /// more since it was chosen. The turn chosen stays chosen, by its number, without telling anyone (its
+    /// owner keeps its step lit and its turn marked) and without scrolling to it, so that a person reading
+    /// further down is left where they are. A reply that fails leaves the turns as they were.
+    public void refresh() {
+        if (attempt == null) {
+            return;
+        }
+        final int request = ++asked;
+        final long attemptId = attempt.getId();
+        restFactory
+                .create(SUPERVISOR_RESOURCE)
+                .method(resource -> resource.fetch(attemptId))
+                .onSuccess(detail -> {
+                    if (request == asked) {
+                        final Integer chosen = NullSafe.get(getSelected(), SupervisorTurn::getNumber);
+                        attempt = detail;
+                        turns.clear();
+                        turns.addAll(NullSafe.list(detail.getTurns()));
+                        show();
+                        turns.stream()
+                                .filter(turn -> chosen != null && turn.getNumber() == chosen)
+                                .findFirst()
+                                .ifPresent(turn -> view.getSelectionModel().setSelected(turn, new SelectionType(),
+                                        false));
+                        updateButtons();
+                        onDetail.accept(detail);
+                    }
+                })
+                .onFailure(error -> {
+                    // Kept as it was: the next refresh may answer, and blanking a conversation a person is
+                    // reading because one read of it failed would lose their place.
+                })
+                .owner(this)
+                .taskMonitorFactory(view.getTaskMonitor())
+                .exec();
+    }
+
     /// The first turn that matches, selected without telling anyone (whoever asked has already shown
     /// what it stands for) and scrolled to. Where none matches, a step the session never reached, no turn
     /// is selected: the one selected before belongs to another step, and Answer would act on it.

@@ -42,7 +42,8 @@ import com.google.gwt.user.client.ui.Widget;
 /// Shapeshifter AI Supervisor, a monitoring tab) with fake REST replies: the learning pipelines, the
 /// selected one's sessions and waiting streams, and the selected session's turns beside its path over
 /// the flow. Opened as `ShapeshifterAiSupervisorPlugin` opens it, and refreshed as the content pane
-/// does.
+/// does; the refresh stories refresh it again, as the content pane's timer does, with the session moved
+/// on since it was chosen.
 ///
 /// Its dialogs: the learners' filter ([LearnerFilterEditorController]), what has been said to a learner
 /// ([GuidanceEditorController]) and the prompt that says something more or asks why a draft is
@@ -120,6 +121,22 @@ public final class SupervisorStories {
             .replace("STATUS", "Parked").replace("DELETED", "false");
     private static final String ABANDONED = ATTEMPT.replace("ID", "8").replace("PIPE", "p-2")
             .replace("STATUS", "Abandoned").replace("DELETED", "true");
+
+    // The parked session, read again after the worker has carried it on: turn 4 answered and fallen short
+    // again, and turn 5 the question it has now stopped at. No longer parked, so nothing is granted it
+    private static final String TURN_5 =
+            "Chain: choose from [dsParser, xmlFragmentParser, xslt], after 2 shortfall(s)";
+    private static final String MOVED_ON = PARKED.replace("\"status\": \"Parked\"", "\"status\": \"Awaiting model\"")
+            .replace("""
+                    "question": "Configure: dsParser TextConverter, after 1 shortfall(s)"}]""", """
+                    "question": "Configure: dsParser TextConverter, after 1 shortfall(s)",
+                       "answer": "PARSER", "outcome": "COVERAGE_SHORT", "answeredBy": "model"},
+                     {"number": 5, "stepId": "chain", "kind": "CHAIN", "candidate": 1,
+                       "question": "TURN_5"}]""".replace("PARSER", PARSER).replace("TURN_5", TURN_5));
+
+    // The Supervisor the story shows: its play can't reach its render's locals, so the story being shown
+    // sets it, and the refresh stories refresh it as the content pane's timer does
+    private static SupervisorController supervisor;
 
     private static final String GUIDANCE = """
             [{"id": 1, "message": "Timestamps are in UTC.", "author": "admin", "timeMs": 1761700000000}]""";
@@ -321,7 +338,51 @@ public final class SupervisorStories {
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
                             RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/turns/2").toSpyMatcher());
                     expectNoProblems(play);
+                })
+                // Refreshed with a session chosen and a turn chosen in it: the session's new turns are read,
+                // its actions follow its status now, and the turn chosen stays chosen in the grid and marked
+                // in the conversation
+                .story("RefreshKeepsTheConversation", SupervisorStories::renderMovingOn)
+                .withPlay(play -> {
+                    chooseTurn2(play);
+                    play.run("Stroom refreshes the tab", () -> supervisor.refresh());
+                    play.waitFor(() -> play.expect(play.getByText(TURN_5)).toBeInTheDocument());
+                    play.waitFor(() -> play.expect(play.getByRole("button",
+                                    TextMatch.startingWith("Give this parked attempt")))
+                            .toHaveAttribute("aria-disabled", "true"));
+                    play.expect(play.getByRole("button", TextMatch.startingWith("Answer this turn instead")))
+                            .not().toHaveAttribute("aria-disabled");
+                    play.click(play.getByText("Conversation", StroomDom.LINK_TAB_LABEL));
+                    final Play conversation = play.within(play.findByRole("region", "Conversation"));
+                    play.waitFor(() -> play.expect(conversation.getByText("Turn 5 · chain · Chain"))
+                            .toBeInTheDocument());
+                    play.expect(conversation.getByText("Turn 2 · parse · Configure")
+                            .closest(".turn-transcript__turn")).toHaveClass("turn-transcript__turn--selected");
+                    expectNoProblems(play);
+                })
+                // Auto refresh off, a refresh reads nothing and the session stays as it was read; on again,
+                // it is read at once
+                .story("AutoRefreshOff", SupervisorStories::renderMovingOn)
+                .withPlay(play -> {
+                    chooseTurn2(play);
+                    play.click(play.getByRole("button", TextMatch.startingWith("Auto Refresh")));
+                    play.run("Stroom refreshes the tab", () -> supervisor.refresh());
+                    play.sleep(200);
+                    play.expect(play.queryByText(TURN_5)).toBeNull();
+                    play.expect(play.getByRole("button", TextMatch.startingWith("Give this parked attempt")))
+                            .not().toHaveAttribute("aria-disabled");
+                    play.click(play.getByRole("button", TextMatch.startingWith("Auto Refresh")));
+                    play.waitFor(() -> play.expect(play.getByText(TURN_5)).toBeInTheDocument());
+                    expectNoProblems(play);
                 });
+    }
+
+    // Chooses the parked session, and turn 2 in its grid
+    private static void chooseTurn2(final Play play) {
+        openSession(play);
+        play.click(play.findByText(TURN_2));
+        play.expect(play.getByRole("button", TextMatch.startingWith("Answer this turn instead")))
+                .not().toHaveAttribute("aria-disabled");
     }
 
     // Chooses the first pipeline and its parked session
@@ -378,13 +439,26 @@ public final class SupervisorStories {
     }
 
     private static Widget render(final StoryContext context) {
-        final RestFixtures fixtures = RestFixtures.builder()
-                .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(LEARNERS))
+        return render(context, RestFixtures.builder()
                 .route(RequestMatcher.post("/shapeshifterAiSupervisor/v1/find")
                                 .withJsonBodyContaining("{\"learner\": {\"pipelineUuid\": \"p-2\"}}"),
                         RestReply.json(page(ABANDONED)))
                 .post("/shapeshifterAiSupervisor/v1/find", RestReply.json(page(PARKED)))
-                .get("/shapeshifterAiSupervisor/v1/7", RestReply.json(PARKED))
+                .get("/shapeshifterAiSupervisor/v1/7", RestReply.json(PARKED)));
+    }
+
+    // The refresh stories': the parked session as it is first read, then as the worker has moved it on
+    private static Widget renderMovingOn(final StoryContext context) {
+        return render(context, RestFixtures.builder()
+                .post("/shapeshifterAiSupervisor/v1/find", RestReply.json(page(PARKED)),
+                        RestReply.json(page(MOVED_ON)))
+                .get("/shapeshifterAiSupervisor/v1/7", RestReply.json(PARKED), RestReply.json(MOVED_ON)));
+    }
+
+    // The sessions' routes are given; the rest are every story's
+    private static Widget render(final StoryContext context, final RestFixtures.Builder sessions) {
+        final RestFixtures fixtures = sessions
+                .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(LEARNERS))
                 .get("/shapeshifterAiSupervisor/v1/8", RestReply.json(ABANDONED))
                 .post("/shapeshifterAiSupervisor/v1/7/grant", RestReply.json(PARKED))
                 .post("/shapeshifterAiSupervisor/v1/7/turns/2", RestReply.json(PARKED))
@@ -400,7 +474,10 @@ public final class SupervisorStories {
                 .realAlerts()
                 .build();
         // Opened once Stroom has started, as the plugin opens it, and refreshed as the content pane does
-        harness.afterStartUp(() -> harness.show(injector.getSupervisorController()).refresh());
+        harness.afterStartUp(() -> {
+            supervisor = injector.getSupervisorController();
+            harness.show(supervisor).refresh();
+        });
         return harness.asWidget();
     }
 

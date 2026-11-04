@@ -23,6 +23,7 @@ import stroom.util.client.DataGridUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.widget.button.client.ToolbarButton;
+import stroom.widget.button.client.ToolbarToggleButton;
 import stroom.widget.component.client.Component;
 import stroom.widget.datagrid.client.ColumnSizeConstants;
 import stroom.widget.datagrid.client.DataGrid;
@@ -50,7 +51,7 @@ import java.util.function.Consumer;
 /// that has learned or is learning (the pipeline, its document, where it stands, what serves it, what
 /// waits on it, when it last had a session and how much has been said to it), most waiting first, one
 /// selectable; with the actions on the pipeline's learner and on the binding the row shows serving (A141),
-/// and a filter (A142).
+/// a filter (A142), and the Supervisor's auto refresh.
 public class LearnerList extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -59,6 +60,8 @@ public class LearnerList extends Component {
 
     @UiField
     PagerPanel pager;
+    @UiField
+    ToolbarToggleButton autoRefreshButton;
     @UiField
     ToolbarButton filterButton;
     @UiField
@@ -125,6 +128,11 @@ public class LearnerList extends Component {
         filterButton.setTitle(filtering
                 ? FILTERING_TITLE
                 : FILTER_TITLE);
+    }
+
+    /// @param onAutoRefreshToggle Given whether auto refresh is now on, when its button is pressed.
+    public void setOnAutoRefreshToggle(final Consumer<Boolean> onAutoRefreshToggle) {
+        autoRefreshButton.setOnToggle(onAutoRefreshToggle);
     }
 
     /// @param onAction Given each action the user takes.

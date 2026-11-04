@@ -64,14 +64,17 @@ public class TurnTranscript extends Component {
     /// Makes an empty transcript.
     public TurnTranscript() {
         initWidget(BINDER.createAndBindUi(this));
-        setTurns(List.of());
+        setTurns(List.of(), null);
     }
 
-    /// Shows a conversation. Nothing is marked until a turn is chosen again.
+    /// Shows a conversation, with a turn marked or none. The turn is marked where it is and not brought
+    /// into view: a conversation read again keeps the turn a person chose, and leaves them where they had
+    /// scrolled to.
     ///
     /// @param conversation The turns, in order; empty where there is no session or it asked nothing yet.
-    public void setTurns(final List<SupervisorTurn> conversation) {
-        selected = null;
+    /// @param selected     The turn to mark, by its number, or null for none.
+    public void setTurns(final List<SupervisorTurn> conversation, final Integer selected) {
+        this.selected = null;
         if (NullSafe.isEmptyCollection(conversation)) {
             turns.setHTML(new HtmlBuilder()
                     .div("Choose a session to read its conversation.",
@@ -102,6 +105,11 @@ public class TurnTranscript extends Component {
                     new Attribute(DATA_TURN, Integer.toString(turn.getNumber())));
         }
         turns.setHTML(html.toSafeHtml());
+        final Element turn = find(selected);
+        if (turn != null) {
+            turn.addClassName(SELECTED);
+            this.selected = selected;
+        }
     }
 
     /// Marks the turn chosen in the grid or on the chart, and brings it into view. It is chosen while the

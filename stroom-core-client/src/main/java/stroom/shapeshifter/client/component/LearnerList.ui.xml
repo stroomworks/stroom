@@ -1,10 +1,13 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <!-- The Supervisor's learning pipelines (design 06 A115), with the actions on a pipeline's learner and on
-     the binding it shows serving (A141) -->
+     the binding it shows serving (A141), and whether the whole Supervisor is read again as it is refreshed -->
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:b="urn:import:stroom.widget.button.client"
              xmlns:dg="urn:import:stroom.widget.datagrid.client">
     <dg:PagerPanel ui:field="pager" toolbarName="Learning pipeline actions">
+        <b:ToolbarToggleButton ui:field="autoRefreshButton" svg="AUTO_REFRESH"
+                               title="Auto Refresh: read the whole Supervisor again as Stroom refreshes it"
+                               pressed="true"/>
         <b:ToolbarButton ui:field="filterButton" svg="FILTER" title="Narrow which learning pipelines are shown"/>
         <b:ToolbarButton ui:field="relearnButton" svg="UNDO"
                          title="Learn again: the next stream opens a session while the binding goes on serving it"

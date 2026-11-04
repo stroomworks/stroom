@@ -24,10 +24,12 @@ import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.SupervisorAttempt;
 import stroom.shapeshifter.shared.SupervisorResource;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.util.shared.ResultPage;
 import stroom.widget.component.client.Controller;
 import stroom.widget.util.client.MultiSelectionModel;
+import stroom.widget.util.client.SelectionType;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.view.client.Range;
@@ -49,6 +51,9 @@ public class SessionListController extends Controller {
     private final RestDataProvider<SupervisorAttempt, ResultPage<SupervisorAttempt>> dataProvider;
     /// Whose sessions are listed: the pipeline chosen above, or nobody's before one is.
     private LearnerRef learner;
+    /// Told when a page read again has put its own row in place of the one selected, or let it go.
+    private Runnable onSelectionRefreshed = () -> {
+    };
 
     /// Made by GIN, with its list.
     ///
@@ -76,7 +81,10 @@ public class SessionListController extends Controller {
                 restFactory
                         .create(SUPERVISOR_RESOURCE)
                         .method(resource -> resource.find(asked))
-                        .onSuccess(dataConsumer)
+                        .onSuccess(page -> {
+                            dataConsumer.accept(page);
+                            keepSelected(page);
+                        })
                         .onFailure(errorHandler)
                         .owner(SessionListController.this)
                         .taskMonitorFactory(view.getTaskMonitor())
@@ -111,8 +119,36 @@ public class SessionListController extends Controller {
         view.setAvailableActions(actions);
     }
 
+    /// @param onSelectionRefreshed Told when a page read again has put its own row in place of the one
+    ///                             selected, or let it go because the page no longer has it: what the
+    ///                             session's actions are decided from has changed.
+    public void setOnSelectionRefreshed(final Runnable onSelectionRefreshed) {
+        this.onSelectionRefreshed = onSelectionRefreshed;
+    }
+
     /// Reads the page again.
     public void refresh() {
         dataProvider.refresh();
+    }
+
+    /// The selection holds the row object it was made from, and a page read again makes new ones, so a
+    /// session that has moved on since would still answer its old status to the guards that decide what
+    /// is offered. The page's own row takes its place, without telling anyone it was chosen: it is the
+    /// session already chosen, and choosing it again would read its turns afresh.
+    private void keepSelected(final ResultPage<SupervisorAttempt> page) {
+        final SupervisorAttempt selected = view.getSelectionModel().getSelected();
+        if (selected == null) {
+            return;
+        }
+        final SupervisorAttempt fresh = NullSafe.stream(page.getValues())
+                .filter(row -> row.getId() == selected.getId())
+                .findFirst()
+                .orElse(null);
+        if (fresh == null) {
+            view.getSelectionModel().clear(false);
+        } else {
+            view.getSelectionModel().setSelected(fresh, new SelectionType(), false);
+        }
+        onSelectionRefreshed.run();
     }
 }

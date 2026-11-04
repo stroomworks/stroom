@@ -85,6 +85,11 @@ public class SupervisorController extends ContentTabController implements HasRef
     private final Map<String, ShapeshifterAiDoc> documents = new HashMap<>();
     /// The steps drawn now, so that a step chosen on the chart can be found among the turns.
     private List<FlowStep> steps = List.of();
+    /// Whether the Supervisor is read again each time Stroom refreshes it, as the Server Tasks are: off,
+    /// a person can read a session without it changing under them.
+    private boolean autoRefresh = true;
+    /// The tab shown beneath the pipelines, whose list alone is read again: the other is read when shown.
+    private TabData shownTab = SESSIONS_TAB;
 
     /// Made by GIN, with its screen and its parts.
     ///
@@ -123,7 +128,13 @@ public class SupervisorController extends ContentTabController implements HasRef
         this.restFactory = restFactory;
 
         // Giving a learner up or sending it back changes its sessions and waiting streams as well as its row.
-        learnerList.setOnActed(this::refresh);
+        learnerList.setOnActed(this::readListsAgain);
+        learnerList.setOnAutoRefreshToggle(pressed -> {
+            autoRefresh = pressed;
+            if (pressed) {
+                refresh();
+            }
+        });
         own(learnerList.getSelectionModel().addSelectionHandler(event -> {
             // A pipeline chosen: its sessions and waiting streams beneath it, and no session yet.
             final SupervisorLearner chosen = learnerList.getSelectionModel().getSelected();
@@ -136,7 +147,13 @@ public class SupervisorController extends ContentTabController implements HasRef
 
         view.getTabBar().addTab(SESSIONS_TAB);
         view.getTabBar().addTab(WAITING_TAB);
-        own(view.getTabBar().addSelectionHandler(event -> selectTab(event.getSelectedItem())));
+        own(view.getTabBar().addSelectionHandler(event -> {
+            selectTab(event.getSelectedItem());
+            // Not read while it was hidden, so read as it is shown
+            if (autoRefresh) {
+                shownList().run();
+            }
+        }));
         selectTab(SESSIONS_TAB);
 
         // A session's turns, a line each to choose and answer from, and beside them its whole conversation
@@ -156,18 +173,22 @@ public class SupervisorController extends ContentTabController implements HasRef
             turnList.read(sessionList.getSelectionModel().getSelected());
             updateButtons();
         }));
+        // The selected session read again: its status decides what is offered.
+        sessionList.setOnSelectionRefreshed(this::updateButtons);
 
         // A turn answered reopens the attempt and takes its claim back (A28), so the row it was answered
         // from is showing a status that is no longer true.
         turnList.setOnAmended(amended -> {
             sessionList.getSelectionModel().clear();
             updateButtons();
-            refresh();
+            readListsAgain();
         });
         final TurnTranscript transcript = view.getTranscript();
         turnList.setOnDetail(detail -> {
             drawPath(detail);
-            transcript.setTurns(NullSafe.getOrElse(detail, SupervisorAttempt::getTurns, List.of()));
+            // A conversation read again keeps the turn chosen in it; one newly read has none chosen yet.
+            transcript.setTurns(NullSafe.getOrElse(detail, SupervisorAttempt::getTurns, List.of()),
+                    chosenTurn());
         });
         // The transcript and the chart choose each other (A116): a turn lights its step and rings its visit;
         // a step brings its first turn into view, and a visit its own. The whole conversation follows
@@ -193,12 +214,15 @@ public class SupervisorController extends ContentTabController implements HasRef
         updateButtons();
     }
 
+    /// Reads the Supervisor again, as Stroom refreshes the tab it is shown in, unless auto refresh is
+    /// off: the pipelines, the list on show beneath them, and the conversation on show, which keeps the
+    /// session and the turn chosen.
     @Override
     public void refresh() {
-        documents.clear();
-        learnerList.refresh();
-        sessionList.refresh();
-        waitingList.refresh();
+        if (autoRefresh) {
+            readListsAgain();
+            turnList.refresh();
+        }
     }
 
     @Override
@@ -323,6 +347,16 @@ public class SupervisorController extends ContentTabController implements HasRef
     private void showPath(final ShapeshifterAiDoc doc, final SupervisorAttempt detail) {
         steps = NullSafe.list(doc.getFlow().getSteps());
         view.getFlowChart().show(steps, null, detail.getTurns(), null);
+        // A path drawn again for a conversation read again keeps the chosen turn's step lit.
+        final Integer chosen = chosenTurn();
+        if (chosen != null) {
+            view.getFlowChart().setSelectedTurn(chosen);
+        }
+    }
+
+    /// @return The number of the turn chosen in the grid, or null for none.
+    private Integer chosenTurn() {
+        return NullSafe.get(turnList.getSelected(), SupervisorTurn::getNumber);
     }
 
     private void clearPath() {
@@ -349,7 +383,7 @@ public class SupervisorController extends ContentTabController implements HasRef
                     turnList.read(decided);
                     // What serves with it, and where its pipeline now stands: approving a draft puts a binding
                     // in front of its learner, and rejecting one gives it up.
-                    refresh();
+                    readListsAgain();
                 })
                 .owner(this)
                 .taskMonitorFactory(taskMonitor())
@@ -408,8 +442,24 @@ public class SupervisorController extends ContentTabController implements HasRef
         view.getConversationTabBar().selectTab(tab);
     }
 
+    /// Reads the lists again: the pipelines, and the list shown beneath them. The documents read for
+    /// sessions' paths go too, so that a flow or a budget edited since is not shown as it was.
+    private void readListsAgain() {
+        documents.clear();
+        learnerList.refresh();
+        shownList().run();
+    }
+
+    /// @return What reads the list shown beneath the pipelines again.
+    private Runnable shownList() {
+        return WAITING_TAB.equals(shownTab)
+                ? waitingList::refresh
+                : sessionList::refresh;
+    }
+
     /// Shows a tab's list beneath the pipelines: the sessions, or the waiting streams.
     private void selectTab(final TabData tab) {
+        shownTab = tab;
         view.getLayerContainer().show(WAITING_TAB.equals(tab)
                 ? waitingLayer
                 : sessionsLayer);
