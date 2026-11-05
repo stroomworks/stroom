@@ -147,7 +147,8 @@ class TestAiServiceChat {
                     null,
                     null,
                     new CacheManagerImpl(),
-                    AiConfig::new);
+                    AiConfig::new,
+                    null);
             this.chatModel = chatModel;
         }
 

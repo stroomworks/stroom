@@ -26,6 +26,7 @@ import stroom.cache.api.CacheManager;
 import stroom.cache.impl.CacheManagerImpl;
 import stroom.cache.impl.TemplateCacheImpl;
 import stroom.data.shared.StreamTypeNames;
+import stroom.egress.api.EgressGuard;
 import stroom.meta.api.AttributeMap;
 import stroom.meta.shared.Meta;
 import stroom.test.common.TestUtil;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -78,7 +80,7 @@ public class TestS3Manager {
         cacheManager = new CacheManagerImpl();
         final S3ClientHelper s3ClientHelper = new S3ClientHelper(
                 s3ClientConfig,
-                new S3ClientPoolImpl(cacheManager));
+                new S3ClientPoolImpl(cacheManager, Mockito.mock(EgressGuard.class)));
         s3Manager = new S3Manager(
                 s3ClientConfig,
                 s3ClientHelper,

@@ -16,6 +16,10 @@
 
 package stroom.pipeline.xsltfunctions;
 
+import stroom.egress.api.EgressDeniedException;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.util.jersey.HttpClientProvider;
 import stroom.util.jersey.HttpClientProviderCache;
 import stroom.util.logging.LambdaLogger;
@@ -65,6 +69,7 @@ import java.util.Optional;
                         }
                 )
         })
+@EgressSink(EgressKind.HTTP)
 class FetchJson extends StroomExtensionFunctionCall {
 
     public static final String FUNCTION_NAME = "fetch-json";
@@ -74,8 +79,8 @@ class FetchJson extends StroomExtensionFunctionCall {
     private final CommonHttpClient commonHttpClient;
 
     @Inject
-    FetchJson(final HttpClientProviderCache httpClientProviderCache) {
-        commonHttpClient = new CommonHttpClient(httpClientProviderCache);
+    FetchJson(final HttpClientProviderCache httpClientProviderCache, final EgressGuard egressGuard) {
+        commonHttpClient = new CommonHttpClient(httpClientProviderCache, egressGuard);
     }
 
     @Override
@@ -90,6 +95,12 @@ class FetchJson extends StroomExtensionFunctionCall {
             log(context, Severity.WARNING, "No URL specified for HTTP call", null);
 
         } else {
+            try {
+                commonHttpClient.requireEgress(url, FUNCTION_NAME);
+            } catch (final EgressDeniedException e) {
+                log(context, Severity.ERROR, e.getMessage(), e);
+                return sequence;
+            }
             try (final HttpClientProvider httpClientProvider = commonHttpClient.createClientProvider(clientConfigStr)) {
                 final HttpClient httpClient = httpClientProvider.get();
                 final HttpGet httpGet = new HttpGet(url);

@@ -16,6 +16,7 @@
 
 package stroom.search.elastic;
 
+import stroom.egress.api.EgressGuard;
 import stroom.util.http.HttpClientConfiguration;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
@@ -23,6 +24,7 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import org.mockito.Mockito;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -60,7 +62,7 @@ public final class ElasticWireMock {
     /// @param server The running WireMock server.
     /// @return The client, which the caller must close.
     public static ElasticsearchClient createClient(final WireMockExtension server) {
-        return new ElasticClientFactory().create(
+        return new ElasticClientFactory(Mockito.mock(EgressGuard.class)).create(
                 new ResolvedElasticConnection(
                         List.of(server.baseUrl()),
                         null,

@@ -16,6 +16,10 @@
 
 package stroom.search.elastic;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.util.http.HttpAsyncClientUtil;
 import stroom.util.http.HttpClientConfiguration;
 import stroom.util.http.HttpProxyConfiguration;
@@ -48,13 +52,17 @@ import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@EgressSink(EgressKind.SEARCH_BACKEND)
 public class ElasticClientFactory {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(ElasticClientFactory.class);
     private static final Pattern URL_PATTERN = Pattern.compile("^([a-zA-Z]+)://(.+?)(?::([0-9]+)/?)?$");
 
+    private final EgressGuard egressGuard;
+
     @Inject
-    public ElasticClientFactory() {
+    public ElasticClientFactory(final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
     }
 
     /// Creates a new Elasticsearch client. The caller is responsible for closing it.
@@ -75,6 +83,9 @@ public class ElasticClientFactory {
                 // allowed, as an Elasticsearch cluster legitimately lives on an internal or (in dev) a
                 // loopback address.
                 SsrfGuard.rejectMetadataAndWildcard(url);
+                // Every Elasticsearch client, for indexing, search and the connection test, is made here. A client
+                // is cached after this, so a rule change takes effect when the cached client is next created.
+                egressGuard.require(new EgressRequest(EgressKind.SEARCH_BACKEND, url, "ElasticClientFactory"));
                 httpHosts.add(host);
             } else {
                 LOGGER.error("Invalid Elasticsearch URL format: '{}'", url);

@@ -24,6 +24,7 @@ dependencies {
     implementation project(':stroom-explorer:stroom-explorer-api')
     implementation project(':stroom-gitrepo:stroom-gitrepo-api')
     implementation project(':stroom-importexport:stroom-importexport-api')
+    implementation project(':stroom-egress:stroom-egress-api')
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
 

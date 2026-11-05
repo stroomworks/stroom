@@ -306,6 +306,15 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
+    stroom.egress.impl.EgressConfig getEgressConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.egress.impl.EgressConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
     stroom.event.logging.impl.LoggingConfig getLoggingConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(

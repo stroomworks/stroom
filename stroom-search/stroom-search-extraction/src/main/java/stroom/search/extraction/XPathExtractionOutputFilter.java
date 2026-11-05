@@ -29,6 +29,7 @@ import stroom.query.language.functions.FieldIndex;
 import stroom.svg.shared.SvgImage;
 import stroom.util.logging.LogUtil;
 import stroom.util.shared.Severity;
+import stroom.util.xml.saxon.SaxonConfinement;
 
 import jakarta.inject.Inject;
 import net.sf.saxon.Configuration;
@@ -75,6 +76,11 @@ public class XPathExtractionOutputFilter extends AbstractXMLFilter {
     private final Configuration config = new Configuration();
     private final PipelineConfiguration pipeConfig = config.makePipelineConfiguration();
     private final Processor processor = new Processor(config);
+
+    {
+        SaxonConfinement.confine(config, SaxonConfinement.refuseAll(), true);
+    }
+
     private final XPathCompiler compiler = processor.newXPathCompiler();
     private String multipleValueDelimiter = DEFAULT_MULTIPLE_STRING_DELIMITER;
     private Locator locator;

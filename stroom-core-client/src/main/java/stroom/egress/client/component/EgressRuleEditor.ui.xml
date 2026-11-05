@@ -1,0 +1,43 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A permitted destination: its kind, destination, way of matching, reason and whether it is enabled -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:l="urn:import:stroom.widget.selection.client">
+    <g:FlowPanel styleName="max form">
+        <form:FormGroup identity="egressKind" label="Kind"
+                        helpText="The kind of destination this rule permits."
+                        screenReaderText="Choose the kind of destination.">
+            <l:SelectionBox ui:field="kind"/>
+        </form:FormGroup>
+        <form:FormGroup identity="egressDestination" label="Destination"
+                        helpText="A URL, a file path, an email address, or a host and port, as the kind needs. It is tidied before it is stored, so https://Example.com:443/a/../b is kept as https://example.com/b."
+                        screenReaderText="The destination to permit.">
+            <form:TextBox ui:field="destination" addStyleNames="w-100" ariaLabel="Destination"/>
+        </form:FormGroup>
+        <form:FormGroup identity="egressMatch" label="Match"
+                        helpText="Exact permits only this destination. Prefix permits anything inside it, a whole part at a time, so /data/out permits /data/out/a but not /data/out-old. An email address can only match exactly."
+                        screenReaderText="Exact or prefix.">
+            <l:SelectionBox ui:field="match"/>
+        </form:FormGroup>
+        <form:FormGroup identity="egressComment" label="Reason"
+                        helpText="Why this destination is permitted. It is required, so that the next person to read the list knows."
+                        screenReaderText="Why this destination is permitted.">
+            <form:TextBox ui:field="comment" addStyleNames="w-100" ariaLabel="Reason"/>
+        </form:FormGroup>
+        <form:FormGroup identity="egressEnabled"
+                        helpText="Untick to keep the rule but stop it permitting anything."
+                        screenReaderText="Whether the rule is in force.">
+            <tickbox:TickBox ui:field="enabled" label="Enabled"/>
+        </form:FormGroup>
+        <form:FormGroup identity="egressTest" label="Test"
+                        helpText="Asks the server how it would treat this destination, using the rules as they are stored now, without sending anything."
+                        screenReaderText="Test the destination.">
+            <b:Button ui:field="testButton" text="Test"/>
+            <tx:Label ui:field="testResult"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

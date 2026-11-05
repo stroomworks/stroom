@@ -131,6 +131,7 @@ public class MockServiceModule extends AbstractModule {
         install(new MockPlanBModule());
         install(new MockClusterLockModule());
         install(new MockAiModule());
+        install(new MockEgressModule());
         install(new ShapeshifterAiTestModule());
         // No database in this harness: the runtime state of A26 is in memory (design 02 §2, tier 1's reach).
         install(new stroom.shapeshifter.ai.state.InMemoryStateModule());

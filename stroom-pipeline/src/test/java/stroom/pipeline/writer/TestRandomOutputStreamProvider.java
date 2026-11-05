@@ -17,6 +17,7 @@
 package stroom.pipeline.writer;
 
 
+import stroom.egress.api.EgressGuard;
 import stroom.test.common.util.test.StroomUnitTest;
 import stroom.util.io.FileUtil;
 import stroom.util.io.PathCreator;
@@ -24,6 +25,7 @@ import stroom.util.io.SimplePathCreator;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -65,7 +67,7 @@ class TestRandomOutputStreamProvider extends StroomUnitTest {
     private FileAppender buildTestObject(final Path tempDir) {
         final String name = "/${year}-${month}-${day}T${hour}:${minute}:${second}.${millis}Z-${uuid}.xml";
         final PathCreator pathCreator = new SimplePathCreator(() -> tempDir, () -> tempDir);
-        final FileAppender provider = new FileAppender(null, null, pathCreator);
+        final FileAppender provider = new FileAppender(null, null, pathCreator, Mockito.mock(EgressGuard.class));
         provider.setOutputPaths(
                 FileUtil.getCanonicalPath(getCurrentTestDir()) + "/t1" + name + "," +
                         FileUtil.getCanonicalPath(getCurrentTestDir()) + "/t2" + name + "," +

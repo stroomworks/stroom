@@ -16,6 +16,10 @@
 
 package stroom.pipeline.xsltfunctions;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.shared.EgressKind;
+import stroom.egress.shared.EgressMode;
 import stroom.pipeline.errorhandler.ProcessException;
 import stroom.util.config.OkHttpClientConfig;
 import stroom.util.http.HttpClientConfiguration;
@@ -39,10 +43,30 @@ public class CommonHttpClient {
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(CommonHttpClient.class);
 
     private final HttpClientProviderCache httpClientProviderCache;
+    private final EgressGuard egressGuard;
     private final Map<String, HttpClientConfiguration> configCache = new HashMap<>();
 
-    CommonHttpClient(final HttpClientProviderCache httpClientProviderCache) {
+    CommonHttpClient(final HttpClientProviderCache httpClientProviderCache, final EgressGuard egressGuard) {
         this.httpClientProviderCache = httpClientProviderCache;
+        this.egressGuard = egressGuard;
+    }
+
+    /// Checks the destination against the egress policy before anything is sent.
+    ///
+    /// @param url  The URL the stylesheet asked for.
+    /// @param sink The name of the function.
+    /// @throws stroom.egress.api.EgressDeniedException If the policy denies it.
+    void requireEgress(final String url, final String sink) {
+        if (egressGuard != null) {
+            egressGuard.require(new EgressRequest(EgressKind.HTTP, url, sink));
+        }
+    }
+
+    /// Whether the HTTP kind is in enforce mode.
+    ///
+    /// @return True if denials are enforced.
+    boolean isEnforced() {
+        return egressGuard != null && egressGuard.getMode(EgressKind.HTTP) == EgressMode.ENFORCE;
     }
 
     public HttpClientProvider createClientProvider(final String clientConfigStr) {
@@ -77,8 +101,12 @@ public class CommonHttpClient {
             return httpClientConfiguration;
         });
 
+        // A stylesheet's own configuration may ask to follow redirects, and a redirect is a second destination that
+        // was never checked, so redirects are always off.
+        final HttpClientConfiguration noRedirects = configuration.copy().followRedirects(false).build();
+
         LOGGER.debug(() -> "Creating client");
-        return httpClientProviderCache.get(configuration);
+        return httpClientProviderCache.get(noRedirects);
     }
 
     @Deprecated // Moving to Apache HttpClientConfiguration

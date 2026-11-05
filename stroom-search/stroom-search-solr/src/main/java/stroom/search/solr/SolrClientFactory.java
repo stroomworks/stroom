@@ -16,6 +16,10 @@
 
 package stroom.search.solr;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.search.solr.shared.SolrConnectionConfig;
 import stroom.search.solr.shared.SolrConnectionConfig.InstanceType;
 
@@ -27,9 +31,23 @@ import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+@EgressSink(EgressKind.SEARCH_BACKEND)
 public class SolrClientFactory {
 
+    private final EgressGuard egressGuard;
+
+    public SolrClientFactory(final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
+    }
+
+    /// Creates a Solr client. Each Solr URL is checked against the egress policy first. ZooKeeper hosts are not
+    /// checked, because they are not URLs and no kind covers them yet.
     public SolrClient create(final SolrConnectionConfig config) {
+        if (config.getSolrUrls() != null) {
+            for (final String url : config.getSolrUrls()) {
+                egressGuard.require(new EgressRequest(EgressKind.SEARCH_BACKEND, url, "SolrClientFactory"));
+            }
+        }
         if (InstanceType.SINGLE_NOOE.equals(config.getInstanceType())) {
             if (config.getSolrUrls() == null) {
                 throw new SolrIndexException("No Solr URLs have been provided");

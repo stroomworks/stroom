@@ -100,6 +100,11 @@ include 'stroom-core-client-widget'
 include 'stroom-core'
 include 'stroom-core-shared'
 
+// Egress policy
+include 'stroom-egress:stroom-egress-api'
+include 'stroom-egress:stroom-egress-impl'
+include 'stroom-egress:stroom-egress-impl-db'
+
 // Credentials Store
 include 'stroom-credentials:stroom-credentials-api'
 include 'stroom-credentials:stroom-credentials-impl'

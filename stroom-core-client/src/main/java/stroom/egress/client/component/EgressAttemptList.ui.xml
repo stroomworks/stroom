@@ -1,0 +1,17 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- What the egress policy has refused or reported, with its actions and a pager above its grid -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel toolbarName="Blocked attempt actions" addStyleNames="default-min-sizes">
+        <b:ToolbarButton ui:field="addRuleButton" svg="ADD"
+                         title="Add a rule for the selected destination" enabled="false"/>
+        <b:ToolbarButton ui:field="revealButton" svg="EYE"
+                         title="Show the selected destination in full. This is recorded in the audit log."
+                         enabled="false"/>
+        <b:ToolbarButton ui:field="clearButton" svg="CLEAR"
+                         title="Clear the list. This is recorded in the audit log."/>
+        <b:ToolbarButton ui:field="refreshButton" svg="REFRESH" title="Read the list again"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Blocked attempts"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

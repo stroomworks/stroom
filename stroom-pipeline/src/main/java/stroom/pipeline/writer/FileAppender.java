@@ -16,6 +16,10 @@
 
 package stroom.pipeline.writer;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.ProcessException;
 import stroom.pipeline.factory.ConfigurableElement;
@@ -60,6 +64,7 @@ import java.util.Set;
                 PipelineElementType.ROLE_DESTINATION,
                 PipelineElementType.VISABILITY_STEPPING},
         icon = SvgImage.PIPELINE_FILE)
+@EgressSink(EgressKind.FILE)
 public class FileAppender extends AbstractAppender {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FileAppender.class);
@@ -69,6 +74,7 @@ public class FileAppender extends AbstractAppender {
     private static final String DEFAULT_COMPRESSION_METHOD_PROP_VALUE = CompressorStreamFactory.GZIP;
 
     private final PathCreator pathCreator;
+    private final EgressGuard egressGuard;
     private final OutputFactory outputFactory;
     private String[] outputPaths;
     private String filePermissions;
@@ -76,9 +82,11 @@ public class FileAppender extends AbstractAppender {
     @Inject
     public FileAppender(final ErrorReceiverProxy errorReceiverProxy,
                         final MetaDataHolder metaDataHolder,
-                        final PathCreator pathCreator) {
+                        final PathCreator pathCreator,
+                        final EgressGuard egressGuard) {
         super(errorReceiverProxy);
         this.pathCreator = pathCreator;
+        this.egressGuard = egressGuard;
         outputFactory = new OutputFactory(metaDataHolder);
 
         // Ensure outputStreamSupport has the defaults for FileAppender
@@ -91,6 +99,10 @@ public class FileAppender extends AbstractAppender {
     protected Output createOutput() throws IOException {
         try {
             final String path = getRandomOutputPath();
+
+            // The check is made before any directory or lock file is created. The lock file sits in the same
+            // directory, so a rule that permits the file permits its lock.
+            egressGuard.require(new EgressRequest(EgressKind.FILE, path, "FileAppender"));
 
             // Make sure we can create this path.
             final Path file = Paths.get(path);

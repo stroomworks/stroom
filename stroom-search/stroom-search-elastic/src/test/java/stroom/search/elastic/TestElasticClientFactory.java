@@ -16,6 +16,7 @@
 
 package stroom.search.elastic;
 
+import stroom.egress.api.EgressGuard;
 import stroom.util.http.HttpClientConfiguration;
 import stroom.util.http.HttpProxyConfiguration;
 import stroom.util.http.HttpTlsConfiguration;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -439,7 +441,8 @@ class TestElasticClientFactory {
                         .trustStorePassword("wrong")
                         .build()));
 
-        assertThatThrownBy(() -> new ElasticClientFactory().create(connection, new ElasticClientConfig()))
+        final ElasticClientFactory factory = new ElasticClientFactory(Mockito.mock(EgressGuard.class));
+        assertThatThrownBy(() -> factory.create(connection, new ElasticClientConfig()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageStartingWith("Unable to initialise SSL context");
     }
@@ -522,7 +525,7 @@ class TestElasticClientFactory {
     }
 
     private static InfoResponse info(final ResolvedElasticConnection connection) throws IOException {
-        try (final ElasticsearchClient client = new ElasticClientFactory()
+        try (final ElasticsearchClient client = new ElasticClientFactory(Mockito.mock(EgressGuard.class))
                 .create(connection, new ElasticClientConfig())) {
             return client.info();
         }

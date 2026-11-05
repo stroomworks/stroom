@@ -16,6 +16,8 @@
 
 package stroom.contentstore.impl;
 
+import stroom.egress.api.EgressGuard;
+
 import com.sun.net.httpserver.HttpServer;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
@@ -168,7 +170,7 @@ class TestIconPassthroughServlet {
         Mockito.when(mockRequest.getQueryString())
                 .thenReturn(UUID.randomUUID().toString());
 
-        new IconPassthroughServlet().doGet(mockRequest, mockResponse);
+        new IconPassthroughServlet(Mockito.mock(EgressGuard.class)).doGet(mockRequest, mockResponse);
 
         Mockito.verify(mockResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
         Mockito.verify(mockResponse, Mockito.never()).getOutputStream();
@@ -222,7 +224,7 @@ class TestIconPassthroughServlet {
         Mockito.when(mockRequest.getQueryString())
                 .thenReturn(id);
 
-        new IconPassthroughServlet().doGet(mockRequest, mockResponse);
+        new IconPassthroughServlet(Mockito.mock(EgressGuard.class)).doGet(mockRequest, mockResponse);
     }
 
     private void assertRefused() throws IOException {

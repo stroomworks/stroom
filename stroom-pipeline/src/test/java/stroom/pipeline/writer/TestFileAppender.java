@@ -17,6 +17,7 @@
 package stroom.pipeline.writer;
 
 
+import stroom.egress.api.EgressGuard;
 import stroom.test.common.util.test.StroomUnitTest;
 import stroom.util.io.FileUtil;
 import stroom.util.io.PathCreator;
@@ -28,6 +29,7 @@ import org.apache.commons.compress.compressors.CompressorException;
 import org.apache.commons.compress.compressors.CompressorStreamFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -74,7 +76,7 @@ class TestFileAppender extends StroomUnitTest {
     private FileAppender createZipAppender(final Path tempDir) {
         final String name = "/${year}-${month}-${day}T${hour}:${minute}:${second}.${millis}Z-${uuid}.zip";
         final PathCreator pathCreator = new SimplePathCreator(() -> tempDir, () -> tempDir);
-        final FileAppender provider = new FileAppender(null, null, pathCreator);
+        final FileAppender provider = new FileAppender(null, null, pathCreator, Mockito.mock(EgressGuard.class));
         provider.setUseCompression(true);
         provider.setCompressionMethod("zip");
         provider.setOutputPaths(FileUtil.getCanonicalPath(getCurrentTestDir()) + "/t1" + name);
@@ -106,7 +108,7 @@ class TestFileAppender extends StroomUnitTest {
     private FileAppender createGZipAppender(final Path tempDir) {
         final String name = "/${year}-${month}-${day}T${hour}:${minute}:${second}.${millis}Z-${uuid}.gz";
         final PathCreator pathCreator = new SimplePathCreator(() -> tempDir, () -> tempDir);
-        final FileAppender provider = new FileAppender(null, null, pathCreator);
+        final FileAppender provider = new FileAppender(null, null, pathCreator, Mockito.mock(EgressGuard.class));
         provider.setUseCompression(true);
         provider.setCompressionMethod("gz");
         provider.setOutputPaths(FileUtil.getCanonicalPath(getCurrentTestDir()) + "/t1" + name);

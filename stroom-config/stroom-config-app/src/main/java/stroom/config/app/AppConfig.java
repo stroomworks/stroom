@@ -35,6 +35,7 @@ import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.impl.CredentialsConfig;
 import stroom.dashboard.impl.DashboardConfig;
 import stroom.docstore.impl.DocStoreConfig;
+import stroom.egress.impl.EgressConfig;
 import stroom.document.asset.impl.DocumentAssetConfig;
 import stroom.document.asset.impl.db.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
@@ -111,6 +112,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_DASHBOARD = "dashboard";
     public static final String PROP_NAME_DATA = "data";
     public static final String PROP_NAME_DOCSTORE = "docstore";
+    public static final String PROP_NAME_EGRESS = "egress";
     public static final String PROP_NAME_ELASTIC = "elastic";
     public static final String PROP_NAME_EXPLORER = "explorer";
     public static final String PROP_NAME_EXPORT = "export";
@@ -183,6 +185,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final DashboardConfig dashboardConfig;
     private final DataConfig dataConfig;
     private final DocStoreConfig docStoreConfig;
+    private final EgressConfig egressConfig;
     private final ElasticConfig elasticConfig;
     private final ExplorerConfig explorerConfig;
     private final ExportConfig exportConfig;
@@ -245,6 +248,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new DashboardConfig(),
                 new DataConfig(),
                 new DocStoreConfig(),
+                new EgressConfig(),
                 new ElasticConfig(),
                 new ExplorerConfig(),
                 new ExportConfig(),
@@ -306,6 +310,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_DASHBOARD) final DashboardConfig dashboardConfig,
                      @JsonProperty(PROP_NAME_DATA) final DataConfig dataConfig,
                      @JsonProperty(PROP_NAME_DOCSTORE) final DocStoreConfig docStoreConfig,
+                     @JsonProperty(PROP_NAME_EGRESS) final EgressConfig egressConfig,
                      @JsonProperty(PROP_NAME_ELASTIC) final ElasticConfig elasticConfig,
                      @JsonProperty(PROP_NAME_EXPLORER) final ExplorerConfig explorerConfig,
                      @JsonProperty(PROP_NAME_EXPORT) final ExportConfig exportConfig,
@@ -366,6 +371,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.dashboardConfig = dashboardConfig;
         this.dataConfig = dataConfig;
         this.docStoreConfig = docStoreConfig;
+        this.egressConfig = egressConfig;
         this.elasticConfig = elasticConfig;
         this.explorerConfig = explorerConfig;
         this.exportConfig = exportConfig;
@@ -512,6 +518,11 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     @JsonProperty(PROP_NAME_DOCSTORE)
     public DocStoreConfig getDocStoreConfig() {
         return docStoreConfig;
+    }
+
+    @JsonProperty(PROP_NAME_EGRESS)
+    public EgressConfig getEgressConfig() {
+        return egressConfig;
     }
 
     @JsonProperty(PROP_NAME_ELASTIC)

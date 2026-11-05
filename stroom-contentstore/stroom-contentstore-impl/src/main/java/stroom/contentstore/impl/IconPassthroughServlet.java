@@ -16,12 +16,18 @@
 
 package stroom.contentstore.impl;
 
+import stroom.egress.api.EgressDeniedException;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.net.SsrfGuard;
 import stroom.util.shared.IsServlet;
 import stroom.util.shared.NullSafe;
 
+import jakarta.inject.Inject;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -50,6 +56,7 @@ import java.util.concurrent.ConcurrentHashMap;
 // so they are not trusted. Only http(s) URLs that pass SsrfGuard are fetched, only image
 // responses are passed through, and the response is served with headers that stop it being
 // sniffed or run as an active document on Stroom's origin.
+@EgressSink(EgressKind.HTTP)
 public class IconPassthroughServlet extends HttpServlet implements IsServlet {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(IconPassthroughServlet.class);
@@ -77,6 +84,8 @@ public class IconPassthroughServlet extends HttpServlet implements IsServlet {
 
     private static final int READ_TIMEOUT_MS = 10_000;
 
+    private final EgressGuard egressGuard;
+
     static final String CONTENT_TYPE_OPTIONS_HEADER = "X-Content-Type-Options";
 
     static final String CONTENT_TYPE_OPTIONS_NOSNIFF = "nosniff";
@@ -86,6 +95,11 @@ public class IconPassthroughServlet extends HttpServlet implements IsServlet {
     // Stops an icon (e.g. an SVG) running script or loading anything if it is opened directly
     // rather than through an img tag. The same policy GitHub uses for raw content.
     static final String CONTENT_SECURITY_POLICY_INERT = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+    @Inject
+    public IconPassthroughServlet(final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
+    }
 
     /**
      * Call to provide a map from the ID to the URL for the icon.
@@ -134,7 +148,7 @@ public class IconPassthroughServlet extends HttpServlet implements IsServlet {
                             ostr.write(buffer, 0, length);
                         }
                     }
-                } catch (final URISyntaxException | IllegalArgumentException e) {
+                } catch (final URISyntaxException | IllegalArgumentException | EgressDeniedException e) {
                     LOGGER.error("Refusing to fetch the icon for content pack with ID '{}' from '{}': {}",
                             id,
                             url,
@@ -175,6 +189,8 @@ public class IconPassthroughServlet extends HttpServlet implements IsServlet {
         String currentUrl = url;
         for (int redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
             final URI uri = checkUrl(currentUrl);
+            // Every hop is a destination in its own right, so every hop is checked against the policy.
+            egressGuard.require(new EgressRequest(EgressKind.HTTP, currentUrl, "IconPassthroughServlet"));
             final HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);

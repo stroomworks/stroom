@@ -107,6 +107,7 @@
     <inherits name='stroom.welcome.Welcome'/>
     <!-- App/Main screens (screen pilot) -->
     <inherits name='stroom.credentials.Credentials'/>
+    <inherits name='stroom.egress.Egress'/>
     <!-- Credentials: KeyStoreSecretFormController uploads with ImportUtil -->
     <inherits name='stroom.importexport.ImportExport'/>
     <inherits name='stroom.dictionary.Dictionary'/>

@@ -67,6 +67,7 @@ dependencies {
     testImplementation project(':stroom-security:stroom-security-mock')
     testImplementation project(':stroom-test-common')
 
+    testImplementation project(':stroom-egress:stroom-egress-api')
     testImplementation libs.bundles.common.test.implementation
     testImplementation libs.data.faker
     testRuntimeOnly libs.bundles.common.test.runtime

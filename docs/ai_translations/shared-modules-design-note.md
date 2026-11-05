@@ -1499,8 +1499,8 @@ Three smaller observations:
 
 ##### 6.5.6.3 Applying them consistently
 
-Four copies of the same four lines would drift. Proposal, none of it implemented (at the project owner's
-direction, no source was changed):
+Four copies of the same four lines would drift. Proposal (**superseded in part by the decisions after review, below**
+and by `egress-ui-plan.md`):
 
 1. **One class** in `stroom-util`, for example `SaxonConfinement.confine(Configuration, mode)`. It installs all four
    hooks plus `ALLOW_EXTERNAL_FUNCTIONS=false`, and `DO_NOT_RECOVER` in deny mode. `stroom-util` already depends on
@@ -1515,22 +1515,31 @@ direction, no source was changed):
    added without a decision. The rows marked *Not needed* above are the initial allow-list.
 4. **A shared test**, run against every confined configuration, that uses the routes in §6.5.6.1 and expects each to
    be refused, so one test proves all four hooks stay installed.
-5. **Two modes**, as for the rest of the policy (§6.5.4): *report-only* for content that exists today, which logs
-   each attempt and lets Saxon proceed using the previous resolver, and *deny* for new or untrusted content.
-   Suggested start: `XsltPoolImpl` in report-only, because existing translations might use these functions
-   (nothing here says whether any do, and the report-only log is how to find out); the `xpath()` function,
-   the extraction filter and the Shapeshifter sites in deny, because I know of no legitimate reason for an
-   extraction expression to read a file or a URL. That last point is a judgement for the project owner, not a
-   finding.
-6. **Delegation detail:** in report-only mode each hook should call the resolver that was installed before it
-   (captured with the matching `get...` method), so that Saxon's behaviour is unchanged. The output resolver needs
-   a `newInstance()` that wraps the delegate's.
+5. **Modes** (revised after the plan review; the earlier suggestion of report-only with delegation for `XsltPoolImpl` is
+   **superseded**). `unparsed-text` (and with it `json-doc()`, `unparsed-text-lines()` and `unparsed-text-available()`),
+   `collection` and `xsl:result-document` are **denied outright in every mode, including report-only**, and each attempt
+   is logged with the pipeline and feed. `doc` and `document` go through the guard and follow the kind's mode. Existing
+   translations that use the three denied routes fail from the first install; the XSLT dependency parser (§5) is run
+   before the upgrade to find them, and a search of the shipped XSLT (222 files in the core samples, content packs and
+   test resources) found none.
+6. **Delegation detail:** for `doc` and `document` in report-only mode the hook calls the resolver that was installed
+   before it (captured with the matching `get...` method), so that Saxon's behaviour is unchanged. The three denied
+   routes do not delegate.
 
-Recommended default for translations once the guard exists: **deny `unparsed-text`, `collection` and
-`xsl:result-document` outright**, as there is no known legitimate use in event translation, and route `doc`,
-`document` and the HTTP functions through the guard. An administrator can open a rule if a site needs one. If a
+Decided default for translations: **deny `unparsed-text`, `collection` and `xsl:result-document` outright, with no
+rule able to open them in 1.0**, as there is no known legitimate use in event translation, and route `doc`, `document`
+and the HTTP functions through the guard. If a
 hook were ever missing, the fallback is a static ban at save time, which sees a function call even when its
 argument is computed.
+
+##### 6.5.6.4 Decisions made at plan review
+
+The project owner's decisions, which `egress-ui-plan.md` implements: rules and settings in the **database**; one
+permission, anyone holding it may approve (no second approver); exact or whole-component prefix only; **redirects
+blocked outright** on every HTTP path; the three XSLT routes above denied in every mode; `stroom-proxy` and git push
+out of scope for 1.0; the Blocked table uncapped, with an audited **Clear** action; report-only duration left to the
+operations guide; kill switch overrides report-only. Authorization and Cookie headers supplied by an XSLT are
+stripped in enforce mode only.
 
 #### 6.5.7 The admin UI
 
@@ -1555,9 +1564,8 @@ function, not the layout.
 Permission and protection:
 
 - A new application permission, for example **Manage Egress Policy**, held by a small group.
-- The permission and the policy store are **protected from AI agents**. An agent acting with a user's authority
-  must not be able to edit the policy, and the MCP server's tool list must have no tool that can. The options
-  paper already notes `OpenAIModelDoc` as a protected object, and the policy belongs in the same class.
+- **Decided for 1.0: no agent-identity check.** The policy is protected by its permission alone. Agent and MCP
+  accounts must not hold the permission or `Administrator`. The MCP server is a prototype and is secured later.
 - Every change is audited and recorded with provenance (D6), including who requested it and who approved it.
 
 #### 6.5.8 Tests this needs (nothing here has been run inside Stroom)

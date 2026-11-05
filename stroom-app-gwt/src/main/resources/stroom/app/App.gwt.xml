@@ -127,6 +127,7 @@
     <inherits name="stroom.contentstore.ContentStore" />
     <inherits name="stroom.gitrepo.GitRepo" />
     <inherits name="stroom.credentials.Credentials"/>
+    <inherits name="stroom.egress.Egress"/>
     <inherits name="stroom.openai.OpenAIModel" />
     <inherits name="stroom.pipelinefactory.PipelineFactory" />
     <inherits name="stroom.shapeshifter.ShapeshifterAi" />

@@ -16,6 +16,11 @@
 
 package stroom.pipeline.writer;
 
+import stroom.egress.api.EgressDecision;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.meta.api.AttributeMap;
 import stroom.meta.api.AttributeMapUtil;
 import stroom.meta.api.StandardHeaderArguments;
@@ -92,6 +97,7 @@ import javax.net.ssl.SSLContext;
                 PipelineElementType.ROLE_DESTINATION,
                 PipelineElementType.VISABILITY_STEPPING},
         icon = SvgImage.PIPELINE_STREAM)
+@EgressSink(EgressKind.HTTP)
 public class HTTPAppender extends AbstractAppender {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(HTTPAppender.class);
@@ -152,13 +158,16 @@ public class HTTPAppender extends AbstractAppender {
     private String httpHeadersStreamMetaDataDenyList;
     private boolean useContentEncodingHeader = DEFAULT_USE_CONTENT_ENCODING_PROP_VALUE_BOOL;
     private Path currentPath;
+    private final EgressGuard egressGuard;
 
     @Inject
     HTTPAppender(final ErrorReceiverProxy errorReceiverProxy,
                  final MetaDataHolder metaDataHolder,
                  final TempDirProvider tempDirProvider,
-                 final HttpClientProviderCache httpClientProviderCache) {
+                 final HttpClientProviderCache httpClientProviderCache,
+                 final EgressGuard egressGuard) {
         super(errorReceiverProxy);
+        this.egressGuard = egressGuard;
         this.metaDataHolder = metaDataHolder;
         this.tempDirProvider = tempDirProvider;
         this.httpClientProviderCache = httpClientProviderCache;
@@ -192,6 +201,8 @@ public class HTTPAppender extends AbstractAppender {
                     .getHttpTlsConfiguration(sslConfigBuilder.build());
             final HttpClientConfiguration.Builder builder = HttpClientConfiguration.builder();
             builder.tlsConfiguration(httpTlsConfiguration);
+            // A redirect is a second destination that was never checked against the egress policy.
+            builder.followRedirects(false);
 
             if (timeout != null) {
                 builder.timeout(StroomDuration.ofMillis(timeout.intValue()));
@@ -323,6 +334,12 @@ public class HTTPAppender extends AbstractAppender {
     private void validateElementProperties() {
         if (NullSafe.isBlankString(forwardUrl)) {
             fatal("Property forwardUrl has no value.");
+        }
+        final EgressDecision decision = egressGuard.check(
+                new EgressRequest(EgressKind.HTTP, forwardUrl, getClass().getSimpleName()));
+        if (!decision.isAllowed()) {
+            fatal(LogUtil.message("The egress policy does not permit sending to the forwardUrl ({})",
+                    decision.reason()));
         }
 
         if (NullSafe.isEmptyString(requestMethod)) {

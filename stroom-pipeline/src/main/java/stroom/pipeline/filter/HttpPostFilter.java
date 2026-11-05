@@ -16,6 +16,10 @@
 
 package stroom.pipeline.filter;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.pipeline.LocationFactoryProxy;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.factory.ConfigurableElement;
@@ -52,20 +56,24 @@ import org.xml.sax.SAXException;
                 PipelineElementType.ROLE_HAS_TARGETS,
                 PipelineElementType.VISABILITY_SIMPLE},
         icon = SvgImage.PIPELINE_STREAM)
+@EgressSink(EgressKind.HTTP)
 public class HttpPostFilter extends AbstractSamplingFilter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpPostFilter.class);
 
     private final ErrorReceiverProxy errorReceiverProxy;
     private final JerseyClientFactory jerseyClientFactory;
+    private final EgressGuard egressGuard;
 
     private String receivingApiUrl;
 
     @Inject
     public HttpPostFilter(final ErrorReceiverProxy errorReceiverProxy,
                           final LocationFactoryProxy locationFactory,
-                          final JerseyClientFactory jerseyClientFactory) {
+                          final JerseyClientFactory jerseyClientFactory,
+                          final EgressGuard egressGuard) {
         super(errorReceiverProxy, locationFactory);
+        this.egressGuard = egressGuard;
         this.errorReceiverProxy = errorReceiverProxy;
         this.jerseyClientFactory = jerseyClientFactory;
     }
@@ -86,9 +94,12 @@ public class HttpPostFilter extends AbstractSamplingFilter {
             errorReceiverProxy.log(Severity.ERROR, null, null, msg, null);
         } else {
             try {
+                egressGuard.require(new EgressRequest(EgressKind.HTTP, receivingApiUrl, "HttpPostFilter"));
                 final Client client = jerseyClientFactory.getNamedClient(JerseyClientName.HTTP_POST_FILTER);
                 try (final Response response = client
                         .target(receivingApiUrl)
+                        // Redirects are never followed: the new destination would not have been checked.
+                        .property("jersey.config.client.followRedirects", false)
                         .request()
                         .accept(MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON)
                         .post(Entity.xml(xml))) {

@@ -17,6 +17,7 @@
 package stroom.pipeline.destination;
 
 
+import stroom.egress.api.EgressGuard;
 import stroom.util.date.DateUtil;
 import stroom.util.io.PathCreator;
 import stroom.util.io.SimplePathCreator;
@@ -26,6 +27,7 @@ import stroom.util.shared.scheduler.CronExpressions;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -45,6 +47,7 @@ class TestRollingFileDestination {
         final PathCreator pathCreator = new SimplePathCreator(() -> tempDir, () -> tempDir);
         final RollingFileDestination rollingFileDestination = new RollingFileDestination(
                 pathCreator,
+                Mockito.mock(EgressGuard.class),
                 "test",
                 new FrequencyTrigger(60000L),
                 null,
@@ -71,6 +74,7 @@ class TestRollingFileDestination {
         final PathCreator pathCreator = new SimplePathCreator(() -> tempDir, () -> tempDir);
         final RollingFileDestination rollingFileDestination = new RollingFileDestination(
                 pathCreator,
+                Mockito.mock(EgressGuard.class),
                 "test",
                 null,
                 new CronTrigger(CronExpressions.EVERY_MINUTE.getExpression()),

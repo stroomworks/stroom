@@ -16,6 +16,10 @@
 
 package stroom.pipeline.writer;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.pipeline.destination.RollingDestination;
 import stroom.pipeline.destination.RollingDestinations;
 import stroom.pipeline.destination.RollingFileDestination;
@@ -65,11 +69,13 @@ import java.util.Set;
                 PipelineElementType.ROLE_DESTINATION,
                 PipelineElementType.VISABILITY_STEPPING},
         icon = SvgImage.PIPELINE_FILES)
+@EgressSink(EgressKind.FILE)
 public class RollingFileAppender extends AbstractRollingAppender {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RollingFileAppender.class);
 
     private final PathCreator pathCreator;
+    private final EgressGuard egressGuard;
 
     private String[] outputPaths;
     private String fileNamePattern;
@@ -84,9 +90,11 @@ public class RollingFileAppender extends AbstractRollingAppender {
 
     @Inject
     RollingFileAppender(final RollingDestinations destinations,
-                        final PathCreator pathCreator) {
+                        final PathCreator pathCreator,
+                        final EgressGuard egressGuard) {
         super(destinations);
         this.pathCreator = pathCreator;
+        this.egressGuard = egressGuard;
     }
 
     @Override
@@ -102,6 +110,9 @@ public class RollingFileAppender extends AbstractRollingAppender {
 
         // Create a new destination.
         final Path file = Paths.get(dir).resolve(fileName);
+
+        // Checked before any directory is created. The rolled file is checked when it is rolled.
+        egressGuard.require(new EgressRequest(EgressKind.FILE, file.toString(), "RollingFileAppender"));
 
         // Try and create the path.
         final Path parentDir = file.getParent();
@@ -121,6 +132,7 @@ public class RollingFileAppender extends AbstractRollingAppender {
 
         return new RollingFileDestination(
                 pathCreator,
+                egressGuard,
                 key,
                 getFrequencyTrigger(),
                 getCronTrigger(),

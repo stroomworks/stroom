@@ -72,6 +72,7 @@ import stroom.gwt.workbench.client.app.editors.StatisticStoreEditorStories;
 import stroom.gwt.workbench.client.app.editors.StoreEditorStories;
 import stroom.gwt.workbench.client.app.editors.ViewEditorStories;
 import stroom.gwt.workbench.client.app.editors.VisualisationEditorStories;
+import stroom.gwt.workbench.client.app.egress.EgressPolicyScreenStories;
 import stroom.gwt.workbench.client.app.explorer.CreateDocumentDialogStories;
 import stroom.gwt.workbench.client.app.explorer.DocInfoDialogStories;
 import stroom.gwt.workbench.client.app.explorer.DocumentPluginStories;
@@ -245,6 +246,8 @@ public final class AppStories {
         EditAccountDialogStories.addTo(registry);
         // App/Main/EditTagsDialog
         EditTagsDialogStories.addTo(registry);
+        // App/Main/EgressPolicyScreen
+        EgressPolicyScreenStories.addTo(registry);
         // App/Main/ExecutionSchedulesScreen
         ExecutionSchedulesScreenStories.addTo(registry);
         // App/Main/FindDialog

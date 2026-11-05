@@ -59,7 +59,8 @@ public class TestAskStroomAi {
                 null,
                 null,
                 new CacheManagerImpl(),
-                AiConfig::new);
+                AiConfig::new,
+                null);
         final OpenAIModelDoc modelDoc = new OpenAIModelDoc(
                 UUID.randomUUID().toString(),
                 "test",

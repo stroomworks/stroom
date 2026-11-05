@@ -18,6 +18,7 @@ package stroom.search.solr;
 
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
+import stroom.egress.api.EgressGuard;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.search.solr.shared.SolrConnectionTestResponse;
@@ -45,10 +46,13 @@ class SolrIndexResourceImpl implements SolrIndexResource, FetchWithUuid<SolrInde
 
     private final Provider<SolrIndexStore> solrIndexStoreProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
+    private final Provider<EgressGuard> egressGuardProvider;
 
     @Inject
     SolrIndexResourceImpl(final Provider<SolrIndexStore> solrIndexStoreProvider,
-                          final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
+                          final Provider<DocumentResourceHelper> documentResourceHelperProvider,
+                          final Provider<EgressGuard> egressGuardProvider) {
+        this.egressGuardProvider = egressGuardProvider;
         this.solrIndexStoreProvider = solrIndexStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
     }
@@ -76,7 +80,7 @@ class SolrIndexResourceImpl implements SolrIndexResource, FetchWithUuid<SolrInde
     @Override
     public List<String> fetchSolrTypes(final SolrIndexDoc solrIndexDoc) {
         try {
-            final SolrClient solrClient = new SolrClientFactory().create(
+            final SolrClient solrClient = new SolrClientFactory(egressGuardProvider.get()).create(
                     solrIndexDoc.getSolrConnectionConfig());
             final FieldTypesResponse response = new FieldTypes().process(
                     solrClient, solrIndexDoc.getCollection());
@@ -98,7 +102,7 @@ class SolrIndexResourceImpl implements SolrIndexResource, FetchWithUuid<SolrInde
     @AutoLogged(value = OperationType.PROCESS, verb = "Testing Solr Connection")
     public SolrConnectionTestResponse solrConnectionTest(final SolrIndexDoc solrIndexDoc) {
         try {
-            final SolrClient solrClient = new SolrClientFactory().create(
+            final SolrClient solrClient = new SolrClientFactory(egressGuardProvider.get()).create(
                     solrIndexDoc.getSolrConnectionConfig());
 //            final SolrPingResponse response = new SolrPing()
 //            .process(solrClient, action.getSolrIndex().getCollection());

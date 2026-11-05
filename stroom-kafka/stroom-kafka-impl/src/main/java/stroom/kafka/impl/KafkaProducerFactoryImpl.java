@@ -18,6 +18,10 @@ package stroom.kafka.impl;
 
 import stroom.docref.DocRef;
 import stroom.docstore.shared.DocRefUtil;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.kafka.api.KafkaProducerFactory;
 import stroom.kafka.api.SharedKafkaProducer;
 import stroom.kafka.api.SharedKafkaProducerIdentity;
@@ -62,6 +66,7 @@ import java.util.stream.Collectors;
  * latest config. {@link KafkaProducer}
  */
 @Singleton
+@EgressSink(EgressKind.MESSAGE_BUS)
 class KafkaProducerFactoryImpl implements KafkaProducerFactory, HasSystemInfo {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(KafkaProducerFactoryImpl.class);
@@ -69,6 +74,7 @@ class KafkaProducerFactoryImpl implements KafkaProducerFactory, HasSystemInfo {
 
     private final KafkaConfigDocCache kafkaConfigDocCache;
     private final Executor executor;
+    private final EgressGuard egressGuard;
 
     // Keyed on uuid, represents the current KP for each UUID. These are the KPs that are given out to
     // new calls to getSharedProducer()
@@ -80,7 +86,9 @@ class KafkaProducerFactoryImpl implements KafkaProducerFactory, HasSystemInfo {
 
     @Inject
     KafkaProducerFactoryImpl(final KafkaConfigDocCache kafkaConfigDocCache,
-                             final ExecutorProvider executorProvider) {
+                             final ExecutorProvider executorProvider,
+                             final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
         this.kafkaConfigDocCache = kafkaConfigDocCache;
         this.executor = executorProvider.get(THREAD_POOL);
     }
@@ -96,6 +104,7 @@ class KafkaProducerFactoryImpl implements KafkaProducerFactory, HasSystemInfo {
 
         if (optKafkaConfigDoc.isPresent()) {
             final KafkaConfigDoc kafkaConfigDoc = optKafkaConfigDoc.get();
+            requireEgress(kafkaConfigDoc);
             final DocRef docRefFromDoc = DocRefUtil.create(kafkaConfigDoc);
             final SharedKafkaProducerIdentity desiredKey = new SharedKafkaProducerIdentity(kafkaConfigDoc);
 
@@ -185,6 +194,19 @@ class KafkaProducerFactoryImpl implements KafkaProducerFactory, HasSystemInfo {
                 }
             } else {
                 throw new RuntimeException("Unexpected type " + sharedKafkaProducer.getClass().getName());
+            }
+        }
+    }
+
+    // The brokers are held in the configuration document, which can be edited, and a producer is shared and long
+    // lived, so every broker is checked each time a producer is asked for.
+    private void requireEgress(final KafkaConfigDoc kafkaConfigDoc) {
+        final String servers = getProperties(kafkaConfigDoc).getProperty("bootstrap.servers");
+        if (servers != null) {
+            for (final String server : servers.split(",")) {
+                if (!server.isBlank()) {
+                    egressGuard.require(new EgressRequest(EgressKind.MESSAGE_BUS, server.trim(), "KafkaProducer"));
+                }
             }
         }
     }

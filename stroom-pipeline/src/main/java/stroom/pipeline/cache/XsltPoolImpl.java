@@ -36,6 +36,7 @@ import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
+import stroom.util.xml.saxon.SaxonConfinement;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -126,6 +127,9 @@ class XsltPoolImpl extends AbstractDocPool<XsltDoc, StoredXsltExecutable> implem
         try {
             // Create a new Saxon processor.
             final Processor processor = new Processor(false);
+
+            // Close the standard routes by which a stylesheet could reach outside its input, under the egress policy.
+            SaxonConfinement.confine(processor.getUnderlyingConfiguration());
 
             // Register the Stroom XSLT extension functions.
             functionLibrary = stroomXsltFunctionLibraryProvider.get();

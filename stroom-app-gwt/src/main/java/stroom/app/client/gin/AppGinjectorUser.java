@@ -37,6 +37,7 @@ import stroom.dictionary.client.gin.DictionaryModule;
 import stroom.dispatch.client.RestModule;
 import stroom.document.client.gin.DocumentModule;
 import stroom.documentation.client.gin.DocumentationModule;
+import stroom.egress.client.gin.EgressModule;
 import stroom.feed.client.gin.FeedModule;
 import stroom.floormap.client.gin.FloorMapModule;
 import stroom.folder.client.gin.FolderModule;
@@ -96,6 +97,7 @@ import com.google.web.bindery.event.shared.EventBus;
         DictionaryModule.class,
         DocumentationModule.class,
         DocumentModule.class,
+        EgressModule.class,
         FeedModule.class,
         FolderModule.class,
         ImportExportConfigModule.class,

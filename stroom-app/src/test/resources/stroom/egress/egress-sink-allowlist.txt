@@ -1,0 +1,67 @@
+# Classes that depend on a network, mail, object-store, message-bus or search client but do not declare
+# @EgressSink. Each needs a reason. A new class that reaches outside Stroom fails TestEgressSinks until it calls the
+# egress guard and is annotated, or is added here with a reason. Format: fully.qualified.ClassName | reason
+# Entries that start with UNGUARDED are gaps still to close; the list is burned down through the egress plan phases.
+stroom.ai.impl.ApacheHttpClient | GUARDED UPSTREAM: used only by AiServiceImpl, which checks the model endpoint (AI_MODEL)
+stroom.ai.impl.SSLUtil | GUARDED UPSTREAM: used only by AiServiceImpl, which checks the model endpoint (AI_MODEL)
+stroom.analytics.impl.AnalyticDataShardResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.analytics.impl.DuplicateCheckResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.app.HttpClientProviderCacheImpl | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it
+stroom.app.guice.JerseyModule | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it
+stroom.aws.s3.client.S3ClientHelper | GUARDED UPSTREAM: S3 clients come from S3ClientPoolImpl, which calls the egress guard (OBJECT_STORE)
+stroom.aws.s3.client.S3ClientPool | GUARDED UPSTREAM: S3 clients come from S3ClientPoolImpl, which calls the egress guard (OBJECT_STORE)
+stroom.aws.sqs.SqsClientFactory | UNGUARDED, TO DO: SQS and S3 event notifications in the receive path; guard as MESSAGE_BUS and OBJECT_STORE (egress plan, Phase 3)
+stroom.cache.service.impl.CacheResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.core.entity.event.EntityEventResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.core.tools.BenchmarkDataFeed | TOOL: a command-line or health-check utility, not reachable from a translation or a pipeline
+stroom.core.tools.DataFeedClient | TOOL: a command-line or health-check utility, not reachable from a translation or a pipeline
+stroom.core.tools.ErrorDataFeedClient | TOOL: a command-line or health-check utility, not reachable from a translation or a pipeline
+stroom.core.tools.URLTestTool | TOOL: a command-line or health-check utility, not reachable from a translation or a pipeline
+stroom.dropwizard.common.AbstractJerseyClientFactory | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it
+stroom.dropwizard.common.DropwizardHttpClientFactory | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it
+stroom.dropwizard.common.prometheus.PushGateway | ADMINISTRATOR CONFIGURED: the Prometheus push URL is set in the YAML configuration and the class is created outside Guice; not reachable from a translation
+stroom.gitrepo.impl.StroomHttpConnection | OUT OF SCOPE: git repository content sync moves configuration, not data (project decision)
+stroom.gitrepo.impl.StroomHttpConnectionFactory | OUT OF SCOPE: git repository content sync moves configuration, not data (project decision)
+stroom.index.impl.IndexResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.index.impl.IndexVolumeResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.job.impl.JobNodeResourceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.kafka.impl.SharedKafkaProducerImpl | GUARDED UPSTREAM: uses a KafkaProducer obtained from KafkaProducerFactoryImpl, which checks every broker (MESSAGE_BUS)
+stroom.kafka.pipeline.StandardKafkaProducer | GUARDED UPSTREAM: uses a KafkaProducer obtained from KafkaProducerFactoryImpl, which checks every broker (MESSAGE_BUS)
+stroom.node.impl.NodeServiceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.pathways.impl.PathwaysService | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.planb.impl.data.query.PlanBQueryService | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.planb.impl.data.query.PlanBShardInfoServiceImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.planb.impl.rest.FileTransferClientImpl | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.receive.common.S3EventService | UNGUARDED, TO DO: SQS and S3 event notifications in the receive path; guard as MESSAGE_BUS and OBJECT_STORE (egress plan, Phase 3)
+stroom.search.elastic.ElasticClientCacheImpl | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.elastic.ElasticClusterResourceImpl | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.elastic.ElasticIndexResourceImpl | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.elastic.indexing.ElasticIndexingFilter | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.elastic.search.ElasticSearchProvider | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.elastic.search.ElasticSearchTaskHandler | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.elastic.suggest.ElasticSuggestionsQueryHandlerImpl | GUARDED UPSTREAM: uses an ElasticsearchClient made by ElasticClientFactory, which calls the egress guard (SEARCH_BACKEND)
+stroom.search.impl.RemoteNodeSearch | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.search.solr.SolrIndexClientCacheImpl | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.search.solr.SolrIndexOptimiseExecutor | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.search.solr.SolrIndexResourceImpl | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.search.solr.SolrIndexRetentionExecutor | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.search.solr.SolrIndexStoreImpl | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.search.solr.indexing.SolrIndexingFilter | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.search.solr.search.SolrSearchTaskHandler | GUARDED UPSTREAM: uses a SolrClient made by SolrClientFactory, which calls the egress guard (SEARCH_BACKEND). ZooKeeper hosts are not covered
+stroom.security.common.impl.ExternalIdpConfigurationProvider | OUTSIDE THE POLICY: OpenID Connect calls to the identity provider; enforcing HTTP over these would stop everyone logging in (egress plan K10)
+stroom.security.common.impl.OpenIdPublicKeysSupplier | OUTSIDE THE POLICY: OpenID Connect calls to the identity provider; enforcing HTTP over these would stop everyone logging in (egress plan K10)
+stroom.security.common.impl.OpenIdTokenRequestHelper | OUTSIDE THE POLICY: OpenID Connect calls to the identity provider; enforcing HTTP over these would stop everyone logging in (egress plan K10)
+stroom.security.common.impl.StandardJwtContextFactory | OUTSIDE THE POLICY: OpenID Connect calls to the identity provider; enforcing HTTP over these would stop everyone logging in (egress plan K10)
+stroom.security.identity.authenticate.EmailSender | UNGUARDED, TO DO: sends account emails to Stroom users only; guard as EMAIL (egress plan, Phase 3)
+stroom.security.identity.token.SigningKeyRefreshFanOut | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.security.identity.token.TokenRevocationService | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.security.impl.SessionListListener | CLUSTER-INTERNAL: node-to-node REST (WebTargetFactory) to other Stroom nodes; outside the policy, as blocking it would break the cluster (egress plan K10)
+stroom.test.common.util.test.AbstractMultiNodeResourceTest | TEST SUPPORT: test utility compiled into a main source set, not part of a running Stroom
+stroom.test.common.util.test.AbstractResourceTest | TEST SUPPORT: test utility compiled into a main source set, not part of a running Stroom
+stroom.test.common.util.test.ContentPackZipDownloader | TEST SUPPORT: test utility compiled into a main source set, not part of a running Stroom
+stroom.util.HealthCheckUtils | TOOL: a command-line or health-check utility, not reachable from a translation or a pipeline
+stroom.util.http.BasicHttpClientFactory | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it
+stroom.util.jersey.MockJerseyClientFactory | TEST SUPPORT: test utility compiled into a main source set, not part of a running Stroom
+stroom.util.jersey.MockJerseyModule | TEST SUPPORT: test utility compiled into a main source set, not part of a running Stroom
+stroom.util.jersey.UriBuilderUtil | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it
+stroom.util.jersey.WebTargetProxy | INFRASTRUCTURE: builds or wraps HTTP clients and does not know the destination; the callers of the client check it

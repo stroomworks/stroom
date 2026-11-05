@@ -18,6 +18,7 @@ package stroom.analytics.impl;
 
 import stroom.analytics.api.EmailMessage;
 import stroom.analytics.shared.NotificationEmailDestination;
+import stroom.egress.api.EgressGuard;
 
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -53,7 +54,7 @@ class TestEmailSender {
                         "Mr Foo"));
 
         final EmailSender emailSender = new EmailSender(() ->
-                mockAnalyticsConfig, ruleEmailTemplatingService);
+                mockAnalyticsConfig, ruleEmailTemplatingService, Mockito.mock(EgressGuard.class));
 
         final NotificationEmailDestination destination = NotificationEmailDestination.builder()
                 .to("bar@bar.com")
@@ -132,7 +133,8 @@ class TestEmailSender {
 
     @Test
     void sendEmailRejectsInvalidMessageBeforeSending() {
-        final EmailSender emailSender = new EmailSender(() -> mockAnalyticsConfig, ruleEmailTemplatingService);
+        final EmailSender emailSender = new EmailSender(
+                () -> mockAnalyticsConfig, ruleEmailTemplatingService, Mockito.mock(EgressGuard.class));
 
         assertThatThrownBy(() -> emailSender.sendEmail(new EmailMessage(null, null, null, "", "Body")))
                 .isInstanceOf(IllegalArgumentException.class)

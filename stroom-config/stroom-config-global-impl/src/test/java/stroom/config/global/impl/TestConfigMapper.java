@@ -48,6 +48,7 @@ import stroom.credentials.impl.KeyStoreFileCredentialConfig;
 import stroom.dashboard.impl.DashboardConfig;
 import stroom.docref.DocRef;
 import stroom.docstore.impl.DocStoreConfig;
+import stroom.egress.impl.EgressConfig;
 import stroom.document.asset.impl.DocumentAssetConfig;
 import stroom.document.asset.impl.db.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
@@ -1098,6 +1099,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_DASHBOARD) final DashboardConfig dashboardConfig,
                 @JsonProperty(PROP_NAME_DATA) final DataConfig dataConfig,
                 @JsonProperty(PROP_NAME_DOCSTORE) final DocStoreConfig docStoreConfig,
+                @JsonProperty(PROP_NAME_EGRESS) final EgressConfig egressConfig,
                 @JsonProperty(PROP_NAME_ELASTIC) final ElasticConfig elasticConfig,
                 @JsonProperty(PROP_NAME_EXPLORER) final ExplorerConfig explorerConfig,
                 @JsonProperty(PROP_NAME_EXPORT) final ExportConfig exportConfig,
@@ -1171,6 +1173,7 @@ class TestConfigMapper {
                     dashboardConfig,
                     dataConfig,
                     docStoreConfig,
+                    egressConfig,
                     elasticConfig,
                     explorerConfig,
                     exportConfig,

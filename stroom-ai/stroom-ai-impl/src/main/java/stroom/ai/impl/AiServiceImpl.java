@@ -33,6 +33,10 @@ import stroom.credentials.api.StoredSecrets;
 import stroom.credentials.shared.AccessTokenSecret;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.openai.shared.OpenAIModelDoc;
 import stroom.security.api.SecurityContext;
 import stroom.util.http.HttpClientConfiguration;
@@ -89,6 +93,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 @Singleton
+@EgressSink(EgressKind.AI_MODEL)
 public class AiServiceImpl implements AiService {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(AiServiceImpl.class);
@@ -121,6 +126,7 @@ public class AiServiceImpl implements AiService {
     private final SecurityContext securityContext;
     private final AiDao aiDao;
     private final StroomCache<ChatKey, String> chatResponseCache;
+    private final EgressGuard egressGuard;
 
     private HttpClientConfig defaultHttpClientConfig;
 
@@ -133,7 +139,9 @@ public class AiServiceImpl implements AiService {
                   final SecurityContext securityContext,
                   final AiDao aiDao,
                   final CacheManager cacheManager,
-                  final Provider<AiConfig> aiConfigProvider) {
+                  final Provider<AiConfig> aiConfigProvider,
+                  final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
         this.openAIModelStoreProvider = openAIModelStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
         this.storedSecretsProvider = storedSecretsProvider;
@@ -155,9 +163,12 @@ public class AiServiceImpl implements AiService {
                 modelDoc,
                 OpenAIModelDoc::getHttpClientConfiguration,
                 getDefaultHttpClientConfig());
-        final HttpClientConfiguration httpClientConfiguration = httpConfigResolver.resolve(httpClientConfig);
+        // A redirect is a second destination that was never checked, whatever the model document says.
+        final HttpClientConfiguration httpClientConfiguration = httpConfigResolver.resolve(httpClientConfig)
+                .copy().followRedirects(false).build();
         final HttpClientProviderCache httpClientProviderCache = httpClientCacheProvider.get();
         final String url = getUrl(modelDoc, "models");
+        requireEgress(modelDoc);
 
         try (final HttpClientProvider httpClientProvider = httpClientProviderCache.get(httpClientConfiguration)) {
             // Reject cloud-metadata/wildcard targets to prevent SSRF. Any redirect the client follows is
@@ -415,6 +426,8 @@ public class AiServiceImpl implements AiService {
             return new StubChatModel();
         }
 
+        requireEgress(modelDoc);
+
         LOGGER.debug(() -> "getChatModel: modelId='" + modelDoc.getModelId()
                            + "' baseUrl='" + NullSafe.toString(modelDoc.getBaseUrl()) + "'");
 
@@ -471,16 +484,24 @@ public class AiServiceImpl implements AiService {
         return modelBuilder.build();
     }
 
+    // The endpoint is held in the model document, which can be edited, so the rule is checked against the endpoint
+    // that is about to be called and not against the document.
+    private void requireEgress(final OpenAIModelDoc modelDoc) {
+        egressGuard.require(new EgressRequest(EgressKind.AI_MODEL, getUrl(modelDoc, null), "AiServiceImpl"));
+    }
+
     private HttpClientBuilder getClientBuilder(final OpenAIModelDoc modelDoc) {
         final HttpClientConfiguration httpClientConfiguration = httpConfigResolver.resolve(NullSafe.getOrElse(
                 modelDoc,
                 OpenAIModelDoc::getHttpClientConfiguration,
-                getDefaultHttpClientConfig()));
+                getDefaultHttpClientConfig()))
+                .copy().followRedirects(false).build();
         return new ApacheHttpClientBuilder(httpClientCacheProvider.get(), httpClientConfiguration);
     }
 
     @Override
     public ScoringModel getCohereScoringModel(final OpenAIModelDoc modelDoc) {
+        requireEgress(modelDoc);
         final CohereScoringModelBuilder modelBuilder = CohereScoringModel.builder()
                 .modelName(modelDoc.getModelId());
 

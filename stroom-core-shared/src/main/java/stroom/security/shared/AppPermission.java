@@ -44,6 +44,10 @@ public enum AppPermission implements HasDisplayValue {
     CREDENTIALS(
             "Credentials",
             "Create and view credentials"),
+    MANAGE_EGRESS_POLICY(
+            "Manage Egress Policy",
+            "Access the Egress Policy screen to view and manage the destinations Stroom may send data to, " +
+            "the mode of each kind of destination and the kill switch."),
     MANAGE_CACHE_PERMISSION(
             "Manage Cache",
             "Access the Caches screen to view and clear system caches."),

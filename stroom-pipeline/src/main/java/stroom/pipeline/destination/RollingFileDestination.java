@@ -16,6 +16,11 @@
 
 package stroom.pipeline.destination;
 
+import stroom.egress.api.EgressDeniedException;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.pipeline.writer.OutputFactory;
 import stroom.util.io.FileUtil;
 import stroom.util.io.PathCreator;
@@ -37,6 +42,7 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.function.Consumer;
 
+@EgressSink(EgressKind.FILE)
 public class RollingFileDestination extends RollingDestination {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RollingFileDestination.class);
@@ -44,6 +50,7 @@ public class RollingFileDestination extends RollingDestination {
     private static final int MAX_FAILED_RENAME_ATTEMPTS = 100;
 
     private final PathCreator pathCreator;
+    private final EgressGuard egressGuard;
     private final String fileName;
     private final String rolledFileName;
 
@@ -56,6 +63,7 @@ public class RollingFileDestination extends RollingDestination {
     private final Set<PosixFilePermission> filePermissions;
 
     public RollingFileDestination(final PathCreator pathCreator,
+                                  final EgressGuard egressGuard,
                                   final String key,
                                   final Trigger frequencyTrigger,
                                   final Trigger cronTrigger,
@@ -72,6 +80,7 @@ public class RollingFileDestination extends RollingDestination {
         super(key, frequencyTrigger, cronTrigger, rollSize, creationTime);
 
         this.pathCreator = pathCreator;
+        this.egressGuard = egressGuard;
         this.fileName = fileName;
         this.rolledFileName = rolledFileName;
         this.dir = dir;
@@ -147,7 +156,15 @@ public class RollingFileDestination extends RollingDestination {
 
         boolean success = false;
         // If we have got valid paths for source and dest then attempt move.
-        if (source != null) {
+        boolean permitted = true;
+        try {
+            // The rolled name is only known now, so it is checked now.
+            egressGuard.require(new EgressRequest(EgressKind.FILE, destFile.toString(), "RollingFileAppender"));
+        } catch (final EgressDeniedException e) {
+            permitted = false;
+            exceptionConsumer.accept(e);
+        }
+        if (source != null && permitted) {
             if (Files.isRegularFile(dest)) {
                 LOGGER.error("Failed to roll file '{}' to '{}' as target exists", getFullPath(file),
                         getFullPath(destFile));

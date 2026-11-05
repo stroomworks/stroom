@@ -25,14 +25,13 @@ import stroom.util.shared.ElementId;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
+import stroom.util.xml.saxon.SaxonConfinement;
 
 import net.sf.saxon.Configuration;
 import net.sf.saxon.TransformerFactoryImpl;
 import net.sf.saxon.jaxp.TransformerImpl;
-import net.sf.saxon.lib.FeatureKeys;
 import net.sf.saxon.s9api.XdmNode;
 import net.sf.saxon.s9api.XdmNodeKind;
-import net.sf.saxon.trans.XPathException;
 
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -146,15 +145,7 @@ public final class XsltStep implements StepRunner {
     private static void confine(final TransformerFactoryImpl factory) {
         final Configuration configuration = factory.getConfiguration();
         factory.setURIResolver(REFUSING_URI_RESOLVER);
-        configuration.setUnparsedTextURIResolver((uri, encoding, config) -> {
-            throw new XPathException(REFUSED + uri);
-        });
-        // collection() and uri-collection() resolve file: URIs themselves, consulting neither resolver.
-        configuration.setCollectionFinder((context, uri) -> {
-            throw new XPathException(REFUSED + uri);
-        });
-        configuration.setConfigurationProperty(FeatureKeys.ALLOW_EXTERNAL_FUNCTIONS, false);
-        configuration.setRecoveryPolicy(Configuration.DO_NOT_RECOVER);
+        SaxonConfinement.confine(configuration, SaxonConfinement.refuseAll(), true);
     }
 
     /**

@@ -16,6 +16,9 @@
 
 package stroom.pipeline.xsltfunctions;
 
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.pipeline.errorhandler.ProcessException;
 import stroom.util.io.StreamUtil;
 import stroom.util.jersey.HttpClientProvider;
@@ -98,6 +101,7 @@ import java.util.Optional;
                         }
                 )
         })
+@EgressSink(EgressKind.HTTP)
 class HttpCall extends StroomExtensionFunctionCall {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(HttpCall.class);
@@ -112,8 +116,8 @@ class HttpCall extends StroomExtensionFunctionCall {
     private final CommonHttpClient commonHttpClient;
 
     @Inject
-    HttpCall(final HttpClientProviderCache httpClientProviderCache) {
-        commonHttpClient = new CommonHttpClient(httpClientProviderCache);
+    HttpCall(final HttpClientProviderCache httpClientProviderCache, final EgressGuard egressGuard) {
+        commonHttpClient = new CommonHttpClient(httpClientProviderCache, egressGuard);
     }
 
     @Override
@@ -131,7 +135,7 @@ class HttpCall extends StroomExtensionFunctionCall {
             log(context, Severity.WARNING, "No URL specified for HTTP call", null);
 
         } else {
-            try (final HttpClientProvider httpClientProvider = commonHttpClient.createClientProvider(clientConfigStr)) {
+            try (final HttpClientProvider httpClientProvider = createProvider(url, clientConfigStr)) {
                 final HttpClient httpClient = httpClientProvider.get();
                 sequence = execute(url, headers, mediaType, data, httpClient, response ->
                         createSequence(context, response));
@@ -150,6 +154,15 @@ class HttpCall extends StroomExtensionFunctionCall {
         }
 
         return sequence;
+    }
+
+    private static boolean isCredentialHeader(final String name) {
+        return "authorization".equalsIgnoreCase(name) || "cookie".equalsIgnoreCase(name);
+    }
+
+    private HttpClientProvider createProvider(final String url, final String clientConfigStr) {
+        commonHttpClient.requireEgress(url, FUNCTION_NAME);
+        return commonHttpClient.createClientProvider(clientConfigStr);
     }
 
     private String buildErrorMessage(final Throwable t) {
@@ -176,6 +189,7 @@ class HttpCall extends StroomExtensionFunctionCall {
             httpPost.setEntity(new StringEntity(data, contentType));
         }
 
+        final boolean stripCredentials = commonHttpClient.isEnforced();
         if (headers != null && !headers.isEmpty()) {
             final String[] parts = headers.split(HEADER_DELIMITER);
             for (final String part : parts) {
@@ -183,7 +197,10 @@ class HttpCall extends StroomExtensionFunctionCall {
                 if (index > 0) {
                     final String key = part.substring(0, index).trim();
                     final String value = part.substring(index + HEADER_KV_DELIMITER.length()).trim();
-                    httpPost.setHeader(key, value);
+                    // In enforce mode credentials supplied by a stylesheet are not sent.
+                    if (!(stripCredentials && isCredentialHeader(key))) {
+                        httpPost.setHeader(key, value);
+                    }
                 }
             }
         }

@@ -1,0 +1,21 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The Egress Policy screen: the mode of each kind, the permitted destinations, and what was refused -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:e="urn:import:stroom.egress.client.component"
+             xmlns:split="urn:import:stroom.widget.layout.client">
+    <g:SimplePanel styleName="max">
+        <split:SplitPane vertical="false" thin="true" sizes="260px, *, *"
+                         names="Modes, Permitted destinations, Blocked attempts" addStyleNames="max">
+            <g:SimplePanel styleName="max">
+                <e:EgressSettingsList ui:field="settings"/>
+            </g:SimplePanel>
+            <g:SimplePanel styleName="max">
+                <e:EgressRuleList ui:field="rules"/>
+            </g:SimplePanel>
+            <g:SimplePanel styleName="max">
+                <e:EgressAttemptList ui:field="attempts"/>
+            </g:SimplePanel>
+        </split:SplitPane>
+    </g:SimplePanel>
+</ui:UiBinder>

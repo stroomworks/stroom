@@ -18,6 +18,7 @@ package stroom.search.solr;
 
 import stroom.cache.api.CacheManager;
 import stroom.cache.api.LoadingStroomCache;
+import stroom.egress.api.EgressGuard;
 import stroom.search.solr.shared.SolrConnectionConfig;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -42,10 +43,13 @@ public class SolrIndexClientCacheImpl implements SolrIndexClientCache, Clearable
 
     private final LoadingStroomCache<SolrConnectionConfig, SolrClient> cache;
     private final IdentityHashMap<SolrClient, State> useMap = new IdentityHashMap<>();
+    private final EgressGuard egressGuard;
 
     @Inject
     SolrIndexClientCacheImpl(final CacheManager cacheManager,
-                             final Provider<SolrConfig> solrConfigProvider) {
+                             final Provider<SolrConfig> solrConfigProvider,
+                             final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
         cache = cacheManager.createLoadingCache(
                 CACHE_NAME,
                 () -> solrConfigProvider.get().getIndexClientCache(),
@@ -54,7 +58,7 @@ public class SolrIndexClientCacheImpl implements SolrIndexClientCache, Clearable
     }
 
     private SolrClient create(final SolrConnectionConfig solrConnectionConfig) {
-        return new SolrClientFactory().create(solrConnectionConfig);
+        return new SolrClientFactory(egressGuard).create(solrConnectionConfig);
     }
 
     private void destroy(final SolrConnectionConfig key, final SolrClient value) {

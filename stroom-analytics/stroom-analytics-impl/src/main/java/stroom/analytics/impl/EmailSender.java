@@ -21,6 +21,10 @@ import stroom.analytics.api.EmailService;
 import stroom.analytics.shared.EmailContent;
 import stroom.analytics.shared.NotificationEmailDestination;
 import stroom.analytics.shared.ReportDoc;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.util.date.DateUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -57,6 +61,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+@EgressSink(EgressKind.EMAIL)
 public class EmailSender implements EmailService {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(EmailSender.class);
@@ -67,12 +72,15 @@ public class EmailSender implements EmailService {
 
     private final Provider<AnalyticsConfig> analyticsConfigProvider;
     private final RuleEmailTemplatingService ruleEmailTemplatingService;
+    private final EgressGuard egressGuard;
 
     @Inject
     EmailSender(final Provider<AnalyticsConfig> analyticsConfigProvider,
-                final RuleEmailTemplatingService ruleEmailTemplatingService) {
+                final RuleEmailTemplatingService ruleEmailTemplatingService,
+                final EgressGuard egressGuard) {
         this.analyticsConfigProvider = analyticsConfigProvider;
         this.ruleEmailTemplatingService = ruleEmailTemplatingService;
+        this.egressGuard = egressGuard;
     }
 
     public void sendDetection(final NotificationEmailDestination emailDestination,
@@ -195,8 +203,25 @@ public class EmailSender implements EmailService {
         send(emailMessage, attachmentResources);
     }
 
+    // Each address in a comma or semicolon separated list is a destination in its own right.
+    private void requireEgress(final String recipients) {
+        if (NullSafe.isBlankString(recipients)) {
+            return;
+        }
+        for (final String address : recipients.split("[,;]")) {
+            if (!address.isBlank()) {
+                egressGuard.require(new EgressRequest(EgressKind.EMAIL, address.trim(), "EmailSender"));
+            }
+        }
+    }
+
     private void send(final EmailMessage emailMessage,
                       final List<AttachmentResource> attachmentResources) {
+        // Every email, from a detection, a report or the send-email function, passes through here.
+        requireEgress(emailMessage.to());
+        requireEgress(emailMessage.cc());
+        requireEgress(emailMessage.bcc());
+
         final AnalyticsConfig analyticsConfig = analyticsConfigProvider.get();
         final EmailConfig emailConfig = analyticsConfig.getEmailConfig();
         Preconditions.checkNotNull(emailConfig, "Missing 'email' section in config");

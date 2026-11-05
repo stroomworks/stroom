@@ -1,0 +1,8 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The mode and kill switch of each kind of destination -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel toolbarName="Egress mode actions" addStyleNames="default-min-sizes">
+        <dg:DataGrid ui:field="dataGrid" tableName="Egress modes"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

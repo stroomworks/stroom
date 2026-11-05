@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
 import stroom.shapeshifter.shared.RecordBoundary;
+import stroom.util.xml.saxon.SaxonConfinement;
 
 import net.sf.saxon.s9api.Processor;
 import net.sf.saxon.s9api.SaxonApiException;
@@ -43,6 +44,11 @@ import java.util.OptionalInt;
 public final class OutputRecords {
 
     private static final Processor PROCESSOR = new Processor(false);
+
+    static {
+        SaxonConfinement.confine(PROCESSOR.getUnderlyingConfiguration(), SaxonConfinement.refuseAll(), true);
+    }
+
 
     private final XdmNode root;
     private final List<XdmNode> records;

@@ -27,6 +27,7 @@ import stroom.cache.impl.CacheManagerImpl;
 import stroom.cache.impl.TemplateCacheImpl;
 import stroom.data.shared.StreamTypeNames;
 import stroom.data.store.api.SegmentOutputStream;
+import stroom.egress.api.EgressGuard;
 import stroom.meta.api.AttributeMap;
 import stroom.meta.shared.Meta;
 import stroom.util.logging.LambdaLogger;
@@ -38,6 +39,7 @@ import net.datafaker.Faker;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -71,7 +73,7 @@ public class TestS3 {
                 s3ClientConfig,
                 new S3ClientHelper(
                         s3ClientConfig,
-                        new S3ClientPoolImpl(new CacheManagerImpl())),
+                        new S3ClientPoolImpl(new CacheManagerImpl(), Mockito.mock(EgressGuard.class))),
                 new TemplateCacheImpl(new CacheManagerImpl()),
                 null);
 
@@ -132,7 +134,7 @@ public class TestS3 {
                 s3ClientConfig,
                 new S3ClientHelper(
                         s3ClientConfig,
-                        new S3ClientPoolImpl(new CacheManagerImpl())),
+                        new S3ClientPoolImpl(new CacheManagerImpl(), Mockito.mock(EgressGuard.class))),
                 new TemplateCacheImpl(new CacheManagerImpl()),
                 null);
 

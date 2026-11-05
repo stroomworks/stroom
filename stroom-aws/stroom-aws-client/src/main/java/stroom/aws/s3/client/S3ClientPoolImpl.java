@@ -22,6 +22,10 @@ import stroom.aws.s3.shared.AwsProxyConfig;
 import stroom.aws.s3.shared.S3ClientConfig;
 import stroom.cache.api.CacheManager;
 import stroom.cache.api.LoadingStroomCache;
+import stroom.egress.api.EgressGuard;
+import stroom.egress.api.EgressRequest;
+import stroom.egress.api.EgressSink;
+import stroom.egress.shared.EgressKind;
 import stroom.util.cache.CacheConfig;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -45,6 +49,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Singleton
+@EgressSink(EgressKind.OBJECT_STORE)
 public class S3ClientPoolImpl implements S3ClientPool {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(S3ClientPoolImpl.class);
@@ -57,8 +62,11 @@ public class S3ClientPoolImpl implements S3ClientPool {
     private final LoadingStroomCache<S3ClientConfig, PooledClientImpl<S3Client>> syncCache;
     private final LoadingStroomCache<S3ClientConfig, PooledClientImpl<S3AsyncClient>> asyncCache;
 
+    private final EgressGuard egressGuard;
+
     @Inject
-    public S3ClientPoolImpl(final CacheManager cacheManager) {
+    public S3ClientPoolImpl(final CacheManager cacheManager, final EgressGuard egressGuard) {
+        this.egressGuard = egressGuard;
 
         this.syncCache = cacheManager.createLoadingCache(
                 CACHE_NAME_SYNC,
@@ -93,6 +101,7 @@ public class S3ClientPoolImpl implements S3ClientPool {
 
     @Override
     public PooledClient<S3Client> getPooledS3Client(final S3ClientConfig config) {
+        requireEgress(config);
         final PooledClientImpl<S3Client> pooledClient = syncCache.get(config);
         pooledClient.borrow();
         return pooledClient;
@@ -100,9 +109,19 @@ public class S3ClientPoolImpl implements S3ClientPool {
 
     @Override
     public PooledClient<S3AsyncClient> getPooledS3AsyncClient(final S3ClientConfig config) {
+        requireEgress(config);
         final PooledClientImpl<S3AsyncClient> pooledClient = asyncCache.get(config);
         pooledClient.borrow();
         return pooledClient;
+    }
+
+    // Every S3 client, for the appender, the data store and receive, comes from this pool, so it is the one place the
+    // destination is checked. It is checked on every borrow, not only when the client is first created.
+    private void requireEgress(final S3ClientConfig config) {
+        final String endpoint = NullSafe.isNonBlankString(config.getEndpointOverride())
+                ? config.getEndpointOverride()
+                : "https://s3." + config.getRegion() + ".amazonaws.com";
+        egressGuard.require(new EgressRequest(EgressKind.OBJECT_STORE, endpoint, "S3ClientPool"));
     }
 
     private S3AsyncClient createAsyncClient(final S3ClientConfig s3ClientConfig) {

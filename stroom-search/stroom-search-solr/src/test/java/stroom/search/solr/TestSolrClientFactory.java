@@ -16,6 +16,7 @@
 
 package stroom.search.solr;
 
+import stroom.egress.api.EgressGuard;
 import stroom.search.solr.shared.SolrConnectionConfig;
 import stroom.search.solr.shared.SolrConnectionConfig.InstanceType;
 
@@ -76,7 +77,7 @@ class TestSolrClientFactory {
                 .zkHosts(ZK_HOSTS)
                 .build();
 
-        assertThatThrownBy(() -> new SolrClientFactory().create(config))
+        assertThatThrownBy(() -> new SolrClientFactory(Mockito.mock(EgressGuard.class)).create(config))
                 .isInstanceOf(SolrIndexException.class)
                 .hasMessage("No Solr URLs have been provided");
     }
@@ -95,7 +96,7 @@ class TestSolrClientFactory {
                             arguments.add(new ArrayList<>(context.arguments()));
                             Mockito.doReturn(Mockito.mock(CloudHttp2SolrClient.class)).when(mock).build();
                         })) {
-            new SolrClientFactory().create(config);
+            new SolrClientFactory(Mockito.mock(EgressGuard.class)).create(config);
             assertThat(cloudBuilders.constructed())
                     .hasSize(1);
         }

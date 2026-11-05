@@ -18,6 +18,7 @@ package stroom.kafka.impl;
 
 import stroom.docref.DocRef;
 import stroom.docstore.shared.DocRefUtil;
+import stroom.egress.api.EgressGuard;
 import stroom.kafka.api.KafkaProducerFactory;
 import stroom.kafka.api.SharedKafkaProducer;
 import stroom.kafka.shared.KafkaConfigDoc;
@@ -83,7 +84,7 @@ public class TestKafkaProducerFactoryImpl {
     public void getSupplier_empty() {
 
         final KafkaProducerFactory kafkaProducerFactory = new KafkaProducerFactoryImpl(
-                kafkaConfigDocCache, executorProvider);
+                kafkaConfigDocCache, executorProvider, Mockito.mock(EgressGuard.class));
 
         final KafkaConfigDoc kafkaConfigDoc = createKafkaConfigDoc("Config1", "v1");
 
@@ -103,7 +104,7 @@ public class TestKafkaProducerFactoryImpl {
     public void getSupplier_twoConfigs() {
 
         final KafkaProducerFactory kafkaProducerFactory = new KafkaProducerFactoryImpl(
-                kafkaConfigDocCache, executorProvider);
+                kafkaConfigDocCache, executorProvider, Mockito.mock(EgressGuard.class));
 
         final KafkaConfigDoc kafkaConfigDoc1 = createKafkaConfigDoc("Config1", "v1");
         final KafkaConfigDoc kafkaConfigDoc2 = createKafkaConfigDoc("Config2", "v1");
@@ -170,7 +171,7 @@ public class TestKafkaProducerFactoryImpl {
     public void getSupplier_updatedConfig() {
 
         final KafkaProducerFactory kafkaProducerFactory = new KafkaProducerFactoryImpl(
-                kafkaConfigDocCache, executorProvider);
+                kafkaConfigDocCache, executorProvider, Mockito.mock(EgressGuard.class));
 
         final KafkaConfigDoc kafkaConfigDoc1mk1 = createKafkaConfigDoc("Config1", "v1");
 
@@ -238,7 +239,7 @@ public class TestKafkaProducerFactoryImpl {
     void testHealthCheck() {
 
         final KafkaProducerFactoryImpl kafkaProducerFactory = new KafkaProducerFactoryImpl(
-                kafkaConfigDocCache, executorProvider);
+                kafkaConfigDocCache, executorProvider, Mockito.mock(EgressGuard.class));
 
         final KafkaConfigDoc kafkaConfigDoc1 = createKafkaConfigDoc("Config1", "v1");
         final KafkaConfigDoc kafkaConfigDoc2 = createKafkaConfigDoc("Config2", "v1");

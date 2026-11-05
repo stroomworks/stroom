@@ -18,6 +18,7 @@ package stroom.query.language.functions;
 
 import stroom.query.language.functions.ref.StoredValues;
 import stroom.util.xml.XMLReaderPool;
+import stroom.util.xml.saxon.SaxonConfinement;
 
 import net.sf.saxon.s9api.DocumentBuilder;
 import net.sf.saxon.s9api.Processor;
@@ -86,6 +87,12 @@ class XPath extends AbstractManyChildFunction {
     private static final int DELIMITER_ARG = 3;
 
     private static final Processor PROCESSOR = new Processor(false);
+
+    static {
+        // An extraction expression has no legitimate reason to read a file or a URL.
+        SaxonConfinement.confine(PROCESSOR.getUnderlyingConfiguration(), SaxonConfinement.refuseAll(), true);
+    }
+
     // Borrow a reader per document rather than creating one for every row. Saxon has its own parser pool but it
     // builds parsers with plain JAXP, i.e. without the hardening that SAXParserFactoryFactory applies.
     private static final XMLReaderPool READER_POOL = XMLReaderPool.getDefault();

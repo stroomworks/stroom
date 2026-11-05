@@ -1,0 +1,24 @@
+# Classes that depend on a Saxon evaluator type but do not call SaxonConfinement. Each needs a reason.
+# A class that creates a Saxon Processor, Configuration or TransformerFactory to evaluate a stylesheet or an
+# expression must call SaxonConfinement.confine(...), so it cannot reach files or URLs the policy has not allowed.
+# Format: fully.qualified.ClassName | reason
+stroom.importexport.impl.Config | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL
+stroom.pipeline.filter.SAXEventRecorder | TREE BUILDING: builds or reads a Saxon tree from events already in memory and evaluates no stylesheet
+stroom.pipeline.filter.TinyTreeBufferFilter | TREE BUILDING: builds or reads a Saxon tree from events already in memory and evaluates no stylesheet
+stroom.pipeline.filter.XsltFilter | USES A CONFINED CONFIGURATION: runs a stylesheet compiled by XsltPoolImpl, whose configuration is confined by SaxonConfinement
+stroom.pipeline.record.XMLRecordEmitter | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL
+stroom.pipeline.refdata.ReferenceDataServiceImpl | TREE BUILDING: builds or reads a Saxon tree from events already in memory and evaluates no stylesheet
+stroom.pipeline.refdata.store.RefDataValueConverter | TREE BUILDING: builds or reads a Saxon tree from events already in memory and evaluates no stylesheet
+stroom.pipeline.xml.event.EventListUtils | TREE BUILDING: builds or reads a Saxon tree from events already in memory and evaluates no stylesheet
+stroom.pipeline.xsltfunctions.AbstractLookup | EXTENSION FUNCTION: reads the configuration of the running stylesheet from its XPathContext and does not create one
+stroom.pipeline.xsltfunctions.HttpCall | EXTENSION FUNCTION: reads the configuration of the running stylesheet from its XPathContext and does not create one
+stroom.pipeline.xsltfunctions.JsonToXml | EXTENSION FUNCTION: reads the configuration of the running stylesheet from its XPathContext and does not create one
+stroom.pipeline.xsltfunctions.ParseUri | EXTENSION FUNCTION: reads the configuration of the running stylesheet from its XPathContext and does not create one
+stroom.pipeline.xsltfunctions.Source | EXTENSION FUNCTION: reads the configuration of the running stylesheet from its XPathContext and does not create one
+stroom.pipeline.xsltfunctions.StroomExtensionMetaFunctionCall | EXTENSION FUNCTION: reads the configuration of the running stylesheet from its XPathContext and does not create one
+stroom.pipeline.xsltfunctions.StroomXsltFunctionLibrary | USES A CONFINED CONFIGURATION: runs a stylesheet compiled by XsltPoolImpl, whose configuration is confined by SaxonConfinement
+stroom.shapeshifter.ai.extraction.JsonStep | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL
+stroom.shapeshifter.ai.extraction.RecordJoin | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL
+stroom.shapeshifter.ai.extraction.RecordSplit | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL
+stroom.util.xml.TransformerFactoryFactory | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL
+stroom.util.xml.XMLUtil | SERIALISER: an identity transformer that writes XML, with no stylesheet, so it has no route to a file or a URL

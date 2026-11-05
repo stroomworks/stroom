@@ -1709,8 +1709,8 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DocRefs"
-        description: docRefs
+              $ref: "#/components/schemas/ExportContentRequest"
+        description: request
         required: true
       responses:
         default:
@@ -2803,6 +2803,172 @@ paths:
       summary: Find the duplicate check data for the current analytic
       tags:
       - DuplicateCheck
+  /egress/v1/attempts:
+    get:
+      operationId: listEgressAttempts
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EgressAttemptDto"
+          description: default response
+      summary: Lists blocked and reported attempts
+      tags:
+      - Egress policy
+  /egress/v1/attempts/clear:
+    post:
+      operationId: clearEgressAttempts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EgressClearRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: integer
+                format: int32
+          description: default response
+      summary: Clears blocked and reported attempts
+      tags:
+      - Egress policy
+  /egress/v1/attempts/reveal:
+    post:
+      operationId: revealEgressAttempt
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: string
+          description: default response
+      summary: Reveals the destination of an attempt
+      tags:
+      - Egress policy
+  /egress/v1/rules:
+    get:
+      operationId: listEgressRules
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EgressRuleDto"
+          description: default response
+      summary: Lists the permitted destinations
+      tags:
+      - Egress policy
+  /egress/v1/rules/delete:
+    post:
+      operationId: deleteEgressRule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: integer
+              format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Deletes a permitted destination
+      tags:
+      - Egress policy
+  /egress/v1/rules/save:
+    post:
+      operationId: saveEgressRule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EgressRuleDto"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EgressRuleDto"
+          description: default response
+      summary: Adds or updates a permitted destination
+      tags:
+      - Egress policy
+  /egress/v1/settings:
+    get:
+      operationId: getEgressSettings
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EgressSettingsDto"
+          description: default response
+      summary: Gets the mode and kill switch of each kind
+      tags:
+      - Egress policy
+  /egress/v1/settings/save:
+    post:
+      operationId: saveEgressSettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EgressSettingsDto"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EgressSettingsDto"
+          description: default response
+      summary: Sets the mode and kill switch of each kind
+      tags:
+      - Egress policy
+  /egress/v1/test:
+    post:
+      operationId: testEgressDestination
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EgressTestRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EgressTestResponse"
+          description: default response
+      summary: Asks whether a destination would be allowed
+      tags:
+      - Egress policy
+  /elasticCluster/v1/getDefaultHttpClientConfig:
+    post:
+      operationId: getElasticClusterDefaultHttpClientConfig
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpClientConfig"
+          description: default response
+      summary: Get default HTTP client configuration
+      tags:
+      - Elastic Clusters
   /elasticCluster/v1/testCluster:
     post:
       operationId: testElasticCluster
@@ -5633,22 +5799,27 @@ paths:
         name: nonce
         schema:
           type: string
+          nullable: true
       - in: query
         name: state
         schema:
           type: string
+          nullable: true
       - in: query
         name: prompt
         schema:
           type: string
+          nullable: true
       - in: query
         name: code_challenge
         schema:
           type: string
+          nullable: true
       - in: query
         name: code_challenge_method
         schema:
           type: string
+          nullable: true
       responses:
         default:
           content:
@@ -6192,6 +6363,99 @@ paths:
       summary: Update a pipeline doc
       tags:
       - Pipelines
+  /pipelineFactory/v1/{uuid}:
+    get:
+      operationId: fetchPipelineFactory
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineFactoryDoc"
+          description: default response
+      summary: Fetch a Pipeline Factory by its UUID
+      tags:
+      - Pipeline Factories
+    put:
+      operationId: updatePipelineFactory
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineFactoryDoc"
+        description: doc
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineFactoryDoc"
+          description: default response
+      summary: Update a Pipeline Factory
+      tags:
+      - Pipeline Factories
+  /pipelineFactory/v1/{uuid}/combinations:
+    get:
+      operationId: fetchPipelineFactoryCombinations
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PipelineFactoryCombination"
+          description: default response
+      summary: The combinations a Pipeline Factory has met and what it made for each
+      tags:
+      - Pipeline Factories
+  /pipelineFactory/v1/{uuid}/forget:
+    post:
+      operationId: forgetPipelineFactoryCombination
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+        description: values
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: "Forget a combination, so that its next stream makes its pipeline afresh"
+      tags:
+      - Pipeline Factories
   /planB/v1/{uuid}:
     get:
       operationId: fetchStateStore
@@ -7319,6 +7583,7 @@ paths:
         name: nodeName
         schema:
           type: string
+          nullable: true
       responses:
         default:
           content:
@@ -7395,6 +7660,7 @@ paths:
         name: nodeName
         schema:
           type: string
+          nullable: true
       responses:
         default:
           content:
@@ -7424,6 +7690,7 @@ paths:
         name: nodeName
         schema:
           type: string
+          nullable: true
       responses:
         default:
           content:
@@ -7450,6 +7717,7 @@ paths:
         name: nodeName
         schema:
           type: string
+          nullable: true
       responses:
         default:
           content:
@@ -8119,6 +8387,525 @@ paths:
       summary: Get information for the current session
       tags:
       - Session Info
+  /shapeshifterAi/v1/templates:
+    get:
+      operationId: fetchShapeshifterAiTemplates
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuiltInTemplates"
+          description: default response
+      summary: The built-in text of the flow's templates and its version
+      tags:
+      - Shapeshifter AI
+  /shapeshifterAi/v1/{uuid}:
+    get:
+      operationId: fetchShapeshifterAi
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShapeshifterAiDoc"
+          description: default response
+      summary: Fetch a Shapeshifter AI document by its UUID
+      tags:
+      - Shapeshifter AI
+    put:
+      operationId: updateShapeshifterAi
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShapeshifterAiDoc"
+        description: doc
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShapeshifterAiDoc"
+          description: default response
+      summary: Update a Shapeshifter AI document
+      tags:
+      - Shapeshifter AI
+  /shapeshifterAiSupervisor/v1/backlog:
+    post:
+      operationId: findShapeshifterAiBacklog
+      parameters:
+      - in: query
+        name: docUuid
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageRequest"
+        description: page
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageBacklogStream"
+          description: default response
+      summary: "What is waiting on a session, a row per stream, the raised ones first"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/find:
+    post:
+      operationId: findShapeshifterAiAttempts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttemptCriteria"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageSupervisorAttempt"
+          description: default response
+      summary: Find attempts across every Shapeshifter AI document
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/guidance/{docUuid}:
+    get:
+      operationId: fetchShapeshifterAiGuidance
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorGuidance"
+          description: default response
+      summary: What a supervisor has told a learner
+      tags:
+      - Shapeshifter AI Supervisor
+    post:
+      operationId: addShapeshifterAiGuidance
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuidanceRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorGuidance"
+          description: default response
+      summary: "Tell a learner something, without asking for anything to be run"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/guidance/{docUuid}/{id}:
+    delete:
+      operationId: withdrawShapeshifterAiGuidance
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorGuidance"
+          description: default response
+      summary: "Take back something said to a learner, so that it stops being carried"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/learners:
+    post:
+      operationId: findShapeshifterAiLearners
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerCriteria"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageSupervisorLearner"
+          description: default response
+      summary: "The learning pipelines: each pipeline's Shapeshifter AI element that\
+        \ has learned or is learning, where it stands, what serves it and what waits\
+        \ on it"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/learners/{docUuid}/giveUp:
+    post:
+      operationId: giveUpShapeshifterAiLearner
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: "Give a learner up: it learns no more, and its streams nothing serves\
+        \ error"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/learners/{docUuid}/relearn:
+    post:
+      operationId: relearnShapeshifterAiLearner
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Send a learner back to learn afresh from its next stream
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/learners/{docUuid}/waiting:
+    post:
+      operationId: findShapeshifterAiLearnerWaiting
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageRequest"
+        description: page
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageBacklogStream"
+          description: default response
+      summary: "The streams waiting on one learner, oldest first"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/accept:
+    post:
+      operationId: acceptShapeshifterAiBinding
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: bindingUuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: "Accept a provisional binding now, rather than waiting for the records\
+        \ that would promote it"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/improve:
+    post:
+      operationId: improveShapeshifterAiBinding
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: bindingUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImproveRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImproveOutcome"
+          description: default response
+      summary: Ask for a binding that is already serving to be made better
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/retract:
+    post:
+      operationId: retractShapeshifterAiBinding
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: bindingUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: integer
+                format: int32
+          description: default response
+      summary: "Take back a binding that is serving, and say how many streams it produced\
+        \ output for"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}:
+    get:
+      operationId: fetchShapeshifterAiAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: Read one attempt with its turns
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}/approve:
+    post:
+      operationId: approveShapeshifterAiAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: Approve what an attempt drafted
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}/exhaust:
+    post:
+      operationId: exhaustShapeshifterAiAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Send a parked attempt to the exhaustion step, and carry it on"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}/grant:
+    post:
+      operationId: grantShapeshifterAiAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Give a parked attempt more to spend, and carry it on"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}/reject:
+    post:
+      operationId: rejectShapeshifterAiAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Reject what an attempt drafted, and give its learner up"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}/turns/{number}:
+    post:
+      operationId: amendShapeshifterAiTurn
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: path
+        name: number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmendTurnRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Answer a turn instead, or edit one and run the attempt again from\
+        \ there"
+      tags:
+      - Shapeshifter AI Supervisor
   /signingKey/v1/list:
     get:
       operationId: listSigningKeys
@@ -10344,6 +11131,7 @@ components:
           - ADMINISTRATOR
           - ANNOTATIONS
           - CREDENTIALS
+          - MANAGE_EGRESS_POLICY
           - MANAGE_CACHE_PERMISSION
           - VIEW_DATA_PERMISSION
           - VIEW_DATA_WITH_PIPELINE_PERMISSION
@@ -10871,6 +11659,11 @@ components:
             $ref: "#/components/schemas/AiChatMessage"
         workingMessage:
           $ref: "#/components/schemas/AiChatMessage"
+    AmendTurnRequest:
+      type: object
+      properties:
+        answer:
+          type: string
     AnalyticDataShard:
       type: object
       properties:
@@ -11219,6 +12012,7 @@ components:
               - ADMINISTRATOR
               - ANNOTATIONS
               - CREDENTIALS
+              - MANAGE_EGRESS_POLICY
               - MANAGE_CACHE_PERMISSION
               - VIEW_DATA_PERMISSION
               - VIEW_DATA_WITH_PIPELINE_PERMISSION
@@ -11267,6 +12061,7 @@ components:
             - ADMINISTRATOR
             - ANNOTATIONS
             - CREDENTIALS
+            - MANAGE_EGRESS_POLICY
             - MANAGE_CACHE_PERMISSION
             - VIEW_DATA_PERMISSION
             - VIEW_DATA_WITH_PIPELINE_PERMISSION
@@ -11305,6 +12100,7 @@ components:
             - ADMINISTRATOR
             - ANNOTATIONS
             - CREDENTIALS
+            - MANAGE_EGRESS_POLICY
             - MANAGE_CACHE_PERMISSION
             - VIEW_DATA_PERMISSION
             - VIEW_DATA_WITH_PIPELINE_PERMISSION
@@ -11348,6 +12144,7 @@ components:
             - ADMINISTRATOR
             - ANNOTATIONS
             - CREDENTIALS
+            - MANAGE_EGRESS_POLICY
             - MANAGE_CACHE_PERMISSION
             - VIEW_DATA_PERMISSION
             - VIEW_DATA_WITH_PIPELINE_PERMISSION
@@ -11514,6 +12311,46 @@ components:
           type: string
         sourceTaskId:
           $ref: "#/components/schemas/TaskId"
+    AttemptCriteria:
+      type: object
+      properties:
+        docUuid:
+          type: string
+        feed:
+          type: string
+        learner:
+          $ref: "#/components/schemas/LearnerRef"
+        pageRequest:
+          $ref: "#/components/schemas/PageRequest"
+        promotionMode:
+          type: string
+          enum:
+          - AUTOMATIC
+          - REVIEW
+        showDeletedPipelines:
+          type: boolean
+        sort:
+          type: string
+          writeOnly: true
+        sortList:
+          type: array
+          items:
+            $ref: "#/components/schemas/CriteriaFieldSort"
+        statuses:
+          type: array
+          items:
+            type: string
+            enum:
+            - In progress
+            - Awaiting model
+            - Awaiting review
+            - Parked
+            - Provisional
+            - Promoted
+            - Rejected
+            - Retracted
+            - Abandoned
+            - Error
     AuthFlowResponse:
       type: object
       properties:
@@ -11719,6 +12556,33 @@ components:
             type: string
           webIdentityTokenFile:
             type: string
+    BacklogStream:
+      type: object
+      properties:
+        doc:
+          $ref: "#/components/schemas/DocRef"
+        failedAgainst:
+          type: string
+        failingRecords:
+          type: integer
+          format: int32
+        feed:
+          type: string
+        firstDeferredMs:
+          type: integer
+          format: int64
+        inputId:
+          type: integer
+          format: int64
+        raised:
+          type: boolean
+        reason:
+          type: string
+        tries:
+          type: integer
+          format: int32
+        type:
+          type: string
     BatchScheduleRequest:
       type: object
       properties:
@@ -11756,6 +12620,16 @@ components:
         upTime:
           type: integer
           format: int64
+    BuiltInTemplates:
+      type: object
+      properties:
+        templates:
+          type: object
+          additionalProperties:
+            type: string
+        version:
+          type: integer
+          format: int32
     BulkActionResult:
       type: object
       properties:
@@ -11786,6 +12660,18 @@ components:
           $ref: "#/components/schemas/ExpressionOperator"
         userRef:
           $ref: "#/components/schemas/UserRef"
+    BusinessRulesParameters:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ScorerParameters"
+      - type: object
+        properties:
+          assertions:
+            type: array
+            items:
+              $ref: "#/components/schemas/XPathAssertion"
+          includeTransformMessages:
+            type: boolean
     CacheIdentity:
       type: object
       properties:
@@ -13338,14 +14224,6 @@ components:
           example: 9f6184b4-bd78-48bc-b0cd-6e51a357f6a6
       required:
       - uuid
-    DocRefs:
-      type: object
-      properties:
-        docRefs:
-          type: array
-          items:
-            $ref: "#/components/schemas/DocRef"
-          uniqueItems: true
     DocumentAsset:
       type: object
       properties:
@@ -13476,6 +14354,7 @@ components:
           - COLLAPSE_UP
           - CONTENT_STORE
           - COPY
+          - CUT
           - DATABASE
           - DELETE
           - DEPENDENCIES
@@ -13501,6 +14380,7 @@ components:
           - DOCUMENT_OPEN_AI
           - DOCUMENT_PATHWAYS
           - DOCUMENT_PIPELINE
+          - DOCUMENT_PIPELINE_FACTORY
           - DOCUMENT_PLAN_B
           - DOCUMENT_QUERY
           - DOCUMENT_RECEIVE_DATA_RULE_SET
@@ -13591,6 +14471,7 @@ components:
           - OPEN
           - OPERATOR
           - PASSWORD
+          - PASTE
           - PATHWAYS_CHOICE
           - PATHWAYS_NODE
           - PATHWAYS_SEQUENCE
@@ -13624,6 +14505,7 @@ components:
           - PROPERTIES
           - QUESTION
           - RAW
+          - REDO
           - REFRESH
           - REGEX
           - REMOVE
@@ -13634,6 +14516,7 @@ components:
           - SAVEAS
           - SEARCH
           - SELECTION
+          - SELECT_ALL
           - SETTINGS
           - SHARD_CLOSE
           - SHARD_FLUSH
@@ -13894,6 +14777,116 @@ components:
           $ref: "#/components/schemas/SimpleDuration"
         enabled:
           type: boolean
+    EgressAttemptDto:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int64
+        destination:
+          type: string
+        feed:
+          type: string
+        firstSeenMs:
+          type: integer
+          format: int64
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - HTTP
+          - EMAIL
+          - AI_MODEL
+          - FILE
+          - OBJECT_STORE
+          - MESSAGE_BUS
+          - SEARCH_BACKEND
+        lastSeenMs:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+        pipeline:
+          type: string
+        reason:
+          type: string
+        sink:
+          type: string
+    EgressClearRequest:
+      type: object
+      properties:
+        beforeMs:
+          type: integer
+          format: int64
+    EgressRuleDto:
+      type: object
+      properties:
+        comment:
+          type: string
+        destination:
+          type: string
+        enabled:
+          type: boolean
+        id:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum:
+          - HTTP
+          - EMAIL
+          - AI_MODEL
+          - FILE
+          - OBJECT_STORE
+          - MESSAGE_BUS
+          - SEARCH_BACKEND
+        match:
+          type: string
+          enum:
+          - EXACT
+          - PREFIX
+    EgressSettingsDto:
+      type: object
+      properties:
+        killSwitches:
+          type: object
+          additionalProperties:
+            type: boolean
+        modes:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - REPORT_ONLY
+            - ENFORCE
+    EgressTestRequest:
+      type: object
+      properties:
+        destination:
+          type: string
+        kind:
+          type: string
+          enum:
+          - HTTP
+          - EMAIL
+          - AI_MODEL
+          - FILE
+          - OBJECT_STORE
+          - MESSAGE_BUS
+          - SEARCH_BACKEND
+    EgressTestResponse:
+      type: object
+      properties:
+        normalised:
+          type: string
+        outcome:
+          type: string
+        reason:
+          type: string
+        ruleId:
+          type: integer
+          format: int64
     ElasticClusterDoc:
       type: object
       properties:
@@ -13929,24 +14922,14 @@ components:
     ElasticConnectionConfig:
       type: object
       properties:
-        apiKeyId:
+        apiKeyName:
           type: string
-        apiKeySecret:
-          type: string
-        caCertificate:
-          type: string
-        connectionTimeoutMillis:
-          type: integer
-          format: int32
         connectionUrls:
           type: array
           items:
             type: string
-        responseTimeoutMillis:
-          type: integer
-          format: int32
-        useAuthentication:
-          type: boolean
+        httpClientConfiguration:
+          $ref: "#/components/schemas/HttpClientConfig"
     ElasticIndexDoc:
       type: object
       properties:
@@ -14062,6 +15045,15 @@ components:
           type: string
         name:
           type: string
+    ElementStepDetails:
+      type: object
+      discriminator:
+        propertyName: type
+      properties:
+        type:
+          type: string
+      required:
+      - type
     EmbeddedQueryComponentSettings:
       type: object
       allOf:
@@ -14169,6 +15161,19 @@ components:
           type: string
       required:
       - type
+    ErrorLoadParameters:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ScorerParameters"
+      - type: object
+        properties:
+          minimumSeverity:
+            type: string
+            enum:
+            - INFO
+            - WARN
+            - ERROR
+            - FATAL
     ErrorMessage:
       type: object
       properties:
@@ -14183,6 +15188,16 @@ components:
           - WARN
           - ERROR
           - FATAL
+    EventClassificationParameters:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ScorerParameters"
+      - type: object
+        properties:
+          recognisedTypes:
+            type: array
+            items:
+              type: string
     EventCoprocessorSettings:
       type: object
       allOf:
@@ -14516,6 +15531,19 @@ components:
           items:
             type: string
           uniqueItems: true
+    ExportContentRequest:
+      type: object
+      properties:
+        docRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocRef"
+          uniqueItems: true
+        includedTypes:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
     ExpressionCriteria:
       type: object
       properties:
@@ -14649,6 +15677,18 @@ components:
           - REJECT_ALL
         uiConfig:
           $ref: "#/components/schemas/UiConfig"
+    ExtractionQualityParameters:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ScorerParameters"
+      - type: object
+        properties:
+          allowUnknownEventDetail:
+            type: boolean
+          requiredFields:
+            type: array
+            items:
+              type: string
     FeedDependencies:
       type: object
       properties:
@@ -14876,6 +15916,8 @@ components:
           items:
             $ref: "#/components/schemas/ExplorerNodeKey"
           uniqueItems: true
+        refresh:
+          type: boolean
         showAlerts:
           type: boolean
         temporaryOpenedItems:
@@ -15717,6 +16759,60 @@ components:
         f:
           type: number
           format: double
+    FlowStep:
+      type: object
+      properties:
+        candidates:
+          type: integer
+          format: int32
+        checks:
+          type: array
+          items:
+            type: string
+            enum:
+            - COVERAGE
+            - YIELD
+            - WHOLENESS
+            - CONFORMANCE
+            - QUALITY
+            - RULES
+            - ERRORS
+            - CLASSIFICATION
+            - PRESERVATION
+            - FIDELITY
+        elements:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - CHAIN
+          - SPLIT
+          - TARGET
+          - CONFIGURE
+          - ADMIT
+        kinds:
+          type: integer
+          format: int32
+        role:
+          type: string
+          enum:
+          - PARSER
+          - TRANSFORM
+        transitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transition"
+        when:
+          type: string
+          enum:
+          - ALWAYS
+          - TEXT
+          - XML
+          - JSON
     Format:
       type: object
       description: Describes the formatting that will be applied to values in a field
@@ -16129,6 +17225,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CriteriaFieldSort"
+    GrantRequest:
+      type: object
+      properties:
+        ms:
+          type: integer
+          format: int64
+        tokens:
+          type: integer
+          format: int64
     GroupSelection:
       type: object
       description: Contains a set of group keys of parent rows we want to show (or
@@ -16147,6 +17252,13 @@ components:
           items:
             type: string
           uniqueItems: true
+    GuidanceRequest:
+      type: object
+      properties:
+        learner:
+          $ref: "#/components/schemas/LearnerRef"
+        message:
+          type: string
     HashedApiKey:
       type: object
       properties:
@@ -16474,6 +17586,16 @@ components:
           type: array
           items:
             type: string
+    ImproveOutcome:
+      type: object
+      properties:
+        said:
+          type: string
+    ImproveRequest:
+      type: object
+      properties:
+        message:
+          type: string
     IncludeExcludeFilter:
       type: object
       description: A pair of regular expression filters (inclusion and exclusion)
@@ -16950,6 +18072,60 @@ components:
           type: boolean
         fitWidth:
           type: boolean
+    LearnerCriteria:
+      type: object
+      properties:
+        docUuid:
+          type: string
+        pageRequest:
+          $ref: "#/components/schemas/PageRequest"
+        showDeletedPipelines:
+          type: boolean
+        sort:
+          type: string
+          writeOnly: true
+        sortList:
+          type: array
+          items:
+            $ref: "#/components/schemas/CriteriaFieldSort"
+        states:
+          type: array
+          items:
+            type: string
+            enum:
+            - Given up
+            - Learning off
+            - Waiting for a person
+            - Learning
+            - Serving
+    LearnerRef:
+      type: object
+      properties:
+        elementId:
+          type: string
+        pipelineUuid:
+          type: string
+    LearnerRequest:
+      type: object
+      properties:
+        learner:
+          $ref: "#/components/schemas/LearnerRef"
+        reason:
+          type: string
+    LearningFlow:
+      type: object
+      properties:
+        builtInVersion:
+          type: integer
+          format: int32
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowStep"
+        templates:
+          type: object
+          additionalProperties:
+            type: string
     LifespanInfo:
       type: object
       properties:
@@ -17424,6 +18600,27 @@ components:
         properties:
           value:
             $ref: "#/components/schemas/NanoTime"
+    NestedElementData:
+      type: object
+      properties:
+        formatInput:
+          type: boolean
+        formatOutput:
+          type: boolean
+        id:
+          type: string
+        input:
+          type: string
+        name:
+          type: string
+        output:
+          type: string
+        truncated:
+          type: boolean
+        type:
+          type: string
+        wholeStream:
+          type: boolean
     Node:
       type: object
       properties:
@@ -18005,6 +19202,7 @@ components:
           - COLLAPSE_UP
           - CONTENT_STORE
           - COPY
+          - CUT
           - DATABASE
           - DELETE
           - DEPENDENCIES
@@ -18030,6 +19228,7 @@ components:
           - DOCUMENT_OPEN_AI
           - DOCUMENT_PATHWAYS
           - DOCUMENT_PIPELINE
+          - DOCUMENT_PIPELINE_FACTORY
           - DOCUMENT_PLAN_B
           - DOCUMENT_QUERY
           - DOCUMENT_RECEIVE_DATA_RULE_SET
@@ -18120,6 +19319,7 @@ components:
           - OPEN
           - OPERATOR
           - PASSWORD
+          - PASTE
           - PATHWAYS_CHOICE
           - PATHWAYS_NODE
           - PATHWAYS_SEQUENCE
@@ -18153,6 +19353,7 @@ components:
           - PROPERTIES
           - QUESTION
           - RAW
+          - REDO
           - REFRESH
           - REGEX
           - REMOVE
@@ -18163,6 +19364,7 @@ components:
           - SAVEAS
           - SEARCH
           - SELECTION
+          - SELECT_ALL
           - SETTINGS
           - SHARD_CLOSE
           - SHARD_FLUSH
@@ -18214,6 +19416,111 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PipelineElement"
+    PipelineFactoryCombination:
+      type: object
+      properties:
+        createTimeMs:
+          type: integer
+          format: int64
+        filterUuid:
+          type: string
+        message:
+          type: string
+        pipeline:
+          $ref: "#/components/schemas/DocRef"
+        pipelineExists:
+          type: boolean
+        state:
+          type: string
+        tries:
+          type: integer
+          format: int32
+        updateTimeMs:
+          type: integer
+          format: int64
+        values:
+          type: object
+          additionalProperties:
+            type: string
+    PipelineFactoryDoc:
+      type: object
+      properties:
+        createTimeMs:
+          type: integer
+          format: int64
+        createUser:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        filterSettings:
+          $ref: "#/components/schemas/PipelineFactoryFilterSettings"
+        folderPattern:
+          type: string
+        key:
+          type: array
+          items:
+            type: string
+        name:
+          type: string
+        namePattern:
+          type: string
+        properties:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineFactoryProperty"
+        runAsUser:
+          $ref: "#/components/schemas/UserRef"
+        streamFilter:
+          $ref: "#/components/schemas/ExpressionOperator"
+        template:
+          $ref: "#/components/schemas/DocRef"
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+        updateUser:
+          type: string
+        uuid:
+          type: string
+        version:
+          type: string
+    PipelineFactoryFilterSettings:
+      type: object
+      properties:
+        autoPriority:
+          type: boolean
+        enabled:
+          type: boolean
+        export:
+          type: boolean
+        maxMetaCreateTimeMs:
+          type: integer
+          format: int64
+        maxProcessingTasks:
+          type: integer
+          format: int32
+        maxTaskCreationDelay:
+          $ref: "#/components/schemas/SimpleDuration"
+        minMetaCreateTimeMs:
+          type: integer
+          format: int64
+        priority:
+          type: integer
+          format: int32
+        profileName:
+          type: string
+    PipelineFactoryProperty:
+      type: object
+      properties:
+        elementId:
+          type: string
+        name:
+          type: string
+        value:
+          type: string
     PipelineLayer:
       type: object
       properties:
@@ -18756,6 +20063,7 @@ components:
           - QUEUED
           - ASSIGNED
           - PROCESSING
+          - DEFERRED
           - COMPLETE
           - FAILED
           - DELETED
@@ -18794,6 +20102,7 @@ components:
           - QUEUED
           - ASSIGNED
           - PROCESSING
+          - DEFERRED
           - COMPLETE
           - FAILED
           - DELETED
@@ -19030,6 +20339,7 @@ components:
             \ with', 'ends with (CS)'"
           - "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'"
           - "'=', '!=', 'in', 'in dictionary', 'matches regex'"
+          - "'=', '!='"
           - "'=', '!=', 'in', 'in dictionary'"
           - "'=', '!=', 'in', 'in dictionary'"
           - "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'"
@@ -19530,6 +20840,11 @@ components:
         properties:
           value:
             type: string
+    RejectRequest:
+      type: object
+      properties:
+        reason:
+          type: string
     RemoveAllDocumentUserCreatePermissions:
       type: object
       allOf:
@@ -19828,6 +21143,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AppUserPermissions"
+    ResultPageBacklogStream:
+      type: object
+      description: A page of results.
+      properties:
+        filterError:
+          $ref: "#/components/schemas/TokenError"
+        pageResponse:
+          $ref: "#/components/schemas/PageResponse"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/BacklogStream"
     ResultPageCompletionItem:
       type: object
       description: A page of results.
@@ -20200,6 +21527,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StoredQuery"
+    ResultPageSupervisorAttempt:
+      type: object
+      description: A page of results.
+      properties:
+        filterError:
+          $ref: "#/components/schemas/TokenError"
+        pageResponse:
+          $ref: "#/components/schemas/PageResponse"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupervisorAttempt"
+    ResultPageSupervisorLearner:
+      type: object
+      description: A page of results.
+      properties:
+        filterError:
+          $ref: "#/components/schemas/TokenError"
+        pageResponse:
+          $ref: "#/components/schemas/PageResponse"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupervisorLearner"
     ResultPageTemporalEntry:
       type: object
       description: A page of results.
@@ -20572,6 +21923,47 @@ components:
           format: int64
         schedule:
           $ref: "#/components/schemas/Schedule"
+    SchemaConformanceParameters:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ScorerParameters"
+      - type: object
+        properties:
+          schemaGroup:
+            type: string
+    ScorerParameters:
+      type: object
+      discriminator:
+        propertyName: type
+      properties:
+        type:
+          type: string
+      required:
+      - type
+    ScorerSetting:
+      type: object
+      properties:
+        gate:
+          type: boolean
+        parameters:
+          $ref: "#/components/schemas/ScorerParameters"
+        threshold:
+          type: number
+          format: double
+        type:
+          type: string
+          enum:
+          - COMPILE
+          - INPUT_COVERAGE
+          - YIELD
+          - SCHEMA_CONFORMANCE
+          - EXTRACTION_QUALITY
+          - BUSINESS_RULES
+          - ERROR_LOAD
+          - EVENT_CLASSIFICATION
+        weight:
+          type: number
+          format: double
     ScriptDoc:
       type: object
       properties:
@@ -21023,9 +22415,128 @@ components:
         properties:
           tag:
             $ref: "#/components/schemas/AnnotationTag"
+    ShapeshifterAiDoc:
+      type: object
+      properties:
+        attemptBudgetMs:
+          type: integer
+          format: int64
+        createTimeMs:
+          type: integer
+          format: int64
+        createUser:
+          type: string
+        description:
+          type: string
+        flow:
+          $ref: "#/components/schemas/LearningFlow"
+        heldOutFraction:
+          type: number
+          format: double
+        instructions:
+          type: string
+        learningMode:
+          type: string
+          enum:
+          - AUTOMATIC
+          - DISABLED
+        maxAttempts:
+          type: integer
+          format: int32
+        maxDeferralAgeMs:
+          type: integer
+          format: int64
+        minRecordsToLearn:
+          type: integer
+          format: int32
+        model:
+          $ref: "#/components/schemas/DocRef"
+        name:
+          type: string
+        promotionFloor:
+          type: number
+          format: double
+        promotionMode:
+          type: string
+          enum:
+          - AUTOMATIC
+          - REVIEW
+        regressionCap:
+          type: integer
+          format: int32
+        regressionRetentionDays:
+          type: integer
+          format: int32
+        relearnThreshold:
+          type: number
+          format: double
+        sampleSizeLimit:
+          type: integer
+          format: int32
+        scorers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScorerSetting"
+        tokenBudget:
+          type: integer
+          format: int64
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+        updateUser:
+          type: string
+        uuid:
+          type: string
+        version:
+          type: string
+    ShapeshifterAiStepDetails:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ElementStepDetails"
+      - type: object
+        properties:
+          bindingUuid:
+            type: string
+          decision:
+            type: string
+          document:
+            $ref: "#/components/schemas/DocRef"
+          dryRun:
+            type: boolean
+          fragment:
+            $ref: "#/components/schemas/DocRef"
+          nested:
+            type: array
+            items:
+              $ref: "#/components/schemas/NestedElementData"
+          provisional:
+            type: boolean
+          reason:
+            type: string
+          recordBoundary:
+            type: string
+          score:
+            type: number
+            format: double
+          stream:
+            type: object
+            additionalProperties:
+              type: string
+          transcript:
+            type: array
+            items:
+              $ref: "#/components/schemas/SupervisorTurn"
+          verdicts:
+            type: array
+            items:
+              $ref: "#/components/schemas/StageVerdict"
     SharedElementData:
       type: object
       properties:
+        details:
+          $ref: "#/components/schemas/ElementStepDetails"
         formatInput:
           type: boolean
         formatOutput:
@@ -21123,6 +22634,7 @@ components:
             - ADMINISTRATOR
             - ANNOTATIONS
             - CREDENTIALS
+            - MANAGE_EGRESS_POLICY
             - MANAGE_CACHE_PERMISSION
             - VIEW_DATA_PERMISSION
             - VIEW_DATA_WITH_PIPELINE_PERMISSION
@@ -21617,6 +23129,45 @@ components:
             type: string
           verifyHosts:
             type: boolean
+    StageScore:
+      type: object
+      properties:
+        gate:
+          type: boolean
+        met:
+          type: boolean
+        scorer:
+          type: string
+          enum:
+          - COMPILE
+          - INPUT_COVERAGE
+          - YIELD
+          - SCHEMA_CONFORMANCE
+          - EXTRACTION_QUALITY
+          - BUSINESS_RULES
+          - ERROR_LOAD
+          - EVENT_CLASSIFICATION
+        threshold:
+          type: number
+          format: double
+        value:
+          type: number
+          format: double
+    StageVerdict:
+      type: object
+      properties:
+        passed:
+          type: boolean
+        scores:
+          type: array
+          items:
+            $ref: "#/components/schemas/StageScore"
+        step:
+          type: integer
+          format: int32
+        weightedTotal:
+          type: number
+          format: double
     State:
       type: object
       allOf:
@@ -22006,6 +23557,182 @@ components:
           total:
             type: integer
             format: int32
+    SupervisorAttempt:
+      type: object
+      properties:
+        bindingUuid:
+          type: string
+        createTimeMs:
+          type: integer
+          format: int64
+        decision:
+          type: string
+        doc:
+          $ref: "#/components/schemas/DocRef"
+        exhaustNext:
+          type: boolean
+        feed:
+          type: string
+        grantedMs:
+          type: integer
+          format: int64
+        grantedTokens:
+          type: integer
+          format: int64
+        id:
+          type: integer
+          format: int64
+        inputId:
+          type: integer
+          format: int64
+        learner:
+          $ref: "#/components/schemas/LearnerRef"
+        node:
+          type: string
+        pipelineDeleted:
+          type: boolean
+        promotionMode:
+          type: string
+          enum:
+          - AUTOMATIC
+          - REVIEW
+        score:
+          type: number
+          format: double
+        status:
+          type: string
+          enum:
+          - In progress
+          - Awaiting model
+          - Awaiting review
+          - Parked
+          - Provisional
+          - Promoted
+          - Rejected
+          - Retracted
+          - Abandoned
+          - Error
+        tokensSpent:
+          type: integer
+          format: int64
+        turns:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupervisorTurn"
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+    SupervisorGuidance:
+      type: object
+      properties:
+        author:
+          type: string
+        id:
+          type: integer
+          format: int64
+        message:
+          type: string
+        timeMs:
+          type: integer
+          format: int64
+    SupervisorLearner:
+      type: object
+      properties:
+        belowThreshold:
+          type: boolean
+        bindingUuid:
+          type: string
+        doc:
+          $ref: "#/components/schemas/DocRef"
+        fragment:
+          $ref: "#/components/schemas/DocRef"
+        givenUpReason:
+          type: string
+        guidance:
+          type: integer
+          format: int32
+        lastSessionMs:
+          type: integer
+          format: int64
+        learner:
+          $ref: "#/components/schemas/LearnerRef"
+        oldestWaitMs:
+          type: integer
+          format: int64
+        pipeline:
+          $ref: "#/components/schemas/DocRef"
+        pipelineDeleted:
+          type: boolean
+        promotedScore:
+          type: number
+          format: double
+        provisional:
+          type: boolean
+        raised:
+          type: boolean
+        records:
+          type: integer
+          format: int32
+        rollingScore:
+          type: number
+          format: double
+        state:
+          type: string
+          enum:
+          - Given up
+          - Learning off
+          - Waiting for a person
+          - Learning
+          - Serving
+        waiting:
+          type: integer
+          format: int32
+    SupervisorTurn:
+      type: object
+      properties:
+        answer:
+          type: string
+        answeredBy:
+          type: string
+        candidate:
+          type: integer
+          format: int32
+        kind:
+          type: string
+          enum:
+          - CHAIN
+          - SPLIT
+          - TARGET
+          - CONFIGURE
+          - ADMIT
+        number:
+          type: integer
+          format: int32
+        outcome:
+          type: string
+          enum:
+          - PASSED
+          - REFUSED
+          - COMPILE_FAILED
+          - RUN_FAILED
+          - COVERAGE_SHORT
+          - YIELD_SHORT
+          - WHOLENESS_SHORT
+          - CONFORMANCE_SHORT
+          - QUALITY_SHORT
+          - RULES_SHORT
+          - ERRORS_SHORT
+          - CLASSIFICATION_SHORT
+          - PRESERVATION_SHORT
+          - FIDELITY_SHORT
+        question:
+          type: string
+        score:
+          $ref: "#/components/schemas/TurnScore"
+        stepId:
+          type: string
     SystemInfoResult:
       type: object
       properties:
@@ -22935,6 +24662,48 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TraceRoot"
+    Transition:
+      type: object
+      properties:
+        goTo:
+          type: string
+        "on":
+          type: string
+          enum:
+          - PASSED
+          - REFUSED
+          - COMPILE_FAILED
+          - RUN_FAILED
+          - COVERAGE_SHORT
+          - YIELD_SHORT
+          - WHOLENESS_SHORT
+          - CONFORMANCE_SHORT
+          - QUALITY_SHORT
+          - RULES_SHORT
+          - ERRORS_SHORT
+          - CLASSIFICATION_SHORT
+          - PRESERVATION_SHORT
+          - FIDELITY_SHORT
+    TurnScore:
+      type: object
+      properties:
+        score:
+          type: number
+          format: double
+        scorer:
+          type: string
+          enum:
+          - COMPILE
+          - INPUT_COVERAGE
+          - YIELD
+          - SCHEMA_CONFORMANCE
+          - EXTRACTION_QUALITY
+          - BUSINESS_RULES
+          - ERROR_LOAD
+          - EVENT_CLASSIFICATION
+        threshold:
+          type: number
+          format: double
     TypeStyle:
       type: object
       properties:
@@ -23002,9 +24771,6 @@ components:
           type: string
         nodeMonitoring:
           $ref: "#/components/schemas/NodeMonitoringConfig"
-        oncontextmenu:
-          type: string
-          pattern: ^return (true|false);$
         process:
           $ref: "#/components/schemas/ProcessConfig"
         query:
@@ -23246,10 +25012,17 @@ components:
             type: array
             items:
               type: string
+        textContextMenu:
+          type: string
+          enum:
+          - STROOM
+          - BROWSER
         theme:
           type: string
         timeZone:
           $ref: "#/components/schemas/UserTimeZone"
+        visualisationPalette:
+          type: string
     UserRef:
       type: object
       properties:
@@ -23625,6 +25398,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Word"
+    XPathAssertion:
+      type: object
+      properties:
+        name:
+          type: string
+        xpath:
+          type: string
     XPathFilter:
       type: object
       properties:
@@ -23720,6 +25500,21 @@ components:
           type: string
         version:
           type: string
+    YieldParameters:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ScorerParameters"
+      - type: object
+        properties:
+          basis:
+            type: string
+            enum:
+            - RECORDS
+            - LINES
+            - BYTES
+          expectedRatio:
+            type: number
+            format: double
   securitySchemes:
     ApiKeyAuth:
       in: header
