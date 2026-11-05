@@ -47,9 +47,17 @@ public class QueryTableColumnValuesDataSupplier extends ColumnValuesDataSupplier
     private final QuerySearchRequest searchRequest;
 
 
+    /// @param restFactory                Fetches the values.
+    /// @param searchModel                The search whose results the column is in.
+    /// @param componentId                The ID of the results in the search model, e.g.
+    ///                                   [QueryModel#TABLE_COMPONENT_ID], or a dashboard pane's ID
+    ///                                   for a pane given its own copy of the query's table.
+    /// @param column                     The column.
+    /// @param conditionalFormattingRules The table's conditional formatting rules.
     public QueryTableColumnValuesDataSupplier(
             final RestFactory restFactory,
             final QueryModel searchModel,
+            final String componentId,
             final stroom.query.api.Column column,
             final List<ConditionalFormattingRule> conditionalFormattingRules) {
         super(column.copy().build(), conditionalFormattingRules);
@@ -58,7 +66,8 @@ public class QueryTableColumnValuesDataSupplier extends ColumnValuesDataSupplier
 
         QuerySearchRequest querySearchRequest = null;
         final QueryKey queryKey = searchModel.getCurrentQueryKey();
-        final QuerySearchRequest currentSearch = searchModel.getCurrentSearch();
+        // Only those results, as the request would otherwise list the values of every copy of the table
+        final QuerySearchRequest currentSearch = searchModel.getCurrentSearch(componentId);
         if (queryKey != null && currentSearch != null) {
             querySearchRequest = currentSearch
                     .copy()

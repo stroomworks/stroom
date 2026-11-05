@@ -1,0 +1,15 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A dashboard's StroomQL Table pane (stroomql-table-pane.css): the results of a StroomQL Query
+     pane's query, as a table, or, while it has no query, a message saying to choose one -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:r="urn:import:stroom.query.client.result.component"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="max">
+        <tx:Label ui:field="noQuery" styleName="stroomql-table-pane__no-query"
+                  text="Choose the StroomQL Query whose results this table shows in its settings."/>
+        <g:SimplePanel ui:field="results" styleName="max" visible="false">
+            <r:ResultTable ui:field="table"/>
+        </g:SimplePanel>
+    </g:FlowPanel>
+</ui:UiBinder>

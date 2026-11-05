@@ -37,6 +37,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
         @JsonSubTypes.Type(value = TextInputComponentSettings.class, name = "text-input"),
         @JsonSubTypes.Type(value = EmbeddedQueryComponentSettings.class, name = "embedded-query"),
         @JsonSubTypes.Type(value = TableFilterComponentSettings.class, name = "table-filter"),
+        @JsonSubTypes.Type(value = StroomQLQueryComponentSettings.class, name = "stroomql-query"),
+        @JsonSubTypes.Type(value = StroomQLTableComponentSettings.class, name = "stroomql-table"),
 })
 @JsonInclude(Include.NON_NULL)
 @Schema(
@@ -50,7 +52,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
                 @DiscriminatorMapping(value = "list-input", schema = ListInputComponentSettings.class),
                 @DiscriminatorMapping(value = "text-input", schema = TextInputComponentSettings.class),
                 @DiscriminatorMapping(value = "embedded-query", schema = EmbeddedQueryComponentSettings.class),
-                @DiscriminatorMapping(value = "table-filter", schema = TableFilterComponentSettings.class)})
+                @DiscriminatorMapping(value = "table-filter", schema = TableFilterComponentSettings.class),
+                @DiscriminatorMapping(value = "stroomql-query", schema = StroomQLQueryComponentSettings.class),
+                @DiscriminatorMapping(value = "stroomql-table", schema = StroomQLTableComponentSettings.class)})
 public sealed interface ComponentSettings permits
         QueryComponentSettings,
         TableComponentSettings,
@@ -60,7 +64,9 @@ public sealed interface ComponentSettings permits
         ListInputComponentSettings,
         TextInputComponentSettings,
         EmbeddedQueryComponentSettings,
-        TableFilterComponentSettings {
+        TableFilterComponentSettings,
+        StroomQLQueryComponentSettings,
+        StroomQLTableComponentSettings {
 
     AbstractBuilder<?, ?> copy();
 

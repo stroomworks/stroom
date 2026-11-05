@@ -21,6 +21,8 @@ import stroom.gwt.workbench.client.app.dashboard.DashboardKeyboardStories;
 import stroom.gwt.workbench.client.app.dashboard.DashboardLayoutStories;
 import stroom.gwt.workbench.client.app.dashboard.DashboardPaneStories;
 import stroom.gwt.workbench.client.app.dashboard.DashboardSearchStories;
+import stroom.gwt.workbench.client.app.dashboard.StroomQLQueryPaneStories;
+import stroom.gwt.workbench.client.app.dashboard.StroomQLTablePaneStories;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
 
 /// The `App/Editors/DashboardEditor` stories: Stroom's real dashboard editor
@@ -47,5 +49,7 @@ public final class DashboardEditorStories {
         DashboardKeyboardStories.addTo(registry);
         DashboardSearchStories.addTo(registry);
         DashboardPaneStories.addTo(registry);
+        StroomQLQueryPaneStories.addTo(registry);
+        StroomQLTablePaneStories.addTo(registry);
     }
 }

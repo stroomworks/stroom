@@ -21,6 +21,7 @@ import stroom.dashboard.shared.ComponentSettings;
 import stroom.dashboard.shared.DashboardConfig;
 import stroom.dashboard.shared.DashboardDoc;
 import stroom.dashboard.shared.QueryComponentSettings;
+import stroom.dashboard.shared.StroomQLQueryComponentSettings;
 import stroom.dashboard.shared.TableComponentSettings;
 import stroom.dashboard.shared.TextComponentSettings;
 import stroom.dashboard.shared.VisComponentSettings;
@@ -29,6 +30,7 @@ import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.DependencyRemapper;
 import stroom.docstore.api.StoreFactory;
+import stroom.query.common.v2.QueryDataSourceRemapper;
 import stroom.security.api.SecurityContext;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Version;
@@ -56,13 +58,15 @@ class DashboardStoreImpl
     private static final String TEMPLATE_FILE = "DashboardTemplate.json";
 
     private final DashboardSerialiser serialiser;
+    private final QueryDataSourceRemapper queryDataSourceRemapper;
 
     private DashboardConfig template;
 
     @Inject
     DashboardStoreImpl(final StoreFactory storeFactory,
                        final SecurityContext securityContext,
-                       final DashboardSerialiser serialiser) {
+                       final DashboardSerialiser serialiser,
+                       final QueryDataSourceRemapper queryDataSourceRemapper) {
         super(storeFactory,
                 securityContext,
                 serialiser,
@@ -70,6 +74,7 @@ class DashboardStoreImpl
                 DashboardDoc::builder,
                 DashboardDoc::copy);
         this.serialiser = serialiser;
+        this.queryDataSourceRemapper = queryDataSourceRemapper;
     }
 
     private DashboardConfig getTemplate() {
@@ -165,6 +170,8 @@ class DashboardStoreImpl
                         visComponentSettings, dependencyRemapper);
                 case final TextComponentSettings textComponentSettings -> remapTextComponentSettings(
                         textComponentSettings, dependencyRemapper);
+                case final StroomQLQueryComponentSettings stroomQLQuerySettings -> remapStroomQLQuerySettings(
+                        stroomQLQuerySettings, dependencyRemapper);
                 default -> componentSettings;
             };
         }
@@ -210,5 +217,15 @@ class DashboardStoreImpl
         final TextComponentSettings.Builder builder = textComponentSettings.copy();
         builder.pipeline(dependencyRemapper.remap(textComponentSettings.getPipeline()));
         return builder.build();
+    }
+
+    // The data source the query reads (its `from` clause) is a dependency, named in the query's text
+    private StroomQLQueryComponentSettings remapStroomQLQuerySettings(
+            final StroomQLQueryComponentSettings stroomQLQuerySettings,
+            final DependencyRemapper dependencyRemapper) {
+        return stroomQLQuerySettings
+                .copy()
+                .query(queryDataSourceRemapper.remap(stroomQLQuerySettings.getQuery(), dependencyRemapper))
+                .build();
     }
 }

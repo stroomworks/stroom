@@ -85,7 +85,6 @@ import stroom.query.shared.QueryContext;
 import stroom.query.shared.QueryDoc;
 import stroom.query.shared.QueryHelpType;
 import stroom.query.shared.QuerySearchRequest;
-import stroom.query.shared.QueryTablePreferencesUtil;
 import stroom.resource.api.ResourceStore;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.AppPermission;
@@ -621,30 +620,8 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         // Fix table result requests.
         final List<ResultRequest> resultRequests = mappedRequest.getResultRequests();
         if (resultRequests != null) {
-            final List<ResultRequest> modifiedResultRequests = new ArrayList<>();
-            for (final ResultRequest resultRequest : resultRequests) {
-
-                // Modify result request to apply additional UI table preferences.
-                ResultRequest modified = QueryTablePreferencesUtil.applyTablePreferences(
-                        resultRequest, searchRequest.getQueryTablePreferences());
-
-                // The vis needs all the data, rather than just a page worth
-                OffsetRange range = modified.getRequestedRange();
-                if (resultRequest.getResultStyle() != ResultStyle.QL_VIS) {
-                    range = searchRequest.getRequestedRange();
-                }
-
-                // Modify result request to open grouped rows and change result display range.
-                modified = modified
-                        .copy()
-                        .groupSelection(searchRequest.getGroupSelection())
-                        .requestedRange(range)
-                        .build();
-
-                modifiedResultRequests.add(modified);
-            }
             mappedRequest = mappedRequest.copy()
-                    .resultRequests(modifiedResultRequests)
+                    .resultRequests(QueryResultRequestMapper.map(resultRequests, searchRequest))
                     .build();
         }
 

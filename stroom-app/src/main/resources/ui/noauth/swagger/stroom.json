@@ -17341,6 +17341,8 @@
             "key-value-input" : "#/components/schemas/KeyValueInputComponentSettings",
             "list-input" : "#/components/schemas/ListInputComponentSettings",
             "query" : "#/components/schemas/QueryComponentSettings",
+            "stroomql-query" : "#/components/schemas/StroomQLQueryComponentSettings",
+            "stroomql-table" : "#/components/schemas/StroomQLTableComponentSettings",
             "table" : "#/components/schemas/TableComponentSettings",
             "table-filter" : "#/components/schemas/TableFilterComponentSettings",
             "text" : "#/components/schemas/TextComponentSettings",
@@ -25625,6 +25627,23 @@
           }
         }
       },
+      "QueryComponentRequest" : {
+        "type" : "object",
+        "properties" : {
+          "componentId" : {
+            "type" : "string"
+          },
+          "groupSelection" : {
+            "$ref" : "#/components/schemas/GroupSelection"
+          },
+          "queryTablePreferences" : {
+            "$ref" : "#/components/schemas/QueryTablePreferences"
+          },
+          "requestedRange" : {
+            "$ref" : "#/components/schemas/OffsetRange"
+          }
+        }
+      },
       "QueryComponentSettings" : {
         "type" : "object",
         "allOf" : [ {
@@ -25984,6 +26003,12 @@
       "QuerySearchRequest" : {
         "type" : "object",
         "properties" : {
+          "componentRequests" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/QueryComponentRequest"
+            }
+          },
           "groupSelection" : {
             "$ref" : "#/components/schemas/GroupSelection"
           },
@@ -29636,6 +29661,50 @@
             "type" : "string"
           }
         }
+      },
+      "StroomQLQueryComponentSettings" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ComponentSettings"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "automate" : {
+              "$ref" : "#/components/schemas/Automate"
+            },
+            "query" : {
+              "type" : "string"
+            },
+            "selectionHandlers" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/ComponentSelectionHandler"
+              }
+            }
+          }
+        } ]
+      },
+      "StroomQLTableComponentSettings" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ComponentSettings"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "queryId" : {
+              "type" : "string"
+            },
+            "queryTablePreferences" : {
+              "$ref" : "#/components/schemas/QueryTablePreferences"
+            },
+            "selectionFilter" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/ComponentSelectionHandler"
+              }
+            }
+          }
+        } ]
       },
       "Suggestions" : {
         "type" : "object",

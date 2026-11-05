@@ -16,33 +16,26 @@
 
 package stroom.query.client.component;
 
-import stroom.alert.client.event.AlertEvent;
-import stroom.alert.client.event.FireAlertEventFunction;
 import stroom.query.api.ParamValues;
 import stroom.query.api.TimeRange;
 import stroom.query.api.TimeRanges;
-import stroom.query.client.ErrorMessageTemplates;
 import stroom.query.client.SearchErrorListener;
+import stroom.query.client.SearchErrorsAlert;
 import stroom.query.client.SearchStateListener;
 import stroom.util.shared.ErrorMessage;
 import stroom.util.shared.ErrorMessages;
-import stroom.util.shared.Severity;
 import stroom.widget.component.client.Controller;
 
-import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /// A query's toolbar ([QueryToolbar]): keeps the time range chosen, follows the query's state and
 /// errors, and shows the errors in an alert when asked.
 public class QueryToolbarController
         extends Controller
         implements SearchStateListener, SearchErrorListener {
-
-    private static final ErrorMessageTemplates ERROR_MESSAGE_TEMPLATES = GWT.create(ErrorMessageTemplates.class);
 
     private final QueryToolbar view;
 
@@ -129,39 +122,6 @@ public class QueryToolbarController
     }
 
     private void showErrors() {
-        if (currentErrors != null && !currentErrors.isEmpty()) {
-            if (currentErrors.containsAny(Severity.FATAL_ERROR, Severity.ERROR)) {
-                fireAlertEvent(AlertEvent::fireError);
-            } else if (currentErrors.containsAny(Severity.WARNING)) {
-                fireAlertEvent(AlertEvent::fireWarn);
-            } else if (currentErrors.containsAny(Severity.INFO)) {
-                fireAlertEvent(AlertEvent::fireInfo);
-            }
-        }
-    }
-
-    private void fireAlertEvent(final FireAlertEventFunction fireAlertEventFunction) {
-        final List<ErrorMessage> errorMessages = currentErrors.getErrorMessagesOrderedBySeverity();
-        final String msg = getAlertMessage(errorMessages.size());
-        final List<String> messages = errorMessages.stream()
-                .map(this::toDisplayMessage)
-                .collect(Collectors.toList());
-
-        fireAlertEventFunction.apply(this, msg, String.join("\n", messages), null);
-    }
-
-    private String toDisplayMessage(final ErrorMessage errorMessage) {
-        if (errorMessage.getNode() == null) {
-            return ERROR_MESSAGE_TEMPLATES.errorMessage(errorMessage.getSeverity().getDisplayValue(),
-                    errorMessage.getMessage());
-        }
-        return ERROR_MESSAGE_TEMPLATES.errorMessageWithNode(errorMessage.getSeverity().getDisplayValue(),
-                errorMessage.getMessage(), errorMessage.getNode());
-    }
-
-    private String getAlertMessage(final int numberOfMessages) {
-        return numberOfMessages == 1
-                ? ERROR_MESSAGE_TEMPLATES.errorMessageCreatedSingular()
-                : ERROR_MESSAGE_TEMPLATES.errorMessagesCreatedPlural();
+        SearchErrorsAlert.show(this, currentErrors);
     }
 }

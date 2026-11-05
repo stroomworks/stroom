@@ -19,11 +19,12 @@ package stroom.core.client.component;
 import stroom.widget.component.client.Component;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.dom.client.Document;
 import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.Style.Display;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.IsWidget;
-import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 
@@ -48,23 +49,36 @@ public class AppPage extends Component {
     /// @param view The screen.
     public void setContent(final IsWidget view) {
         content.setWidget(view.asWidget());
-        RootPanel.get("logo").setVisible(false);
+        final Element logo = Document.get().getElementById("logo");
+        if (logo != null) {
+            logo.getStyle().setDisplay(Display.NONE);
+            logo.setAttribute("aria-hidden", "true");
+        }
     }
 
     /// Shows the host page's loading message.
     ///
     /// @param message What is being done, or null to keep the message shown.
     public void showWorking(final String message) {
-        final Element loading = RootPanel.get("loading").getElement();
-        loading.removeClassName(LOADING_HIDDEN);
-        if (message != null) {
-            RootPanel.get("loadingText").getElement().setInnerText(message);
+        // Plain DOM lookups, not RootPanel.get(id): #loadingText is inside #loading, and once
+        // #loading is a RootPanel, making another RootPanel inside it fails GWT's assertion
+        final Document document = Document.get();
+        final Element loading = document.getElementById("loading");
+        if (loading != null) {
+            loading.removeClassName(LOADING_HIDDEN);
+        }
+        final Element loadingText = document.getElementById("loadingText");
+        if (message != null && loadingText != null) {
+            loadingText.setInnerText(message);
         }
     }
 
     /// Hides the host page's loading message.
     public void hideWorking() {
-        RootPanel.get("loading").getElement().addClassName(LOADING_HIDDEN);
+        final Element loading = Document.get().getElementById("loading");
+        if (loading != null) {
+            loading.addClassName(LOADING_HIDDEN);
+        }
     }
 
 

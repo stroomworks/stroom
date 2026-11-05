@@ -124,6 +124,8 @@ public class QueryResultTableController
     private MultiSelectionModelImpl<TableRow> selectionModel;
 
     private QueryModel currentSearchModel;
+    // The ID the table's results are kept under in its search model
+    private String resultComponentId = QueryModel.TABLE_COMPONENT_ID;
     private boolean ignoreRangeChange;
     private boolean pause;
 
@@ -449,7 +451,7 @@ public class QueryResultTableController
     public void forceNewSearch() {
         if (currentSearchModel != null) {
             pagerView.getRefreshButton().setRefreshing(true);
-            currentSearchModel.forceNewSearch(QueryModel.TABLE_COMPONENT_ID, result -> {
+            currentSearchModel.forceNewSearch(resultComponentId, result -> {
                 try {
                     if (result != null) {
                         setDataInternal(result);
@@ -474,7 +476,7 @@ public class QueryResultTableController
     public void refresh() {
         if (currentSearchModel != null) {
             pagerView.getRefreshButton().setRefreshing(true);
-            currentSearchModel.refresh(QueryModel.TABLE_COMPONENT_ID, result -> {
+            currentSearchModel.refresh(resultComponentId, result -> {
                 try {
                     if (result != null) {
                         setDataInternal(result);
@@ -763,10 +765,20 @@ public class QueryResultTableController
         this.currentSearchModel = queryModel;
     }
 
+    /// Sets the ID the table's results are kept under in its search model, e.g. a dashboard pane's
+    /// ID when the pane is given its own copy of the query's table
+    /// ([QueryModel#addTableComponent(String, QueryResultConsumer)]). It refreshes, downloads and
+    /// lists column values for those results alone. The default is [QueryModel#TABLE_COMPONENT_ID].
+    ///
+    /// @param resultComponentId The ID.
+    public void setResultComponentId(final String resultComponentId) {
+        this.resultComponentId = Objects.requireNonNull(resultComponentId, "resultComponentId");
+    }
+
     private void download() {
         if (currentSearchModel != null) {
             final QueryKey queryKey = currentSearchModel.getCurrentQueryKey();
-            final QuerySearchRequest currentSearch = currentSearchModel.getCurrentSearch();
+            final QuerySearchRequest currentSearch = currentSearchModel.getCurrentSearch(resultComponentId);
             if (queryKey != null && currentSearch != null) {
                 final QuerySearchRequest request = currentSearch
                         .copy()
@@ -834,7 +846,10 @@ public class QueryResultTableController
         fireColumnAndDataUpdate();
     }
 
-    QueryTablePreferences getQueryTablePreferences() {
+    /// @return The table's preferences (its columns' sorts, filters and formats, and its conditional
+    /// formatting), as its owner keeps them.
+    @Override
+    public QueryTablePreferences getQueryTablePreferences() {
         return queryTablePreferencesSupplier.get();
     }
 
@@ -900,6 +915,7 @@ public class QueryResultTableController
                                                     final List<ConditionalFormattingRule> conditionalFormattingRules) {
         return new QueryTableColumnValuesDataSupplier(restFactory,
                 currentSearchModel,
+                resultComponentId,
                 column,
                 conditionalFormattingRules);
     }
@@ -962,7 +978,7 @@ public class QueryResultTableController
     private void askStroomAi() {
         if (currentSearchModel != null) {
             final QueryKey queryKey = currentSearchModel.getCurrentQueryKey();
-            final QuerySearchRequest currentSearch = currentSearchModel.getCurrentSearch();
+            final QuerySearchRequest currentSearch = currentSearchModel.getCurrentSearch(resultComponentId);
             if (queryKey != null && currentSearch != null) {
                 final QuerySearchRequest request = currentSearch
                         .copy()

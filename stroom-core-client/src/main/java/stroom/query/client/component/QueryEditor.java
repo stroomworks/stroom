@@ -16,7 +16,6 @@
 
 package stroom.query.client.component;
 
-import stroom.editor.client.component.CodeEditor;
 import stroom.widget.component.client.Component;
 import stroom.widget.component.client.Layer;
 import stroom.widget.component.client.LayerContainer;
@@ -30,16 +29,14 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.function.Consumer;
 
-/// A StroomQL query: its help beside the editor (both shown here by its controller), above the
-/// results, one tab each for the table and the visualisation.
+/// A StroomQL query: its text, the help beside the editor ([StroomQLEditor], shown here by its
+/// controller), above the results, one tab each for the table and the visualisation.
 public class QueryEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
 
     @UiField
-    QueryHelp queryHelp;
-    @UiField
-    CodeEditor editor;
+    StroomQLEditor editor;
     @UiField
     LinkTabBar tabBar;
     @UiField
@@ -51,13 +48,8 @@ public class QueryEditor extends Component {
         tabBar.setTabPanel(layerContainer.getElement());
     }
 
-    /// @return The query help, which its controller attaches the help's controller to.
-    public QueryHelp getQueryHelp() {
-        return queryHelp;
-    }
-
-    /// @return The query's editor, for its controller to attach to.
-    public CodeEditor getEditor() {
+    /// @return The query's text, its help and editor, for its controller to attach to.
+    public StroomQLEditor getEditor() {
         return editor;
     }
 

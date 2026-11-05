@@ -120,7 +120,7 @@ public final class IdpPage {
         play.expect(play.spy(ScreenHarness.UNHANDLED_REQUEST_SPY)).not().toHaveBeenCalled();
     }
 
-    // The host page's loading box (hidden), outside any widget, as RootPanel.get(id) requires
+    // The host page's loading box (hidden), which the sign-in pages look up by id
     private static void addLoadingElements(final ScreenHarness harness) {
         final Document document = Document.get();
         if (document.getElementById("loading") == null) {

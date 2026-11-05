@@ -1,0 +1,25 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A dashboard's StroomQL Query pane: the query's actions, its messages and Run above its text,
+     the help beside the editor -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:q="urn:import:stroom.query.client.component">
+    <g:FlowPanel styleName="stroomql-query-pane max dock-container-vertical">
+        <g:FlowPanel styleName="dock-min dock-container-horizontal stroomql-query-pane__buttons">
+            <b:Toolbar name="Query actions" addStyleNames="dock-max">
+                <b:ToolbarButton ui:field="createRule" svg="DOCUMENT_ANALYTIC_RULE" title="Create Analytic Rule"/>
+                <b:ToolbarButton ui:field="createReport" svg="DOCUMENT_REPORT" title="Create Report"/>
+            </b:Toolbar>
+            <b:Toolbar name="Query messages" addStyleNames="dock-min">
+                <!-- Out of sight rather than removed while there are none, so the toolbar doesn't shift -->
+                <b:ToolbarButton ui:field="messages" svg="ERROR" title="Show Errors"
+                                 addStyleNames="toolbar-button--invisible"/>
+            </b:Toolbar>
+            <q:RunQueryButton ui:field="queryButtons" addStyleNames="dock-min"/>
+        </g:FlowPanel>
+        <g:SimplePanel styleName="dock-max stroomql-query-pane__editor">
+            <q:StroomQLEditor ui:field="editor"/>
+        </g:SimplePanel>
+    </g:FlowPanel>
+</ui:UiBinder>

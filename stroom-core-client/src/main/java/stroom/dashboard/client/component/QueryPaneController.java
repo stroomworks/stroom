@@ -17,7 +17,6 @@
 package stroom.dashboard.client.component;
 
 import stroom.alert.client.event.AlertEvent;
-import stroom.alert.client.event.FireAlertEventFunction;
 import stroom.core.client.LocationManager;
 import stroom.core.client.event.WindowCloseEvent;
 import stroom.dashboard.client.component.QueryPane.QueryPaneAction;
@@ -48,8 +47,8 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.QueryKey;
 import stroom.query.client.DateTimeSettingsFactory;
-import stroom.query.client.ErrorMessageTemplates;
 import stroom.query.client.SearchErrorListener;
+import stroom.query.client.SearchErrorsAlert;
 import stroom.query.client.SearchStateListener;
 import stroom.query.client.component.ExpressionTreeController;
 import stroom.query.client.component.QueryInfo;
@@ -63,7 +62,6 @@ import stroom.svg.shared.SvgImage;
 import stroom.ui.config.client.UiConfigCache;
 import stroom.util.shared.ErrorMessage;
 import stroom.util.shared.ErrorMessages;
-import stroom.util.shared.Severity;
 import stroom.widget.contextmenu.client.ContextMenuManager;
 import stroom.widget.contextmenu.client.TextEditTarget;
 import stroom.widget.menu.client.IconMenuItem;
@@ -80,7 +78,6 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /// A dashboard's query pane ([QueryPane]): its expression, which it searches the data source with,
 /// the search's messages, its history and favourites, downloading it and processing it with a
@@ -93,7 +90,6 @@ public class QueryPaneController
     private static final DashboardResource DASHBOARD_RESOURCE = GWT.create(DashboardResource.class);
     private static final ResultStoreResource RESULT_STORE_RESOURCE = GWT.create(ResultStoreResource.class);
     private static final ProcessorFilterResource PROCESSOR_FILTER_RESOURCE = GWT.create(ProcessorFilterResource.class);
-    private static final ErrorMessageTemplates ERROR_MESSAGE_TEMPLATES = GWT.create(ErrorMessageTemplates.class);
 
     public static final ComponentType TYPE = new ComponentType(0, "query", "Query", ComponentUse.PANEL);
 
@@ -431,41 +427,7 @@ public class QueryPaneController
     }
 
     private void showErrors() {
-        if (!currentErrors.isEmpty()) {
-            if (currentErrors.containsAny(Severity.FATAL_ERROR, Severity.ERROR)) {
-                fireAlertEvent(AlertEvent::fireError);
-            } else if (currentErrors.containsAny(Severity.WARNING)) {
-                fireAlertEvent(AlertEvent::fireWarn);
-            } else if (currentErrors.containsAny(Severity.INFO)) {
-                fireAlertEvent(AlertEvent::fireInfo);
-            }
-        }
-    }
-
-    private void fireAlertEvent(final FireAlertEventFunction fireAlertEventFunction) {
-        final List<ErrorMessage> errorMessages = currentErrors.getErrorMessagesOrderedBySeverity();
-        final String msg = getAlertMessage(errorMessages.size());
-        final List<String> messages = errorMessages.stream()
-                .map(this::toDisplayMessage)
-                .collect(Collectors.toList());
-
-        fireAlertEventFunction.apply(this, msg, String.join("\n", messages), null);
-    }
-
-    private String toDisplayMessage(final ErrorMessage errorMessage) {
-        if (errorMessage.getNode() == null) {
-            return ERROR_MESSAGE_TEMPLATES.errorMessage(errorMessage.getSeverity().getDisplayValue(),
-                    errorMessage.getMessage());
-        }
-        return ERROR_MESSAGE_TEMPLATES.errorMessageWithNode(errorMessage.getSeverity().getDisplayValue(),
-                errorMessage.getMessage(), errorMessage.getNode());
-    }
-
-    private String getAlertMessage(final int numberOfMessages) {
-        return numberOfMessages == 1
-                ? ERROR_MESSAGE_TEMPLATES.errorMessageCreatedSingular()
-                :
-                        ERROR_MESSAGE_TEMPLATES.errorMessagesCreatedPlural();
+        SearchErrorsAlert.show(this, currentErrors);
     }
 
     @Override

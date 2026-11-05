@@ -110,8 +110,7 @@ public class BasicTextSettingsController extends BasicSettingsTabController<Basi
         super.read(componentConfig);
 
         final List<DashboardPane> list = getDashboardContext().getComponents().getSortedComponentsByType(
-                TableController.TYPE.getId(),
-                EmbeddedQueryController.TYPE.getId());
+                TextPaneController.TABLE_TYPE_IDS);
         setTableList(list);
 
         TextComponentSettings settings = (TextComponentSettings) componentConfig.getSettings();

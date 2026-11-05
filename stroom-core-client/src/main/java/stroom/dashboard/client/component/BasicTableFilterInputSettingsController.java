@@ -92,7 +92,8 @@ public class BasicTableFilterInputSettingsController
         final List<DashboardPane> list = getDashboardContext()
                 .getComponents().getSortedComponentsByType(
                         TableController.TYPE.getId(),
-                        EmbeddedQueryController.TYPE.getId());
+                        EmbeddedQueryController.TYPE.getId(),
+                        StroomQLTablePaneController.TYPE.getId());
         getView().setTableList(list);
 
         final TableFilterComponentSettings settings = (TableFilterComponentSettings) componentConfig.getSettings();

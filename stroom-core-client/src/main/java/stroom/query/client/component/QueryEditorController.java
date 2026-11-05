@@ -20,9 +20,6 @@ import stroom.core.client.event.WindowCloseEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.editor.HasToolbar;
-import stroom.editor.client.ace.IndicatorLines;
-import stroom.editor.client.ace.Marker;
-import stroom.editor.client.component.CodeEditorController;
 import stroom.query.api.DestroyReason;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.GroupSelection;
@@ -37,11 +34,7 @@ import stroom.query.client.QueryResultConsumer;
 import stroom.query.client.SearchStateListener;
 import stroom.query.client.model.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
-import stroom.util.shared.DefaultLocation;
-import stroom.util.shared.Indicators;
 import stroom.util.shared.NullSafe;
-import stroom.util.shared.Severity;
-import stroom.util.shared.StoredError;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
 import stroom.widget.tab.client.TabData;
@@ -52,21 +45,16 @@ import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.logical.shared.HasValueChangeHandlers;
 import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.event.shared.HasHandlers;
-import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.google.web.bindery.event.shared.HandlerRegistration;
-import edu.ycp.cs.dh.acegwt.client.ace.AceEditorMode;
-import edu.ycp.cs.dh.acegwt.client.ace.AceMarkerType;
-import edu.ycp.cs.dh.acegwt.client.ace.AceRange;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 
 /// A StroomQL query ([QueryEditor]): its editor and help, the query toolbar that runs it, and its
@@ -76,13 +64,11 @@ public class QueryEditorController
         extends Controller
         implements HasToolbar, HasHandlers, HasValueChangeHandlers<String> {
 
-    private static final int DEBOUNCE_DELAY_MS = 400;
     private static final TabData TABLE = new TabDataImpl("Table");
     private static final TabData VISUALISATION = new TabDataImpl("Visualisation");
 
-    private final QueryHelpController queryHelp;
     private final QueryToolbarController queryToolbar;
-    private final CodeEditorController editor;
+    private final StroomQLEditorController editor;
     private final QueryResultTableSplitController queryResultController;
     private final QueryModel queryModel;
     private final QueryEditor view;
@@ -92,8 +78,6 @@ public class QueryEditorController
     private final Provider<QueryResultVisController> visControllerProvider;
 
     private QueryResultVisController currentVisController;
-    private String currentQuery;
-    private Timer requestTimer;
     private Map<String, String> queryVariables;
 
     private Runnable onChange = () -> {
@@ -103,9 +87,8 @@ public class QueryEditorController
     ///
     /// @param eventBus                The application's event bus.
     /// @param view                    The content.
-    /// @param queryHelp               The query's help.
     /// @param queryToolbar            Runs the query, over a time range.
-    /// @param editor                  The query's editor.
+    /// @param editor                  The query's text: its editor and help.
     /// @param queryResultController   The results as a table.
     /// @param visControllerProvider   Makes the results' visualisation.
     /// @param restFactory             Runs the query.
@@ -115,9 +98,8 @@ public class QueryEditorController
     @Inject
     public QueryEditorController(final EventBus eventBus,
                                final QueryEditor view,
-                               final QueryHelpController queryHelp,
                                final QueryToolbarController queryToolbar,
-                               final CodeEditorController editor,
+                               final StroomQLEditorController editor,
                                final QueryResultTableSplitController queryResultController,
                                final Provider<QueryResultVisController> visControllerProvider,
                                final RestFactory restFactory,
@@ -127,10 +109,8 @@ public class QueryEditorController
         super(eventBus);
         this.view = view;
         initWidget(view);
-        own(queryHelp).attach(view.getQueryHelp());
         own(queryToolbar);
         own(queryResultController);
-        this.queryHelp = queryHelp;
         this.queryToolbar = queryToolbar;
         this.queryResultController = queryResultController;
         this.visControllerProvider = visControllerProvider;
@@ -225,33 +205,9 @@ public class QueryEditorController
         queryModel.addResultComponent(QueryModel.VIS_COMPONENT_ID, resultConsumer);
 
         queryModel.addSearchErrorListener(queryToolbar);
-        queryModel.addTokenErrorListener(e -> {
-            final Indicators indicators = new Indicators();
-            final DefaultLocation from = e.getFrom();
-            final DefaultLocation to = e.getTo();
-            indicators.add(new StoredError(Severity.ERROR, from, null, e.getText()));
-            final IndicatorLines indicatorLines = new IndicatorLines(indicators);
-            final AceRange range = AceRange.create(
-                    from.getLineNo() - 1,
-                    from.getColNo(),
-                    to.getLineNo() - 1,
-                    to.getColNo());
-            final Marker marker = new Marker(range, "code-editor__error-underline", AceMarkerType.TEXT, true);
-            editor.setIndicators(indicatorLines);
-            editor.setMarkers(Collections.singletonList(marker));
-        });
-        queryModel.addSearchStateListener(queryToolbar);
-
         this.editor = own(editor).attach(view.getEditor());
-        this.editor.setMode(AceEditorMode.STROOM_QUERY);
-        this.editor.getOptions().getBasicAutoCompletionOption().setOff();
-
-//        // This glues the editor code completion to the query help's completion provider
-//        // Need to do this via addAttachHandler so the editor is fully loaded
-//        // else it moans about the id not being a thing on the AceEditor
-//        this.editor.getWidget().addAttachHandler(event ->
-//                this.editor.registerCompletionProviders(queryHelp.getKeyedAceCompletionProvider()));
-
+        queryModel.addTokenErrorListener(editor::showTokenError);
+        queryModel.addSearchStateListener(queryToolbar);
 
         view.addTab(TABLE);
         view.addTab(VISUALISATION);
@@ -260,20 +216,13 @@ public class QueryEditorController
         queryToolbar.setEnabled(true);
         queryToolbar.onSearching(false);
 
-        //noinspection unused event
-        own(editor.addValueChangeHandler(event -> {
-            final String query = editor.getText();
-            updateQuery(query);
-            onChange();
-        }));
-        //noinspection unused event
-        own(editor.addFormatListener(this::onChange));
+        editor.setOnChange(this::onChange);
+        editor.setOnQueryChange(queryResultController::setQuery);
         queryToolbar.setOnStart(this::toggleStart);
         queryToolbar.setOnTimeRangeChange(() -> {
             run();
             onChange();
         });
-        queryHelp.linkToEditor(editor);
 
         //noinspection unused event
         listen(WindowCloseEvent.getType(), event -> {
@@ -281,13 +230,8 @@ public class QueryEditorController
             queryModel.reset(DestroyReason.WINDOW_CLOSE);
         });
         view.setOnSelectTab(this::selectTab);
-        // Destroys the query when its tab is closed, and stops a query change waiting to be told
-        onDispose(() -> {
-            if (requestTimer != null) {
-                requestTimer.cancel();
-            }
-            onClose();
-        });
+        // Destroys the query when its tab is closed
+        onDispose(this::onClose);
         queryResultController.setOnChange(this::onChange);
     }
 
@@ -355,22 +299,7 @@ public class QueryEditorController
     ///
     /// @param query The query.
     public void updateQuery(final String query) {
-        // Debounce requests so we don't spam the backend
-        if (requestTimer != null) {
-            requestTimer.cancel();
-        }
-
-        requestTimer = new Timer() {
-            @Override
-            public void run() {
-                if (!Objects.equals(currentQuery, query)) {
-                    currentQuery = query;
-                    queryHelp.setQuery(query);
-                    queryResultController.setQuery(query);
-                }
-            }
-        };
-        requestTimer.schedule(DEBOUNCE_DELAY_MS);
+        editor.updateQuery(query);
     }
 
     private void selectTab(final TabData tabData) {
@@ -440,8 +369,7 @@ public class QueryEditorController
     private void run(final Function<ExpressionOperator, ExpressionOperator> expressionDecorator) {
         // Clear the table selection and any markers.
         queryResultController.clear();
-        editor.setMarkers(Collections.emptyList());
-        editor.setIndicators(new IndicatorLines(new Indicators()));
+        editor.clearErrors();
 
         // Destroy any previous query.
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
@@ -504,16 +432,8 @@ public class QueryEditorController
         // Read only as its document is
         final boolean readOnly = context(Contexts.READ_ONLY);
         queryModel.init(docRef);
-        if (query != null) {
-            if (NullSafe.isBlankString(editor.getText())
-                || !Objects.equals(editor.getText(), query)) {
-                editor.setText(query);
-                updateQuery(query);
-            }
-        }
-
+        editor.setText(query);
         editor.setReadOnly(readOnly);
-        editor.getFormatAction().setAvailable(!readOnly);
         focus();
     }
 

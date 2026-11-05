@@ -21,9 +21,11 @@ import stroom.docref.DocRef;
 import stroom.docstore.impl.Serialiser2FactoryImpl;
 import stroom.docstore.impl.StoreFactoryImpl;
 import stroom.docstore.impl.memory.MemoryPersistence;
+import stroom.query.common.v2.QueryDataSourceRemapper;
 import stroom.security.mock.MockSecurityContext;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,7 +50,8 @@ class TestDashboardStoreImplCreate {
         return new DashboardStoreImpl(
                 new StoreFactoryImpl(new MemoryPersistence(), null, securityContext, null, () -> null),
                 securityContext,
-                new DashboardSerialiser(new Serialiser2FactoryImpl()));
+                new DashboardSerialiser(new Serialiser2FactoryImpl()),
+                Mockito.mock(QueryDataSourceRemapper.class));
     }
 
     @Test

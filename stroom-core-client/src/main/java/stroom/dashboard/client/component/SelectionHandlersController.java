@@ -28,6 +28,7 @@ import stroom.dashboard.shared.HasSelectionFilter;
 import stroom.dashboard.shared.HasSelectionFilterBuilder;
 import stroom.dashboard.shared.HasSelectionQuery;
 import stroom.dashboard.shared.HasSelectionQueryBuilder;
+import stroom.dashboard.shared.StroomQLTableComponentSettings;
 import stroom.dashboard.shared.TableComponentSettings;
 import stroom.docref.DocRef;
 import stroom.query.api.Column;
@@ -39,6 +40,7 @@ import stroom.query.client.component.QueryResultTableController;
 import stroom.query.client.model.DynamicFieldSelectionListModel;
 import stroom.query.client.model.FieldSelectionListModel;
 import stroom.query.client.model.SimpleFieldSelectionListModel;
+import stroom.query.shared.QueryTablePreferences;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.RandomId;
 
@@ -270,6 +272,12 @@ public class SelectionHandlersController extends SettingsTabController implement
         fieldSelectionListModel = dynamicFieldSelectionListModel;
         if (componentConfig.getSettings() instanceof final TableComponentSettings settings) {
             fieldSelectionListModel = createSelectionListModelFromColumns(settings.getColumns());
+        } else if (useForFilter
+                   && componentConfig.getSettings() instanceof final StroomQLTableComponentSettings settings) {
+            // The columns its results last had, which it keeps
+            fieldSelectionListModel = createSelectionListModelFromColumns(NullSafe.list(NullSafe.get(
+                    settings.getQueryTablePreferences(),
+                    QueryTablePreferences::getColumns)));
         } else if (useForFilter) {
             final DashboardPane component = getDashboardContext().getComponents().get(componentConfig.getId());
             if (component instanceof final EmbeddedQueryController embeddedQuery) {

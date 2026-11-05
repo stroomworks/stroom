@@ -20,12 +20,16 @@ import stroom.dashboard.shared.DashboardSearchResponse;
 import stroom.dispatch.client.FakeRestFactory;
 import stroom.dispatch.client.FakeRestFactory.FakeRequest;
 import stroom.query.api.DestroyReason;
+import stroom.query.api.GroupSelection;
+import stroom.query.api.OffsetRange;
 import stroom.query.api.QueryKey;
 import stroom.query.api.Result;
 import stroom.query.api.TableResult;
 import stroom.query.client.model.ResultStoreModel;
+import stroom.query.shared.QueryComponentRequest;
 import stroom.query.shared.QueryResource;
 import stroom.query.shared.QuerySearchRequest;
+import stroom.query.shared.QueryTablePreferences;
 import stroom.util.shared.ErrorMessage;
 import stroom.util.shared.Severity;
 
@@ -38,7 +42,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -46,6 +52,14 @@ class TestQueryModel {
 
     private static final String NODE = "node1";
     private static final QueryKey QUERY_KEY = new QueryKey("query-key");
+    private static final QueryKey FORCED_QUERY_KEY = new QueryKey("forced-query-key");
+    private static final String PANE_1 = "pane1";
+    private static final String PANE_2 = "pane2";
+    private static final QueryTablePreferences PREFERENCES_1 = QueryTablePreferences.builder().pageSize(10).build();
+    private static final QueryTablePreferences PREFERENCES_2 = QueryTablePreferences.builder().pageSize(20).build();
+    private static final OffsetRange RANGE_1 = new OffsetRange(0, 10);
+    private static final OffsetRange RANGE_2 = new OffsetRange(40, 20);
+    private static final GroupSelection GROUPS_2 = GroupSelection.builder().openGroups(Set.of("group1")).build();
 
     private final FakeRestFactory restFactory = new FakeRestFactory();
     private final List<Boolean> searching = new ArrayList<>();
@@ -343,6 +357,52 @@ class TestQueryModel {
     }
 
     @Test
+    void forceNewSearch_destroysItsStore() {
+        // A forced search starts a search of its own on the server, which nothing polls again once its
+        // reply is read, so its store is destroyed rather than left until the server expires it
+        startSearch();
+        restFactory.getRequests().getFirst().succeed(response(false));
+        final List<Result> results = new ArrayList<>();
+
+        queryModel.forceNewSearch(QueryModel.TABLE_COMPONENT_ID, results::add);
+        restFactory.getLastRequest().succeed(response(FORCED_QUERY_KEY, true, QueryModel.TABLE_COMPONENT_ID));
+
+        assertThat(results)
+                .hasSize(1);
+        Mockito.verify(resultStoreModel).destroy(
+                Mockito.eq(NODE),
+                Mockito.eq(FORCED_QUERY_KEY),
+                Mockito.eq(DestroyReason.NO_LONGER_NEEDED),
+                Mockito.any(),
+                Mockito.any());
+        // The model's own search is kept: a refresh still asks for its results
+        queryModel.refresh(QueryModel.TABLE_COMPONENT_ID, result -> {
+        });
+        assertThat(searchRequest(restFactory.getLastRequest(), NODE).getQueryKey())
+                .isEqualTo(QUERY_KEY);
+        Mockito.verify(resultStoreModel, Mockito.never()).destroy(
+                Mockito.any(),
+                Mockito.eq(QUERY_KEY),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.any());
+    }
+
+    @Test
+    void refresh_keepsTheStore() {
+        // A refresh reads the model's own search, whose store must stay
+        startSearch();
+        restFactory.getRequests().getFirst().succeed(response(true));
+
+        queryModel.refresh(QueryModel.TABLE_COMPONENT_ID, result -> {
+        });
+        restFactory.getLastRequest().succeed(response(true));
+
+        Mockito.verify(resultStoreModel, Mockito.never()).destroy(
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
     void forceNewSearch_unknownComponent() {
         startSearch();
         final List<Result> results = new ArrayList<>();
@@ -386,6 +446,174 @@ class TestQueryModel {
 
         assertThat(errors)
                 .isEmpty();
+    }
+
+    @Test
+    void poll_noTableComponents() {
+        // Asks for the query's own table and visualisation
+        startSearch();
+
+        assertThat(searchRequest(restFactory.getLastRequest(), null).getComponentRequests())
+                .isNull();
+    }
+
+    @Test
+    void poll_tableComponents() {
+        addTableComponents();
+        startSearch();
+
+        // Each asks for its own copy of the table, as it wants it
+        assertThat(searchRequest(restFactory.getLastRequest(), null).getComponentRequests())
+                .containsExactly(
+                        new QueryComponentRequest(PANE_1, PREFERENCES_1, RANGE_1, null),
+                        new QueryComponentRequest(PANE_2, PREFERENCES_2, RANGE_2, GROUPS_2));
+    }
+
+    @Test
+    void poll_tableComponents_eachGivenItsResult() {
+        final QueryResultConsumer[] panes = addTableComponents();
+        startSearch();
+        // Starting a search ends the last one, so only count what the reply does
+        Mockito.clearInvocations((Object[]) panes);
+
+        restFactory.getLastRequest().succeed(response(true, PANE_1, PANE_2));
+
+        final ArgumentCaptor<Result> pane1Result = ArgumentCaptor.forClass(Result.class);
+        Mockito.verify(panes[0]).setData(pane1Result.capture());
+        assertThat(pane1Result.getValue().getComponentId())
+                .isEqualTo(PANE_1);
+        final ArgumentCaptor<Result> pane2Result = ArgumentCaptor.forClass(Result.class);
+        Mockito.verify(panes[1]).setData(pane2Result.capture());
+        assertThat(pane2Result.getValue().getComponentId())
+                .isEqualTo(PANE_2);
+        Mockito.verify(panes[0]).endSearch();
+        Mockito.verify(panes[1]).endSearch();
+    }
+
+    @Test
+    void poll_tableComponentRemoved() {
+        final QueryResultConsumer[] panes = addTableComponents();
+        queryModel.removeResultComponent(PANE_1);
+        startSearch();
+
+        assertThat(searchRequest(restFactory.getLastRequest(), null).getComponentRequests())
+                .extracting(QueryComponentRequest::getComponentId)
+                .containsExactly(PANE_2);
+
+        // A result for it, e.g. from a search started before it went, isn't given to it
+        restFactory.getLastRequest().succeed(response(true, PANE_1, PANE_2));
+        Mockito.verify(panes[0], Mockito.never()).setData(Mockito.any());
+    }
+
+    @Test
+    void poll_allTableComponentsRemoved() {
+        addTableComponents();
+        queryModel.removeResultComponent(PANE_1);
+        queryModel.removeResultComponent(PANE_2);
+        startSearch();
+
+        // Back to asking for the query's own table and visualisation
+        assertThat(searchRequest(restFactory.getLastRequest(), null).getComponentRequests())
+                .isNull();
+    }
+
+    @Test
+    void refresh_tableComponent() {
+        addTableComponents();
+        startSearch();
+        restFactory.getRequests().getFirst().succeed(response(true, PANE_1, PANE_2));
+        final List<Result> results = new ArrayList<>();
+
+        queryModel.refresh(PANE_2, results::add);
+
+        // Asks for its copy alone
+        assertThat(searchRequest(restFactory.getLastRequest(), NODE).getComponentRequests())
+                .containsExactly(new QueryComponentRequest(PANE_2, PREFERENCES_2, RANGE_2, GROUPS_2));
+        restFactory.getLastRequest().succeed(response(true, PANE_2));
+        assertThat(results)
+                .singleElement()
+                .extracting(Result::getComponentId)
+                .isEqualTo(PANE_2);
+    }
+
+    @Test
+    void refresh_tableComponentWithRange() {
+        addTableComponents();
+        startSearch();
+        restFactory.getRequests().getFirst().succeed(response(true, PANE_1, PANE_2));
+        final OffsetRange oneRow = new OffsetRange(7, 1);
+
+        queryModel.refresh(PANE_2, oneRow, result -> {
+        });
+
+        // Asks for the given rows, not the ones the component asks for
+        final QuerySearchRequest request = searchRequest(restFactory.getLastRequest(), NODE);
+        assertThat(request.getComponentRequests())
+                .containsExactly(new QueryComponentRequest(PANE_2, PREFERENCES_2, oneRow, GROUPS_2));
+        assertThat(request.getRequestedRange())
+                .isEqualTo(oneRow);
+    }
+
+    @Test
+    void refresh_withRange() {
+        startSearch();
+        restFactory.getRequests().getFirst().succeed(response(true));
+        final OffsetRange oneRow = new OffsetRange(7, 1);
+
+        queryModel.refresh(QueryModel.TABLE_COMPONENT_ID, oneRow, result -> {
+        });
+
+        final QuerySearchRequest request = searchRequest(restFactory.getLastRequest(), NODE);
+        assertThat(request.getRequestedRange())
+                .isEqualTo(oneRow);
+        assertThat(request.getComponentRequests())
+                .isNull();
+    }
+
+    @Test
+    void getCurrentSearch_beforeSearch() {
+        addTableComponents();
+
+        assertThat(queryModel.getCurrentSearch(PANE_1))
+                .isNull();
+    }
+
+    @Test
+    void getCurrentSearch_tableComponent() {
+        addTableComponents();
+        startSearch();
+
+        // Asks for its copy alone, e.g. so a download has its table and no other
+        assertThat(queryModel.getCurrentSearch(PANE_1).getComponentRequests())
+                .containsExactly(new QueryComponentRequest(PANE_1, PREFERENCES_1, RANGE_1, null));
+    }
+
+    @Test
+    void getCurrentSearch_otherComponent() {
+        addTableComponents();
+        startSearch();
+
+        assertThat(queryModel.getCurrentSearch(QueryModel.TABLE_COMPONENT_ID))
+                .isSameAs(queryModel.getCurrentSearch());
+    }
+
+    // Adds two components that each have their own copy of the table, each wanting it differently
+    private QueryResultConsumer[] addTableComponents() {
+        final QueryResultConsumer pane1 = tableComponent(PREFERENCES_1, RANGE_1, null);
+        final QueryResultConsumer pane2 = tableComponent(PREFERENCES_2, RANGE_2, GROUPS_2);
+        queryModel.addTableComponent(PANE_1, pane1);
+        queryModel.addTableComponent(PANE_2, pane2);
+        return new QueryResultConsumer[]{pane1, pane2};
+    }
+
+    private static QueryResultConsumer tableComponent(final QueryTablePreferences preferences,
+                                                      final OffsetRange range,
+                                                      final GroupSelection groupSelection) {
+        final QueryResultConsumer component = Mockito.mock(QueryResultConsumer.class);
+        Mockito.when(component.getQueryTablePreferences()).thenReturn(preferences);
+        Mockito.when(component.getRequestedRange()).thenReturn(range);
+        Mockito.when(component.getGroupSelection()).thenReturn(groupSelection);
+        return component;
     }
 
     private void startSearch() {
@@ -435,18 +663,46 @@ class TestQueryModel {
     }
 
     private static DashboardSearchResponse response(final boolean complete) {
-        return response(complete, null);
+        return response(complete, (List<ErrorMessage>) null);
     }
 
     private static DashboardSearchResponse response(final boolean complete, final List<ErrorMessage> errors) {
+        return response(complete, errors, QueryModel.TABLE_COMPONENT_ID);
+    }
+
+    // A response with a table result for each of the given components
+    private static DashboardSearchResponse response(final boolean complete, final String... componentIds) {
+        return response(complete, null, componentIds);
+    }
+
+    private static DashboardSearchResponse response(final boolean complete,
+                                                    final List<ErrorMessage> errors,
+                                                    final String... componentIds) {
+        return response(QUERY_KEY, complete, errors, componentIds);
+    }
+
+    // A response for the search with the given key, with a table result for each of the given components
+    private static DashboardSearchResponse response(final QueryKey queryKey,
+                                                    final boolean complete,
+                                                    final String... componentIds) {
+        return response(queryKey, complete, null, componentIds);
+    }
+
+    private static DashboardSearchResponse response(final QueryKey queryKey,
+                                                    final boolean complete,
+                                                    final List<ErrorMessage> errors,
+                                                    final String... componentIds) {
+        final List<Result> results = Arrays.stream(componentIds)
+                .map(componentId -> (Result) TableResult.builder().componentId(componentId).build())
+                .toList();
         return new DashboardSearchResponse(
                 NODE,
-                QUERY_KEY,
+                queryKey,
                 null,
                 null,
                 null,
                 complete,
-                List.of(TableResult.builder().componentId(QueryModel.TABLE_COMPONENT_ID).build()),
+                results,
                 errors);
     }
 }

@@ -16,93 +16,42 @@
 
 package stroom.query.impl;
 
-import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
-import stroom.query.common.v2.DataSourceProviderRegistry;
-import stroom.query.language.SearchRequestFactory;
+import stroom.query.common.v2.QueryDataSourceRemapper;
 import stroom.query.shared.QueryDoc;
 import stroom.security.api.SecurityContext;
-import stroom.util.logging.LambdaLogger;
-import stroom.util.logging.LambdaLoggerFactory;
 
 import jakarta.inject.Inject;
-import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
-
-import java.util.Objects;
-import java.util.Optional;
 
 @Singleton
 class QueryStoreImpl
         extends AbstractDocumentStore<QueryDoc>
         implements QueryStore {
 
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(QueryStoreImpl.class);
-
-    private final Provider<DataSourceProviderRegistry> dataSourceProviderRegistryProvider;
-    private final SearchRequestFactory searchRequestFactory;
+    private final QueryDataSourceRemapper queryDataSourceRemapper;
 
     @Inject
     QueryStoreImpl(final StoreFactory storeFactory,
                    final SecurityContext securityContext,
                    final QuerySerialiser serialiser,
-                   final Provider<DataSourceProviderRegistry> dataSourceProviderRegistryProvider,
-                   final SearchRequestFactory searchRequestFactory) {
+                   final QueryDataSourceRemapper queryDataSourceRemapper) {
         super(storeFactory,
                 securityContext,
                 serialiser,
                 QueryDoc.TYPE,
                 QueryDoc::builder,
                 QueryDoc::copy);
-        this.dataSourceProviderRegistryProvider = dataSourceProviderRegistryProvider;
-        this.searchRequestFactory = searchRequestFactory;
+        this.queryDataSourceRemapper = queryDataSourceRemapper;
     }
 
     @Override
     protected DependencyRemapFunction<QueryDoc> getDependencyRemapFunction() {
-        return (doc, dependencyRemapper) -> {
-            final QueryDoc.Builder builder = doc.copy();
-            try {
-                if (doc.getQuery() != null) {
-                    searchRequestFactory.extractDataSourceOnly(doc.getQuery(), docRef -> {
-                        try {
-                            if (docRef != null) {
-                                final DataSourceProviderRegistry dataSourceProviderRegistry =
-                                        dataSourceProviderRegistryProvider.get();
-                                final Optional<DocRef> optional = dataSourceProviderRegistry
-                                        .getDataSourceDocRefs()
-                                        .stream()
-                                        .filter(dr -> dr.equals(docRef))
-                                        .findAny();
-                                optional.ifPresent(dataSourceRef -> {
-                                    final DocRef remapped = dependencyRemapper.remap(dataSourceRef);
-                                    if (remapped != null) {
-                                        String query = doc.getQuery();
-                                        if (remapped.getName() != null &&
-                                            !remapped.getName().isBlank() &&
-                                            !Objects.equals(remapped.getName(), docRef.getName())) {
-                                            query = query.replaceFirst(docRef.getName(), remapped.getName());
-                                        }
-                                        if (remapped.getUuid() != null &&
-                                            !remapped.getUuid().isBlank() &&
-                                            !Objects.equals(remapped.getUuid(), docRef.getUuid())) {
-                                            query = query.replaceFirst(docRef.getUuid(), remapped.getUuid());
-                                        }
-                                        builder.query(query);
-                                    }
-                                });
-                            }
-                        } catch (final RuntimeException e) {
-                            LOGGER.debug(e::getMessage, e);
-                        }
-                    });
-                }
-            } catch (final RuntimeException e) {
-                LOGGER.debug(e::getMessage, e);
-            }
-            return builder.build();
-        };
+        return (doc, dependencyRemapper) -> doc
+                .copy()
+                .query(queryDataSourceRemapper.remap(doc.getQuery(), dependencyRemapper))
+                .build();
     }
 }

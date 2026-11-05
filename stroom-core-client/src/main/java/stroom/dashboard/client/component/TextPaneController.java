@@ -18,8 +18,10 @@ package stroom.dashboard.client.component;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.dashboard.client.main.DashboardContext;
+import stroom.dashboard.client.main.DashboardPane;
 import stroom.dashboard.client.main.PaneRegistry.ComponentType;
 import stroom.dashboard.client.main.PaneRegistry.ComponentUse;
+import stroom.dashboard.client.main.Panes;
 import stroom.dashboard.shared.ComponentConfig;
 import stroom.dashboard.shared.ComponentSettings;
 import stroom.dashboard.shared.TextComponentSettings;
@@ -75,6 +77,13 @@ public class TextPaneController extends DashboardPaneController {
     /// The pane's type, as the dashboard's Add menu offers it.
     public static final ComponentType TYPE = new ComponentType(
             2, "text", "Text", ComponentUse.PANEL);
+
+    /// The types of the panes whose selected rows a Text pane can show: Table, Embedded Query and
+    /// StroomQL Table.
+    static final String[] TABLE_TYPE_IDS = {
+            TableController.TYPE.getId(),
+            EmbeddedQueryController.TYPE.getId(),
+            StroomQLTablePaneController.TYPE.getId()};
 
     private static final Version CURRENT_MODEL_VERSION = new Version(7, 8, 0);
     private static final ColumnRef DEFAULT_STREAM_ID_COLUMN = new ColumnRef(
@@ -507,20 +516,44 @@ public class TextPaneController extends DashboardPaneController {
         setSettings(builder.build());
     }
 
+    /// Gives the table a Text pane shows once the dashboard links its panes: the one it names, while
+    /// that is a pane whose rows a Text pane can show ([#TABLE_TYPE_IDS]), else null, so that it
+    /// listens to changes to any table. Only the Table type was checked before, so a Text pane
+    /// showing an Embedded Query's rows lost it each time the dashboard linked its panes.
+    ///
+    /// (package-private for its tests).
+    ///
+    /// @param panes   The dashboard's panes.
+    /// @param tableId The ID of the table the Text pane names, or null for none.
+    /// @return The table's ID, or null.
+    static String linkTableId(final Panes panes, final String tableId) {
+        return tableId != null && isTable(panes.get(tableId))
+                ? tableId
+                : null;
+    }
+
+    // Whether the pane is one whose selected rows a Text pane can show
+    private static boolean isTable(final DashboardPane component) {
+        if (component == null) {
+            return false;
+        }
+        final String typeId = component.getComponentType().getId();
+        for (final String tableTypeId : TABLE_TYPE_IDS) {
+            if (tableTypeId.equals(typeId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private TextComponentSettings getTextSettings() {
         return (TextComponentSettings) getSettings();
     }
 
     @Override
     public void link() {
-        final String tableId = getTextSettings().getTableId();
-        String newTableId = getDashboardContext()
-                .getComponents().validateOrGetLastComponentId(tableId, TableController.TYPE.getId());
-
-        // If we can't get the same table id then set to null so that changes to any table can be listened to.
-        if (!Objects.equals(tableId, newTableId)) {
-            newTableId = null;
-        }
+        final String newTableId = linkTableId(getDashboardContext().getComponents(),
+                getTextSettings().getTableId());
 
         setSettings(getTextSettings()
                 .copy()

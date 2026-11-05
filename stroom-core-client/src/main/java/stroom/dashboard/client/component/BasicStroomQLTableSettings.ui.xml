@@ -1,0 +1,30 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A StroomQL Table pane's Basic settings: its id and name, the StroomQL Query whose results it
+     shows, and how many rows it shows on a page -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:i="urn:import:stroom.widget.selection.client"
+             xmlns:valuespinner="urn:import:stroom.widget.valuespinner.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="max form">
+        <form:FormGroup identity="basicStroomQLTableSettingsId" label="Id"
+                        helpText="Unique ID of this component on the dashboard, generated when the component is added (e.g. stroomql-table-AB1C2). It cannot be changed.">
+            <tx:Label ui:field="id" addStyleNames="w-100 text-label--value"/>
+        </form:FormGroup>
+        <form:FormGroup identity="basicStroomQLTableSettingsName" label="Name"
+                        helpText="Name of this component, shown in its tab on the dashboard.">
+            <form:TextBox ui:field="name" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup identity="basicStroomQLTableSettingsQuery" label="Query"
+                        helpText="StroomQL Query component whose results this table shows. Several tables can show the same query's results, each with its own sorting, filters and formatting.">
+            <i:SelectionBox ui:field="query" addStyleNames="w-100"/>
+        </form:FormGroup>
+        <form:FormGroup identity="basicStroomQLTableSettingsPageSize" label="Table Page Size"
+                        helpText="Number of rows shown on each page of the table, from 1 to 10,000. Default is 100."
+                        screenReaderText="1 to 10,000 rows. Default is 100.">
+            <valuespinner:ValueSpinner ui:field="pageSize" addStyleNames="value-spinner--wide"
+                                       minValue="1" maxValue="10000"/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

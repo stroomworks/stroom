@@ -20,6 +20,8 @@ import stroom.dashboard.client.component.EmbeddedQueryController;
 import stroom.dashboard.client.component.KeyValueInputController;
 import stroom.dashboard.client.component.ListInputController;
 import stroom.dashboard.client.component.QueryPaneController;
+import stroom.dashboard.client.component.StroomQLQueryPaneController;
+import stroom.dashboard.client.component.StroomQLTablePaneController;
 import stroom.dashboard.client.component.TableController;
 import stroom.dashboard.client.component.TableFilterInputController;
 import stroom.dashboard.client.component.TextInputController;
@@ -46,6 +48,8 @@ public class DashboardPaneTypes {
     /// @param listInputProvider      Makes the controllers of List Input panes.
     /// @param textInputProvider      Makes the controllers of Text Input panes.
     /// @param tableFilterProvider    Makes the controllers of Table Filter panes.
+    /// @param stroomQLQueryProvider  Makes the controllers of StroomQL Query panes.
+    /// @param stroomQLTableProvider  Makes the controllers of StroomQL Table panes.
     @Inject
     public DashboardPaneTypes(final PaneRegistry paneRegistry,
                               final Provider<QueryPaneController> queryProvider,
@@ -56,7 +60,9 @@ public class DashboardPaneTypes {
                               final Provider<KeyValueInputController> keyValueInputProvider,
                               final Provider<ListInputController> listInputProvider,
                               final Provider<TextInputController> textInputProvider,
-                              final Provider<TableFilterInputController> tableFilterProvider) {
+                              final Provider<TableFilterInputController> tableFilterProvider,
+                              final Provider<StroomQLQueryPaneController> stroomQLQueryProvider,
+                              final Provider<StroomQLTablePaneController> stroomQLTableProvider) {
         paneRegistry.register(QueryPaneController.TYPE, queryProvider);
         paneRegistry.register(TableController.TYPE, tableProvider);
         paneRegistry.register(VisController.TYPE, visProvider);
@@ -66,5 +72,7 @@ public class DashboardPaneTypes {
         paneRegistry.register(ListInputController.TYPE, listInputProvider);
         paneRegistry.register(TextInputController.TYPE, textInputProvider);
         paneRegistry.register(TableFilterInputController.TYPE, tableFilterProvider);
+        paneRegistry.register(StroomQLQueryPaneController.TYPE, stroomQLQueryProvider);
+        paneRegistry.register(StroomQLTablePaneController.TYPE, stroomQLTableProvider);
     }
 }

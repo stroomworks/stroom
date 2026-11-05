@@ -29,6 +29,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -77,6 +78,12 @@ public class QuerySearchRequest {
     private final GroupSelection groupSelection;
     @JsonProperty
     private final QueryTablePreferences queryTablePreferences;
+    @JsonPropertyDescription("If set, the query's table is returned once for each item, under the item's " +
+            "component ID and with the item's table preferences, requested range and group selection, in place " +
+            "of the query's own table and visualisation. If not set, the query's table and visualisation are " +
+            "returned using queryTablePreferences, requestedRange and groupSelection.")
+    @JsonProperty
+    private final List<QueryComponentRequest> componentRequests;
 
     @JsonCreator
     public QuerySearchRequest(
@@ -90,7 +97,8 @@ public class QuerySearchRequest {
             @JsonProperty("requestedRange") final OffsetRange requestedRange,
             @JsonProperty("openGroups") final Set<String> openGroups,
             @JsonProperty("groupSelection") final GroupSelection groupSelection,
-            @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences) {
+            @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences,
+            @JsonProperty("componentRequests") final List<QueryComponentRequest> componentRequests) {
         this.searchRequestSource = searchRequestSource;
         this.queryKey = queryKey;
         this.query = query;
@@ -103,6 +111,7 @@ public class QuerySearchRequest {
         this.groupSelection = groupSelection == null ?
                 GroupSelection.builder().openGroups(openGroups).build() : groupSelection;
         this.queryTablePreferences = queryTablePreferences;
+        this.componentRequests = componentRequests;
     }
 
     public SearchRequestSource getSearchRequestSource() {
@@ -145,6 +154,12 @@ public class QuerySearchRequest {
         return queryTablePreferences;
     }
 
+    /// @return The copies of the query's table to return, one for each component, or null to return the
+    /// query's own table and visualisation.
+    public List<QueryComponentRequest> getComponentRequests() {
+        return componentRequests;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -164,7 +179,8 @@ public class QuerySearchRequest {
                 Objects.equals(requestedRange, that.requestedRange) &&
                 Objects.equals(openGroups, that.openGroups) &&
                 Objects.equals(groupSelection, that.groupSelection) &&
-                Objects.equals(queryTablePreferences, that.queryTablePreferences);
+                Objects.equals(queryTablePreferences, that.queryTablePreferences) &&
+                Objects.equals(componentRequests, that.componentRequests);
     }
 
     @Override
@@ -180,7 +196,8 @@ public class QuerySearchRequest {
                 requestedRange,
                 openGroups,
                 groupSelection,
-                queryTablePreferences);
+                queryTablePreferences,
+                componentRequests);
     }
 
     @Override
@@ -197,6 +214,7 @@ public class QuerySearchRequest {
                 ", openGroups=" + openGroups +
                 ", groupSelection=" + groupSelection +
                 ", queryTablePreferences=" + queryTablePreferences +
+                ", componentRequests=" + componentRequests +
                 '}';
     }
 
@@ -224,6 +242,7 @@ public class QuerySearchRequest {
         private Set<String> openGroups;
         private GroupSelection groupSelection;
         private QueryTablePreferences queryTablePreferences;
+        private List<QueryComponentRequest> componentRequests;
 
         private Builder() {
         }
@@ -238,6 +257,7 @@ public class QuerySearchRequest {
             this.storeHistory = request.storeHistory;
             this.groupSelection = request.groupSelection;
             this.queryTablePreferences = request.queryTablePreferences;
+            this.componentRequests = request.componentRequests;
         }
 
         /**
@@ -300,6 +320,17 @@ public class QuerySearchRequest {
             return this;
         }
 
+        /// Asks for the query's table once for each component, in place of the query's own table and
+        /// visualisation.
+        ///
+        /// @param componentRequests The copies of the table to return, or null for the query's own table and
+        ///                          visualisation.
+        /// @return This builder.
+        public Builder componentRequests(final List<QueryComponentRequest> componentRequests) {
+            this.componentRequests = componentRequests;
+            return this;
+        }
+
         public QuerySearchRequest build() {
             return new QuerySearchRequest(
                     searchRequestSource,
@@ -312,7 +343,8 @@ public class QuerySearchRequest {
                     requestedRange,
                     openGroups,
                     groupSelection,
-                    queryTablePreferences);
+                    queryTablePreferences,
+                    componentRequests);
         }
     }
 }

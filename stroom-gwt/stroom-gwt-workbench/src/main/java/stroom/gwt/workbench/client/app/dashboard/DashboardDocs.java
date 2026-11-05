@@ -260,6 +260,36 @@ public final class DashboardDocs {
             component("text", "b1", "Bravo", ""),
             component("text", "c1", "Charlie", ""));
 
+    /// The query of [#STROOMQL_QUERY_DASHBOARD]'s StroomQL Query (as JSON string content), using
+    /// the Text Input `in1`'s parameter `name`.
+    public static final String STROOMQL_QUERY =
+            "from index\\nwhere Name = ${component.in1.param.name}\\nselect Name\\n";
+
+    /// A Text Input (key `name`, value `alpha`) beside a StroomQL Query, 'Events Query' (`sq1`),
+    /// whose query ([#STROOMQL_QUERY]) uses it.
+    public static final String STROOMQL_QUERY_DASHBOARD = stroomQLQueryDashboard("");
+
+    /// As [#STROOMQL_QUERY_DASHBOARD], with its query run on open, below which two StroomQL Tables,
+    /// 'Events A' (`st1`) and 'Events B' (`st2`, 50 rows to a page), show its results, beside a
+    /// Text pane, 'Event Text' (`tx1`), showing `st1`'s selected row.
+    public static final String STROOMQL_TABLE_DASHBOARD = doc("dash-st", "StroomQL Tables", null,
+            "\"designMode\": false",
+            split(1,
+                    split(0, sized(tabs(0, "in1"), 250, 100), sized(tabs(0, "sq1"), 600, 100)),
+                    split(0, tabs(0, "st1"), tabs(0, "st2"), tabs(0, "tx1"))),
+            component("text-input", "in1", "Name Filter", "\"key\": \"name\", \"value\": \"alpha\""),
+            stroomQLQuery("sq1", "Events Query", STROOMQL_QUERY, ", \"automate\": {\"open\": true}"),
+            stroomQLTable("st1", "Events A", "sq1", ""),
+            stroomQLTable("st2", "Events B", "sq1", ", \"queryTablePreferences\": {\"pageSize\": 50}"),
+            component("text", "tx1", "Event Text", "\"tableId\": \"st1\""));
+
+    /// A StroomQL Table, 'Events A' (`st1`), on a dashboard with no StroomQL Query to show the
+    /// results of.
+    public static final String STROOMQL_TABLE_NO_QUERY_DASHBOARD = doc("dash-st0", "StroomQL Table", null,
+            "\"designMode\": false",
+            tabs(0, "st1"),
+            stroomQLTable("st1", "Events A", null, ""));
+
     private DashboardDocs() {
         // Static utility
     }
@@ -354,6 +384,41 @@ public final class DashboardDocs {
     public static String vis(final String id, final String name) {
         return component("vis", id, name, "\"tableId\": \"t1\", \"visualisation\": {\"type\": \"Visualisation\", "
                                           + "\"uuid\": \"vis-1\", \"name\": \"Bar\"}, \"json\": \"{}\"");
+    }
+
+    /// A StroomQL Query component.
+    ///
+    /// @param id    Its id.
+    /// @param name  Its name.
+    /// @param query Its query, as JSON string content.
+    /// @param extra More members of its settings, starting with a comma, or empty.
+    /// @return The component's JSON.
+    public static String stroomQLQuery(final String id, final String name, final String query, final String extra) {
+        return component("stroomql-query", id, name, "\"query\": \"" + query + "\"" + extra);
+    }
+
+    /// A StroomQL Table component.
+    ///
+    /// @param id      Its id.
+    /// @param name    Its name.
+    /// @param queryId The id of the StroomQL Query whose results it shows, or null for none.
+    /// @param extra   More members of its settings, starting with a comma, or empty.
+    /// @return The component's JSON.
+    public static String stroomQLTable(final String id, final String name, final String queryId, final String extra) {
+        return component("stroomql-table", id, name, "\"queryId\": " + (queryId == null
+                ? "null"
+                : "\"" + queryId + "\"") + extra);
+    }
+
+    /// As [#STROOMQL_QUERY_DASHBOARD], with more settings of its StroomQL Query.
+    ///
+    /// @param extra More members of the StroomQL Query's settings, starting with a comma, or empty.
+    /// @return The dashboard's JSON.
+    public static String stroomQLQueryDashboard(final String extra) {
+        return doc("dash-sq", "StroomQL", null, "\"designMode\": false",
+                split(0, sized(tabs(0, "in1"), 250, 100), sized(tabs(0, "sq1"), 600, 100)),
+                component("text-input", "in1", "Name Filter", "\"key\": \"name\", \"value\": \"alpha\""),
+                stroomQLQuery("sq1", "Events Query", STROOMQL_QUERY, extra));
     }
 
     /// A Text Input component.

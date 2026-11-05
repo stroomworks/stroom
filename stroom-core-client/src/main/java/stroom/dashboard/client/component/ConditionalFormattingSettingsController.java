@@ -20,6 +20,7 @@ import stroom.dashboard.client.main.DashboardContext;
 import stroom.dashboard.client.main.PaneDataModifier;
 import stroom.dashboard.shared.ComponentConfig;
 import stroom.dashboard.shared.EmbeddedQueryComponentSettings;
+import stroom.dashboard.shared.StroomQLTableComponentSettings;
 import stroom.dashboard.shared.TableComponentSettings;
 import stroom.query.api.ConditionalFormattingRule;
 import stroom.query.client.result.component.ConditionalFormattingRuleEditorController;
@@ -34,7 +35,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/// The Conditional Formatting tab of a Table's or Embedded Query's settings: the shared
+/// The Conditional Formatting tab of a Table's, Embedded Query's or StroomQL Table's settings: the shared
 /// [ConditionalFormattingRulesController], reading the rules from the pane's config and writing
 /// them back.
 public class ConditionalFormattingSettingsController extends ConditionalFormattingRulesController
@@ -62,6 +63,9 @@ public class ConditionalFormattingSettingsController extends ConditionalFormatti
         } else if (componentConfig.getSettings() instanceof
                 final EmbeddedQueryComponentSettings embeddedQueryComponentSettings) {
             read(embeddedQueryComponentSettings.getQueryTablePreferences());
+        } else if (componentConfig.getSettings() instanceof
+                final StroomQLTableComponentSettings stroomQLTableComponentSettings) {
+            read(stroomQLTableComponentSettings.getQueryTablePreferences());
         }
     }
 
@@ -91,6 +95,15 @@ public class ConditionalFormattingSettingsController extends ConditionalFormatti
             final EmbeddedQueryComponentSettings newSettings = oldSettings
                     .copy()
                     .queryTablePreferences(queryTablePreferences)
+                    .build();
+            return componentConfig
+                    .copy()
+                    .settings(newSettings)
+                    .build();
+        } else if (componentConfig.getSettings() instanceof final StroomQLTableComponentSettings oldSettings) {
+            final StroomQLTableComponentSettings newSettings = oldSettings
+                    .copy()
+                    .queryTablePreferences(write(oldSettings.getQueryTablePreferences()))
                     .build();
             return componentConfig
                     .copy()

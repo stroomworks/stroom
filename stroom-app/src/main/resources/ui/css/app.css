@@ -260,6 +260,8 @@
 @import url("scheduled-processing.css");
 @import url("annotation-tag-text.css");
 @import url("query-pane.css");
+@import url("stroomql-query-pane.css");
+@import url("stroomql-table-pane.css");
 @import url("unknown-pane.css");
 @import url("iframe-content.css");
 /* Last, so a scroll pane fills its parent whatever other classes it has */

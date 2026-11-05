@@ -19,6 +19,7 @@ package stroom.query.client;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.Result;
+import stroom.query.shared.QueryTablePreferences;
 
 public interface QueryResultConsumer {
 
@@ -35,4 +36,12 @@ public interface QueryResultConsumer {
     void setData(Result componentResult);
 
     void setQueryModel(QueryModel queryModel);
+
+    /// Gives the preferences (sorts, filters, formats) for this consumer's own copy of the query's table.
+    /// Only asked of a consumer added with [QueryModel#addTableComponent(String, QueryResultConsumer)].
+    ///
+    /// @return The preferences, or null for none.
+    default QueryTablePreferences getQueryTablePreferences() {
+        return null;
+    }
 }

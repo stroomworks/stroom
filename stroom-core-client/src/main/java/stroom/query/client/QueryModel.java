@@ -30,6 +30,7 @@ import stroom.query.api.SearchRequestSource;
 import stroom.query.api.SearchRequestSource.SourceType;
 import stroom.query.api.TimeRange;
 import stroom.query.client.model.ResultStoreModel;
+import stroom.query.shared.QueryComponentRequest;
 import stroom.query.shared.QueryContext;
 import stroom.query.shared.QueryResource;
 import stroom.query.shared.QuerySearchRequest;
@@ -49,6 +50,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -87,6 +89,8 @@ public class QueryModel implements HasHandlers {
     private final List<SearchErrorListener> errorListeners = new ArrayList<>();
     private final List<TokenErrorListener> tokenErrorListeners = new ArrayList<>();
     private final Map<String, QueryResultConsumer> resultComponents = new HashMap<>();
+    // The result components that are each given their own copy of the query's table, in the order added
+    private final Set<String> tableComponentIds = new LinkedHashSet<>();
 
     public QueryModel(final EventBus eventBus,
                       final RestFactory restFactory,
@@ -103,6 +107,30 @@ public class QueryModel implements HasHandlers {
     public void addResultComponent(final String componentId, final QueryResultConsumer resultComponent) {
         resultComponent.setQueryModel(this);
         resultComponents.put(componentId, resultComponent);
+    }
+
+    /// Adds a component that is given its own copy of the query's table, with its own preferences
+    /// ([QueryResultConsumer#getQueryTablePreferences()]), page and open groups, e.g. one of several
+    /// dashboard tables showing this query. Once a model has any, the server returns only their copies:
+    /// the query's own table and visualisation aren't returned, so components added with
+    /// [#addResultComponent(String, QueryResultConsumer)] under [#TABLE_COMPONENT_ID] or
+    /// [#VIS_COMPONENT_ID] are given nothing. A component added while a search runs is given nothing
+    /// until the next search, as the server makes its copies when a search starts.
+    ///
+    /// @param componentId     The ID its copy of the table is returned under, unique within this model.
+    /// @param resultComponent The component.
+    public void addTableComponent(final String componentId, final QueryResultConsumer resultComponent) {
+        addResultComponent(componentId, resultComponent);
+        tableComponentIds.add(componentId);
+    }
+
+    /// Removes a component added with [#addResultComponent(String, QueryResultConsumer)] or
+    /// [#addTableComponent(String, QueryResultConsumer)], which is given no more results.
+    ///
+    /// @param componentId The ID it was added with.
+    public void removeResultComponent(final String componentId) {
+        resultComponents.remove(componentId);
+        tableComponentIds.remove(componentId);
     }
 
     public void init(final DocRef queryDocRef) {
@@ -231,7 +259,7 @@ public class QueryModel implements HasHandlers {
     public void forceNewSearch(final String componentId,
                                final Consumer<Result> resultConsumer) {
         if (currentSearch != null) {
-            final boolean exec = exec(componentId, resultConsumer, null);
+            final boolean exec = exec(componentId, resultConsumer, null, null);
             // If no exec happened then let the caller know.
             if (!exec) {
                 resultConsumer.accept(null);
@@ -243,9 +271,23 @@ public class QueryModel implements HasHandlers {
      * Refresh the search data for the specified component.
      */
     public void refresh(final String componentId, final Consumer<Result> resultConsumer) {
+        refresh(componentId, null, resultConsumer);
+    }
+
+    /// Fetches the given rows of the current search's results for a component, e.g. a single row, rather
+    /// than the rows the component asks for ([QueryResultConsumer#getRequestedRange()]). The component
+    /// isn't given them; they go to the consumer.
+    ///
+    /// @param componentId    The component whose results to fetch.
+    /// @param requestedRange The rows to fetch, or null for the rows the component asks for.
+    /// @param resultConsumer Given the component's result, or null if there is no search, the component
+    ///                       isn't known or the request fails.
+    public void refresh(final String componentId,
+                        final OffsetRange requestedRange,
+                        final Consumer<Result> resultConsumer) {
         boolean exec = false;
         if (currentQueryKey != null) {
-            exec = exec(componentId, resultConsumer, currentQueryKey);
+            exec = exec(componentId, resultConsumer, currentQueryKey, requestedRange);
         }
 
         // If no exec happened then let the caller know.
@@ -254,23 +296,31 @@ public class QueryModel implements HasHandlers {
         }
     }
 
+    // Asks for one component's results. A component with its own copy of the table asks for that alone.
     private boolean exec(final String componentId,
                          final Consumer<Result> resultConsumer,
-                         final QueryKey queryKey) {
+                         final QueryKey queryKey,
+                         final OffsetRange requestedRange) {
         final QueryResultConsumer resultComponent = resultComponents.get(componentId);
         if (resultComponent == null) {
             return false;
         }
         // The search this is for, to tell whether it is still current when the reply comes
         final QuerySearchRequest searchAtStart = currentSearch;
+        final OffsetRange range = requestedRange != null
+                ? requestedRange
+                : resultComponent.getRequestedRange();
 
         final QuerySearchRequest request = currentSearch
                 .copy()
                 .queryKey(queryKey)
                 .storeHistory(false)
                 .groupSelection(resultComponent.getGroupSelection())
-                .requestedRange(resultComponent.getRequestedRange())
+                .requestedRange(range)
                 .queryTablePreferences(queryTablePreferencesSupplier.get())
+                .componentRequests(tableComponentIds.contains(componentId)
+                        ? List.of(createComponentRequest(componentId, resultComponent, range))
+                        : null)
                 .build();
         restFactory
                 .create(QUERY_RESOURCE)
@@ -278,6 +328,12 @@ public class QueryModel implements HasHandlers {
                 .onSuccess(response -> {
                     Result result = null;
                     try {
+                        // A forced new search (no query key) starts a search of its own on the server,
+                        // which this model never adopts or polls again: its results are read once, here,
+                        // so its store goes now rather than being left until the server expires it
+                        if (queryKey == null && response != null && response.getQueryKey() != null) {
+                            deleteStore(response.getNode(), response.getQueryKey(), DestroyReason.NO_LONGER_NEEDED);
+                        }
                         if (response != null && response.getResults() != null) {
                             currentHighlights = response.getHighlights();
                             for (final Result componentResult : response.getResults()) {
@@ -308,6 +364,31 @@ public class QueryModel implements HasHandlers {
                 .taskMonitorFactory(taskMonitorFactory)
                 .exec();
         return true;
+    }
+
+    // A copy of the query's table for each component that has its own, or null if none do, for the
+    // query's own table and visualisation
+    private List<QueryComponentRequest> createComponentRequests() {
+        if (tableComponentIds.isEmpty()) {
+            return null;
+        }
+        final List<QueryComponentRequest> componentRequests = new ArrayList<>(tableComponentIds.size());
+        for (final String componentId : tableComponentIds) {
+            final QueryResultConsumer resultComponent = resultComponents.get(componentId);
+            componentRequests.add(createComponentRequest(
+                    componentId, resultComponent, resultComponent.getRequestedRange()));
+        }
+        return componentRequests;
+    }
+
+    private static QueryComponentRequest createComponentRequest(final String componentId,
+                                                                final QueryResultConsumer resultComponent,
+                                                                final OffsetRange requestedRange) {
+        return new QueryComponentRequest(
+                componentId,
+                resultComponent.getQueryTablePreferences(),
+                requestedRange,
+                resultComponent.getGroupSelection());
     }
 
     private void deleteStore(final String node, final QueryKey queryKey, final DestroyReason destroyReason) {
@@ -341,6 +422,7 @@ public class QueryModel implements HasHandlers {
                     .groupSelection(groupSelection)
                     .requestedRange(requestedRange)
                     .queryTablePreferences(queryTablePreferencesSupplier.get())
+                    .componentRequests(createComponentRequests())
                     .build();
 
             restFactory
@@ -500,6 +582,25 @@ public class QueryModel implements HasHandlers {
 
     public QuerySearchRequest getCurrentSearch() {
         return currentSearch;
+    }
+
+    /// Gives the current search as it asks for one component's results alone, e.g. to download them or
+    /// to list a column's values. For a component with its own copy of the query's table
+    /// ([#addTableComponent(String, QueryResultConsumer)]) it asks for that copy, with the component's
+    /// preferences, page and open groups; otherwise it is the current search.
+    ///
+    /// @param componentId The component.
+    /// @return The search, or null if there is none.
+    public QuerySearchRequest getCurrentSearch(final String componentId) {
+        final QueryResultConsumer resultComponent = resultComponents.get(componentId);
+        if (currentSearch == null || resultComponent == null || !tableComponentIds.contains(componentId)) {
+            return currentSearch;
+        }
+        return currentSearch
+                .copy()
+                .componentRequests(List.of(createComponentRequest(
+                        componentId, resultComponent, resultComponent.getRequestedRange())))
+                .build();
     }
 
     public String getCurrentNode() {
