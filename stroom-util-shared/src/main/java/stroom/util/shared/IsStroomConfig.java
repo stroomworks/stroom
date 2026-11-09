@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,11 @@
 
 package stroom.util.shared;
 
-/**
- * Marker interface for config classes used by Stroom.
- * Helps with ensuring all config classes are bound.
- * Used to distinguish between config classes that are used by proxy.
- * Config classes can implement {@link IsStroomConfig} and IsProxyConfig if
- * they are shared.
- */
+/// Marker interface for config classes used by Stroom.
+/// Helps with ensuring all config classes are bound.
+/// Used to distinguish between config classes that are used by proxy.
+/// Config classes can implement both [IsStroomConfig] and [IsProxyConfig] if
+/// they are shared.
 public interface IsStroomConfig extends HasPropertyPath {
 
 }

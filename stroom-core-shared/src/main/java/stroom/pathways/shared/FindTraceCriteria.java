@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,14 @@ package stroom.pathways.shared;
 
 import stroom.docref.DocRef;
 import stroom.pathways.shared.pathway.Pathway;
+import stroom.query.api.TimeRange;
 import stroom.query.api.datasource.FieldFields;
+import stroom.query.api.datasource.QuickFilterFields;
+import stroom.quickfilter.shared.QuickFilterContext;
 import stroom.util.shared.BaseCriteria;
 import stroom.util.shared.CriteriaFieldSort;
 import stroom.util.shared.PageRequest;
+import stroom.util.shared.filter.FilterFieldDefinition;
 import stroom.util.shared.time.SimpleDuration;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -43,6 +47,26 @@ public class FindTraceCriteria extends BaseCriteria {
     public static final List<CriteriaFieldSort> DEFAULT_SORT_LIST =
             Collections.singletonList(DEFAULT_SORT);
 
+    public static final FilterFieldDefinition FIELD_DEF_OPERATION =
+            FilterFieldDefinition.defaultField("Operation");
+    public static final FilterFieldDefinition FIELD_DEF_TRACE_ID =
+            FilterFieldDefinition.defaultField("Trace Id", "traceid");
+    public static final FilterFieldDefinition FIELD_DEF_IS_ERROR =
+            FilterFieldDefinition.qualifiedField("Is Error", "iserror");
+    public static final List<FilterFieldDefinition> FIELD_DEFINITIONS =
+            List.of(FIELD_DEF_OPERATION, FIELD_DEF_TRACE_ID, FIELD_DEF_IS_ERROR);
+
+    /**
+     * The field set only: a traces list is over one Plan B document, so the screen calls
+     * {@link QuickFilterContext#withDataSource} with it. Operations and trace ids in one document
+     * mean nothing in another, so their histories are kept apart.
+     */
+    public static final QuickFilterContext QUICK_FILTER_CONTEXT = QuickFilterContext.of(
+            "traces",
+            FIELD_DEFINITIONS,
+            QuickFilterFields.uiTextDefaults(FIELD_DEFINITIONS),
+            QuickFilterFields.uiText(FIELD_DEFINITIONS));
+
     @JsonProperty
     private final DocRef dataSourceRef;
     @JsonProperty
@@ -51,13 +75,23 @@ public class FindTraceCriteria extends BaseCriteria {
     private final Pathway pathway;
     @JsonProperty
     private SimpleDuration temporalOrderingTolerance;
+    @JsonProperty
+    private final TimeRange timeRange;
 
-    @SuppressWarnings("checkstyle:linelength")
-    public FindTraceCriteria(@JsonProperty("pageRequest") final PageRequest pageRequest,
-                             @JsonProperty("sortList") final List<CriteriaFieldSort> sortList,
-                             @JsonProperty("dataSourceRef") final DocRef dataSourceRef,
-                             @JsonProperty("temporalOrderingTolerance") final SimpleDuration temporalOrderingTolerance) {
-        this(pageRequest, sortList, dataSourceRef, null, null, temporalOrderingTolerance);
+    public FindTraceCriteria(final PageRequest pageRequest,
+                             final List<CriteriaFieldSort> sortList,
+                             final DocRef dataSourceRef,
+                             final SimpleDuration temporalOrderingTolerance) {
+        this(pageRequest, sortList, dataSourceRef, null, null, temporalOrderingTolerance, null);
+    }
+
+    public FindTraceCriteria(final PageRequest pageRequest,
+                             final List<CriteriaFieldSort> sortList,
+                             final DocRef dataSourceRef,
+                             final String filter,
+                             final Pathway pathway,
+                             final SimpleDuration temporalOrderingTolerance) {
+        this(pageRequest, sortList, dataSourceRef, filter, pathway, temporalOrderingTolerance, null);
     }
 
     @SuppressWarnings("checkstyle:linelength")
@@ -67,12 +101,14 @@ public class FindTraceCriteria extends BaseCriteria {
                              @JsonProperty("dataSourceRef") final DocRef dataSourceRef,
                              @JsonProperty("filter") final String filter,
                              @JsonProperty("pathway") final Pathway pathway,
-                             @JsonProperty("temporalOrderingTolerance") final SimpleDuration temporalOrderingTolerance) {
+                             @JsonProperty("temporalOrderingTolerance") final SimpleDuration temporalOrderingTolerance,
+                             @JsonProperty("timeRange") final TimeRange timeRange) {
         super(pageRequest, sortList);
         this.dataSourceRef = dataSourceRef;
         this.filter = filter;
         this.pathway = pathway;
         this.temporalOrderingTolerance = temporalOrderingTolerance;
+        this.timeRange = timeRange;
     }
 
     public DocRef getDataSourceRef() {
@@ -91,6 +127,10 @@ public class FindTraceCriteria extends BaseCriteria {
         return temporalOrderingTolerance;
     }
 
+    public TimeRange getTimeRange() {
+        return timeRange;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -106,12 +146,13 @@ public class FindTraceCriteria extends BaseCriteria {
         return Objects.equals(dataSourceRef, that.dataSourceRef) &&
                Objects.equals(filter, that.filter) &&
                Objects.equals(pathway, that.pathway) &&
-               Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance);
+               Objects.equals(temporalOrderingTolerance, that.temporalOrderingTolerance) &&
+               Objects.equals(timeRange, that.timeRange);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), dataSourceRef, filter, pathway, temporalOrderingTolerance);
+        return Objects.hash(super.hashCode(), dataSourceRef, filter, pathway, temporalOrderingTolerance, timeRange);
     }
 
     @Override
@@ -121,6 +162,7 @@ public class FindTraceCriteria extends BaseCriteria {
                ", filter='" + filter + '\'' +
                ", pathway=" + pathway +
                ", temporalOrderingTolerance=" + temporalOrderingTolerance +
+               ", timeRange=" + timeRange +
                '}';
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package stroom.data.retention.impl;
 
 import stroom.data.retention.api.DataRetentionRulesProvider;
+import stroom.docstore.api.DocDependencyProviderBinder;
 import stroom.job.api.ScheduledJobsBinder;
 import stroom.util.RunnableWrapper;
 import stroom.util.guice.RestResourcesBinder;
@@ -31,6 +32,8 @@ public class DataRetentionModule extends AbstractModule {
     protected void configure() {
         bind(DataRetentionRulesService.class).to(DataRetentionRulesServiceImpl.class);
         bind(DataRetentionRulesProvider.class).to(DataRetentionRulesServiceImpl.class);
+        DocDependencyProviderBinder.create(binder())
+                .bind(DataRetentionRulesServiceImpl.class);
 
         RestResourcesBinder.create(binder())
                 .bind(DataRetentionRulesResourceImpl.class);

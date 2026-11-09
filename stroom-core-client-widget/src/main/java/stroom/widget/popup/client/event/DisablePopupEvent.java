@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,25 @@
 
 package stroom.widget.popup.client.event;
 
+import stroom.widget.component.client.Controller;
+import stroom.widget.popup.client.DialogAction;
+
 import com.google.gwt.event.shared.EventHandler;
 import com.google.gwt.event.shared.GwtEvent;
-import com.gwtplatform.mvp.client.PresenterWidget;
 
 public class DisablePopupEvent extends GwtEvent<DisablePopupEvent.Handler> {
 
     private static Type<Handler> TYPE;
-    private final PresenterWidget<?> presenterWidget;
+    private final Controller controller;
+    private final DialogAction action;
 
-    private DisablePopupEvent(final PresenterWidget<?> presenterWidget) {
-        this.presenterWidget = presenterWidget;
+    private DisablePopupEvent(final Controller controller, final DialogAction action) {
+        this.controller = controller;
+        this.action = action;
     }
 
-    public static Builder builder(final PresenterWidget<?> presenterWidget) {
-        return new Builder(presenterWidget);
+    public static Builder builder(final Controller controller) {
+        return new Builder(controller);
     }
 
     public static Type<Handler> getType() {
@@ -50,8 +54,13 @@ public class DisablePopupEvent extends GwtEvent<DisablePopupEvent.Handler> {
         handler.onDisable(this);
     }
 
-    public PresenterWidget<?> getPresenterWidget() {
-        return presenterWidget;
+    /// @return The controller shown as the popup.
+    public Controller getController() {
+        return controller;
+    }
+
+    public DialogAction getAction() {
+        return action;
     }
 
     public interface Handler extends EventHandler {
@@ -61,14 +70,20 @@ public class DisablePopupEvent extends GwtEvent<DisablePopupEvent.Handler> {
 
     public static class Builder {
 
-        private final PresenterWidget<?> presenterWidget;
+        private final Controller controller;
+        private DialogAction action;
 
-        public Builder(final PresenterWidget<?> presenterWidget) {
-            this.presenterWidget = presenterWidget;
+        public Builder(final Controller controller) {
+            this.controller = controller;
+        }
+
+        public Builder action(final DialogAction action) {
+            this.action = action;
+            return this;
         }
 
         public void fire() {
-            presenterWidget.fireEvent(new DisablePopupEvent(presenterWidget));
+            controller.fireEvent(new DisablePopupEvent(controller, action));
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package stroom.config.global.shared;
 
 import stroom.util.shared.PageResponse;
 import stroom.util.shared.ResultPage;
+import stroom.util.shared.TokenError;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -40,11 +41,18 @@ public class ListConfigResponse extends ResultPage<ConfigProperty> {
         this.nodeName = nodeName;
     }
 
+    public ListConfigResponse(final List<ConfigProperty> values,
+                              final PageResponse pageResponse,
+                              final String nodeName) {
+        this(values, pageResponse, nodeName, null);
+    }
+
     @JsonCreator
     public ListConfigResponse(@JsonProperty("values") final List<ConfigProperty> values,
                               @JsonProperty("pageResponse") final PageResponse pageResponse,
-                              @JsonProperty("nodeName") final String nodeName) {
-        super(values, pageResponse);
+                              @JsonProperty("nodeName") final String nodeName,
+                              @JsonProperty("filterError") final TokenError filterError) {
+        super(values, pageResponse, filterError);
         this.nodeName = nodeName;
     }
 

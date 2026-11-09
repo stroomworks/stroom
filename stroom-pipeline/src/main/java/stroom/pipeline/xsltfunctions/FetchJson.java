@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,37 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Optional;
 
+@XsltFunctionDef(
+        name = FetchJson.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.NETWORK,
+        commonDescription = """
+                Sends an HTTP GET request and converts a JSON response body to XML using `json-to-xml()`. A `404`
+                response produces an empty sequence.
+                """,
+        commonReturnType = XsltDataType.SEQUENCE,
+        commonReturnDescription = "The XML representation of the JSON response, or an empty sequence when no " +
+                "usable response is returned.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "url",
+                                        description = "The URL to fetch.",
+                                        argType = XsltDataType.STRING
+                                ),
+                                @XsltFunctionArg(
+                                        name = "clientConfig",
+                                        description = "Optional JSON HTTP client configuration, including SSL " +
+                                                "settings.",
+                                        argType = XsltDataType.STRING,
+                                        isOptional = true
+                                )
+                        }
+                )
+        })
 class FetchJson extends StroomExtensionFunctionCall {
+
+    public static final String FUNCTION_NAME = "fetch-json";
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(FetchJson.class);
 

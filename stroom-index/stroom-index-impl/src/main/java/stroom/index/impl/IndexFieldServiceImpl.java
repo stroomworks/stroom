@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -166,7 +166,7 @@ public class IndexFieldServiceImpl implements IndexFieldService {
                     PageRequest.oneRow(),
                     FindFieldCriteria.DEFAULT_SORT_LIST,
                     docRef,
-                    StringExpressionUtil.equalsCaseSensitive(fieldName),
+                    StringExpressionUtil.equalTo(fieldName),
                     null);
             final ResultPage<IndexField> resultPage = findFields(findIndexFieldCriteria);
             if (!resultPage.isEmpty()) {

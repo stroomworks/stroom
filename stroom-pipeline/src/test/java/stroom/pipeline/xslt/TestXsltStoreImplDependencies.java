@@ -22,6 +22,7 @@ import stroom.docstore.api.DependencyRemapper;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.pipeline.shared.XsltDoc;
+import stroom.security.api.SecurityContext;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -258,6 +259,7 @@ class TestXsltStoreImplDependencies {
 
         return new XsltStoreImpl(
                 storeFactory,
+                Mockito.mock(SecurityContext.class),
                 Mockito.mock(XsltSerialiser.class),
                 new XsltReferenceParserImpl(lookup));
     }

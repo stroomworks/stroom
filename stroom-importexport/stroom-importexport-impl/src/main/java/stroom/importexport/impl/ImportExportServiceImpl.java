@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,6 +87,13 @@ public class ImportExportServiceImpl implements ImportExportService {
     @Override
     public ExportSummary exportConfig(final Set<DocRef> docRefs,
                                       final Path zipFile) {
+        return exportConfig(docRefs, null, zipFile);
+    }
+
+    @Override
+    public ExportSummary exportConfig(final Set<DocRef> docRefs,
+                                      final Set<String> includedTypes,
+                                      final Path zipFile) {
         final Path explodeDir = workingZipDir(zipFile);
         try {
             Files.createDirectories(explodeDir);
@@ -97,6 +104,7 @@ public class ImportExportServiceImpl implements ImportExportService {
                     explodeDir,
                     docRefs,
                     Collections.emptySet(),
+                    includedTypes,
                     true);
 
             // Now zip the dir.

@@ -47,6 +47,7 @@ proxyConfig:
   forwardFileDestinations:
   - atomicMoveEnabled: true
     enabled: true
+    fsyncMode: "ENABLED"
     instant: false
     livenessCheckMode: "READ"
     livenessCheckPath: null
@@ -77,6 +78,7 @@ proxyConfig:
       connectionRequestTimeout: "PT3M"
       connectionTimeout: "PT3M"
       cookiesEnabled: false
+      followRedirects: true
       keepAlive: "PT0S"
       maxConnections: 1024
       maxConnectionsPerRoute: 1024
@@ -105,12 +107,20 @@ proxyConfig:
       queueAndRetryEnabled: true
       retryDelay: "PT10M"
       retryDelayGrowthFactor: 1.0
+  forwardS3Destinations: []
+  fsync:
+    aggregateInputQueueMode: "ENABLED"
+    forwardingInputQueueMode: "ENABLED"
+    preAggregateInputQueueMode: "ENABLED"
+    receivingMode: "ENABLED"
+    zipSplittingInputQueueMode: "ENABLED"
   haltBootOnConfigValidationFailure: true
   logStream:
     metaKeys:
     - "GUID"
     - "ReceiptId"
     - "Feed"
+    - "Type"
     - "System"
     - "Environment"
     - "RemoteHost"
@@ -118,6 +128,7 @@ proxyConfig:
     - "RemoteDN"
     - "RemoteCertExpiry"
     - "DataReceiptRule"
+    useMappedDiagnosticContext: false
   path:
     data: "data"
     home: null
@@ -162,6 +173,33 @@ proxyConfig:
     - "Test Events"
     - "Test Reference"
     receiptCheckMode: "FEED_STATUS"
+    s3Event:
+      rePollDuration: "PT5M"
+      sleepDurationPostFailure: "PT1M"
+      sqs:
+        assumeRole: null
+        awsRegionName: null
+        credentials: null
+        deadLetterQueueUrl: null
+        httpClient:
+          connectionRequestTimeout: "PT3M"
+          connectionTimeout: "PT3M"
+          cookiesEnabled: false
+          followRedirects: true
+          keepAlive: "PT0S"
+          maxConnections: 1024
+          maxConnectionsPerRoute: 1024
+          proxy: null
+          retries: 0
+          timeToLive: "PT1H"
+          timeout: "PT3M"
+          tls: null
+          userAgent: null
+          validateAfterInactivityPeriod: "PT0S"
+        maxNumberOfMessages: 10
+        pollMaxWaitTime: "PT10S"
+        queueUrl: null
+        visibilityTimeout: "PT3M"
     x509CertificateDnFormat: "LDAP"
     x509CertificateDnHeader: "X-SSL-CLIENT-S-DN"
     x509CertificateHeader: "X-SSL-CERT"

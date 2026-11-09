@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,7 @@
 package stroom.receive.content.client.gin;
 
 import stroom.core.client.gin.PluginModule;
-import stroom.receive.content.client.presenter.ContentTemplateEditPresenter;
-import stroom.receive.content.client.presenter.ContentTemplateEditPresenter.ContentTemplateEditView;
-import stroom.receive.content.client.presenter.ContentTemplateTabPresenter;
-import stroom.receive.content.client.presenter.ContentTemplateTabPresenter.ContentTemplateTabView;
-import stroom.receive.content.client.view.ContentTemplateEditViewImpl;
-import stroom.receive.content.client.view.ContentTemplateTabViewImpl;
-import stroom.receive.rules.client.ContentTemplatePlugin;
+import stroom.receive.content.client.ContentTemplatePlugin;
 
 public class ContentTemplateModule extends PluginModule {
 
@@ -31,11 +25,5 @@ public class ContentTemplateModule extends PluginModule {
     protected void configure() {
 
         bindPlugin(ContentTemplatePlugin.class);
-        bindPresenterWidget(ContentTemplateTabPresenter.class,
-                ContentTemplateTabView.class,
-                ContentTemplateTabViewImpl.class);
-        bindPresenterWidget(ContentTemplateEditPresenter.class,
-                ContentTemplateEditView.class,
-                ContentTemplateEditViewImpl.class);
     }
 }

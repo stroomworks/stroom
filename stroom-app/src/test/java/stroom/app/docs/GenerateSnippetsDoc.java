@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,7 +103,7 @@ public class GenerateSnippetsDoc implements DocumentationGenerator {
                     "Stroom Query Language",
                     STROOM_SNIPPETS_FILE,
                     """
-                            \s
+
                             All [Expression Functions]({{< relref "docs/reference-section/expressions" >}}) are available as snippets.
                             They do not currently have `tab` triggers.
                             """,
@@ -114,13 +114,13 @@ public class GenerateSnippetsDoc implements DocumentationGenerator {
     // Using \s to keep CS happy.
     @SuppressWarnings("checkstyle:LineLength")
     private static final String FOOTER = """
-            \s
+
             ## Dashboard Table Expression Editor Snippets
-            \s
+
             All [Expression Functions]({{< relref "docs/reference-section/expressions" >}}) are available as snippets.
             They do not currently have `tab` triggers.
-            \s
-            \s
+
+
             """; // One of the new lines seems to get lost when written to file
 
     @GeneratesDocumentation
@@ -176,7 +176,8 @@ public class GenerateSnippetsDoc implements DocumentationGenerator {
                                 final String fencedBlockSyntaxType,
                                 final List<Snippet> snippets) {
 
-        sb.append("## ")
+        sb.append("\n\n")
+                .append("## ")
                 .append(name)
                 .append(" Snippets");
 
@@ -193,12 +194,12 @@ public class GenerateSnippetsDoc implements DocumentationGenerator {
                     : "```";
 
             final String snippetSection = LogUtil.message("""
-                            \s
-                            \s
+
+
                             ### {} (`{}`)
-                            \s
+
                             **Name**: `{}`, **Tab Trigger**: `{}`
-                            \s
+
                             {}{}
                             {}
                             {}`

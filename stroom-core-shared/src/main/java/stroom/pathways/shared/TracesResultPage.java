@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package stroom.pathways.shared;
 import stroom.pathways.shared.otel.trace.TraceRoot;
 import stroom.util.shared.PageResponse;
 import stroom.util.shared.ResultPage;
+import stroom.util.shared.TokenError;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -27,12 +28,38 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
+/**
+ * A page of traces, optionally carrying the histogram of the window the page was drawn from. The
+ * histogram travels with the page so that both come from one read of each archive bucket rather than
+ * from two requests that could see different copies; it is null on a page-only query.
+ */
 @JsonInclude(Include.NON_NULL)
 public class TracesResultPage extends ResultPage<TraceRoot> {
 
+    @JsonProperty
+    private final TraceHistogram histogram;
+
+    public TracesResultPage(final List<TraceRoot> values,
+                            final PageResponse pageResponse) {
+        this(values, pageResponse, null, null);
+    }
+
+    public TracesResultPage(final List<TraceRoot> values,
+                            final PageResponse pageResponse,
+                            final TraceHistogram histogram) {
+        this(values, pageResponse, null, histogram);
+    }
+
     @JsonCreator
     public TracesResultPage(@JsonProperty("values") final List<TraceRoot> values,
-                            @JsonProperty("pageResponse") final PageResponse pageResponse) {
-        super(values, pageResponse);
+                            @JsonProperty("pageResponse") final PageResponse pageResponse,
+                            @JsonProperty("filterError") final TokenError filterError,
+                            @JsonProperty("histogram") final TraceHistogram histogram) {
+        super(values, pageResponse, filterError);
+        this.histogram = histogram;
+    }
+
+    public TraceHistogram getHistogram() {
+        return histogram;
     }
 }

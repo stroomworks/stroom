@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,17 @@
 
 package stroom.dashboard.impl.vis;
 
+import stroom.visualisation.shared.VisInput;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.List;
 
 public class VisSettings {
 
     private Data data;
     private Tab[] tabs;
+    private List<VisInput> inputs;
 
     public VisSettings() {
         // Default constructor necessary for JSON object instantiation.
@@ -35,6 +40,13 @@ public class VisSettings {
     @JsonProperty("tabs")
     public Tab[] getTabs() {
         return tabs;
+    }
+
+    /// @return The data fields the visualisation declares it takes (its typed inputs), each
+    /// describing the `field` control with its id, or null if it declares none.
+    @JsonProperty("inputs")
+    public List<VisInput> getInputs() {
+        return inputs;
     }
 
 

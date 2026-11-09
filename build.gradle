@@ -15,7 +15,7 @@
  */
 
 buildscript {
-    ext.jooqVer = '3.20.1'
+    ext.jooqVer = '3.20.10'
     repositories {
         mavenLocal()
         mavenCentral()
@@ -33,7 +33,7 @@ buildscript {
         //classpath 'org.glassfish.jaxb:jaxb-runtime:2.3.1'
 
         // Needed for parsing local.yml to get the jdbcUrl
-        classpath 'org.yaml:snakeyaml:2.6'
+        classpath 'org.yaml:snakeyaml:2.7'
     }
     // This was borrowed from
     // https://github.com/etiennestuder/gradle-jooq-plugin/blob/main/example/specify_jooq_config_xml_schema_version/build.gradle
@@ -110,19 +110,9 @@ if (localYamlFile.exists()) {
         ext.jdbcUrl = yamlVal
         // Extract the schema name from the url
         ext.dbSchema = (yamlVal =~ /jdbc:mysql:\/\/[^:]+:[0-9]+\/([^?]+)\?.*/)[0][1]
-        println "Using jdbc url [${jdbcUrl}] and dbSchema [${dbSchema}] from local.yml"
+        logger.info("Using jdbc url [${jdbcUrl}] and dbSchema [${dbSchema}] from local.yml")
     }
 }
-
-// Convert the abs root project dir into a string that can be used as a dir
-// to allow us to have a dir for multiple repo instances that don't conflict
-// e.g. 'home+dev+git_work+gchq+stroom'
-ext.rootProjectAbsPathStr = project.rootProject.rootDir
-        .toPath()
-        .toAbsolutePath()
-        .toString()
-        .replaceAll("^/", "")
-        .replaceAll("/", "+")
 
 ext.gwtCompilerProps = [
         mainClass: 'stroom.gwt.GwtCompilerWrapper',
@@ -199,6 +189,10 @@ subprojects {
             implementation platform(libs.aws.bom)
             implementation platform(libs.jackson.bom)
             implementation platform(libs.jackson2.bom)
+
+            // This is only here because DW 5.0.2 pulls in jetty 12.1.9 which has
+            // vulns, so force it up to 12.1.4 for the fix
+            implementation platform(libs.jetty.bom)
 
             testImplementation platform(libs.junit.bom)
         }
@@ -277,6 +271,16 @@ subprojects {
 
     test {
         useJUnitPlatform()
+
+        // Gradle forks the test JVMs, so a -D on the gradle command line reaches the daemon and
+        // stops there. Forward the ones measurement tests use to scale or enable themselves, e.g.
+        // -DtestFilterCount for TestProcessorTaskQueryPlans and -DrunProcessorBenchmark for
+        // TestProcessorTaskDispatchBenchmark. Deliberately a narrow prefix rather than the whole
+        // system property set, which would make test runs depend on whatever the daemon happens
+        // to have been started with.
+        systemProperties System.properties.findAll { key, value ->
+            key.startsWith("test") || key.startsWith("bench") || key.startsWith("run")
+        }
 
         // set heap size for the test JVM(s)
 //        minHeapSize = "128m"
@@ -417,6 +421,7 @@ subprojects {
                 jvmArgsCopy.add("java.base/java.nio=ALL-UNNAMED")
                 jvmArgsCopy.add("--add-opens")
                 jvmArgsCopy.add("java.base/sun.nio.ch=ALL-UNNAMED")
+                jvmArgsCopy.add("--enable-native-access=ALL-UNNAMED")
                 jvmArgs = jvmArgsCopy
 
 //                jvmArgs = [
@@ -518,12 +523,7 @@ subprojects {
     checkstyle {
         ignoreFailures = false
         showViolations = true
-
-        // TODO Uplifting this to 13.0.0 caused a lot of checkstyle violations.
-        //   A lot were switch statement lambda indent violations which do not agree with our auto formatter
-        //   Also, 10.4 can't cope with statements
-        toolVersion = "10.4"
-        //toolVersion = "13.0.0"
+        toolVersion = "14.1.0"
     }
 
     // These work in tandem with the suppression.xml
@@ -537,7 +537,7 @@ subprojects {
 
 // configures only those projects in publishedProjectsPaths
 configure(projectsToBePublished) {
-    println "Configuring ${project.name} for publishing"
+    logger.info("Configuring ${project.name} for publishing")
 
     apply plugin: 'maven-publish'
 

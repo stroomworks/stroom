@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package stroom.index.impl;
 
 import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
+import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
 import stroom.importexport.api.ImportExportDocument;
@@ -28,6 +29,8 @@ import stroom.index.shared.LuceneIndexDoc;
 import stroom.index.shared.LuceneIndexField;
 import stroom.query.api.datasource.FindFieldCriteria;
 import stroom.query.api.datasource.IndexField;
+import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.logging.LogUtil;
@@ -57,10 +60,12 @@ public class IndexStoreImpl
 
     @Inject
     IndexStoreImpl(final StoreFactory storeFactory,
+                   final SecurityContext securityContext,
                    final IndexSerialiser serialiser,
                    final Provider<IndexFieldService> indexFieldServiceProvider,
                    final Provider<IndexVolumeGroupService> indexVolumeGroupServiceProvider) {
         super(storeFactory,
+                securityContext,
                 serialiser,
                 LuceneIndexDoc.TYPE,
                 LuceneIndexDoc::builder,
@@ -71,11 +76,23 @@ public class IndexStoreImpl
     }
 
     @Override
+    protected DependencyRemapFunction<LuceneIndexDoc> getDependencyRemapFunction() {
+        return (doc, dependencyRemapper) -> doc
+                .copy()
+                .defaultExtractionPipeline(dependencyRemapper.remap(doc.getDefaultExtractionPipeline()))
+                .build();
+    }
+
+    @Override
     public DocRef copyDocument(final DocRef docRef,
                                final String name,
                                final boolean makeNameUnique,
                                final Set<String> existingNames) {
         final String newName = UniqueNameUtil.getCopyName(name, makeNameUnique, existingNames);
+        // Copy reads the source document, so it needs VIEW on it. This override reaches
+        // getStore() directly, which is the unchecked handle, so the check the base applies is
+        // applied here.
+        checkDocumentPermission(docRef, DocumentPermission.VIEW);
         final DocRef copy = getStore().copyDocument(docRef.getUuid(), newName);
         indexFieldServiceProvider.get().copyAll(docRef, copy);
         return copy;
@@ -144,6 +161,9 @@ public class IndexStoreImpl
     public ImportExportDocument exportDocument(final DocRef docRef,
                                               final boolean omitAuditFields,
                                               final List<Message> messageList) {
+        // The four-arg export has no counterpart on the base, so the check the base would have applied
+        // is applied explicitly here.
+        checkDocumentPermission(docRef, DocumentPermission.VIEW);
         // Get the first 1000 fields.
         final List<LuceneIndexField> fields = getFieldsForExport(docRef);
         return getStore().exportDocument(docRef, omitAuditFields, messageList, d -> d.copy().fields(fields).build());

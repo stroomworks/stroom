@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -159,6 +159,59 @@ class TestFilterFetchBackoff {
         assertThat(backoff.isFetchDue(dropped, SKIP_DURATION))
                 .describedAs("Forgotten, so we would look again if it came back")
                 .isTrue();
+    }
+
+    // --------------------------------------------------------------------------------
+    // gh-5699. Claiming on a worker node, an empty result means another node beat us to work we
+    // had already been told was there, so what makes a filter worth another try is the summary
+    // reporting *different* waiting work - not just the passage of time.
+    // --------------------------------------------------------------------------------
+
+    @Test
+    void filterWeHaveNeverTriedToClaimFromIsDue() {
+        assertThat(backoff.isClaimDue(filter(1), SKIP_DURATION, 100L)).isTrue();
+    }
+
+    @Test
+    void filterWeLostTheRaceForIsLeftAloneUntilTheWaitIsUp() {
+        final ProcessorFilter filter = filter(1);
+        backoff.recordEmptyClaim(filter, SKIP_DURATION, 100L);
+
+        assertThat(backoff.isClaimDue(filter, SKIP_DURATION, 100L)).isFalse();
+
+        now.addAndGet(SKIP_DURATION.toMillis());
+        assertThat(backoff.isClaimDue(filter, SKIP_DURATION, 100L)).isTrue();
+    }
+
+    @Test
+    void differentWorkWaitingMakesTheFilterDueStraightAway() {
+        final ProcessorFilter filter = filter(1);
+        backoff.recordEmptyClaim(filter, SKIP_DURATION, 100L);
+        assertThat(backoff.isClaimDue(filter, SKIP_DURATION, 100L)).isFalse();
+
+        // A later summary shows a different oldest waiting task, so this is new work rather than
+        // the work we already lost the race for. Waiting out the timer would be pure latency.
+        assertThat(backoff.isClaimDue(filter, SKIP_DURATION, 101L)).isTrue();
+    }
+
+    @Test
+    void successfulClaimClearsTheRememberedWork() {
+        final ProcessorFilter filter = filter(1);
+        backoff.recordEmptyClaim(filter, SKIP_DURATION, 100L);
+        backoff.recordFetchedTasks(filter);
+
+        assertThat(backoff.isClaimDue(filter, SKIP_DURATION, 100L))
+                .describedAs("a filter that just gave us work is worth asking again immediately")
+                .isTrue();
+    }
+
+    @Test
+    void nothingIsBackedOffForClaimingWhenTheWaitIsZero() {
+        final ProcessorFilter filter = filter(1);
+        backoff.recordEmptyClaim(filter, StroomDuration.ZERO, 100L);
+
+        assertThat(backoff.isClaimDue(filter, StroomDuration.ZERO, 100L)).isTrue();
+        assertThat(backoff.size()).isZero();
     }
 
     private ProcessorFilter filter(final int id) {

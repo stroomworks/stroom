@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,15 +36,27 @@ public class AdvancedDocumentFindRequest extends ExpressionCriteria {
 
     @JsonProperty
     private final Set<DocumentPermission> requiredPermissions;
+    @JsonProperty
+    private final String quickFilter;
+
+    public AdvancedDocumentFindRequest(final PageRequest pageRequest,
+                                       final List<CriteriaFieldSort> sortList,
+                                       final ExpressionOperator expression,
+                                       final Set<DocumentPermission>
+                                               requiredPermissions) {
+        this(pageRequest, sortList, expression, requiredPermissions, null);
+    }
 
     @JsonCreator
     public AdvancedDocumentFindRequest(@JsonProperty("pageRequest") final PageRequest pageRequest,
                                        @JsonProperty("sortList") final List<CriteriaFieldSort> sortList,
                                        @JsonProperty("expression") final ExpressionOperator expression,
                                        @JsonProperty("requiredPermissions") final Set<DocumentPermission>
-                                               requiredPermissions) {
+                                               requiredPermissions,
+                                       @JsonProperty("quickFilter") final String quickFilter) {
         super(pageRequest, sortList, expression);
         this.requiredPermissions = requiredPermissions;
+        this.quickFilter = quickFilter;
     }
 
     public Set<DocumentPermission> getRequiredPermissions() {
@@ -75,7 +87,22 @@ public class AdvancedDocumentFindRequest extends ExpressionCriteria {
     // --------------------------------------------------------------------------------
 
 
+    public String getQuickFilter() {
+        return quickFilter;
+    }
+
     public static class Builder extends ExpressionCriteriaBuilder<AdvancedDocumentFindRequest, Builder> {
+
+        private String quickFilter;
+
+        /**
+         * @see AdvancedDocumentFindRequest#getQuickFilter()
+         */
+        public Builder quickFilter(final String quickFilter) {
+            this.quickFilter = quickFilter;
+            return self();
+        }
+
 
         private Set<DocumentPermission> requiredPermissions;
 
@@ -99,7 +126,8 @@ public class AdvancedDocumentFindRequest extends ExpressionCriteria {
 
         @Override
         public AdvancedDocumentFindRequest build() {
-            return new AdvancedDocumentFindRequest(pageRequest, sortList, expression, requiredPermissions);
+            return new AdvancedDocumentFindRequest(pageRequest, sortList, expression, requiredPermissions,
+                    quickFilter);
         }
     }
 }

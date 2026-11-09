@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2022 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,7 @@ class TestStroomCacheImpl {
     private static final String MAXIMUM_SIZE = "MaximumSize";
     private static final String EXPIRE_AFTER_WRITE = "ExpireAfterWrite";
     private static final String EXPIRE_AFTER_ACCESS = "ExpireAfterAccess";
+    private static final String REFRESH_AFTER_WRITE = "RefreshAfterWrite";
     private static final int ALL_MONTHS_COUNT = 12;
 
     private StroomCache<Integer, String> cache;
@@ -763,6 +764,19 @@ class TestStroomCacheImpl {
         // The remaining entry should now be gone
         assertThat(cache.size())
                 .isZero();
+    }
+
+    @Test
+    void testRefreshAfterWrite_isIgnored() {
+        cacheConfig = cacheConfig.copy()
+                .refreshAfterWrite(StroomDuration.ofMillis(300))
+                .build();
+
+        cache.rebuild();
+
+        // Prop not supported and ignored for non-loading caches
+        assertThat(cache.getCacheInfo().getMap())
+                .doesNotContainKey(REFRESH_AFTER_WRITE);
     }
 
     @Test

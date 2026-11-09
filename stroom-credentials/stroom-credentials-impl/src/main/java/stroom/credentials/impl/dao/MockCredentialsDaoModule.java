@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -98,6 +98,54 @@ public class MockCredentialsDaoModule extends AbstractModule {
             deleteCredentialsAndSecret(secret.credential().getUuid());
             uuidToCred.put(secret.credential().getUuid(), secret);
             nameToCred.put(secret.credential().getName(), secret);
+        }
+
+        @Override
+        public StoredSecret getStoredSecretByUuid(final String uuid) {
+            return uuidToCred.get(uuid);
+        }
+
+        @Override
+        public boolean updateCredential(final Credential credential) {
+            final StoredSecret existing = uuidToCred.get(credential.getUuid());
+            if (existing == null) {
+                return false;
+            }
+            final Credential old = existing.credential();
+            final Credential updated = new Credential(old.getUuid(),
+                    credential.getName(),
+                    old.getCreateTimeMs(),
+                    credential.getUpdateTimeMs(),
+                    old.getCreateUser(),
+                    credential.getUpdateUser(),
+                    old.getCredentialType(),
+                    old.getKeyStoreType(),
+                    old.getKeyStorePath(),
+                    credential.getExpiryTimeMs());
+            putStoredSecret(new StoredSecret(updated, existing.secret(), existing.keyStore()), true);
+            return true;
+        }
+
+        @Override
+        public boolean updateSecret(final StoredSecret secret) {
+            final Credential credential = secret.credential();
+            final StoredSecret existing = uuidToCred.get(credential.getUuid());
+            if (existing == null) {
+                return false;
+            }
+            final Credential old = existing.credential();
+            final Credential updated = new Credential(old.getUuid(),
+                    old.getName(),
+                    old.getCreateTimeMs(),
+                    credential.getUpdateTimeMs(),
+                    old.getCreateUser(),
+                    credential.getUpdateUser(),
+                    old.getCredentialType(),
+                    credential.getKeyStoreType(),
+                    credential.getKeyStorePath(),
+                    credential.getExpiryTimeMs());
+            putStoredSecret(new StoredSecret(updated, secret.secret(), secret.keyStore()), true);
+            return true;
         }
     }
 }

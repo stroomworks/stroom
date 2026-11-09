@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,13 +26,30 @@ import stroom.planb.impl.serde.hash.HashFactoryFactory;
 import stroom.planb.impl.serde.time.TimeSerde;
 import stroom.planb.shared.HashLength;
 import stroom.planb.shared.KeyType;
-import stroom.planb.shared.PlanBDoc;
+import stroom.planb.shared.PlanBDocument;
 
 public class TemporalKeySerdeFactory {
 
     private static final String KEY_LOOKUP_DB_NAME = "key";
 
-    public static TemporalKeySerde createKeySerde(final PlanBDoc doc,
+    /// Refuses [KeyType#TERMINATED_STRING] for a store type that does not support it.
+    ///
+    /// This factory serves temporal state, histogram and metric stores alike, and only temporal
+    /// state stores read by seeking per key, which is the only thing a prefix-free encoding buys.
+    /// The other two would otherwise accept the type silently. Mirrors the refusals in
+    /// `KeyPrefixSerdeFactory` and `SessionDb`.
+    ///
+    /// @param keyType   the store's key type
+    /// @param storeKind the kind of store, for the message, e.g. "histogram"
+    /// @throws IllegalArgumentException if the key type is [KeyType#TERMINATED_STRING]
+    public static void checkNotTerminatedString(final KeyType keyType, final String storeKind) {
+        if (keyType == KeyType.TERMINATED_STRING) {
+            throw new IllegalArgumentException("TERMINATED_STRING keys are only supported by temporal state "
+                                               + "stores, not " + storeKind + " stores");
+        }
+    }
+
+    public static TemporalKeySerde createKeySerde(final PlanBDocument doc,
                                                   final KeyType keyType,
                                                   final HashLength hashLength,
                                                   final PlanBEnv env,
@@ -48,6 +65,7 @@ public class TemporalKeySerdeFactory {
             case FLOAT -> new FloatKeySerde(byteBuffers, timeSerde);
             case DOUBLE -> new DoubleKeySerde(byteBuffers, timeSerde);
             case STRING -> new LimitedStringKeySerde(byteBuffers, timeSerde);
+            case TERMINATED_STRING -> new TerminatedStringKeySerde(byteBuffers, timeSerde);
             case UID_LOOKUP -> {
                 final UidLookupDb uidLookupDb = new UidLookupDb(
                         env,

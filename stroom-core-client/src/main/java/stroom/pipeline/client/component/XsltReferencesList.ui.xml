@@ -1,0 +1,8 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- What an XSLT refers to, with a pager -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client">
+    <dg:PagerPanel ui:field="pager">
+        <dg:DataGrid ui:field="dataGrid" tableName="XSLT References"/>
+    </dg:PagerPanel>
+</ui:UiBinder>

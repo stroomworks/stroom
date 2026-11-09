@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 @JsonInclude(Include.NON_NULL)
 public class AiChatPollRequest {
 
@@ -28,8 +30,8 @@ public class AiChatPollRequest {
     private final int lastSeenMessageId;
 
     @JsonCreator
-    public AiChatPollRequest(@JsonProperty("lastSeenMessageId") final int lastSeenMessageId) {
-        this.lastSeenMessageId = lastSeenMessageId;
+    public AiChatPollRequest(@JsonProperty("lastSeenMessageId") final Integer lastSeenMessageId) {
+        this.lastSeenMessageId = Objects.requireNonNullElse(lastSeenMessageId, 0);
     }
 
     public int getLastSeenMessageId() {

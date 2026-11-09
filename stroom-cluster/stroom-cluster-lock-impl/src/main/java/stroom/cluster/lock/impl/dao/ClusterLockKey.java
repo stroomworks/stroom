@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,10 +37,10 @@ public class ClusterLockKey {
     @JsonCreator
     public ClusterLockKey(@JsonProperty("name") final String name,
                           @JsonProperty("nodeName") final String nodeName,
-                          @JsonProperty("creationTime") final long creationTime) {
+                          @JsonProperty("creationTime") final Long creationTime) {
         this.name = name;
         this.nodeName = nodeName;
-        this.creationTime = creationTime;
+        this.creationTime = Objects.requireNonNullElse(creationTime, 0L);
     }
 
     public String getName() {

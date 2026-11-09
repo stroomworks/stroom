@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.time.format.DateTimeParseException;
         name = FloorTime.NAME,
         commonCategory = FunctionCategory.DATE,
         commonSubCategories = AbstractRoundDateTime.ROUND_SUB_CATEGORY,
+        commonDescription = "Floors the supplied time to the nearest duration.",
         commonReturnType = ValDate.class,
         commonReturnDescription = "The result date and time.",
         signatures =
@@ -61,14 +62,21 @@ class FloorTime extends AbstractRoundDateTime {
         };
     }
 
+    // Reads the argument via AbstractRoundDateTime.constantString; reading it with
+    // param.toString() would silently break param('key') here.
     private Duration parseDuration(final Param param, final String paramName) {
         if (param == null) {
             return Duration.ZERO;
         }
+        final String value = constantString(param);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Invalid " + paramName + ": " + param + " - " + whyNotConstant(param));
+        }
         try {
-            return Duration.parse(param.toString());
+            return Duration.parse(value);
         } catch (final DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid " + paramName + " format: " + param);
+            throw new IllegalArgumentException("Invalid " + paramName + " format: " + value);
         }
     }
 }

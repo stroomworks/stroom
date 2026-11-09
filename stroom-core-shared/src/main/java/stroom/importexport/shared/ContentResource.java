@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package stroom.importexport.shared;
 
-import stroom.util.shared.DocRefs;
 import stroom.util.shared.ResourceGeneration;
 import stroom.util.shared.ResourceKey;
 import stroom.util.shared.ResourcePaths;
@@ -62,7 +61,7 @@ public interface ContentResource extends RestResource, DirectRestService {
             summary = "Export content",
             operationId = "exportContent")
     ResourceGeneration exportContent(
-            @NotNull @Parameter(description = "docRefs", required = true) DocRefs docRefs);
+            @NotNull @Parameter(description = "request", required = true) ExportContentRequest request);
 
     @POST
     @Path("fetchDependencies")

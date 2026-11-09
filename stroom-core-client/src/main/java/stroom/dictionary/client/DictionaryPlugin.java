@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package stroom.dictionary.client;
 
 import stroom.core.client.ContentManager;
-import stroom.dictionary.client.presenter.DictionaryPresenter;
+import stroom.dictionary.client.component.DictionaryEditor;
 import stroom.dictionary.shared.DictionaryDoc;
 import stroom.dictionary.shared.DictionaryResource;
 import stroom.dispatch.client.RestErrorHandler;
@@ -26,9 +26,9 @@ import stroom.docref.DocRef;
 import stroom.docstore.shared.DocRefUtil;
 import stroom.document.client.DocumentPlugin;
 import stroom.document.client.DocumentPluginEventManager;
-import stroom.entity.client.presenter.DocPresenter;
+import stroom.document.client.editor.DocumentEditorHost;
 import stroom.security.client.api.ClientSecurityContext;
-import stroom.task.client.TaskMonitorFactory;
+import stroom.widget.task.client.TaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
@@ -43,24 +43,26 @@ public class DictionaryPlugin extends DocumentPlugin<DictionaryDoc> {
 
     private static final DictionaryResource DICTIONARY_RESOURCE = GWT.create(DictionaryResource.class);
 
-    private final Provider<DictionaryPresenter> editorProvider;
+    private final EventBus eventBus;
+    private final Provider<DictionaryEditor> editorProvider;
     private final RestFactory restFactory;
 
     @Inject
     public DictionaryPlugin(final EventBus eventBus,
-                            final Provider<DictionaryPresenter> editorProvider,
+                            final Provider<DictionaryEditor> editorProvider,
                             final RestFactory restFactory,
                             final ContentManager contentManager,
                             final DocumentPluginEventManager entityPluginEventManager,
                             final ClientSecurityContext securityContext) {
         super(eventBus, contentManager, entityPluginEventManager, securityContext);
+        this.eventBus = eventBus;
         this.editorProvider = editorProvider;
         this.restFactory = restFactory;
     }
 
     @Override
-    protected DocPresenter<?, ?> createEditor() {
-        return editorProvider.get();
+    protected DocumentEditorHost<?> createEditor() {
+        return new DocumentEditorHost<>(eventBus, editorProvider.get(), DictionaryDoc.TYPE);
     }
 
     @Override

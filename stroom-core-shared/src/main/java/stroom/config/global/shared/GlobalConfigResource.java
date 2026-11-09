@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 package stroom.config.global.shared;
 
+import stroom.query.api.datasource.QueryField;
+import stroom.query.api.datasource.QuickFilterFields;
+import stroom.quickfilter.shared.QuickFilterContext;
 import stroom.ui.config.shared.ExtendedUiConfig;
 import stroom.util.shared.ResourcePaths;
 import stroom.util.shared.RestResource;
@@ -51,6 +54,7 @@ public interface GlobalConfigResource extends RestResource, DirectRestService {
     String CLUSTER_PROPERTIES_SUB_PATH = "/clusterProperties";
     String FETCH_UI_CONFIG_SUB_PATH = "/noauth/fetchUiConfig";
     String FETCH_EXTENDED_UI_CONFIG_SUB_PATH = "/noauth/fetchExtendedUiConfig";
+    String SET_CONFIG_VALUE_SUB_PATH = "/setConfigValue";
 
     String PROP_NAME_PATH_PARAM = "/{propertyName}";
     String NODE_NAME_PATH_PARAM = "/{nodeName}";
@@ -67,6 +71,18 @@ public interface GlobalConfigResource extends RestResource, DirectRestService {
             FIELD_DEF_VALUE,
             FIELD_DEF_SOURCE,
             FIELD_DEF_DESCRIPTION);
+
+    // What GlobalConfigService's quick filter declares it can honour. Filtered in memory by
+    // ExpressionPredicateFactory, hence ALL_UI_TEXT. Derived rather than hand-written so the
+    // qualifiers cannot drift from FIELD_DEFINITIONS.
+    List<QueryField> QUERY_FIELDS = QuickFilterFields.uiText(FIELD_DEFINITIONS);
+    List<QueryField> DEFAULT_QUERY_FIELDS = QuickFilterFields.uiTextDefaults(FIELD_DEFINITIONS);
+
+    QuickFilterContext QUICK_FILTER_CONTEXT = QuickFilterContext.of(
+            "globalProperties",
+            FIELD_DEFINITIONS,
+            DEFAULT_QUERY_FIELDS,
+            QUERY_FIELDS);
 
     @POST
     @Path(PROPERTIES_SUB_PATH)
@@ -122,4 +138,12 @@ public interface GlobalConfigResource extends RestResource, DirectRestService {
             summary = "Fetch the extended UI configuration",
             operationId = "fetchExtendedUiConfig")
     ExtendedUiConfig fetchExtendedUiConfig();
+
+    @POST
+    @Path(SET_CONFIG_VALUE_SUB_PATH)
+    @Operation(
+            summary = "Set a single config property for all users",
+            operationId = "setConfigValue")
+    Boolean setConfigValue(
+            @Parameter(description = "request", required = true) final SetConfigValueRequest request);
 }

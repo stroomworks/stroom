@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,5 +24,8 @@ public interface AttributeMapFactory {
 
     Map<String, String> getAttributes(long metaId);
 
+    /// Get the {@link AttributeMap} for the given stream and part number
+    ///
+    /// @param partNo One based
     AttributeMap getAttributeMapForPart(final long streamId, final long partNo);
 }

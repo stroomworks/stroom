@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,15 @@
 
 package stroom.security.client.gin;
 
-import stroom.security.client.ApiKeysPlugin;
 import stroom.security.client.LoginManager;
-import stroom.security.client.LogoutPlugin;
 import stroom.security.client.api.ClientSecurityContext;
 
-import com.google.gwt.inject.client.AsyncProvider;
 import com.google.gwt.inject.client.Ginjector;
 import com.google.inject.Provider;
 
 public interface SecurityGinjector extends Ginjector {
 
     LoginManager getLoginManager();
-
-    AsyncProvider<LogoutPlugin> getLogoutPlugin();
-
-    AsyncProvider<ApiKeysPlugin> getApiKeysPlugin();
 
     Provider<ClientSecurityContext> getSecurityContext();
 }

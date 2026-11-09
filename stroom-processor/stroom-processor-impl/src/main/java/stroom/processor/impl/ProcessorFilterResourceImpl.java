@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,22 +109,37 @@ class ProcessorFilterResourceImpl implements ProcessorFilterResource {
         final ProcessorFilterService processorFilterService = processorFilterServiceProvider.get();
         final SecurityContext securityContext = securityContextProvider.get();
         securityContext.secure(PERMISSION, () -> {
-            final ExpressionCriteria criteria = new ExpressionCriteria(
-                    PageRequest.unlimited(),
-                    null,
-                    request.getExpression());
-            final ResultPage<ProcessorFilter> resultPage = processorFilterService.find(criteria);
-            resultPage.getValues().stream().forEach(filter -> {
+            final ResultPage<ProcessorFilter> resultPage = findBulkChangeFilters(request);
+            resultPage.forEach(filter -> {
                 switch (request.getChange()) {
                     case ENABLE -> processorFilterService.setEnabled(filter.getId(), true);
                     case DISABLE -> processorFilterService.setEnabled(filter.getId(), false);
                     case DELETE -> processorFilterService.delete(filter.getId());
-                    case SET_RUN_AS_USER ->
-                            processorFilterService.update(filter.copy().runAsUser(request.getUserRef()).build());
+                    case SET_RUN_AS_USER -> processorFilterService.update(
+                            filter.copy()
+                                    .runAsUser(request.getUserRef())
+                                    .build());
                 }
             });
         });
 
         return true;
+    }
+
+    @Override
+    public Integer getBulkChangeCount(final BulkProcessorFilterChangeRequest request) {
+        return securityContextProvider.get().secureResult(PERMISSION, () ->
+                findBulkChangeFilters(request).size());
+    }
+
+    // The filters a bulk change applies to. The count and the change share this so that the number
+    // the user confirms is the number that changes: the processor list's own row total also counts
+    // the processors' rows, which a change never touches.
+    private ResultPage<ProcessorFilter> findBulkChangeFilters(final BulkProcessorFilterChangeRequest request) {
+        final ExpressionCriteria criteria = new ExpressionCriteria(
+                PageRequest.unlimited(),
+                null,
+                request.getExpression());
+        return processorFilterServiceProvider.get().find(criteria);
     }
 }

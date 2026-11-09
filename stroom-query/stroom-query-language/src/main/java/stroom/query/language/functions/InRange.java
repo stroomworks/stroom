@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import java.util.function.Supplier;
 @FunctionDef(
         name = InRange.NAME,
         commonCategory = FunctionCategory.LOGIC,
+        commonDescription = "Returns true if the value is between the lower and upper bounds, inclusive. " +
+                "All parameters must be either numbers or ISO date strings.",
         commonReturnType = ValBoolean.class,
         signatures = @FunctionSignature(
                 description = "Returns true if the value is between lower and upper (inclusive). " +

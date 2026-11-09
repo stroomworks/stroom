@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import stroom.node.shared.ClusterNodeInfo;
 import stroom.node.shared.FetchNodeStatusResponse;
 import stroom.node.shared.FindNodeStatusCriteria;
 import stroom.node.shared.NodeResource;
-import stroom.task.client.TaskMonitorFactory;
+import stroom.widget.task.client.TaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
 
@@ -105,11 +105,6 @@ public class NodeClient {
                 .taskMonitorFactory(taskMonitorFactory)
                 .exec();
     }
-
-//    public void listAllNodes(final Consumer<List<String>> nodeListConsumer,
-//                             final RestErrorHandler errorHandler) {
-//        listAllNodes(nodeListConsumer, errorConsumer, null);
-//    }
 
     public void listAllNodes(final Consumer<List<String>> nodeListConsumer,
                              final RestErrorHandler errorHandler,

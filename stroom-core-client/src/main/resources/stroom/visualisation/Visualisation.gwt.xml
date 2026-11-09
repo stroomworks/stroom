@@ -1,5 +1,7 @@
 <module>
   <inherits name='com.google.gwt.user.User' />
+  <inherits name="stroom.widget.util.Util"/>
+  <inherits name='stroom.document.asset.DocumentAsset' />
 
   <source path="client" />
   <source path="shared" />

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,19 @@ import net.sf.saxon.value.Int64Value;
 
 import java.time.Instant;
 
+@XsltFunctionDef(
+        name = CurrentUnixTime.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.DATE,
+        commonDescription = """
+                Returns the current system time as milliseconds since the Unix epoch.
+                """,
+        commonReturnType = XsltDataType.INTEGER,
+        commonReturnDescription = "The current time in milliseconds since the Unix epoch.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {}
+                )
+        })
 class CurrentUnixTime extends StroomExtensionFunctionCall {
 
     public static final String FUNCTION_NAME = "current-unixTime";

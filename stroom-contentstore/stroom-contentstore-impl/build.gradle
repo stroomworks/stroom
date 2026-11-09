@@ -28,10 +28,12 @@ dependencies {
     implementation project(':stroom-util-shared')
 
     implementation libs.guice
+    implementation libs.jackson.annotations
     implementation libs.jackson.dataformat.yaml
     implementation libs.restygwt
     implementation libs.slf4j.api
     implementation libs.jakarta.servlet.api
 
+    testImplementation libs.bundles.common.test.implementation
     testRuntimeOnly libs.bundles.common.test.runtime
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,28 @@ import net.sf.saxon.om.EmptyAtomicSequence;
 import net.sf.saxon.om.Sequence;
 import net.sf.saxon.value.StringValue;
 
+@XsltFunctionDef(
+        name = DecodeUrl.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.URI,
+        commonDescription = """
+                Decodes a URL-encoded string.
+                """,
+        commonReturnType = XsltDataType.STRING,
+        commonReturnDescription = "The decoded string, or an empty sequence if decoding fails.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "encodedUrl",
+                                        description = "The URL-encoded string.",
+                                        argType = XsltDataType.STRING
+                                )
+                        }
+                )
+        })
 class DecodeUrl extends StroomExtensionFunctionCall {
+
+    public static final String FUNCTION_NAME = "decode-url";
 
     @Override
     protected Sequence call(final String functionName, final XPathContext context, final Sequence[] arguments) {

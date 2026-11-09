@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,5 +116,18 @@ public interface ProcessorFilterResource extends RestResource, DirectRestService
             summary = "Bulk change processors",
             operationId = "bulkChange")
     Boolean bulkChange(
+            @Parameter(description = "request", required = true) BulkProcessorFilterChangeRequest request);
+
+    /// Counts the processor filters that [#bulkChange(BulkProcessorFilterChangeRequest)] would change
+    /// for the same request, so the change can be confirmed with the right number.
+    ///
+    /// @param request The bulk change request whose expression selects the filters.
+    /// @return The number of processor filters the change would apply to.
+    @POST
+    @Path("/bulkChange/count")
+    @Operation(
+            summary = "Count the processor filters a bulk change would change",
+            operationId = "getBulkChangeCount")
+    Integer getBulkChangeCount(
             @Parameter(description = "request", required = true) BulkProcessorFilterChangeRequest request);
 }

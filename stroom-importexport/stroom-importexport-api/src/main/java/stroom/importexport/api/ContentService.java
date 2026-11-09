@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package stroom.importexport.api;
 
+import stroom.importexport.shared.ExportContentRequest;
 import stroom.importexport.shared.ImportConfigRequest;
 import stroom.importexport.shared.ImportConfigResponse;
-import stroom.util.shared.DocRefs;
 import stroom.util.shared.ResourceGeneration;
 import stroom.util.shared.ResourceKey;
 
@@ -28,7 +28,7 @@ public interface ContentService {
 
     void abortImport(ResourceKey resourceKey);
 
-    ResourceGeneration exportContent(DocRefs docRefs);
+    ResourceGeneration exportContent(ExportContentRequest request);
 
     ResourceKey exportAll();
 }

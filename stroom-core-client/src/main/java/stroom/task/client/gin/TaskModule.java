@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,12 @@
 package stroom.task.client.gin;
 
 import stroom.core.client.gin.PluginModule;
-import stroom.task.client.presenter.UserTaskManagerPresenter;
-import stroom.task.client.presenter.UserTaskManagerPresenter.UserTaskManagerProxy;
-import stroom.task.client.presenter.UserTaskManagerPresenter.UserTaskManagerView;
-import stroom.task.client.presenter.UserTaskPresenter;
-import stroom.task.client.presenter.UserTaskPresenter.UserTaskView;
-import stroom.task.client.view.UserTaskManagerViewImpl;
-import stroom.task.client.view.UserTaskViewImpl;
+import stroom.task.client.ServerTasksPlugin;
 
 public class TaskModule extends PluginModule {
 
     @Override
     protected void configure() {
-        bindPresenter(UserTaskManagerPresenter.class, UserTaskManagerView.class, UserTaskManagerViewImpl.class,
-                UserTaskManagerProxy.class);
-        bindPresenterWidget(UserTaskPresenter.class, UserTaskView.class, UserTaskViewImpl.class);
+        bindPlugin(ServerTasksPlugin.class);
     }
 }

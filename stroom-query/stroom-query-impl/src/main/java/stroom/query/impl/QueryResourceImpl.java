@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import stroom.docref.DocRef;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.node.api.NodeService;
+import stroom.query.api.ExpressionOperator;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.shared.CompletionItem;
 import stroom.query.shared.CompletionsRequest;
@@ -122,6 +123,12 @@ class QueryResourceImpl implements QueryResource {
             LOGGER.debug(e::getMessage, e);
         }
         return null;
+    }
+
+    @Override
+    @AutoLogged(OperationType.UNLOGGED)
+    public ExpressionOperator parseQuery(final String query) {
+        return queryServiceProvider.get().parseQuery(query);
     }
 
     @Override

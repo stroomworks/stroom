@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,11 @@ package stroom.kafka.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.kafka.client.KafkaConfigPlugin;
-import stroom.kafka.client.presenter.KafkaConfigPresenter;
 
 public class KafkaConfigModule extends PluginModule {
 
     @Override
     protected void configure() {
         bindPlugin(KafkaConfigPlugin.class);
-        bind(KafkaConfigPresenter.class);
     }
 }

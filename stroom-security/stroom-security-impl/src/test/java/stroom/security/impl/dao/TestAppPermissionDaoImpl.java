@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package stroom.security.impl.dao;
 
 import stroom.db.util.JooqUtil;
-import stroom.query.api.ExpressionOperator;
 import stroom.security.impl.TestModule;
 import stroom.security.impl.UserDao;
 import stroom.security.impl.db.SecurityDbConnProvider;
@@ -112,7 +111,6 @@ class TestAppPermissionDaoImpl {
         final FetchAppUserPermissionsRequest request = new FetchAppUserPermissionsRequest(
                 PageRequest.unlimited(),
                 Collections.emptyList(),
-                ExpressionOperator.builder().build(),
                 null,
                 PermissionShowLevel.SHOW_EFFECTIVE);
         final ResultPage<AppUserPermissions> resultPage = appPermissionDao.fetchAppUserPermissions(request);
@@ -134,7 +132,6 @@ class TestAppPermissionDaoImpl {
         final FetchAppUserPermissionsRequest request = new FetchAppUserPermissionsRequest(
                 PageRequest.unlimited(),
                 Collections.emptyList(),
-                ExpressionOperator.builder().build(),
                 null,
                 PermissionShowLevel.SHOW_EFFECTIVE);
         final ResultPage<AppUserPermissions> resultPage = appPermissionDao.fetchAppUserPermissions(request);
@@ -160,7 +157,6 @@ class TestAppPermissionDaoImpl {
         final FetchAppUserPermissionsRequest request = new FetchAppUserPermissionsRequest(
                 PageRequest.unlimited(),
                 Collections.emptyList(),
-                ExpressionOperator.builder().build(),
                 null,
                 PermissionShowLevel.SHOW_EFFECTIVE);
         final ResultPage<AppUserPermissions> resultPage = appPermissionDao.fetchAppUserPermissions(request);
@@ -185,7 +181,6 @@ class TestAppPermissionDaoImpl {
         final FetchAppUserPermissionsRequest request = new FetchAppUserPermissionsRequest(
                 PageRequest.unlimited(),
                 Collections.emptyList(),
-                ExpressionOperator.builder().build(),
                 null,
                 PermissionShowLevel.SHOW_EFFECTIVE);
         final ResultPage<AppUserPermissions> resultPage = appPermissionDao.fetchAppUserPermissions(request);
@@ -211,7 +206,6 @@ class TestAppPermissionDaoImpl {
         final FetchAppUserPermissionsRequest request = new FetchAppUserPermissionsRequest(
                 PageRequest.unlimited(),
                 Collections.emptyList(),
-                ExpressionOperator.builder().build(),
                 null,
                 PermissionShowLevel.SHOW_EFFECTIVE);
         final ResultPage<AppUserPermissions> resultPage = appPermissionDao.fetchAppUserPermissions(request);
@@ -242,7 +236,6 @@ class TestAppPermissionDaoImpl {
         final FetchAppUserPermissionsRequest request = new FetchAppUserPermissionsRequest(
                 PageRequest.unlimited(),
                 Collections.emptyList(),
-                ExpressionOperator.builder().build(),
                 null,
                 PermissionShowLevel.SHOW_EFFECTIVE);
         final ResultPage<AppUserPermissions> resultPage = appPermissionDao.fetchAppUserPermissions(request);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,11 +45,7 @@ public class SolrClientFactory {
             }
             final CloudHttp2SolrClient.Builder builder = new CloudSolrClient.Builder(config.getZkHosts(),
                     Optional.ofNullable(config.getZkPath()))
-                    .withHttpClient(
-                            new Http2SolrClient.Builder()
-                                    .withConnectionTimeout(15000, TimeUnit.MILLISECONDS)
-                                    .withIdleTimeout(30000, TimeUnit.MILLISECONDS)
-                                    .build());
+                    .withHttpClient(createHttpClient());
             final CloudSolrClient client = builder.build();
             client.connect();
             return client;
@@ -58,14 +54,17 @@ public class SolrClientFactory {
             if (config.getSolrUrls() == null || config.getSolrUrls().isEmpty()) {
                 throw new SolrIndexException("No Solr URLs have been provided");
             }
-            final CloudHttp2SolrClient.Builder builder = new CloudSolrClient.Builder(config.getZkHosts(),
-                    Optional.ofNullable(config.getZkPath()))
-                    .withHttpClient(
-                            new Http2SolrClient.Builder()
-                                    .withConnectionTimeout(15000, TimeUnit.MILLISECONDS)
-                                    .withIdleTimeout(30000, TimeUnit.MILLISECONDS)
-                                    .build());
+            // Without ZooKeeper the cluster state is read from the Solr URLs
+            final CloudHttp2SolrClient.Builder builder = new CloudSolrClient.Builder(config.getSolrUrls())
+                    .withHttpClient(createHttpClient());
             return builder.build();
         }
+    }
+
+    private static Http2SolrClient createHttpClient() {
+        return new Http2SolrClient.Builder()
+                .withConnectionTimeout(15000, TimeUnit.MILLISECONDS)
+                .withIdleTimeout(30000, TimeUnit.MILLISECONDS)
+                .build();
     }
 }

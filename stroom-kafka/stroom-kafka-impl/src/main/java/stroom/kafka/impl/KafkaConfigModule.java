@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import stroom.kafka.api.KafkaProducerFactory;
 import stroom.kafka.shared.KafkaConfigDoc;
 import stroom.lifecycle.api.LifecycleBinder;
 import stroom.util.RunnableWrapper;
+import stroom.util.entityevent.EntityEvent;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.HasSystemInfoBinder;
 import stroom.util.shared.Clearable;
@@ -40,6 +41,9 @@ public class KafkaConfigModule extends AbstractModule {
                 .bind(KafkaProducerFactoryImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), Clearable.class)
+                .addBinding(KafkaConfigDocCache.class);
+
+        GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
                 .addBinding(KafkaConfigDocCache.class);
 
         LifecycleBinder.create(binder())

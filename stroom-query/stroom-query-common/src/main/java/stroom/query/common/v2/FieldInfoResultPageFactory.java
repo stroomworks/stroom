@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ public class FieldInfoResultPageFactory {
                                          final List<QueryField> fields) {
         final ResultPageBuilder<QueryField> resultPageBuilder = new ResultPageBuilder<>(criteria.getPageRequest());
         final Optional<Predicate<QueryField>> optionalNamePredicate = expressionPredicateFactory
-                .createOptional(criteria.getFilter(), QueryField::getFldName);
+                .createOptional(criteria.getQuickFilter(), QueryField::getFldName);
         final List<Predicate<QueryField>> predicates = new ArrayList<>(2);
         optionalNamePredicate.ifPresent(predicates::add);
         if (criteria.getQueryable() != null) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,6 +76,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -90,8 +91,10 @@ public class MockHttpDestination {
     private volatile boolean isRequestLoggingEnabled = true;
     private volatile boolean isHeaderLoggingEnabled = true;
 
-    // Hold all requests send to the wiremock stroom datafeed endpoint
-    private final List<DataFeedRequest> dataFeedRequests = new ArrayList<>();
+    // Hold all requests send to the wiremock stroom datafeed endpoint.
+    // WireMock calls afterComplete on multiple Jetty threads concurrently and the test thread
+    // streams over this list while it is being appended to, so it must be thread safe.
+    private final List<DataFeedRequest> dataFeedRequests = new CopyOnWriteArrayList<>();
 
     private final ThreadLocal<Long> responseTimes = new ThreadLocal<>();
     private final AtomicInteger count = new AtomicInteger();

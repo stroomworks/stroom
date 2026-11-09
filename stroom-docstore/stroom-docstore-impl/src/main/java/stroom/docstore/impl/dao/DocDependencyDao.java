@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,21 @@
 
 package stroom.docstore.impl.dao;
 
+import stroom.db.util.ExpressionMapper;
+import stroom.db.util.ExpressionMapperFactory;
 import stroom.db.util.JooqUtil;
 import stroom.docref.DocRef;
 import stroom.docstore.impl.db.DocStoreDbConnProvider;
 import stroom.docstore.impl.db.jooq.tables.Doc;
 import stroom.importexport.shared.Dependency;
 import stroom.importexport.shared.DependencyCriteria;
-import stroom.util.shared.CriteriaFieldSort;
+import stroom.query.api.token.TokenErrorUtil;
+import stroom.query.api.token.TokenException;
+import stroom.query.language.filter.FieldProviderImpl;
+import stroom.query.language.filter.SimpleStringExpressionParser;
+import stroom.query.language.filter.SimpleStringExpressionParser.FieldProvider;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
 import stroom.util.shared.ResultPage;
@@ -38,6 +46,7 @@ import org.jooq.Result;
 import org.jooq.impl.DSL;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -52,28 +61,68 @@ import static stroom.docstore.impl.db.jooq.tables.DocDependency.DOC_DEPENDENCY;
 @Singleton
 public class DocDependencyDao {
 
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(DocDependencyDao.class);
+
     // Aliased doc tables for the LEFT JOINs
     private static final Doc FROM_DOC = DOC.as("d1");
     private static final Doc TO_DOC = DOC.as("d2");
 
-    // Computed fields for the query
-    private static final Field<String> FROM_NAME_RESOLVED =
-            DSL.coalesce(FROM_DOC.NAME, DOC_DEPENDENCY.FROM_NAME).as("from_name_resolved");
-    private static final Field<String> TO_NAME_RESOLVED =
-            DSL.coalesce(TO_DOC.NAME, DOC_DEPENDENCY.TO_NAME).as("to_name_resolved");
-    private static final Field<Boolean> OK_FIELD =
-            DSL.field(TO_DOC.UUID.isNotNull()).as("ok");
+    private static final String STATUS_OK = "OK";
+    private static final String STATUS_MISSING = "Missing";
 
-    // Sort field mapping
-    private static final Map<String, Field<?>> SORT_FIELD_MAP = Map.of(
-            DependencyCriteria.FIELD_FROM_TYPE, DOC_DEPENDENCY.FROM_TYPE,
-            DependencyCriteria.FIELD_FROM_NAME, FROM_NAME_RESOLVED,
-            DependencyCriteria.FIELD_FROM_UUID, DOC_DEPENDENCY.FROM_UUID,
-            DependencyCriteria.FIELD_TO_TYPE, DOC_DEPENDENCY.TO_TYPE,
-            DependencyCriteria.FIELD_TO_NAME, TO_NAME_RESOLVED,
-            DependencyCriteria.FIELD_TO_UUID, DOC_DEPENDENCY.TO_UUID,
-            DependencyCriteria.FIELD_STATUS, OK_FIELD
-    );
+    // Computed fields for the query.
+    //
+    // Each exists in two forms. The unaliased *_EXPR form is for the WHERE clause: jOOQ renders an
+    // .as(...) aliased field as a bare alias reference outside the SELECT clause, and MySQL does
+    // not allow select aliases in WHERE. The aliased form is for SELECT and ORDER BY.
+    private static final Field<String> FROM_NAME_EXPR =
+            DSL.coalesce(FROM_DOC.NAME, DOC_DEPENDENCY.FROM_NAME);
+    private static final Field<String> TO_NAME_EXPR =
+            DSL.coalesce(TO_DOC.NAME, DOC_DEPENDENCY.TO_NAME);
+    private static final Field<String> FROM_NAME_RESOLVED = FROM_NAME_EXPR.as("from_name_resolved");
+    private static final Field<String> TO_NAME_RESOLVED = TO_NAME_EXPR.as("to_name_resolved");
+
+    /**
+     * Sort field mapping. Sorting is requested by column display name, unlike filtering which uses
+     * the filter qualifier, so these keys are the FIELD_* display names.
+     * <p>
+     * Built per call rather than held as a static because the status expression depends on the
+     * pseudo-ref set. Sorting must use the <b>same</b> expression instance the SELECT does, or a
+     * pseudo-ref row would be ordered as missing while being displayed as OK.
+     */
+    private static Map<String, Field<?>> sortFieldMap(final Field<String> statusField) {
+        return Map.of(
+                DependencyCriteria.FIELD_FROM_TYPE, DOC_DEPENDENCY.FROM_TYPE,
+                DependencyCriteria.FIELD_FROM_NAME, FROM_NAME_RESOLVED,
+                DependencyCriteria.FIELD_FROM_UUID, DOC_DEPENDENCY.FROM_UUID,
+                DependencyCriteria.FIELD_TO_TYPE, DOC_DEPENDENCY.TO_TYPE,
+                DependencyCriteria.FIELD_TO_NAME, TO_NAME_RESOLVED,
+                DependencyCriteria.FIELD_TO_UUID, DOC_DEPENDENCY.TO_UUID,
+                DependencyCriteria.FIELD_STATUS, statusField);
+    }
+
+    private static final FieldProvider FIELD_PROVIDER = new FieldProviderImpl(
+            DependencyCriteria.DEFAULT_QUERY_FIELDS,
+            DependencyCriteria.QUERY_FIELDS);
+
+    /**
+     * A dependency is OK if its target still exists as a non deleted doc, or if it is a known
+     * pseudo-ref (e.g. a Searchable or Annotation data source) which by design lives outside the
+     * doc table. Exposed as the "OK"/"Missing" text the user filters and sorts on so the status
+     * column, the {@code status:} filter and the status sort all derive from one definition.
+     */
+    private static Field<String> statusExpr(final Set<String> pseudoRefUuids) {
+        return DSL
+                .when(okCondition(pseudoRefUuids), STATUS_OK)
+                .otherwise(STATUS_MISSING);
+    }
+
+    private static Condition okCondition(final Set<String> pseudoRefUuids) {
+        final Condition targetExists = TO_DOC.UUID.isNotNull();
+        return NullSafe.hasItems(pseudoRefUuids)
+                ? targetExists.or(DOC_DEPENDENCY.TO_UUID.in(pseudoRefUuids))
+                : targetExists;
+    }
 
     // Explorer-document types that "own" a non-explorer entity (e.g. a ProcessorFilter is owned by its
     // Pipeline). A broken dependency whose source is a non-explorer entity (its from_uuid is absent
@@ -83,52 +132,138 @@ public class DocDependencyDao {
     // added to the dependency store.
     private static final Set<String> OWNER_DOC_TYPES = Set.of("Pipeline");
 
+    /// The version of the dependency extraction logic. Each document's `dependency_version` column is
+    /// stamped with this when its edges are written. Increment it when a change to the extraction logic
+    /// means existing edges need rebuilding: every document is then rebuilt once by
+    /// `DocDependencyRebuildStartup` on the next start.
+    public static final int CURRENT_DEPENDENCY_VERSION = 1;
+
     private final DocStoreDbConnProvider connProvider;
+    private final ExpressionMapperFactory expressionMapperFactory;
 
     @Inject
-    DocDependencyDao(final DocStoreDbConnProvider connProvider) {
+    DocDependencyDao(final DocStoreDbConnProvider connProvider,
+                     final ExpressionMapperFactory expressionMapperFactory) {
         this.connProvider = connProvider;
+        this.expressionMapperFactory = expressionMapperFactory;
+    }
+
+    /**
+     * The status expression depends on the pseudo-ref set, which varies per call, so the mapper is
+     * built per call rather than held as state. Cheap - it is just a map of term handlers.
+     */
+    private ExpressionMapper createExpressionMapper(final Set<String> pseudoRefUuids) {
+        return expressionMapperFactory.create()
+                .map(DependencyCriteria.QF_FROM_TYPE, DOC_DEPENDENCY.FROM_TYPE, value -> value)
+                .map(DependencyCriteria.QF_FROM_NAME, FROM_NAME_EXPR, value -> value)
+                .map(DependencyCriteria.QF_FROM_UUID, DOC_DEPENDENCY.FROM_UUID, value -> value)
+                .map(DependencyCriteria.QF_TO_TYPE, DOC_DEPENDENCY.TO_TYPE, value -> value)
+                .map(DependencyCriteria.QF_TO_NAME, TO_NAME_EXPR, value -> value)
+                .map(DependencyCriteria.QF_TO_UUID, DOC_DEPENDENCY.TO_UUID, value -> value)
+                .map(DependencyCriteria.QF_STATUS, statusExpr(pseudoRefUuids), value -> value);
     }
 
     /**
      * Replace all outgoing dependency edges for the given document.
      * Runs in a transaction: deletes existing edges, then inserts new ones.
+     * Also stamps the document's {@code dependency_version} so the dependency rebuild knows its edges
+     * are current.
      */
     public void setDependencies(final DocRef from, final Set<DocRef> deps) {
-        JooqUtil.transaction(connProvider, context -> {
-            // Delete existing edges for this doc
-            context
-                    .deleteFrom(DOC_DEPENDENCY)
-                    .where(DOC_DEPENDENCY.FROM_UUID.eq(from.getUuid()))
-                    .execute();
+        JooqUtil.transaction(connProvider, context -> writeDependencies(context, from, deps));
+    }
 
-            // Insert new edges
-            if (NullSafe.hasItems(deps)) {
-                final String fromType = NullSafe.nonBlankStringElse(from.getType(), "");
-                final String fromName = NullSafe.nonBlankStringElse(from.getName(), "");
-                for (final DocRef to : deps) {
-                    final String toType = NullSafe.nonBlankStringElse(to.getType(), "");
-                    final String toName = NullSafe.nonBlankStringElse(to.getName(), "");
-                    // Upsert on the (from_uuid, to_uuid) unique key. Use onDuplicateKeyUpdate rather than
-                    // onDuplicateKeyIgnore so any genuine constraint failure surfaces rather than being
-                    // silently swallowed; on a duplicate edge we refresh the type/name columns.
-                    context
-                            .insertInto(DOC_DEPENDENCY)
-                            .set(DOC_DEPENDENCY.FROM_TYPE, fromType)
-                            .set(DOC_DEPENDENCY.FROM_UUID, from.getUuid())
-                            .set(DOC_DEPENDENCY.FROM_NAME, fromName)
-                            .set(DOC_DEPENDENCY.TO_TYPE, toType)
-                            .set(DOC_DEPENDENCY.TO_UUID, to.getUuid())
-                            .set(DOC_DEPENDENCY.TO_NAME, toName)
-                            .onDuplicateKeyUpdate()
-                            .set(DOC_DEPENDENCY.FROM_TYPE, fromType)
-                            .set(DOC_DEPENDENCY.FROM_NAME, fromName)
-                            .set(DOC_DEPENDENCY.TO_TYPE, toType)
-                            .set(DOC_DEPENDENCY.TO_NAME, toName)
-                            .execute();
-                }
+    /// Replace all outgoing dependency edges for a document, but only if the document has not been
+    /// changed since `docVersion` was read. Used by the dependency rebuild, which reads a document and
+    /// extracts its dependencies outside of this transaction. If the document was saved in the meantime,
+    /// that save has already written the correct edges, so they are left alone.
+    ///
+    /// @param from       The document whose edges are being replaced.
+    /// @param docVersion The document version (the `doc.version` column) that the dependencies were
+    ///                   extracted from.
+    /// @param deps       The document's dependencies.
+    /// @return `true` if the edges were written, `false` if the document has since been changed or
+    /// deleted.
+    public boolean setDependenciesIfUnchanged(final DocRef from,
+                                              final String docVersion,
+                                              final Set<DocRef> deps) {
+        return JooqUtil.transactionResult(connProvider, context -> {
+            // Lock the doc row so a concurrent save cannot change the version until we have written
+            final String currentVersion = context
+                    .select(DOC.VERSION)
+                    .from(DOC)
+                    .where(DOC.UUID.eq(from.getUuid()))
+                    .and(DOC.DELETED.isNull())
+                    .forUpdate()
+                    .fetchOne(DOC.VERSION);
+            if (currentVersion == null || !currentVersion.equals(docVersion)) {
+                return false;
             }
+            writeDependencies(context, from, deps);
+            return true;
         });
+    }
+
+    /// Find all non-deleted documents whose dependency edges were not written by the current
+    /// dependency extraction logic, i.e. whose `dependency_version` is null or older than
+    /// [#CURRENT_DEPENDENCY_VERSION].
+    ///
+    /// @return The documents needing a dependency rebuild, each with its current `doc.version`.
+    public List<DocVersion> findDocsWithStaleDependencies() {
+        return JooqUtil.contextResult(connProvider, context -> context
+                        .select(DOC.TYPE, DOC.UUID, DOC.NAME, DOC.VERSION)
+                        .from(DOC)
+                        .where(DOC.DELETED.isNull())
+                        .and(DOC.DEPENDENCY_VERSION.isNull()
+                                .or(DOC.DEPENDENCY_VERSION.lt(CURRENT_DEPENDENCY_VERSION)))
+                        .orderBy(DOC.TYPE, DOC.ID)
+                        .fetch())
+                .map(record -> new DocVersion(
+                        new DocRef(record.get(DOC.TYPE), record.get(DOC.UUID), record.get(DOC.NAME)),
+                        record.get(DOC.VERSION)));
+    }
+
+    private void writeDependencies(final DSLContext context, final DocRef from, final Set<DocRef> deps) {
+        // Delete existing edges for this doc
+        context
+                .deleteFrom(DOC_DEPENDENCY)
+                .where(DOC_DEPENDENCY.FROM_UUID.eq(from.getUuid()))
+                .execute();
+
+        // Insert new edges
+        if (NullSafe.hasItems(deps)) {
+            final String fromType = NullSafe.nonBlankStringElse(from.getType(), "");
+            final String fromName = NullSafe.nonBlankStringElse(from.getName(), "");
+            for (final DocRef to : deps) {
+                final String toType = NullSafe.nonBlankStringElse(to.getType(), "");
+                final String toName = NullSafe.nonBlankStringElse(to.getName(), "");
+                // Upsert on the (from_uuid, to_uuid) unique key. Use onDuplicateKeyUpdate rather than
+                // onDuplicateKeyIgnore so any genuine constraint failure surfaces rather than being
+                // silently swallowed; on a duplicate edge we refresh the type/name columns.
+                context
+                        .insertInto(DOC_DEPENDENCY)
+                        .set(DOC_DEPENDENCY.FROM_TYPE, fromType)
+                        .set(DOC_DEPENDENCY.FROM_UUID, from.getUuid())
+                        .set(DOC_DEPENDENCY.FROM_NAME, fromName)
+                        .set(DOC_DEPENDENCY.TO_TYPE, toType)
+                        .set(DOC_DEPENDENCY.TO_UUID, to.getUuid())
+                        .set(DOC_DEPENDENCY.TO_NAME, toName)
+                        .onDuplicateKeyUpdate()
+                        .set(DOC_DEPENDENCY.FROM_TYPE, fromType)
+                        .set(DOC_DEPENDENCY.FROM_NAME, fromName)
+                        .set(DOC_DEPENDENCY.TO_TYPE, toType)
+                        .set(DOC_DEPENDENCY.TO_NAME, toName)
+                        .execute();
+            }
+        }
+
+        // Record that this doc's edges are current. Sources that are not documents (e.g. processor
+        // filters) have no doc row, so this updates nothing for them.
+        context
+                .update(DOC)
+                .set(DOC.DEPENDENCY_VERSION, CURRENT_DEPENDENCY_VERSION)
+                .where(DOC.UUID.eq(from.getUuid()))
+                .execute();
     }
 
     /**
@@ -228,48 +363,51 @@ public class DocDependencyDao {
      * Uses LEFT JOINs to the doc table to resolve live names and determine
      * whether the target document still exists.
      * <p>
-     * The {@code filter} predicate is applied in Java after rows are fetched
+     * The criteria's quick filter text is parsed and applied as SQL conditions, so it narrows the
+     * result set in the database. Text that cannot be parsed, or that uses a condition outside a
+     * field's {@code ConditionSet}, matches nothing rather than failing the request - the quick
+     * filter queries on a debounce as the user types, so partial input is expected.
+     * <p>
+     * The {@code filter} predicate is a separate concern, applied in Java after rows are fetched
      * from the database. This allows callers to apply checks that cannot be
      * expressed in SQL (e.g. document permission checks). Pagination is
      * applied <b>after</b> filtering via {@link ResultPage#collector}, so
      * page sizes and totals are correct even when rows are filtered out.
      *
-     * @param criteria the search/sort/page criteria
-     * @param filter   a predicate applied to each row; only rows passing
-     *                 the predicate are counted and included in the page
+     * @param criteria       the search/sort/page criteria
+     * @param pseudoRefUuids UUIDs of known pseudo-refs that live outside the doc table and so
+     *                       must be reported as OK rather than missing
+     * @param filter         a predicate applied to each row; only rows passing
+     *                       the predicate are counted and included in the page
      */
     public ResultPage<Dependency> fetchDependencies(final DependencyCriteria criteria,
+                                                    final Set<String> pseudoRefUuids,
                                                     final Predicate<Dependency> filter) {
         final PageRequest pageRequest = NullSafe.get(criteria, DependencyCriteria::getPageRequest);
+        final Field<String> statusField = statusExpr(pseudoRefUuids).as("status");
+
+        // Turn the quick filter text into SQL conditions. Both the parse and the mapping can throw
+        // on input that is partially typed or uses a condition this field does not support, which
+        // is expected while the user types, so match nothing rather than failing the request.
+        final List<Condition> conditions = new ArrayList<>();
+        final String filterInput = NullSafe.get(criteria, DependencyCriteria::getQuickFilter);
+        try {
+            SimpleStringExpressionParser
+                    .create(FIELD_PROVIDER, filterInput)
+                    .ifPresent(expression ->
+                            conditions.add(createExpressionMapper(pseudoRefUuids).apply(expression)));
+        } catch (final TokenException e) {
+            // A rejected filter must not look like a filter that matched nothing, so send the
+            // reason back with the (empty) results. See ResultPage.filterError.
+            LOGGER.debug(e::getMessage, e);
+            return ResultPage.emptyWithFilterError(TokenErrorUtil.toTokenError(e));
+        } catch (final RuntimeException e) {
+            LOGGER.debug(e::getMessage, e);
+            return ResultPage.empty();
+        }
 
         return JooqUtil.contextResult(connProvider, context -> {
-            // Build filter condition
-            Condition condition = DSL.trueCondition();
-            final String partialName = criteria != null
-                    ? criteria.getPartialName()
-                    : null;
-            if (NullSafe.isNonBlankString(partialName)) {
-                final String likePattern = "%" + partialName + "%";
-                condition = condition.and(
-                        DSL.coalesce(FROM_DOC.NAME, DOC_DEPENDENCY.FROM_NAME).likeIgnoreCase(likePattern)
-                                .or(DSL.coalesce(TO_DOC.NAME, DOC_DEPENDENCY.TO_NAME).likeIgnoreCase(likePattern))
-                );
-            }
-
-            // Build sort order
-            final List<OrderField<?>> orderFields = new ArrayList<>();
-            if (criteria != null && NullSafe.hasItems(criteria.getSortList())) {
-                for (final CriteriaFieldSort sort : criteria.getSortList()) {
-                    final Field<?> field = SORT_FIELD_MAP.get(sort.getId());
-                    if (field != null) {
-                        if (sort.isDesc()) {
-                            orderFields.add(field.desc());
-                        } else {
-                            orderFields.add(field.asc());
-                        }
-                    }
-                }
-            }
+            final Collection<OrderField<?>> orderFields = JooqUtil.getOrderFields(sortFieldMap(statusField), criteria);
 
             // Fetch ALL matching rows (no SQL LIMIT — pagination is done in Java
             // after the filter predicate is applied, so totals are correct)
@@ -280,13 +418,13 @@ public class DocDependencyDao {
                             DOC_DEPENDENCY.TO_TYPE,
                             DOC_DEPENDENCY.TO_UUID,
                             TO_NAME_RESOLVED,
-                            OK_FIELD)
+                            statusField)
                     .from(DOC_DEPENDENCY)
                     .leftJoin(FROM_DOC).on(FROM_DOC.UUID.eq(DOC_DEPENDENCY.FROM_UUID)
                             .and(FROM_DOC.DELETED.isNull()))
                     .leftJoin(TO_DOC).on(TO_DOC.UUID.eq(DOC_DEPENDENCY.TO_UUID)
                             .and(TO_DOC.DELETED.isNull()))
-                    .where(condition)
+                    .where(conditions)
                     .orderBy(orderFields)
                     .fetchStream()
                     .map(r -> {
@@ -298,7 +436,7 @@ public class DocDependencyDao {
                                 r.get(DOC_DEPENDENCY.TO_TYPE),
                                 r.get(DOC_DEPENDENCY.TO_UUID),
                                 r.get(TO_NAME_RESOLVED));
-                        final boolean ok = Boolean.TRUE.equals(r.get(OK_FIELD));
+                        final boolean ok = STATUS_OK.equals(r.get(statusField));
                         return new Dependency(fromRef, toRef, ok);
                     })
                     .filter(filter)
@@ -417,5 +555,17 @@ public class DocDependencyDao {
                                 r.get(DOC_DEPENDENCY.TO_UUID),
                                 r.get(TO_DOC.NAME)),
                         (a, b) -> a));
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    /// A document with its current `doc.version`.
+    ///
+    /// @param docRef  The document.
+    /// @param version The document's version, as held in the `doc.version` column.
+    public record DocVersion(DocRef docRef, String version) {
+
     }
 }

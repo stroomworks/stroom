@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ package stroom.security.client;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.RestFactory;
-import stroom.security.client.api.event.LogoutEvent;
+import stroom.security.client.event.LogoutEvent;
 import stroom.security.shared.AppPermissionResource;
 import stroom.security.shared.SessionResource;
-import stroom.task.client.DefaultTaskMonitorFactory;
+import stroom.widget.task.client.DefaultTaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.event.shared.GwtEvent;

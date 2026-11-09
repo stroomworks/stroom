@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,6 +56,8 @@ public class TestProxyGuiceBindings extends AbstractApplicationTest {
                 packagePrefix, annotationClass.getCanonicalName());
 
         final ScanResult scanResult = new ClassGraph()
+                .enableClasspath()
+                .enableNonSystemModules()
                 .acceptPackages(packagePrefix)
                 .enableClassInfo()
                 .enableMethodInfo()
@@ -64,7 +66,7 @@ public class TestProxyGuiceBindings extends AbstractApplicationTest {
 
         scanResult.getClassesWithMethodAnnotation(annotationClass.getName())
                 .forEach(classInfo -> {
-                    final Class<?> clazz = classInfo.loadClass();
+                    final Class<?> clazz = loadClass(classInfo.getName());
                     LOGGER.info("  Testing injection for " + clazz.getCanonicalName());
                     try {
                         actionPerClass.accept(clazz);
@@ -87,6 +89,14 @@ public class TestProxyGuiceBindings extends AbstractApplicationTest {
 
     // --------------------------------------------------------------------------------
 
+
+    private static Class<?> loadClass(final String className) {
+        try {
+            return Class.forName(className, false, TestProxyGuiceBindings.class.getClassLoader());
+        } catch (final ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     public static class MyApp extends Application<Config> {
 

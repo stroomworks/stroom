@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,10 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class Automate {
 
+    /// The refresh interval used when none has been set, e.g. for a dashboard saved before the
+    /// interval had a default.
+    public static final String DEFAULT_REFRESH_INTERVAL = "10s";
+
     @JsonProperty("open")
     private final boolean open;
     @JsonProperty("refresh")
@@ -36,11 +40,11 @@ public class Automate {
     private final String refreshInterval;
 
     @JsonCreator
-    public Automate(@JsonProperty("open") final boolean open,
-                    @JsonProperty("refresh") final boolean refresh,
+    public Automate(@JsonProperty("open") final Boolean open,
+                    @JsonProperty("refresh") final Boolean refresh,
                     @JsonProperty("refreshInterval") final String refreshInterval) {
-        this.open = open;
-        this.refresh = refresh;
+        this.open = Objects.requireNonNullElse(open, false);
+        this.refresh = Objects.requireNonNullElse(refresh, false);
         this.refreshInterval = refreshInterval;
     }
 
@@ -96,7 +100,7 @@ public class Automate {
 
         private boolean open;
         private boolean refresh;
-        private String refreshInterval = "10s";
+        private String refreshInterval = DEFAULT_REFRESH_INTERVAL;
 
         private Builder() {
         }

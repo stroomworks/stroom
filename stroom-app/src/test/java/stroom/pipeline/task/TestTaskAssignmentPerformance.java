@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -193,7 +193,7 @@ public class TestTaskAssignmentPerformance extends StroomIntegrationTest {
         jobBootstrap.startup();
 
         final AtomicLong executionCount = new AtomicLong();
-        dataProcessorTaskFactory.setRunnableFactory(processorTask -> () -> {
+        dataProcessorTaskFactory.setRunnableFactory((processorTask, alreadyClaimed) -> () -> {
             final long count = executionCount.incrementAndGet();
             if (count % (metaCount / 10) == 0) {
                 LOGGER.info("Execute " + count);

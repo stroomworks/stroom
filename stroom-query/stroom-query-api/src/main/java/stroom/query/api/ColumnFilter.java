@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,13 +35,13 @@ public class ColumnFilter {
 
     @JsonCreator
     public ColumnFilter(@JsonProperty("filter") final String filter,
-                        @JsonProperty("enabled") final boolean enabled) {
+                        @JsonProperty("enabled") final Boolean enabled) {
         if (NullSafe.isBlankString(filter)) {
             this.filter = null;
         } else {
             this.filter = filter;
         }
-        this.enabled = enabled;
+        this.enabled = Objects.requireNonNullElse(enabled, false);
     }
 
     public String getFilter() {

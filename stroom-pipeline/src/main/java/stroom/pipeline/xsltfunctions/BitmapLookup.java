@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,11 +41,89 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
+
+@XsltFunctionDef(
+        name = BitmapLookup.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.PIPELINE,
+        commonDescription = """
+                The bitmap-lookup() function looks up a bitmap key from reference or context data a value \
+                (which can be an XML node set) for each set bit position and adds it to the resultant XML.
+
+                If the look up fails no result will be returned.
+                """,
+        extendedCommonDescription = """
+                The key is a bitmap expressed as either a decimal integer or a hexidecimal value, \
+                e.g. `14`/`0xE` is `1110` as a binary bitmap.
+                For each bit position that is set, (i.e. has a binary value of `1`) a lookup will be performed \
+                using that bit position as the key.
+                In this example, positions `1`, `2` & `3` are set so a lookup would be performed for these \
+                bit positions.
+                The result of each lookup for the bitmap are concatenated together in bit position order, \
+                separated by a space.
+
+                If `ignoreWarnings` is true then any lookup failures will be ignored and it will return the \
+                value(s) for the bit positions it was able to lookup.
+
+                This function can be useful when you have a set of values that can be represented as a bitmap \
+                and you need them to be converted back to individual values.
+
+                For example if you have a set of additive account permissions (e.g Admin, ManageUsers, \
+                PerformExport, etc.), each of which is associated with a bit position, then a user's \
+                permissions could be defined as a single decimal/hex bitmap value.
+                Thus a bitmap lookup with this value would return all the permissions held by the user.
+                """,
+        commonReturnType = XsltDataType.SEQUENCE,
+        commonReturnDescription = "The matching value or XML nodes, or an empty sequence if no value is found.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "map",
+                                        description = "The name of the map to perform the lookup in.",
+                                        argType = XsltDataType.STRING),
+                                @XsltFunctionArg(
+                                        name = "key",
+                                        description = "The key to lookup in the named map.",
+                                        argType = XsltDataType.STRING),
+                                @XsltFunctionArg(
+                                        name = "time",
+                                        description = """
+                                                Determines which set of reference data was effective at the \
+                                                requested time.
+                                                If no reference data exists with an effective time before the \
+                                                requested time then the lookup will fail.
+                                                Time is in the format `yyyy-MM-dd'T'HH:mm:ss.SSSXX`, e.g. \
+                                                `2010-01-01T00:00:00.000Z`.""",
+                                        isOptional = true,
+                                        argType = XsltDataType.STRING),
+                                @XsltFunctionArg(
+                                        name = "ignoreWarnings",
+                                        description = "If true, any lookup failures will be ignored, else they " +
+                                                      "will be reported as warnings.",
+                                        argType = XsltDataType.BOOLEAN,
+                                        isOptional = true),
+                                @XsltFunctionArg(
+                                        name = "trace",
+                                        description = "If true, additional trace information is output as " +
+                                                      "INFO messages.",
+                                        argType = XsltDataType.BOOLEAN,
+                                        isOptional = true),
+                                @XsltFunctionArg(
+                                        name = "delimiter",
+                                        description = "The delimiter to use when concatenating multiple lookup " +
+                                                      "values. The default delimiter is a space.",
+                                        argType = XsltDataType.STRING,
+                                        isOptional = true,
+                                        defaultValue = "<space>"),
+                        })
+        })
 class BitmapLookup extends AbstractLookup {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(BitmapLookup.class);
 
     public static final String FUNCTION_NAME = "bitmap-lookup";
+
+    private String delimiter = SequenceMaker.DEFAULT_DELIMITER;
 
     @Inject
     BitmapLookup(final ReferenceData referenceData,
@@ -55,13 +133,28 @@ class BitmapLookup extends AbstractLookup {
         super(referenceData, metaHolder, sequenceMakerFactory, taskContextFactory);
     }
 
+    @Override
+    protected void parseAdditionalArguments(final String functionName,
+                                            final XPathContext context,
+                                            final Sequence[] arguments) throws XPathException {
+        // The optional sixth argument sets the delimiter placed between the values of
+        // the matched bit positions. Defaults to a single space.
+        if (arguments.length > 5) {
+            delimiter = Objects.requireNonNullElse(
+                    getSafeString(functionName, context, arguments, 5),
+                    SequenceMaker.DEFAULT_DELIMITER);
+        } else {
+            delimiter = SequenceMaker.DEFAULT_DELIMITER;
+        }
+    }
+
     private SequenceMaker getOrCreateSequenceMaker(final AtomicReference<SequenceMaker> sequenceMakerRef,
                                                    final XPathContext xPathContext) throws XPathException {
         Objects.requireNonNull(sequenceMakerRef);
         Objects.requireNonNull(xPathContext);
         if (sequenceMakerRef.get() == null) {
             final SequenceMaker sequenceMaker = createSequenceMaker(xPathContext);
-            sequenceMaker.open();
+            sequenceMaker.open(delimiter);
             sequenceMakerRef.set(sequenceMaker);
         }
         return sequenceMakerRef.get();
@@ -150,11 +243,9 @@ class BitmapLookup extends AbstractLookup {
             if (result.getRefDataValueProxy().isPresent()) {
                 final SequenceMaker sequenceMaker = getOrCreateSequenceMaker(sequenceMakerRef, xPathContext);
 
-                // When multiple values are consumed they appear to be separated with a ' '.
-                // Not really sure why as it is not something we are doing explicitly.  May be something to
-                // do with how we call characters() on the TinyBuilder deeper down.
-                // receiver.characters(
-                // str, RefDataValueProxyConsumer.NULL_LOCATION, ReceiverOptions.WHOLE_TEXT_NODE);
+                // When multiple values are consumed the SequenceMaker delimits each one (with
+                // a ' ' unless the optional delimiter argument was supplied), so the result is
+                // a delimited list of the values for all matched bit positions.
 
                 final RefDataValueProxy refDataValueProxy = result.getRefDataValueProxy().get();
 

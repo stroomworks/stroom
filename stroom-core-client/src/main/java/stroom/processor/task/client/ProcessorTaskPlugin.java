@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 package stroom.processor.task.client;
 
 import stroom.core.client.ContentManager;
-import stroom.data.client.AbstractTabPresenterPlugin;
+import stroom.data.client.AbstractTabPlugin;
 import stroom.processor.shared.ProcessorFilter;
+import stroom.processor.task.client.component.ProcessorFilterTasksTabController;
 import stroom.processor.task.client.event.OpenProcessorTaskEvent;
-import stroom.processor.task.client.presenter.ProcessorTaskPresenter;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -29,26 +29,27 @@ import com.google.web.bindery.event.shared.EventBus;
 import javax.inject.Singleton;
 
 @Singleton
-public class ProcessorTaskPlugin extends AbstractTabPresenterPlugin<ProcessorFilter, ProcessorTaskPresenter> {
+public class ProcessorTaskPlugin
+        extends AbstractTabPlugin<ProcessorFilter, ProcessorFilterTasksTabController> {
 
     @Inject
     public ProcessorTaskPlugin(final EventBus eventBus,
                                final ContentManager contentManager,
-                               final Provider<ProcessorTaskPresenter> processorTaskPresenterProvider) {
-        super(eventBus, contentManager, processorTaskPresenterProvider);
+                               final Provider<ProcessorFilterTasksTabController> processorTaskControllerProvider) {
+        super(eventBus, contentManager, processorTaskControllerProvider);
 
-        registerHandler(getEventBus().addHandler(OpenProcessorTaskEvent.getType(), event -> {
+        getEventBus().addHandler(OpenProcessorTaskEvent.getType(), event -> {
             open(event.getProcessorFilter(), true);
-        }));
+        });
     }
 
     public void open(final ProcessorFilter processorFilter, final boolean forceOpen) {
         if (processorFilter != null) {
-            super.openTabPresenter(
+            super.openTabController(
                     forceOpen,
                     processorFilter,
-                    processorTaskPresenter ->
-                            processorTaskPresenter.setProcessorFilter(processorFilter));
+                    processorTaskController ->
+                            processorTaskController.setProcessorFilter(processorFilter));
         }
     }
 

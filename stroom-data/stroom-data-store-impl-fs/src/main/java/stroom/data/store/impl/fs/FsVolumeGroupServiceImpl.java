@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,28 +18,28 @@ package stroom.data.store.impl.fs;
 
 import stroom.data.store.api.FsVolumeGroupService;
 import stroom.data.store.impl.fs.shared.FsVolumeGroup;
+import stroom.data.store.impl.fs.shared.FsVolumeGroupRow;
+import stroom.entity.shared.ExpressionCriteria;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.AppPermission;
 import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.entityevent.EntityEventBus;
-import stroom.util.entityevent.EntityEventHandler;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.Clearable;
+import stroom.util.shared.NullSafe;
+import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Singleton
-@EntityEventHandler(type = FsVolumeGroupServiceImpl.ENTITY_TYPE, action = {
-        EntityAction.UPDATE,
-        EntityAction.CREATE,
-        EntityAction.DELETE})
 public class FsVolumeGroupServiceImpl implements FsVolumeGroupService, Clearable {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(FsVolumeGroupServiceImpl.class);
@@ -77,38 +77,52 @@ public class FsVolumeGroupServiceImpl implements FsVolumeGroupService, Clearable
     }
 
     @Override
+    public ResultPage<FsVolumeGroupRow> findExtended(final ExpressionCriteria criteria) {
+        ensureDefaultVolumes();
+        return securityContext.secureResult(() -> volumeGroupDao.findExtended(criteria));
+    }
+
+    @Override
     public FsVolumeGroup getOrCreate(final String name) {
         ensureDefaultVolumes();
-        final FsVolumeGroup indexVolumeGroup = FsVolumeGroup
-                .builder()
-                .name(name)
-                .stampAudit(securityContext)
-                .build();
-        final FsVolumeGroup result = securityContext.secureResult(AppPermission.MANAGE_VOLUMES_PERMISSION,
-                () -> volumeGroupDao.getOrCreate(indexVolumeGroup));
-        fireChange(EntityAction.CREATE);
-        return result;
+        FsVolumeGroup volumeGroup = securityContext.secureResult(() ->
+                volumeGroupDao.fetchByName(name));
+        if (volumeGroup == null) {
+            final FsVolumeGroup newVolumeGroup = FsVolumeGroup
+                    .builder()
+                    .name(name)
+                    .stampAudit(securityContext)
+                    .build();
+            volumeGroup = securityContext.secureResult(AppPermission.MANAGE_VOLUMES_PERMISSION, () ->
+                    volumeGroupDao.getOrCreate(newVolumeGroup));
+            if (!Objects.equals(newVolumeGroup, volumeGroup)) {
+                // We only want to fire a change event if the volume group was actually created to save
+                // clearing caches when not needed
+                fireChange(EntityAction.CREATE);
+            }
+        }
+        return volumeGroup;
     }
 
     @Override
     public FsVolumeGroup create(final String name) {
         ensureDefaultVolumes();
-        final FsVolumeGroup indexVolumeGroup = FsVolumeGroup
+        final FsVolumeGroup fsVolumeGroup = FsVolumeGroup
                 .builder()
                 .name(name)
                 .stampAudit(securityContext)
                 .build();
         final FsVolumeGroup result = securityContext.secureResult(AppPermission.MANAGE_VOLUMES_PERMISSION,
-                () -> volumeGroupDao.create(indexVolumeGroup));
+                () -> volumeGroupDao.create(fsVolumeGroup));
         fireChange(EntityAction.CREATE);
         return result;
     }
 
     @Override
-    public FsVolumeGroup update(final FsVolumeGroup indexVolumeGroup) {
+    public FsVolumeGroup update(final FsVolumeGroup fsVolumeGroup) {
         ensureDefaultVolumes();
         final FsVolumeGroup result = securityContext.secureResult(AppPermission.MANAGE_VOLUMES_PERMISSION,
-                () -> volumeGroupDao.update(indexVolumeGroup.copy().stampAudit(securityContext).build()));
+                () -> volumeGroupDao.update(fsVolumeGroup.copy().stampAudit(securityContext).build()));
         fireChange(EntityAction.UPDATE);
         return result;
     }
@@ -149,8 +163,15 @@ public class FsVolumeGroupServiceImpl implements FsVolumeGroupService, Clearable
     }
 
     @Override
-    public Optional<String> getDefaultVolumeGroup() {
-        return Optional.ofNullable(volumeConfigProvider.get().getDefaultStreamVolumeGroupName());
+    public Optional<FsVolumeGroup> getOrCreateDefaultVolumeGroup() {
+        return getDefaultVolumeGroupName()
+                .map(this::getOrCreate);
+    }
+
+    @Override
+    public Optional<String> getDefaultVolumeGroupName() {
+        return Optional.ofNullable(volumeConfigProvider.get().getDefaultStreamVolumeGroupName())
+                .filter(NullSafe::isNonBlankString);
     }
 
     private synchronized void createDefaultVolumes() {
@@ -161,50 +182,16 @@ public class FsVolumeGroupServiceImpl implements FsVolumeGroupService, Clearable
                     final FsVolumeConfig volumeConfig = volumeConfigProvider.get();
                     final boolean isEnabled = volumeConfig.isCreateDefaultStreamVolumesOnStart();
                     if (isEnabled) {
-                        if (volumeConfig.getDefaultStreamVolumeGroupName() != null) {
+                        if (NullSafe.isNonBlankString(volumeConfig.getDefaultStreamVolumeGroupName())) {
                             final String groupName = volumeConfig.getDefaultStreamVolumeGroupName();
-                            final FsVolumeGroup indexVolumeGroup = FsVolumeGroup
+                            final FsVolumeGroup volumeGroup = FsVolumeGroup
                                     .builder().name(groupName).stampAudit(securityContext).build();
                             LOGGER.info("Creating default volume group [{}]", groupName);
-//                            final FsVolumeGroup newGroup = volumeGroupDao.getOrCreate(indexVolumeGroup);
+                            final FsVolumeGroup newGroup = volumeGroupDao.getOrCreate(volumeGroup);
 
-//                            // Now create associated volumes within the group
-//                            if (volumeConfig.getDefaultStreamVolumePaths() != null) {
-//                                final String nodeName = nodeInfo.getThisNodeName();
-//
-//                                // See if we have already created a volume for this node.
-//                                final List<FsVolume> existingVolumesInGroup =
-//                                        volumeDao.getVolumesInGroup(groupName);
-//                                final boolean exists = existingVolumesInGroup
-//                                        .stream()
-//                                        .map(FsVolume::getNodeName)
-//                                        .anyMatch(name -> name.equals(nodeName));
-//                                if (!exists) {
-//                                    final List<String> paths = volumeConfig.getDefaultFsVolumeGroupPaths();
-//                                    for (String path : paths) {
-//                                        final Path resolvedPath = pathCreator.toAppPath(path);
-//
-//                                        LOGGER.info("Creating index volume with path {}",
-//                                                resolvedPath.toAbsolutePath().normalize());
-//
-//                                        final OptionalLong byteLimitOption = getDefaultVolumeLimit(
-//                                                resolvedPath.toString());
-//
-//                                        final IndexVolume indexVolume = new IndexVolume();
-//                                        indexVolume.setFsVolumeGroupId(newGroup.getId());
-//                                        indexVolume.setBytesLimit(byteLimitOption.orElse(0L));
-//                                        indexVolume.setNodeName(nodeName);
-//                                        indexVolume.setPath(resolvedPath.toString());
-//                                        AuditUtil.stamp(processingUserIdentity, indexVolume);
-//
-//                                        volumeDao.create(indexVolume);
-//                                    }
-//                                }
-//                            } else {
-//                                LOGGER.warn(() -> "Unable to create default index volume group. " +
-//                                        "Properties defaultVolumeGroupPaths defaultVolumeGroupNodes " +
-//                                        "and defaultVolumeGroupLimit must all be defined.");
-//                            }
+                            // Default volumes are created in
+                            // stroom.data.store.impl.fs.FsVolumeServiceImpl#createDefaultVolumes
+
                         } else {
                             LOGGER.warn(() -> "Unable to create default index " +
                                               "Property defaultVolumeGroupName must be defined.");

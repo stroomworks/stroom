@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -111,6 +111,7 @@ public class MockServiceModule extends AbstractModule {
         install(new stroom.pipeline.factory.PipelineFactoryModule());
         install(new PipelineScopeModule());
         install(new PipelineStreamTaskModule());
+        install(new stroom.pipeline.xsltfunctions.AiXsltFunctionModule());
         install(new stroom.pipeline.xsltfunctions.CommonXsltFunctionModule());
         install(new stroom.pipeline.xsltfunctions.DataStoreXsltFunctionModule());
         install(new stroom.pipeline.refdata.ReferenceDataModule());
@@ -127,6 +128,8 @@ public class MockServiceModule extends AbstractModule {
         install(new MockClusterLockModule());
         install(new MockAiModule());
         install(new stroom.core.entity.event.EntityEventModule());
+
+        bind(stroom.pipeline.xsltfunctions.SqlStoreLookup.class).toProvider(() -> null);
 
         bind(DocDependencyService.class).to(MockDocDependencyService.class);
         bind(AiDao.class).to(MockAiDao.class);

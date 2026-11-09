@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,15 @@ package stroom.security.client;
 
 import stroom.core.client.ContentManager;
 import stroom.core.client.MenuKeys;
-import stroom.core.client.presenter.MonitoringPlugin;
+import stroom.core.client.MonitoringPlugin;
 import stroom.document.client.DocumentPluginRegistry;
 import stroom.menubar.client.event.BeforeRevealMenubarEvent;
 import stroom.security.client.api.ClientSecurityContext;
+import stroom.security.client.component.UsersController;
 import stroom.security.client.event.OpenUsersScreenEvent;
-import stroom.security.client.presenter.UserAndGroupsPresenter;
-import stroom.security.client.presenter.UsersPresenter;
 import stroom.security.shared.AppPermission;
-import stroom.svg.client.Preset;
-import stroom.svg.client.SvgPresets;
-import stroom.widget.menu.client.presenter.IconMenuItem.Builder;
+import stroom.svg.shared.SvgImage;
+import stroom.widget.menu.client.IconMenuItem.Builder;
 import stroom.widget.util.client.KeyBinding.Action;
 
 import com.google.inject.Inject;
@@ -39,23 +37,23 @@ import java.util.function.Consumer;
 import javax.inject.Singleton;
 
 @Singleton
-public class UsersPlugin extends MonitoringPlugin<UsersPresenter> {
+public class UsersPlugin extends MonitoringPlugin<UsersController> {
 
     public static final String SCREEN_NAME = "Users";
-    public static final Preset ICON = SvgPresets.USER;
+    public static final SvgImage ICON = SvgImage.USER;
 
     @Inject
     public UsersPlugin(final EventBus eventBus,
                        final ContentManager contentManager,
-                       final Provider<UsersPresenter> presenterProvider,
+                       final Provider<UsersController> controllerProvider,
                        final ClientSecurityContext securityContext,
                        final DocumentPluginRegistry documentPluginRegistry) {
-        super(eventBus, contentManager, presenterProvider, securityContext, documentPluginRegistry);
+        super(eventBus, contentManager, controllerProvider, securityContext, documentPluginRegistry);
 
-        registerHandler(getEventBus().addHandler(OpenUsersScreenEvent.getType(), event -> {
-            open(usersPresenter ->
-                    usersPresenter.showUser(event.getUserRef()));
-        }));
+        getEventBus().addHandler(OpenUsersScreenEvent.getType(), event -> {
+            open(usersController ->
+                    usersController.showUser(event.getUserRef()));
+        });
     }
 
     @Override
@@ -67,17 +65,16 @@ public class UsersPlugin extends MonitoringPlugin<UsersPresenter> {
                             .priority(20)
                             .icon(ICON)
                             .text(SCREEN_NAME)
-//                            .action(getOpenAction())
                             .command(this::open)
                             .build());
         }
     }
 
     @Override
-    public void open(final Consumer<UsersPresenter> consumer) {
-        super.open(presenter -> {
-            presenter.refresh();
-            consumer.accept(presenter);
+    public void open(final Consumer<UsersController> consumer) {
+        super.open(controller -> {
+            controller.refresh();
+            consumer.accept(controller);
         });
     }
 
@@ -93,6 +90,6 @@ public class UsersPlugin extends MonitoringPlugin<UsersPresenter> {
 
     @Override
     public String getType() {
-        return UsersPresenter.TAB_TYPE;
+        return UsersController.TAB_TYPE;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,15 @@ package stroom.security.client;
 
 import stroom.core.client.ContentManager;
 import stroom.core.client.MenuKeys;
-import stroom.core.client.presenter.MonitoringPlugin;
+import stroom.core.client.MonitoringPlugin;
 import stroom.document.client.DocumentPluginRegistry;
 import stroom.menubar.client.event.BeforeRevealMenubarEvent;
-import stroom.pathways.client.presenter.TracesPresenter;
 import stroom.security.client.api.ClientSecurityContext;
+import stroom.security.client.component.UsersAndGroupsTabController;
 import stroom.security.client.event.OpenUsersAndGroupsScreenEvent;
-import stroom.security.client.presenter.UserAndGroupsPresenter;
 import stroom.security.shared.AppPermission;
-import stroom.svg.client.Preset;
-import stroom.svg.client.SvgPresets;
-import stroom.widget.menu.client.presenter.IconMenuItem.Builder;
+import stroom.svg.shared.SvgImage;
+import stroom.widget.menu.client.IconMenuItem.Builder;
 import stroom.widget.util.client.KeyBinding.Action;
 
 import com.google.inject.Inject;
@@ -39,23 +37,23 @@ import java.util.function.Consumer;
 import javax.inject.Singleton;
 
 @Singleton
-public class UsersAndGroupsPlugin extends MonitoringPlugin<UserAndGroupsPresenter> {
+public class UsersAndGroupsPlugin extends MonitoringPlugin<UsersAndGroupsTabController> {
 
     public static final String SCREEN_NAME = "User Groups";
-    public static final Preset ICON = SvgPresets.USER_GROUP;
+    public static final SvgImage ICON = SvgImage.USERS;
 
     @Inject
     public UsersAndGroupsPlugin(final EventBus eventBus,
                                 final ContentManager contentManager,
-                                final Provider<UserAndGroupsPresenter> presenterProvider,
+                                final Provider<UsersAndGroupsTabController> controllerProvider,
                                 final ClientSecurityContext securityContext,
                                 final DocumentPluginRegistry documentPluginRegistry) {
-        super(eventBus, contentManager, presenterProvider, securityContext, documentPluginRegistry);
+        super(eventBus, contentManager, controllerProvider, securityContext, documentPluginRegistry);
 
-        registerHandler(getEventBus().addHandler(OpenUsersAndGroupsScreenEvent.getType(), event -> {
-            open(userAndGroupsPresenter ->
-                    userAndGroupsPresenter.showUser(event.getUserRef()));
-        }));
+        getEventBus().addHandler(OpenUsersAndGroupsScreenEvent.getType(), event -> {
+            open(userAndGroupsController ->
+                    userAndGroupsController.showUser(event.getUserRef()));
+        });
     }
 
     @Override
@@ -74,10 +72,10 @@ public class UsersAndGroupsPlugin extends MonitoringPlugin<UserAndGroupsPresente
     }
 
     @Override
-    public void open(final Consumer<UserAndGroupsPresenter> consumer) {
-        super.open(presenter -> {
-            presenter.refresh();
-            consumer.accept(presenter);
+    public void open(final Consumer<UsersAndGroupsTabController> consumer) {
+        super.open(controller -> {
+            controller.refresh();
+            consumer.accept(controller);
         });
     }
 
@@ -93,6 +91,6 @@ public class UsersAndGroupsPlugin extends MonitoringPlugin<UserAndGroupsPresente
 
     @Override
     public String getType() {
-        return UserAndGroupsPresenter.TAB_TYPE;
+        return UsersAndGroupsTabController.TAB_TYPE;
     }
 }

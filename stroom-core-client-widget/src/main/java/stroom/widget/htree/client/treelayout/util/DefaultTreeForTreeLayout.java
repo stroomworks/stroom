@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,6 +120,22 @@ public class DefaultTreeForTreeLayout<T_TREE_NODE> extends AbstractTreeForTreeLa
         checkArg(!hasNode(node), "node is already in the tree");
 
         childrenMap.computeIfAbsent(parentNode, k -> new ArrayList<>()).add(node);
+        parents.put(node, parentNode);
+    }
+
+    /// Adds a node as a child of another at a given position among its children, e.g. to put a
+    /// node back where it was.
+    ///
+    /// @param parentNode The parent, which must be in the tree.
+    /// @param node       The node, which must not be in the tree.
+    /// @param index      Its position among the parent's children, from 0 (one past the last, or
+    ///                   more, adds it last).
+    public void addChild(final T_TREE_NODE parentNode, final T_TREE_NODE node, final int index) {
+        checkArg(hasNode(parentNode), "parentNode is not in the tree");
+        checkArg(!hasNode(node), "node is already in the tree");
+
+        final List<T_TREE_NODE> children = childrenMap.computeIfAbsent(parentNode, k -> new ArrayList<>());
+        children.add(Math.max(0, Math.min(index, children.size())), node);
         parents.put(node, parentNode);
     }
 

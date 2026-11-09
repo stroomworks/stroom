@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,10 +45,6 @@ public class Templates {
         return TEMPLATE.emptySvg(className);
     }
 
-    public static SafeHtml input(final String value) {
-        return TEMPLATE.input(value);
-    }
-
     interface Template extends SafeHtmlTemplates {
 
         @Template("<div class=\"{0}\"></div>")
@@ -65,8 +61,5 @@ public class Templates {
 
         @Template("<div class=\"{0}\"><svg></svg></div>")
         SafeHtml emptySvg(String className);
-
-        @Template("<input type=\"text\" value=\"{0}\"></input>")
-        SafeHtml input(String value);
     }
 }

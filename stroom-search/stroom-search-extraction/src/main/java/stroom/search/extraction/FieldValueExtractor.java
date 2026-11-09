@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,10 +90,11 @@ public class FieldValueExtractor {
                     return ValDouble.create(val);
                 }
                 case DATE -> {
-                    final long val = DateUtil.parseNormalDateTimeString(value);
+                    // Accept epoch millis as well as ISO 8601, as both are Elasticsearch's default date format
+                    final long val = DateUtil.parseUnknownString(value);
                     return ValDate.create(val);
                 }
-                case TEXT -> {
+                case TEXT, KEYWORD, IPV4_ADDRESS -> {
                     return ValString.create(value);
                 }
             }

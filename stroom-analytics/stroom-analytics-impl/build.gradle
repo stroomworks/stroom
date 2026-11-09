@@ -17,6 +17,7 @@
 ext.moduleName = 'stroom.analytics.impl'
 
 dependencies {
+    implementation project(':stroom-ai:stroom-ai-api')
     implementation project(':stroom-analytics:stroom-analytics-api')
     implementation project(':stroom-analytics:stroom-analytics-impl-db')
     implementation project(':stroom-bytebuffer')
@@ -59,6 +60,7 @@ dependencies {
 
     implementation libs.eventLogging
     implementation libs.guice
+    implementation libs.jackson.annotations
     implementation libs.jakarta.validation.api
     implementation libs.jooq
     implementation libs.jinjava
@@ -71,7 +73,10 @@ dependencies {
     implementation libs.zero.allocation.hashing
 
     runtimeOnly libs.mysql.connector.java
+    // This batch module is needed at runtime for simple mail to work
+    runtimeOnly libs.simple.java.mail.batch.module
 
     testImplementation libs.bundles.common.test.implementation
+    testImplementation libs.logback.classic
     testRuntimeOnly libs.bundles.common.test.runtime
 }

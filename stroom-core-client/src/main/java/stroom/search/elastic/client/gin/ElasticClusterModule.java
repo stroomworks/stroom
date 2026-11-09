@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,10 @@ package stroom.search.elastic.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.search.elastic.client.ElasticClusterPlugin;
-import stroom.search.elastic.client.presenter.ElasticClusterPresenter;
-import stroom.search.elastic.client.presenter.ElasticClusterSettingsPresenter;
-import stroom.search.elastic.client.presenter.ElasticClusterSettingsPresenter.ElasticClusterSettingsView;
-import stroom.search.elastic.client.view.ElasticClusterSettingsViewImpl;
 
 public class ElasticClusterModule extends PluginModule {
     @Override
     protected void configure() {
         bindPlugin(ElasticClusterPlugin.class);
-        bind(ElasticClusterPresenter.class);
-        bindPresenterWidget(ElasticClusterSettingsPresenter.class,
-                ElasticClusterSettingsView.class,
-                ElasticClusterSettingsViewImpl.class);
     }
 }

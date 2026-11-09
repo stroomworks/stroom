@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
+import stroom.docstore.api.DependencyRemapper;
 import stroom.docstore.api.Serialiser2Factory;
 import stroom.docstore.api.StoreFactory;
 import stroom.receive.content.shared.ContentTemplate;
@@ -36,9 +37,10 @@ import jakarta.inject.Singleton;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * A bit of a special store that only ever holds one doc with a hard coded name.
+ * A bit of a special store that only ever holds one doc with a hard-coded name.
  */
 @Singleton
 public class ContentTemplateStoreImpl
@@ -55,10 +57,11 @@ public class ContentTemplateStoreImpl
 
     @Inject
     public ContentTemplateStoreImpl(final StoreFactory storeFactory,
-                                    final Serialiser2Factory serialiser2Factory,
                                     final SecurityContext securityContext,
+                                    final Serialiser2Factory serialiser2Factory,
                                     final ClusterLockService clusterLockService) {
         super(storeFactory,
+                securityContext,
                 serialiser2Factory.createSerialiser(ContentTemplates.class),
                 ContentTemplates.TYPE,
                 ContentTemplates::builder,
@@ -69,13 +72,17 @@ public class ContentTemplateStoreImpl
 
     @Override
     public ContentTemplates getOrCreate() {
-        // The user will never have any doc perms on the ContentTemplates as it is not an explorer doc, thus
-        // access it via the proc user.
-        return securityContext.asProcessingUserResult(() -> {
-            final DocRef docRef = lazyDocRef.getValueWithLocks();
-            Objects.requireNonNull(docRef);
-            return readDocument(docRef);
-        });
+        final DocRef docRef = lazyDocRef.getValueWithLocks();
+        Objects.requireNonNull(docRef);
+        return readDocument(docRef);
+    }
+
+    @Override
+    public Optional<ContentTemplates> get() {
+        // If we are just trying to apply content templates, we don't need to create them
+        // if they don't exist
+        return Optional.ofNullable(getSingletonDoc())
+                .map(this::readDocument);
     }
 
     private DocRef doGetOrCreate() {
@@ -121,10 +128,22 @@ public class ContentTemplateStoreImpl
 
     @Override
     public ContentTemplates writeDocument(final ContentTemplates document) {
-        // The user will never have any doc perms on the DRR as it is not an explorer doc, thus
-        // access it via the proc user (so long as use has MANAGE_POLICIES_PERMISSION)
+        // Authorised by the APPLICATION permission, not by a document permission.
         return securityContext.secureResult(AppPermission.MANAGE_CONTENT_TEMPLATES_PERMISSION,
-                () -> securityContext.asProcessingUserResult(() -> getStore().writeDocument(document)));
+                () -> getStore().writeDocument(document));
+    }
+
+    /**
+     * The content templates are not an explorer document and no user will ever hold a document
+     * permission on them, so a document check has nothing to consult. Authority comes from
+     * {@link AppPermission#MANAGE_CONTENT_TEMPLATES_PERMISSION}, checked at the entry points above.
+     * <p>
+     * Saying so here keeps the write running as the real user, so the audit trail names whoever
+     * changed the templates.
+     */
+    @Override
+    protected boolean isDocumentPermissionCheckRequired() {
+        return false;
     }
 
     @Override
@@ -132,13 +151,25 @@ public class ContentTemplateStoreImpl
         return (doc, dependencyRemapper) -> {
             final List<ContentTemplate> templates = doc.getContentTemplates();
             if (NullSafe.hasItems(templates)) {
-                templates.forEach(receiveDataRule -> {
-                    if (receiveDataRule.getExpression() != null) {
-                        dependencyRemapper.remapExpression(receiveDataRule.getExpression());
-                    }
-                });
+                final List<ContentTemplate> remappedTemplates = templates
+                        .stream()
+                        .map(template -> remapContentTemplate(template, dependencyRemapper))
+                        .toList();
+                return doc.copy().contentTemplates(remappedTemplates).build();
             }
             return doc;
         };
+    }
+
+    private ContentTemplate remapContentTemplate(final ContentTemplate template,
+                                                 final DependencyRemapper dependencyRemapper) {
+        final ContentTemplate.Builder builder = template.copy();
+        if (template.getExpression() != null) {
+            builder.withExpression(dependencyRemapper.remapExpression(template.getExpression()));
+        }
+        if (template.getPipeline() != null) {
+            builder.withPipeline(dependencyRemapper.remap(template.getPipeline()));
+        }
+        return builder.build();
     }
 }

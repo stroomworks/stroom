@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,16 +101,5 @@ public class LazyValue<T> {
      */
     public boolean isInitialised() {
         return value != null;
-    }
-
-    /**
-     * If the value has been initialised run the valueConsumer with the initialised value.
-     * If it hasn't been initialised, it will remain in that state and valueConsumer will
-     * not be called.
-     */
-    public void consumeIfInitialised(final Consumer<T> valueConsumer) {
-        if (value != null) {
-            valueConsumer.accept(value);
-        }
     }
 }

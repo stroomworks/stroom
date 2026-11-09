@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,12 @@ import stroom.db.util.ExpressionMapperFactory;
 import stroom.db.util.JooqUtil;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
+import stroom.query.api.token.TokenErrorUtil;
+import stroom.query.api.token.TokenException;
+import stroom.query.language.filter.QuickFilter;
 import stroom.security.impl.UserDao;
 import stroom.security.impl.db.SecurityDbConnProvider;
-import stroom.security.impl.db.jooq.tables.PermissionApp;
-import stroom.security.impl.db.jooq.tables.PermissionDoc;
 import stroom.security.impl.db.jooq.tables.PermissionDocCreate;
-import stroom.security.impl.db.jooq.tables.StroomUser;
-import stroom.security.impl.db.jooq.tables.StroomUserArchive;
-import stroom.security.impl.db.jooq.tables.StroomUserGroup;
 import stroom.security.shared.FindUserContext;
 import stroom.security.shared.FindUserCriteria;
 import stroom.security.shared.User;
@@ -382,9 +380,25 @@ public class UserDaoImpl implements UserDao {
 
     @Override
     public ResultPage<User> find(final FindUserCriteria criteria) {
-        final List<String> fields = ExpressionUtil.fields(criteria.getExpression());
+        final ExpressionOperator expression;
+        try {
+            // The user's text is parsed here rather than on the client, so this screen speaks the
+            // same filter language as every other one. See the syntax spec §9 and §11.
+            expression = QuickFilter.and(
+                    criteria.getExpression(),
+                    criteria.getQuickFilter(),
+                    UserFields.QUICK_FILTER_DEFAULT_FIELDS,
+                    UserFields.QUICK_FILTER_FIELDS);
+        } catch (final TokenException e) {
+            // Debounced filter - match nothing and say why rather than erroring at the user
+            // mid-keystroke. See ResultPage.filterError.
+            LOGGER.debug(e::getMessage, e);
+            return ResultPage.emptyWithFilterError(TokenErrorUtil.toTokenError(e));
+        }
 
-        Condition condition = expressionMapper.apply(criteria.getExpression());
+        final List<String> fields = ExpressionUtil.fields(expression);
+
+        Condition condition = expressionMapper.apply(expression);
         if (FindUserContext.ANNOTATION_ASSIGNMENT.equals(criteria.getContext()) ||
             FindUserContext.RUN_AS.equals(criteria.getContext())) {
             condition = condition.and(STROOM_USER.ENABLED.isTrue());
@@ -666,13 +680,15 @@ public class UserDaoImpl implements UserDao {
         Objects.requireNonNull(userUuid);
 
         try {
+            // NOTE: when onDuplicateKeyUpdate is ued, JOOQ adds an 'as excluded' alias
+            // to the sub-select derived table, hence the need for 'DSL.excluded'.
             final int changeCount = context.insertInto(STROOM_USER_ARCHIVE,
                             STROOM_USER_ARCHIVE.UUID,
                             STROOM_USER_ARCHIVE.NAME,
                             STROOM_USER_ARCHIVE.DISPLAY_NAME,
                             STROOM_USER_ARCHIVE.FULL_NAME,
                             STROOM_USER_ARCHIVE.IS_GROUP)
-                    .select(context.select(
+                    .select(DSL.select(
                                     STROOM_USER.UUID,
                                     STROOM_USER.NAME,
                                     STROOM_USER.DISPLAY_NAME,
@@ -681,10 +697,10 @@ public class UserDaoImpl implements UserDao {
                             .from(STROOM_USER)
                             .where(STROOM_USER.UUID.eq(userUuid)))
                     .onDuplicateKeyUpdate()
-                    .set(STROOM_USER_ARCHIVE.NAME, STROOM_USER.NAME)
-                    .set(STROOM_USER_ARCHIVE.DISPLAY_NAME, STROOM_USER.DISPLAY_NAME)
-                    .set(STROOM_USER_ARCHIVE.FULL_NAME, STROOM_USER.FULL_NAME)
-                    .set(STROOM_USER_ARCHIVE.IS_GROUP, STROOM_USER.IS_GROUP)
+                    .set(STROOM_USER_ARCHIVE.NAME, DSL.excluded(STROOM_USER.NAME))
+                    .set(STROOM_USER_ARCHIVE.DISPLAY_NAME, DSL.excluded(STROOM_USER.DISPLAY_NAME))
+                    .set(STROOM_USER_ARCHIVE.FULL_NAME, DSL.excluded(STROOM_USER.FULL_NAME))
+                    .set(STROOM_USER_ARCHIVE.IS_GROUP, DSL.excluded(STROOM_USER.IS_GROUP))
                     .execute();
 
             LOGGER.debug("insertOrUpdateStroomUserArchiveRecord - changeCount: {} for userUuid: {}",
@@ -770,5 +786,21 @@ public class UserDaoImpl implements UserDao {
 
     Condition getUserCondition(final ExpressionOperator expression) {
         return expressionMapper.apply(expression);
+    }
+
+    /**
+     * The permission screens filter users by the same text and the same grammar as the user list
+     * does, so they resolve it against the same fields. Those screens carry no expression of their
+     * own - they extend {@code QuickFilterCriteria}, not {@code ExpressionCriteria} - so there is
+     * nothing to compose with.
+     * <p>
+     * Throws {@link TokenException} if the text is bad; callers turn that into an empty result
+     * carrying the reason.
+     */
+    Condition getUserCondition(final String quickFilter) {
+        return expressionMapper.apply(QuickFilter.parse(
+                quickFilter,
+                UserFields.QUICK_FILTER_DEFAULT_FIELDS,
+                UserFields.QUICK_FILTER_FIELDS));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@ public class ContentPacks {
     private static final GitRepo STROOM_VISUALISATION_DEV_GIT_REPO =
             new GitRepo("stroom-visualisations-dev",
                     "https://github.com/gchq/stroom-visualisations-dev.git",
-                    "main",
-                    "5d650d01bd2839e5f89e9f897d2f0e7a733690f2");
+                    "8.0",
+                    "94bc68b3f0968e9f4a58740e2ff34519b97bbb00");
 
     public static final ContentPack CORE_XML_SCHEMAS_PACK = createStandardContentPack("core-xml-schemas");
 

@@ -22,6 +22,7 @@ dependencies {
     implementation project(':stroom-analytics:stroom-analytics-impl')
     implementation project(':stroom-annotation:stroom-annotation-impl')
     implementation project(':stroom-contentstore:stroom-contentstore-impl')
+    implementation project(':stroom-aws:stroom-aws-client')
     implementation project(':stroom-aws:stroom-aws-s3-impl')
     implementation project(':stroom-bytebuffer')
     implementation project(':stroom-cluster:stroom-cluster-api')
@@ -34,7 +35,8 @@ dependencies {
     implementation project(':stroom-core-shared')
     implementation project(':stroom-credentials:stroom-credentials-impl')
     implementation project(':stroom-dashboard:stroom-dashboard-impl')
-    implementation project(':stroom-dashboard:stroom-dashboard-impl-db')
+    implementation project(':stroom-document-asset:stroom-document-asset-impl')
+    implementation project(':stroom-document-asset:stroom-document-asset-impl-db')
     implementation project(':stroom-dashboard:stroom-storedquery-impl')
     implementation project(':stroom-data:stroom-data-retention-api')
     implementation project(':stroom-data:stroom-data-store-impl-fs')
@@ -61,6 +63,8 @@ dependencies {
     implementation project(':stroom-pipeline')
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-processor:stroom-processor-impl')
+    implementation project(':stroom-query:stroom-query-api')
+    implementation project(':stroom-query:stroom-query-language')
     implementation project(':stroom-query:stroom-query-common')
     implementation project(':stroom-receive:stroom-receive-common')
     implementation project(':stroom-receive:stroom-receive-rules-impl')
@@ -73,6 +77,7 @@ dependencies {
     implementation project(':stroom-security:stroom-security-identity')
     implementation project(':stroom-security:stroom-security-impl')
     implementation project(':stroom-security:stroom-security-openid-api')
+    implementation project(':stroom-sqlstore:stroom-sqlstore-impl')
     implementation project(':stroom-statistics:stroom-statistics-impl')
     implementation project(':stroom-statistics:stroom-statistics-impl-sql')
     implementation project(':stroom-task:stroom-task-api')
@@ -84,6 +89,8 @@ dependencies {
     implementation libs.dropwizard.metrics.annotation
     implementation libs.eventLogging
     implementation libs.guice
+    implementation libs.jackson.annotations
+    implementation libs.jackson.databind
     implementation libs.jakarta.validation.api
     implementation libs.jooq
     implementation libs.restygwt
@@ -97,4 +104,16 @@ dependencies {
 
     testImplementation libs.bundles.common.test.implementation
     testRuntimeOnly libs.bundles.common.test.runtime
+}
+
+// Regenerates the checked-in ConfigProvidersModule after adding/removing an IsStroomConfig class.
+// The generator resolves its output path from the process working directory, so it must run from the
+// repo root. See GenerateConfigProvidersModule and TestConfigProvidersModule.
+tasks.register('generateConfigProvidersModule', JavaExec) {
+    dependsOn compileJava
+    dependsOn compileTestJava
+
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'stroom.config.global.impl.GenerateConfigProvidersModule'
+    workingDir = rootProject.projectDir
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 
 package stroom.folder.client;
 
-import stroom.core.client.presenter.Plugin;
+import stroom.core.client.Plugin;
 import stroom.explorer.shared.ExplorerConstants;
 import stroom.svg.shared.SvgImage;
-import stroom.widget.tab.client.presenter.TabData;
+import stroom.widget.tab.client.TabData;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;

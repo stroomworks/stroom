@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package stroom.annotation.shared;
 
 import stroom.docref.DocRef;
-import stroom.entity.shared.ExpressionCriteria;
 import stroom.util.shared.ResourcePaths;
 import stroom.util.shared.RestResource;
 import stroom.util.shared.ResultPage;
@@ -140,7 +139,7 @@ public interface AnnotationResource extends RestResource, DirectRestService {
             summary = "Finds annotation tags matching request",
             operationId = "findAnnotationTags")
     ResultPage<AnnotationTag> findAnnotationTags(
-            @Parameter(description = "request", required = true) ExpressionCriteria request);
+            @Parameter(description = "request", required = true) FindAnnotationTagCriteria request);
 
     @POST
     @Path("fetchAnnotationEntry")

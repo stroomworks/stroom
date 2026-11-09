@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,7 +135,7 @@ public class GenerateProxyConfigProvidersModule {
                 .map(ClassInfo::load)
                 .filter(clazz -> clazz.isAnnotationPresent(NotInjectableConfig.class))
                 .filter(AbstractConfig.class::isAssignableFrom)
-                .filter(clazz -> IsProxyConfig.class.isAssignableFrom(clazz))
+                .filter(IsProxyConfig.class::isAssignableFrom)
                 .sorted(Comparator.comparing(Class::getName))
                 .map(clazz ->
                         buildThrowingMethod(simpleNames, simpleNameToFullNamesMap,

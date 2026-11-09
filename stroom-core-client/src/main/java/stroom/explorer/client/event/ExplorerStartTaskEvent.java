@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package stroom.explorer.client.event;
 
-import stroom.task.client.Task;
+import stroom.widget.task.client.Task;
 
 import com.google.gwt.event.shared.EventHandler;
 import com.google.gwt.event.shared.GwtEvent;
@@ -32,7 +32,11 @@ public class ExplorerStartTaskEvent extends GwtEvent<ExplorerStartTaskEvent.Hand
         this.task = task;
     }
 
-    static void fire(final HasHandlers handlers, final Task task) {
+    /// Fires the event.
+    ///
+    /// @param handlers Where to fire it, e.g. the event bus.
+    /// @param task     The explorer task.
+    public static void fire(final HasHandlers handlers, final Task task) {
         handlers.fireEvent(new ExplorerStartTaskEvent(task));
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,6 @@
 package stroom.analytics.client.gin;
 
 import stroom.analytics.client.ReportPlugin;
-import stroom.analytics.client.presenter.ReportPresenter;
-import stroom.analytics.client.presenter.ReportSettingsPresenter;
-import stroom.analytics.client.presenter.ReportSettingsPresenter.ReportSettingsView;
-import stroom.analytics.client.view.ReportSettingsViewImpl;
 import stroom.core.client.gin.PluginModule;
 
 public class ReportModule extends PluginModule {
@@ -28,8 +24,6 @@ public class ReportModule extends PluginModule {
     @Override
     protected void configure() {
         bindPlugin(ReportPlugin.class);
-        bind(ReportPresenter.class);
 
-        bindPresenterWidget(ReportSettingsPresenter.class, ReportSettingsView.class, ReportSettingsViewImpl.class);
     }
 }

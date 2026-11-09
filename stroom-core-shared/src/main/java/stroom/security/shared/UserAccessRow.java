@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,19 +60,19 @@ public class UserAccessRow {
     public UserAccessRow(@JsonProperty("subjectId") final String subjectId,
                          @JsonProperty("userRef") final UserRef userRef,
                          @JsonProperty("displayName") final String displayName,
-                         @JsonProperty("sessionCount") final int sessionCount,
+                         @JsonProperty("sessionCount") final Integer sessionCount,
                          @JsonProperty("nodeNames") final List<String> nodeNames,
                          @JsonProperty("lastAccessedMs") final Long lastAccessedMs,
-                         @JsonProperty("tokenCount") final int tokenCount,
+                         @JsonProperty("tokenCount") final Integer tokenCount,
                          @JsonProperty("nextTokenExpiryMs") final Long nextTokenExpiryMs,
                          @JsonProperty("lastTokenExpiryMs") final Long lastTokenExpiryMs) {
         this.subjectId = subjectId;
         this.userRef = userRef;
         this.displayName = displayName;
-        this.sessionCount = sessionCount;
+        this.sessionCount = Objects.requireNonNullElse(sessionCount, 0);
         this.nodeNames = nodeNames;
         this.lastAccessedMs = lastAccessedMs;
-        this.tokenCount = tokenCount;
+        this.tokenCount = Objects.requireNonNullElse(tokenCount, 0);
         this.nextTokenExpiryMs = nextTokenExpiryMs;
         this.lastTokenExpiryMs = lastTokenExpiryMs;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,13 @@ class TestSessionListServlet {
         // A strict CSP that forbids all script is set as a backstop, overriding the app-wide policy.
         verify(response).setHeader("Content-Security-Policy", "default-src 'none'; style-src 'self'");
         verify(response).setContentType("text/html; charset=UTF-8");
+    }
+
+    @Test
+    void sessionListDeclaresItsLanguage() throws Exception {
+        // The page says it is in English, for screen readers (gchq/stroom#5408).
+        final String html = render(sessionWith("Mozilla/5.0", "alice"));
+        assertThat(html).startsWith("<html lang=\"en\">");
     }
 
     private String render(final SessionDetails sessionDetails) throws Exception {

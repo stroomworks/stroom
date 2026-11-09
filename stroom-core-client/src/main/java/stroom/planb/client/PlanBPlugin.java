@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,13 @@ import stroom.docref.DocRef;
 import stroom.docstore.shared.DocRefUtil;
 import stroom.document.client.DocumentPlugin;
 import stroom.document.client.DocumentPluginEventManager;
-import stroom.entity.client.presenter.DocPresenter;
-import stroom.planb.client.presenter.PlanBPresenter;
+import stroom.document.client.editor.DocumentEditorHost;
+import stroom.planb.client.component.PlanBEditor;
+import stroom.planb.shared.AbstractPlanBSettings;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.PlanBDocResource;
 import stroom.security.client.api.ClientSecurityContext;
-import stroom.task.client.TaskMonitorFactory;
+import stroom.widget.task.client.TaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
@@ -43,26 +44,28 @@ public class PlanBPlugin extends DocumentPlugin<PlanBDoc> {
 
     private static final PlanBDocResource PLAN_B_DOC_RESOURCE = GWT.create(PlanBDocResource.class);
 
-    private final Provider<PlanBPresenter> editorProvider;
+    private final EventBus eventBus;
+    private final Provider<PlanBEditor> editorProvider;
     private final RestFactory restFactory;
 
     @Inject
     public PlanBPlugin(
             final EventBus eventBus,
-            final Provider<PlanBPresenter> editorProvider,
+            final Provider<PlanBEditor> editorProvider,
             final RestFactory restFactory,
             final ContentManager contentManager,
             final DocumentPluginEventManager entityPluginEventManager,
             final ClientSecurityContext securityContext) {
         super(eventBus, contentManager, entityPluginEventManager, securityContext);
+        this.eventBus = eventBus;
 
         this.editorProvider = editorProvider;
         this.restFactory = restFactory;
     }
 
     @Override
-    protected DocPresenter<?, ?> createEditor() {
-        return editorProvider.get();
+    protected DocumentEditorHost<?> createEditor() {
+        return new DocumentEditorHost<>(eventBus, editorProvider.get(), PlanBDoc.TYPE);
     }
 
     @Override
@@ -102,5 +105,14 @@ public class PlanBPlugin extends DocumentPlugin<PlanBDoc> {
     @Override
     protected DocRef getDocRef(final PlanBDoc document) {
         return DocRefUtil.create(document);
+    }
+
+    /**
+     * Block the save and display a warning if the settings contradict each other, so the user is
+     * told in the browser rather than by a server error.
+     */
+    @Override
+    protected String getPreSaveError(final PlanBDoc doc) {
+        return AbstractPlanBSettings.validationError(doc.getSettings());
     }
 }

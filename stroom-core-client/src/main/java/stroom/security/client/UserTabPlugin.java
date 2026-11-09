@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,12 @@ package stroom.security.client;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.core.client.ContentManager;
-import stroom.data.client.AbstractTabPresenterPlugin;
+import stroom.data.client.AbstractTabPlugin;
 import stroom.security.client.api.ClientSecurityContext;
+import stroom.security.client.component.UserTabController;
 import stroom.security.client.event.OpenUserEvent;
-import stroom.security.client.presenter.UserTabPresenter;
 import stroom.security.shared.AppPermission;
-import stroom.svg.client.Preset;
-import stroom.svg.client.SvgPresets;
+import stroom.svg.shared.SvgImage;
 import stroom.util.shared.UserRef;
 
 import com.google.gwt.core.client.GWT;
@@ -35,26 +34,25 @@ import com.google.web.bindery.event.shared.EventBus;
 import javax.inject.Singleton;
 
 @Singleton
-public class UserTabPlugin extends AbstractTabPresenterPlugin<UserRef, UserTabPresenter> {
+public class UserTabPlugin extends AbstractTabPlugin<UserRef, UserTabController> {
 
-    public static final Preset USER_ICON = SvgPresets.USER;
-    public static final Preset GROUP_ICON = SvgPresets.USER_GROUP;
+    public static final SvgImage USER_ICON = SvgImage.USER;
+    public static final SvgImage GROUP_ICON = SvgImage.USERS;
 
     private final ClientSecurityContext securityContext;
 
     @Inject
     public UserTabPlugin(final EventBus eventBus,
                          final ContentManager contentManager,
-                         final Provider<UserTabPresenter> userTabPresenterProvider,
+                         final Provider<UserTabController> userTabControllerProvider,
                          final ClientSecurityContext securityContext) {
-        super(eventBus, contentManager, userTabPresenterProvider);
+        super(eventBus, contentManager, userTabControllerProvider);
         this.securityContext = securityContext;
 
-        registerHandler(getEventBus().addHandler(OpenUserEvent.getType(), event -> {
+        getEventBus().addHandler(OpenUserEvent.getType(), event -> {
             GWT.log("handling event");
             open(event.getUserRef(), true);
-        }));
-
+        });
 
     }
 
@@ -62,11 +60,11 @@ public class UserTabPlugin extends AbstractTabPresenterPlugin<UserRef, UserTabPr
         if (userRef != null) {
             if (hasPermissionToOpenUser(userRef)) {
 
-                super.openTabPresenter(
+                super.openTabController(
                         forceOpen,
                         userRef,
-                        userTabPresenter ->
-                                userTabPresenter.setUserRef(userRef));
+                        userTabController ->
+                                userTabController.setUserRef(userRef));
             } else {
                 AlertEvent.fireError(this, "You do not have permission to open user '"
                                            + userRef.toDisplayString() + "'.", null);

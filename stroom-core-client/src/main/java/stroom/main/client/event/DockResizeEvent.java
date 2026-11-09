@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import com.google.gwt.event.shared.HasHandlers;
 
 /**
  * Event fired when the user drags the dock splitter to resize a docked panel.
- * Allows presenters to persist the new dock size to user preferences.
+ * Allows controllers to persist the new dock size to user preferences.
  */
 public class DockResizeEvent extends GwtEvent<DockResizeEvent.Handler> {
 

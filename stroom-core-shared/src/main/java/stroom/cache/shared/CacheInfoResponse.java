@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package stroom.cache.shared;
 
 import stroom.util.shared.PageResponse;
 import stroom.util.shared.ResultPage;
+import stroom.util.shared.TokenError;
 import stroom.util.shared.cache.CacheInfo;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -34,9 +35,15 @@ public class CacheInfoResponse extends ResultPage<CacheInfo> {
         super(values);
     }
 
+    public CacheInfoResponse(final List<CacheInfo> values,
+                             final PageResponse pageResponse) {
+        this(values, pageResponse, null);
+    }
+
     @JsonCreator
     public CacheInfoResponse(@JsonProperty("values") final List<CacheInfo> values,
-                             @JsonProperty("pageResponse") final PageResponse pageResponse) {
-        super(values, pageResponse);
+                             @JsonProperty("pageResponse") final PageResponse pageResponse,
+                             @JsonProperty("filterError") final TokenError filterError) {
+        super(values, pageResponse, filterError);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import stroom.job.shared.GetScheduledTimesRequest;
 import stroom.job.shared.ScheduleRestriction;
 import stroom.job.shared.ScheduledTimeResource;
 import stroom.job.shared.ScheduledTimes;
-import stroom.task.client.TaskMonitorFactory;
 import stroom.util.shared.scheduler.Schedule;
+import stroom.widget.task.client.TaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.event.shared.GwtEvent;

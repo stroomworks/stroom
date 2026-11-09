@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,32 @@ import net.sf.saxon.trans.XPathException;
 import net.sf.saxon.value.DoubleValue;
 import net.sf.saxon.value.NumericValue;
 
+@XsltFunctionDef(
+        name = CosineSimilarity.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.OTHER,
+        commonSubCategories = {"Maths", "Vectors"},
+        commonDescription = """
+                Calculates the cosine similarity of two numeric vectors, such as embedding vectors.
+                The result is between `-1` and `1`; larger values indicate that the vectors point
+                more closely in the same direction.
+
+                Both vectors must have the same number of elements, otherwise an error is raised.
+                If either vector has zero magnitude, the function returns `0`.
+                """,
+        commonReturnType = XsltDataType.DECIMAL,
+        commonReturnDescription = "The cosine similarity of the two vectors, or `0` if either has zero magnitude.",
+        signatures = {
+                @XsltFunctionSignature(args = {
+                        @XsltFunctionArg(
+                                name = "vectorA",
+                                description = "The first sequence of numbers.",
+                                argType = XsltDataType.SEQUENCE),
+                        @XsltFunctionArg(
+                                name = "vectorB",
+                                description = "The second sequence of numbers, with the same length as `vectorA`.",
+                                argType = XsltDataType.SEQUENCE)
+                })
+        })
 public class CosineSimilarity extends StroomExtensionMetaFunctionCall {
 
     public static final String FUNCTION_NAME = "cosine-similarity";

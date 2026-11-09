@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,10 +32,10 @@ public class DurationLabel {
     }
 
     public void append(final HtmlBuilder builder, final long time, final long nowMs) {
-        span(builder, "annotationDurationLabel", time, nowMs);
+        span(builder, "duration-label", time, nowMs);
     }
 
-    public void span(final HtmlBuilder builder, final String className, final long time, final long nowMs) {
+    private void span(final HtmlBuilder builder, final String className, final long time, final long nowMs) {
         builder.span(span -> span.append(dateTimeFormatter.formatRelative(time, nowMs)),
                 Attribute.className(className),
                 Attribute.title(dateTimeFormatter.format(time)));

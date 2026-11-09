@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,8 +99,8 @@ class SessionListServlet extends HttpServlet implements IsServlet {
         // app-wide policy for this response (ContentSecurityFilter sets that before the servlet runs).
         response.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'self'");
 
-        response.getWriter().write("<html>" +
-                                   "<head><link type=\"text/css\" href=\"/ui/css/SessionList.css\" rel=\"stylesheet\" /></head>" +
+        response.getWriter().write("<html lang=\"en\">" +
+                                   "<head><link type=\"text/css\" href=\"/ui/css/session-list.css\" rel=\"stylesheet\" /></head>" +
                                    "<body>");
         response.getWriter().write("<table>");
         response.getWriter().write("<thead>" +

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,16 @@ import stroom.query.api.ExpressionTerm.Condition;
 
 public class StringExpressionUtil {
 
-    public static String equalsCaseSensitive(final String string) {
-        return Condition.EQUALS_CASE_SENSITIVE.getOperator() + "\"" + string + "\"";
+    /// Creates quick filter text that matches a value equal to the supplied string, e.g. `="StreamId"`.
+    ///
+    /// Uses [Condition#EQUALS] rather than [Condition#EQUALS_CASE_SENSITIVE] because every text
+    /// `ConditionSet` declares `EQUALS`, whereas the SQL backed field lists do not support the case
+    /// sensitive variant and the quick filter parser will reject it.
+    ///
+    /// @param string The value to match.
+    /// @return The quick filter text.
+    public static String equalTo(final String string) {
+        return Condition.EQUALS.getOperator() + "\"" + string + "\"";
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package stroom.folder.client.gin;
 import stroom.core.client.gin.PluginModule;
 import stroom.folder.client.FolderFavouritesPlugin;
 import stroom.folder.client.FolderPlugin;
-import stroom.folder.client.FolderPresenter;
 import stroom.folder.client.FolderRootPlugin;
 
 public class FolderModule extends PluginModule {
@@ -29,7 +28,5 @@ public class FolderModule extends PluginModule {
         bindPlugin(FolderRootPlugin.class);
         bindPlugin(FolderFavouritesPlugin.class);
         bindPlugin(FolderPlugin.class);
-
-        bind(FolderPresenter.class);
     }
 }

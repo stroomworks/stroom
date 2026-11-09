@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.flywaydb.core.api.migration.JavaMigration;
 import org.flywaydb.core.api.output.MigrateResult;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -185,7 +186,10 @@ public final class FlywayUtil {
                             .withColumn(Column.of("Category", output -> output.category))
                             .withColumn(Column.of("Version", output -> output.version))
                             .withColumn(Column.of("Description", output -> output.description))
-                            .withColumn(Column.of("path", output -> output.filepath))
+                            .withColumn(Column.of("Type", output -> output.type))
+                            .withColumn(Column.of("Path", output -> output.filepath))
+                            .withColumn(Column.of("Duration", output ->
+                                    Duration.ofMillis(output.executionTime)))
                             .build();
 
                     LOGGER.info("{} - Successfully applied {} Flyway DB migrations using history table '{}'\n{}",

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import stroom.collection.mock.MockCollectionModule;
 import stroom.dictionary.mock.MockWordListProviderModule;
 import stroom.docstore.mock.MockDocFinderModule;
 import stroom.explorer.api.ExplorerService;
+import stroom.quickfilter.shared.QuickFilterHistoryService;
 import stroom.security.api.AppPermissionService;
 import stroom.security.api.UserService;
 import stroom.security.impl.dao.SecurityDaoModule;
@@ -76,6 +77,10 @@ public class TestModule extends AbstractModule {
         final UserPreferencesService userPreferencesService = GuiceTestUtil.bindMock(
                 binder(), UserPreferencesService.class);
         Mockito.when(userPreferencesService.delete(Mockito.any())).thenReturn(true);
+
+        final QuickFilterHistoryService quickFilterHistoryService = GuiceTestUtil.bindMock(
+                binder(), QuickFilterHistoryService.class);
+        Mockito.when(quickFilterHistoryService.delete(Mockito.any())).thenReturn(0);
 
         final ActivityService activityService = GuiceTestUtil.bindMock(binder(), ActivityService.class);
         Mockito.when(activityService.deleteAllByOwner(Mockito.any())).thenReturn(0);

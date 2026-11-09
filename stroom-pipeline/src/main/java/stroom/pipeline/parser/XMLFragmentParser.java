@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,10 +58,12 @@ import java.util.function.Consumer;
         description = """
                 A parser to convert multiple XML fragments into an XML document.
                 For example the data may contain:
+
                 ```xml
                 <Event>...</Event>
                 <Event>...</Event>
                 ```
+
                 i.e. with no root element, so not valid XML.
                 The XMLFragmentParser will wrap the fragments with a root element as defined in the TextConverter \
                 document configured with the `textConverterRef` property.""",

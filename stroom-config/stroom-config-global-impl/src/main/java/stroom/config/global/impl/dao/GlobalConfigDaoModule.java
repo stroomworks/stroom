@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package stroom.config.global.impl.dao;
 
 import stroom.config.global.impl.ConfigPropertyDao;
+import stroom.config.global.impl.QuickFilterHistoryDao;
 import stroom.config.global.impl.UserPreferencesDao;
 
 import com.google.inject.AbstractModule;
@@ -29,5 +30,6 @@ public class GlobalConfigDaoModule extends AbstractModule {
 
         bind(ConfigPropertyDao.class).to(ConfigPropertyDaoImpl.class);
         bind(UserPreferencesDao.class).to(UserPreferencesDaoImpl.class);
+        bind(QuickFilterHistoryDao.class).to(QuickFilterHistoryDaoImpl.class);
     }
 }

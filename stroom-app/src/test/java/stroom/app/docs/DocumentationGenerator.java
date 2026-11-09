@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,5 +20,7 @@ import io.github.classgraph.ScanResult;
 
 public interface DocumentationGenerator {
 
+    /// Generate documentation using the provided result of scanning all the classes
+    /// in the stroom package
     void generateAll(ScanResult scanResult);
 }

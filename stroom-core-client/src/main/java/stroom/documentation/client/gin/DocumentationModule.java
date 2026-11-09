@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,11 @@ package stroom.documentation.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.documentation.client.DocumentationPlugin;
-import stroom.documentation.client.presenter.DocumentationPresenter;
 
 public class DocumentationModule extends PluginModule {
 
     @Override
     protected void configure() {
         bindPlugin(DocumentationPlugin.class);
-        bind(DocumentationPresenter.class);
-//        bindPresenterWidget(DictionarySettingsPresenter.class,
-//                DictionarySettingsView.class,
-//                DictionarySettingsViewImpl.class);
     }
 }

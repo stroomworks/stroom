@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package stroom.annotation.client;
 
 import stroom.annotation.shared.AnnotationTag;
 import stroom.query.api.ConditionalFormattingStyle;
-import stroom.security.client.presenter.ClassNameBuilder;
+import stroom.widget.util.client.ClassNameBuilder;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 

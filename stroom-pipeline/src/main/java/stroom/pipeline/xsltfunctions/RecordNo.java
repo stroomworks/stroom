@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,22 @@ import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 
+@XsltFunctionDef(
+        name = RecordNo.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.PIPELINE,
+        commonDescription = """
+                Returns the current record number within the current stream part, counting from `1`.
+                """,
+        commonReturnType = XsltDataType.STRING,
+        commonReturnDescription = "The current record number, if available.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {}
+                )
+        })
 class RecordNo extends AbstractLocationFunction {
+
+    public static final String FUNCTION_NAME = "record-no";
 
     @Inject
     RecordNo(final LocationHolder locationHolder) {
@@ -32,7 +47,10 @@ class RecordNo extends AbstractLocationFunction {
 
     @Override
     String getValue(final SourceLocation location) {
-        return NullSafe.get(location, SourceLocation::getRecordIndex, i -> String.valueOf(i + 1));
+        return NullSafe.get(
+                location,
+                SourceLocation::getRecordNumber,
+                String::valueOf);
     }
 
     @Override

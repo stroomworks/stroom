@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ import java.util.Set;
  * <p>
  * <b>ProcessorFilter</b> dependencies are handled separately by the
  * cross-module migration
- * {@code V07_14_00_005__populate_doc_dependency_processor_filters}
+ * {@code V07_13_00_005__populate_doc_dependency_processor_filters}
  * in {@code stroom-app}, since processor data may reside in a different
  * database.
  */

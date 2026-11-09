@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,31 +18,11 @@ package stroom.search.solr.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.search.solr.client.SolrIndexPlugin;
-import stroom.search.solr.client.presenter.SolrIndexFieldEditPresenter;
-import stroom.search.solr.client.presenter.SolrIndexFieldEditPresenter.SolrIndexFieldEditView;
-import stroom.search.solr.client.presenter.SolrIndexFieldListPresenter;
-import stroom.search.solr.client.presenter.SolrIndexFieldListPresenter.SolrIndexFieldListView;
-import stroom.search.solr.client.presenter.SolrIndexPresenter;
-import stroom.search.solr.client.presenter.SolrIndexSettingsPresenter;
-import stroom.search.solr.client.presenter.SolrIndexSettingsPresenter.SolrIndexSettingsView;
-import stroom.search.solr.client.view.SolrIndexFieldEditViewImpl;
-import stroom.search.solr.client.view.SolrIndexFieldListViewImpl;
-import stroom.search.solr.client.view.SolrIndexSettingsViewImpl;
 
 public class SolrIndexModule extends PluginModule {
 
     @Override
     protected void configure() {
         bindPlugin(SolrIndexPlugin.class);
-        bind(SolrIndexPresenter.class);
-        bindPresenterWidget(SolrIndexSettingsPresenter.class,
-                SolrIndexSettingsView.class,
-                SolrIndexSettingsViewImpl.class);
-        bindPresenterWidget(SolrIndexFieldListPresenter.class,
-                SolrIndexFieldListView.class,
-                SolrIndexFieldListViewImpl.class);
-        bindPresenterWidget(SolrIndexFieldEditPresenter.class,
-                SolrIndexFieldEditView.class,
-                SolrIndexFieldEditViewImpl.class);
     }
 }

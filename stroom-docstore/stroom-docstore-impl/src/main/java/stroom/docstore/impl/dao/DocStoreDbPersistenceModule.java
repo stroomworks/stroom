@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package stroom.docstore.impl.dao;
 
+import stroom.docstore.api.DocDependencyProviderBinder;
 import stroom.docstore.api.DocDependencyService;
 import stroom.docstore.impl.DocStoreConfig;
 import stroom.docstore.impl.Persistence;
-import stroom.docstore.impl.db.jooq.tables.Doc;
 import stroom.job.api.ScheduledJobsBinder;
+import stroom.lifecycle.api.LifecycleBinder;
 import stroom.util.RunnableWrapper;
 import stroom.util.shared.scheduler.CronExpressions;
 
@@ -37,6 +38,12 @@ public class DocStoreDbPersistenceModule extends AbstractModule {
         bind(Persistence.class).to(DBPersistence.class);
         bind(DocDependencyDao.class);
         bind(DocDependencyService.class).to(DocDependencyServiceImpl.class);
+
+        // Make sure the provider set exists even if nothing registers a provider
+        DocDependencyProviderBinder.create(binder());
+        // Default priority, so this runs after content packs are imported
+        LifecycleBinder.create(binder())
+                .bindStartupTaskTo(DocDependencyRebuildStartup.class);
 
         ScheduledJobsBinder.create(binder())
                 .bindJobTo(PhysicalDeleteOldDocs.class, builder -> builder

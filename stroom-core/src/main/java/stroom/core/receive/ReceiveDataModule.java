@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
 
 package stroom.core.receive;
 
+import stroom.docstore.api.DocDependencyProviderBinder;
 import stroom.receive.common.CertificateExtractorImpl;
 import stroom.receive.common.ContentAutoCreationAttrMapFilterFactory;
 import stroom.receive.common.FeedStatusService;
 import stroom.receive.common.ReceiptIdGenerator;
 import stroom.receive.common.RequestHandler;
+import stroom.receive.common.S3EventConsumer;
 import stroom.util.cert.CertificateExtractor;
 import stroom.util.guice.RestResourcesBinder;
 
@@ -37,7 +39,10 @@ public class ReceiveDataModule extends AbstractModule {
         bind(ReceiptIdGenerator.class).to(StroomReceiptIdGenerator.class).asEagerSingleton();
         bind(RequestHandler.class).to(ReceiveDataRequestHandler.class);
         bind(ContentTemplateStore.class).to(ContentTemplateStoreImpl.class);
+        DocDependencyProviderBinder.create(binder())
+                .bind(ContentTemplateStoreImpl.class);
         bind(ContentTemplateService.class).to(ContentTemplateServiceImpl.class);
+        bind(S3EventConsumer.class).to(StroomS3EventConsumer.class);
 
         RestResourcesBinder.create(binder())
                 .bind(ContentTemplateResourceImpl.class);

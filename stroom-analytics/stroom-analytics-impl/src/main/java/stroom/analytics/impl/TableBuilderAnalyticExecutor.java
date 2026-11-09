@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -812,7 +812,7 @@ public class TableBuilderAnalyticExecutor {
 
             // Create a time filter.
             final TimeFilter timeFilter = new TimeFilter(
-                    0,
+                    0L,
                     to);
 
             // Delete old data from the DB.
@@ -915,12 +915,14 @@ public class TableBuilderAnalyticExecutor {
                         .withDetectorName(analyticRuleDoc.getName())
                         .withDetectorUuid(analyticRuleDoc.getUuid())
                         .withDetectorVersion(analyticRuleDoc.getVersion())
-                        .withDetailedDescription(analyticRuleDoc.getDescription())
+                        .withDetailedDescription(RuleUtil.getDetailedDescription(analyticRuleDoc))
                         .withDetectionUniqueId(UUID.randomUUID().toString())
                         .withDetectionRevision(0)
                         .notDefunct()
                         .withValues(values)
                         .withLinkedEvents(linkedEvents)
+                        .withLevel(RuleUtil.getLevel(analyticRuleDoc))
+                        .withStatus(RuleUtil.getStatus(analyticRuleDoc))
                         .build();
 
                 detectionConsumer.accept(detection);

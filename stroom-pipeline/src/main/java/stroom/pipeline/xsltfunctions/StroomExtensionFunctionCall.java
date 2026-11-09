@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,14 +92,14 @@ abstract class StroomExtensionFunctionCall {
     }
 
     DateTimeValue getSafeDateTime(final String functionName,
-                                       final XPathContext context,
-                                       final Sequence[] arguments,
-                                       final int index) throws XPathException {
+                                  final XPathContext context,
+                                  final Sequence[] arguments,
+                                  final int index) throws XPathException {
         DateTimeValue dateTime = null;
         final Sequence sequence = arguments[index];
         if (sequence != null) {
             final Item item = sequence.iterate().next();
-            if (item != null && item instanceof DateTimeValue) {
+            if (item instanceof DateTimeValue) {
                 dateTime = ((DateTimeValue) item);
             }
         }
@@ -139,6 +139,28 @@ abstract class StroomExtensionFunctionCall {
         }
 
         return bool;
+    }
+
+    /**
+     * Get the value of an optional trailing boolean argument that indicates whether warnings should
+     * be suppressed. If the argument has not been supplied, or it cannot be read, then warnings will
+     * not be suppressed.
+     */
+    boolean isIgnoreWarnings(final String functionName,
+                             final XPathContext context,
+                             final Sequence[] arguments,
+                             final int index) {
+        if (arguments.length <= index) {
+            return false;
+        }
+
+        try {
+            return NullSafe.isTrue(getSafeBoolean(functionName, context, arguments, index));
+        } catch (final XPathException | RuntimeException e) {
+            LOGGER.debug("Unable to read the ignore warnings argument of function {}() at position {}",
+                    functionName, index, e);
+            return false;
+        }
     }
 
     void outputWarning(final XPathContext context, final StringBuilder msgBuilder, final Throwable e) {

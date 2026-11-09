@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import stroom.util.shared.Message;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 public interface Store<D extends AbstractDoc>
@@ -53,6 +54,13 @@ public interface Store<D extends AbstractDoc>
     // ---------------------------------------------------------------------
 
     List<String> remapDependencies(DocRef docRef, Map<DocRef, DocRef> remappings);
+
+    /// Read a document and extract its dependencies with this store's dependency remap function.
+    /// No document permission checks are applied.
+    ///
+    /// @param docRef The document to read.
+    /// @return The document's dependencies, or an empty set if this document type tracks none.
+    Set<DocRef> getDependencies(DocRef docRef);
 
     // ---------------------------------------------------------------------
     // END OF HasDependencies

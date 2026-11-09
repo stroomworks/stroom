@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,7 @@ import static org.assertj.core.api.Assertions.within;
 /**
  * Unit test class for <code>XMLTransformer</code>.
  */
+@SuppressWarnings("SequencedCollectionMethodCanBeUsed")
 class TestStatisticsFilter implements Statistics {
 
     private static final String INPUT_DIR = "TestStatisticsFilter/";
@@ -574,6 +575,7 @@ class TestStatisticsFilter implements Statistics {
                         securityContext,
                         null,
                         null),
+                securityContext,
                 new StatisticStoreSerialiser(new Serialiser2FactoryImpl()));
     }
 }

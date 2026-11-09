@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -259,13 +259,13 @@ class TestAnnotationDaoImpl {
         annotationDao.change(new SingleAnnotationChangeRequest(docRef, new ChangeComment("Comment 3")),
                 currentUser);
         annotationDao.change(new SingleAnnotationChangeRequest(docRef, new ChangeRetentionPeriod(
-                        new SimpleDuration(1, TimeUnit.YEARS))),
+                        new SimpleDuration(1L, TimeUnit.YEARS))),
                 currentUser);
         annotationDao.change(new SingleAnnotationChangeRequest(docRef, new ChangeDescription(
                         "Test Description")),
                 currentUser);
         annotationDao.change(new SingleAnnotationChangeRequest(docRef, new LinkEvents(
-                        List.of(new EventId(1, 1)))),
+                        List.of(new EventId(1L, 1L)))),
                 currentUser);
 
         // Reload annotation so we have latest updated values.

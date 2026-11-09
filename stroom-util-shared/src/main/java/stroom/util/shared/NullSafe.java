@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +65,7 @@ public class NullSafe {
         if (val1 == null) {
             return false;
         } else {
-            final T2 val2 = getter.apply(val1);
+            final T2 val2 = Objects.requireNonNull(getter).apply(val1);
             return Objects.equals(val2, other);
         }
     }
@@ -82,11 +83,11 @@ public class NullSafe {
         if (val1 == null) {
             return false;
         } else {
-            final T2 val2 = getter1.apply(val1);
+            final T2 val2 = Objects.requireNonNull(getter1).apply(val1);
             if (val2 == null) {
                 return false;
             } else {
-                final T3 val3 = getter2.apply(val2);
+                final T3 val3 = Objects.requireNonNull(getter2).apply(val2);
                 return Objects.equals(val3, other);
             }
         }
@@ -234,6 +235,17 @@ public class NullSafe {
     }
 
     /**
+     * @return The first item in the collection or null if collection is null or empty.
+     */
+    public static <T> T first(final Collection<T> list) {
+        if (list == null || list.isEmpty()) {
+            return null;
+        } else {
+            return list.iterator().next();
+        }
+    }
+
+    /**
      * @return The first item in the list or null if list is null or empty.
      */
     public static <T> T last(final List<T> list) {
@@ -266,7 +278,7 @@ public class NullSafe {
         return val1 != null
                 ? Optional.of(val1)
                 : (val2 != null
-                   ? Optional.of(val2)
+                        ? Optional.of(val2)
                         : Optional.empty());
     }
 
@@ -277,9 +289,9 @@ public class NullSafe {
         return val1 != null
                 ? Optional.of(val1)
                 : (val2 != null
-                   ? Optional.of(val2)
+                        ? Optional.of(val2)
                         : (val3 != null
-                           ? Optional.of(val3)
+                                ? Optional.of(val3)
                                 : Optional.empty()));
     }
 
@@ -293,11 +305,11 @@ public class NullSafe {
         return val1 != null
                 ? Optional.of(val1)
                 : (val2 != null
-                   ? Optional.of(val2)
+                        ? Optional.of(val2)
                         : (val3 != null
-                           ? Optional.of(val3)
+                                ? Optional.of(val3)
                                 : (val4 != null
-                                   ? Optional.of(val4)
+                                        ? Optional.of(val4)
                                         : Optional.empty())));
     }
 
@@ -374,6 +386,19 @@ public class NullSafe {
     }
 
     /**
+     * Maps str using mapper if str is not null/empty.
+     *
+     * @return The mapped value or null if str is null/empty.
+     */
+    public static <T> T mapNonEmptyString(final String str, final Function<String, T> mapper) {
+        if (isNonEmptyString(str)) {
+            return Objects.requireNonNull(mapper).apply(str);
+        } else {
+            return null;
+        }
+    }
+
+    /**
      * @return str if it is not null/empty/blank, else other.
      */
     public static String nonBlankStringElse(final String str, final String other) {
@@ -414,6 +439,19 @@ public class NullSafe {
             } else {
                 consumer.accept(str);
             }
+        }
+    }
+
+    /**
+     * Maps str using mapper if str is not null/empty/blank.
+     *
+     * @return The mapped value or null if str is null/empty/blank.
+     */
+    public static <T> T mapNonBlankString(final String str, final Function<String, T> mapper) {
+        if (isNonBlankString(str)) {
+            return Objects.requireNonNull(mapper).apply(str);
+        } else {
+            return null;
         }
     }
 
@@ -722,8 +760,7 @@ public class NullSafe {
     }
 
     /**
-     * Returns a {@link Stream<Entry>} of entries is non-null
-     * else returns an empty {@link Stream<Entry>}
+     * Returns a {@link Stream<Entry>} of entries if non-null else returns an empty {@link Stream<Entry>}
      */
     public static <K, V> Stream<Entry<K, V>> streamEntries(final Map<K, V> map) {
         if (map == null || map.isEmpty()) {
@@ -805,6 +842,18 @@ public class NullSafe {
     }
 
     /**
+     * Returns the passed collection items as a non-null set.
+     * Does not support null items.
+     *
+     * @return A non-null unmodifiable set of items.
+     */
+    public static <T> Set<T> asSet(final Collection<T> collection) {
+        return collection == null || collection.isEmpty()
+                ? Collections.emptySet()
+                : Set.copyOf(collection);
+    }
+
+    /**
      * Returns the passed list if it is non-null else returns an empty list.
      */
     public static <L extends List<T>, T> List<T> list(final L list) {
@@ -819,6 +868,18 @@ public class NullSafe {
     public static <L extends List<T>, T> List<T> unmodifiableList(final L list) {
         return list != null
                 ? Collections.unmodifiableList(list)
+                : Collections.emptyList();
+    }
+
+    /**
+     * Sorts the passed collection using natural order and returns the sorted collection
+     * as a list.
+     */
+    public static <C extends Collection<T>, T> List<T> sort(final C collection) {
+        return collection != null
+                ? collection.stream()
+                .sorted()
+                .collect(Collectors.toList())
                 : Collections.emptyList();
     }
 
@@ -860,6 +921,16 @@ public class NullSafe {
         return list != null
                 ? new ArrayList<>(list)
                 : new ArrayList<>();
+    }
+
+    /**
+     * Returns a new {@link HashMap} instance. If map is not null, the new {@link HashMap} will
+     * contain the contents of map, else it will be empty.
+     */
+    public static <M extends Map<K, V>, K, V> Map<K, V> mutableMap(final M map) {
+        return map != null
+                ? new HashMap<>(map)
+                : new HashMap<>();
     }
 
     /**
@@ -1767,21 +1838,6 @@ public class NullSafe {
     }
 
     /**
-     * If value is null, empty or blank an {@link IllegalArgumentException} will be thrown with a message
-     * supplied by messageSupplier.
-     *
-     * @param value           THe string to test.
-     * @param messageSupplier The supplier of the exception message.
-     * @return The supplied string if not blank.
-     */
-    public static String requireNonBlankString(final String value, final Supplier<String> messageSupplier) {
-        if (isBlankString(value)) {
-            throw new IllegalArgumentException(Objects.requireNonNull(messageSupplier).get());
-        }
-        return value;
-    }
-
-    /**
      * If value is null or empty an {@link IllegalArgumentException} will be thrown with a message
      * supplied by messageSupplier.
      *
@@ -1849,6 +1905,60 @@ public class NullSafe {
     }
 
     /**
+     * If value is null or empty an {@link IllegalArgumentException} will be thrown.
+     *
+     * @param value THe string to test.
+     * @return The supplied string if not empty.
+     */
+    public static String requireNonEmptyString(final String value) {
+        return requireNonEmptyString(value, null);
+    }
+
+    /**
+     * If value is null or empty an {@link IllegalArgumentException} will be thrown with a message
+     * supplied by messageSupplier.
+     *
+     * @param value           THe string to test.
+     * @param messageSupplier The supplier of the exception message.
+     * @return The supplied string if not empty.
+     */
+    public static String requireNonEmptyString(final String value, final Supplier<String> messageSupplier) {
+        if (isEmptyString(value)) {
+            final String msg = NullSafe.getOrElse(messageSupplier, Supplier::get, "Non-empty string required");
+            throw new IllegalArgumentException(msg);
+        } else {
+            return value;
+        }
+    }
+
+    /**
+     * If value is null, empty or blank an {@link IllegalArgumentException} will be thrown.
+     *
+     * @param value THe string to test.
+     * @return The supplied string if not blank.
+     */
+    public static String requireNonBlankString(final String value) {
+        return requireNonBlankString(value, null);
+    }
+
+    /**
+     * If value is null, empty or blank an {@link IllegalArgumentException} will be thrown with a message
+     * supplied by messageSupplier.
+     *
+     * @param value           THe string to test.
+     * @param messageSupplier The supplier of the exception message.
+     * @return The supplied string if not blank.
+     */
+    public static String requireNonBlankString(final String value, final Supplier<String> messageSupplier) {
+        if (isBlankString(value)) {
+            final String msg = NullSafe.getOrElse(messageSupplier, Supplier::get, "Non-blank string required");
+            throw new IllegalArgumentException(msg);
+        } else {
+            return value;
+        }
+    }
+
+    /**
      * If predicate is non-null return it, else return a Predicate that always returns defaultOutcome.
      */
     @SuppressWarnings("unchecked")
@@ -1856,7 +1966,7 @@ public class NullSafe {
         return predicate != null
                 ? predicate
                 : (defaultOutcome
-                   ? (Predicate<T>) ALWAYS_TRUE_PREDICATE
+                        ? (Predicate<T>) ALWAYS_TRUE_PREDICATE
                         : (Predicate<T>) ALWAYS_FALSE_PREDICATE);
 //        return requireNonNullElseGet(predicate, () -> ignored -> defaultOutcome);
 

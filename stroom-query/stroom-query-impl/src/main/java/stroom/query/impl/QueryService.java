@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2022 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import stroom.dashboard.shared.ColumnValues;
 import stroom.dashboard.shared.DashboardSearchResponse;
 import stroom.dashboard.shared.ValidateExpressionResult;
 import stroom.docref.DocRef;
+import stroom.query.api.ExpressionOperator;
 import stroom.query.api.datasource.FindFieldCriteria;
 import stroom.query.api.datasource.QueryField;
 import stroom.query.shared.DownloadQueryResultsRequest;
@@ -51,6 +52,8 @@ public interface QueryService {
     Optional<DocRef> fetchDefaultExtractionPipeline(DocRef dataSourceRef);
 
     Optional<DocRef> getReferencedDataSource(String query);
+
+    ExpressionOperator parseQuery(String query);
 
     ContextualQueryHelp getQueryHelpContext(String query, int row, int col);
 

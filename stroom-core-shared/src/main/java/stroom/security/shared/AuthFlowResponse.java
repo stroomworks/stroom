@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
+import java.util.Objects;
 
 /**
  * Response DTO for the SPA authentication flow.
@@ -47,12 +49,12 @@ public class AuthFlowResponse {
     private final Long expiresInSec;
 
     @JsonCreator
-    public AuthFlowResponse(@JsonProperty("authenticated") final boolean authenticated,
+    public AuthFlowResponse(@JsonProperty("authenticated") final Boolean authenticated,
                             @JsonProperty("subjectId") final String subjectId,
                             @JsonProperty("displayName") final String displayName,
                             @JsonProperty("redirectUrl") final String redirectUrl,
                             @JsonProperty("expiresInSec") final Long expiresInSec) {
-        this.authenticated = authenticated;
+        this.authenticated = Objects.requireNonNullElse(authenticated, false);
         this.subjectId = subjectId;
         this.displayName = displayName;
         this.redirectUrl = redirectUrl;

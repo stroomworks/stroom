@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -259,6 +259,27 @@ public abstract class AbstractXsltFunctionTest<T extends StroomExtensionFunction
                 });
     }
 
+    protected static Optional<Integer> getAsIntegerValue(final Sequence sequence) {
+        return Optional.ofNullable(sequence)
+                .map(sequence2 -> {
+                    if (sequence2 instanceof EmptyAtomicSequence) {
+                        return null;
+                    } else if (sequence2 instanceof Int64Value int64Value) {
+                        final long val = int64Value.longValue();
+                        final int intVal = Math.toIntExact(val);
+                        LOGGER.debug("Got int value:\n{}", intVal);
+                        return intVal;
+                    } else if (sequence2 instanceof StringValue stringValue) {
+                        final String str = stringValue.getStringValue();
+                        final int intVal = Integer.parseInt(str);
+                        LOGGER.debug("Got int value:\n{}", intVal);
+                        return intVal;
+                    } else {
+                        return Integer.parseInt(sequence.toString());
+                    }
+                });
+    }
+
     protected static Optional<Double> getAsDoubleValue(final Sequence sequence) {
         return Optional.ofNullable(sequence)
                 .map(sequence2 -> {
@@ -307,6 +328,12 @@ public abstract class AbstractXsltFunctionTest<T extends StroomExtensionFunction
                         return sequence.toString();
                     }
                 });
+    }
+
+    protected void verifyEmptySequence(final Sequence sequence) {
+        Assertions.assertThat(sequence)
+                .isNotNull()
+                .isInstanceOf(EmptyAtomicSequence.class);
     }
 
     /**

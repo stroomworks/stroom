@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -231,7 +231,8 @@ class TestStroomUserIdentityFactory {
         final OpenIdConfiguration openIdConfiguration = Mockito.mock(OpenIdConfiguration.class);
         Mockito.lenient().when(openIdConfiguration.getIdentityProviderType()).thenReturn(IdpType.INTERNAL_IDP);
         final ApiKeyService apiKeyService = Mockito.mock(ApiKeyService.class);
-        Mockito.lenient().when(apiKeyService.fetchVerifiedIdentity(Mockito.any())).thenReturn(Optional.empty());
+        Mockito.lenient().when(apiKeyService.fetchVerifiedIdentity(Mockito.any()))
+                .thenReturn(Optional.empty());
 
         return new StroomUserIdentityFactory(
                 Mockito.mock(JwtContextFactory.class),

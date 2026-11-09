@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Criteria for the user access list.
@@ -66,10 +67,10 @@ public class FindUserAccessCriteria extends BaseCriteria {
     public FindUserAccessCriteria(@JsonProperty("pageRequest") final PageRequest pageRequest,
                                   @JsonProperty("sortList") final List<CriteriaFieldSort> sortList,
                                   @JsonProperty("filter") final String filter,
-                                  @JsonProperty("activeOnly") final boolean activeOnly) {
+                                  @JsonProperty("activeOnly") final Boolean activeOnly) {
         super(pageRequest, sortList);
         this.filter = filter;
-        this.activeOnly = activeOnly;
+        this.activeOnly = Objects.requireNonNullElse(activeOnly, false);
     }
 
     public String getFilter() {

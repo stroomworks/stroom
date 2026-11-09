@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.query.shared.QueryDoc;
 import stroom.query.shared.QueryResource;
-import stroom.task.client.TaskMonitorFactory;
+import stroom.widget.task.client.TaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;

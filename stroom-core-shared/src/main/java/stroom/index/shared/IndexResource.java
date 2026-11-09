@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package stroom.index.shared;
 
 import stroom.query.api.datasource.FindFieldCriteria;
+import stroom.quickfilter.shared.QuickFilterContext;
 import stroom.util.shared.FetchWithUuid;
 import stroom.util.shared.FindWithCriteria;
 import stroom.util.shared.ResourcePaths;
@@ -44,6 +45,13 @@ import org.fusesource.restygwt.client.DirectRestService;
 @Consumes(MediaType.APPLICATION_JSON)
 public interface IndexResource extends RestResource, DirectRestService, FetchWithUuid<LuceneIndexDoc>,
         FindWithCriteria<FindIndexShardCriteria, IndexShard> {
+
+    /**
+     * The index field list is over one index document, so the screen calls
+     * {@link QuickFilterContext#withDataSource} with it. History only: the fields the server
+     * parses against are declared in the field DAO, not here.
+     */
+    QuickFilterContext QUICK_FILTER_CONTEXT = QuickFilterContext.historyOnly("indexFields");
 
     String BASE_PATH = "/index" + ResourcePaths.V2;
     String SHARD_DELETE_SUB_PATH = "/shard/delete";
@@ -96,6 +104,19 @@ public interface IndexResource extends RestResource, DirectRestService, FetchWit
             operationId = "findFields")
     ResultPage<IndexFieldImpl> findFields(
             @Parameter(description = "criteria", required = true) FindFieldCriteria criteria);
+
+    /// Deletes every shard of the index on every node. Requires DELETE permission on the index.
+    ///
+    /// @param uuid The UUID of the index document.
+    /// @return The number of shards marked for deletion; zero if the index had none.
+    @POST
+    @Path("/{uuid}/reset")
+    @Operation(
+            summary = "Reset index contents (delete all shards across all nodes)",
+            description = "Requires DELETE permission on the index. Returns the number of shards "
+                          + "marked for deletion.",
+            operationId = "resetIndex")
+    Long reset(@PathParam("uuid") String uuid);
 
     @POST
     @Path("/addField")

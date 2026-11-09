@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package stroom.config.global.impl;
 
 import stroom.config.global.api.GlobalConfig;
 import stroom.job.api.ScheduledJobsBinder;
+import stroom.quickfilter.shared.QuickFilterHistoryService;
 import stroom.ui.config.shared.UserPreferencesService;
 import stroom.util.RunnableWrapper;
 import stroom.util.guice.GuiceUtil;
@@ -44,10 +45,13 @@ public class GlobalConfigModule extends AbstractModule {
                 .addBinding(AppConfigMonitor.class);
 
         bind(UserPreferencesService.class).to(UserPreferencesServiceImpl.class);
+        bind(QuickFilterHistoryService.class).to(QuickFilterHistoryServiceImpl.class);
         RestResourcesBinder.create(binder())
                 .bind(GlobalConfigResourceImpl.class);
         RestResourcesBinder.create(binder())
                 .bind(UserPreferencesResourceImpl.class);
+        RestResourcesBinder.create(binder())
+                .bind(QuickFilterHistoryResourceImpl.class);
 
         HasSystemInfoBinder.create(binder())
                 .bind(AppConfigSystemInfo.class);

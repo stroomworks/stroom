@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,22 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@XsltFunctionDef(
+        name = MetaKeys.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.PIPELINE,
+        commonDescription = """
+                Returns the metadata keys for the current stream part as an array of strings.
+                """,
+        commonReturnType = XsltDataType.SEQUENCE,
+        commonReturnDescription = "An array containing the available metadata keys.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {}
+                )
+        })
 class MetaKeys extends StroomExtensionFunctionCall {
+
+    public static final String FUNCTION_NAME = "meta-keys";
 
     private final MetaDataHolder metaDataHolder;
 

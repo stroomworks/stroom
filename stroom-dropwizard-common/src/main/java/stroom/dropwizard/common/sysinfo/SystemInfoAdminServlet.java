@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -188,7 +188,7 @@ public class SystemInfoAdminServlet extends HttpServlet implements IsAdminServle
     private static void writeHtmlHeader(final Writer writer) throws IOException {
         writer.write("""
                 <!DOCTYPE html>
-                <html>
+                <html lang="en">
                   <head>
                     <title>System Info Providers</title>
                     <style>

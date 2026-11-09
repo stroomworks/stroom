@@ -65,8 +65,9 @@ dependencies {
     implementation project(':stroom-annotation:stroom-annotation-impl')
     implementation project(':stroom-annotation:stroom-annotation-impl-db')
     implementation project(':stroom-annotation:stroom-annotation-pipeline')
-    implementation project(':stroom-contentstore:stroom-contentstore-impl')
+    implementation project(':stroom-aws:stroom-aws-client')
     implementation project(':stroom-aws:stroom-aws-s3-impl')
+    implementation project(':stroom-contentstore:stroom-contentstore-impl')
     implementation project(':stroom-bytebuffer')
     implementation project(':stroom-cache:stroom-cache-api')
     implementation project(':stroom-cache:stroom-cache-impl')
@@ -88,7 +89,8 @@ dependencies {
     implementation project(':stroom-credentials:stroom-credentials-impl')
     implementation project(':stroom-credentials:stroom-credentials-impl-db')
     implementation project(':stroom-dashboard:stroom-dashboard-impl')
-    implementation project(':stroom-dashboard:stroom-dashboard-impl-db')
+    implementation project(':stroom-document-asset:stroom-document-asset-impl')
+    implementation project(':stroom-document-asset:stroom-document-asset-impl-db')
     implementation project(':stroom-dashboard:stroom-storedquery-impl')
     implementation project(':stroom-dashboard:stroom-storedquery-impl-db')
     implementation project(':stroom-data:stroom-data-retention-api')
@@ -98,6 +100,7 @@ dependencies {
     implementation project(':stroom-data:stroom-data-store-impl-fs-db')
     implementation project(':stroom-data:stroom-data-zip')
     implementation project(':stroom-datagen:stroom-datagen-impl')
+    implementation project(':stroom-floormap:stroom-floormap-impl')
     implementation project(':stroom-db-util')
     implementation project(':stroom-dictionary:stroom-dictionary-api')
     implementation project(':stroom-dictionary:stroom-dictionary-impl')
@@ -141,6 +144,8 @@ dependencies {
     implementation project(':stroom-pathways:stroom-pathways-impl')
     implementation project(':stroom-pipeline')
     implementation project(':stroom-planb:stroom-planb-impl')
+    implementation project(':stroom-sqlstore:stroom-sqlstore-impl')
+    implementation project(':stroom-sqlstore:stroom-sqlstore-impl-db')
     implementation project(':stroom-processor:stroom-processor-api')
     implementation project(':stroom-processor:stroom-processor-impl')
     implementation project(':stroom-processor:stroom-processor-impl-db')
@@ -190,6 +195,7 @@ dependencies {
     implementation libs.eventLogging
     implementation libs.flyway.mysql
     implementation libs.guice
+    implementation libs.jackson.annotations
     implementation libs.jackson.dataformat.yaml
     implementation libs.jakarta.servlet.api
     implementation libs.jakarta.validation.api
@@ -208,8 +214,12 @@ dependencies {
     implementation libs.ws.rs.api
 
     runtimeOnly libs.jakarta.el
+    // This allows the use of JSON format app/request logs
+    // See https://www.dropwizard.io/en/stable/manual/configuration.html#json-layout
+    runtimeOnly libs.dropwizard.json.logging
 
     // Use default DB config.
+    testImplementation libs.poi.ooxml
     testImplementation project(':stroom-activity:stroom-activity-api')
     testImplementation project(':stroom-activity:stroom-activity-mock')
     testImplementation project(':stroom-ai:stroom-ai-mock')
@@ -229,6 +239,8 @@ dependencies {
     testImplementation project(':stroom-meta:stroom-meta-api')
     testImplementation project(':stroom-meta:stroom-meta-mock')
     testImplementation project(':stroom-node:stroom-node-mock')
+    testImplementation project(':stroom-sqlstore:stroom-sqlstore-impl')
+    testImplementation project(':stroom-sqlstore:stroom-sqlstore-impl-db')
     testImplementation project(':stroom-processor:stroom-processor-mock')
     testImplementation project(':stroom-security:stroom-security-mock')
     testImplementation project(':stroom-statistics:stroom-statistics-api')
@@ -259,6 +271,7 @@ dependencies {
     swaggerBuild libs.swagger.annotations
     swaggerBuild libs.swagger.core
     swaggerBuild libs.swagger.jaxrs
+    swaggerBuild libs.classgraph.legacy
     swaggerBuild libs.ws.rs.api
 }
 
@@ -294,19 +307,20 @@ compileJava {
             vendor = javaVendor
         }
         def compilerMeta = compiler.get().metadata
-        println """
+        logger.info("""
             |=============================================================
             |Compiling with:
             |  Vendor:  ${compilerMeta.vendor} (${javaVendor})
             |  Version: ${compilerMeta.javaRuntimeVersion}
             |  Path:    ${compilerMeta.installationPath}
-            |=============================================================""".stripMargin()
+            |=============================================================""".stripMargin())
     }
 }
 
 shadowJar {
-    // We want to run the tests before we build the fat jar.
-    dependsOn test
+    // If the tests and the fat jar are both requested, run the tests first. Ordering only, so
+    // that assemble (which Shadow wires to shadowJar) does not run the tests.
+    mustRunAfter test
     // We want to compile all GWT and React content before we build the fat jar.
     dependsOn ":stroom-app-gwt:gwtCompile"
 //    dependsOn ":stroom-dashboard-gwt:gwtCompile"
@@ -360,7 +374,7 @@ tasks.register('generateConfigFiles', JavaExec) {
 }
 
 tasks.register('downloadStroomContentForDocker', JavaExec) {
-    println "Downloading/copying content packs to ${stroomDockerContentPacksDir}"
+    logger.info("Downloading/copying content packs to ${stroomDockerContentPacksDir}")
 
     dependsOn this: compileJava
     dependsOn this: compileTestJava
@@ -373,7 +387,7 @@ tasks.register('downloadStroomContentForDocker', JavaExec) {
 }
 
 tasks.register('downloadStroomContentForZipDist', JavaExec) {
-    println "Downloading/copying content packs to ${stroomZipDistContentPacksDir}"
+    logger.info("Downloading/copying content packs to ${stroomZipDistContentPacksDir}")
 
     dependsOn this: compileJava
     dependsOn this: compileTestJava
@@ -459,6 +473,7 @@ tasks.register('copyFilesForStroomDockerBuild') {
 //    }
 //}
 
+// Task from swagger-gradle-plugin that generates the swagger spec files
 resolve {
     outputFileName = 'stroom'
     outputFormat = 'JSONANDYAML'
@@ -469,7 +484,11 @@ resolve {
     // deps which includes logback-classic.  In the absence of a logback.xml logback will output
     // DEBUG which makes for a LOT of output. Thus provide it with a logback.xml to use
     // so we have control.
-    classpath = configurations.runtimeClasspath + files("../config/swagger-plugin")
+    // Exclude classgraph because the swagger plugin requires v4 while we have v6 on the main stroom
+    // classpath
+    classpath = configurations.runtimeClasspath - configurations.runtimeClasspath.filter {
+        it.name.startsWith('classgraph-')
+    } + files("../config/swagger-plugin")
 
     // We need to use specific deps for the plugin itself so it knows how to handle jakarta annos
     buildClasspath = configurations.swaggerBuild
@@ -593,7 +612,7 @@ tasks.register('downloadSend', Download) {
     def token = System.getenv('GITHUB_TOKEN')
     if (token != null && !token.isEmpty()) {
         // Don't log the actual token obvs
-        println "Adding auth token for ${src}"
+        logger.info("Adding auth token for ${src}")
         header 'Authorization', "Bearer $token"
     }
 }
@@ -608,7 +627,7 @@ tasks.register('downloadSendArgs', Download) {
     def token = System.getenv('GITHUB_TOKEN')
     if (token != null && !token.isEmpty()) {
         // Don't log the actual token obvs
-        println "Adding auth token for ${src}"
+        logger.info("Adding auth token for ${src}")
         header 'Authorization', "Bearer $token"
     }
 }

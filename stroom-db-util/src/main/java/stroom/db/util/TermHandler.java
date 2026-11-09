@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2021 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -316,19 +316,31 @@ public final class TermHandler<T> implements Function<ExpressionTerm, Condition>
     }
 
     private Optional<T> getSingleValue(final String value) {
-        final List<T> values = converter.apply(NullSafe.singletonList(value));
-        if (values.size() == 1) {
-            return Optional.of(values.getFirst());
+        try {
+            final List<T> values = converter.apply(NullSafe.singletonList(value));
+            if (values.size() == 1) {
+                return Optional.of(values.getFirst());
+            }
+            return Optional.empty();
+        } catch (final NumberFormatException e) {
+            throw new IllegalArgumentException("Cannot convert value '" + value + "' to a number", e);
         }
-        return Optional.empty();
     }
 
     private List<T> getValues(final String value) {
-        return converter.apply(NullSafe.singletonList(value));
+        try {
+            return converter.apply(NullSafe.singletonList(value));
+        } catch (final NumberFormatException e) {
+            throw new IllegalArgumentException("Cannot convert value '" + value + "' to a number", e);
+        }
     }
 
     private List<T> getValues(final List<String> values) {
-        return converter.apply(values);
+        try {
+            return converter.apply(values);
+        } catch (final NumberFormatException e) {
+            throw new IllegalArgumentException("Cannot convert values '" + values + "' to a number", e);
+        }
     }
 
     private Condition isInDictionary(final DocRef docRef) {

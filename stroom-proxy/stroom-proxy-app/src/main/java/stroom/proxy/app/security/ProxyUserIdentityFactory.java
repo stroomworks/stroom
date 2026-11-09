@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -134,7 +134,7 @@ public class ProxyUserIdentityFactory extends AbstractUserIdentityFactory {
      */
     private Optional<UserIdentity> getInsecureTestServiceUserIdentity(final HttpServletRequest request) {
         return insecureTestCredentials.matches(request)
-                ? Optional.of(getServiceUserIdentity())
+                ? Optional.of(ProxyProcessingUserIdentity.INSTANCE)
                 : Optional.empty();
     }
 

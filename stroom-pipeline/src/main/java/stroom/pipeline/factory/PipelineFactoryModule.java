@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package stroom.pipeline.factory;
 
+import stroom.util.entityevent.EntityEvent;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.shared.Clearable;
 
@@ -31,6 +32,10 @@ public class PipelineFactoryModule extends AbstractModule {
         bind(PipelineStackLoader.class).to(PipelineStackLoaderImpl.class);
         bind(ProcessorFactory.class).to(ProcessorFactoryImpl.class);
 
-        GuiceUtil.buildMultiBinder(binder(), Clearable.class).addBinding(PipelineDataCacheImpl.class);
+        GuiceUtil.buildMultiBinder(binder(), Clearable.class)
+                .addBinding(PipelineDataCacheImpl.class);
+
+        GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
+                .addBinding(PipelineDataCacheImpl.class);
     }
 }

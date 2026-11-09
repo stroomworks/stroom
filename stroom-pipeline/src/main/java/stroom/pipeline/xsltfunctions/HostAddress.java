@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,19 +25,52 @@ import net.sf.saxon.value.StringValue;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
+@XsltFunctionDef(
+        name = HostAddress.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.NETWORK,
+        commonDescription = """
+                Resolves a host name to an IP address.
+                """,
+        commonReturnType = XsltDataType.STRING,
+        commonReturnDescription = "The resolved IP address, or an empty sequence if resolution fails.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "hostname",
+                                        description = "The host name to resolve.",
+                                        argType = XsltDataType.STRING
+                                ),
+                                @XsltFunctionArg(
+                                        name = "ignoreWarnings",
+                                        description = "Suppress resolution warnings when `true`.",
+                                        argType = XsltDataType.BOOLEAN,
+                                        isOptional = true
+                                )
+                        }
+                )
+        })
 class HostAddress extends StroomExtensionFunctionCall {
+
+    public static final String FUNCTION_NAME = "host-address";
+
     @Override
     protected Sequence call(final String functionName, final XPathContext context, final Sequence[] arguments) {
         String result = null;
+
+        // Find out if we are going to ignore warnings.
+        final boolean ignoreWarnings = isIgnoreWarnings(functionName, context, arguments, 1);
 
         try {
             final String hostName = getSafeString(functionName, context, arguments, 0);
             final InetAddress addr = InetAddress.getByName(hostName);
             result = addr.getHostAddress();
         } catch (final XPathException | UnknownHostException | RuntimeException e) {
-            final StringBuilder sb = new StringBuilder();
-            sb.append(e.getMessage());
-            outputWarning(context, sb, e);
+            if (!ignoreWarnings) {
+                final StringBuilder sb = new StringBuilder();
+                sb.append(e.getMessage());
+                outputWarning(context, sb, e);
+            }
         }
 
         if (result == null) {

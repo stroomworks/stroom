@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,7 @@ import java.util.function.Consumer;
 public class FutureImpl<T> implements Future<T> {
 
     private T result;
-    private Throwable throwable;
     private Consumer<T> resultConsumer;
-    private Consumer<Throwable> throwableConsumer;
 
     public FutureImpl<T> onSuccess(final Consumer<T> resultConsumer) {
         this.resultConsumer = resultConsumer;
@@ -34,10 +32,7 @@ public class FutureImpl<T> implements Future<T> {
     }
 
     public FutureImpl<T> onFailure(final Consumer<Throwable> throwableConsumer) {
-        this.throwableConsumer = throwableConsumer;
-        if (throwable != null && throwableConsumer != null) {
-            throwableConsumer.accept(throwable);
-        }
+        // Nothing fails: a future is only ever given its result
         return this;
     }
 
@@ -45,14 +40,6 @@ public class FutureImpl<T> implements Future<T> {
         this.result = result;
         if (resultConsumer != null) {
             resultConsumer.accept(result);
-        }
-        return this;
-    }
-
-    public FutureImpl<T> setThrowable(final Throwable throwable) {
-        this.throwable = throwable;
-        if (throwableConsumer != null) {
-            throwableConsumer.accept(throwable);
         }
         return this;
     }

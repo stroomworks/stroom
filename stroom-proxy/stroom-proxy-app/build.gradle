@@ -14,6 +14,7 @@ application {
 }
 
 dependencies {
+    implementation project(':stroom-aws:stroom-aws-client')
     implementation project(':stroom-core-shared')
     implementation project(':stroom-cache:stroom-cache-api')
     implementation project(':stroom-cache:stroom-cache-impl')
@@ -39,11 +40,13 @@ dependencies {
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
 
+    implementation libs.aws.s3.transfer.manager
     implementation libs.aws.sqs
     implementation libs.commons.compress
     implementation libs.dropwizard.client
     implementation libs.eventLogging
     implementation libs.guice
+    implementation libs.jackson.annotations
     implementation libs.jackson.dataformat.yaml
     implementation libs.jose4j
     implementation libs.kafka.clients
@@ -51,6 +54,9 @@ dependencies {
     implementation libs.vavr
 
     runtimeOnly libs.jakarta.el
+    // This allows the use of JSON format app/request logs
+    // See https://www.dropwizard.io/en/stable/manual/configuration.html#json-layout
+    runtimeOnly libs.dropwizard.json.logging
 
     testImplementation project(':stroom-test-common')
 
@@ -78,8 +84,9 @@ jar {
 }
 
 shadowJar {
-    // We want to run the tests before we build the fat jar.
-    dependsOn test
+    // If the tests and the fat jar are both requested, run the tests first. Ordering only, so
+    // that assemble (which Shadow wires to shadowJar) does not run the tests.
+    mustRunAfter test
 
     // Allows us to build fat jars with lots of files
     zip64 = true

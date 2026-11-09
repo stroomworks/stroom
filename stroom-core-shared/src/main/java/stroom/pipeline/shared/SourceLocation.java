@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package stroom.pipeline.shared;
 
 import stroom.annotation.shared.EventId;
 import stroom.util.shared.DataRange;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.TextRange;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -58,16 +59,16 @@ public class SourceLocation {
     private final List<DataRange> highlights;
 
     @JsonCreator
-    public SourceLocation(@JsonProperty("metaId") final long metaId,
+    public SourceLocation(@JsonProperty("metaId") final Long metaId,
                           @JsonProperty("childType") final String childType,
-                          @JsonProperty("partIndex") final long partIndex,
-                          @JsonProperty("recordIndex") final long recordIndex,
+                          @JsonProperty("partIndex") final Long partIndex,
+                          @JsonProperty("recordIndex") final Long recordIndex,
                           @JsonProperty("dataRange") final DataRange dataRange,
                           @JsonProperty("highlights") final List<DataRange> highlights) {
-        this.metaId = metaId;
+        this.metaId = Objects.requireNonNullElse(metaId, 0L);
         this.childType = childType;
-        this.partIndex = partIndex;
-        this.recordIndex = recordIndex;
+        this.partIndex = Objects.requireNonNullElse(partIndex, 0L);
+        this.recordIndex = Objects.requireNonNullElse(recordIndex, 0L);
         this.dataRange = dataRange;
         this.highlights = highlights;
     }
@@ -117,10 +118,27 @@ public class SourceLocation {
     }
 
     /**
-     * @return The record number (AKA segment number), zero based
+     * @return Part number in the stream, one based. Non multi-part streams would have
+     * a single part with number one.
+     */
+    @JsonIgnore
+    public long getPartNumber() {
+        return partIndex + 1;
+    }
+
+    /**
+     * @return The record index (AKA segment index), zero based.
      */
     public long getRecordIndex() {
         return recordIndex;
+    }
+
+    /**
+     * @return The record number (AKA segment number), one based.
+     */
+    @JsonIgnore
+    public long getRecordNumber() {
+        return recordIndex + 1;
     }
 
     /**
@@ -150,9 +168,7 @@ public class SourceLocation {
      */
     @JsonIgnore
     public DataRange getFirstHighlight() {
-        return highlights != null && !highlights.isEmpty()
-                ? highlights.get(0)
-                : null;
+        return NullSafe.first(highlights);
     }
 
     public boolean isSameSource(final SourceLocation other) {
@@ -181,7 +197,7 @@ public class SourceLocation {
     @JsonIgnore
     public String getIdentifierString() {
         // Convert to one-based
-        return metaId + ":" + (partIndex + 1) + ":" + (recordIndex + 1);
+        return metaId + ":" + getPartNumber() + ":" + getRecordNumber();
     }
 
     @Override
@@ -225,6 +241,10 @@ public class SourceLocation {
     public Builder copy() {
         return new Builder(this);
     }
+
+
+    // --------------------------------------------------------------------------------
+
 
     public static final class Builder {
 

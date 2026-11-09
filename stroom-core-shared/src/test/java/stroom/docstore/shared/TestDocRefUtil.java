@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2022 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package stroom.docstore.shared;
 
 import stroom.docref.DocRef;
+import stroom.docs.shared.NotDocumented;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.test.common.TestUtil;
 
@@ -137,8 +138,18 @@ class TestDocRefUtil {
     }
 
     private AbstractDoc buildDoc(final String uuid, final String type) {
-        return new AbstractDoc(type, uuid, null, null, null, null, null, null) {
+        return new MyDoc(uuid, type);
+    }
 
-        };
+
+    // --------------------------------------------------------------------------------
+
+
+    @NotDocumented(reason = "Test class")
+    private static final class MyDoc extends AbstractDoc {
+
+        public MyDoc(final String uuid, final String type) {
+            super(type, uuid, null, null, null, null, null, null);
+        }
     }
 }

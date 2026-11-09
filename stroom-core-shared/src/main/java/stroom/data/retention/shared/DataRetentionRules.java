@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package stroom.data.retention.shared;
 
 import stroom.docref.DocRef;
+import stroom.docs.shared.NotDocumented;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeGroup;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@NotDocumented(reason = "Users are not aware data retention rules are a doc")
 @JsonPropertyOrder({
         "type",
         "uuid",

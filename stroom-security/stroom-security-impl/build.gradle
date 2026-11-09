@@ -30,6 +30,7 @@ dependencies {
     implementation project(':stroom-lifecycle:stroom-lifecycle-api')
     implementation project(':stroom-node:stroom-node-api')
     implementation project(':stroom-query:stroom-query-api')
+    implementation project(':stroom-query:stroom-query-language')
     implementation project(':stroom-security:stroom-security-api')
     implementation project(':stroom-security:stroom-security-common-impl')
     implementation project(':stroom-security:stroom-security-impl-db')
@@ -39,7 +40,6 @@ dependencies {
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
 
-    implementation libs.bcrypt
     implementation libs.bouncy.castle
     implementation libs.commons.csv
     implementation libs.commons.lang
@@ -48,12 +48,14 @@ dependencies {
     implementation libs.eventLogging
     implementation libs.guice
     implementation libs.http.client
+    implementation libs.jackson.annotations
     implementation libs.jackson.databind
     implementation libs.jakarta.servlet.api
     implementation libs.jooq
     implementation libs.jose4j
     implementation libs.mysql.connector.java
     implementation libs.restygwt
+    implementation libs.spring.security.crypto
     implementation libs.swagger.annotations
     implementation libs.ws.rs.api
 

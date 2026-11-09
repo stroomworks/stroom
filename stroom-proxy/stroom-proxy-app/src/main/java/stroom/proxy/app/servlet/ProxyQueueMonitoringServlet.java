@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ public class ProxyQueueMonitoringServlet extends HttpServlet implements IsAdminS
             throws ServletException, IOException {
         final QueueMonitors queueMonitors = queueMonitorsProvider.get();
         final Writer writer = response.getWriter();
-        writer.write("<html>\n" +
+        writer.write("<html lang=\"en\">\n" +
                      "<head>\n" +
                      "<style>\n" +
                      "body {\n" +

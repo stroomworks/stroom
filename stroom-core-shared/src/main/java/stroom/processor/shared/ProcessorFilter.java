@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,6 +136,19 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
     @JsonProperty
     private final SimpleDuration maxTaskCreationDelay;
 
+    /**
+     * The filter this one was made from, where it replaced an existing filter rather than being
+     * created outright, e.g. restoring a deleted filter so that its range is processed again.
+     * Processing a range again makes a new filter rather than resetting an existing filter's
+     * tracker, so that a filter id always means the same body of work; this is what keeps the
+     * history visible once it does. Null for a filter that replaced nothing.
+     * <p>
+     * A soft reference: the parent is physically deleted once its tasks have gone, and this is
+     * then left dangling rather than the parent being kept alive by its descendants.
+     */
+    @JsonProperty
+    private final Integer parentFilterId;
+
     @JsonCreator
     public ProcessorFilter(@JsonProperty("id") final Integer id,
                            @JsonProperty("version") final Integer version,
@@ -147,13 +160,13 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
                            @JsonProperty("queryData") final QueryData queryData,
                            @JsonProperty("processor") final Processor processor,
                            @JsonProperty("processorFilterTracker") final ProcessorFilterTracker processorFilterTracker,
-                           @JsonProperty("priority") final int priority,
-                           @JsonProperty("maxProcessingTasks") final int maxProcessingTasks,
+                           @JsonProperty("priority") final Integer priority,
+                           @JsonProperty("maxProcessingTasks") final Integer maxProcessingTasks,
                            @JsonProperty("profileName") final String profileName,
-                           @JsonProperty("reprocess") final boolean reprocess,
-                           @JsonProperty("enabled") final boolean enabled,
-                           @JsonProperty("deleted") final boolean deleted,
-                           @JsonProperty("export") final boolean export,
+                           @JsonProperty("reprocess") final Boolean reprocess,
+                           @JsonProperty("enabled") final Boolean enabled,
+                           @JsonProperty("deleted") final Boolean deleted,
+                           @JsonProperty("export") final Boolean export,
                            @JsonProperty("processorType") final ProcessorType processorType,
                            @JsonProperty("processorUuid") final String processorUuid,
                            @JsonProperty("pipelineUuid") final String pipelineUuid,
@@ -161,7 +174,8 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
                            @JsonProperty("runAsUser") final UserRef runAsUser,
                            @JsonProperty("minMetaCreateTimeMs") final Long minMetaCreateTimeMs,
                            @JsonProperty("maxMetaCreateTimeMs") final Long maxMetaCreateTimeMs,
-                           @JsonProperty("maxTaskCreationDelay") final SimpleDuration maxTaskCreationDelay) {
+                           @JsonProperty("maxTaskCreationDelay") final SimpleDuration maxTaskCreationDelay,
+                           @JsonProperty("parentFilterId") final Integer parentFilterId) {
 
         this.id = id;
         this.version = version;
@@ -176,15 +190,16 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
         this.pipelineUuid = pipelineUuid != null
                 ? pipelineUuid
                 : NullSafe.get(processor, Processor::getPipelineUuid);
-        this.priority = priority > 0
-                ? priority
+        final int resolvedPriority = Objects.requireNonNullElse(priority, 0);
+        this.priority = resolvedPriority > 0
+                ? resolvedPriority
                 : DEFAULT_PRIORITY;
-        this.maxProcessingTasks = maxProcessingTasks;
+        this.maxProcessingTasks = Objects.requireNonNullElse(maxProcessingTasks, 0);
         this.profileName = profileName;
-        this.reprocess = reprocess;
-        this.enabled = enabled;
-        this.deleted = deleted;
-        this.export = export;
+        this.reprocess = Objects.requireNonNullElse(reprocess, false);
+        this.enabled = Objects.requireNonNullElse(enabled, false);
+        this.deleted = Objects.requireNonNullElse(deleted, false);
+        this.export = Objects.requireNonNullElse(export, false);
         this.processorType = processorType != null
                 ? processorType
                 : NullSafe.getOrElse(processor, Processor::getProcessorType, ProcessorType.PIPELINE);
@@ -197,6 +212,7 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
         this.minMetaCreateTimeMs = minMetaCreateTimeMs;
         this.maxMetaCreateTimeMs = maxMetaCreateTimeMs;
         this.maxTaskCreationDelay = maxTaskCreationDelay;
+        this.parentFilterId = parentFilterId;
     }
 
     @Override
@@ -253,6 +269,14 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
      */
     public SimpleDuration getMaxTaskCreationDelay() {
         return maxTaskCreationDelay;
+    }
+
+    /**
+     * Null unless this filter replaced another, e.g. a deleted filter restored so that its range
+     * is processed again. May refer to a filter that has since been physically deleted.
+     */
+    public Integer getParentFilterId() {
+        return parentFilterId;
     }
 
     @JsonIgnore
@@ -403,6 +427,7 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
                ", minMetaCreateTimeMs=" + minMetaCreateTimeMs +
                ", maxMetaCreateTimeMs=" + maxMetaCreateTimeMs +
                ", maxTaskCreationDelay=" + maxTaskCreationDelay +
+               ", parentFilterId=" + parentFilterId +
                '}';
     }
 
@@ -464,6 +489,7 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
         private Long minMetaCreateTimeMs;
         private Long maxMetaCreateTimeMs;
         private SimpleDuration maxTaskCreationDelay;
+        private Integer parentFilterId;
 
         public Builder() {
 
@@ -497,6 +523,7 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
             this.minMetaCreateTimeMs = filter.minMetaCreateTimeMs;
             this.maxMetaCreateTimeMs = filter.maxMetaCreateTimeMs;
             this.maxTaskCreationDelay = filter.maxTaskCreationDelay;
+            this.parentFilterId = filter.parentFilterId;
         }
 
         public Builder id(final Integer id) {
@@ -622,6 +649,15 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
             return self();
         }
 
+        /**
+         * The filter this one replaced, e.g. the deleted filter it was restored from. Null for a
+         * filter that replaced nothing.
+         */
+        public Builder parentFilterId(final Integer parentFilterId) {
+            this.parentFilterId = parentFilterId;
+            return self();
+        }
+
         protected Builder self() {
             return this;
         }
@@ -652,7 +688,8 @@ public class ProcessorFilter implements HasAuditInfoGetters, HasUuid, HasInteger
                     runAsUser,
                     minMetaCreateTimeMs,
                     maxMetaCreateTimeMs,
-                    maxTaskCreationDelay);
+                    maxTaskCreationDelay,
+                    parentFilterId);
         }
     }
 }

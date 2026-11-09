@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+
+import java.util.Objects;
 
 @JsonPropertyOrder(alphabetic = true)
 @JsonInclude(Include.NON_NULL)
@@ -54,14 +56,14 @@ public class InternalIdpPasswordPolicyConfig {
 
     @JsonCreator
     public InternalIdpPasswordPolicyConfig(
-            @JsonProperty("allowPasswordResets") final boolean allowPasswordResets,
-            @JsonProperty("minimumPasswordStrength") final int minimumPasswordStrength,
-            @JsonProperty("minimumPasswordLength") final int minimumPasswordLength,
+            @JsonProperty("allowPasswordResets") final Boolean allowPasswordResets,
+            @JsonProperty("minimumPasswordStrength") final Integer minimumPasswordStrength,
+            @JsonProperty("minimumPasswordLength") final Integer minimumPasswordLength,
             @JsonProperty("passwordPolicyMessage") final String passwordPolicyMessage) {
 
-        this.allowPasswordResets = allowPasswordResets;
-        this.minimumPasswordStrength = minimumPasswordStrength;
-        this.minimumPasswordLength = minimumPasswordLength;
+        this.allowPasswordResets = Objects.requireNonNullElse(allowPasswordResets, false);
+        this.minimumPasswordStrength = Objects.requireNonNullElse(minimumPasswordStrength, 0);
+        this.minimumPasswordLength = Objects.requireNonNullElse(minimumPasswordLength, 0);
         this.passwordPolicyMessage = passwordPolicyMessage;
     }
 

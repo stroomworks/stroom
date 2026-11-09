@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,6 @@ import stroom.annotation.impl.AnnotationValues;
 import stroom.annotation.impl.AnnotationValues.FieldValueEntry;
 import stroom.annotation.impl.dao.AnnotationEventLinkCache.AnnotationEventLink;
 import stroom.annotation.impl.db.AnnotationDbConnProvider;
-import stroom.annotation.impl.db.jooq.tables.AnnotationDataLink;
-import stroom.annotation.impl.db.jooq.tables.AnnotationLink;
-import stroom.annotation.impl.db.jooq.tables.AnnotationTagLink;
 import stroom.annotation.impl.db.jooq.tables.records.AnnotationDataLinkRecord;
 import stroom.annotation.impl.db.jooq.tables.records.AnnotationEntryRecord;
 import stroom.annotation.impl.db.jooq.tables.records.AnnotationLinkRecord;
@@ -76,10 +73,12 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.datasource.QueryField;
+import stroom.query.api.token.TokenErrorUtil;
+import stroom.query.api.token.TokenException;
 import stroom.query.common.v2.DateExpressionParser;
-import stroom.query.common.v2.FieldProviderImpl;
-import stroom.query.common.v2.SimpleStringExpressionParser;
-import stroom.query.common.v2.SimpleStringExpressionParser.FieldProvider;
+import stroom.query.language.filter.FieldProviderImpl;
+import stroom.query.language.filter.SimpleStringExpressionParser;
+import stroom.query.language.filter.SimpleStringExpressionParser.FieldProvider;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValDate;
@@ -518,20 +517,25 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
                                                   final Predicate<Annotation> viewPredicate) {
         final List<Condition> conditions = new ArrayList<>();
         final FieldProvider fieldProvider = new FieldProviderImpl(
-                List.of(AnnotationFields.TITLE),
-                List.of(AnnotationFields.ID,
-                        AnnotationFields.UUID,
-                        AnnotationFields.SUBJECT,
-                        AnnotationFields.STATUS,
-                        AnnotationFields.ASSIGNED_TO,
-                        AnnotationFields.LABEL,
-                        AnnotationFields.COLLECTION));
+                List.of(AnnotationFields.TITLE_FIELD),
+                List.of(AnnotationFields.ID_FIELD,
+                        AnnotationFields.UUID_FIELD,
+                        AnnotationFields.SUBJECT_FIELD,
+                        AnnotationFields.STATUS_FIELD,
+                        AnnotationFields.ASSIGNED_TO_FIELD,
+                        AnnotationFields.LABEL_FIELD,
+                        AnnotationFields.COLLECTION_FIELD));
         try {
             final Optional<ExpressionOperator> optionalExpressionOperator = SimpleStringExpressionParser
-                    .create(fieldProvider, request.getFilter());
+                    .create(fieldProvider, request.getQuickFilter());
             optionalExpressionOperator.ifPresent(expressionOperator ->
                     conditions.add(expressionMapper.apply(expressionOperator)));
             conditions.add(ANNOTATION.DELETED.isFalse());
+        } catch (final TokenException e) {
+            // A rejected filter must not look like a filter that matched nothing, so send the
+            // reason back with the (empty) results. See ResultPage.filterError.
+            LOGGER.debug(e::getMessage, e);
+            return ResultPage.emptyWithFilterError(TokenErrorUtil.toTokenError(e));
         } catch (final RuntimeException e) {
             LOGGER.debug(e::getMessage, e);
             return ResultPage.empty();
@@ -825,30 +829,30 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
             final AbstractAnnotationChange change = request.getChange();
 
             switch (change) {
-                case final ChangeTitle changeTitle ->
-                        changeAnnotationTitle(changeTitle, currentUser, annotationId, now);
-                case final ChangeSubject changeSubject ->
-                        changeAnnotationSubject(changeSubject, currentUser, annotationId, now);
+                case final ChangeTitle changeTitle -> changeAnnotationTitle(
+                        changeTitle, currentUser, annotationId, now);
+                case final ChangeSubject changeSubject -> changeAnnotationSubject(
+                        changeSubject, currentUser, annotationId, now);
                 case final AddTag addTag -> addTag(addTag, currentUser, annotationId, now);
                 case final RemoveTag removeTag -> removeTag(removeTag, currentUser, annotationId, now);
                 case final SetTag setTag -> setTag(setTag, currentUser, annotationId, now);
-                case final ChangeAssignedTo changeAssignedTo ->
-                        changeAssignedTo(changeAssignedTo, currentUser, annotationId, now);
+                case final ChangeAssignedTo changeAssignedTo -> changeAssignedTo(
+                        changeAssignedTo, currentUser, annotationId, now);
                 case final ChangeComment changeComment -> changeComment(changeComment, currentUser, annotationId, now);
-                case final ChangeDescription changeDescription ->
-                        changeDescription(changeDescription, currentUser, annotationId, now);
-                case final ChangeRetentionPeriod changeRetentionPeriod ->
-                        changeRetentionPeriod(changeRetentionPeriod, currentUser, annotationId, now);
-                case final LinkEvents linkEvents ->
-                        linkEvents(userUuid, now, annotationIdentity, linkEvents.getEvents());
-                case final UnlinkEvents unlinkEvents ->
-                        unlinkEvents(userUuid, now, annotationIdentity, unlinkEvents.getEvents());
-                case final LinkAnnotations linkAnnotations ->
-                        linkAnnotations(userUuid, now, annotationId, linkAnnotations.getAnnotations());
-                case final UnlinkAnnotations unlinkAnnotations ->
-                        unlinkAnnotations(userUuid, now, annotationId, unlinkAnnotations.getAnnotations());
-                case final AddAnnotationTable addAnnotationTable ->
-                        addAnnotationTable(userUuid, now, annotationId, addAnnotationTable);
+                case final ChangeDescription changeDescription -> changeDescription(
+                        changeDescription, currentUser, annotationId, now);
+                case final ChangeRetentionPeriod changeRetentionPeriod -> changeRetentionPeriod(
+                        changeRetentionPeriod, currentUser, annotationId, now);
+                case final LinkEvents linkEvents -> linkEvents(
+                        userUuid, now, annotationIdentity, linkEvents.getEvents());
+                case final UnlinkEvents unlinkEvents -> unlinkEvents(
+                        userUuid, now, annotationIdentity, unlinkEvents.getEvents());
+                case final LinkAnnotations linkAnnotations -> linkAnnotations(
+                        userUuid, now, annotationId, linkAnnotations.getAnnotations());
+                case final UnlinkAnnotations unlinkAnnotations -> unlinkAnnotations(
+                        userUuid, now, annotationId, unlinkAnnotations.getAnnotations());
+                case final AddAnnotationTable addAnnotationTable -> addAnnotationTable(
+                        userUuid, now, annotationId, addAnnotationTable);
             }
         } catch (final RuntimeException e) {
             LOGGER.error(e::getMessage, e);

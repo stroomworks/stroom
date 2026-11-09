@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,13 @@
 
 package stroom.app.guice;
 
+import stroom.data.store.impl.S3EventPollManager;
 import stroom.index.lucene.LuceneModule;
+import stroom.job.api.ScheduledJobsBinder;
+import stroom.util.RunnableWrapper;
 
 import com.google.inject.AbstractModule;
+import jakarta.inject.Inject;
 
 public class CoreModule extends AbstractModule {
 
@@ -35,8 +39,7 @@ public class CoreModule extends AbstractModule {
         install(new stroom.contentstore.impl.ContentStoreModule());
         install(new stroom.credentials.impl.CredentialsModule());
         install(new stroom.credentials.impl.dao.CredentialsDaoModule());
-        install(new stroom.aws.s3.impl.S3ConfigHandlerModule());
-        install(new stroom.aws.s3.impl.S3ConfigModule());
+        install(new stroom.aws.s3.impl.S3AllModules());
         install(new stroom.cache.impl.CacheModule());
         install(new stroom.cache.service.impl.CacheServiceModule());
         install(new stroom.cache.service.impl.CacheResourceModule());
@@ -61,10 +64,12 @@ public class CoreModule extends AbstractModule {
         install(new stroom.gitrepo.impl.GitRepoModule());
         install(new stroom.gitrepo.impl.dao.GitRepoDaoModule());
         install(new stroom.dashboard.impl.visualisation.VisualisationModule());
-        install(new stroom.dashboard.impl.dao.VisualisationAssetDaoModule());
+        install(new stroom.document.asset.impl.db.DocumentAssetDaoModule());
+        install(new stroom.document.asset.impl.DocumentAssetModule());
         install(new stroom.data.retention.impl.DataRetentionModule());
         install(new stroom.data.store.impl.DataStoreModule());
         install(new stroom.data.store.impl.fs.FsDataStoreModule());
+        install(new stroom.data.store.impl.fs.s3v2.ZstdModule());
         install(new stroom.data.store.impl.fs.FsDataStoreTaskHandlerModule());
         install(new stroom.data.store.impl.fs.dao.FsDataStoreDaoModule());
         install(new stroom.dictionary.impl.DictionaryHandlerModule());
@@ -109,8 +114,10 @@ public class CoreModule extends AbstractModule {
         install(new stroom.pipeline.factory.PipelineFactoryModule());
         install(new stroom.pipeline.refdata.ReferenceDataModule());
         install(new stroom.pipeline.stepping.PipelineSteppingModule());
+        install(new stroom.pipeline.xsltfunctions.AiXsltFunctionModule());
         install(new stroom.pipeline.xsltfunctions.CommonXsltFunctionModule());
         install(new stroom.pipeline.xsltfunctions.DataStoreXsltFunctionModule());
+        install(new stroom.pipeline.xsltfunctions.EmailXsltFunctionModule());
         install(new stroom.processor.impl.ProcessorModule());
         install(new stroom.processor.impl.dao.ProcessorDaoModule());
         install(new stroom.suggestions.impl.SuggestModule());
@@ -130,7 +137,10 @@ public class CoreModule extends AbstractModule {
         install(new stroom.analytics.impl.AnalyticRuleModule());
         install(new stroom.analytics.impl.ReportModule());
         install(new stroom.datagen.impl.DataGenModule());
+        install(new stroom.floormap.impl.FloorMapModule());
         install(new stroom.planb.impl.PlanBModule());
+        install(new stroom.sqlstore.impl.SqlStoreModule());
+        install(new stroom.sqlstore.impl.db.SqlStoreDaoModule());
         install(new stroom.statistics.impl.InternalStatisticsModule());
         install(new stroom.statistics.impl.sql.SqlStatisticsModule());
         install(new stroom.statistics.impl.sql.entity.StatisticStoreModule());
@@ -142,5 +152,28 @@ public class CoreModule extends AbstractModule {
         install(new stroom.task.impl.TaskModule());
         install(new stroom.util.pipeline.scope.PipelineScopeModule());
         install(new stroom.view.impl.ViewModule());
+
+        // We have to define this here rather than in RemoteFeedModule as that is common to
+        // both stroom and proxy.
+        ScheduledJobsBinder.create(binder())
+                .bindJobTo(S3EventNotificationsRunnable.class, builder -> builder
+                        .name(S3EventPollManager.JOB_NAME)
+                        .description("Polls an AWS SQS for S3 event notifications.")
+                        .frequencySchedule("1s") // Essentially to run continuously
+                        .enabled(false)
+                        .enabledOnBootstrap(false)
+                        .advanced(true));
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    private static class S3EventNotificationsRunnable extends RunnableWrapper {
+
+        @Inject
+        S3EventNotificationsRunnable(final S3EventPollManager s3EventPollManager) {
+            super(s3EventPollManager::poll);
+        }
     }
 }

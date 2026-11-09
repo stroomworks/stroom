@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.Objects;
+
 @JsonInclude(Include.NON_NULL)
 @JsonPropertyOrder(alphabetic = true)
 public class DownloadChatHistoryRequest {
@@ -32,10 +34,10 @@ public class DownloadChatHistoryRequest {
     private final boolean includeDataContexts;
 
     @JsonCreator
-    public DownloadChatHistoryRequest(@JsonProperty("chatId") final int chatId,
-                                      @JsonProperty("includeDataContexts") final boolean includeDataContexts) {
-        this.chatId = chatId;
-        this.includeDataContexts = includeDataContexts;
+    public DownloadChatHistoryRequest(@JsonProperty("chatId") final Integer chatId,
+                                      @JsonProperty("includeDataContexts") final Boolean includeDataContexts) {
+        this.chatId = Objects.requireNonNullElse(chatId, 0);
+        this.includeDataContexts = Objects.requireNonNullElse(includeDataContexts, false);
     }
 
     public int getChatId() {

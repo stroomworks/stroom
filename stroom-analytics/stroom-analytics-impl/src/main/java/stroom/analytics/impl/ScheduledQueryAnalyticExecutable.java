@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,7 +223,7 @@ public class ScheduledQueryAnalyticExecutable extends AbstractScheduledQueryExec
                                         .withDetectorName(doc.getName())
                                         .withDetectorUuid(doc.getUuid())
                                         .withDetectorVersion(doc.getVersion())
-                                        .withDetailedDescription(doc.getDescription())
+                                        .withDetailedDescription(RuleUtil.getDetailedDescription(doc))
                                         .withRandomDetectionUniqueId()
                                         .withDetectionRevision(0)
                                         .withExecutionSchedule(NullSafe
@@ -233,6 +233,8 @@ public class ScheduledQueryAnalyticExecutable extends AbstractScheduledQueryExec
                                         .notDefunct()
                                         .withValues(values)
                                         .withLinkedEvents(linkedEvents)
+                                        .withLevel(RuleUtil.getLevel(doc))
+                                        .withStatus(RuleUtil.getStatus(doc))
                                         .build();
                                 detectionConsumerProxy.getDetectionConsumer().accept(detection);
                             }

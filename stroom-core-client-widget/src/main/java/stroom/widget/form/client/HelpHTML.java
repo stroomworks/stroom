@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2024 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package stroom.widget.form.client;
 
-import com.google.gwt.user.client.ui.HTML;
+import stroom.widget.text.client.Html;
+
 
 /**
  * A widget to contain HTML help content for a {@link FormGroup}.
@@ -25,7 +26,7 @@ import com.google.gwt.user.client.ui.HTML;
  * If you only need plain text help content then just use
  * {@link FormGroup#setHelpText(String)}
  */
-public class HelpHTML extends HTML {
+public class HelpHTML extends Html {
 
 
 }

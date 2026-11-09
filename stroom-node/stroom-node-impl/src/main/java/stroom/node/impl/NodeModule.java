@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import stroom.node.shared.NodeGroupResource;
 import stroom.node.shared.NodeResource;
 import stroom.pipeline.writer.ExtendedPathCreator;
 import stroom.util.RunnableWrapper;
+import stroom.util.entityevent.EntityEvent;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
 import stroom.util.io.PathCreator;
@@ -53,6 +54,9 @@ public class NodeModule extends AbstractModule {
                 .bind(NodeGroupResourceImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), Clearable.class)
+                .addBinding(NodeGroupCacheImpl.class);
+
+        GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
                 .addBinding(NodeGroupCacheImpl.class);
 
         // Provide object info to the logging service.

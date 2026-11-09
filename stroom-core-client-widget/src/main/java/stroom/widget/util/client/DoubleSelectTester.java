@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,6 +77,13 @@ public class DoubleSelectTester implements HasHandlers {
             doubleSelectTimer.schedule(DOUBLE_SELECT_DELAY);
             return false;
         }
+    }
+
+    /// Forgets the last selection and ends any double select period, so the next selection
+    /// can't complete a double select.
+    public void reset() {
+        doubleSelectTimer.cancel();
+        clear();
     }
 
     private void clear() {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2023 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -271,15 +271,15 @@ public class HtmlBuilder {
         return this;
     }
 
+    /// Appends a link that opens in a new browser tab, which tells screen readers so (see
+    /// [NewTabLink#link(String, String)]).
+    ///
+    /// @param url   The URL the link goes to.
+    /// @param title The link's text. If null or empty, the URL is the text.
+    /// @return This builder.
     public HtmlBuilder appendLink(final String url, final String title) {
         Objects.requireNonNull(url);
-        appendTrustedString("<a href=\"");
-        append(url);
-        appendTrustedString("\" target=\"_blank\">");
-        if (title != null && !title.isEmpty()) {
-            append(title);
-        }
-        appendTrustedString("</a>");
+        sb.append(NewTabLink.link(url, title));
         return this;
     }
 
@@ -296,10 +296,6 @@ public class HtmlBuilder {
     public HtmlBuilder append(final SafeHtml safeHtml) {
         sb.append(safeHtml);
         return this;
-    }
-
-    public HtmlBuilder appendEscapedLines(final String text) {
-        return appendTrustedString(SafeHtmlUtils.htmlEscape(text).replaceAll("\n", "<br/>"));
     }
 
     public SafeHtml toSafeHtml() {

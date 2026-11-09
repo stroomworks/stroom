@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package stroom.pipeline.xsltfunctions;
 
-import stroom.util.shared.StringUtil;
+import stroom.util.shared.NullSafe;
 
 import net.sf.saxon.expr.XPathContext;
 import net.sf.saxon.om.EmptyAtomicSequence;
@@ -27,6 +27,31 @@ import net.sf.saxon.value.StringValue;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 
+@XsltFunctionDef(
+        name = HexToString.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.CONVERSION,
+        commonDescription = """
+                Decodes hexadecimal bytes to text using the specified character set. Whitespace in the hexadecimal input
+                is ignored.
+                """,
+        commonReturnType = XsltDataType.STRING,
+        commonReturnDescription = "The decoded text, or an empty sequence if decoding fails.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "hex",
+                                        description = "The hexadecimal bytes to decode.",
+                                        argType = XsltDataType.STRING
+                                ),
+                                @XsltFunctionArg(
+                                        name = "charset",
+                                        description = "The character set name, such as `UTF-8`.",
+                                        argType = XsltDataType.STRING
+                                )
+                        }
+                )
+        })
 class HexToString extends StroomExtensionFunctionCall {
 
     public static final String FUNCTION_NAME = "hex-to-string";
@@ -44,7 +69,7 @@ class HexToString extends StroomExtensionFunctionCall {
                 if (hex != null) {
                     hex = hex.replaceAll("\\s*", "");
                 }
-                if (!StringUtil.isBlank(hex)) {
+                if (!NullSafe.isBlankString(hex)) {
                     final Charset charset = Charset.forName(charsetName);
                     final ByteBuffer bytes = decodeHex(hex);
                     result = charset.decode(bytes).toString();

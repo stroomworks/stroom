@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package stroom.util.entityevent;
 
+import stroom.util.entityevent.EntityEvent.FiringBuilder;
+
 public interface EntityEventBus {
 
     EntityEventBus NO_OP_EVENT_BUS = new NoOpEntityEventBus();
@@ -23,6 +25,15 @@ public interface EntityEventBus {
     void fire(EntityEvent event);
 
     void fire(EntityEventBatch events);
+
+    /**
+     * Starts building an event-firing operation.
+     *
+     * @return A builder that requires the document reference and action to be supplied.
+     */
+    default FiringBuilder buildFiring() {
+        return EntityEvent.buildFiring(this);
+    }
 
 
     // --------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,8 @@ import stroom.importexport.shared.ImportSettings.ImportMode;
 import stroom.importexport.shared.ImportState;
 import stroom.importexport.shared.ImportState.State;
 import stroom.security.api.SecurityContext;
+import stroom.security.api.UserIdentity;
+import stroom.security.api.exception.AuthenticationException;
 import stroom.security.shared.DocumentPermission;
 import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
@@ -49,6 +51,7 @@ import stroom.util.shared.Message;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.Severity;
+import stroom.util.shared.UserRef;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -64,17 +67,36 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
+/**
+ * Persistence for a document type: serialise, store, audit, keep the dependency edges current.
+ *
+ * <h2>This class does not authorise</h2>
+ * Document permissions are applied by {@code AbstractDocumentStore}, which is the service layer for a
+ * document type and the level that decides who may read, write or delete one. <b>Do not assume an
+ * instance of this class is safe to hand out</b>: it does what it is asked. It is reachable only
+ * through {@code AbstractDocumentStore.getStore()}, which is {@code protected} and documented as the
+ * deliberately unchecked handle.
+ *
+ * <p>There is exactly <b>one</b> exception, and it is here rather than at the boundary for two
+ * reasons: {@link #importDocument} checks EDIT only when the document <em>already exists</em> —
+ * importing a new one requires no document permission, for the same reason creating one does not —
+ * and its failures are collected onto the {@link stroom.importexport.shared.ImportState} as messages
+ * rather than thrown, which is what the import confirmation screen renders. Hoisting it would both
+ * refuse every new document (the path that loads content packs at startup) and turn a per-item
+ * message into a failed request.
+ *
+ * <p>The {@link stroom.security.api.SecurityContext} retained here is otherwise used only to
+ * attribute writes — {@code stampAudit} and the {@code UserRef} handed to the persistence layer, which
+ * must name the real user — and to elevate the dependency-index update.
+ */
 public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> implements Store<D> {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(StoreImpl.class);
-    private static final String META = "meta";
 
     private final Persistence persistence;
     private final EntityEventBus entityEventBus;
@@ -212,14 +234,14 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     @Override
     public final void deleteDocument(final DocRef docRef) {
         Objects.requireNonNull(docRef);
-        // Check that the user has permission to delete this item.
-        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.DELETE)) {
-            throwPermissionException(
-                    "You are not authorised to delete this item",
-                    () -> "document: " + toDocRefDisplayString(docRef));
-        }
-
-        persistence.delete(docRef, securityContext.getUserRef());
+        // Authorisation is applied by AbstractDocumentStore, the service layer for this document type.
+        // AbstractDocumentStore.deleteDocument calls
+        // checkDocumentPermission(docRef, DocumentPermission.DELETE) before delegating.
+        //
+        // The audit user comes from getAuditUserRef() rather than securityContext.getUserRef(),
+        // which throws for the processing user; see getAuditUserRef() for why and for when that
+        // can change.
+        persistence.delete(docRef, getAuditUserRef());
         EntityEvent.fire(entityEventBus, docRef, EntityAction.DELETE);
 
         removeDocDependencies(docRef);
@@ -269,6 +291,14 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         return List.of();
     }
 
+    @Override
+    public Set<DocRef> getDependencies(final DocRef docRef) {
+        // The remap function may perform registry lookups for some doc types, so run as the
+        // processing user, as updateDocDependencies does.
+        return securityContext.asProcessingUserResult(() ->
+                extractDependencies(read(docRef), getDependencyRemapFunction()));
+    }
+
     // ---------------------------------------------------------------------
     // END OF HasDependencies
     // ---------------------------------------------------------------------
@@ -308,17 +338,13 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         return persistence.exists(docRef);
     }
 
+    /**
+     * Every document of this type. Filtering to what the user may see is applied by
+     * {@code AbstractDocumentStore}, the service layer for this document type.
+     */
     @Override
     public Set<DocRef> listDocuments() {
-        final List<DocRef> list = list();
-        return list.stream()
-                .filter(this::canRead)
-                .collect(Collectors.toSet());
-    }
-
-    private boolean canRead(final DocRef docRef) {
-        Objects.requireNonNull(docRef);
-        return securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW);
+        return Set.copyOf(list());
     }
 
     @Override
@@ -405,7 +431,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
             // Convert the document back into a data map.
             final ImportExportDocument finalData = serialiser.write(builtDoc);
             // Write the data — import always succeeds, no version check.
-            persistence.write(docRef, AuditAction.IMPORT, securityContext.getUserRef(),
+            persistence.write(docRef, AuditAction.IMPORT, getAuditUserRef(),
                     finalData, null, builtDoc.getVersion());
 
             // Fire an entity event to alert other services of the change.
@@ -456,19 +482,15 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         ImportExportDocument importExportDocument = new ImportExportDocument();
 
         try {
-            // Check that the user has permission to read this item.
-            if (!canRead(docRef)) {
-                throwPermissionException("You are not authorised to read " + toDocRefDisplayString(docRef));
-            } else {
-                D document = read(docRef);
-                if (document == null) {
-                    throw new IOException("Unable to read " + toDocRefDisplayString(docRef));
-                }
-                if (omitAuditFields) {
-                    document = removeAuditData(builderFunction, document);
-                }
-                importExportDocument = serialiser.write(function.apply(document));
+            // Authorisation is applied by AbstractDocumentStore.
+            D document = read(docRef);
+            if (document == null) {
+                throw new IOException("Unable to read " + toDocRefDisplayString(docRef));
             }
+            if (omitAuditFields) {
+                document = removeAuditData(builderFunction, document);
+            }
+            importExportDocument = serialiser.write(function.apply(document));
         } catch (final IOException e) {
             messageList.add(new Message(Severity.ERROR, e.getMessage()));
         }
@@ -593,7 +615,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         try {
             final DocRef docRef = createDocRef(document);
             final ImportExportDocument importExportDocument = serialiser.write(document);
-            persistence.write(docRef, AuditAction.CREATE, securityContext.getUserRef(),
+            persistence.write(docRef, AuditAction.CREATE, getAuditUserRef(),
                     importExportDocument, null, document.getVersion());
             EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
 
@@ -611,28 +633,6 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         return read(new DocRef(type, uuid));
     }
 
-    /**
-     * The document to authorise a read against: an embedded document (one that declares a parent via
-     * {@link Embeddable#getEmbeddedIn()}, e.g. an XSLT or TextConverter embedded in a pipeline) is authorised
-     * by VIEW permission on its parent; every other document - including any non-embeddable type - is
-     * authorised by VIEW permission on its own {@link DocRef}.
-     *
-     * @return the {@link DocRef} that failed the VIEW check, or empty if the read is authorised.
-     */
-    static Optional<DocRef> findUnauthorisedReadDocRef(final SecurityContext securityContext,
-                                                       final Object doc,
-                                                       final DocRef docRef) {
-        final DocRef refToAuthorise;
-        if (doc instanceof final Embeddable embeddable && embeddable.getEmbeddedIn() != null) {
-            refToAuthorise = embeddable.getEmbeddedIn();
-        } else {
-            refToAuthorise = docRef;
-        }
-        return securityContext.hasDocumentPermission(refToAuthorise, DocumentPermission.VIEW)
-                ? Optional.empty()
-                : Optional.of(refToAuthorise);
-    }
-
     private D read(final DocRef docRef) {
         final String uuid = NullSafe.requireNonNull(docRef, DocRef::getUuid, () -> "UUID required");
         checkType(docRef);
@@ -640,11 +640,10 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         final ImportExportDocument importExportDocument = readPersistence(docRef);
         if (importExportDocument != null) {
             try {
-                final D doc = serialiser.read(importExportDocument);
-                findUnauthorisedReadDocRef(securityContext, doc, docRef).ifPresent(unauthorisedRef ->
-                        throwPermissionException(LogUtil.message("You are not authorised to read {}",
-                                toDocRefDisplayString(unauthorisedRef))));
-                return doc;
+                // Authorisation is applied by AbstractDocumentStore, which reads the document and then
+                // authorises it — an embedded document is authorised by its parent, which can only be
+                // known from the document itself.
+                return serialiser.read(importExportDocument);
             } catch (final IOException e) {
                 LOGGER.error(e.getMessage(), e);
                 throw new UncheckedIOException(
@@ -676,6 +675,70 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         throw new PermissionException(securityContext.getUserRef(), msg);
     }
 
+    // --------------------------------------------------------------------------------
+    // TODO Workaround: doc writes made as the processing user record a null audit user.
+    //  #5582 (audit trail) made every doc write record the acting user via
+    //  SecurityContext.getUserRef(). Running as a service user there is no stroom user to
+    //  return (neither InternalIdpProcessingUserIdentity nor ServiceUserIdentity implements
+    //  HasUserRef), so getUserRef() throws AuthenticationException and any doc create/update/
+    //  delete/import run inside SecurityContext.asProcessingUser*(...) fails.
+    //  doc_audit.user_uuid/user_name are nullable and DBPersistence already null-guards
+    //  them, so we record a null user rather than failing the write.
+    //
+    //  REMOVAL CONDITION - test this, do not infer it. Remove when getUserRef() no longer
+    //  throws for the processing user, i.e. when one of the service identities implements
+    //  HasUserRef. Verify by rewiring the call sites below back to
+    //  securityContext.getUserRef() and running TestStoreImplAuditUser, whose
+    //  create_asProcessingUser / delete_asProcessingUser cases exist to pin exactly this.
+    //
+    //  Do NOT infer the condition is met from a caller disappearing. The original motivating
+    //  example was auto-creation of the singleton Data Retention doc, which 500d
+    //  POST /api/meta/v1/find; that one has since been fixed specifically, by having
+    //  StreamAttributeMapRetentionRuleDecoratorFactory fetch the rules with
+    //  DataRetentionRulesProvider::get instead of getOrCreate, so nothing is written on read.
+    //  That removed a trigger, not the cause, and other processing-user doc writes remain -
+    //  e.g. TableBuilderAnalyticExecutor.processUntilAllComplete wraps its whole run in
+    //  asProcessingUser, and on a rule failure disableProcess() writes the analytic rule doc
+    //  to stop it failing repeatedly. Without this workaround that recovery write throws, so a
+    //  handled rule failure becomes an unhandled one and the rule stays enabled.
+    // --------------------------------------------------------------------------------
+
+    /**
+     * @return The {@link UserRef} of the current user for recording in the audit trail, or null if
+     * the current identity is the internal processing (service) user, which has no associated
+     * stroom user.
+     * @throws AuthenticationException if there is no user, or the user is not the processing user
+     * and has no stroom user account - only the processing user is allowed to write unattributed.
+     */
+    private UserRef getAuditUserRef() {
+        final UserIdentity userIdentity = securityContext.getUserIdentity();
+        if (userIdentity == null) {
+            // Having no user at all is still an error, so let SecurityContext raise it.
+            return securityContext.getUserRef();
+        }
+        try {
+            // Ask the SecurityContext rather than testing the identity for HasUserRef. That
+            // test was the original discriminator and it is too narrow: upstream's
+            // TestStoreImplPermissions supplies a context whose identity is not HasUserRef
+            // but whose getUserRef() resolves a real user perfectly well, and those writes
+            // must name that user. What actually matters is whether getUserRef() can answer,
+            // so ask it and handle the refusal.
+            return securityContext.getUserRef();
+        } catch (final AuthenticationException e) {
+            if (!securityContext.isProcessingUser()) {
+                // Any other identity that cannot be named is an authentication failure, and must
+                // not be turned into an unattributed write.
+                throw e;
+            }
+            LOGGER.debug(() -> LogUtil.message(
+                    "No stroom user account for processing user identity '{}' ({}), auditing doc "
+                    + "change with a null user",
+                    userIdentity.getUserIdentityForAudit(),
+                    userIdentity.getClass().getSimpleName()));
+            return null;
+        }
+    }
+
     private void checkType(final DocRef docRef) {
         try {
             Objects.requireNonNull(docRef);
@@ -699,10 +762,9 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         D updatedDoc = document;
         final DocRef docRef = createDocRef(updatedDoc);
 
-        // Check that the user has permission to update this item.
-        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
-            throwPermissionException("You are not authorised to update " + toDocRefDisplayString(docRef));
-        }
+        // Authorisation is applied by AbstractDocumentStore, the service layer for this document type.
+        // Note that `update` is also reached from the import path, which authorises itself — see
+        // importDocument, where the check is conditional on the document already existing.
 
         try {
             // Capture the version the caller expects to be current.
@@ -723,7 +785,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
             // Single atomic call — persistence layer handles version check.
             // For DB: UPDATE ... WHERE version = expectedVersion (optimistic lock).
             // For FS: StripedLockFactory in StoreImpl.readPersistence() serialises access.
-            persistence.write(docRef, AuditAction.UPDATE, securityContext.getUserRef(),
+            persistence.write(docRef, AuditAction.UPDATE, getAuditUserRef(),
                     newData, currentVersion, newVersion);
             EntityEvent.fire(entityEventBus, docRef, oldDocRef, EntityAction.UPDATE);
 
@@ -737,13 +799,13 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         return updatedDoc;
     }
 
+    /**
+     * Every document of this type. Filtering to what the user may see is applied by
+     * {@code AbstractDocumentStore}, the service layer for this document type.
+     */
     @Override
     public List<DocRef> list() {
-        return persistence
-                .list(type)
-                .stream()
-                .filter(this::canRead)
-                .collect(Collectors.toList());
+        return persistence.list(type);
     }
 
     @Override
@@ -753,10 +815,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
 
     @Override
     public Map<String, String> getIndexableData(final DocRef docRef) {
-        if (!canRead(docRef)) {
-            return Collections.emptyMap();
-        }
-
+        // Authorisation is applied by AbstractDocumentStore.
         final ImportExportDocument importExportDocument = readPersistence(docRef);
         if (importExportDocument == null) {
             return Collections.emptyMap();

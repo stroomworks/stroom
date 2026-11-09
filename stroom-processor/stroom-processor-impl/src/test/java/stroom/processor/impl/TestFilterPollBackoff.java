@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ class TestFilterPollBackoff {
     @Test
     void filterLevelMaximumOverridesTheClusterWideOne() {
         final ProcessorFilterTracker tracker = tracker(NOW - MAX_MS, 0, NOW);
-        final ProcessorFilter filter = filter(new SimpleDuration(30, TimeUnit.SECONDS), null);
+        final ProcessorFilter filter = filter(new SimpleDuration(30L, TimeUnit.SECONDS), null);
 
         final Long nextPollMs = FilterPollBackoff.calculateNextPollMs(filter, tracker, config(), NOW, 0);
         assertThat(nextPollMs).isEqualTo(NOW + 30_000);
@@ -107,7 +107,7 @@ class TestFilterPollBackoff {
 
     @Test
     void zeroFilterLevelMaximumMeansPollEveryTime() {
-        final ProcessorFilter filter = filter(new SimpleDuration(0, TimeUnit.SECONDS), null);
+        final ProcessorFilter filter = filter(new SimpleDuration(0L, TimeUnit.SECONDS), null);
         final ProcessorFilterTracker tracker = tracker(NOW, 0, NOW);
 
         final Long nextPollMs = FilterPollBackoff.calculateNextPollMs(filter, tracker, config(), NOW, 0);

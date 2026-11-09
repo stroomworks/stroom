@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
@@ -79,6 +80,7 @@ import java.util.stream.Stream;
  * 5. Ensure all JSON annotated classes default serialisation behaviour is consistent.
  * 6. Build complex JSON annotated objects and perform serialisation testing.
  * 7. Ensure all JSON classes that use Map have a string key
+ * 8. Ensure no @JsonCreator annotated constructor takes primitive parameters
  */
 class TestJsonSerialisation {
 
@@ -95,13 +97,19 @@ class TestJsonSerialisation {
 //        String routeAnnotation = JsonCreator.class.getName();// "com.fasterxml.jackson.annotation.JsonCreator";
 //        try (ScanResult scanResult =
 //                     new ClassGraph()
-//                             .enableAllInfo()             // Scan classes, methods, fields, annotations
+//                             .enableClasspath()
+//                             .enableNonSystemModules()
+//                             .enableClassInfo()
+//                             .enableMethodInfo()
+//                             .enableFieldInfo()
+//                             .enableAnnotationInfo()       // Scan classes, methods, fields, annotations
 //                             .acceptPackages(PACKAGE_NAME)      // Scan com.xyz and subpackages (omit to
 //                                                                      scan all packages)
 //                             .scan()) {                   // Start the scan
 //            for (ClassInfo routeClassInfo : scanResult.getClassesWithMethodAnnotation(routeAnnotation)) {
 //                try {
-//                    Class<?> clazz = routeClassInfo.loadClass();
+//                    Class<?> clazz = Class.forName(routeClassInfo.getName(), false,
+//                            TestJsonSerialisation.class.getClassLoader());
 //                    Constructor<?> constructor = clazz.getConstructor();
 //                    Object o = constructor.newInstance();
 //
@@ -126,7 +134,7 @@ class TestJsonSerialisation {
 //                    System.err.println(e.getMessage());
 //                }
 
-    /// /                AnnotationInfo routeAnnotationInfo = routeClassInfo.getAnnotationInfo(routeAnnotation);
+    /// /                AnnotationInfo routeAnnotationInfo = routeClassInfo.getAllAnnotationInfo(routeAnnotation);
     /// /                List<AnnotationParameterValue> routeParamVals = routeAnnotationInfo.getParameterValues();
     /// /                // @com.xyz.Route has one required parameter
     /// /                String route = (String) routeParamVals.get(0).getValue();
@@ -534,6 +542,51 @@ class TestJsonSerialisation {
         });
     }
 
+    /**
+     * Test that no constructor annotated with @{@link JsonCreator} has primitive parameters.
+     * Primitive parameters cannot represent an absent JSON property, so Jackson will silently
+     * substitute the primitive default (e.g. `0` or `false`) when the property is missing, which
+     * makes it impossible to distinguish an unset value from a deliberately set default.
+     * Use the boxed equivalent (e.g. {@link Integer} or {@link Boolean}) instead.
+     */
+    @TestFactory
+    @Execution(ExecutionMode.SAME_THREAD)
+    Stream<DynamicTest> testNoPrimitivesInJsonCreator() {
+        return buildRelatedResourceTests(clazz -> {
+            final List<String> primitiveParams = new ArrayList<>();
+
+            for (final Constructor<?> constructor : clazz.getDeclaredConstructors()) {
+                if (constructor.getAnnotation(JsonCreator.class) != null) {
+                    primitiveParams.addAll(getPrimitiveParamDescriptions(constructor));
+                }
+            }
+
+            Assertions.assertThat(primitiveParams)
+                    .describedAs("%s - @JsonCreator constructor parameters must not be primitive, " +
+                                 "use the boxed equivalent instead: %s",
+                            clazz.getName(), primitiveParams)
+                    .isEmpty();
+        });
+    }
+
+    /// Describes each primitive parameter of the supplied constructor, e.g. `int (maxResults)`.
+    /// Returns an empty list if the constructor has no primitive parameters.
+    private List<String> getPrimitiveParamDescriptions(final Constructor<?> constructor) {
+        final List<String> descriptions = new ArrayList<>();
+        final Parameter[] parameters = constructor.getParameters();
+        for (int i = 0; i < parameters.length; i++) {
+            final Parameter parameter = parameters[i];
+            if (parameter.getType().isPrimitive()) {
+                final JsonProperty jsonProperty = parameter.getDeclaredAnnotation(JsonProperty.class);
+                final String name = jsonProperty != null && !jsonProperty.value().isEmpty()
+                        ? jsonProperty.value()
+                        : "arg" + i;
+                descriptions.add(LogUtil.message("{} ({})", parameter.getType().getName(), name));
+            }
+        }
+        return descriptions;
+    }
+
     @Test
     @Execution(ExecutionMode.SAME_THREAD)
     void testAllSharedAreResources() {
@@ -778,6 +831,8 @@ class TestJsonSerialisation {
         final Set<Class<?>> stroomClasses = new HashSet<>();
         try (final ScanResult scanResult =
                 new ClassGraph()
+                        .enableClasspath()
+                        .enableNonSystemModules()
                         .enableClassInfo()             // Scan classes, methods, fields, annotations
                         .acceptPackages(PACKAGE_NAME)  // Scan com.xyz and subpackages (omit to scan all packages)
                         .enableAnnotationInfo()
@@ -790,18 +845,18 @@ class TestJsonSerialisation {
                     JsonTypeInfo.class,
                     JsonSubTypes.class,
                     JsonProperty.class)) {
-                final Class<?> clazz = routeClassInfo.loadClass();
+                final Class<?> clazz = loadClass(routeClassInfo.getName());
                 addJsonRelatedClasses(clazz, scanResult, stroomClasses);
             }
 
-            for (final ClassInfo routeClassInfo : scanResult.getClassesImplementing(
+            for (final ClassInfo routeClassInfo : scanResult.getAllClassesImplementing(
                     DirectRestService.class.getName())) {
 
-                final Class<?> clazz = routeClassInfo.loadClass();
+                final Class<?> clazz = loadClass(routeClassInfo.getName());
                 addPublicMethods(stroomClasses, clazz);
             }
-            for (final ClassInfo routeClassInfo : scanResult.getClassesImplementing(RestResource.class.getName())) {
-                final Class<?> clazz = routeClassInfo.loadClass();
+            for (final ClassInfo routeClassInfo : scanResult.getAllClassesImplementing(RestResource.class.getName())) {
+                final Class<?> clazz = loadClass(routeClassInfo.getName());
                 addPublicMethods(stroomClasses, clazz);
             }
         }
@@ -837,8 +892,8 @@ class TestJsonSerialisation {
         for (final Type type : types) {
             addType(stroomClasses, type);
 
-            for (final ClassInfo routeClassInfo : scanResult.getSubclasses(type.getClass())) {
-                final Class<?> inner = routeClassInfo.loadClass();
+            for (final ClassInfo routeClassInfo : scanResult.getAllSubclasses(type.getClass())) {
+                final Class<?> inner = loadClass(routeClassInfo.getName());
                 addJsonRelatedClasses(inner, scanResult, stroomClasses);
             }
         }
@@ -849,6 +904,8 @@ class TestJsonSerialisation {
 
         try (final ScanResult scanResult =
                 new ClassGraph()
+                        .enableClasspath()
+                        .enableNonSystemModules()
                         .enableClassInfo()
                         .acceptPackages(PACKAGE_NAME)
                         .rejectPackages("hadoopcommonshaded")
@@ -865,7 +922,7 @@ class TestJsonSerialisation {
                     !name.contains("$") &&
                     !name.contains("_")) {
                     try {
-                        final Class<?> clazz = routeClassInfo.loadClass();
+                        final Class<?> clazz = loadClass(routeClassInfo.getName());
                         if (!Modifier.isInterface(clazz.getModifiers()) &&
                             !Modifier.isAbstract(clazz.getModifiers()) &&
                             !RestResource.class.isAssignableFrom(clazz) &&
@@ -936,5 +993,12 @@ class TestJsonSerialisation {
 
         return strategies;
     }
-}
 
+    private static Class<?> loadClass(final String className) {
+        try {
+            return Class.forName(className, false, TestJsonSerialisation.class.getClassLoader());
+        } catch (final ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}

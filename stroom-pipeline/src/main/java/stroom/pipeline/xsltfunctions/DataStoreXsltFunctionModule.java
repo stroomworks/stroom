@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,13 +40,14 @@ public class DataStoreXsltFunctionModule extends AbstractXsltFunctionModule {
             super(
                     BitmapLookup.FUNCTION_NAME,
                     2,
-                    5,
+                    6,
                     new SequenceType[]{
                             SequenceType.SINGLE_STRING,
                             SequenceType.SINGLE_STRING,
                             SequenceType.OPTIONAL_STRING,
                             SequenceType.OPTIONAL_BOOLEAN,
-                            SequenceType.OPTIONAL_BOOLEAN},
+                            SequenceType.OPTIONAL_BOOLEAN,
+                            SequenceType.OPTIONAL_STRING},
                     SequenceType.NODE_SEQUENCE,
                     functionCallProvider);
         }
@@ -104,7 +105,7 @@ public class DataStoreXsltFunctionModule extends AbstractXsltFunctionModule {
         @Inject
         PartNoFunction(final Provider<PartNo> functionCallProvider) {
             super(
-                    "part-no",
+                    PartNo.FUNCTION_NAME,
                     0,
                     0,
                     new SequenceType[]{},
@@ -118,7 +119,7 @@ public class DataStoreXsltFunctionModule extends AbstractXsltFunctionModule {
         @Inject
         SourceIdFunction(final Provider<SourceId> functionCallProvider) {
             super(
-                    "source-id",
+                    SourceId.FUNCTION_NAME,
                     0,
                     0,
                     new SequenceType[]{},
@@ -132,7 +133,7 @@ public class DataStoreXsltFunctionModule extends AbstractXsltFunctionModule {
         @Inject
         StreamIdFunction(final Provider<SourceId> functionCallProvider) {
             super(
-                    "stream-id",
+                    SourceId.FUNCTION_NAME_STREAM_ID,
                     0,
                     0,
                     new SequenceType[]{},

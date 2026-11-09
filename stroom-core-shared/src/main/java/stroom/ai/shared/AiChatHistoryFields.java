@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,5 +21,6 @@ import stroom.query.api.datasource.QueryField;
 public class AiChatHistoryFields {
     public static final String NAME = "Name";
 
-    public static final QueryField NAME_FIELD = QueryField.createText(NAME);
+    // AI_CHAT.TITLE via an identity converter in AiDaoImpl. See QueryField.createSqlText.
+    public static final QueryField NAME_FIELD = QueryField.createSqlText(NAME);
 }

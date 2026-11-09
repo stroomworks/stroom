@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,14 +42,14 @@ public class SessionDetails {
 
     @JsonCreator
     public SessionDetails(@JsonProperty("userRef") final UserRef userRef,
-                          @JsonProperty("createMs") final long createMs,
-                          @JsonProperty("lastAccessedMs") final long lastAccessedMs,
+                          @JsonProperty("createMs") final Long createMs,
+                          @JsonProperty("lastAccessedMs") final Long lastAccessedMs,
                           @JsonProperty("lastAccessedAgent") final String lastAccessedAgent,
                           @JsonProperty("nodeName") final String nodeName,
                           @JsonProperty("sessionHandle") final String sessionHandle) {
         this.userRef = userRef;
-        this.createMs = createMs;
-        this.lastAccessedMs = lastAccessedMs;
+        this.createMs = Objects.requireNonNullElse(createMs, 0L);
+        this.lastAccessedMs = Objects.requireNonNullElse(lastAccessedMs, 0L);
         this.lastAccessedAgent = lastAccessedAgent;
         this.nodeName = nodeName;
         this.sessionHandle = sessionHandle;

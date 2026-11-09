@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import stroom.event.logging.rs.api.AutoLogged;
 import stroom.processor.shared.FindProcessorProfileRequest;
 import stroom.processor.shared.ProcessorProfile;
 import stroom.processor.shared.ProcessorProfileResource;
+import stroom.util.rest.RestUtil;
 import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
@@ -42,6 +43,7 @@ class ProcessorProfileResourceImpl implements ProcessorProfileResource {
 
     @Override
     public ProcessorProfile create(final ProcessorProfile processorProfile) {
+        RestUtil.checkPathSafeName(processorProfile.getName());
         return processorProfileServiceProvider.get().create(processorProfile);
     }
 
@@ -57,6 +59,7 @@ class ProcessorProfileResourceImpl implements ProcessorProfileResource {
 
     @Override
     public ProcessorProfile update(final Integer id, final ProcessorProfile processorProfile) {
+        RestUtil.checkPathSafeName(processorProfile.getName());
         return processorProfileServiceProvider.get().update(processorProfile);
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,8 +33,24 @@ public interface AnnotationTagFields {
 
     QueryField ID_FIELD = QueryField.createId(ID);
     QueryField UUID_FIELD = QueryField.createId(UUID);
-    QueryField NAME_FIELD = QueryField.createDate(NAME);
+    // Was createDate, which declared DEFAULT_DATE on what is ANNOTATION_TAG.NAME - a text column
+    // reached through an identity converter. The wrong FieldType also made the expression editor
+    // offer a date picker for a tag name. Found by arming the capability check: the annotation tag
+    // screens filter this field with CONTAINS, which DEFAULT_DATE does not declare.
+    QueryField NAME_FIELD = QueryField.createSqlText(NAME);
     QueryField TYPE_ID_FIELD = QueryField.createText(TYPE_ID);
+
+    /**
+     * What the annotation tag quick filter resolves against.
+     * <p>
+     * TYPE_ID is deliberately absent. The type is carried on
+     * {@link FindAnnotationTagCriteria#getType()} as a structural constraint, so offering it as a
+     * qualifier here would let a user type {@code typeid:label} and change what the chooser is
+     * showing rather than narrowing it.
+     */
+    List<QueryField> QUICK_FILTER_DEFAULT_FIELDS = Arrays.asList(NAME_FIELD);
+
+    List<QueryField> QUICK_FILTER_FIELDS = Arrays.asList(NAME_FIELD, UUID_FIELD);
 
     List<QueryField> FIELDS = Arrays.asList(
             ID_FIELD,

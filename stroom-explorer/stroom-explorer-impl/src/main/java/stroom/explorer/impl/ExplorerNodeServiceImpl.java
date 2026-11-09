@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2017 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -288,6 +288,15 @@ class ExplorerNodeServiceImpl implements ExplorerNodeService {
         } else {
             return Optional.empty();
         }
+    }
+
+    @Override
+    public Optional<ExplorerNode> getNodeByUuid(final String uuid) {
+        // Only return entries the user has permission to see.
+        return Optional.ofNullable(uuid)
+                .map(explorerTreeDao::findByUUID)
+                .filter(node -> securityContext.hasDocumentPermission(node.getDocRef(), DocumentPermission.USE))
+                .map(this::createExplorerNode);
     }
 
     @Override

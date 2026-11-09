@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2019 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,8 +42,6 @@ import stroom.meta.impl.db.MetaDbConnProvider;
 import stroom.meta.impl.db.jooq.tables.MetaFeed;
 import stroom.meta.impl.db.jooq.tables.MetaProcessor;
 import stroom.meta.impl.db.jooq.tables.MetaType;
-import stroom.meta.impl.db.jooq.tables.MetaVal;
-import stroom.meta.impl.db.jooq.tables.records.MetaRecord;
 import stroom.meta.shared.FindMetaCriteria;
 import stroom.meta.shared.Meta;
 import stroom.meta.shared.MetaFields;
@@ -60,6 +58,7 @@ import stroom.query.api.datasource.QueryField;
 import stroom.query.common.v2.DateExpressionParser;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValBoolean;
 import stroom.query.language.functions.ValDate;
 import stroom.query.language.functions.ValInteger;
 import stroom.query.language.functions.ValLong;
@@ -91,13 +90,11 @@ import org.jooq.Cursor;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.InsertOnDuplicateStep;
-import org.jooq.InsertValuesStep10;
 import org.jooq.Name;
 import org.jooq.OrderField;
 import org.jooq.Record;
 import org.jooq.Record1;
 import org.jooq.Record11;
-import org.jooq.Record12;
 import org.jooq.Record2;
 import org.jooq.Record4;
 import org.jooq.Result;
@@ -158,6 +155,11 @@ public class MetaDaoImpl implements MetaDao {
 
     private static final int FIND_RECORD_LIMIT = 1000000;
 
+    /**
+     * The name MySQL gives the primary key index, for use in index hints.
+     */
+    private static final String PRIMARY_KEY_INDEX = "PRIMARY";
+
     static final stroom.meta.impl.db.jooq.tables.Meta META_M = META.as("m");
     static final MetaFeed META_FEED_F = META_FEED.as("f");
     static final MetaType META_TYPE_T = META_TYPE.as("t");
@@ -184,10 +186,11 @@ public class MetaDaoImpl implements MetaDao {
             .processorFilterId(record.get(META_M.PROCESSOR_FILTER_ID))
             .processorTaskId(record.get(META_M.PROCESSOR_TASK_ID))
             .parentDataId(record.get(META_M.PARENT_ID))
-            .status(MetaStatusId.getStatus(record.get(META_M.STATUS)))
+            .status(getStatus(record.get(META_M.STATUS)))
             .statusMs(record.get(META_M.STATUS_TIME))
             .createMs(record.get(META_M.CREATE_TIME))
             .effectiveMs(record.get(META_M.EFFECTIVE_TIME))
+            .readOnly(record.get(META_M.IS_READ_ONLY))
             .build();
 
     private static final Function<Record, Meta> RECORD_TO_PARENT_META_MAPPER = record -> Meta.builder()
@@ -199,11 +202,16 @@ public class MetaDaoImpl implements MetaDao {
             .processorFilterId(record.get(parent.PROCESSOR_FILTER_ID))
             .processorTaskId(record.get(parent.PROCESSOR_TASK_ID))
             .parentDataId(record.get(parent.PARENT_ID))
-            .status(MetaStatusId.getStatus(record.get(parent.STATUS)))
+            .status(getStatus(record.get(parent.STATUS)))
             .statusMs(record.get(parent.STATUS_TIME))
             .createMs(record.get(parent.CREATE_TIME))
             .effectiveMs(record.get(parent.EFFECTIVE_TIME))
+            .readOnly(record.get(parent.IS_READ_ONLY))
             .build();
+
+    private static final byte STATUS_ID_UNLOCKED = Status.UNLOCKED.getPrimitiveValue();
+    private static final byte STATUS_ID_LOCKED = Status.LOCKED.getPrimitiveValue();
+    private static final byte STATUS_ID_DELETED = Status.DELETED.getPrimitiveValue();
 
     private final MetaDbConnProvider metaDbConnProvider;
     private final MetaFeedDaoImpl feedDao;
@@ -258,13 +266,14 @@ public class MetaDaoImpl implements MetaDao {
         expressionMapper.map(MetaFields.META_PROCESSOR_TASK_ID, META_M.PROCESSOR_TASK_ID, Long::valueOf);
         expressionMapper.multiMap(MetaFields.FEED, META_M.FEED_ID, this::getFeedIds, true);
         expressionMapper.multiMap(MetaFields.TYPE, META_M.TYPE_ID, this::getTypeIds);
+        expressionMapper.map(MetaFields.READ_ONLY, META_M.IS_READ_ONLY, Boolean::valueOf);
         // Get a uuid for the selected pipe doc
         expressionMapper.map(MetaFields.PIPELINE, META_PROCESSOR_P.PIPELINE_UUID, value -> value, false);
         // Get 0-many uuids for a pipe name (partial/wild-carded)
         expressionMapper.multiMap(
                 MetaFields.PIPELINE_NAME, META_PROCESSOR_P.PIPELINE_UUID, this::getPipelineUuidsByName, true);
         expressionMapper.map(MetaFields.STATUS, META_M.STATUS, value ->
-                MetaStatusId.getPrimitiveValue(value.toUpperCase()));
+                Status.getPrimitiveValue(value.toUpperCase()));
         expressionMapper.map(MetaFields.STATUS_TIME, META_M.STATUS_TIME, value ->
                 DateExpressionParser.getMs(MetaFields.STATUS_TIME.getFldName(), value));
         expressionMapper.map(MetaFields.CREATE_TIME, META_M.CREATE_TIME, value ->
@@ -275,7 +284,7 @@ public class MetaDaoImpl implements MetaDao {
         // Parent fields.
         expressionMapper.map(MetaFields.PARENT_ID, META_M.PARENT_ID, Long::valueOf);
         expressionMapper.map(MetaFields.PARENT_STATUS, parent.STATUS, value ->
-                MetaStatusId.getPrimitiveValue(value.toUpperCase()));
+                Status.getPrimitiveValue(value.toUpperCase()));
         expressionMapper.map(MetaFields.PARENT_CREATE_TIME, parent.CREATE_TIME, value ->
                 DateExpressionParser.getMs(MetaFields.PARENT_CREATE_TIME.getFldName(), value));
         expressionMapper.map(MetaFields.PARENT_EFFECTIVE_TIME, parent.EFFECTIVE_TIME, value ->
@@ -286,13 +295,14 @@ public class MetaDaoImpl implements MetaDao {
         valueMapper.map(MetaFields.ID, META_M.ID, ValLong::create);
         valueMapper.map(MetaFields.FEED, META_FEED_F.NAME, ValString::create);
         valueMapper.map(MetaFields.TYPE, META_TYPE_T.NAME, ValString::create);
+        valueMapper.map(MetaFields.READ_ONLY, META_M.IS_READ_ONLY, ValBoolean::create);
         valueMapper.map(MetaFields.PIPELINE, META_PROCESSOR_P.PIPELINE_UUID, this::getPipelineName);
         valueMapper.map(MetaFields.PIPELINE_NAME, META_PROCESSOR_P.PIPELINE_UUID, this::getPipelineName);
         valueMapper.map(MetaFields.PARENT_ID, META_M.PARENT_ID, ValLong::create);
         valueMapper.map(MetaFields.META_INTERNAL_PROCESSOR_ID, META_M.PROCESSOR_ID, ValInteger::create);
         valueMapper.map(MetaFields.META_PROCESSOR_FILTER_ID, META_M.PROCESSOR_FILTER_ID, ValInteger::create);
         valueMapper.map(MetaFields.META_PROCESSOR_TASK_ID, META_M.PROCESSOR_TASK_ID, ValLong::create);
-        valueMapper.map(MetaFields.STATUS, META_M.STATUS, v -> Optional.ofNullable(MetaStatusId.getStatus(v))
+        valueMapper.map(MetaFields.STATUS, META_M.STATUS, v -> Optional.of(getStatus(v))
                 .map(w -> (Val) ValString.create(w.getDisplayValue()))
                 .orElse(ValNull.INSTANCE));
         valueMapper.map(MetaFields.STATUS_TIME, META_M.STATUS_TIME, ValDate::create);
@@ -341,32 +351,45 @@ public class MetaDaoImpl implements MetaDao {
     }
 
     @Override
-    public Long getMaxId() {
+    public Optional<Long> getMaxId() {
         return JooqUtil.contextResult(metaDbConnProvider, context -> context
                         .select(DSL.max(META_M.ID))
                         .from(META_M)
                         .fetchOptional())
-                .map(Record1::value1)
-                .orElse(null);
+                .map(Record1::value1);
     }
 
     @Override
-    public Long getMaxId(final long maxCreateTimeMs) {
+    public Optional<Long> getMaxId(final long minId, final long maxCreateTimeMs) {
+        // Walk back down the primary key and stop at the first row created at or before the supplied time.
+        // `max(id)` would read every row created at or before that time instead, which is most of the table
+        // for a recent time, so it gets slower as the table grows. Ids and create times rise together, so the
+        // row we want is normally within a few rows of the end. The index hint is needed because MySQL will
+        // otherwise use a create time index and sort all the matching rows to satisfy the `order by`.
         return JooqUtil.contextResult(metaDbConnProvider, context -> context
-                        .select(DSL.max(META_M.ID))
-                        .from(META_M)
-                        .where(META_M.CREATE_TIME.le(maxCreateTimeMs))
+                        .select(META_M.ID)
+                        .from(META_M.useIndex(PRIMARY_KEY_INDEX))
+                        .where(META_M.ID.ge(minId))
+                        .and(META_M.CREATE_TIME.le(maxCreateTimeMs))
+                        .orderBy(META_M.ID.desc())
+                        .limit(1)
                         .fetchOptional())
-                .map(Record1::value1)
-                .orElse(null);
+                .map(Record1::value1);
     }
 
     @Override
     public Meta create(final MetaProperties metaProperties) {
+        return create(metaProperties, null);
+    }
+
+    @Override
+    public Meta create(final MetaProperties metaProperties, final Status status) {
         final Integer feedId = feedDao.getOrCreate(metaProperties.getFeedName());
         final Integer typeId = metaTypeDao.getOrCreate(metaProperties.getTypeName());
         final Integer processorId = metaProcessorDao.getOrCreate(
                 metaProperties.getProcessorUuid(), metaProperties.getPipelineUuid());
+        final byte metaStatusId = Objects.requireNonNullElse(status, Status.LOCKED)
+                .getPrimitiveValue();
 
         final long id = JooqUtil.contextResult(metaDbConnProvider, context -> context
                         .insertInto(META,
@@ -379,18 +402,20 @@ public class MetaDaoImpl implements MetaDao {
                                 META.TYPE_ID,
                                 META.PROCESSOR_ID,
                                 META.PROCESSOR_FILTER_ID,
-                                META.PROCESSOR_TASK_ID)
+                                META.PROCESSOR_TASK_ID,
+                                META.IS_READ_ONLY)
                         .values(
                                 metaProperties.getCreateMs(),
                                 metaProperties.getEffectiveMs(),
                                 metaProperties.getParentId(),
-                                MetaStatusId.LOCKED,
+                                metaStatusId,
                                 metaProperties.getStatusMs(),
                                 feedId,
                                 typeId,
                                 processorId,
                                 metaProperties.getProcessorFilterId(),
-                                metaProperties.getProcessorTaskId())
+                                metaProperties.getProcessorTaskId(),
+                                metaProperties.isReadOnly())
                         .returning(META.ID)
                         .fetchOne())
                 .getId();
@@ -409,6 +434,7 @@ public class MetaDaoImpl implements MetaDao {
                 .statusMs(metaProperties.getStatusMs())
                 .createMs(metaProperties.getCreateMs())
                 .effectiveMs(metaProperties.getEffectiveMs())
+                .readOnly(metaProperties.isReadOnly())
                 .build();
     }
 
@@ -442,25 +468,15 @@ public class MetaDaoImpl implements MetaDao {
                         metaProcessorDao.getOrCreate(tuple._1(), tuple._2())))
                 .collect(Collectors.toMap(Tuple2::_1, Tuple2::_2));
 
-        final byte statusId = MetaStatusId.getPrimitiveValue(status);
+        final byte statusId = getStatusId(status);
 
         // Create a batch of insert stmts, each with n value sets
         JooqUtil.context(metaDbConnProvider, context -> context
                 .batch(
                         BatchingIterator.batchedStreamOf(metaPropertiesList, MAX_VALUES_PER_INSERT)
                                 .map(metaPropertiesBatch -> {
-                                    final InsertValuesStep10<
-                                            MetaRecord,
-                                            Long,
-                                            Long,
-                                            Long,
-                                            Byte,
-                                            Long,
-                                            Integer,
-                                            Integer,
-                                            Integer,
-                                            Integer,
-                                            Long> insertStep = context
+                                    //noinspection VariableTypeCanBeExplicit // var is justified with 11 types
+                                    var insertStep = context
                                             .insertInto(META,
                                                     META.CREATE_TIME,
                                                     META.EFFECTIVE_TIME,
@@ -471,26 +487,23 @@ public class MetaDaoImpl implements MetaDao {
                                                     META.TYPE_ID,
                                                     META.PROCESSOR_ID,
                                                     META.PROCESSOR_FILTER_ID,
-                                                    META.PROCESSOR_TASK_ID);
+                                                    META.PROCESSOR_TASK_ID,
+                                                    META.IS_READ_ONLY);
 
-                                    metaPropertiesBatch.forEach(metaProperties ->
-                                            insertStep.values(
-                                                    metaProperties.getCreateMs(),
-                                                    metaProperties.getEffectiveMs(),
-                                                    metaProperties.getParentId(),
-                                                    statusId,
-                                                    metaProperties.getStatusMs(),
-                                                    metaProperties.getFeedName() == null
-                                                            ? null
-                                                            : feedIds.get(metaProperties.getFeedName()),
-                                                    metaProperties.getTypeName() == null
-                                                            ? null
-                                                            : typeIds.get(metaProperties.getTypeName()),
-                                                    metaProperties.getProcessorUuid() == null
-                                                            ? null
-                                                            : processorIds.get(metaProperties.getProcessorUuid()),
-                                                    metaProperties.getProcessorFilterId(),
-                                                    metaProperties.getProcessorTaskId()));
+                                    for (final MetaProperties metaProperties : metaPropertiesBatch) {
+                                        insertStep = insertStep.values(
+                                                metaProperties.getCreateMs(),
+                                                metaProperties.getEffectiveMs(),
+                                                metaProperties.getParentId(),
+                                                statusId,
+                                                metaProperties.getStatusMs(),
+                                                NullSafe.get(metaProperties.getFeedName(), feedIds::get),
+                                                NullSafe.get(metaProperties.getTypeName(), typeIds::get),
+                                                NullSafe.get(metaProperties.getProcessorUuid(), processorIds::get),
+                                                metaProperties.getProcessorFilterId(),
+                                                metaProperties.getProcessorTaskId(),
+                                                metaProperties.isReadOnly());
+                                    }
                                     return insertStep;
                                 })
                                 .collect(Collectors.toList()))
@@ -529,7 +542,7 @@ public class MetaDaoImpl implements MetaDao {
                                 "newStatus: {}, statusTime: {}",
                         expression, currentStatus, newStatus, LogUtil.instant(statusTime)));
 
-        final byte newStatusId = MetaStatusId.getPrimitiveValue(newStatus);
+        final byte newStatusId = getStatusId(newStatus);
         final Table<?> metaWithJoins = buildMeteWithOptionalJoins(expression);
 
         final Condition conditions = createUpdateStatusCondition(expression, currentStatus, newStatus);
@@ -563,7 +576,7 @@ public class MetaDaoImpl implements MetaDao {
                                 "newStatus: {}, statusTime: {}",
                         expression, currentStatus, newStatus, LogUtil.instant(statusTime)));
 
-        final byte newStatusId = MetaStatusId.getPrimitiveValue(newStatus);
+        final byte newStatusId = getStatusId(newStatus);
         final int batchSize = metaServiceConfigProvider.get().getMetaStatusUpdateBatchSize();
 
         final Table<?> metaWithJoins = buildMeteWithOptionalJoins(expression);
@@ -573,13 +586,15 @@ public class MetaDaoImpl implements MetaDao {
         final Select<Record1<Long>> select;
         // One big batch should be more efficient as long as it only locks the rows being changed
         // and no others. If it does lock other rows then smaller batches may be needed.
+        // Every table `buildMeteWithOptionalJoins` joins to is joined on its primary key, so each meta
+        // appears once and the ids are unique.
         if (batchSize <= 0) {
             // 0 == one big batch
-            select = DSL.selectDistinct(META_M.ID)
+            select = DSL.select(META_M.ID)
                     .from(metaWithJoins)
                     .where(conditions);
         } else {
-            select = DSL.selectDistinct(META_M.ID)
+            select = DSL.select(META_M.ID)
                     .from(metaWithJoins)
                     .where(conditions)
                     .limit(batchSize);
@@ -663,10 +678,10 @@ public class MetaDaoImpl implements MetaDao {
             final Status newStatus) {
 
         if (currentStatus != null) {
-            final byte currentStatusId = MetaStatusId.getPrimitiveValue(currentStatus);
+            final byte currentStatusId = getStatusId(currentStatus);
             return META_M.STATUS.eq(currentStatusId);
         } else {
-            final byte newStatusId = MetaStatusId.getPrimitiveValue(newStatus);
+            final byte newStatusId = getStatusId(newStatus);
             return META_M.STATUS.ne(newStatusId);
         }
     }
@@ -828,8 +843,6 @@ public class MetaDaoImpl implements MetaDao {
             // If none of the rules matches then we don't to delete so return false
             final Field<Integer> ruleNoCaseField = ruleNoCaseConditionStep.otherwise((Field<Integer>) null);
 
-            final byte statusIdDeleted = MetaStatusId.getPrimitiveValue(Status.DELETED);
-
             final Field<Integer> ruleNoField = DSL.field("rule_no", Integer.class);
             final Field<String> feedNameField = DSL.field("feed_name", String.class);
             final Field<String> typeNameField = DSL.field("type_name", String.class);
@@ -864,7 +877,7 @@ public class MetaDaoImpl implements MetaDao {
                                                 ruleNoCaseField.as(ruleNoField),
                                                 META_M.CREATE_TIME.as(metaCreateTimeField))
                                         .from(fromClause)
-                                        .where(META_M.STATUS.notEqual(statusIdDeleted))
+                                        .where(META_M.STATUS.notEqual(STATUS_ID_DELETED))
 //                                        .and(ruleNoCaseField.isNotNull()) // only want data that WILL be deleted
                                         .and(DSL.or(orConditions)) // Here to help use indexes
                                         .and(getFilterCriteriaCondition(criteria)) // UI filtering
@@ -986,7 +999,6 @@ public class MetaDaoImpl implements MetaDao {
         final AtomicInteger totalUpdateCount = new AtomicInteger(0);
         if (ruleActions != null && !ruleActions.isEmpty()) {
             final DataRetentionConfig dataRetentionConfig = dataRetentionConfigProvider.get();
-            final byte statusIdDeleted = MetaStatusId.getPrimitiveValue(Status.DELETED);
 
             final List<Condition> baseConditions = createRetentionDeleteConditions(ruleActions);
             final boolean rulesUsePipelineField = ruleActionsContainField(MetaFields.PIPELINE.getFldName(),
@@ -1042,7 +1054,7 @@ public class MetaDaoImpl implements MetaDao {
                             // add the join to meta_processor
                             final Table<?> tableClause = rulesUsePipelineField
                                     ? META_M.leftOuterJoin(META_PROCESSOR_P)
-                                      .on(META_M.PROCESSOR_ID.eq(META_PROCESSOR_P.ID))
+                                    .on(META_M.PROCESSOR_ID.eq(META_PROCESSOR_P.ID))
                                     : META_M;
 
                             // We might want to do this delete using a temp table like we do for
@@ -1050,7 +1062,7 @@ public class MetaDaoImpl implements MetaDao {
                             // an issue.
                             final UpdateConditionStep<?> query = context
                                     .update(tableClause)
-                                    .set(META_M.STATUS, statusIdDeleted)
+                                    .set(META_M.STATUS, STATUS_ID_DELETED)
                                     .set(META_M.STATUS_TIME, Instant.now().toEpochMilli())
                                     .where(conditions)
                                     .and(META_M.CREATE_TIME.greaterOrEqual(subPeriod.getFrom().toEpochMilli()))
@@ -1120,7 +1132,7 @@ public class MetaDaoImpl implements MetaDao {
                                     // add the join to meta_processor
                                     final Table<?> fromClause = includesMetaProcessorTbl
                                             ? META_M.straightJoin(META_PROCESSOR_P)
-                                              .on(META_M.PROCESSOR_ID.eq(META_PROCESSOR_P.ID))
+                                            .on(META_M.PROCESSOR_ID.eq(META_PROCESSOR_P.ID))
                                             : META_M;
 
                                     final Table<?> orderedFullSet = context
@@ -1177,11 +1189,9 @@ public class MetaDaoImpl implements MetaDao {
         }
 
         final List<Condition> conditions = new ArrayList<>();
-        final byte statusIdUnlocked = MetaStatusId.getPrimitiveValue(Status.UNLOCKED);
-
         // Ensure we only 'delete' unlocked records, also ensures we don't touch
         // records we have already deleted in a previous pass
-        conditions.add(META_M.STATUS.eq(statusIdUnlocked));
+        conditions.add(META_M.STATUS.eq(STATUS_ID_UNLOCKED));
 
         // What we are building is roughly:
         // WHERE (CASE
@@ -1504,21 +1514,12 @@ public class MetaDaoImpl implements MetaDao {
         return JooqUtil.contextResult(
                         metaDbConnProvider,
                         context -> {
-                            final SelectWithTiesAfterOffsetStep<Record12<
-                                    Long,
-                                    String,
-                                    String,
-                                    String,
-                                    String,
-                                    Long,
-                                    Byte,
-                                    Long,
-                                    Long,
-                                    Long,
-                                    Integer,
-                                    Long>> select = metaExpressionMapper.addJoins(
+                            // Each meta joins to at most one row of every other table,
+                            // so the results are unique.
+                            //noinspection VariableTypeCanBeExplicit // 13 generic types justifies var
+                            final var select = metaExpressionMapper.addJoins(
                                             context
-                                                    .selectDistinct(
+                                                    .select(
                                                             META_M.ID,
                                                             META_FEED_F.NAME,
                                                             META_TYPE_T.NAME,
@@ -1530,7 +1531,8 @@ public class MetaDaoImpl implements MetaDao {
                                                             META_M.CREATE_TIME,
                                                             META_M.EFFECTIVE_TIME,
                                                             META_M.PROCESSOR_FILTER_ID,
-                                                            META_M.PROCESSOR_TASK_ID
+                                                            META_M.PROCESSOR_TASK_ID,
+                                                            META_M.IS_READ_ONLY
                                                     )
                                                     .from(META_M)
                                                     .straightJoin(META_FEED_F).on(META_M.FEED_ID.eq(META_FEED_F.ID))
@@ -1577,7 +1579,8 @@ public class MetaDaoImpl implements MetaDao {
         return JooqUtil.contextResult(metaDbConnProvider, context ->
                         metaExpressionMapper.addJoins(
                                         (context
-                                                .selectDistinct(
+                                                // The `group by parent.id` below gives one row per parent.
+                                                .select(
                                                         parent.ID,
                                                         PARENT_FEED.NAME,
                                                         PARENT_TYPE.NAME,
@@ -1589,7 +1592,8 @@ public class MetaDaoImpl implements MetaDao {
                                                         parent.CREATE_TIME,
                                                         parent.EFFECTIVE_TIME,
                                                         parent.PROCESSOR_FILTER_ID,
-                                                        parent.PROCESSOR_TASK_ID
+                                                        parent.PROCESSOR_TASK_ID,
+                                                        parent.IS_READ_ONLY
                                                 )
                                                 .from(META_M)
                                                 .straightJoin(META_FEED_F).on(META_M.FEED_ID.eq(META_FEED_F.ID))
@@ -1633,7 +1637,10 @@ public class MetaDaoImpl implements MetaDao {
                         metaExpressionMapper.addJoins(
                                         context
                                                 .select(
-                                                        DSL.countDistinct(META_M.ID),
+                                                        // The counts below need to be distinct as many
+                                                        // metas share a feed, type, processor and status,
+                                                        // but each meta appears once.
+                                                        DSL.count(),
                                                         DSL.countDistinct(META_FEED_F.NAME),
                                                         DSL.groupConcatDistinct(META_FEED_F.NAME)
                                                                 .separator(GROUP_CONCAT_DELIMITER),
@@ -1646,7 +1653,11 @@ public class MetaDaoImpl implements MetaDao {
                                                         DSL.groupConcatDistinct(META_M.STATUS)
                                                                 .separator(GROUP_CONCAT_DELIMITER),
                                                         DSL.min(META_M.CREATE_TIME),
-                                                        DSL.max(META_M.CREATE_TIME)
+                                                        DSL.max(META_M.CREATE_TIME),
+                                                        DSL.sum(DSL.if_(
+                                                                META_M.IS_READ_ONLY.eq(true),
+                                                                1,
+                                                                0))
                                                 )
                                                 .from(META_M)
                                                 .straightJoin(META_FEED_F).on(META_M.FEED_ID.eq(META_FEED_F.ID))
@@ -1664,16 +1675,19 @@ public class MetaDaoImpl implements MetaDao {
                     final Set<String> distinctStatuses = getDistinctStatuses(record.get(8, String.class));
 
                     return new SelectionSummary(
-                            NullSafe.getInt(record.get(0, Integer.class)),
-                            NullSafe.getInt(record.get(1, Integer.class)),
+                            NullSafe.getLong(record.get(0, Long.class)),
+                            NullSafe.getLong(record.get(1, Long.class)),
                             distinctFeeds,
-                            NullSafe.getInt(record.get(3, Integer.class)),
+                            NullSafe.getLong(record.get(3, Long.class)),
                             distinctTypes,
-                            NullSafe.getInt(record.get(5, Integer.class)),
-                            NullSafe.getInt(record.get(6, Integer.class)),
-                            NullSafe.getInt(record.get(7, Integer.class)),
+                            NullSafe.getLong(record.get(5, Long.class)),
+                            NullSafe.getLong(record.get(6, Long.class)),
+                            NullSafe.getLong(record.get(7, Long.class)),
                             distinctStatuses,
-                            new Range<>((Long) record.get(9), (Long) record.get(10)));
+                            new Range<>(
+                                    (Long) record.get(9),
+                                    (Long) record.get(10)),
+                            NullSafe.getLong(record.get(11, Long.class)));
                 })
                 .orElse(null);
     }
@@ -1682,7 +1696,7 @@ public class MetaDaoImpl implements MetaDao {
         return splitGroupConcat(str)
                 .stream()
                 .map(Byte::parseByte)
-                .map(MetaStatusId::getStatus)
+                .map(MetaDaoImpl::getStatus)
                 .map(Status::getDisplayValue)
                 .collect(Collectors.toSet());
     }
@@ -1779,8 +1793,8 @@ public class MetaDaoImpl implements MetaDao {
                                             usedValKeys)
                                     .where(conditions)
                                     .and(parent.ID.isNotNull())
-                                    .and(parent.STATUS.notEqual(MetaStatusId.getPrimitiveValue(Status.DELETED)))
-                                    .and(META_M.STATUS.notEqual(MetaStatusId.getPrimitiveValue(Status.DELETED)))
+                                    .and(parent.STATUS.notEqual(STATUS_ID_DELETED))
+                                    .and(META_M.STATUS.notEqual(STATUS_ID_DELETED))
                                     .limit(offset, numberOfRows);
 
                             LOGGER.debug("getReprocessSelectionSummary() - sql:\n{}", sql);
@@ -1791,14 +1805,14 @@ public class MetaDaoImpl implements MetaDao {
                     final Set<String> distinctTypes = splitGroupConcat(record.get(4, String.class));
                     final Set<String> distinctStatuses = getDistinctStatuses(record.get(8, String.class));
                     return new SelectionSummary(
-                            NullSafe.getInt(record.get(0, Integer.class)),
-                            NullSafe.getInt(record.get(1, Integer.class)),
+                            NullSafe.getLong(record.get(0, Long.class)),
+                            NullSafe.getLong(record.get(1, Long.class)),
                             distinctFeeds,
-                            NullSafe.getInt(record.get(3, Integer.class)),
+                            NullSafe.getLong(record.get(3, Long.class)),
                             distinctTypes,
-                            NullSafe.getInt(record.get(5, Integer.class)),
-                            NullSafe.getInt(record.get(6, Integer.class)),
-                            NullSafe.getInt(record.get(7, Integer.class)),
+                            NullSafe.getLong(record.get(5, Long.class)),
+                            NullSafe.getLong(record.get(6, Long.class)),
+                            NullSafe.getLong(record.get(7, Long.class)),
                             distinctStatuses,
                             new Range<>((Long) record.get(9), (Long) record.get(10)));
                 })
@@ -1822,7 +1836,7 @@ public class MetaDaoImpl implements MetaDao {
         return JooqUtil.contextResult(metaDbConnProvider, context -> context
                         .selectCount()
                         .from(META_M)
-                        .where(META_M.STATUS.eq(MetaStatusId.LOCKED))
+                        .where(META_M.STATUS.eq(STATUS_ID_LOCKED))
                         .fetchOptional()
                         .map(Record1::value1))
                 .orElse(0);
@@ -1881,8 +1895,9 @@ public class MetaDaoImpl implements MetaDao {
 
         return JooqUtil.contextResult(metaDbConnProvider,
                         context -> {
+                            // The `group by` below gives one row per uuid.
                             SelectJoinStep<Record1<String>> select = context
-                                    .selectDistinct(META_PROCESSOR_P.PROCESSOR_UUID)
+                                    .select(META_PROCESSOR_P.PROCESSOR_UUID)
                                     .from(META_M);
 
                             select = select
@@ -1907,8 +1922,6 @@ public class MetaDaoImpl implements MetaDao {
             final int feedId,
             final int metaTypeId) {
 
-        final byte unlockedId = MetaStatusId.getPrimitiveValue(Status.UNLOCKED);
-
         // Force the idx to ensure mysql uses the idx with feed_id|effective_time rather than
         return context.select(
                         META_M.ID,
@@ -1916,7 +1929,7 @@ public class MetaDaoImpl implements MetaDao {
                 .from(META_M)
                 .where(META_M.FEED_ID.eq(feedId))
                 .and(META_M.TYPE_ID.eq(metaTypeId))
-                .and(META_M.STATUS.eq(unlockedId));
+                .and(META_M.STATUS.eq(STATUS_ID_UNLOCKED));
     }
 
     @Override
@@ -2003,7 +2016,6 @@ public class MetaDaoImpl implements MetaDao {
         Objects.requireNonNull(deleteThreshold);
         final List<SimpleMeta> simpleMetas;
         if (batchSize > 0) {
-            final byte statusIdDeleted = MetaStatusId.getPrimitiveValue(Status.DELETED);
             // Get a batch starting from the cut off threshold and working backwards in time.
             // This is so next time we can work from the previous min status time.
             final TimedResult<List<SimpleMeta>> timedResult = JooqUtil.timedContextResult(
@@ -2015,7 +2027,7 @@ public class MetaDaoImpl implements MetaDao {
                                 .from(META_M)
                                 .straightJoin(META_TYPE_T).on(META_M.TYPE_ID.eq(META_TYPE_T.ID))
                                 .straightJoin(META_FEED_F).on(META_M.FEED_ID.eq(META_FEED_F.ID))
-                                .where(META_M.STATUS.eq(statusIdDeleted))
+                                .where(META_M.STATUS.eq(STATUS_ID_DELETED))
                                 .and(META_M.STATUS_TIME.lessOrEqual(deleteThreshold.toEpochMilli()));
 
                         // Here to stop us trying to pick up any failed ones from the previous batch.
@@ -2094,7 +2106,7 @@ public class MetaDaoImpl implements MetaDao {
                 .select(META.ID)
                 .from(META)
                 .where(META.ID.in(metaIdCollection))
-                .and(META.STATUS.eq(MetaStatusId.LOCKED))
+                .and(META.STATUS.eq(STATUS_ID_LOCKED))
                 .fetchSet(META.ID));
     }
 
@@ -2148,5 +2160,14 @@ public class MetaDaoImpl implements MetaDao {
                 return new HashSet<>(select.fetch(META_M.ID));
             });
         }
+    }
+
+    private static byte getStatusId(final Status status) {
+        return Objects.requireNonNull(status)
+                .getPrimitiveValue();
+    }
+
+    private static Status getStatus(final byte b) {
+        return Status.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValueOrThrow(b);
     }
 }

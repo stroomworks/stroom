@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,15 @@
 
 package stroom.annotation.client;
 
+import stroom.annotation.client.event.CreateAnnotationEvent;
 import stroom.core.client.MenuKeys;
-import stroom.core.client.presenter.Plugin;
+import stroom.core.client.Plugin;
 import stroom.menubar.client.event.BeforeRevealMenubarEvent;
 import stroom.security.client.api.ClientSecurityContext;
 import stroom.security.shared.AppPermission;
 import stroom.svg.client.IconColour;
 import stroom.svg.shared.SvgImage;
-import stroom.widget.menu.client.presenter.IconMenuItem;
+import stroom.widget.menu.client.IconMenuItem;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -53,7 +54,7 @@ public class AnnotationCreatePlugin extends Plugin {
                             .priority(1)
                             .icon(SvgImage.EDIT)
                             .iconColour(IconColour.GREY)
-                            .text("Create New Annotation")
+                            .text("New Annotation")
                             .command(this::create)
                             .build());
         }

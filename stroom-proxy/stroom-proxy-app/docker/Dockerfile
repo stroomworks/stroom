@@ -17,23 +17,29 @@
 # ~~~ stroom base stage ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Intermediate build stage that is common to stroom and proxy to speed up
-# the build
+# the build. Keep both statements the same between this and stroom-proxy
+# so they can each use the same cached layer.
 
 # The JDK (rather than JRE) is required for the diagnostic tools like
 # jstat/jmap/jcmd/etc.
 # Using 'openjdk' on Alpine is not fully supported so using Eclipse Temurin JDK to ensure we have a known jdk version
 # See https://github.com/docker-library/docs/blob/master/openjdk/README.md#openjdkversion-alpine
-FROM eclipse-temurin:25.0.3_9-jdk-alpine-3.23@sha256:5ecfde8e5ecde5954ea3721155b345ef56c1d579b940c761318ad4c05959a151 AS stroom-base-stage
+FROM eclipse-temurin:25.0.4.1_1-jdk-alpine-3.23@sha256:c6acc8b9925c6b6091977462ebae4fb3b37c132159069964f595ba17e7d19c3a AS stroom-base-stage
 
+# bash and jq are required for Kubernetes lifecycle scripts, which interact with the API
 # curl is required for the docker healthcheck
 # su-exec required for running stroom as not-root user
 # tini required for process control in the entrypoint
+# Semi-fixed brotli version is to fix CVE-2026-111497, can remove once eclipse-temurin includes latest alpine
 RUN echo "http_proxy: $http_proxy" && \
     echo "https_proxy: $https_proxy" && \
     apk add --no-cache \
+        bash \
+        jq \
         curl \
         su-exec \
-        tini
+        tini \
+        'brotli-libs>=1.2.1-r0'
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 

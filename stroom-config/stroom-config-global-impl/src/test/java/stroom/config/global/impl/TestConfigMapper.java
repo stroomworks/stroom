@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2018 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package stroom.config.global.impl;
 
 import stroom.activity.impl.dao.ActivityConfig;
 import stroom.ai.impl.AiConfig;
-import stroom.ai.shared.AskStroomAIConfig;
+import stroom.ai.shared.AskStroomAiConfig;
+import stroom.ai.shared.KeyStoreType;
 import stroom.analytics.impl.AnalyticsConfig;
 import stroom.annotation.impl.AnnotationConfig;
 import stroom.aws.s3.impl.S3Config;
@@ -43,11 +44,12 @@ import stroom.contentindex.ContentIndexConfig;
 import stroom.contentstore.impl.ContentStoreConfig;
 import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.impl.CredentialsConfig;
+import stroom.credentials.impl.KeyStoreFileCredentialConfig;
 import stroom.dashboard.impl.DashboardConfig;
-import stroom.dashboard.impl.db.VisualisationAssetDbConfig;
-import stroom.dashboard.impl.visualisation.VisualisationAssetConfig;
 import stroom.docref.DocRef;
 import stroom.docstore.impl.DocStoreConfig;
+import stroom.document.asset.impl.DocumentAssetConfig;
+import stroom.document.asset.impl.db.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
 import stroom.explorer.impl.ExplorerConfig;
 import stroom.feed.impl.FeedConfig;
@@ -72,19 +74,26 @@ import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
 import stroom.search.impl.SearchConfig;
 import stroom.search.solr.SolrConfig;
+import stroom.sqlstore.impl.SqlStoreConfig;
 import stroom.storedquery.impl.StoredQueryConfig;
 import stroom.ui.config.shared.UiConfig;
+import stroom.util.config.AbstractConfigUtil;
 import stroom.util.config.PropertyUtil.Prop;
 import stroom.util.io.ByteSize;
 import stroom.util.io.StroomPathConfig;
+import stroom.util.json.JsonUtil;
 import stroom.util.logging.AsciiTable;
 import stroom.util.logging.AsciiTable.Column;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.AbstractConfig;
+import stroom.util.shared.IsAtomicConfigValue;
 import stroom.util.shared.PropertyPath;
 import stroom.util.time.StroomDuration;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.reflect.TypeToken;
@@ -95,6 +104,7 @@ import io.vavr.Tuple8;
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
 import java.nio.file.Path;
@@ -104,6 +114,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -114,6 +125,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestConfigMapper {
 
@@ -402,7 +414,7 @@ class TestConfigMapper {
                         LOGGER.info("{}", name))
                 .collect(Collectors.toList());
 
-        Assertions.assertThat(propsWithNoDesc)
+        assertThat(propsWithNoDesc)
                 .isEmpty();
     }
 
@@ -787,24 +799,151 @@ class TestConfigMapper {
         doValidateStringValueTest("stroom.byteSizeProp", "xxxxx", false);
     }
 
-//    @Test
-//    void testBuildAppConfigFromFile() {
-//        final Path configFile = Path.of("../../stroom-app/dev.yml");
-//        assertThat(configFile)
-//                .isRegularFile();
-//        final AppConfig appConfig = ConfigMapper.buildMergedAppConfig(configFile);
-//        assertThat(appConfig)
-//                .isNotNull();
-//    }
+    @Test
+    void testAtomicConfig_null() {
+        final PropertyPath atomicConfigPropPath = TestConfig.ROOT_PROPERTY_PATH
+                .merge(TestConfig.PROP_NAME_ATOMIC_CONFIG);
+        final TestConfig testConfig = new TestConfig();
+        assertThat(testConfig.getAtomicConfigProp())
+                .isNull();
+        final ConfigMapper configMapper = new ConfigMapper(testConfig, TestConfig::new);
 
-    //    @Test
-//    void testRefreshConfig() {
-//
-//        final AppConfig appConfig = new AppConfig();
-//        ConfigMapper configMapper = new ConfigMapper(appConfig);
-//
-//        configMapper.refreshConfig(appConfig);
-//    }
+        // It is atomic so should not be in the instance map
+        assertThatThrownBy(() -> configMapper.getConfigObject(MyAtomicConfigValue.class))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("No config instance found")
+                .hasMessageContaining(MyAtomicConfigValue.class.getSimpleName());
+
+        final Optional<ConfigProperty> optProp = configMapper.getGlobalProperty(atomicConfigPropPath);
+        assertThat(optProp)
+                .isNotEmpty();
+        assertThat(optProp.get().getDefaultValue())
+                .isEmpty();
+    }
+
+    @Test
+    void testAtomicConfigList() {
+        // A list of atomic values is serialised as a JSON array, which must be read back as one
+        final PropertyPath propPath = AppConfig.ROOT_PROPERTY_PATH
+                .merge(AppConfig.PROP_NAME_CREDENTIALS)
+                .merge("keyStoreFiles");
+        final List<KeyStoreFileCredentialConfig> keyStoreFiles = List.of(
+                new KeyStoreFileCredentialConfig("keystore 1", KeyStoreType.JKS, "/certs/one.jks", "pass|word,[1]"),
+                new KeyStoreFileCredentialConfig("keystore 2", null, "/certs/two.p12", null));
+        final AppConfig appConfig = AbstractConfigUtil.mutateTree(
+                new AppConfig(),
+                AppConfig.ROOT_PROPERTY_PATH,
+                Map.of(propPath, keyStoreFiles));
+
+        final ConfigMapper configMapper = new ConfigMapper(appConfig, AppConfig::new);
+
+        assertThat(configMapper.getConfigObject(CredentialsConfig.class).getKeyStoreFiles())
+                .isEqualTo(keyStoreFiles);
+
+        final ConfigProperty configProperty = configMapper.getGlobalProperty(propPath).orElseThrow();
+        assertThat(configProperty.isPassword())
+                .isTrue();
+        assertThat(configProperty.isEditable())
+                .isFalse();
+        final String yamlValue = configProperty.getYamlOverrideValue().getValue();
+        assertThat(configMapper.convertValue(propPath, yamlValue))
+                .isEqualTo(keyStoreFiles);
+    }
+
+    @Test
+    void testPasswordValueIsNotLoggedWhenItChanges() {
+        final PropertyPath credentialsPath = AppConfig.ROOT_PROPERTY_PATH.merge(AppConfig.PROP_NAME_CREDENTIALS);
+        final PropertyPath keyStoreFilesPath = credentialsPath.merge("keyStoreFiles");
+        final PropertyPath allowedDirsPath = credentialsPath.merge("allowedKeyStoreFileDirs");
+        final ConfigMapper configMapper = new ConfigMapper(
+                createKeyStoreFilesAppConfig(keyStoreFilesPath, allowedDirsPath, "first-pass-phrase", "/dir1"),
+                AppConfig::new);
+        // Both sets of overrides must be initialised before changes are logged
+        configMapper.decorateAllDbConfigProperties(List.of());
+
+        final Logger logger = (Logger) LoggerFactory.getLogger(ConfigMapper.class);
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            configMapper.updateConfigFromYaml(
+                    createKeyStoreFilesAppConfig(keyStoreFilesPath, allowedDirsPath, "second-pass-phrase", "/dir2"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        final String logged = appender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.joining("\n"));
+        assertThat(logged)
+                .contains(keyStoreFilesPath.toString())
+                .doesNotContain("first-pass-phrase")
+                .doesNotContain("second-pass-phrase")
+                // Values of other properties are still logged
+                .contains("/dir1")
+                .contains("/dir2");
+    }
+
+    private static AppConfig createKeyStoreFilesAppConfig(final PropertyPath keyStoreFilesPath,
+                                                          final PropertyPath allowedDirsPath,
+                                                          final String keyStorePassword,
+                                                          final String allowedDir) {
+        return AbstractConfigUtil.mutateTree(
+                new AppConfig(),
+                AppConfig.ROOT_PROPERTY_PATH,
+                Map.of(keyStoreFilesPath,
+                        List.of(new KeyStoreFileCredentialConfig(
+                                "keystore 1", null, "/certs/one.p12", keyStorePassword)),
+                        allowedDirsPath,
+                        List.of(allowedDir)));
+    }
+
+    @Test
+    void testAtomicConfig_nonNull() {
+        final PropertyPath atomicConfigPropPath = TestConfig.ROOT_PROPERTY_PATH
+                .merge(TestConfig.PROP_NAME_ATOMIC_CONFIG);
+        final MyAtomicConfigValue atomicConfigVal = new MyAtomicConfigValue(
+                "foo",
+                true,
+                List.of("one", "two", "three"));
+
+        final TestConfig testConfig = AbstractConfigUtil.mutateTree(
+                new TestConfig(),
+                TestConfig.ROOT_PROPERTY_PATH,
+                Map.of(TestConfig.ROOT_PROPERTY_PATH.merge(TestConfig.PROP_NAME_ATOMIC_CONFIG), atomicConfigVal));
+
+        final ConfigMapper configMapper = new ConfigMapper(testConfig, TestConfig::new);
+
+        assertThat(testConfig.getAtomicConfigProp())
+                .isEqualTo(atomicConfigVal);
+
+        // It is atomic so should not be in the instance map
+        assertThatThrownBy(() -> configMapper.getConfigObject(MyAtomicConfigValue.class))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("No config instance found")
+                .hasMessageContaining(MyAtomicConfigValue.class.getSimpleName());
+
+        final Optional<ConfigProperty> optProp = configMapper.getGlobalProperty(atomicConfigPropPath);
+        assertThat(optProp)
+                .isNotEmpty();
+        assertThat(optProp.get().getDefaultValue())
+                .isEmpty();
+
+        configMapper.validateValueSerialisation(atomicConfigPropPath, JsonUtil.writeValueAsString(atomicConfigVal));
+
+        assertThat(configMapper.getProp(atomicConfigPropPath))
+                .isNotEmpty()
+                .hasValueSatisfying(prop -> {
+                    assertThat(prop.getValueClass())
+                            .isEqualTo(MyAtomicConfigValue.class);
+                    assertThat(prop.getName())
+                            .isEqualTo(TestConfig.PROP_NAME_ATOMIC_CONFIG);
+                });
+
+        assertThat(configMapper.getInjectableConfigClasses())
+                .doesNotContain(MyAtomicConfigValue.class);
+    }
 
     private void doValidateStringValueTest(final String path, final String value, final boolean shouldValidate) {
         final TestConfig testConfig = new TestConfig();
@@ -882,21 +1021,13 @@ class TestConfigMapper {
         }
     }
 
-//    private static class ExtendedAppConfig extends AppConfig {
-//
-//        private TestConfig testConfig = new TestConfig();
-//
-//        @JsonProperty("test")
-//        TestConfig getTestConfig() {
-//            return testConfig;
-//        }
-//
-//        void setTestConfig(final TestConfig testConfig) {
-//            this.testConfig = testConfig;
-//        }
-//    }
+
+    // --------------------------------------------------------------------------------
+
 
     public static class TestConfig extends AppConfig {
+
+        private static final String PROP_NAME_ATOMIC_CONFIG = "atomicConfigProp";
 
         private final String stringProp;
         private final List<String> stringListProp;
@@ -910,6 +1041,7 @@ class TestConfigMapper {
         private final Path pathProp;
         private final StroomDuration stroomDurationProp;
         private final ByteSize byteSizeProp;
+        private final MyAtomicConfigValue atomicConfigProp;
 
         // sub-configs
         private final TestPrimitiveConfig testPrimitiveConfig;
@@ -939,8 +1071,8 @@ class TestConfigMapper {
             // sub-configs
             testPrimitiveConfig = new TestPrimitiveConfig();
             testBoxedConfig = new TestBoxedConfig();
+            atomicConfigProp = null;
         }
-
 
         @JsonCreator
         @SuppressWarnings("checkstyle:LineLength")
@@ -951,7 +1083,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_AI) final AiConfig aiConfig,
                 @JsonProperty(PROP_NAME_ANALYTICS) final AnalyticsConfig analyticsConfig,
                 @JsonProperty(PROP_NAME_ANNOTATION) final AnnotationConfig annotationConfig,
-                @JsonProperty(PROP_NAME_ASK_STROOM_AI) final AskStroomAIConfig askStroomAIConfig,
+                @JsonProperty(PROP_NAME_ASK_STROOM_AI) final AskStroomAiConfig askStroomAIConfig,
                 @JsonProperty(PROP_NAME_AUTO_CONTENT_CREATION) final AutoContentCreationConfig autoContentCreationConfig,
                 @JsonProperty(PROP_NAME_BYTE_BUFFER_POOL) final ByteBufferPoolConfig byteBufferPoolConfig,
                 @JsonProperty(PROP_NAME_CLUSTER) final ClusterConfig clusterConfig,
@@ -989,6 +1121,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_SECURITY) final SecurityConfig securityConfig,
                 @JsonProperty(PROP_NAME_SESSION_COOKIE) final SessionCookieConfig sessionCookieConfig,
                 @JsonProperty(PROP_NAME_SESSION) final SessionConfig sessionConfig,
+                @JsonProperty(PROP_NAME_SQL_STORE) final SqlStoreConfig sqlStoreConfig,
                 @JsonProperty(PROP_NAME_SOLR) final SolrConfig solrConfig,
                 @JsonProperty(PROP_NAME_PLANB) final PlanBConfig planBConfig,
                 @JsonProperty(PROP_NAME_STATISTICS) final StatisticsConfig statisticsConfig,
@@ -996,8 +1129,8 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_PATH) final StroomPathConfig pathConfig,
                 @JsonProperty(PROP_NAME_UI) final UiConfig uiConfig,
                 @JsonProperty(PROP_NAME_UI_URI) final UiUriConfig uiUri,
-                @JsonProperty(PROP_NAME_VISUALISATION_ASSET) final VisualisationAssetConfig visualisationAssetConfig,
-                @JsonProperty(PROP_NAME_VISUALISATION_ASSET_DB) final VisualisationAssetDbConfig visualisationAssetDbConfig,
+                @JsonProperty(PROP_NAME_DOCUMENT_ASSET) final DocumentAssetConfig documentAssetConfig,
+                @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB) final DocumentAssetDbConfig documentAssetDbConfig,
                 @JsonProperty(PROP_NAME_VOLUMES) final VolumeConfig volumeConfig,
                 @JsonProperty("stringProp") final String stringProp,
                 @JsonProperty("stringListProp") final List<String> stringListProp,
@@ -1011,6 +1144,7 @@ class TestConfigMapper {
                 @JsonProperty("pathProp") final Path pathProp,
                 @JsonProperty("stroomDurationProp") final StroomDuration stroomDurationProp,
                 @JsonProperty("byteSizeProp") final ByteSize byteSizeProp,
+                @JsonProperty(PROP_NAME_ATOMIC_CONFIG) final MyAtomicConfigValue atomicConfig,
                 @JsonProperty("primitive") final TestPrimitiveConfig testPrimitiveConfig,
                 @JsonProperty("boxed") final TestBoxedConfig testBoxedConfig) {
 
@@ -1059,14 +1193,15 @@ class TestConfigMapper {
                     sessionCookieConfig,
                     sessionConfig,
                     solrConfig,
+                    sqlStoreConfig,
                     planBConfig,
                     statisticsConfig,
                     storedQueryConfig,
                     pathConfig,
                     uiConfig,
                     uiUri,
-                    visualisationAssetConfig,
-                    visualisationAssetDbConfig,
+                    documentAssetConfig,
+                    documentAssetDbConfig,
                     volumeConfig);
 
             this.stringProp = stringProp;
@@ -1081,6 +1216,7 @@ class TestConfigMapper {
             this.pathProp = pathProp;
             this.stroomDurationProp = stroomDurationProp;
             this.byteSizeProp = byteSizeProp;
+            this.atomicConfigProp = atomicConfig;
             this.testPrimitiveConfig = testPrimitiveConfig;
             this.testBoxedConfig = testBoxedConfig;
         }
@@ -1143,12 +1279,38 @@ class TestConfigMapper {
             return byteSizeProp;
         }
 
+        public MyAtomicConfigValue getAtomicConfigProp() {
+            return atomicConfigProp;
+        }
+
         public enum State {
             ON,
             IN_BETWEEN,
             OFF
         }
+
+//        public TestConfig withAtomicConfig(final MyAtomicConfig atomicConfig) {
+//            return new TestConfig(
+//            stringProp,
+//            stringListProp,
+//            intListProp,
+//            stringSetProp,
+//            stringLongMapProp,
+//            docRefProp,
+//            docRefListProp,
+//            stateProp,
+//            stateListProp,
+//            pathProp,
+//            stroomDurationProp,
+//            byteSizeProp,
+//            atomicConfig,
+//            testPrimitiveConfig,
+//            testBoxedConfig)
+//        }
     }
+
+
+    // --------------------------------------------------------------------------------
 
 
     public static class TestPrimitiveConfig extends AbstractConfig {
@@ -1201,6 +1363,10 @@ class TestConfigMapper {
         }
     }
 
+
+    // --------------------------------------------------------------------------------
+
+
     public static class TestBoxedConfig extends AbstractConfig {
 
         private final Boolean booleanProp;
@@ -1248,6 +1414,59 @@ class TestConfigMapper {
 
         public Short getShortProp() {
             return shortProp;
+        }
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    public static class MyAtomicConfigValue extends AbstractConfig implements IsAtomicConfigValue {
+
+        private final String myString;
+        private final boolean myBoolean;
+        private final List<String> myList;
+
+        public MyAtomicConfigValue() {
+            this.myString = null;
+            this.myBoolean = false;
+            this.myList = null;
+        }
+
+        public MyAtomicConfigValue(@JsonProperty("myString") final String myString,
+                                   @JsonProperty("myBoolean") final boolean myBoolean,
+                                   @JsonProperty("myList") final List<String> myList) {
+            this.myString = myString;
+            this.myBoolean = myBoolean;
+            this.myList = myList;
+        }
+
+        public String getMyString() {
+            return myString;
+        }
+
+        public boolean isMyBoolean() {
+            return myBoolean;
+        }
+
+        public List<String> getMyList() {
+            return myList;
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            final MyAtomicConfigValue that = (MyAtomicConfigValue) o;
+            return myBoolean == that.myBoolean && Objects.equals(myString, that.myString) && Objects.equals(
+                    myList,
+                    that.myList);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(myString, myBoolean, myList);
         }
     }
 }

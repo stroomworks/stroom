@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2020 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package stroom.query.shared;
 import stroom.query.api.ResultStoreInfo;
 import stroom.util.shared.PageResponse;
 import stroom.util.shared.ResultPage;
+import stroom.util.shared.TokenError;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -42,11 +43,18 @@ public class ResultStoreResponse extends ResultPage<ResultStoreInfo> {
         this.errors = null;
     }
 
+    public ResultStoreResponse(final List<ResultStoreInfo> values,
+                               final List<String> errors,
+                               final PageResponse pageResponse) {
+        this(values, errors, pageResponse, null);
+    }
+
     @JsonCreator
     public ResultStoreResponse(@JsonProperty("values") final List<ResultStoreInfo> values,
                                @JsonProperty("errors") final List<String> errors,
-                               @JsonProperty("pageResponse") final PageResponse pageResponse) {
-        super(values, pageResponse);
+                               @JsonProperty("pageResponse") final PageResponse pageResponse,
+                               @JsonProperty("filterError") final TokenError filterError) {
+        super(values, pageResponse, filterError);
         this.errors = errors;
     }
 

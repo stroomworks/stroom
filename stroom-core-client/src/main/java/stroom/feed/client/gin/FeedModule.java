@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,26 +17,12 @@
 package stroom.feed.client.gin;
 
 import stroom.core.client.gin.PluginModule;
-import stroom.data.client.presenter.DataUploadPresenter;
-import stroom.data.client.presenter.DataUploadPresenter.DataUploadView;
-import stroom.data.client.view.DataUploadViewImpl;
 import stroom.feed.client.FeedPlugin;
-import stroom.feed.client.presenter.FeedPresenter;
-import stroom.feed.client.presenter.FeedSettingsPresenter;
-import stroom.feed.client.presenter.FeedSettingsPresenter.FeedSettingsView;
-import stroom.feed.client.view.FeedSettingsViewImpl;
 
 public class FeedModule extends PluginModule {
 
     @Override
     protected void configure() {
         bindPlugin(FeedPlugin.class);
-
-        bind(FeedPresenter.class);
-
-        bindSharedView(FeedSettingsView.class, FeedSettingsViewImpl.class);
-        bind(FeedSettingsPresenter.class);
-
-        bindPresenterWidget(DataUploadPresenter.class, DataUploadView.class, DataUploadViewImpl.class);
     }
 }

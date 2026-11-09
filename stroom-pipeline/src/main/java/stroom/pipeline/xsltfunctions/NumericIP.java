@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,28 @@ import net.sf.saxon.value.StringValue;
 
 import java.net.UnknownHostException;
 
+@XsltFunctionDef(
+        name = NumericIP.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.NETWORK,
+        commonDescription = """
+                Converts an IP address to a numeric string suitable for range comparisons and reference data lookups.
+                """,
+        commonReturnType = XsltDataType.STRING,
+        commonReturnDescription = "The numeric IP address, or an empty sequence if conversion fails.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "ipAddress",
+                                        description = "The IP address to convert.",
+                                        argType = XsltDataType.STRING
+                                )
+                        }
+                )
+        })
 class NumericIP extends StroomExtensionFunctionCall {
+
+    public static final String FUNCTION_NAME = "numeric-ip";
 
     @Override
     protected Sequence call(final String functionName, final XPathContext context, final Sequence[] arguments) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,25 @@ import net.sf.saxon.om.Sequence;
 import net.sf.saxon.trans.XPathException;
 import net.sf.saxon.value.DateTimeValue;
 
+@XsltFunctionDef(
+        name = FromUnixTime.FUNCTION_NAME,
+        commonCategory = XsltFunctionCategory.DATE,
+        commonDescription = """
+                Converts milliseconds since the Unix epoch to an XPath date-time value.
+                """,
+        commonReturnType = XsltDataType.DATE_TIME,
+        commonReturnDescription = "The corresponding date-time value.",
+        signatures = {
+                @XsltFunctionSignature(
+                        args = {
+                                @XsltFunctionArg(
+                                        name = "milliseconds",
+                                        description = "Milliseconds since the Unix epoch.",
+                                        argType = XsltDataType.INTEGER
+                                )
+                        }
+                )
+        })
 class FromUnixTime extends StroomExtensionFunctionCall {
 
     public static final String FUNCTION_NAME = "from-unixTime";

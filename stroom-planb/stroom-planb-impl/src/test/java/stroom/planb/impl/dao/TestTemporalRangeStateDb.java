@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import stroom.planb.impl.dao.StateValueTestUtil.ValueFunction;
 import stroom.planb.impl.dao.temporalrangestate.TemporalRangeStateDb;
 import stroom.planb.impl.dao.temporalrangestate.TemporalRangeStateFields;
 import stroom.planb.impl.dao.temporalrangestate.TemporalRangeStateRequest;
-import stroom.planb.impl.data.TemporalRangeState;
-import stroom.planb.impl.data.TemporalRangeState.Key;
+import stroom.planb.impl.data.value.TemporalRangeState;
+import stroom.planb.impl.data.value.TemporalRangeState.Key;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.RangeType;
 import stroom.planb.shared.StateValueSchema;
@@ -174,7 +174,8 @@ class TestTemporalRangeStateDb {
                                         .build();
 
                                 final Instant refTime = Instant.parse("2000-01-01T00:00:00.000Z");
-                                final Function<Integer, Key> keyFunction = i -> new Key(i, i + 1, refTime);
+                                final Function<Integer, Key> keyFunction =
+                                        i -> new Key((long) i, (long) i + 1, refTime);
 
                                 Path path = null;
                                 try {
@@ -273,10 +274,10 @@ class TestTemporalRangeStateDb {
                 .create(dbPath, BYTE_BUFFERS, DOC, false)) {
             assertThat(db.count()).isEqualTo(100);
             db.condense(Instant.now());
-            db.deleteOldData(Instant.MIN, true);
+            db.runRetention(Instant.MIN, true);
             assertThat(db.count()).isEqualTo(1);
             db.condense(Instant.now());
-            db.deleteOldData(Instant.now(), true);
+            db.runRetention(Instant.now(), true);
             assertThat(db.count()).isEqualTo(0);
         }
     }
