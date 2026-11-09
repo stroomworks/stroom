@@ -17,6 +17,7 @@
 package stroom.pipeline.xslt;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocumentStore;
 import stroom.pipeline.shared.XsltDoc;
 
@@ -24,4 +25,11 @@ import java.util.List;
 
 public interface XsltStore extends DocumentStore<XsltDoc> {
     List<DocRef> list();
+
+    /// Read an XSLT and extract what it refers to, as it is recorded when the XSLT is saved: resolved as
+    /// the processing user, with ambiguous names marked. No document permission check is applied.
+    ///
+    /// @param docRef The XSLT to read.
+    /// @return Its dependencies.
+    DocDependencies getDocDependencies(DocRef docRef);
 }

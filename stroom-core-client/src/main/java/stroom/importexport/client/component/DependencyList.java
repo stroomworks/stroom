@@ -274,9 +274,14 @@ public class DependencyList extends Component {
     }
 
     private SafeHtml getStatusValue(final Dependency row) {
-        return row.isOk()
-                ? TEMPLATE.status("dependency-list__status dependency-list__status--ok", "OK")
-                : TEMPLATE.status("dependency-list__status dependency-list__status--missing", "Missing");
+        if (!row.isOk()) {
+            return TEMPLATE.status("dependency-list__status dependency-list__status--missing", "Missing");
+        } else if (row.isAmbiguous()) {
+            // The target exists, but the name the source uses matches other documents too
+            return TEMPLATE.status("dependency-list__status dependency-list__status--ambiguous", "Ambiguous");
+        } else {
+            return TEMPLATE.status("dependency-list__status dependency-list__status--ok", "OK");
+        }
     }
 
 

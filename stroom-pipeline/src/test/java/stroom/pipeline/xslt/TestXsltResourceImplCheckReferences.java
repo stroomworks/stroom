@@ -25,11 +25,14 @@ import stroom.pipeline.shared.XsltReferenceCheckResult;
 import stroom.pipeline.shared.XsltReferenceInfo;
 import stroom.pipeline.shared.XsltReferenceKind;
 import stroom.pipeline.shared.XsltReferenceReason;
+import stroom.security.api.SecurityContext;
 import stroom.util.shared.EntityServiceException;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -94,6 +97,67 @@ class TestXsltResourceImplCheckReferences {
         assertThat(result.getProblems())
                 .extracting(XsltReferenceInfo::getRawValue)
                 .containsExactly("Missing");
+    }
+
+    @Test
+    @DisplayName("a name with a match the user cannot view is ambiguous, without naming or counting it")
+    void hiddenMatchMakesAFoundNameAmbiguous() {
+        lookup.with(DictionaryDoc.TYPE, "GeoIP", "uuid-visible")
+                .withHidden(DictionaryDoc.TYPE, "GeoIP", "uuid-hidden");
+
+        final XsltReferenceCheckResult result = checkReferences(stored(null), dictionaryReader("GeoIP"));
+
+        // The runtime sees both, so the name is ambiguous. The match the user can see is still given, and
+        // the hidden one is neither named nor counted.
+        assertThat(result.getReferences()).singleElement().satisfies(reference -> {
+            assertThat(reference.getReason()).isEqualTo(XsltReferenceReason.AMBIGUOUS);
+            assertThat(reference.isHiddenMatches()).isTrue();
+            assertThat(reference.getTarget()).extracting(DocRef::getUuid).isEqualTo("uuid-visible");
+            assertThat(reference.getCandidates()).isEmpty();
+            assertThat(reference.toString()).doesNotContain("uuid-hidden");
+        });
+        assertThat(result.getProblems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a name whose only matches the user cannot view is ambiguous, not missing")
+    void hiddenMatchesMakeAMissingNameAmbiguous() {
+        lookup.withHidden(DictionaryDoc.TYPE, "GeoIP", "uuid-hidden-1")
+                .withHidden(DictionaryDoc.TYPE, "GeoIP", "uuid-hidden-2");
+
+        final XsltReferenceCheckResult result = checkReferences(stored(null), dictionaryReader("GeoIP"));
+
+        assertThat(result.getReferences()).singleElement().satisfies(reference -> {
+            assertThat(reference.getReason()).isEqualTo(XsltReferenceReason.AMBIGUOUS);
+            assertThat(reference.isHiddenMatches()).isTrue();
+            assertThat(reference.getTarget()).isNull();
+            assertThat(reference.getCandidates()).isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("a single match the user cannot view is still reported as not found")
+    void singleHiddenMatchIsStillNotFound() {
+        lookup.withHidden(DictionaryDoc.TYPE, "GeoIP", "uuid-hidden");
+
+        final XsltReferenceCheckResult result = checkReferences(stored(null), dictionaryReader("GeoIP"));
+
+        // Saying anything else would reveal that a document by that name exists
+        assertThat(result.getReferences()).singleElement().satisfies(reference -> {
+            assertThat(reference.getReason()).isEqualTo(XsltReferenceReason.NOT_FOUND);
+            assertThat(reference.isHiddenMatches()).isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("an ambiguity the user can see in full is reported as before")
+    void visibleAmbiguityHasNoHiddenMatches() {
+        lookup.with(DictionaryDoc.TYPE, "GeoIP", "uuid-1").with(DictionaryDoc.TYPE, "GeoIP", "uuid-2");
+
+        final XsltReferenceCheckResult result = checkReferences(stored(null), dictionaryReader("GeoIP"));
+
+        assertThat(result.getReferences()).singleElement()
+                .satisfies(reference -> assertThat(reference.isHiddenMatches()).isFalse());
     }
 
     @Test
@@ -191,6 +255,17 @@ class TestXsltResourceImplCheckReferences {
                 .hasMessageContaining("document must be supplied");
     }
 
+    private static String dictionaryReader(final String name) {
+        return """
+                <xsl:stylesheet version="2.0"
+                                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                xmlns:stroom="stroom">
+                  <xsl:template match="/">
+                    <xsl:value-of select="stroom:dictionary('%s')"/>
+                  </xsl:template>
+                </xsl:stylesheet>""".formatted(name);
+    }
+
     private XsltReferenceCheckResult checkReferences(final XsltDoc storedDoc, final String data) {
         return newResource(storedDoc)
                 .checkReferences(new CheckXsltReferencesRequest(XSLT_DOC_REF, data));
@@ -213,9 +288,21 @@ class TestXsltResourceImplCheckReferences {
         Mockito.when(documentResourceHelper.read(Mockito.any(), Mockito.eq(XSLT_DOC_REF)))
                 .thenReturn(storedDoc);
 
+        // Runs the supplied work with the lookup switched to the processing user's view
+        final SecurityContext securityContext = Mockito.mock(SecurityContext.class);
+        Mockito.when(securityContext.asProcessingUserResult(Mockito.any())).thenAnswer(invocation -> {
+            lookup.setAsProcessingUser(true);
+            try {
+                return ((Supplier<?>) invocation.getArgument(0)).get();
+            } finally {
+                lookup.setAsProcessingUser(false);
+            }
+        });
+
         return new XsltResourceImpl(
                 () -> Mockito.mock(XsltStore.class),
                 () -> documentResourceHelper,
-                () -> new XsltReferenceParserImpl(lookup));
+                () -> new XsltReferenceParserImpl(lookup),
+                securityContext);
     }
 }

@@ -273,6 +273,13 @@ public abstract class AbstractDocumentStore<D extends AbstractDoc>
         return store.getDependencies(docRef);
     }
 
+    /// Used by the dependency rebuild, which runs as the processing user, so no document permission
+    /// check is applied.
+    @Override
+    public DocDependencies getDocDependencies(final DocRef docRef) {
+        return store.getDocDependencies(docRef);
+    }
+
     // -------------------------------------------------------------------------
     // ImportExportActionHandler
     // -------------------------------------------------------------------------

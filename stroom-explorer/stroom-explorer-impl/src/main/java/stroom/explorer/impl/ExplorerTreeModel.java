@@ -16,11 +16,13 @@
 
 package stroom.explorer.impl;
 
+import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocDependencyService;
 import stroom.explorer.api.ExplorerDecorator;
 import stroom.explorer.shared.ExplorerNode;
 import stroom.explorer.shared.ExplorerNode.NodeInfo;
+import stroom.pipeline.shared.XsltDoc;
 import stroom.security.api.SecurityContext;
 import stroom.task.api.TaskContextFactory;
 import stroom.util.entityevent.EntityAction;
@@ -37,10 +39,14 @@ import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -225,17 +231,69 @@ class ExplorerTreeModel implements EntityEvent.Handler {
                 }
             }
         });
+
+        NullSafe.map(docDependencyService.fetchAmbiguousDependencies())
+                .forEach((nodeDocRef, ambiguousDepDocRefs) -> {
+                    final ExplorerNode node = treeModel.getNode(nodeDocRef);
+                    if (node != null) {
+                        final List<NodeInfo> nodeInfos = buildAmbiguousNodeInfo(ambiguousDepDocRefs);
+                        if (!nodeInfos.isEmpty()) {
+                            treeModel.addNodeInfo(node, nodeInfos);
+                        }
+                    }
+                });
     }
 
-    private List<NodeInfo> buildNodeInfo(final Set<DocRef> brokenDeps) {
+    /// One message per ambiguous name rather than per candidate, since the candidates all answer to the
+    /// one name the document uses.
+    ///
+    /// The message gives the name and deliberately nothing else. The candidates were found as the
+    /// processing user, so some may be documents the viewer cannot see: neither their UUIDs nor how many
+    /// there are may be shown. The name is the one the document itself uses.
+    static List<NodeInfo> buildAmbiguousNodeInfo(final Set<DocRef> ambiguousDeps) {
+        if (NullSafe.isEmptyCollection(ambiguousDeps)) {
+            return Collections.emptyList();
+        }
+        final Map<String, Set<String>> namesByType = ambiguousDeps.stream()
+                .collect(Collectors.groupingBy(
+                        DocRef::getType,
+                        TreeMap::new,
+                        Collectors.mapping(DocRef::getName, Collectors.toCollection(TreeSet::new))));
+        final List<NodeInfo> nodeInfos = new ArrayList<>();
+        namesByType.forEach((type, names) -> names.forEach(name -> {
+            final String consequence = switch (type) {
+                case XsltDoc.TYPE -> ", so this XSLT fails to compile";
+                case DictionaryDoc.TYPE -> ", so the one with the lowest UUID is used";
+                default -> "";
+            };
+            final String msg = LogUtil.message(
+                    "Ambiguous reference to {} '{}': more than one document has this name{}. Refer to it by UUID.",
+                    type, name, consequence);
+            // An ambiguous import breaks the XSLT. Any other ambiguity still works, but not reliably.
+            final Severity severity = XsltDoc.TYPE.equals(type)
+                    ? Severity.ERROR
+                    : Severity.WARNING;
+            nodeInfos.add(new NodeInfo(severity, msg));
+        }));
+        return nodeInfos;
+    }
+
+    static List<NodeInfo> buildNodeInfo(final Set<DocRef> brokenDeps) {
         if (NullSafe.hasItems(brokenDeps)) {
             return brokenDeps.stream()
                     .map(missingDocRef -> {
-                        final String msg = LogUtil.message(
-                                "Missing dependency to {} '{}' ({})",
+                        // A reference by a name that matched nothing is recorded with the name as its
+                        // UUID too (see XsltReferences.notFoundTargets), so the UUID would only repeat it
+                        final String msg = Objects.equals(missingDocRef.getUuid(), missingDocRef.getName())
+                                ? LogUtil.message(
+                                "Missing dependency to {} '{}'",
                                 missingDocRef.getType(),
-                                missingDocRef.getName(),
-                                missingDocRef.getUuid());
+                                missingDocRef.getName())
+                                : LogUtil.message(
+                                        "Missing dependency to {} '{}' ({})",
+                                        missingDocRef.getType(),
+                                        missingDocRef.getName(),
+                                        missingDocRef.getUuid());
                         return new NodeInfo(Severity.ERROR, msg);
                     })
                     .collect(Collectors.toList());

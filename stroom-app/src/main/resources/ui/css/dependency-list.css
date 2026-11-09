@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-/* A dependency's status in the dependencies list: OK, or its document missing */
+/* A dependency's status in the dependencies list: OK, its document missing, or named by a name that
+   other documents share */
 .dependency-list__status {
     font-weight: bold;
 }
@@ -25,4 +26,8 @@
 
 .dependency-list__status--missing {
     color: var(--text-color--red);
+}
+
+.dependency-list__status--ambiguous {
+    color: var(--status__color--warning);
 }

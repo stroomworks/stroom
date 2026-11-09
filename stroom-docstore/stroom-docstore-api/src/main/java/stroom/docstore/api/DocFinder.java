@@ -18,6 +18,7 @@ package stroom.docstore.api;
 
 import stroom.docref.DocRef;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -120,5 +121,20 @@ public interface DocFinder {
      */
     default Optional<DocRef> decorateIfExists(final DocRef docRef) {
         return getName(docRef).map(name -> docRef.copy().name(name).build());
+    }
+
+    /// Forget any cached answer to [#findByName(String, String)] for the given names, so the next lookup
+    /// reads the store.
+    ///
+    /// The cache is cleared for a document's names by its own entity event handler, but handlers run in no
+    /// guaranteed order. A handler that looks a name up in response to the same event calls this first,
+    /// so it does not read the answer from before the change.
+    ///
+    /// The default does nothing, for implementations with no cache.
+    ///
+    /// @param type  The document type.
+    /// @param names The names to forget.
+    default void invalidateNames(final String type, final Collection<String> names) {
+        // No cache to invalidate
     }
 }

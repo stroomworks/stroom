@@ -31,6 +31,9 @@ import java.util.Optional;
 class FakeXsltReferenceLookup implements XsltReferenceLookup {
 
     private final List<DocRef> documents = new ArrayList<>();
+    // Documents the user cannot view, so only found while looking up as the processing user
+    private final List<DocRef> hiddenDocuments = new ArrayList<>();
+    private boolean asProcessingUser;
 
     /**
      * Add a document, generating a UUID from its name for legible assertions.
@@ -45,6 +48,19 @@ class FakeXsltReferenceLookup implements XsltReferenceLookup {
     }
 
     /**
+     * Add a document the user cannot view, which is found only while {@link #setAsProcessingUser} is true,
+     * as the real lookup filters by the current user's permissions.
+     */
+    FakeXsltReferenceLookup withHidden(final String type, final String name, final String uuid) {
+        hiddenDocuments.add(new DocRef(type, uuid, name));
+        return this;
+    }
+
+    void setAsProcessingUser(final boolean asProcessingUser) {
+        this.asProcessingUser = asProcessingUser;
+    }
+
+    /**
      * @return true if no documents have been registered, so nothing can resolve.
      */
     boolean isEmpty() {
@@ -53,15 +69,24 @@ class FakeXsltReferenceLookup implements XsltReferenceLookup {
 
     @Override
     public List<DocRef> findByName(final String type, final String name) {
-        return documents.stream()
+        return visibleDocuments().stream()
                 .filter(docRef -> docRef.getType().equals(type) && name.equals(docRef.getName()))
                 .toList();
     }
 
     @Override
     public Optional<DocRef> findByUuid(final String type, final String uuid) {
-        return documents.stream()
+        return visibleDocuments().stream()
                 .filter(docRef -> docRef.getType().equals(type) && uuid.equals(docRef.getUuid()))
                 .findFirst();
+    }
+
+    private List<DocRef> visibleDocuments() {
+        if (!asProcessingUser) {
+            return documents;
+        }
+        final List<DocRef> all = new ArrayList<>(documents);
+        all.addAll(hiddenDocuments);
+        return all;
     }
 }

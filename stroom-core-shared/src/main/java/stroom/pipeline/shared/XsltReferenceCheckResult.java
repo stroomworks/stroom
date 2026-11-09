@@ -70,7 +70,6 @@ public class XsltReferenceCheckResult {
         return parseFailure;
     }
 
-    @JsonIgnore
     public boolean hasParseFailure() {
         return parseFailure != null;
     }

@@ -17,6 +17,7 @@
 package stroom.docstore.impl.dao;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyService;
 import stroom.importexport.shared.Dependency;
 import stroom.importexport.shared.DependencyCriteria;
@@ -28,7 +29,7 @@ import java.util.Set;
 public class MockDocDependencyService implements DocDependencyService {
 
     @Override
-    public void setDependencies(final DocRef docRef, final Set<DocRef> dependencies) {
+    public void setDependencies(final DocRef docRef, final DocDependencies dependencies) {
 
     }
 
@@ -51,6 +52,18 @@ public class MockDocDependencyService implements DocDependencyService {
     @Override
     public Map<DocRef, Set<DocRef>> fetchBrokenDependencies(final Set<String> pseudoRefUuids) {
         return Map.of();
+    }
+
+    @Override
+    public Map<DocRef, Set<DocRef>> fetchAmbiguousDependencies() {
+        return Map.of();
+    }
+
+    @Override
+    public Set<DocRef> findSourcesByTargetName(final String fromType,
+                                               final String toType,
+                                               final Set<String> toNames) {
+        return Set.of();
     }
 
     @Override

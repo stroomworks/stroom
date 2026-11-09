@@ -46,6 +46,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -297,7 +298,7 @@ class TestProcessorFilterDependencies {
         assertThat(stamped)
                 .isTrue();
         verify(docDependencyService).removeDependencies(FILTER_DOC_REF);
-        verify(docDependencyService, never()).setDependencies(any(), any());
+        verify(docDependencyService, never()).setDependencies(any(), anySet());
         verify(processorFilterDao).setDependencyVersion(
                 FILTER_ID, FILTER_VERSION, ProcessorFilterDependencies.CURRENT_DEPENDENCY_VERSION);
     }

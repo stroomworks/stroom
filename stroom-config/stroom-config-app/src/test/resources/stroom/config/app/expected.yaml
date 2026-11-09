@@ -842,6 +842,8 @@ appConfig:
         refreshAfterWrite: null
         statisticsMode: "INTERNAL"
       maxElements: 1000000
+      maxReferenceVariableDepth: 10
+      referenceParseTimeout: "PT5S"
   planb:
     defaultShardCounts:
       STATE: 16

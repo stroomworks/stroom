@@ -90,9 +90,9 @@ public class DependencyCriteria extends QuickFilterCriteria {
     public static final QueryField QF_TO_NAME = sqlTextField(FIELD_DEF_TO_NAME);
     public static final QueryField QF_TO_UUID = sqlTextField(FIELD_DEF_TO_UUID);
     /**
-     * Status holds one of two literal values, "OK" or "Missing", so only exact matching makes
-     * sense on it. Declaring the narrower set also means an expression tree editor offers just
-     * the two sensible operators.
+     * Status holds one of three literal values, "OK", "Missing" or "Ambiguous", so only exact
+     * matching makes sense on it. Declaring the narrower set also means an expression tree editor
+     * offers just the two sensible operators.
      */
     public static final QueryField QF_STATUS = queryField(FIELD_DEF_STATUS, ConditionSet.SQL_ENUM_TEXT);
 

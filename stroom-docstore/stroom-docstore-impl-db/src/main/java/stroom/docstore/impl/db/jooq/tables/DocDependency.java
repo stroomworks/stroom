@@ -17,13 +17,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -57,7 +58,7 @@ public class DocDependency extends TableImpl<DocDependencyRecord> {
     /**
      * The column <code>stroom.doc_dependency.id</code>.
      */
-    public final TableField<DocDependencyRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<DocDependencyRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.doc_dependency.from_type</code>.
@@ -88,6 +89,11 @@ public class DocDependency extends TableImpl<DocDependencyRecord> {
      * The column <code>stroom.doc_dependency.to_name</code>.
      */
     public final TableField<DocDependencyRecord, String> TO_NAME = createField(DSL.name("to_name"), SQLDataType.VARCHAR(255).nullable(false).defaultValue(DSL.inline("", SQLDataType.VARCHAR)), this, "");
+
+    /**
+     * The column <code>stroom.doc_dependency.ambiguous</code>.
+     */
+    public final TableField<DocDependencyRecord, Boolean> AMBIGUOUS = createField(DSL.name("ambiguous"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.inline("0", SQLDataType.BOOLEAN)), this, "");
 
     private DocDependency(Name alias, Table<DocDependencyRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -187,7 +193,7 @@ public class DocDependency extends TableImpl<DocDependencyRecord> {
      */
     @Override
     public DocDependency where(Condition condition) {
-        return new DocDependency(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new DocDependency(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -254,7 +260,7 @@ public class DocDependency extends TableImpl<DocDependencyRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public DocDependency whereExists(Select<?> select) {
+    public DocDependency whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -262,7 +268,7 @@ public class DocDependency extends TableImpl<DocDependencyRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public DocDependency whereNotExists(Select<?> select) {
+    public DocDependency whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

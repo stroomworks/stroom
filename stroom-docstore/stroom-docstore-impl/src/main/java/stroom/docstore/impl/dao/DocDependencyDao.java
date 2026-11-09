@@ -20,6 +20,7 @@ import stroom.db.util.ExpressionMapper;
 import stroom.db.util.ExpressionMapperFactory;
 import stroom.db.util.JooqUtil;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.impl.db.DocStoreDbConnProvider;
 import stroom.docstore.impl.db.jooq.tables.Doc;
 import stroom.docstore.impl.db.jooq.tables.DocDependency;
@@ -48,6 +49,7 @@ import org.jooq.impl.DSL;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -81,6 +83,7 @@ public class DocDependencyDao {
 
     private static final String STATUS_OK = "OK";
     private static final String STATUS_MISSING = "Missing";
+    private static final String STATUS_AMBIGUOUS = "Ambiguous";
 
     // Computed fields for the query.
     //
@@ -132,13 +135,18 @@ public class DocDependencyDao {
     /**
      * A dependency is OK if its target still exists as a non deleted doc, or if it is a known
      * pseudo-ref (e.g. a Searchable or Annotation data source) which by design lives outside the
-     * doc table. Exposed as the "OK"/"Missing" text the user filters and sorts on so the status
-     * column, the {@code status:} filter and the status sort all derive from one definition.
+     * doc table. Exposed as the "OK"/"Missing"/"Ambiguous" text the user filters and sorts on so the
+     * status column, the {@code status:} filter and the status sort all derive from one definition.
+     * <p>
+     * A missing target is reported as missing even if its edge was recorded as ambiguous: the target
+     * has gone, which is the more immediate problem, and the remaining candidates are re-recorded when
+     * the deletion is noticed.
      */
     private static Field<String> statusExpr(final Set<String> pseudoRefUuids) {
         return DSL
-                .when(okCondition(pseudoRefUuids), STATUS_OK)
-                .otherwise(STATUS_MISSING);
+                .when(DSL.not(okCondition(pseudoRefUuids)), STATUS_MISSING)
+                .when(DOC_DEPENDENCY.AMBIGUOUS.isTrue(), STATUS_AMBIGUOUS)
+                .otherwise(STATUS_OK);
     }
 
     private static Condition okCondition(final Set<String> pseudoRefUuids) {
@@ -186,6 +194,16 @@ public class DocDependencyDao {
      * are current.
      */
     public void setDependencies(final DocRef from, final Set<DocRef> deps) {
+        setDependencies(from, DocDependencies.of(deps));
+    }
+
+    /// Replace all outgoing dependency edges for the given document, flagging those listed in
+    /// [DocDependencies#ambiguous()] as candidates of an ambiguous name. Runs in a transaction, and
+    /// stamps the document's `dependency_version` as [#setDependencies(DocRef, Set)] does.
+    ///
+    /// @param from The document whose edges are replaced.
+    /// @param deps Its dependencies. May be null, which clears its edges.
+    public void setDependencies(final DocRef from, final DocDependencies deps) {
         JooqUtil.transaction(connProvider, context -> writeDependencies(context, from, deps));
     }
 
@@ -203,6 +221,21 @@ public class DocDependencyDao {
     public boolean setDependenciesIfUnchanged(final DocRef from,
                                               final String docVersion,
                                               final Set<DocRef> deps) {
+        return setDependenciesIfUnchanged(from, docVersion, DocDependencies.of(deps));
+    }
+
+    /// As [#setDependenciesIfUnchanged(DocRef, String, Set)], flagging those dependencies listed in
+    /// [DocDependencies#ambiguous()] as candidates of an ambiguous name.
+    ///
+    /// @param from       The document whose edges are being replaced.
+    /// @param docVersion The document version (the `doc.version` column) that the dependencies were
+    ///                   extracted from.
+    /// @param deps       The document's dependencies.
+    /// @return `true` if the edges were written, `false` if the document has since been changed or
+    /// deleted.
+    public boolean setDependenciesIfUnchanged(final DocRef from,
+                                              final String docVersion,
+                                              final DocDependencies deps) {
         return JooqUtil.transactionResult(connProvider, context -> {
             // Lock the doc row so a concurrent save cannot change the version until we have written
             final String currentVersion = context
@@ -239,7 +272,7 @@ public class DocDependencyDao {
                         record.get(DOC.VERSION)));
     }
 
-    private void writeDependencies(final DSLContext context, final DocRef from, final Set<DocRef> deps) {
+    private void writeDependencies(final DSLContext context, final DocRef from, final DocDependencies deps) {
         // Delete existing edges for this doc
         context
                 .deleteFrom(DOC_DEPENDENCY)
@@ -247,12 +280,13 @@ public class DocDependencyDao {
                 .execute();
 
         // Insert new edges
-        if (NullSafe.hasItems(deps)) {
+        if (deps != null && !deps.dependencies().isEmpty()) {
             final String fromType = NullSafe.nonBlankStringElse(from.getType(), "");
             final String fromName = NullSafe.nonBlankStringElse(from.getName(), "");
-            for (final DocRef to : deps) {
+            for (final DocRef to : deps.dependencies()) {
                 final String toType = NullSafe.nonBlankStringElse(to.getType(), "");
                 final String toName = NullSafe.nonBlankStringElse(to.getName(), "");
+                final boolean ambiguous = deps.isAmbiguous(to);
                 // Upsert on the (from_uuid, to_uuid) unique key. Use onDuplicateKeyUpdate rather than
                 // onDuplicateKeyIgnore so any genuine constraint failure surfaces rather than being
                 // silently swallowed; on a duplicate edge we refresh the type/name columns.
@@ -264,11 +298,13 @@ public class DocDependencyDao {
                         .set(DOC_DEPENDENCY.TO_TYPE, toType)
                         .set(DOC_DEPENDENCY.TO_UUID, to.getUuid())
                         .set(DOC_DEPENDENCY.TO_NAME, toName)
+                        .set(DOC_DEPENDENCY.AMBIGUOUS, ambiguous)
                         .onDuplicateKeyUpdate()
                         .set(DOC_DEPENDENCY.FROM_TYPE, fromType)
                         .set(DOC_DEPENDENCY.FROM_NAME, fromName)
                         .set(DOC_DEPENDENCY.TO_TYPE, toType)
                         .set(DOC_DEPENDENCY.TO_NAME, toName)
+                        .set(DOC_DEPENDENCY.AMBIGUOUS, ambiguous)
                         .execute();
             }
         }
@@ -464,8 +500,11 @@ public class DocDependencyDao {
                                 r.get(DOC_DEPENDENCY.TO_TYPE),
                                 r.get(DOC_DEPENDENCY.TO_UUID),
                                 r.get(TO_NAME_RESOLVED));
-                        final boolean ok = STATUS_OK.equals(r.get(statusField));
-                        return new Dependency(fromRef, toRef, ok);
+                        final String status = r.get(statusField);
+                        final boolean ambiguous = STATUS_AMBIGUOUS.equals(status);
+                        // An ambiguous target exists, so it is as openable as an OK one
+                        final boolean ok = STATUS_OK.equals(status) || ambiguous;
+                        return new Dependency(fromRef, toRef, ok, ambiguous);
                     })
                     .filter(filter)
                     .collect(ResultPage.collector(pageRequest));
@@ -555,6 +594,78 @@ public class DocDependencyDao {
             }
             return result;
         });
+    }
+
+    /// Find every edge recorded as one of several documents a name matches, keyed by the source.
+    ///
+    /// Edges whose target has gone are left out: they are reported by
+    /// [#getBrokenDependencies(Set)] as missing, which takes precedence (see [#statusExpr(Set)]).
+    ///
+    /// @return Source to the ambiguous targets it names, with each target's live name. Empty if there
+    /// are none.
+    public Map<DocRef, Set<DocRef>> getAmbiguousDependencies() {
+        return JooqUtil.contextResult(connProvider, ctx -> {
+            final Map<DocRef, Set<DocRef>> result = new HashMap<>();
+            ctx
+                    .select(DOC_DEPENDENCY.FROM_TYPE,
+                            DOC_DEPENDENCY.FROM_UUID,
+                            FROM_NAME_RESOLVED,
+                            DOC_DEPENDENCY.TO_TYPE,
+                            DOC_DEPENDENCY.TO_UUID,
+                            TO_NAME_RESOLVED)
+                    .from(DOC_DEPENDENCY)
+                    .leftJoin(FROM_DOC).on(FROM_DOC.UUID.eq(DOC_DEPENDENCY.FROM_UUID)
+                            .and(FROM_DOC.DELETED.isNull()))
+                    .join(TO_DOC).on(TO_DOC.UUID.eq(DOC_DEPENDENCY.TO_UUID)
+                            .and(TO_DOC.DELETED.isNull()))
+                    .where(DOC_DEPENDENCY.AMBIGUOUS.isTrue())
+                    .fetch()
+                    .forEach(r -> {
+                        final DocRef fromRef = new DocRef(
+                                r.get(DOC_DEPENDENCY.FROM_TYPE),
+                                r.get(DOC_DEPENDENCY.FROM_UUID),
+                                r.get(FROM_NAME_RESOLVED));
+                        final DocRef toRef = new DocRef(
+                                r.get(DOC_DEPENDENCY.TO_TYPE),
+                                r.get(DOC_DEPENDENCY.TO_UUID),
+                                r.get(TO_NAME_RESOLVED));
+                        result.computeIfAbsent(fromRef, k -> new HashSet<>()).add(toRef);
+                    });
+            return result;
+        });
+    }
+
+    /// Find the sources of one type with a recorded edge to a document of the given type, matching the
+    /// stored target name.
+    ///
+    /// The stored name is matched rather than the target's live name because an edge recorded from a
+    /// name that matched nothing has no target document, so the name the source used is all there is.
+    /// For an edge to a real document the stored name is kept current by [#updateName(String, String)].
+    ///
+    /// @param fromType The source type.
+    /// @param toType   The target type.
+    /// @param toNames  The target names, matched exactly.
+    /// @return The matching sources, with their live names. Empty if `toNames` is empty.
+    public Set<DocRef> findSourcesByTargetName(final String fromType,
+                                               final String toType,
+                                               final Set<String> toNames) {
+        if (NullSafe.isEmptyCollection(toNames)) {
+            return Collections.emptySet();
+        }
+        return JooqUtil.contextResult(connProvider, ctx -> new HashSet<>(ctx
+                .selectDistinct(DOC_DEPENDENCY.FROM_TYPE,
+                        DOC_DEPENDENCY.FROM_UUID,
+                        FROM_NAME_RESOLVED)
+                .from(DOC_DEPENDENCY)
+                .leftJoin(FROM_DOC).on(FROM_DOC.UUID.eq(DOC_DEPENDENCY.FROM_UUID)
+                        .and(FROM_DOC.DELETED.isNull()))
+                .where(DOC_DEPENDENCY.FROM_TYPE.eq(fromType))
+                .and(DOC_DEPENDENCY.TO_TYPE.eq(toType))
+                .and(DOC_DEPENDENCY.TO_NAME.in(toNames))
+                .fetch(r -> new DocRef(
+                        r.get(DOC_DEPENDENCY.FROM_TYPE),
+                        r.get(DOC_DEPENDENCY.FROM_UUID),
+                        r.get(FROM_NAME_RESOLVED)))));
     }
 
     /**

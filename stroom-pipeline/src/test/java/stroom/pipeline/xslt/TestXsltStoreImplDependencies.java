@@ -224,6 +224,89 @@ class TestXsltStoreImplDependencies {
                 .containsExactlyInAnyOrder("uuid-1", "uuid-2");
     }
 
+    @Test
+    @DisplayName("an ambiguous name's edges are recorded as ambiguous")
+    void ambiguousNameIsMarkedAmbiguous() {
+        lookup.with(DictionaryDoc.TYPE, "GeoIP", "uuid-1").with(DictionaryDoc.TYPE, "GeoIP", "uuid-2");
+        final DependencyRemapper remapper = new DependencyRemapper();
+
+        remapOnRecordingPath(remapper, dictionaryStylesheet());
+
+        // Each candidate is stored as one of several, so the explorer and the Dependencies screen can say
+        // the name is ambiguous rather than showing two healthy dependencies.
+        assertThat(remapper.getDocDependencies().ambiguous()).extracting(DocRef::getUuid)
+                .containsExactlyInAnyOrder("uuid-1", "uuid-2");
+    }
+
+    @Test
+    @DisplayName("a candidate also referred to definitely is recorded as definite")
+    void definiteReferenceTakesPrecedenceOverAmbiguity() {
+        lookup.with(DictionaryDoc.TYPE, "GeoIP", "uuid-1").with(DictionaryDoc.TYPE, "GeoIP", "uuid-2");
+        final DependencyRemapper remapper = new DependencyRemapper();
+
+        remapOnRecordingPath(remapper, """
+                <xsl:stylesheet version="2.0"
+                                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                xmlns:stroom="stroom">
+                  <xsl:template match="/">
+                    <xsl:value-of select="stroom:dictionary('GeoIP')"/>
+                    <xsl:value-of select="stroom:dictionary('uuid-1')"/>
+                  </xsl:template>
+                </xsl:stylesheet>""");
+
+        // The XSLT does depend on uuid-1, whatever the ambiguous name also means, so only uuid-2 is
+        // recorded as merely a candidate.
+        assertThat(remapper.getDocDependencies().ambiguous()).extracting(DocRef::getUuid)
+                .containsExactly("uuid-2");
+        assertThat(remapper.getDependencies()).extracting(DocRef::getUuid)
+                .containsExactlyInAnyOrder("uuid-1", "uuid-2");
+    }
+
+    @Test
+    @DisplayName("a name that matches nothing is recorded as a dependency on a missing document")
+    void notFoundNamesAreRecordedAsMissing() {
+        final DependencyRemapper remapper = new DependencyRemapper();
+
+        remapOnRecordingPath(remapper, """
+                <xsl:stylesheet version="2.0"
+                                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                xmlns:stroom="stroom">
+                  <xsl:import href="No Such XSLT"/>
+                  <xsl:template match="/">
+                    <xsl:value-of select="stroom:dictionary('No Such Dictionary')"/>
+                  </xsl:template>
+                </xsl:stylesheet>""");
+
+        // No document has these UUIDs, so each is reported as a missing dependency and the explorer flags
+        // the XSLT, as it would for a reference to a document that had been deleted. The name is the
+        // reference as written, so a document later created with that name can be noticed.
+        assertThat(remapper.getDocDependencies().dependencies()).containsExactlyInAnyOrder(
+                new DocRef(XsltDoc.TYPE, "No Such XSLT", "No Such XSLT"),
+                new DocRef(DictionaryDoc.TYPE, "No Such Dictionary", "No Such Dictionary"));
+        assertThat(remapper.getDocDependencies().ambiguous()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an import of a doc ref string that matches nothing is recorded by its UUID")
+    void notFoundDocRefStringIsRecordedByUuid() {
+        final DependencyRemapper remapper = new DependencyRemapper();
+        final String href = "uuid='missing-uuid', name='Gone'";
+
+        remapOnRecordingPath(remapper, """
+                <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+                  <xsl:import href="%s"/>
+                </xsl:stylesheet>""".formatted(href));
+
+        // The runtime looks a doc ref string up by its UUID, so that is the UUID recorded: were the
+        // document to reappear with it, the dependency would be satisfied.
+        assertThat(remapper.getDependencies()).singleElement()
+                .satisfies(docRef -> {
+                    assertThat(docRef.getType()).isEqualTo(XsltDoc.TYPE);
+                    assertThat(docRef.getUuid()).isEqualTo("missing-uuid");
+                    assertThat(docRef.getName()).isEqualTo(href);
+                });
+    }
+
     private void remapOnRecordingPath(final DependencyRemapper remapper, final String data) {
         newStore().getDependencyRemapFunction().remap(xsltDoc(data), remapper);
     }

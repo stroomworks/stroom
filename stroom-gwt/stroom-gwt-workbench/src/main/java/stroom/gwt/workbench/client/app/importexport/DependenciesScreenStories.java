@@ -70,10 +70,12 @@ public final class DependenciesScreenStories {
 
     private static final String PATH = "/content/v1/fetchDependencies";
 
-    // {fromType, fromUuid, fromName, toType, toUuid, toName, ok}
+    // {fromType, fromUuid, fromName, toType, toUuid, toName, ok, ambiguous}
     private static final String[][] ROWS = {
-            {"Pipeline", "p-1", "Alpha Pipeline", "XSLT", "x-1", "Alpha XSLT", "true"},
-            {"Pipeline", "p-1", "Alpha Pipeline", "Feed", "f-1", "Missing Feed", "false"}};
+            {"Pipeline", "p-1", "Alpha Pipeline", "XSLT", "x-1", "Alpha XSLT", "true", "false"},
+            {"Pipeline", "p-1", "Alpha Pipeline", "Feed", "f-1", "Missing Feed", "false", "false"},
+            // An XSLT reads a dictionary by a name another dictionary shares
+            {"XSLT", "x-2", "Beta XSLT", "Dictionary", "d-1", "Shared Words", "true", "true"}};
 
     private static final RestFixtures FIXTURES = RestFixtures.builder()
             .post(PATH, request -> fetch(request, rows()))
@@ -132,14 +134,15 @@ public final class DependenciesScreenStories {
                     play.expect(play.spy(ON_DELETE)).not().toHaveBeenCalled();
                     ContentStorySupport.expectNoProblems(play);
                 })
-                // The grid loads; a resolved dependency shows OK, a broken one Missing; the quick
-                // filter re-queries with quickFilter
+                // The grid loads; a resolved dependency shows OK, a broken one Missing, and one named by
+                // a name other documents share Ambiguous; the quick filter re-queries with quickFilter
                 .story("Dependencies", context -> render(context, FIXTURES))
                 .withPlay(play -> {
-                    play.findByText("Alpha XSLT");
-                    play.expect(play.getByText("Missing Feed")).toBeInTheDocument();
+                    play.findByText("Missing Feed");
+                    play.expect(play.getByText("Shared Words")).toBeInTheDocument();
                     play.expect(play.getByText("OK")).toBeInTheDocument();
                     play.expect(play.getByText("Missing")).toBeInTheDocument();
+                    play.expect(play.getByText("Ambiguous")).toBeInTheDocument();
                     // GWT's quick filter has no label, only a placeholder
                     play.type(play.getByPlaceholderText(StroomDom.QUICK_FILTER_PLACEHOLDER), "Missing");
                     play.waitFor(3000, () -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
@@ -269,7 +272,11 @@ public final class DependenciesScreenStories {
     private static String toJson(final String[] row) {
         return "{\"from\": {\"type\": \"" + row[0] + "\", \"uuid\": \"" + row[1] + "\", \"name\": \"" + row[2]
                 + "\"}, \"to\": {\"type\": \"" + row[3] + "\", \"uuid\": \"" + row[4] + "\", \"name\": \"" + row[5]
-                + "\"}, \"ok\": " + row[6] + "}";
+                + "\"}, \"ok\": " + row[6]
+                + (row.length > 7
+                ? ", \"ambiguous\": " + row[7]
+                : "")
+                + "}";
     }
 
     private static Widget render(final StoryContext context, final RestFixtures fixtures) {

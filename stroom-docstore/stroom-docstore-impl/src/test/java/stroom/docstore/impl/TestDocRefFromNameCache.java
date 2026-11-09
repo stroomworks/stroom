@@ -32,6 +32,7 @@ import org.mockito.quality.Strictness;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -128,6 +129,21 @@ class TestDocRefFromNameCache {
         persistenceFails.set(false);
 
         assertThat(cache.get(TYPE, "doc")).as("once persistence recovers").containsExactly(doc);
+    }
+
+    /// A handler reacting to the same event that creates a document may run before the cache's own handler,
+    /// so it invalidates the name itself, and must then see the document.
+    @Test
+    void invalidatedNameIsReadAgainWithoutAnEvent() {
+        assertThat(cache.get(TYPE, "wanted")).as("before the document exists").isEmpty();
+        // Added without firing the event that would clear the cache
+        final DocRef added = new DocRef(TYPE, UUID.randomUUID().toString(), "wanted");
+        docs.add(added);
+        assertThat(cache.get(TYPE, "wanted")).as("still cached as missing").isEmpty();
+
+        cache.invalidate(TYPE, "wanted");
+
+        assertThat(cache.get(TYPE, "wanted")).as("after invalidating the name").containsExactly(added);
     }
 
     private DocRef create(final String name) {

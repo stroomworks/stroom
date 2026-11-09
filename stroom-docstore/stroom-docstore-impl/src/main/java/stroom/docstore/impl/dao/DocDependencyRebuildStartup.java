@@ -18,6 +18,7 @@ package stroom.docstore.impl.dao;
 
 import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyProvider;
 import stroom.docstore.api.DocDependencyService;
 import stroom.docstore.impl.dao.DocDependencyDao.DocVersion;
@@ -116,7 +117,7 @@ public class DocDependencyRebuildStartup implements Runnable {
                 noProviderCounts.merge(docRef.getType(), 1, Integer::sum);
             } else {
                 try {
-                    final Set<DocRef> dependencies = provider.getDependencies(docRef);
+                    final DocDependencies dependencies = provider.getDocDependencies(docRef);
                     if (docDependencyDao.setDependenciesIfUnchanged(docRef, docVersion.version(), dependencies)) {
                         rebuiltCount++;
                     } else {

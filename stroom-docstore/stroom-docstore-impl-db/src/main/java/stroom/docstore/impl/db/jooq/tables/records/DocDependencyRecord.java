@@ -116,6 +116,20 @@ public class DocDependencyRecord extends UpdatableRecordImpl<DocDependencyRecord
         return (String) get(6);
     }
 
+    /**
+     * Setter for <code>stroom.doc_dependency.ambiguous</code>.
+     */
+    public void setAmbiguous(Boolean value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>stroom.doc_dependency.ambiguous</code>.
+     */
+    public Boolean getAmbiguous() {
+        return (Boolean) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -139,7 +153,7 @@ public class DocDependencyRecord extends UpdatableRecordImpl<DocDependencyRecord
     /**
      * Create a detached, initialised DocDependencyRecord
      */
-    public DocDependencyRecord(Long id, String fromType, String fromUuid, String fromName, String toType, String toUuid, String toName) {
+    public DocDependencyRecord(Long id, String fromType, String fromUuid, String fromName, String toType, String toUuid, String toName, Boolean ambiguous) {
         super(DocDependency.DOC_DEPENDENCY);
 
         setId(id);
@@ -149,6 +163,7 @@ public class DocDependencyRecord extends UpdatableRecordImpl<DocDependencyRecord
         setToType(toType);
         setToUuid(toUuid);
         setToName(toName);
+        setAmbiguous(ambiguous);
         resetTouchedOnNotNull();
     }
 }

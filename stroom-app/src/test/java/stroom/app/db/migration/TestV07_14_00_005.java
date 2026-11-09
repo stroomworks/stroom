@@ -50,6 +50,9 @@ public class TestV07_14_00_005 extends AbstractCrossModuleMigrationTest {
     private static final String LOOKUP_ONLY_UUID = "xslt_uuid_lookup_only";
     private static final String BROKEN_UUID = "xslt_uuid_broken";
     private static final String WRONG_CASE_UUID = "xslt_uuid_wrong_case";
+    private static final String AMBIGUOUS_READER_UUID = "xslt_uuid_ambiguous_reader";
+    private static final String WORDS_1_UUID = "dict_uuid_words_1";
+    private static final String WORDS_2_UUID = "dict_uuid_words_2";
 
     @Override
     public Class<? extends AbstractCrossModuleMigrationTestData> getTestDataClass() {
@@ -63,14 +66,19 @@ public class TestV07_14_00_005 extends AbstractCrossModuleMigrationTest {
 
     @Test
     void test() {
-        // Five XSLTs and one dictionary were inserted by TestData before the migration ran. Reaching this
-        // point at all means the migration completed rather than failing on the malformed one below.
+        // Six XSLTs and three dictionaries were inserted by TestData before the migration ran. Reaching
+        // this point at all means the migration completed rather than failing on the malformed one below.
         final List<String> edges = fetchEdges();
 
         // The importer names another XSLT by name and a dictionary by name, so both resolve.
         assertThat(edges).contains(
                 IMPORTER_UUID + " -> XSLT " + COMMON_UUID,
                 IMPORTER_UUID + " -> Dictionary " + DICTIONARY_UUID);
+
+        // A name that two dictionaries share records both, each marked as one of several candidates.
+        assertThat(edges).contains(
+                AMBIGUOUS_READER_UUID + " -> Dictionary " + WORDS_1_UUID + " (ambiguous)",
+                AMBIGUOUS_READER_UUID + " -> Dictionary " + WORDS_2_UUID + " (ambiguous)");
 
         // A lookup names a map, not a document, so it contributes no edge at all. This is the two-halves
         // constraint: which store a lookup reaches depends on the pipeline's configured references.
@@ -82,18 +90,20 @@ public class TestV07_14_00_005 extends AbstractCrossModuleMigrationTest {
 
         // Names are matched case sensitively, as the runtime does. The doc table's own collation is case
         // insensitive, so a query without an explicit COLLATE would wrongly resolve 'COMMON' here and
-        // record an edge the runtime would never follow.
-        assertThat(edges).noneMatch(edge -> edge.startsWith(WRONG_CASE_UUID));
+        // record an edge the runtime would never follow. Instead the import matches nothing, so it is
+        // recorded as a dependency on a document that does not exist, which is reported as missing.
+        assertThat(edges).noneMatch(edge -> edge.startsWith(WRONG_CASE_UUID) && edge.contains(COMMON_UUID));
+        assertThat(edges).contains(WRONG_CASE_UUID + " -> XSLT COMMON");
 
-        // Exactly the two edges above, from the whole corpus.
-        assertThat(edges).hasSize(2);
+        // Exactly the five edges above, from the whole corpus.
+        assertThat(edges).hasSize(5);
     }
 
     private List<String> fetchEdges() {
         return DbUtil.getWithPreparedStatement(
                 getDatasource(DocStoreDbConnProvider.class),
                 """
-                        SELECT from_uuid, to_type, to_uuid
+                        SELECT from_uuid, to_type, to_uuid, ambiguous
                         FROM doc_dependency
                         ORDER BY from_uuid, to_uuid
                         """,
@@ -103,7 +113,10 @@ public class TestV07_14_00_005 extends AbstractCrossModuleMigrationTest {
                         while (resultSet.next()) {
                             edges.add(resultSet.getString(1)
                                       + " -> " + resultSet.getString(2)
-                                      + " " + resultSet.getString(3));
+                                      + " " + resultSet.getString(3)
+                                      + (resultSet.getBoolean(4)
+                                    ? " (ambiguous)"
+                                    : ""));
                         }
                     }
                     LOGGER.info(() -> "doc_dependency edges: " + edges);
@@ -162,6 +175,18 @@ public class TestV07_14_00_005 extends AbstractCrossModuleMigrationTest {
                     </xsl:stylesheet>""");
 
             insertDoc("XSLT", BROKEN_UUID, "Broken", "<xsl:stylesheet><unclosed>");
+
+            // Two dictionaries share a name, so a read of it is ambiguous.
+            insertDoc("Dictionary", WORDS_1_UUID, "Words", null);
+            insertDoc("Dictionary", WORDS_2_UUID, "Words", null);
+            insertDoc("XSLT", AMBIGUOUS_READER_UUID, "Ambiguous Reader", """
+                    <xsl:stylesheet version="2.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:template match="/">
+                        <xsl:value-of select="stroom:dictionary('Words')"/>
+                      </xsl:template>
+                    </xsl:stylesheet>""");
 
             // Imports 'COMMON', which differs from 'Common' only in case.
             insertDoc("XSLT", WRONG_CASE_UUID, "Wrong Case", """

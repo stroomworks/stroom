@@ -19,13 +19,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -59,7 +60,7 @@ public class DocDataSnapshot extends TableImpl<DocDataSnapshotRecord> {
     /**
      * The column <code>stroom.doc_data_snapshot.id</code>.
      */
-    public final TableField<DocDataSnapshotRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<DocDataSnapshotRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.doc_data_snapshot.fk_doc_id</code>.
@@ -194,7 +195,7 @@ public class DocDataSnapshot extends TableImpl<DocDataSnapshotRecord> {
      */
     @Override
     public DocDataSnapshot where(Condition condition) {
-        return new DocDataSnapshot(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new DocDataSnapshot(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -261,7 +262,7 @@ public class DocDataSnapshot extends TableImpl<DocDataSnapshotRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public DocDataSnapshot whereExists(Select<?> select) {
+    public DocDataSnapshot whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -269,7 +270,7 @@ public class DocDataSnapshot extends TableImpl<DocDataSnapshotRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public DocDataSnapshot whereNotExists(Select<?> select) {
+    public DocDataSnapshot whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

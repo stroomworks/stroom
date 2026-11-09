@@ -91,6 +91,11 @@ class DocFinderImpl implements DocFinder {
     }
 
     @Override
+    public void invalidateNames(final String type, final Collection<String> names) {
+        NullSafe.forEach(names, name -> docRefFromNameCache.invalidate(type, name));
+    }
+
+    @Override
     public Optional<String> getName(final DocRef docRef) {
         if (canView(docRef)) {
             return docRefToNameCache.getName(docRef);

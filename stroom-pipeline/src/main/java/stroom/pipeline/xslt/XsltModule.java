@@ -18,6 +18,8 @@ package stroom.pipeline.xslt;
 
 import stroom.docstore.api.DocumentStoreBinder;
 import stroom.pipeline.shared.XsltDoc;
+import stroom.util.entityevent.EntityEvent;
+import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
 
 import com.google.inject.AbstractModule;
@@ -30,8 +32,8 @@ public class XsltModule extends AbstractModule {
     protected void configure() {
         bind(URIResolver.class).to(CustomURIResolver.class);
 
-        // Injected rather than constructed, so it can be substituted in tests and reused from a
-        // migration. Nothing calls it yet - recording what it finds is a separate change.
+        // Injected rather than constructed, so it can be substituted in tests. The store uses it to
+        // record what an XSLT refers to, and the References tab to report it.
         bind(XsltReferenceParser.class).to(XsltReferenceParserImpl.class);
         bind(XsltReferenceLookup.class).to(XsltReferenceLookupImpl.class);
 
@@ -40,5 +42,8 @@ public class XsltModule extends AbstractModule {
 
         RestResourcesBinder.create(binder())
                 .bind(XsltResourceImpl.class);
+
+        GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
+                .addBinding(XsltDependencyRefresher.class);
     }
 }

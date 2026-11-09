@@ -493,8 +493,8 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
 
             switch (localName) {
                 case DICTIONARY_FUNCTION -> emitDictionary(firstArgument, site, expressionText, lineNumber);
-                case LOOKUP_FUNCTION, BITMAP_LOOKUP_FUNCTION ->
-                        emitMapRead(firstArgument, site, expressionText, lineNumber);
+                case LOOKUP_FUNCTION, BITMAP_LOOKUP_FUNCTION -> emitMapRead(
+                        firstArgument, site, expressionText, lineNumber);
                 case HTTP_CALL_FUNCTION -> emitEndpoint(
                         firstArgument, site, expressionText, lineNumber, XsltReferenceDirection.OUT);
                 case FETCH_JSON_FUNCTION -> emitEndpoint(
@@ -610,8 +610,9 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
          * {@code Dictionary} does at runtime.
          * <p>
          * Where a name matches several dictionaries this reports every candidate rather than choosing.
-         * The runtime does choose - {@code list.getFirst()} - but its choice is the lowest UUID, filtered
-         * by the caller's permissions, so it is arbitrary and not reproducible from here.
+         * The runtime does choose - {@code list.getFirst()} - but its choice is the lowest UUID among the
+         * dictionaries the user the pipeline runs as may view, so it is arbitrary and can differ between
+         * processor filters, and is not reproducible from here.
          */
         private XsltReference resolveDictionary(final String name, final int lineNumber) {
             final Optional<DocRef> byUuid = lookup.findByUuid(DictionaryDoc.TYPE, name);

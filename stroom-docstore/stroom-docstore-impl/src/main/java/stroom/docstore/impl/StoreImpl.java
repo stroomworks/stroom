@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.docref.EmbeddedDocRef;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.DependencyRemapper;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyService;
 import stroom.docstore.api.DocFinder;
 import stroom.docstore.api.DocumentNotFoundException;
@@ -293,6 +294,11 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
 
     @Override
     public Set<DocRef> getDependencies(final DocRef docRef) {
+        return getDocDependencies(docRef).dependencies();
+    }
+
+    @Override
+    public DocDependencies getDocDependencies(final DocRef docRef) {
         // The remap function may perform registry lookups for some doc types, so run as the
         // processing user, as updateDocDependencies does.
         return securityContext.asProcessingUserResult(() ->
@@ -556,8 +562,13 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
             // The remap function may perform registry lookups for some doc types, so run as the
             // processing user. Errors are swallowed and logged by the service so a dependency-update
             // failure never blocks the document save (the table is a self-healing, rebuildable index).
+            //
+            // Running as the processing user also decides what a name-based reference resolves to (an
+            // XSLT's import or dictionary name): it is resolved as the runtime resolves it, which is as
+            // the processing user, so a recorded dependency says what will actually run. See
+            // XsltStoreImpl.getDependencyRemapFunction for why that is acceptable.
             securityContext.asProcessingUser(() -> {
-                final Set<DocRef> deps = extractDependencies(document, getDependencyRemapFunction());
+                final DocDependencies deps = extractDependencies(document, getDependencyRemapFunction());
                 docDependencyService.setDependencies(docRef, deps);
                 if (propagateName) {
                     docDependencyService.propagateName(docRef);
@@ -581,13 +592,13 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
      * Extract the dependencies of a document using this store's dependency remap function. Returns an
      * empty set when this doc type has no mapper (i.e. it tracks no dependencies).
      */
-    private Set<DocRef> extractDependencies(final D document, final DependencyRemapFunction<D> mapper) {
+    private DocDependencies extractDependencies(final D document, final DependencyRemapFunction<D> mapper) {
         if (mapper == null || document == null) {
-            return Collections.emptySet();
+            return DocDependencies.empty();
         }
         final DependencyRemapper dependencyRemapper = new DependencyRemapper();
         mapper.remap(document, dependencyRemapper);
-        return dependencyRemapper.getDependencies();
+        return dependencyRemapper.getDocDependencies();
     }
 
     /**

@@ -94,6 +94,14 @@ class DocRefFromNameCache implements EntityEvent.Handler, Clearable {
                 .collect(Collectors.toList());
     }
 
+    /// Forget the cached documents of the given type and name, so the next lookup reads the store.
+    ///
+    /// @param type The document type.
+    /// @param name The name.
+    void invalidate(final String type, final String name) {
+        cache.invalidate(new TypeAndName(type, name));
+    }
+
     @Override
     public void clear() {
         cache.clear();

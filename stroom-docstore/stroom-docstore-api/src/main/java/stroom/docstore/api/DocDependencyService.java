@@ -40,8 +40,20 @@ public interface DocDependencyService {
      * Replace all stored edges for a document (or other entity, e.g. a processor filter) with the
      * supplied, already-computed dependencies. Callers extract the dependencies directly from the
      * object they have just persisted, so no re-read of the entity is required.
+     * <p>
+     * Every dependency is stored as definite. Use {@link #setDependencies(DocRef, DocDependencies)} for a
+     * document that can name something ambiguously.
      */
-    void setDependencies(DocRef docRef, Set<DocRef> dependencies);
+    default void setDependencies(final DocRef docRef, final Set<DocRef> dependencies) {
+        setDependencies(docRef, DocDependencies.of(dependencies));
+    }
+
+    /// Replace all stored edges for a document with the supplied, already-computed dependencies,
+    /// storing those listed in [DocDependencies#ambiguous()] as candidates of an ambiguous name.
+    ///
+    /// @param docRef       The document (or other entity) whose edges are replaced.
+    /// @param dependencies Its dependencies. Must not be null.
+    void setDependencies(DocRef docRef, DocDependencies dependencies);
 
     /**
      * Remove all dependency edges from a document (called on doc delete).
@@ -83,6 +95,30 @@ public interface DocDependencyService {
      *                       outside the doc table and so must not be treated as broken targets.
      */
     Map<DocRef, Set<DocRef>> fetchBrokenDependencies(final Set<String> pseudoRefUuids);
+
+    /// Get every dependency recorded as one of several documents that a name matches, keyed by the
+    /// source document. Unlike [#fetchBrokenDependencies(Set)], the targets exist: the problem is that
+    /// more than one has the name the source uses, so the runtime cannot tell which is meant.
+    ///
+    /// Not cached. It is read when the explorer tree is rebuilt, which is when the broken-dependency
+    /// cache is invalidated and re-read too.
+    ///
+    /// @return Source to the ambiguous targets it names. Empty if there are none.
+    Map<DocRef, Set<DocRef>> fetchAmbiguousDependencies();
+
+    /// Find the sources of one type that have a recorded edge to a document of the given type and name.
+    ///
+    /// Used to find the documents whose name-based references may have changed meaning because a
+    /// document with one of those names was created, renamed or deleted: an XSLT's import or dictionary
+    /// name can start or stop matching, or start or stop being ambiguous. The stored target name is
+    /// matched, which is the name the source used for an edge recorded from a name, and the target's
+    /// current name otherwise.
+    ///
+    /// @param fromType The source type, e.g. `XSLT`.
+    /// @param toType   The target type, e.g. `Dictionary`.
+    /// @param toNames  The target names to match, exactly.
+    /// @return The matching sources. Empty if there are none, or if `toNames` is empty.
+    Set<DocRef> findSourcesByTargetName(String fromType, String toType, Set<String> toNames);
 
     /**
      * Invalidate the broken-dependency cache so the next call to

@@ -20,6 +20,7 @@ import stroom.collection.api.CollectionService;
 import stroom.db.util.JooqUtil;
 import stroom.dictionary.api.WordListProvider;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.impl.db.DocStoreDBPersistenceDbModule;
 import stroom.docstore.impl.db.DocStoreDbConnProvider;
 import stroom.docstore.mock.MockDocFinderModule;
@@ -46,6 +47,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.mock;
 import static stroom.docstore.impl.db.jooq.tables.Doc.DOC;
 import static stroom.docstore.impl.db.jooq.tables.DocDependency.DOC_DEPENDENCY;
@@ -175,7 +177,7 @@ class TestDocDependencyDao {
         final DocRef to1 = docRef("Index", "My Index");
 
         dao.setDependencies(from, Set.of(to1));
-        dao.setDependencies(from, null);
+        dao.setDependencies(from, (Set<DocRef>) null);
 
         assertThat(dao.getDependenciesOf(from.getUuid())).isEmpty();
     }
@@ -827,6 +829,119 @@ class TestDocDependencyDao {
                         "fromtype", "fromname", "fromuuid",
                         "totype", "toname", "touuid",
                         "status");
+    }
+
+    // --- ambiguous edges ---
+
+    @Test
+    void testAmbiguous_reportedAsAmbiguousNotOk() {
+        final DocRef xslt = docRef("XSLT", "Reader");
+        final DocRef words1 = docRef("Dictionary", "Words");
+        final DocRef words2 = docRef("Dictionary", "Words");
+        final DocRef geoIp = docRef("Dictionary", "GeoIP");
+        createDocRow(xslt);
+        createDocRow(words1);
+        createDocRow(words2);
+        createDocRow(geoIp);
+
+        dao.setDependencies(xslt, new DocDependencies(Set.of(words1, words2, geoIp), Set.of(words1, words2)));
+
+        final ResultPage<Dependency> page = dao.fetchDependencies(new DependencyCriteria(), Set.of(), dep -> true);
+        assertThat(page.getValues())
+                .extracting(dep -> dep.getTo().getUuid(), Dependency::isOk, Dependency::isAmbiguous)
+                .containsExactlyInAnyOrder(
+                        // The candidates exist, so they are still openable, but they are flagged
+                        tuple(words1.getUuid(), true, true),
+                        tuple(words2.getUuid(), true, true),
+                        tuple(geoIp.getUuid(), true, false));
+        assertThat(filter("status:Ambiguous").getValues())
+                .extracting(dep -> dep.getTo().getUuid())
+                .containsExactlyInAnyOrder(words1.getUuid(), words2.getUuid());
+    }
+
+    @Test
+    void testAmbiguous_missingTakesPrecedence() {
+        final DocRef xslt = docRef("XSLT", "Reader");
+        final DocRef words1 = docRef("Dictionary", "Words");
+        final DocRef words2 = docRef("Dictionary", "Words");
+        createDocRow(xslt);
+        createDocRow(words1);
+        // words2 has no doc row, i.e. it has been deleted since the edges were recorded
+
+        dao.setDependencies(xslt, new DocDependencies(Set.of(words1, words2), Set.of(words1, words2)));
+
+        assertThat(filter("status:Missing").getValues())
+                .extracting(dep -> dep.getTo().getUuid(), Dependency::isAmbiguous)
+                .containsExactly(tuple(words2.getUuid(), false));
+        assertThat(dao.getAmbiguousDependencies()).containsOnlyKeys(xslt);
+        assertThat(dao.getAmbiguousDependencies().get(xslt)).containsExactly(words1);
+    }
+
+    @Test
+    void testAmbiguous_fetchAmbiguousDependencies() {
+        final DocRef xslt = docRef("XSLT", "Importer");
+        final DocRef common1 = docRef("XSLT", "Common");
+        final DocRef common2 = docRef("XSLT", "Common");
+        final DocRef other = docRef("XSLT", "Other");
+        createDocRow(xslt);
+        createDocRow(common1);
+        createDocRow(common2);
+        createDocRow(other);
+
+        dao.setDependencies(xslt, new DocDependencies(Set.of(common1, common2, other), Set.of(common1, common2)));
+        // A document with no ambiguous edges contributes nothing
+        dao.setDependencies(other, Set.of(common1));
+
+        final Map<DocRef, Set<DocRef>> ambiguous = dao.getAmbiguousDependencies();
+        assertThat(ambiguous).containsOnlyKeys(xslt);
+        assertThat(ambiguous.get(xslt)).containsExactlyInAnyOrder(common1, common2);
+        // Ambiguous targets exist, so they are not broken
+        assertThat(dao.getBrokenDependencies(Set.of())).doesNotContainKey(xslt);
+    }
+
+    @Test
+    void testAmbiguous_rewritingClearsTheFlag() {
+        final DocRef xslt = docRef("XSLT", "Reader");
+        final DocRef words1 = docRef("Dictionary", "Words");
+        final DocRef words2 = docRef("Dictionary", "Words");
+        createDocRow(xslt);
+        createDocRow(words1);
+        createDocRow(words2);
+
+        dao.setDependencies(xslt, new DocDependencies(Set.of(words1, words2), Set.of(words1, words2)));
+        // Re-recorded once words2 has been renamed, so the name is no longer ambiguous
+        dao.setDependencies(xslt, Set.of(words1));
+
+        assertThat(dao.getAmbiguousDependencies()).isEmpty();
+        assertThat(dao.getDependenciesOf(xslt.getUuid())).containsExactly(words1);
+    }
+
+    @Test
+    void testFindSourcesByTargetName() {
+        final DocRef importer = docRef("XSLT", "Importer");
+        final DocRef reader = docRef("XSLT", "Reader");
+        final DocRef pipeline = docRef("Pipeline", "Pipeline");
+        final DocRef common = docRef("XSLT", "Common");
+        final DocRef words = docRef("Dictionary", "Words");
+        // A name that matched nothing, recorded as a dependency on a document that does not exist
+        final DocRef missing = new DocRef("Dictionary", "Not Yet", "Not Yet");
+        createDocRow(importer);
+        createDocRow(reader);
+        createDocRow(pipeline);
+        createDocRow(common);
+        createDocRow(words);
+
+        dao.setDependencies(importer, Set.of(common));
+        dao.setDependencies(reader, Set.of(words, missing));
+        dao.setDependencies(pipeline, Set.of(common, words));
+
+        assertThat(dao.findSourcesByTargetName("XSLT", "XSLT", Set.of("Common")))
+                .containsExactly(importer);
+        assertThat(dao.findSourcesByTargetName("XSLT", "Dictionary", Set.of("Words", "Not Yet")))
+                .containsExactly(reader);
+        // Matched on the target's type as well as its name
+        assertThat(dao.findSourcesByTargetName("XSLT", "Dictionary", Set.of("Common"))).isEmpty();
+        assertThat(dao.findSourcesByTargetName("XSLT", "XSLT", Set.of())).isEmpty();
     }
 
     // --- dependency_version stamping and rebuild support ---

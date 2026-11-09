@@ -110,8 +110,9 @@ class Dictionary extends StroomExtensionFunctionCall {
 
                             } else {
                                 if (list.size() > 1) {
+                                    // The matches are ordered by UUID, not by creation
                                     log(context, Severity.INFO, "Multiple dictionaries found with name '" + name
-                                                                + "' - using the first one that was created", null);
+                                                                + "' - using the one with the lowest UUID", null);
                                 }
 
                                 docRef = list.getFirst();

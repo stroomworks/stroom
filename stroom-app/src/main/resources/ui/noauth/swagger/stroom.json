@@ -14974,6 +14974,36 @@
         "tags" : [ "XSLTs" ]
       }
     },
+    "/xslt/v1/checkReferences" : {
+      "post" : {
+        "operationId" : "checkXsltReferences",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CheckXsltReferencesRequest"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/XsltReferenceCheckResult"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Report the documents, map names and endpoints an XSLT refers to",
+        "tags" : [ "XSLTs" ]
+      }
+    },
     "/xslt/v1/{uuid}" : {
       "get" : {
         "operationId" : "fetchXslt",
@@ -16765,6 +16795,12 @@
           },
           "message" : {
             "type" : "string"
+          },
+          "warnings" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
           }
         }
       },
@@ -17011,6 +17047,17 @@
           "permission" : {
             "type" : "string",
             "enum" : [ "OWNER", "DELETE", "EDIT", "VIEW", "USE" ]
+          }
+        }
+      },
+      "CheckXsltReferencesRequest" : {
+        "type" : "object",
+        "properties" : {
+          "data" : {
+            "type" : "string"
+          },
+          "docRef" : {
+            "$ref" : "#/components/schemas/DocRef"
           }
         }
       },
@@ -18655,6 +18702,9 @@
       "Dependency" : {
         "type" : "object",
         "properties" : {
+          "ambiguous" : {
+            "type" : "boolean"
+          },
           "from" : {
             "$ref" : "#/components/schemas/DocRef"
           },
@@ -26473,15 +26523,15 @@
       "ReplaceSecretRequest" : {
         "type" : "object",
         "properties" : {
+          "credential" : {
+            "$ref" : "#/components/schemas/Credential"
+          },
           "expiryTimeMs" : {
             "type" : "integer",
             "format" : "int64"
           },
           "secret" : {
             "$ref" : "#/components/schemas/Secret"
-          },
-          "uuid" : {
-            "type" : "string"
           }
         }
       },
@@ -31363,6 +31413,10 @@
           "timeZone" : {
             "$ref" : "#/components/schemas/UserTimeZone"
           },
+          "toolbarDisplay" : {
+            "type" : "string",
+            "enum" : [ "ICONS", "ICONS_AND_TEXT", "TEXT" ]
+          },
           "visualisationPalette" : {
             "type" : "string"
           }
@@ -32035,6 +32089,53 @@
           },
           "version" : {
             "type" : "string"
+          }
+        }
+      },
+      "XsltReferenceCheckResult" : {
+        "type" : "object",
+        "properties" : {
+          "parseFailure" : {
+            "type" : "string"
+          },
+          "references" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/XsltReferenceInfo"
+            }
+          }
+        }
+      },
+      "XsltReferenceInfo" : {
+        "type" : "object",
+        "properties" : {
+          "candidates" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DocRef"
+            }
+          },
+          "direction" : {
+            "type" : "string",
+            "enum" : [ "OUT", "IN" ]
+          },
+          "kind" : {
+            "type" : "string",
+            "enum" : [ "IMPORT", "DICTIONARY", "REF_MAP_READ", "REF_MAP_WRITE", "HTTP", "UNANALYSED" ]
+          },
+          "lineNumber" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "rawValue" : {
+            "type" : "string"
+          },
+          "reason" : {
+            "type" : "string",
+            "enum" : [ "DATA_DRIVEN", "PARAMETER", "NON_LITERAL_BINDING", "IMPORTED", "AMBIGUOUS", "NOT_FOUND", "UNPARSEABLE" ]
+          },
+          "target" : {
+            "$ref" : "#/components/schemas/DocRef"
           }
         }
       }

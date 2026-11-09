@@ -17,6 +17,7 @@
 package stroom.docstore.impl.dao;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyService;
 import stroom.importexport.shared.Dependency;
 import stroom.importexport.shared.DependencyCriteria;
@@ -52,9 +53,9 @@ public class DocDependencyServiceImpl implements DocDependencyService {
     }
 
     @Override
-    public void setDependencies(final DocRef docRef, final Set<DocRef> dependencies) {
+    public void setDependencies(final DocRef docRef, final DocDependencies dependencies) {
         try {
-            // The DAO tolerates a null/empty set (it just clears existing edges).
+            // The DAO tolerates null/empty dependencies (it just clears existing edges).
             docDependencyDao.setDependencies(docRef, dependencies);
         } catch (final RuntimeException e) {
             LOGGER.error(() -> "Error setting dependencies for " + docRef + ": " + e.getMessage(), e);
@@ -100,6 +101,18 @@ public class DocDependencyServiceImpl implements DocDependencyService {
         // The cache (via the DAO) already rolls up any non-explorer source (e.g. a ProcessorFilter)
         // to its owning explorer document, so broken deps are keyed on real tree nodes.
         return brokenDependenciesCache.getMap(pseudoRefUuids);
+    }
+
+    @Override
+    public Map<DocRef, Set<DocRef>> fetchAmbiguousDependencies() {
+        return docDependencyDao.getAmbiguousDependencies();
+    }
+
+    @Override
+    public Set<DocRef> findSourcesByTargetName(final String fromType,
+                                               final String toType,
+                                               final Set<String> toNames) {
+        return docDependencyDao.findSourcesByTargetName(fromType, toType, toNames);
     }
 
     @Override

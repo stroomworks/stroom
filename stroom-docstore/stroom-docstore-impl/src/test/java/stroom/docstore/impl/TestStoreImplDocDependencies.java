@@ -19,6 +19,7 @@ package stroom.docstore.impl;
 import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DependencyRemapFunction;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyService;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.api.Store;
@@ -62,6 +63,7 @@ class TestStoreImplDocDependencies {
     // The stub remap function reports this as the (only) dependency of every document, so we can
     // assert the store passes exactly what it extracted from the in-hand object.
     private static final DocRef DEP = new DocRef("Dictionary", "dep-uuid", "DepDict");
+    private static final DocDependencies DEP_DEPENDENCIES = DocDependencies.of(Set.of(DEP));
 
     private DocDependencyService docDependencyService;
     private Store<DictionaryDoc> store;
@@ -100,7 +102,7 @@ class TestStoreImplDocDependencies {
         final DocRef docRef = store.createDocument("dict1");
 
         // Deps came straight from the extracted document, not a re-read.
-        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(docRef.getUuid()), eq(Set.of(DEP)));
+        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(docRef.getUuid()), eq(DEP_DEPENDENCIES));
         // Nothing can reference a brand-new doc yet, so no name propagation and no removal.
         verify(docDependencyService, never()).propagateName(any());
         verify(docDependencyService, never()).removeDependencies(any());
@@ -116,7 +118,7 @@ class TestStoreImplDocDependencies {
         final DictionaryDoc doc = store.readDocument(docRef);
         store.writeDocument(doc);
 
-        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(docRef.getUuid()), eq(Set.of(DEP)));
+        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(docRef.getUuid()), eq(DEP_DEPENDENCIES));
         verify(docDependencyService, times(1)).propagateName(docRefWithUuid(docRef.getUuid()));
         verify(docDependencyService, never()).removeDependencies(any());
         verifyNoMoreInteractions(docDependencyService);
@@ -129,7 +131,7 @@ class TestStoreImplDocDependencies {
 
         store.renameDocument(docRef, "dict1-renamed");
 
-        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(docRef.getUuid()), eq(Set.of(DEP)));
+        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(docRef.getUuid()), eq(DEP_DEPENDENCIES));
         verify(docDependencyService, times(1)).propagateName(docRefWithUuid(docRef.getUuid()));
         verify(docDependencyService, never()).removeDependencies(any());
         verifyNoMoreInteractions(docDependencyService);
@@ -143,7 +145,7 @@ class TestStoreImplDocDependencies {
         store.deleteDocument(docRef);
 
         verify(docDependencyService, times(1)).removeDependencies(docRefWithUuid(docRef.getUuid()));
-        verify(docDependencyService, never()).setDependencies(any(), any());
+        verify(docDependencyService, never()).setDependencies(any(), any(DocDependencies.class));
         verify(docDependencyService, never()).propagateName(any());
         verifyNoMoreInteractions(docDependencyService);
     }
@@ -164,7 +166,7 @@ class TestStoreImplDocDependencies {
         final ImportState importState = new ImportState(docRef, "imported");
         store.importDocument(docRef, importData, importState, ImportSettings.auto());
 
-        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(uuid), eq(Set.of(DEP)));
+        verify(docDependencyService, times(1)).setDependencies(docRefWithUuid(uuid), eq(DEP_DEPENDENCIES));
         verify(docDependencyService, times(1)).propagateName(docRefWithUuid(uuid));
         verify(docDependencyService, never()).removeDependencies(any());
         verifyNoMoreInteractions(docDependencyService);

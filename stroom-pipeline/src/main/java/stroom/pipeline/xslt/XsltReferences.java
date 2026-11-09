@@ -16,13 +16,16 @@
 
 package stroom.pipeline.xslt;
 
+import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
+import stroom.pipeline.shared.XsltDoc;
 import stroom.pipeline.shared.XsltReferenceKind;
 import stroom.pipeline.shared.XsltReferenceReason;
 
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -46,6 +49,7 @@ import java.util.Set;
 public record XsltReferences(List<XsltReference> references, @Nullable String parseFailure) {
 
     private static final XsltReferences EMPTY = new XsltReferences(List.of(), null);
+    private static final int MAX_STORED_LENGTH = 255;
 
     /**
      * @throws NullPointerException if {@code references} is null.
@@ -86,16 +90,20 @@ public record XsltReferences(List<XsltReference> references, @Nullable String pa
         return parseFailure != null;
     }
 
-    /**
-     * The documents this XSLT depends on, for recording as dependency edges.
-     * <p>
-     * An ambiguous name contributes <b>every</b> candidate. A dependency edge means "may use" rather
-     * than "will use" - references in never-matched templates are recorded too - so listing all
-     * candidates keeps the edge set complete, where choosing one would invent a fact and choosing none
-     * would lose a live edge.
-     *
-     * @return the distinct targets, in the order first encountered.
-     */
+    /// The documents this XSLT depends on, for recording as dependency edges.
+    ///
+    /// Three kinds of reference contribute:
+    ///
+    /// - **A resolved reference** contributes its target.
+    /// - **An ambiguous name** contributes **every** candidate. A dependency edge means "may use" rather
+    ///   than "will use" - references in never-matched templates are recorded too - so listing all
+    ///   candidates keeps the edge set complete, where choosing one would invent a fact and choosing none
+    ///   would lose a live edge. The candidates are recorded as ambiguous (see [#ambiguousTargets()]), so
+    ///   they are reported as a problem to fix rather than as dependencies the XSLT follows.
+    /// - **A name that matched nothing** contributes a dependency on a document that does not exist (see
+    ///   [#notFoundTargets()]), so that it is reported as a missing dependency like any other.
+    ///
+    /// @return the distinct targets, in the order first encountered.
     public Set<DocRef> documentTargets() {
         final Set<DocRef> targets = new LinkedHashSet<>();
         for (final XsltReference reference : references) {
@@ -103,6 +111,57 @@ public record XsltReferences(List<XsltReference> references, @Nullable String pa
                 targets.add(reference.target());
             }
             targets.addAll(reference.candidates());
+        }
+        targets.addAll(notFoundTargets());
+        return targets;
+    }
+
+    /// The targets that are recorded only as candidates of an ambiguous name.
+    ///
+    /// A candidate that another reference resolves to definitely, e.g. by UUID, is left out: the XSLT
+    /// does depend on it, whatever else the ambiguous name may mean.
+    ///
+    /// @return the distinct ambiguous targets, in the order first encountered.
+    public Set<DocRef> ambiguousTargets() {
+        final Set<DocRef> ambiguous = new LinkedHashSet<>();
+        final Set<DocRef> definite = new HashSet<>();
+        for (final XsltReference reference : references) {
+            if (reference.target() != null) {
+                definite.add(reference.target());
+            }
+            ambiguous.addAll(reference.candidates());
+        }
+        ambiguous.removeAll(definite);
+        return ambiguous;
+    }
+
+    /// Dependencies on the documents named by references that matched nothing.
+    ///
+    /// Only an import and a dictionary name a document, so only they contribute. Each becomes a [DocRef]
+    /// whose UUID is what the runtime would look the reference up by, and whose name is the reference as
+    /// written. No document has that UUID, so the dependency is reported as missing, and the explorer
+    /// flags the XSLT. Were a document with that UUID to appear, the dependency would be satisfied with no
+    /// further work; a document appearing with that **name** is noticed by the XSLT dependency refresher,
+    /// which re-records the XSLT.
+    ///
+    /// A value too long to store, or blank, is left out. Neither can be a document's name or UUID.
+    ///
+    /// @return the distinct not-found targets, in the order first encountered.
+    public Set<DocRef> notFoundTargets() {
+        final Set<DocRef> targets = new LinkedHashSet<>();
+        for (final XsltReference reference : withReason(XsltReferenceReason.NOT_FOUND)) {
+            final String rawValue = reference.rawValue();
+            final DocRef target = switch (reference.kind()) {
+                // An import is looked up by name, then as a doc ref string or a bare UUID
+                case IMPORT -> new DocRef(
+                        XsltDoc.TYPE, CustomURIResolver.parseDocRef(rawValue).getUuid(), rawValue);
+                // A dictionary is looked up by UUID, then by name, so both are the value as written
+                case DICTIONARY -> new DocRef(DictionaryDoc.TYPE, rawValue, rawValue);
+                default -> null;
+            };
+            if (target != null && isStorable(target.getUuid()) && isStorable(target.getName())) {
+                targets.add(target);
+            }
         }
         return targets;
     }
@@ -138,5 +197,10 @@ public record XsltReferences(List<XsltReference> references, @Nullable String pa
                 .filter(reference -> kind == reference.kind() && reference.isResolved())
                 .map(XsltReference::rawValue)
                 .toList();
+    }
+
+    // The doc_dependency columns are VARCHAR(255)
+    private static boolean isStorable(final String value) {
+        return value != null && !value.isBlank() && value.length() <= MAX_STORED_LENGTH;
     }
 }

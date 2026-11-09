@@ -26,6 +26,7 @@ import org.jspecify.annotations.NonNull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,21 +52,25 @@ public class DependencyRemapper {
 
     private final Map<DocRef, DocRef> remappings;
     private final Set<DocRef> dependencies;
+    // The dependencies recorded as definite, by remap() or record(), so that a target named both
+    // definitely and ambiguously is stored as definite.
+    private final Set<DocRef> definite;
+    // The candidates of ambiguous names, as passed to recordAmbiguous().
+    private final Set<DocRef> ambiguousCandidates;
     private final List<String> warnings;
     private final AtomicBoolean changed;
 
     public DependencyRemapper(final Map<DocRef, DocRef> remappings) {
         this.remappings = remappings;
         this.dependencies = new HashSet<>();
+        this.definite = new HashSet<>();
+        this.ambiguousCandidates = new LinkedHashSet<>();
         this.warnings = new ArrayList<>();
         this.changed = new AtomicBoolean();
     }
 
     public DependencyRemapper() {
-        this.remappings = Collections.emptyMap();
-        this.dependencies = new HashSet<>();
-        this.warnings = new ArrayList<>();
-        this.changed = new AtomicBoolean();
+        this(Collections.emptyMap());
     }
 
     public DocRef remap(final DocRef docRef) {
@@ -77,6 +82,7 @@ public class DependencyRemapper {
         changed.compareAndSet(false, !Objects.equals(remap, docRef));
         if (remap != null) {
             dependencies.add(remap);
+            definite.add(remap);
         }
         return remap;
     }
@@ -112,6 +118,27 @@ public class DependencyRemapper {
     public void record(@NonNull final DocRef docRef) {
         Objects.requireNonNull(docRef, "Null docRef supplied");
         dependencies.add(docRef);
+        definite.add(docRef);
+    }
+
+    /// Record `docRef` as one of several documents that a name in this document matches.
+    ///
+    /// **Why this exists.** A document that refers to others by name, such as an XSLT, can name
+    /// something that several documents share, since names are not unique. Each match is recorded, so
+    /// the dependency is not lost and deleting or renaming any of them is noticed, but it is stored as
+    /// ambiguous rather than as a dependency the document will actually follow. Ambiguous dependencies
+    /// are surfaced as problems: an ambiguous XSLT import fails to compile, and an ambiguous dictionary
+    /// name uses whichever match is found first.
+    ///
+    /// Like [#record(DocRef)], this never reports the document as changed. Where the same document is
+    /// also recorded definitely, by [#record(DocRef)] or [#remap(DocRef)], it is stored as definite.
+    ///
+    /// @param docRef One of the documents the name matched. Must not be null.
+    /// @throws NullPointerException if `docRef` is null.
+    public void recordAmbiguous(@NonNull final DocRef docRef) {
+        Objects.requireNonNull(docRef, "Null docRef supplied");
+        dependencies.add(docRef);
+        ambiguousCandidates.add(docRef);
     }
 
     /**
@@ -180,6 +207,14 @@ public class DependencyRemapper {
 
     public Set<DocRef> getDependencies() {
         return dependencies;
+    }
+
+    /// @return Everything recorded, with the dependencies that are only candidates of an ambiguous name
+    /// marked as such. A candidate that was also recorded definitely is not marked.
+    public DocDependencies getDocDependencies() {
+        final Set<DocRef> ambiguous = new LinkedHashSet<>(ambiguousCandidates);
+        ambiguous.removeAll(definite);
+        return new DocDependencies(dependencies, ambiguous);
     }
 
     /**

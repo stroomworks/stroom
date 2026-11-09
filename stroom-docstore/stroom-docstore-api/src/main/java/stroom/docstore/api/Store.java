@@ -62,6 +62,14 @@ public interface Store<D extends AbstractDoc>
     /// @return The document's dependencies, or an empty set if this document type tracks none.
     Set<DocRef> getDependencies(DocRef docRef);
 
+    /// Read a document and extract its dependencies with this store's dependency remap function,
+    /// including which of them are only candidates of an ambiguous name.
+    /// No document permission checks are applied.
+    ///
+    /// @param docRef The document to read.
+    /// @return The document's dependencies. Empty if this document type tracks none.
+    DocDependencies getDocDependencies(DocRef docRef);
+
     // ---------------------------------------------------------------------
     // END OF HasDependencies
     // ---------------------------------------------------------------------

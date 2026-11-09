@@ -19,12 +19,16 @@ package stroom.gwt.workbench.client.app.editors;
 import stroom.aws.s3.shared.S3ConfigDoc;
 import stroom.aws.s3.shared.S3ConfigResource;
 import stroom.docref.DocRef;
+import stroom.document.client.event.OpenDocumentEvent;
 import stroom.gwt.workbench.client.app.editors.DocEditors.DocResource;
+import stroom.gwt.workbench.client.app.rest.RequestMatcher;
 import stroom.gwt.workbench.client.app.rest.RestFixtures;
 import stroom.gwt.workbench.client.app.rest.RestReply;
+import stroom.gwt.workbench.client.app.screen.ScreenHarness;
 import stroom.gwt.workbench.client.app.screen.StroomDom;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.play.Query;
+import stroom.gwt.workbench.framework.client.play.Spy;
 import stroom.gwt.workbench.framework.client.play.Value;
 import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
@@ -53,7 +57,11 @@ import java.util.List;
 /// `/textConverter/v1/...`, `/script/v1/...`, `/kafkaConfig/v1/...`, `/s3/v1/...`,
 /// `/xmlSchema/v1/...`) and reads it into the editor ([DocEditors#open]). Download is
 /// `POST /kafkaConfig/v1/download` (and S3's), XML Schema's validation
-/// `POST /xmlSchema/v1/validate`, and the Permissions tab has its own routes.
+/// `POST /xmlSchema/v1/validate`, an XSLT's References tab `POST /xslt/v1/checkReferences`, and
+/// the Permissions tab has its own routes.
+///
+/// The `checkReferences` spy records the body of each reference check the XSLT stories answer, and
+/// the `openDocument` spy the type and name of each [OpenDocumentEvent] fired.
 public final class CodeDocumentEditorStories {
 
     // Stroom's Ace editor's text area
@@ -67,6 +75,31 @@ public final class CodeDocumentEditorStories {
             {"resourceKey": {"key": "k1", "name": "NAME"}, "messageList": []}""";
 
     private static final String XSLT_DATA = "\"<xsl:stylesheet version=\\\"2.0\\\"/>\"";
+
+    private static final String CHECK_REFERENCES_PATH = "/xslt/v1/checkReferences";
+    private static final String CHECK_REFERENCES_SPY = "checkReferences";
+    private static final String OPEN_DOCUMENT_SPY = "openDocument";
+
+    // What the server finds in a stylesheet: an import it resolves, a dictionary that doesn't exist, one
+    // whose name other dictionaries the user cannot view share, and a map name that comes from the input
+    // data (XsltResourceImpl.checkReferences)
+    private static final String REFERENCES = """
+            {"references": [
+              {"kind": "IMPORT", "rawValue": "Common", "lineNumber": 3,
+                "target": {"type": "XSLT", "uuid": "xslt-common", "name": "Common"}},
+              {"kind": "DICTIONARY", "rawValue": "Missing Words", "lineNumber": 7, "reason": "NOT_FOUND"},
+              {"kind": "DICTIONARY", "rawValue": "Shared Words", "lineNumber": 9, "reason": "AMBIGUOUS",
+                "target": {"type": "Dictionary", "uuid": "dict-shared", "name": "Shared Words"},
+                "hiddenMatches": true},
+              {"kind": "REF_MAP_READ", "rawValue": "$mapName", "lineNumber": 12, "reason": "DATA_DRIVEN"}
+            ]}""";
+
+    // A stylesheet that won't parse: one row saying so, and the failure
+    private static final String UNPARSEABLE_REFERENCES = """
+            {"references": [
+              {"kind": "UNANALYSED", "rawValue": "<xsl:stylesheet", "lineNumber": 1, "reason": "UNPARSEABLE"}
+            ],
+             "parseFailure": "XML document structures must start and end within the same entity."}""";
 
     private static final String XSLT = """
             {"type": "XSLT", "uuid": "xslt-1", "name": "My XSLT", "data": DATA,
@@ -106,16 +139,92 @@ public final class CodeDocumentEditorStories {
                 .layout(StoryLayout.FULLSCREEN)
                 .story("Xslt", context -> xslt(context, XSLT_DATA, false))
                 .withPlay(play -> {
-                    expectTabs(play, "XSLT", "Documentation", "Permissions");
+                    expectTabs(play, "XSLT", "References", "Documentation", "Permissions");
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
+                    // Nothing is checked until the References tab is opened
+                    play.expect(play.spy(CHECK_REFERENCES_SPY)).not().toHaveBeenCalled();
                     DocEditors.expectNoProblems(play);
                 })
                 // Read only: the XSLT tab, as 'Xslt' shows it
                 .story("XsltReadOnly", context -> xslt(context, XSLT_DATA, true))
                 .withPlay(play -> {
-                    expectTabs(play, "XSLT", "Documentation", "Permissions");
+                    expectTabs(play, "XSLT", "References", "Documentation", "Permissions");
                     play.waitFor(() -> play.expect(play.querySelector(ACE_INPUT)).not().toBeNull());
                     play.expect(play.getByText("Read only", ".link-tab-panel__read-only-note")).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // The References tab checks the stylesheet when opened and lists what it refers to:
+                // a resolved reference's target is a link that opens it
+                .story("XsltReferences", context -> xslt(context, XSLT_DATA, false))
+                .withPlay(play -> {
+                    openTab(play, "References");
+                    final Play grid = play.within(play.findByText("Resolves to").closest(".data-grid"));
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post(CHECK_REFERENCES_PATH)
+                                    .withJsonBodyContaining("""
+                                            {"docRef": {"type": "XSLT", "uuid": "xslt-1"},
+                                              "data": "<xsl:stylesheet version=\\"2.0\\"/>"}""")
+                                    .toSpyMatcher());
+                    play.expect(grid.getByText("Import")).toBeInTheDocument();
+                    play.expect(grid.getByText("Found")).toBeInTheDocument();
+                    play.expect(grid.getByText("Missing Words")).toBeInTheDocument();
+                    play.expect(grid.getByText("No such document")).toBeInTheDocument();
+                    // A name that also matches documents the user cannot view says so, without saying how
+                    // many, and still links to the match the user can see
+                    play.expect(grid.getByText("Also matches documents you cannot view - use the UUID"))
+                            .toBeInTheDocument();
+                    play.expect(grid.getByRole("button", "Open Dictionary 'Shared Words'.")).toBeInTheDocument();
+                    play.expect(grid.getByText("Map read")).toBeInTheDocument();
+                    play.expect(grid.getByText("Comes from the input data")).toBeInTheDocument();
+                    play.expect(grid.getByText("12")).toBeInTheDocument();
+                    play.click(grid.getByRole("button", "Open XSLT 'Common'."));
+                    play.waitFor(() -> play.expect(play.spy(OPEN_DOCUMENT_SPY)).toHaveBeenCalledWith("XSLT Common"));
+                    play.expect(play.spy(OPEN_DOCUMENT_SPY)).toHaveBeenCalledTimes(1);
+                    DocEditors.expectNoProblems(play);
+                })
+                // Read only: checking reads the stylesheet and changes nothing, so it works as
+                // 'XsltReferences' shows it
+                .story("XsltReferencesReadOnly", context -> xslt(context, XSLT_DATA, true))
+                .withPlay(play -> {
+                    openTab(play, "References");
+                    final Play grid = play.within(play.findByText("Resolves to").closest(".data-grid"));
+                    play.expect(grid.getByRole("button", "Open XSLT 'Common'.")).toBeInTheDocument();
+                    play.expect(grid.getByText("No such document")).toBeInTheDocument();
+                    play.expect(play.getByText("Read only", ".link-tab-panel__read-only-note")).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // What is checked is the editor's text, unsaved changes included, and it is checked
+                // again each time the tab is opened, so the answer is about what the author has now
+                .story("XsltReferencesUnsavedEdits", context -> xslt(context, XSLT_DATA, false))
+                .withPlay(play -> {
+                    final Query input = play.querySelector(ACE_INPUT);
+                    play.waitFor(() -> play.expect(input).not().toBeNull());
+                    play.run("focus the editor", () -> input.element().get().focus());
+                    play.keyboard("edited");
+                    play.waitFor(() -> play.expect(play.getByRole("button", "Save")).not()
+                            .toHaveAttribute("aria-disabled"));
+                    openTab(play, "References");
+                    play.waitFor(() -> play.expect(play.spy(CHECK_REFERENCES_SPY)).toHaveBeenCalledTimes(1));
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post(CHECK_REFERENCES_PATH).withBodyContaining("edited").toSpyMatcher());
+                    // Away and back again: checked again
+                    openTab(play, "XSLT");
+                    openTab(play, "References");
+                    play.waitFor(() -> play.expect(play.spy(CHECK_REFERENCES_SPY)).toHaveBeenCalledTimes(2));
+                    // Checking saves nothing
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
+                            RequestMatcher.put("/xslt/v1/xslt-1").toSpyMatcher());
+                    DocEditors.expectNoProblems(play);
+                })
+                // A stylesheet that won't parse is reported as a row, never as an alert: someone
+                // mid-edit would otherwise be shown one every time they opened the tab
+                .story("XsltReferencesUnparseable",
+                        context -> xslt(context, XSLT_DATA, false, RestReply.json(UNPARSEABLE_REFERENCES)))
+                .withPlay(play -> {
+                    openTab(play, "References");
+                    final Play grid = play.within(play.findByText("Resolves to").closest(".data-grid"));
+                    play.expect(grid.findByText("Could not be read")).toBeInTheDocument();
+                    play.expect(grid.getByText("Not analysed")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
                 .story("TextConverter", context -> textConverter(context, false))
@@ -328,15 +437,34 @@ public final class CodeDocumentEditorStories {
     }
 
     private static Widget xslt(final StoryContext context, final String data, final boolean readOnly) {
+        return xslt(context, data, readOnly, RestReply.json(REFERENCES));
+    }
+
+    private static Widget xslt(final StoryContext context,
+                               final String data,
+                               final boolean readOnly,
+                               final RestReply references) {
         final DocRef docRef = new DocRef(XsltDoc.TYPE, "xslt-1", "My XSLT");
         final XsltResource resource = GWT.create(XsltResource.class);
-        final RestFixtures fixtures = fixtures("/xslt/v1/xslt-1", XSLT.replace("DATA", data)).build();
+        final Spy checkReferences = context.fn(CHECK_REFERENCES_SPY);
+        final Spy openDocument = context.fn(OPEN_DOCUMENT_SPY);
+        final RestFixtures fixtures = fixtures("/xslt/v1/xslt-1", XSLT.replace("DATA", data))
+                .post(CHECK_REFERENCES_PATH, request -> {
+                    checkReferences.call(request.getBody());
+                    return references;
+                })
+                .build();
         return DocEditors.render(context, fixtures, readOnly,
-                (harness, injector) -> DocEditors.open(harness, docRef, injector.getXsltEditor(),
-                        DocResource.of(
-                                restFactory -> restFactory.create(resource).method(res -> res.fetch(docRef.getUuid())),
-                                (restFactory, doc) -> restFactory.create(resource)
-                                        .method(res -> res.update(doc.getUuid(), doc)))));
+                (harness, injector) -> {
+                    harness.addRegistration(harness.getEventBus().addHandler(OpenDocumentEvent.getType(), event ->
+                            openDocument.call(event.getDocRef().getType() + " " + event.getDocRef().getName())));
+                    DocEditors.open(harness, docRef, injector.getXsltEditor(),
+                            DocResource.of(
+                                    restFactory -> restFactory.create(resource)
+                                            .method(res -> res.fetch(docRef.getUuid())),
+                                    (restFactory, doc) -> restFactory.create(resource)
+                                            .method(res -> res.update(doc.getUuid(), doc))));
+                });
     }
 
     private static Widget textConverter(final StoryContext context, final boolean readOnly) {

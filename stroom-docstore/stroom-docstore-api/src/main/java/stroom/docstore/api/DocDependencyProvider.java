@@ -35,4 +35,16 @@ public interface DocDependencyProvider {
     /// @param docRef The document to read.
     /// @return The document's dependencies, or an empty set if this document type tracks none.
     Set<DocRef> getDependencies(DocRef docRef);
+
+    /// Read a document and extract its dependencies, including which of them are only candidates of an
+    /// ambiguous name.
+    ///
+    /// The default treats every dependency as definite, which is right for any document that holds its
+    /// dependencies as [DocRef] fields.
+    ///
+    /// @param docRef The document to read.
+    /// @return The document's dependencies. Empty if this document type tracks none.
+    default DocDependencies getDocDependencies(final DocRef docRef) {
+        return DocDependencies.of(getDependencies(docRef));
+    }
 }

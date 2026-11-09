@@ -36,7 +36,14 @@ import java.util.Optional;
  * <p>
  * The permission filtering is a feature of this class, not an inconvenience. Both methods answer only for
  * documents the current user may view, so neither can be used to establish that a document exists by
- * naming it. Callers must not restore the missing answers by running this under the processing user.
+ * naming it. What a caller shows a user must therefore come from a lookup run as that user: the XSLT
+ * editor's References tab ({@code XsltResourceImpl.checkReferences}) and the warnings raised when an XSLT
+ * is copied both do.
+ * <p>
+ * Recording dependencies is the one exception. The store records them as the processing user, so that a
+ * recorded dependency says what the runtime will do, and accepts that a recorded problem can reveal that a
+ * name has matches the viewer cannot see. {@code XsltStoreImpl.getDependencyRemapFunction} explains why
+ * that is acceptable.
  */
 @Singleton
 class XsltReferenceLookupImpl implements XsltReferenceLookup {

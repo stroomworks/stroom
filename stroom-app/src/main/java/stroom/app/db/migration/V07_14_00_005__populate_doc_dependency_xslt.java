@@ -48,6 +48,11 @@ import java.util.Set;
  * because a map name does not identify a document - which store a lookup reaches depends on the pipeline's
  * configured references rather than on the XSLT.
  * <p>
+ * Problems are recorded as the store records them on save: a name matching several documents records each
+ * as an ambiguous edge, and a name matching nothing records an edge to a document that does not exist (see
+ * {@code XsltReferences.documentTargets}). Names are resolved against every document, as the store resolves
+ * them as the processing user; see {@code XsltStoreImpl.getDependencyRemapFunction} for why.
+ * <p>
  * <b>Safe to re-run.</b> Inserts are idempotent on the {@code (from_uuid, to_uuid)} unique key, and a
  * document whose stylesheet cannot be parsed is logged and skipped rather than failing the migration. A run
  * that dies part way through can simply be run again: the work already done is not repeated, and nothing
@@ -113,8 +118,8 @@ public class V07_14_00_005__populate_doc_dependency_xslt extends AbstractCrossMo
     // free but a genuine error such as data truncation is still raised.
     private static final String INSERT_DEPENDENCY = """
             INSERT INTO doc_dependency
-                (from_type, from_uuid, from_name, to_type, to_uuid, to_name)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (from_type, from_uuid, from_name, to_type, to_uuid, to_name, ambiguous)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE from_type = from_type
             """;
 
@@ -157,6 +162,7 @@ public class V07_14_00_005__populate_doc_dependency_xslt extends AbstractCrossMo
                         unresolvedCount += references.unresolved().size();
 
                         final Set<DocRef> targets = references.documentTargets();
+                        final Set<DocRef> ambiguous = references.ambiguousTargets();
                         for (final DocRef target : targets) {
                             insertStmt.setString(1, XSLT_TYPE);
                             insertStmt.setString(2, uuid);
@@ -164,6 +170,7 @@ public class V07_14_00_005__populate_doc_dependency_xslt extends AbstractCrossMo
                             insertStmt.setString(4, safeStr(target.getType()));
                             insertStmt.setString(5, target.getUuid());
                             insertStmt.setString(6, safeStr(target.getName()));
+                            insertStmt.setBoolean(7, ambiguous.contains(target));
                             insertStmt.addBatch();
                             edgeCount++;
                         }

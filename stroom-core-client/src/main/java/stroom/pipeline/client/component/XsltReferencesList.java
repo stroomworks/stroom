@@ -160,7 +160,10 @@ public class XsltReferencesList extends Component {
         }
         return switch (reason) {
             case NOT_FOUND -> "No such document";
-            case AMBIGUOUS -> "Matches " + reference.getCandidates().size() + " documents - use the UUID";
+            // Some matches may be documents the user cannot view, whose number must not be given away
+            case AMBIGUOUS -> reference.isHiddenMatches()
+                    ? "Also matches documents you cannot view - use the UUID"
+                    : "Matches " + reference.getCandidates().size() + " documents - use the UUID";
             case DATA_DRIVEN -> "Comes from the input data";
             case PARAMETER -> "Comes from a parameter";
             case NON_LITERAL_BINDING -> "Built at run time";

@@ -19,6 +19,7 @@ package stroom.pipeline.shared;
 import stroom.docref.DocRef;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -44,7 +45,8 @@ import java.util.Objects;
         "candidates",
         "reason",
         "direction",
-        "lineNumber"})
+        "lineNumber",
+        "hiddenMatches"})
 public class XsltReferenceInfo {
 
     @JsonProperty
@@ -61,6 +63,8 @@ public class XsltReferenceInfo {
     private final XsltReferenceDirection direction;
     @JsonProperty
     private final int lineNumber;
+    @JsonProperty
+    private final boolean hiddenMatches;
 
     @JsonCreator
     public XsltReferenceInfo(@JsonProperty("kind") final XsltReferenceKind kind,
@@ -69,7 +73,8 @@ public class XsltReferenceInfo {
                              @JsonProperty("candidates") final List<DocRef> candidates,
                              @JsonProperty("reason") final XsltReferenceReason reason,
                              @JsonProperty("direction") final XsltReferenceDirection direction,
-                             @JsonProperty("lineNumber") final int lineNumber) {
+                             @JsonProperty("lineNumber") final Integer lineNumber,
+                             @JsonProperty("hiddenMatches") final Boolean hiddenMatches) {
         this.kind = kind;
         this.rawValue = rawValue;
         this.target = target;
@@ -78,7 +83,10 @@ public class XsltReferenceInfo {
                 : candidates;
         this.reason = reason;
         this.direction = direction;
-        this.lineNumber = lineNumber;
+        this.lineNumber = lineNumber == null
+                ? -1
+                : lineNumber;
+        this.hiddenMatches = hiddenMatches != null && hiddenMatches;
     }
 
     public XsltReferenceKind getKind() {
@@ -130,10 +138,17 @@ public class XsltReferenceInfo {
         return lineNumber;
     }
 
+    /// @return true if the name also matches documents the user cannot view, so it is ambiguous at runtime
+    /// even where only one match, or none, is shown. Says nothing about how many such documents there are.
+    public boolean isHiddenMatches() {
+        return hiddenMatches;
+    }
+
     /**
      * @return true if the value was determined. A resolved reference of a kind that has no document target,
      * such as a map name, still returns true.
      */
+    @JsonIgnore
     public boolean isResolved() {
         return reason == null;
     }
@@ -148,6 +163,7 @@ public class XsltReferenceInfo {
         }
         final XsltReferenceInfo that = (XsltReferenceInfo) o;
         return lineNumber == that.lineNumber
+               && hiddenMatches == that.hiddenMatches
                && kind == that.kind
                && Objects.equals(rawValue, that.rawValue)
                && Objects.equals(target, that.target)
@@ -158,7 +174,7 @@ public class XsltReferenceInfo {
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, rawValue, target, candidates, reason, direction, lineNumber);
+        return Objects.hash(kind, rawValue, target, candidates, reason, direction, lineNumber, hiddenMatches);
     }
 
     @Override
@@ -169,6 +185,7 @@ public class XsltReferenceInfo {
                + ", target=" + target
                + ", reason=" + reason
                + ", lineNumber=" + lineNumber
+               + ", hiddenMatches=" + hiddenMatches
                + '}';
     }
 }

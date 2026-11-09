@@ -18,6 +18,7 @@ package stroom.docstore.impl.dao;
 
 import stroom.cluster.lock.api.ClusterLockService;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyProvider;
 import stroom.docstore.api.DocDependencyService;
 import stroom.docstore.api.DocumentNotFoundException;
@@ -93,7 +94,7 @@ class TestDocDependencyRebuildStartup {
 
         startup.run();
 
-        verify(docDependencyDao, never()).setDependenciesIfUnchanged(any(), anyString(), any());
+        verify(docDependencyDao, never()).setDependenciesIfUnchanged(any(), anyString(), anyDeps());
         verifyNoInteractions(docDependencyService);
     }
 
@@ -103,14 +104,14 @@ class TestDocDependencyRebuildStartup {
         when(docDependencyDao.findDocsWithStaleDependencies()).thenReturn(List.of(
                 new DocVersion(PIPELINE_1, "v1"),
                 new DocVersion(PIPELINE_2, "v2")));
-        when(pipelineProvider.getDependencies(PIPELINE_1)).thenReturn(Set.of(PARENT_PIPELINE));
-        when(pipelineProvider.getDependencies(PIPELINE_2)).thenReturn(Set.of());
-        when(docDependencyDao.setDependenciesIfUnchanged(any(), anyString(), any())).thenReturn(true);
+        when(pipelineProvider.getDocDependencies(PIPELINE_1)).thenReturn(deps(PARENT_PIPELINE));
+        when(pipelineProvider.getDocDependencies(PIPELINE_2)).thenReturn(deps());
+        when(docDependencyDao.setDependenciesIfUnchanged(any(), anyString(), anyDeps())).thenReturn(true);
 
         startup.run();
 
-        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_1, "v1", Set.of(PARENT_PIPELINE));
-        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_2, "v2", Set.of());
+        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_1, "v1", deps(PARENT_PIPELINE));
+        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_2, "v2", deps());
         verify(docDependencyService).invalidateBrokenDependencyCache();
     }
 
@@ -120,14 +121,14 @@ class TestDocDependencyRebuildStartup {
         when(docDependencyDao.findDocsWithStaleDependencies()).thenReturn(List.of(
                 new DocVersion(PIPELINE_1, "v1"),
                 new DocVersion(PIPELINE_2, "v2")));
-        when(pipelineProvider.getDependencies(any())).thenReturn(Set.of(PARENT_PIPELINE));
+        when(pipelineProvider.getDocDependencies(any())).thenReturn(deps(PARENT_PIPELINE));
         // The first doc was saved after it was found, so the guarded write is refused
-        when(docDependencyDao.setDependenciesIfUnchanged(eq(PIPELINE_1), anyString(), any())).thenReturn(false);
-        when(docDependencyDao.setDependenciesIfUnchanged(eq(PIPELINE_2), anyString(), any())).thenReturn(true);
+        when(docDependencyDao.setDependenciesIfUnchanged(eq(PIPELINE_1), anyString(), anyDeps())).thenReturn(false);
+        when(docDependencyDao.setDependenciesIfUnchanged(eq(PIPELINE_2), anyString(), anyDeps())).thenReturn(true);
 
         startup.run();
 
-        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_2, "v2", Set.of(PARENT_PIPELINE));
+        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_2, "v2", deps(PARENT_PIPELINE));
         verify(docDependencyService).invalidateBrokenDependencyCache();
     }
 
@@ -137,14 +138,14 @@ class TestDocDependencyRebuildStartup {
         when(docDependencyDao.findDocsWithStaleDependencies()).thenReturn(List.of(
                 new DocVersion(PIPELINE_1, "v1"),
                 new DocVersion(PIPELINE_2, "v2")));
-        when(pipelineProvider.getDependencies(PIPELINE_1)).thenThrow(new DocumentNotFoundException(PIPELINE_1));
-        when(pipelineProvider.getDependencies(PIPELINE_2)).thenReturn(Set.of(PARENT_PIPELINE));
-        when(docDependencyDao.setDependenciesIfUnchanged(any(), anyString(), any())).thenReturn(true);
+        when(pipelineProvider.getDocDependencies(PIPELINE_1)).thenThrow(new DocumentNotFoundException(PIPELINE_1));
+        when(pipelineProvider.getDocDependencies(PIPELINE_2)).thenReturn(deps(PARENT_PIPELINE));
+        when(docDependencyDao.setDependenciesIfUnchanged(any(), anyString(), anyDeps())).thenReturn(true);
 
         startup.run();
 
-        verify(docDependencyDao, never()).setDependenciesIfUnchanged(eq(PIPELINE_1), anyString(), any());
-        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_2, "v2", Set.of(PARENT_PIPELINE));
+        verify(docDependencyDao, never()).setDependenciesIfUnchanged(eq(PIPELINE_1), anyString(), anyDeps());
+        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_2, "v2", deps(PARENT_PIPELINE));
         verify(docDependencyService).invalidateBrokenDependencyCache();
     }
 
@@ -154,13 +155,13 @@ class TestDocDependencyRebuildStartup {
         when(docDependencyDao.findDocsWithStaleDependencies()).thenReturn(List.of(
                 new DocVersion(VIEW, "v1"),
                 new DocVersion(PIPELINE_1, "v2")));
-        when(pipelineProvider.getDependencies(PIPELINE_1)).thenReturn(Set.of(PARENT_PIPELINE));
-        when(docDependencyDao.setDependenciesIfUnchanged(any(), anyString(), any())).thenReturn(true);
+        when(pipelineProvider.getDocDependencies(PIPELINE_1)).thenReturn(deps(PARENT_PIPELINE));
+        when(docDependencyDao.setDependenciesIfUnchanged(any(), anyString(), anyDeps())).thenReturn(true);
 
         startup.run();
 
-        verify(docDependencyDao, never()).setDependenciesIfUnchanged(eq(VIEW), anyString(), any());
-        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_1, "v2", Set.of(PARENT_PIPELINE));
+        verify(docDependencyDao, never()).setDependenciesIfUnchanged(eq(VIEW), anyString(), anyDeps());
+        verify(docDependencyDao).setDependenciesIfUnchanged(PIPELINE_1, "v2", deps(PARENT_PIPELINE));
     }
 
     private void givenLockAcquired() {
@@ -169,5 +170,13 @@ class TestDocDependencyRebuildStartup {
             runnable.run();
             return null;
         }).when(clusterLockService).tryLock(eq(DocDependencyRebuildStartup.LOCK_NAME), any());
+    }
+
+    private static DocDependencies deps(final DocRef... docRefs) {
+        return DocDependencies.of(Set.of(docRefs));
+    }
+
+    private static DocDependencies anyDeps() {
+        return any(DocDependencies.class);
     }
 }
