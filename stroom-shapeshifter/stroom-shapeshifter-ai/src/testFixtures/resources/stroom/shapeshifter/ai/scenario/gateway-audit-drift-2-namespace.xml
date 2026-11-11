@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?gateway-export format="audit" compression="none"?>
+<!--
+  Drift 2 of 3: product version 8 changed the default namespace from urn:example:gateway:audit:3
+  to urn:example:gateway:audit:4. Element and attribute names are exactly as before, so an XSLT
+  that matches on the old namespace will no longer match anything.
+-->
+<export xmlns="urn:example:gateway:audit:4"
+        xmlns:dlp="urn:example:gateway:dlp:1"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        product="Tidewater Secure Exchange"
+        productVersion="8.0.0"
+        exportId="EXP-20261020-0043"
+        generated="2026-10-20T10:00:05Z">
+
+  <batch id="B-1101" node="gw-lon-01.dmz.example.org" site="LON" timeZone="Europe/London"
+         schemaVersion="3.0" firstSeq="88410" lastSeq="88423">
+
+    <authentication seq="88410" at="2026-10-20T08:58:41.204Z" outcome="success">
+      <user>
+        <id>u-10234</id>
+        <name>alice.ng</name>
+        <displayName>Alice Ng</displayName>
+        <domain>CORP</domain>
+      </user>
+      <client ip="192.0.2.17" port="53122">
+        <userAgent><![CDATA[Mozilla/5.0 (Windows NT 10.0; Win64; x64) TidewaterClient/7.4]]></userAgent>
+      </client>
+      <method>password</method>
+      <mfa required="true">
+        <factor type="password" result="pass"/>
+        <factor type="totp" result="pass" device="Pixel 8"/>
+      </mfa>
+      <sessionId>S-7f3a9c</sessionId>
+    </authentication>
+
+    <authentication seq="88411" at="2026-10-20T09:02:13.880Z" outcome="failure">
+      <user>
+        <id>u-20977</id>
+        <name>b.okafor</name>
+        <displayName>Bola Okafor</displayName>
+        <domain>CORP</domain>
+      </user>
+      <client ip="198.51.100.44" port="61004">
+        <userAgent><![CDATA[curl/8.6.0]]></userAgent>
+      </client>
+      <method>password</method>
+      <failure code="BAD_CREDENTIALS" attempt="2" of="5">Incorrect password</failure>
+    </authentication>
+
+    <authentication seq="88412" at="2026-10-20T09:02:31.002Z" outcome="failure">
+      <user>
+        <id>u-20977</id>
+        <name>b.okafor</name>
+        <displayName>Bola Okafor</displayName>
+        <domain>CORP</domain>
+      </user>
+      <client ip="198.51.100.44" port="61010">
+        <userAgent><![CDATA[curl/8.6.0]]></userAgent>
+      </client>
+      <method>password</method>
+      <failure code="ACCOUNT_LOCKED" attempt="5" of="5">Too many failed attempts &#8211; account locked</failure>
+      <lockout until="2026-10-20T09:32:31Z" by="policy:lockout-standard"/>
+    </authentication>
+
+    <transfer seq="88413" at="2026-10-20T09:05:57.640Z" direction="upload" outcome="partial">
+      <user>
+        <id>u-10234</id>
+        <name>alice.ng</name>
+        <displayName>Alice Ng</displayName>
+        <domain>CORP</domain>
+      </user>
+      <sessionId>S-7f3a9c</sessionId>
+      <destination type="folder">/Finance/Quarter End/Q3 2026</destination>
+      <files count="2">
+        <file name="Q3 Board Pack.pdf" size="2481152" mime="application/pdf">
+          <sha256>6d1f2b3c4a5e69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0</sha256>
+          <dlp:scan engine="dlp-core" version="2.18" verdict="clean" durationMs="412"/>
+          <stored>true</stored>
+        </file>
+        <file name="payroll_export_2026-09.csv" size="88213" mime="text/csv">
+          <sha256>0a9b8c7d6e5f40312233445566778899aabbccddeeff00112233445566778899</sha256>
+          <dlp:scan engine="dlp-core" version="2.18" verdict="violation" durationMs="97">
+            <dlp:finding severity="high" count="214">
+              <dlp:rule id="R-PII-004" name="National Insurance number"/>
+              <dlp:sample><![CDATA[QQ 12 34 56 C, <redacted>, QQ 98 76 54 A]]></dlp:sample>
+            </dlp:finding>
+            <dlp:finding severity="medium" count="214">
+              <dlp:rule id="R-FIN-011" name="UK sort code &amp; account number"/>
+              <dlp:sample><![CDATA[20-00-00 & 12345678]]></dlp:sample>
+            </dlp:finding>
+            <dlp:action>quarantine</dlp:action>
+          </dlp:scan>
+          <stored>false</stored>
+          <quarantineId>Q-55120</quarantineId>
+        </file>
+      </files>
+    </transfer>
+
+    <heartbeat seq="88414" epochMs="1792487160000">
+      <cpu unit="percent">23.5</cpu>
+      <memory unit="MiB" used="5120" total="16384"/>
+      <queue name="outbound" depth="0"/>
+      <queue name="dlp" depth="3"/>
+    </heartbeat>
+
+    <share seq="88415" at="2026-10-20T09:07:10.019Z" outcome="success">
+      <user>
+        <id>u-10234</id>
+        <name>alice.ng</name>
+        <displayName>Alice Ng</displayName>
+        <domain>CORP</domain>
+      </user>
+      <sessionId>S-7f3a9c</sessionId>
+      <item type="file">/Finance/Quarter End/Q3 2026/Q3 Board Pack.pdf</item>
+      <link id="L-0f81" expires="2026-10-26T09:07:10Z" passwordProtected="true" maxDownloads="3"/>
+      <recipients>
+        <recipient role="to" internal="false">j.marlow@auditors.example.net</recipient>
+        <recipient role="cc" internal="true">cfo.office@corp.example.org</recipient>
+        <recipient role="bcc" internal="true">records@corp.example.org</recipient>
+      </recipients>
+      <subject>Q3 board pack &#8211; Profit &amp; Loss &lt;DRAFT&gt; for Zoë Müller</subject>
+      <message><![CDATA[Hi James,
+Please find the <b>draft</b> board pack attached. The password follows separately.
+Regards, Alice]]></message>
+    </share>
+
+    <!-- A policy change: localTime has no offset, so it is in the batch's timeZone. -->
+    <policyChange seq="88416" localTime="2026-10-20 10:12:44" outcome="success">
+      <user>
+        <id>u-00007</id>
+        <name>adm.patel</name>
+        <displayName>Ravi Patel (Admin)</displayName>
+        <domain>CORP</domain>
+      </user>
+      <policy id="P-DLP-EXT" name="External sharing DLP"/>
+      <changes>
+        <set path="/rules/R-PII-004/action">
+          <old>alert</old>
+          <new>quarantine</new>
+        </set>
+        <set path="/rules/R-PII-004/threshold">
+          <old>10</old>
+          <new>1</new>
+        </set>
+        <set path="/exemptions/group[@name='Payroll']">
+          <old xsi:nil="true"/>
+          <new>enabled until 2026-12-31</new>
+        </set>
+      </changes>
+      <reason>CHG-4471: tighten PII rules after Q3 audit finding</reason>
+    </policyChange>
+
+    <adminAction seq="88417" at="2026-10-20T09:14:02.500Z" action="grantRole" outcome="success">
+      <user>
+        <id>u-00007</id>
+        <name>adm.patel</name>
+        <displayName>Ravi Patel (Admin)</displayName>
+        <domain>CORP</domain>
+      </user>
+      <target>
+        <id>u-31415</id>
+        <name>c.dubois</name>
+        <displayName>Céline Dubois</displayName>
+        <domain>CORP</domain>
+      </target>
+      <role name="Finance Approver" scope="/Finance"/>
+      <approvals>
+        <approval step="1" by="u-00012" at="2026-10-19T16:40:00Z" decision="approved">Line manager</approval>
+        <approval step="2" by="u-00003" at="2026-10-20T08:55:12Z" decision="approved">Data owner</approval>
+      </approvals>
+    </adminAction>
+
+    <transfer seq="88418" at="2026-10-20T09:20:33.117Z" direction="download" outcome="success">
+      <user>
+        <id>u-90001</id>
+        <name>j.marlow@auditors.example.net</name>
+        <displayName>James Marlow</displayName>
+        <domain>EXTERNAL</domain>
+      </user>
+      <viaLink>L-0f81</viaLink>
+      <client ip="203.0.113.80" port="44512">
+        <userAgent><![CDATA[Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) Safari/605.1.15]]></userAgent>
+        <geo country="GB" city="Leeds"/>
+      </client>
+      <files count="1">
+        <file name="Q3 Board Pack.pdf" size="2481152" mime="application/pdf">
+          <sha256>6d1f2b3c4a5e69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0</sha256>
+        </file>
+      </files>
+      <downloadsRemaining>2</downloadsRemaining>
+    </transfer>
+
+    <transfer seq="88419" at="2026-10-20T09:31:08.004Z" direction="upload" outcome="blocked">
+      <user>
+        <id>u-44120</id>
+        <name>t.hughes</name>
+        <displayName>Tom Hughes</displayName>
+        <domain>CORP</domain>
+      </user>
+      <sessionId>S-81bd02</sessionId>
+      <destination type="externalShare">dropbox-bridge</destination>
+      <files count="0"/>
+      <blockedBy rule="R-EXT-001">Uploads to unsanctioned external stores are not permitted</blockedBy>
+    </transfer>
+
+    <authentication seq="88420" at="2026-10-20T09:33:47.310Z" outcome="success">
+      <user>
+        <id>u-31415</id>
+        <name>c.dubois</name>
+        <displayName>Céline Dubois</displayName>
+        <domain>CORP</domain>
+      </user>
+      <client ip="192.0.2.58" port="50999">
+        <userAgent><![CDATA[TidewaterClient/7.4 (Linux)]]></userAgent>
+      </client>
+      <method>saml</method>
+      <sso idp="https://idp.corp.example.org/saml" nameId="c.dubois@corp.example.org">
+        <attribute name="department">Finance</attribute>
+        <attribute name="groups">
+          <value>finance-approvers</value>
+          <value>all-staff</value>
+          <value>paris-office</value>
+        </attribute>
+      </sso>
+      <sessionId>S-92c4e7</sessionId>
+    </authentication>
+
+    <sessionEnd seq="88421" at="2026-10-20T09:40:00.000Z" reason="logout">
+      <user>
+        <id>u-10234</id>
+        <name>alice.ng</name>
+        <displayName>Alice Ng</displayName>
+        <domain>CORP</domain>
+      </user>
+      <sessionId>S-7f3a9c</sessionId>
+      <duration>PT41M18.796S</duration>
+      <bytes in="2569365" out="0"/>
+    </sessionEnd>
+
+    <heartbeat seq="88422" epochMs="1792487760000">
+      <cpu unit="percent">31.0</cpu>
+      <memory unit="MiB" used="5390" total="16384"/>
+      <queue name="outbound" depth="1"/>
+      <queue name="dlp" depth="0"/>
+    </heartbeat>
+
+    <sessionEnd seq="88423" at="2026-10-20T09:44:10.250Z" reason="timeout">
+      <user>
+        <id>u-44120</id>
+        <name>t.hughes</name>
+        <displayName>Tom Hughes</displayName>
+        <domain>CORP</domain>
+      </user>
+      <sessionId>S-81bd02</sessionId>
+      <duration>PT30M0S</duration>
+      <bytes in="0" out="0"/>
+    </sessionEnd>
+
+    <batchSummary records="14" failures="2" violations="1" checksum="crc32:5c1e9a07"/>
+  </batch>
+
+  <!-- Second node, upgraded: schemaVersion 3.1 moves the user onto attributes and the duration to seconds. -->
+  <batch id="B-1102" node="gw-nyc-02.dmz.example.org" site="NYC" timeZone="America/New_York"
+         schemaVersion="3.1" firstSeq="51200" lastSeq="51210">
+
+    <authentication seq="51200" at="2026-10-20T09:01:05.733Z" outcome="success">
+      <user id="u-50310" name="d.reyes" displayName="Daniel Reyes" domain="CORP-US"/>
+      <client ip="2001:db8:4a::1c" port="443">
+        <userAgent><![CDATA[TidewaterClient/7.4 (iOS 18.1)]]></userAgent>
+      </client>
+      <method>certificate</method>
+      <certificate subject="CN=d.reyes,OU=Staff,O=Corp US" issuer="CN=Corp Issuing CA 2" serial="4F:A2:19:0C"/>
+      <sessionId>S-n-00a1</sessionId>
+    </authentication>
+
+    <transfer seq="51201" at="2026-10-20T09:03:40.090Z" direction="upload" outcome="success">
+      <user id="u-50310" name="d.reyes" displayName="Daniel Reyes" domain="CORP-US"/>
+      <sessionId>S-n-00a1</sessionId>
+      <destination type="folder">/Legal/Contracts/2026</destination>
+      <files count="3">
+        <file name="MSA - Northwind (signed).pdf" size="913402" mime="application/pdf">
+          <sha256>11aa22bb33cc44dd55ee66ff77008899aabbccddeeff0011aa22bb33cc44dd55</sha256>
+          <dlp:scan engine="dlp-core" version="2.19" verdict="clean" durationMs="230"/>
+        </file>
+        <file name="SOW-03.docx" size="64220" mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+          <sha256>99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa</sha256>
+          <dlp:scan engine="dlp-core" version="2.19" verdict="clean" durationMs="58"/>
+        </file>
+        <file name="redlines.zip" size="1048576" mime="application/zip">
+          <sha256>abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd</sha256>
+          <dlp:scan engine="dlp-core" version="2.19" verdict="unscannable" durationMs="5">
+            <dlp:error code="ENCRYPTED_ARCHIVE">Archive is password protected</dlp:error>
+            <dlp:action>allow-with-warning</dlp:action>
+          </dlp:scan>
+        </file>
+      </files>
+    </transfer>
+
+    <diagnostic seq="51202" at="2026-10-20T09:04:00Z" level="WARN" component="dlp-core">
+      <text>Signature pack 2026.10.18 older than 24h; using cached rules</text>
+    </diagnostic>
+
+    <authentication seq="51203" at="2026-10-20T09:06:12.448Z" outcome="failure">
+      <user id="" name="administrator" displayName="" domain=""/>
+      <client ip="203.0.113.250" port="39811">
+        <userAgent/>
+        <geo country="NL"/>
+      </client>
+      <method>password</method>
+      <failure code="UNKNOWN_USER" attempt="1" of="5">No such user</failure>
+    </authentication>
+
+    <share seq="51204" at="2026-10-20T09:10:51.600Z" outcome="denied">
+      <user id="u-50310" name="d.reyes" displayName="Daniel Reyes" domain="CORP-US"/>
+      <sessionId>S-n-00a1</sessionId>
+      <item type="folder">/Legal/Contracts/2026</item>
+      <recipients>
+        <recipient role="to" internal="false">counsel@northwind.example.com</recipient>
+        <recipient role="to" internal="false">paralegal@northwind.example.com</recipient>
+      </recipients>
+      <subject>Executed MSA &amp; SOW-03</subject>
+      <deniedBy rule="R-EXT-014">Folder shares to external domains need Legal approval</deniedBy>
+    </share>
+
+    <transfer seq="51205" at="2026-10-20T09:15:22.011Z" direction="upload" outcome="failed">
+      <user id="u-50477" name="m.chen" displayName="Mei Chen" domain="CORP-US"/>
+      <sessionId>S-n-00b7</sessionId>
+      <destination type="folder">/Engineering/Builds</destination>
+      <files count="1">
+        <file name="release-7.4.3.tar.gz" size="734003200" mime="application/gzip">
+          <sha256 xsi:nil="true"/>
+        </file>
+      </files>
+      <error code="TIMEOUT">Upload stalled after 3 retries</error>
+      <retries>
+        <retry n="1" at="2026-10-20T09:12:02Z" bytesSent="104857600"/>
+        <retry n="2" at="2026-10-20T09:13:41Z" bytesSent="209715200"/>
+        <retry n="3" at="2026-10-20T09:15:20Z" bytesSent="209715200"/>
+      </retries>
+    </transfer>
+
+    <policyChange seq="51206" localTime="2026-10-20 05:20:00" outcome="success">
+      <user id="u-50001" name="adm.okeefe" displayName="Siobhán O'Keefe (Admin)" domain="CORP-US"/>
+      <policy id="P-SESSION" name="Session limits"/>
+      <changes>
+        <set path="/idleTimeoutMinutes">
+          <old>30</old>
+          <new>15</new>
+        </set>
+      </changes>
+      <reason/>
+    </policyChange>
+
+    <adminAction seq="51207" at="2026-10-20T09:22:30.300Z" action="revokeRole" outcome="success">
+      <user id="u-50001" name="adm.okeefe" displayName="Siobhán O'Keefe (Admin)" domain="CORP-US"/>
+      <target id="u-50477" name="m.chen" displayName="Mei Chen" domain="CORP-US"/>
+      <role name="Build Publisher" scope="/Engineering/Builds"/>
+      <approvals/>
+    </adminAction>
+
+    <heartbeat seq="51208" epochMs="1792488180000">
+      <cpu unit="percent">88.2</cpu>
+      <memory unit="MiB" used="15020" total="16384"/>
+      <queue name="outbound" depth="42"/>
+      <queue name="dlp" depth="17"/>
+    </heartbeat>
+
+    <sessionEnd seq="51209" at="2026-10-20T09:25:00.000Z" reason="adminTerminated">
+      <user id="u-50477" name="m.chen" displayName="Mei Chen" domain="CORP-US"/>
+      <sessionId>S-n-00b7</sessionId>
+      <terminatedBy id="u-50001" name="adm.okeefe"/>
+      <durationSeconds>1418</durationSeconds>
+      <bytes in="209715200" out="0"/>
+    </sessionEnd>
+
+    <sessionEnd seq="51210" at="2026-10-20T09:31:45.512Z" reason="logout">
+      <user id="u-50310" name="d.reyes" displayName="Daniel Reyes" domain="CORP-US"/>
+      <sessionId>S-n-00a1</sessionId>
+      <durationSeconds>1840</durationSeconds>
+      <bytes in="2026198" out="0"/>
+    </sessionEnd>
+
+    <batchSummary records="11" failures="3" violations="0" checksum="crc32:a07d33f1"/>
+  </batch>
+</export>
