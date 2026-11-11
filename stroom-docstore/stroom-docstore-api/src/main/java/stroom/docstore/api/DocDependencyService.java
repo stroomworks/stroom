@@ -21,6 +21,7 @@ import stroom.importexport.shared.Dependency;
 import stroom.importexport.shared.DependencyCriteria;
 import stroom.util.shared.ResultPage;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -127,6 +128,24 @@ public interface DocDependencyService {
      * the result needs to be reflected immediately (e.g. an explorer tree rebuild).
      */
     void invalidateBrokenDependencyCache();
+
+    /// Get the stored edges from any of the given sources, as recorded.
+    ///
+    /// **No permission check is applied**: the caller must check every end it shows, and should fail
+    /// closed. Unlike [#getDependantsOf(DocRef)], a source that is not a document (e.g. a processor
+    /// filter) is returned as itself, not rolled up to its owner.
+    ///
+    /// @param fromUuids The sources' UUIDs.
+    /// @return The edges. Empty if there are none, or if `fromUuids` is empty.
+    List<DependencyEdge> getEdgesFrom(Set<String> fromUuids);
+
+    /// Get the stored edges to any of the given targets, as recorded.
+    ///
+    /// **No permission check is applied**, as for [#getEdgesFrom(Set)].
+    ///
+    /// @param toUuids The targets' UUIDs.
+    /// @return The edges. Empty if there are none, or if `toUuids` is empty.
+    List<DependencyEdge> getEdgesTo(Set<String> toUuids);
 
     /**
      * Get direct dependants of a specific document (for safe-delete).

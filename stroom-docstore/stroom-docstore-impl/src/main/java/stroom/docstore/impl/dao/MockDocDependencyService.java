@@ -17,12 +17,14 @@
 package stroom.docstore.impl.dao;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DependencyEdge;
 import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyService;
 import stroom.importexport.shared.Dependency;
 import stroom.importexport.shared.DependencyCriteria;
 import stroom.util.shared.ResultPage;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -74,6 +76,16 @@ public class MockDocDependencyService implements DocDependencyService {
     @Override
     public Set<DocRef> getDependantsOf(final DocRef docRef) {
         return Set.of();
+    }
+
+    @Override
+    public List<DependencyEdge> getEdgesFrom(final Set<String> fromUuids) {
+        return List.of();
+    }
+
+    @Override
+    public List<DependencyEdge> getEdgesTo(final Set<String> toUuids) {
+        return List.of();
     }
 
     @Override

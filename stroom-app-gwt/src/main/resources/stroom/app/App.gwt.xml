@@ -163,6 +163,7 @@
     <inherits name="stroom.analytics.Analytics" />
     <inherits name="stroom.datagen.DataGen" />
     <inherits name="stroom.floormap.FloorMap" />
+    <inherits name="stroom.dependency.Dependency" />
     <inherits name="stroom.widget.histogram.Histogram" />
     <inherits name="stroom.view.View" />
     <!--

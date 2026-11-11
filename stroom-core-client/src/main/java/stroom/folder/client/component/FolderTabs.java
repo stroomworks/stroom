@@ -17,6 +17,7 @@
 package stroom.folder.client.component;
 
 import stroom.data.client.component.MetaBrowserController;
+import stroom.dependency.client.component.StructureGraphController;
 import stroom.docref.DocRef;
 import stroom.document.client.editor.LinkTabPanel;
 import stroom.document.client.editor.TabbedController;
@@ -33,20 +34,24 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
-/// A folder's tab, or the System root's: the data in the folder, its processors and their active
-/// tasks, and its permissions, as far as the user may see them. Nothing in it can be changed, so
-/// every tab is read only.
+/// A folder's tab, or the System root's: the structure of what is in the folder (its documents and how
+/// they depend on each other, as a graph), the data in it, its processors and their active tasks, and
+/// its permissions, as far as the user may see them. Nothing in it can be changed, so every tab is read
+/// only.
 ///
-/// Which tabs it has depends on the user's permissions (Processors and Active Tasks only for a user
-/// who may manage processors); they are added when it is first read.
+/// Structure is the first tab and the one shown, for every user who may open the folder: it needs only
+/// what they may already see. Which other tabs there are depends on the user's permissions (Processors
+/// and Active Tasks only for a user who may manage processors); they are added when it is first read.
 public class FolderTabs extends TabbedController<DocRef> {
 
+    private static final TabData STRUCTURE = new TabDataImpl("Structure");
     private static final TabData DATA = new TabDataImpl("Data");
     private static final TabData TASKS = new TabDataImpl("Active Tasks");
     private static final TabData PROCESSORS = new TabDataImpl("Processors");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
     private final ClientSecurityContext securityContext;
+    private final Provider<StructureGraphController> structureProvider;
     private final Provider<MetaBrowserController> metaControllerProvider;
     private final Provider<ProcessorsController> processorsProvider;
     private final Provider<ProcessorTasksController> processorTaskControllerProvider;
@@ -57,12 +62,14 @@ public class FolderTabs extends TabbedController<DocRef> {
     public FolderTabs(final EventBus eventBus,
                       final LinkTabPanel view,
                       final ClientSecurityContext securityContext,
+                      final Provider<StructureGraphController> structureProvider,
                       final Provider<MetaBrowserController> metaControllerProvider,
                       final Provider<ProcessorsController> processorsProvider,
                       final Provider<ProcessorTasksController> processorTaskControllerProvider,
                       final Provider<DocumentUserPermissionsTabController> permissionsProvider) {
         super(eventBus, view);
         this.securityContext = securityContext;
+        this.structureProvider = structureProvider;
         this.metaControllerProvider = metaControllerProvider;
         this.processorsProvider = processorsProvider;
         this.processorTaskControllerProvider = processorTaskControllerProvider;
@@ -85,12 +92,16 @@ public class FolderTabs extends TabbedController<DocRef> {
     }
 
     private void addTabs() {
-        TabData selectedTab = null;
+        // The server leaves out of the graph whatever the user may not see, so the tab needs no
+        // permission of its own
+        addTab(STRUCTURE,
+                structureProvider::get,
+                (structure, docRef, folder) -> structure.read(docRef));
+
         if (securityContext.hasAppPermission(AppPermission.VIEW_DATA_PERMISSION)) {
             addTab(DATA,
                     metaControllerProvider::get,
                     (meta, docRef, folder) -> meta.read(docRef, null));
-            selectedTab = DATA;
         }
 
         final boolean manageProcessors = securityContext.hasAppPermission(
@@ -108,9 +119,6 @@ public class FolderTabs extends TabbedController<DocRef> {
             addTab(TASKS,
                     processorTaskControllerProvider::get,
                     (tasks, docRef, folder) -> tasks.read(docRef, null));
-            if (selectedTab == null) {
-                selectedTab = PROCESSORS;
-            }
         }
 
         // Every folder has Permissions, as the System root does: the tab shows only what the user
@@ -120,8 +128,6 @@ public class FolderTabs extends TabbedController<DocRef> {
                 (permissions, docRef, folder) -> permissions.setDocRef(docRef));
         setCommonTab(CommonDocLinkTab.PERMISSIONS, PERMISSIONS);
 
-        if (selectedTab != null) {
-            selectTab(selectedTab);
-        }
+        selectTab(STRUCTURE);
     }
 }

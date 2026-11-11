@@ -36,6 +36,7 @@ public class XsltModule extends AbstractModule {
         // record what an XSLT refers to, and the References tab to report it.
         bind(XsltReferenceParser.class).to(XsltReferenceParserImpl.class);
         bind(XsltReferenceLookup.class).to(XsltReferenceLookupImpl.class);
+        bind(XsltReferenceCheckService.class);
 
         DocumentStoreBinder.create(binder())
                 .bind(XsltDoc.TYPE, XsltStore.class, XsltStoreImpl.class);

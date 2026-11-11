@@ -22,6 +22,7 @@ import stroom.explorer.api.ExplorerDecorator;
 import stroom.explorer.api.ExplorerNodePermissionsService;
 import stroom.explorer.api.ExplorerNodeService;
 import stroom.explorer.api.ExplorerService;
+import stroom.explorer.impl.graph.DependencyGraphResourceImpl;
 import stroom.explorer.shared.ExplorerFields;
 import stroom.explorer.shared.TabSessionResource;
 import stroom.suggestions.api.SuggestionsQueryHandler;
@@ -59,6 +60,8 @@ public class ExplorerModule extends AbstractModule {
                 .bind(TabSessionResourceImpl.class);
         RestResourcesBinder.create(binder())
                 .bind(PermissionChangeResourceImpl.class);
+        RestResourcesBinder.create(binder())
+                .bind(DependencyGraphResourceImpl.class);
 
         SuggestionsServiceBinder.create(binder())
                 .bind(ExplorerFields.EXPLORER_TYPE, ExplorerServiceImpl.class);

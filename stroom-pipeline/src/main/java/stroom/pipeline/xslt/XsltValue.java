@@ -21,8 +21,10 @@ import stroom.pipeline.shared.XsltReferenceReason;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * What an expression was determined to be worth.
@@ -38,6 +40,11 @@ import java.util.Objects;
  * @param reason    Why part or all of the expression could not be determined, or null if all of it was.
  */
 record XsltValue(List<String> values, @Nullable XsltReferenceReason reason) {
+
+    /// The most values one expression is followed to, as `XsltValueResolver` bounds a concatenation, so
+    /// a conditional with thousands of literal arms cannot turn into thousands of lookups and recorded
+    /// dependencies.
+    static final int MAX_VALUES = 16;
 
     XsltValue {
         Objects.requireNonNull(values, "Null values supplied");
@@ -70,6 +77,9 @@ record XsltValue(List<String> values, @Nullable XsltReferenceReason reason) {
      * choosing a branch was not written at the point of use. Where branches disagree about why they
      * failed, the first reason wins - reasons are diagnostic, and one accurate reason is more use than a
      * list.
+     * <p>
+     * At most {@link #MAX_VALUES} values are kept. Beyond that the first are kept and the result says
+     * the rest could not be followed, as a value it could not determine.
      */
     static XsltValue merge(final List<XsltValue> branches) {
         Objects.requireNonNull(branches, "Null branches supplied");
@@ -80,18 +90,24 @@ record XsltValue(List<String> values, @Nullable XsltReferenceReason reason) {
             return branches.getFirst();
         }
 
-        final List<String> values = new ArrayList<>();
+        final Set<String> values = new LinkedHashSet<>();
         XsltReferenceReason reason = null;
+        boolean truncated = false;
         for (final XsltValue branch : branches) {
             for (final String value : branch.values()) {
-                if (!values.contains(value)) {
+                if (values.size() < MAX_VALUES) {
                     values.add(value);
+                } else if (!values.contains(value)) {
+                    truncated = true;
                 }
             }
             if (reason == null) {
                 reason = branch.reason();
             }
         }
-        return new XsltValue(values, reason);
+        if (truncated && reason == null) {
+            reason = XsltReferenceReason.NON_LITERAL_BINDING;
+        }
+        return new XsltValue(new ArrayList<>(values), reason);
     }
 }

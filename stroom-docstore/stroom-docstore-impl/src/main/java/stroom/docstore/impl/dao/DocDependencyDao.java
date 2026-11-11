@@ -20,6 +20,7 @@ import stroom.db.util.ExpressionMapper;
 import stroom.db.util.ExpressionMapperFactory;
 import stroom.db.util.JooqUtil;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DependencyEdge;
 import stroom.docstore.api.DocDependencies;
 import stroom.docstore.impl.db.DocStoreDbConnProvider;
 import stroom.docstore.impl.db.jooq.tables.Doc;
@@ -80,6 +81,9 @@ public class DocDependencyDao {
     // The owner is found via one of the source's own dependency edges of these types. Extend this set if
     // other non-explorer entities with a different owner type are added to the dependency store.
     private static final Set<String> OWNER_DOC_TYPES = Set.of("Pipeline", "AnalyticRule");
+
+    // The most UUIDs in one query's IN list.
+    private static final int EDGE_QUERY_CHUNK_SIZE = 1000;
 
     private static final String STATUS_OK = "OK";
     private static final String STATUS_MISSING = "Missing";
@@ -352,6 +356,61 @@ public class DocDependencyDao {
                                 r.get(DOC_DEPENDENCY.TO_TYPE),
                                 r.get(DOC_DEPENDENCY.TO_UUID),
                                 r.get(DOC_DEPENDENCY.TO_NAME)))));
+    }
+
+    /// Get the stored edges from any of the given sources, with live names, the ambiguous flag and whether
+    /// each target exists. No permission check is applied.
+    ///
+    /// @param fromUuids The sources' UUIDs.
+    /// @return The edges. Empty if `fromUuids` is empty.
+    public List<DependencyEdge> getEdgesFrom(final Set<String> fromUuids) {
+        return getEdges(fromUuids, DOC_DEPENDENCY.FROM_UUID);
+    }
+
+    /// Get the stored edges to any of the given targets, as [#getEdgesFrom(Set)] does.
+    ///
+    /// @param toUuids The targets' UUIDs.
+    /// @return The edges. Empty if `toUuids` is empty.
+    public List<DependencyEdge> getEdgesTo(final Set<String> toUuids) {
+        return getEdges(toUuids, DOC_DEPENDENCY.TO_UUID);
+    }
+
+    // Read in chunks, so a large folder does not make one enormous IN list.
+    private List<DependencyEdge> getEdges(final Set<String> uuids, final Field<String> uuidField) {
+        if (NullSafe.isEmptyCollection(uuids)) {
+            return List.of();
+        }
+        final List<String> all = new ArrayList<>(uuids);
+        final List<DependencyEdge> edges = new ArrayList<>();
+        for (int start = 0; start < all.size(); start += EDGE_QUERY_CHUNK_SIZE) {
+            final List<String> chunk = all.subList(start, Math.min(all.size(), start + EDGE_QUERY_CHUNK_SIZE));
+            edges.addAll(JooqUtil.contextResult(connProvider, ctx -> ctx
+                    .select(DOC_DEPENDENCY.FROM_TYPE,
+                            DOC_DEPENDENCY.FROM_UUID,
+                            FROM_NAME_RESOLVED,
+                            DOC_DEPENDENCY.TO_TYPE,
+                            DOC_DEPENDENCY.TO_UUID,
+                            TO_NAME_RESOLVED,
+                            DOC_DEPENDENCY.AMBIGUOUS,
+                            TO_DOC.UUID)
+                    .from(DOC_DEPENDENCY)
+                    .leftJoin(FROM_DOC).on(FROM_DOC.UUID.eq(DOC_DEPENDENCY.FROM_UUID)
+                            .and(FROM_DOC.DELETED.isNull()))
+                    .leftJoin(TO_DOC).on(TO_DOC.UUID.eq(DOC_DEPENDENCY.TO_UUID)
+                            .and(TO_DOC.DELETED.isNull()))
+                    .where(uuidField.in(chunk))
+                    .orderBy(DOC_DEPENDENCY.FROM_UUID, DOC_DEPENDENCY.TO_UUID)
+                    .fetch(r -> new DependencyEdge(
+                            new DocRef(r.get(DOC_DEPENDENCY.FROM_TYPE),
+                                    r.get(DOC_DEPENDENCY.FROM_UUID),
+                                    r.get(FROM_NAME_RESOLVED)),
+                            new DocRef(r.get(DOC_DEPENDENCY.TO_TYPE),
+                                    r.get(DOC_DEPENDENCY.TO_UUID),
+                                    r.get(TO_NAME_RESOLVED)),
+                            Boolean.TRUE.equals(r.get(DOC_DEPENDENCY.AMBIGUOUS)),
+                            r.get(TO_DOC.UUID) != null))));
+        }
+        return edges;
     }
 
     /// Get the UUIDs of every source of the given type that has stored dependency edges.

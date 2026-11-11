@@ -26,6 +26,7 @@ import stroom.pipeline.shared.XsltReferenceInfo;
 import stroom.pipeline.shared.XsltReferenceKind;
 import stroom.pipeline.shared.XsltReferenceReason;
 import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.util.shared.EntityServiceException;
 
 import org.junit.jupiter.api.DisplayName;
@@ -50,6 +51,9 @@ class TestXsltResourceImplCheckReferences {
     private static final DocRef XSLT_DOC_REF = new DocRef(XsltDoc.TYPE, "xslt-uuid", "My XSLT");
 
     private final FakeXsltReferenceLookup lookup = new FakeXsltReferenceLookup();
+
+    // Whether the caller may change the XSLT, so whether their own copy is checked
+    private boolean canEdit = true;
 
     @Test
     @DisplayName("reports resolved and unresolved references from the supplied body")
@@ -183,6 +187,25 @@ class TestXsltResourceImplCheckReferences {
     }
 
     @Test
+    @DisplayName("a viewer who may not edit is checked against the saved copy, not text they send")
+    void viewerCannotCheckArbitraryText() {
+        // Sending names to see which match hidden documents would otherwise work for anyone able to view
+        // one XSLT, across the whole store
+        lookup.withHidden(DictionaryDoc.TYPE, "Probe", "uuid-hidden-1")
+                .withHidden(DictionaryDoc.TYPE, "Probe", "uuid-hidden-2")
+                .with(DictionaryDoc.TYPE, "Saved");
+        canEdit = false;
+
+        final XsltReferenceCheckResult result = checkReferences(stored(dictionaryReader("Saved")),
+                dictionaryReader("Probe"));
+
+        // What the saved copy names is checked; the name sent is not
+        assertThat(result.getReferences())
+                .extracting(XsltReferenceInfo::getRawValue)
+                .containsExactly("Saved");
+    }
+
+    @Test
     @DisplayName("checks the supplied body rather than the stored one")
     void prefersTheSuppliedBody() {
         lookup.with(DictionaryDoc.TYPE, "InStore").with(DictionaryDoc.TYPE, "BeingEdited");
@@ -299,10 +322,16 @@ class TestXsltResourceImplCheckReferences {
             }
         });
 
+        Mockito.when(securityContext.hasDocumentPermission(Mockito.any(DocRef.class),
+                        Mockito.eq(DocumentPermission.EDIT)))
+                .thenAnswer(invocation -> canEdit);
+
+        final XsltReferenceCheckService checkService = new XsltReferenceCheckService(
+                () -> new XsltReferenceParserImpl(lookup),
+                securityContext);
         return new XsltResourceImpl(
                 () -> Mockito.mock(XsltStore.class),
                 () -> documentResourceHelper,
-                () -> new XsltReferenceParserImpl(lookup),
-                securityContext);
+                () -> checkService);
     }
 }

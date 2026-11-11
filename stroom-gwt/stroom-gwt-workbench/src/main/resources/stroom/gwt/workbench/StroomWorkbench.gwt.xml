@@ -91,6 +91,7 @@
          the floor map, with its histogram -->
     <inherits name='stroom.sqlstore.SqlTemporalStore'/>
     <inherits name='stroom.floormap.FloorMap'/>
+    <inherits name='stroom.dependency.Dependency'/>
     <inherits name='stroom.widget.histogram.Histogram'/>
     <inherits name='stroom.ai.AI'/>
     <inherits name='stroom.receive.rules.RuleSet'/>

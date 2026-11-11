@@ -17,6 +17,7 @@
 package stroom.docstore.impl.dao;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DependencyEdge;
 import stroom.docstore.api.DocDependencies;
 import stroom.docstore.api.DocDependencyService;
 import stroom.importexport.shared.Dependency;
@@ -30,6 +31,7 @@ import stroom.util.shared.ResultPage;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -113,6 +115,16 @@ public class DocDependencyServiceImpl implements DocDependencyService {
                                                final String toType,
                                                final Set<String> toNames) {
         return docDependencyDao.findSourcesByTargetName(fromType, toType, toNames);
+    }
+
+    @Override
+    public List<DependencyEdge> getEdgesFrom(final Set<String> fromUuids) {
+        return docDependencyDao.getEdgesFrom(fromUuids);
+    }
+
+    @Override
+    public List<DependencyEdge> getEdgesTo(final Set<String> toUuids) {
+        return docDependencyDao.getEdgesTo(toUuids);
     }
 
     @Override

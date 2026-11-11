@@ -87,6 +87,10 @@ import java.util.function.Supplier;
 /// | `POST /session/v1/terminateOther` | ending the user's other sessions |
 public final class AppShellStories {
 
+    // DependencyGraphResource.fetchGraph(): a folder with nothing in it
+    private static final String EMPTY_GRAPH = """
+            {"nodes": [], "edges": [], "truncations": [], "nodeLimitReached": false}""";
+
     /// The name of the spy recording the registry's answers in `LocateOnlyForExplorerTabs`.
     static final String LOCATE_SPY = "getExplorerDocRef";
 
@@ -544,8 +548,10 @@ public final class AppShellStories {
                     play.expect(play.spy(ScreenHarness.UNHANDLED_REQUEST_SPY)).not().toHaveBeenCalled();
                 })
                 // Double-clicking a document opens its editor in a tab; a folder opens too
-                .story("OpensDocument", context -> render(context, AppShellFixtures.dictTree(), routes -> {
-                }, builder -> builder.appPermissions(AppPermission.VIEW_DATA_PERMISSION), null))
+                .story("OpensDocument", context -> render(context, AppShellFixtures.dictTree(),
+                        // A folder's Structure tab, its default, asks for the folder's graph
+                        routes -> routes.post("/dependency/v1/graph", RestReply.json(EMPTY_GRAPH)),
+                        builder -> builder.appPermissions(AppPermission.VIEW_DATA_PERMISSION), null))
                 .withPlay(play -> {
                     final Play nav = navTree(play);
                     // GWT's empty tab pane shows nothing, so the play checks there are no tabs
@@ -553,13 +559,14 @@ public final class AppShellStories {
                     play.dblClick(nav.getByText("Countries"));
                     play.expect(play.findByText("Words", StroomDom.LINK_TAB_LABEL)).toBeInTheDocument();
                     play.expect(tabs(play)).toHaveLength(1);
-                    // A folder opens the same way (FolderPlugin), with its Data tab.
+                    // A folder opens the same way (FolderPlugin), showing its Structure tab first.
                     // GWT's Data tab lists the folder's streams, so the play checks the folder's tab
-                    // and its stream
+                    // and, on its Data tab, its stream
                     play.dblClick(nav.getByText("Dictionaries"));
                     play.waitFor(5000, () -> play.expect(tabs(play)).toHaveLength(2));
                     play.expect(play.getByText("Dictionaries", TAB_LABEL)).toBeInTheDocument();
-                    play.expect(play.findByText("Data", StroomDom.LINK_TAB_LABEL)).toBeInTheDocument();
+                    play.expect(play.findByText("Structure", StroomDom.LINK_TAB_LABEL)).toBeInTheDocument();
+                    play.click(play.findByText("Data", StroomDom.LINK_TAB_LABEL));
                     play.expect(play.findByText("Raw Events")).toBeInTheDocument();
                     expectNoProblems(play);
                 })

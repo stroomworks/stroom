@@ -32,6 +32,7 @@ dependencies {
     testImplementation project(':stroom-util')
     testImplementation project(':stroom-test-common')
     testImplementation libs.gwt.dev
+    testImplementation libs.jackson.databind // Reads the Structure view layout reference files
     testImplementation libs.slf4j.api
 
     testImplementation libs.bundles.common.test.implementation

@@ -39,11 +39,12 @@ import java.util.List;
 import java.util.Map;
 
 /// The `App/Editors/FolderEditor` stories, showing Stroom's real [FolderTabs] (a folder's tab, or
-/// the System root's: Data, Processors, Active Tasks and Permissions) in a [DocumentEditorHost], with
-/// fake REST replies.
+/// the System root's: Structure, Data, Processors, Active Tasks and Permissions) in a
+/// [DocumentEditorHost], with fake REST replies.
 ///
 /// As `FolderPlugin` (and `FolderRootPlugin`) do, the story reads the folder's DocRef into the
-/// host, read only, and shows it; there is no document to fetch. The Data tab is Stroom's real
+/// host, read only, and shows it; there is no document to fetch. The Structure tab, the default, asks
+/// `POST /dependency/v1/graph` for the folder's graph (see `App/Folder/Structure`). The Data tab is Stroom's real
 /// `MetaBrowserController` (`POST /meta/v1/findMetaRow`, no streams), the Processors tab asks
 /// `POST /processorFilter/v1/find` (checked with the request spy), Active Tasks
 /// `POST /processorTask/v1/find` and `summary`, and the Permissions tab has its own routes. The
@@ -57,7 +58,26 @@ public final class FolderEditorStories {
 
     private static final String FIND_PROCESSOR_FILTERS = "/processorFilter/v1/find";
 
+    private static final String GRAPH_PATH = "/dependency/v1/graph";
+
+    // DependencyGraphResource.fetchGraph(): a feed processed by a pipeline
+    private static final String GRAPH = """
+            {
+              "nodes": [
+                {"id": "raw", "role": "FLOW", "inScope": true,
+                 "docRef": {"type": "Feed", "uuid": "raw", "name": "FW-LOGS:RAW_EVENTS"}},
+                {"id": "par", "role": "FLOW", "inScope": true, "elementCount": 6,
+                 "docRef": {"type": "Pipeline", "uuid": "par", "name": "FW Parser"}}
+              ],
+              "edges": [
+                {"from": "raw", "to": "par", "kind": "FLOW", "certainty": "CONFIGURED"}
+              ],
+              "truncations": [],
+              "nodeLimitReached": false
+            }""";
+
     private static final RestFixtures FIXTURES = DocEditors.permissionRoutes(RestFixtures.builder())
+            .post(GRAPH_PATH, RestReply.json(GRAPH))
             .post("/meta/v1/find", RestReply.json(EMPTY_PAGE))
             .post(FIND_PROCESSOR_FILTERS, RestReply.json(EMPTY_PAGE))
             .post("/processorTask/v1/find", RestReply.json(EMPTY_PAGE))
@@ -74,16 +94,25 @@ public final class FolderEditorStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Editors/FolderEditor", FolderEditorStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // A folder has four tabs: Data, Processors, Active Tasks and Permissions
+                // A folder has five tabs: Structure, Data, Processors, Active Tasks and Permissions
                 .story("Folder", context -> render(context, false))
                 .withPlay(play -> {
-                    play.waitFor(() -> play.expect(DocEditors.tab(play, "Data")).toBeInTheDocument());
+                    play.waitFor(() -> play.expect(DocEditors.tab(play, "Structure")).toBeInTheDocument());
+                    play.expect(DocEditors.tab(play, "Data")).toBeInTheDocument();
                     play.expect(DocEditors.tab(play, "Processors")).toBeInTheDocument();
                     play.expect(DocEditors.tab(play, "Active Tasks")).toBeInTheDocument();
                     play.expect(DocEditors.tab(play, "Permissions")).toBeInTheDocument();
-                    // Data is the default tab.
-                    // It is Stroom's real data browser (MetaBrowserController), so the play checks its
+                    // Structure is the default tab: the folder's graph, fetched for the folder
+                    play.expect(DocEditors.tab(play, "Structure").closest("[role=tab]"))
+                            .toHaveAttribute("aria-selected", "true");
+                    play.waitFor(() -> play.expect(play.querySelector("[data-id='par']")).toBeInTheDocument());
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post(GRAPH_PATH)
+                                    .withJsonBodyContaining("{\"root\": {\"uuid\": \"folder-uuid-1\"}}")
+                                    .toSpyMatcher());
+                    // Data is Stroom's real data browser (MetaBrowserController), so the play checks its
                     // stream list's Feed column
+                    play.click(DocEditors.tab(play, "Data"));
                     play.waitFor(() -> play.expect(play.getAllByText("Feed").nth(0)).toBeVisible());
                     // Processors: an administrator may edit but not add or duplicate (a folder has
                     // no single pipeline). The list declares every button, and hides those that
@@ -124,6 +153,7 @@ public final class FolderEditorStories {
                 .story("ViewDataOnly", context -> render(context, false, AppPermission.VIEW_DATA_PERMISSION))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(DocEditors.tab(play, "Data")).toBeInTheDocument());
+                    play.expect(DocEditors.tab(play, "Structure")).toBeInTheDocument();
                     play.expect(play.queryByText("Processors", StroomDom.LINK_TAB_LABEL)).toBeNull();
                     play.expect(play.queryByText("Active Tasks", StroomDom.LINK_TAB_LABEL)).toBeNull();
                     play.expect(DocEditors.tab(play, "Permissions")).toBeInTheDocument();

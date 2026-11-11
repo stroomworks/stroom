@@ -23,7 +23,6 @@ import stroom.pipeline.shared.CheckXsltReferencesRequest;
 import stroom.pipeline.shared.XsltDoc;
 import stroom.pipeline.shared.XsltReferenceCheckResult;
 import stroom.pipeline.shared.XsltResource;
-import stroom.security.api.SecurityContext;
 import stroom.util.shared.EntityServiceException;
 
 import jakarta.inject.Inject;
@@ -34,18 +33,15 @@ class XsltResourceImpl implements XsltResource {
 
     private final Provider<XsltStore> xsltStoreProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
-    private final Provider<XsltReferenceParser> referenceParserProvider;
-    private final SecurityContext securityContext;
+    private final Provider<XsltReferenceCheckService> referenceCheckServiceProvider;
 
     @Inject
     XsltResourceImpl(final Provider<XsltStore> xsltStoreProvider,
                      final Provider<DocumentResourceHelper> documentResourceHelperProvider,
-                     final Provider<XsltReferenceParser> referenceParserProvider,
-                     final SecurityContext securityContext) {
+                     final Provider<XsltReferenceCheckService> referenceCheckServiceProvider) {
         this.xsltStoreProvider = xsltStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
-        this.referenceParserProvider = referenceParserProvider;
-        this.securityContext = securityContext;
+        this.referenceCheckServiceProvider = referenceCheckServiceProvider;
     }
 
     @Override
@@ -82,28 +78,7 @@ class XsltResourceImpl implements XsltResource {
             throw new EntityServiceException("Document not found: " + request.getDocRef());
         }
 
-        // Resolved twice. The report itself is resolved with the caller's permissions, so a document they
-        // cannot view is never named: it is reported as not found, and a match they cannot see is not
-        // listed. Resolving as the processing user as well, as the runtime and the recorded dependencies do,
-        // adds one fact and no more: that a name also matches documents the caller cannot view, and so is
-        // ambiguous at runtime even though the caller sees one match or none. The report says so without
-        // saying how many such documents there are (see XsltReferenceInfoMapper). That much is already
-        // disclosed by the runtime's error ("Found 2 XSLTs named ...") and by the explorer, which flags the
-        // XSLT; XsltStoreImpl.getDependencyRemapFunction explains why that is acceptable.
-        //
-        // A document the caller cannot view that a name resolves to unambiguously is still reported as not
-        // found. Saying otherwise would reveal that a document by that name exists.
-
-        // The caller's copy wins where there is one, so an author checks what is in front of them rather
-        // than what was last saved.
-        final String data = request.getData() != null
-                ? request.getData()
-                : doc.getData();
-
-        final XsltReferenceParser parser = referenceParserProvider.get();
-        final XsltReferences asUser = parser.parse(data);
-        final XsltReferences asProcessingUser = securityContext.asProcessingUserResult(() -> parser.parse(data));
-        return XsltReferenceInfoMapper.toResult(asUser, asProcessingUser);
+        return referenceCheckServiceProvider.get().check(doc, request.getData());
     }
 
     private DocRef getDocRef(final String uuid) {

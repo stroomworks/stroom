@@ -185,7 +185,6 @@ class XsltValueResolver {
      * @return the joined value, or unresolved if any part is - a string is only known if all of it is.
      */
     private static XsltValue concatenate(final List<XsltValue> parts) {
-        final int maxCombinations = 16;
         if (parts.isEmpty()) {
             return XsltValue.resolved("");
         }
@@ -201,7 +200,7 @@ class XsltValueResolver {
                 return XsltValue.unresolved(
                         Objects.requireNonNullElse(part.reason(), XsltReferenceReason.NON_LITERAL_BINDING));
             }
-            if (combinations.size() * part.values().size() > maxCombinations) {
+            if (combinations.size() * part.values().size() > XsltValue.MAX_VALUES) {
                 return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
             }
 

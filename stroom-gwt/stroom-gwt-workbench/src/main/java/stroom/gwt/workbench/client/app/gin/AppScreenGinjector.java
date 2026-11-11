@@ -18,6 +18,7 @@
 package stroom.gwt.workbench.client.app.gin;
 
 import stroom.credentials.client.component.CredentialsPickerController;
+import stroom.dependency.client.component.StructureGraphController;
 import stroom.dictionary.client.component.DictionaryEditor;
 import stroom.document.client.component.InfoDocumentController;
 import stroom.explorer.client.component.ExplorerNodeEditTagsController;
@@ -59,6 +60,9 @@ public interface AppScreenGinjector extends ScreenGinjector {
     CredentialsPickerController getCredentialsManagerDialogController();
 
     // Documents and the explorer
+
+    /// @return A folder's 'Structure' view: its dependency graph.
+    StructureGraphController getStructureGraphController();
 
     /// @return The document 'Info' dialog, shown by firing `ShowInfoDocumentDialogEvent`.
     InfoDocumentController getInfoDocumentController();

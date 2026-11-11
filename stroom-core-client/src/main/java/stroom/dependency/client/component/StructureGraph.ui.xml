@@ -1,0 +1,77 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!--
+  ~ Copyright 2026 Crown Copyright
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client"
+             xmlns:split="urn:import:stroom.widget.layout.client"
+             xmlns:v="urn:import:stroom.widget.quickfilter.client"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:HTMLPanel ui:field="root" styleName="max dock-container-vertical structure-graph">
+        <g:FlowPanel styleName="dock-min structure-graph__toolbar">
+            <b:Toolbar name="Structure actions" addStyleNames="toolbar--icons">
+                <b:ToolbarButton ui:field="fitButton" svg="MAXIMISE" title="Fit the Whole Graph in View"
+                                 label="Fit"/>
+                <b:ToolbarToggleButton ui:field="tableButton" svg="TABLE" title="Show as Table"/>
+            </b:Toolbar>
+            <v:QuickFilter ui:field="searchFilter" accessibleName="Find documents in the graph"
+                           addStyleNames="structure-graph__search"/>
+        </g:FlowPanel>
+        <g:FlowPanel styleName="dock-max structure-graph__views">
+            <!-- The graph above, and the table of its documents below: the table says in words what the
+                 graph shows, a row per document, and is what a screen reader reads and the keyboard
+                 moves through, so it is always shown. Its focused row is ringed on the graph. Shown as a
+                 table, the graph's pane is hidden. -->
+            <split:SplitPane ui:field="split" vertical="true" sizes="*, 35%" names="Graph, Documents"
+                             addStyleNames="max">
+                <!-- The canvas's pointer and keyboard host: GWT gives the FocusPanel tabindex="0", and
+                     the controller binds pan, zoom and Escape to it, so it draws a focus ring of its own
+                     (structure-graph.css). Its role and name are set by StructureGraph. -->
+                <g:FocusPanel ui:field="canvas" styleName="max structure-graph__canvas">
+                    <g:HTMLPanel styleName="max structure-graph__container">
+                        <!-- The graph is named and summarised as one image: the SVG inside is a
+                             picture, its text placed for the eye, and is hidden from assistive
+                             technology. Each layout replaces the SVG; this container lasts as long as
+                             the canvas. -->
+                        <div ui:field="drawing" class="max structure-graph__drawing" role="img"
+                             aria-label="Structure of the folder"></div>
+                        <!-- What the canvas's keys do, which is its description -->
+                        <div ui:field="canvasKeys" class="sr-only">Arrow keys move the graph, plus and
+                            minus zoom, and Escape clears the selection. The table that follows lists
+                            the documents.</div>
+                        <!-- Describes the node under the pointer. Anchored to the node rather than the
+                             pointer, so it holds still while the pointer moves across one node. -->
+                        <g:FlowPanel ui:field="hoverCard" addStyleNames="structure-graph__hover-card">
+                            <tx:Label ui:field="hoverTitle" addStyleNames="structure-graph__hover-title"/>
+                            <g:FlowPanel ui:field="hoverLines"/>
+                        </g:FlowPanel>
+                    </g:HTMLPanel>
+                </g:FocusPanel>
+                <g:SimplePanel styleName="max structure-graph__table">
+                    <dg:DataGrid ui:field="table" tableName="Documents in the folder"/>
+                </g:SimplePanel>
+            </split:SplitPane>
+            <!-- Loading, failure and empty states: text in the DOM, so it can be read and copied. -->
+            <tx:Label ui:field="message" addStyleNames="structure-graph__message"/>
+        </g:FlowPanel>
+        <!-- What the view does that can only be seen, said to a screen reader. Visually hidden rather
+             than display:none, which would stop it announcing. -->
+        <div ui:field="statusRegion" class="sr-only" role="status" aria-live="polite"
+             aria-atomic="true"></div>
+    </g:HTMLPanel>
+</ui:UiBinder>

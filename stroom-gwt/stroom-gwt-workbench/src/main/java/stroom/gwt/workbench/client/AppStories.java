@@ -47,6 +47,7 @@ import stroom.gwt.workbench.client.app.data.DataUploadDialogStories;
 import stroom.gwt.workbench.client.app.data.DataVolumesScreenStories;
 import stroom.gwt.workbench.client.app.data.MetaBrowserStories;
 import stroom.gwt.workbench.client.app.data.SaveChangedDocumentsStories;
+import stroom.gwt.workbench.client.app.dependency.StructureGraphStories;
 import stroom.gwt.workbench.client.app.dictionary.DictionaryEditorStories;
 import stroom.gwt.workbench.client.app.editors.AnalyticRuleEditorStories;
 import stroom.gwt.workbench.client.app.editors.CodeDocumentEditorStories;
@@ -345,6 +346,8 @@ public final class AppStories {
         FloorMapMapTabStories.addTo(registry);
         // App/Editors/FolderEditor
         FolderEditorStories.addTo(registry);
+        // App/Folder/Structure
+        StructureGraphStories.addTo(registry);
         // App/Editors/GitRepoEditor
         GitRepoEditorStories.addTo(registry);
         // App/Editors/OpenAiModelEditor

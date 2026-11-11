@@ -2040,6 +2040,45 @@ class TestXsltReferenceParser {
             assertThat(result.hasParseFailure()).isTrue();
             assertThat(result.parseFailure()).contains("exceeded");
         }
+
+        @Test
+        @DisplayName("a conditional with very many literal arms is followed only so far")
+        void manyBranchesAreBounded() {
+            // Thousands of arms would otherwise be thousands of lookups and recorded dependencies
+            final StringBuilder arms = new StringBuilder();
+            for (int i = 0; i < 40; i++) {
+                arms.append("    <xsl:when test=\"@type = '").append(i).append("'\">dict")
+                        .append(i).append("</xsl:when>\n");
+            }
+            final XsltReferences result = parse(template("""
+                    <xsl:variable name="name">
+                      <xsl:choose>
+                    %s  </xsl:choose>
+                    </xsl:variable>
+                    <xsl:value-of select="stroom:dictionary($name)"/>""".formatted(arms)));
+
+            assertThat(result.references())
+                    .filteredOn(reference -> reference.rawValue().startsWith("dict"))
+                    .hasSize(XsltValue.MAX_VALUES);
+            assertThat(result.references())
+                    .anySatisfy(reference -> assertThat(reference.reason())
+                            .isEqualTo(XsltReferenceReason.NON_LITERAL_BINDING));
+        }
+
+        @Test
+        @DisplayName("a stylesheet naming very many things is cut short, marked incomplete")
+        void referencesAreBounded() {
+            final StringBuilder body = new StringBuilder();
+            for (int i = 0; i < XsltReferenceParserImpl.MAX_REFERENCES + 200; i++) {
+                body.append("<xsl:value-of select=\"stroom:dictionary('name").append(i).append("')\"/>\n");
+            }
+
+            final XsltReferences result = parse(template(body.toString()));
+
+            assertThat(result.references()).hasSize(XsltReferenceParserImpl.MAX_REFERENCES);
+            assertThat(result.hasParseFailure()).isTrue();
+            assertThat(result.parseFailure()).contains("Stopped after finding");
+        }
     }
 
     // ------------------------------------------------------------------------

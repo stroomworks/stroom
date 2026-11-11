@@ -20,6 +20,7 @@ import stroom.collection.api.CollectionService;
 import stroom.db.util.JooqUtil;
 import stroom.dictionary.api.WordListProvider;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DependencyEdge;
 import stroom.docstore.api.DocDependencies;
 import stroom.docstore.impl.db.DocStoreDBPersistenceDbModule;
 import stroom.docstore.impl.db.DocStoreDbConnProvider;
@@ -829,6 +830,73 @@ class TestDocDependencyDao {
                         "fromtype", "fromname", "fromuuid",
                         "totype", "toname", "touuid",
                         "status");
+    }
+
+    // --- raw edges, for the dependency graph ---
+
+    @Test
+    void testGetEdgesFrom_flagsAmbiguityAndExistence() {
+        final DocRef xslt = docRef("XSLT", "Reader");
+        final DocRef words1 = docRef("Dictionary", "Words");
+        final DocRef words2 = docRef("Dictionary", "Words");
+        final DocRef gone = docRef("Dictionary", "Gone");
+        createDocRow(xslt);
+        createDocRow(words1);
+        createDocRow(words2);
+        // gone has no doc row
+
+        dao.setDependencies(xslt, new DocDependencies(Set.of(words1, words2, gone), Set.of(words1, words2)));
+
+        assertThat(dao.getEdgesFrom(Set.of(xslt.getUuid())))
+                .extracting(edge -> edge.from().getUuid(),
+                        edge -> edge.to().getUuid(),
+                        DependencyEdge::ambiguous,
+                        DependencyEdge::targetExists)
+                .containsExactlyInAnyOrder(
+                        tuple(xslt.getUuid(), words1.getUuid(), true, true),
+                        tuple(xslt.getUuid(), words2.getUuid(), true, true),
+                        tuple(xslt.getUuid(), gone.getUuid(), false, false));
+    }
+
+    @Test
+    void testGetEdgesTo_returnsNonDocumentSourcesAsThemselves() {
+        // A processor filter has no doc row, and is not rolled up to its pipeline as getDependantsOf does
+        final DocRef filter = new DocRef("ProcessorFilter", UUID.randomUUID().toString());
+        final DocRef pipeline = docRef("Pipeline", "Parser");
+        final DocRef feed = docRef("Feed", "RAW");
+        createDocRow(pipeline);
+        createDocRow(feed);
+        dao.setDependencies(filter, Set.of(pipeline, feed));
+
+        assertThat(dao.getEdgesTo(Set.of(pipeline.getUuid())))
+                .extracting(edge -> edge.from().getType(), edge -> edge.from().getUuid(), edge -> edge.to().getName())
+                .containsExactly(tuple("ProcessorFilter", filter.getUuid(), "Parser"));
+        assertThat(dao.getEdgesFrom(Set.of(filter.getUuid())))
+                .extracting(edge -> edge.to().getUuid())
+                .containsExactlyInAnyOrder(pipeline.getUuid(), feed.getUuid());
+    }
+
+    @Test
+    void testGetEdges_emptyAndUnknown() {
+        assertThat(dao.getEdgesFrom(Set.of())).isEmpty();
+        assertThat(dao.getEdgesTo(Set.of())).isEmpty();
+        assertThat(dao.getEdgesFrom(Set.of(UUID.randomUUID().toString()))).isEmpty();
+    }
+
+    @Test
+    void testGetEdgesFrom_readsInChunks() {
+        // More sources than one query takes, each with one edge
+        final DocRef index = docRef("Index", "Index");
+        createDocRow(index);
+        final Set<String> sources = new java.util.HashSet<>();
+        for (int i = 0; i < 1500; i++) {
+            final DocRef dashboard = docRef("Dashboard", "Dashboard " + i);
+            dao.setDependencies(dashboard, Set.of(index));
+            sources.add(dashboard.getUuid());
+        }
+
+        assertThat(dao.getEdgesFrom(sources)).hasSize(1500);
+        assertThat(dao.getEdgesTo(Set.of(index.getUuid()))).hasSize(1500);
     }
 
     // --- ambiguous edges ---

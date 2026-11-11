@@ -5,6 +5,8 @@
   <inherits name='com.google.gwt.user.User' />
   <!-- The component model, for a folder's tabs (FolderTabs) -->
   <inherits name='stroom.widget.component.Component' />
+  <!-- The Structure tab (StructureGraphController) -->
+  <inherits name='stroom.dependency.Dependency' />
 
   <source path="client" />
   <source path="shared" />

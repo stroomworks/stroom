@@ -2621,6 +2621,26 @@ paths:
       summary: Find status of the DB
       tags:
       - Database Status
+  /dependency/v1/graph:
+    post:
+      operationId: fetchDependencyGraph
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DependencyGraphRequest"
+        description: request
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DependencyGraph"
+          description: default response
+      summary: Fetch the dependency graph of a folder's contents
+      tags:
+      - Dependencies
   /dictionary/v1/download:
     post:
       operationId: downloadDictionary
@@ -13280,6 +13300,41 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CriteriaFieldSort"
+    DependencyGraph:
+      type: object
+      properties:
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphEdge"
+        generatedAt:
+          type: integer
+          format: int64
+        nodeLimitReached:
+          type: boolean
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphNode"
+        root:
+          $ref: "#/components/schemas/DocRef"
+        topologyHash:
+          type: string
+        truncations:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphTruncation"
+    DependencyGraphRequest:
+      type: object
+      properties:
+        contextDepth:
+          type: integer
+          format: int32
+        maxNodes:
+          type: integer
+          format: int32
+        root:
+          $ref: "#/components/schemas/DocRef"
     DestroyStoreRequest:
       type: object
       properties:
@@ -16186,6 +16241,77 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CriteriaFieldSort"
+    GraphEdge:
+      type: object
+      properties:
+        ambiguous:
+          type: boolean
+        certainty:
+          type: string
+          enum:
+          - STATIC
+          - CONFIGURED
+          - INFERRED
+        element:
+          type: string
+        from:
+          type: string
+        kind:
+          type: string
+          enum:
+          - FLOW
+          - QUERY
+          - REFERENCE
+          - INHERITANCE
+          - HTTP
+          - LOOKUP
+        to:
+          type: string
+    GraphNode:
+      type: object
+      properties:
+        docRef:
+          $ref: "#/components/schemas/DocRef"
+        elementCount:
+          type: integer
+          format: int32
+        hop:
+          type: integer
+          format: int32
+        id:
+          type: string
+        inScope:
+          type: boolean
+        role:
+          type: string
+          enum:
+          - FLOW
+          - REFERENCE
+          - EXTERNAL
+        streamType:
+          type: string
+        unresolvedRefs:
+          type: integer
+          format: int32
+    GraphTruncation:
+      type: object
+      properties:
+        anchor:
+          type: string
+        docType:
+          type: string
+        kind:
+          type: string
+          enum:
+          - FLOW
+          - QUERY
+          - REFERENCE
+          - INHERITANCE
+          - HTTP
+          - LOOKUP
+        omitted:
+          type: integer
+          format: int32
     GroupSelection:
       type: object
       description: Contains a set of group keys of parent rows we want to show (or
@@ -23824,6 +23950,8 @@ components:
           enum:
           - OUT
           - IN
+        hiddenMatches:
+          type: boolean
         kind:
           type: string
           enum:

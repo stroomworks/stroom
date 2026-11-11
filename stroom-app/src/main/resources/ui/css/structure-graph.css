@@ -1,0 +1,456 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* The Structure view (StructureGraph): a folder's dependency graph, drawn as SVG by StructureGraphSvg,
+   with its toolbar, hover card and message. The SVG carries geometry and classes only; its colours and
+   font sizes are here, as theme tokens, so both themes and forced colours restyle it. */
+
+:root {
+    --structure-graph__lane-fill:           rgba(0, 0, 0, 0.035);
+    --structure-graph__lane-fill--alternate: rgba(0, 0, 0, 0.06);
+    --structure-graph__lane-stroke:         var(--border-color);
+    --structure-graph__node-fill:           #ffffff;
+    --structure-graph__summary-fill:        #f3f5f8;
+    --structure-graph__chip-fill:           #eef1f5;
+    --structure-graph__node-stroke:         #8796a8;
+    --structure-graph__text-color:          var(--text-color);
+    --structure-graph__meta-color:          var(--text-color--muted);
+    --structure-graph__edge-color:          #6b7a8c;
+    --structure-graph__reference-edge-color: #8a7fb5;
+    --structure-graph__selected-color:      var(--focus-ring__color);
+    --structure-graph__match-color:         #b26a00;
+    /* A thin line, so held to the 3:1 non-text threshold: the theme's warning amber is too pale on
+       white */
+    --structure-graph__warning-color:       #b45309;
+    /* Dimming changes colours rather than opacity, because opacity over a theme background cannot be
+       measured once: these keep dimmed text at 4.5:1 or better on the canvas. */
+    --structure-graph__dimmed-text-color:   #5f6b78;
+    --structure-graph__dimmed-stroke:       #c3cad3;
+    --structure-graph__glyph-text-color:    #0c1219;
+
+    --structure-graph__glyph--feed:           #2dd4bf;
+    --structure-graph__glyph--pipeline:       #60a5fa;
+    --structure-graph__glyph--xslt:           #a78bfa;
+    --structure-graph__glyph--xml-schema:     #e879f9;
+    --structure-graph__glyph--text-converter: #fbbf24;
+    --structure-graph__glyph--index:          #34d399;
+    --structure-graph__glyph--plan-b:         #22d3ee;
+    --structure-graph__glyph--dashboard:      #38bdf8;
+    --structure-graph__glyph--dictionary:     #f0a868;
+    --structure-graph__glyph--endpoint:       #d8dee6;
+    --structure-graph__glyph--elastic-index:  #6ee7b7;
+    --structure-graph__glyph--solr-index:     #a3e635;
+    --structure-graph__glyph--statistic-store: #fda4af;
+    --structure-graph__glyph--stroom-stats-store: #f9a8d4;
+    --structure-graph__glyph--analytic-rule:  #fcd34d;
+    --structure-graph__glyph--other:          #cbd5e1;
+}
+
+.stroom-theme-dark {
+    --structure-graph__warning-color:       var(--status__color--warning);
+    --structure-graph__lane-fill:           rgba(255, 255, 255, 0.035);
+    --structure-graph__lane-fill--alternate: rgba(255, 255, 255, 0.06);
+    --structure-graph__node-fill:           #17202b;
+    --structure-graph__summary-fill:        #1e2937;
+    --structure-graph__chip-fill:           #212d3d;
+    --structure-graph__node-stroke:         #4a5d75;
+    --structure-graph__edge-color:          #8b9bb0;
+    --structure-graph__reference-edge-color: #a99be0;
+    --structure-graph__match-color:         #ffb74d;
+    --structure-graph__dimmed-text-color:   #9aa6b4;
+    --structure-graph__dimmed-stroke:       #33404f;
+}
+
+.structure-graph {
+    --structure-graph__label-scale: 1;
+}
+
+.structure-graph__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px;
+}
+
+.structure-graph__search {
+    width: 260px;
+}
+
+.structure-graph__views {
+    position: relative;
+}
+
+/* The table of documents, the split pane's lower pane */
+.structure-graph__table {
+    position: relative;
+}
+
+.structure-graph__canvas {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+}
+
+/* The canvas is a div, so base.css's app-wide `outline: none` strips its focus ring; without one,
+   tabbing to the canvas, where + and - zoom, gives no sign that it is listening. */
+.structure-graph__canvas:focus-visible {
+    outline: 2px solid var(--focus-ring__color);
+    outline-offset: -2px;
+}
+
+.structure-graph--dragging .structure-graph__canvas {
+    cursor: grabbing;
+}
+
+.structure-graph__container {
+    position: relative;
+}
+
+.structure-graph__drawing {
+    user-select: none;
+}
+
+.structure-graph__svg {
+    display: block;
+}
+
+/* Lanes */
+
+.structure-graph__lane {
+    fill: var(--structure-graph__lane-fill);
+    stroke: var(--structure-graph__lane-stroke);
+    stroke-width: 1;
+}
+
+.structure-graph__lane--alternate {
+    fill: var(--structure-graph__lane-fill--alternate);
+}
+
+.structure-graph__lane-toggle {
+    cursor: pointer;
+}
+
+.structure-graph__lane-toggle-box {
+    fill: var(--structure-graph__summary-fill);
+    stroke: var(--structure-graph__node-stroke);
+    stroke-width: 1;
+}
+
+.structure-graph__lane-toggle-glyph {
+    fill: var(--structure-graph__meta-color);
+    font-size: 15px;
+}
+
+/* Edges */
+
+.structure-graph__edge {
+    fill: none;
+    stroke: var(--structure-graph__edge-color);
+    stroke-width: 1.6;
+    vector-effect: non-scaling-stroke;
+}
+
+.structure-graph__edge--reference,
+.structure-graph__edge--lookup {
+    stroke: var(--structure-graph__reference-edge-color);
+    stroke-dasharray: 5 4;
+    stroke-width: 1.2;
+}
+
+.structure-graph__edge--inheritance {
+    stroke-dasharray: 2 4;
+    stroke-width: 1.2;
+}
+
+.structure-graph__edge--http {
+    stroke-dasharray: 7 4;
+}
+
+.structure-graph__edge--back {
+    stroke-dasharray: 3 5;
+}
+
+.structure-graph__edge--ambiguous {
+    stroke: var(--structure-graph__warning-color);
+    stroke-width: 2;
+}
+
+.structure-graph__edge--highlighted {
+    stroke: var(--structure-graph__selected-color);
+    stroke-width: 2.2;
+}
+
+.structure-graph__edge--dimmed {
+    stroke: var(--structure-graph__dimmed-stroke);
+}
+
+.structure-graph__arrow-head {
+    fill: var(--structure-graph__edge-color);
+}
+
+/* Nodes */
+
+.structure-graph__node {
+    cursor: pointer;
+}
+
+.structure-graph__body {
+    fill: var(--structure-graph__node-fill);
+    stroke: var(--structure-graph__node-stroke);
+    stroke-width: 1.3;
+}
+
+.structure-graph__node--endpoint .structure-graph__body {
+    stroke-dasharray: 7 4;
+}
+
+.structure-graph__node--lane-summary .structure-graph__body,
+.structure-graph__node--reference-summary .structure-graph__body {
+    fill: var(--structure-graph__summary-fill);
+    stroke-dasharray: 1 3;
+    stroke-width: 1.8;
+}
+
+.structure-graph__node--context .structure-graph__body {
+    stroke-dasharray: 4 3;
+}
+
+.structure-graph__node--broken .structure-graph__body {
+    stroke: var(--structure-graph__warning-color);
+    stroke-width: 2;
+}
+
+/* The node whose row has the keyboard focus: the table's focus, shown where the user is looking */
+.structure-graph__node--focused .structure-graph__body {
+    stroke: var(--focus-ring__color);
+    stroke-width: 3;
+    stroke-dasharray: 6 3;
+}
+
+.structure-graph__node--selected .structure-graph__body {
+    stroke: var(--structure-graph__selected-color);
+    stroke-width: 2.6;
+}
+
+.structure-graph__node--dimmed .structure-graph__body {
+    stroke: var(--structure-graph__dimmed-stroke);
+}
+
+/* After dimmed, so a match outside the selected chain is still marked */
+.structure-graph__node--match .structure-graph__body {
+    stroke: var(--structure-graph__match-color);
+    stroke-width: 2.4;
+}
+
+.structure-graph__name {
+    fill: var(--structure-graph__text-color);
+    font-family: var(--monospace-font-family), monospace;
+    font-size: calc(15px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__meta {
+    fill: var(--structure-graph__meta-color);
+    font-family: var(--regular-font-family), sans-serif;
+    font-size: calc(12px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__node--reference .structure-graph__name,
+.structure-graph__node--reference-summary .structure-graph__name,
+.structure-graph__node--endpoint .structure-graph__name {
+    font-size: calc(13.5px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__node--reference .structure-graph__meta,
+.structure-graph__node--reference-summary .structure-graph__meta,
+.structure-graph__node--endpoint .structure-graph__meta {
+    font-size: calc(11px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__node--dimmed .structure-graph__name,
+.structure-graph__node--dimmed .structure-graph__meta {
+    fill: var(--structure-graph__dimmed-text-color);
+}
+
+.structure-graph--names-hidden .structure-graph__name,
+.structure-graph--names-hidden .structure-graph__glyph,
+.structure-graph--names-hidden .structure-graph__glyph-text,
+.structure-graph--names-hidden .structure-graph__toggle,
+.structure-graph--meta-hidden .structure-graph__meta,
+.structure-graph--meta-hidden .structure-graph__badge {
+    display: none;
+}
+
+.structure-graph__glyph {
+    fill: var(--structure-graph__glyph--other);
+}
+
+.structure-graph__glyph--feed { fill: var(--structure-graph__glyph--feed); }
+.structure-graph__glyph--pipeline { fill: var(--structure-graph__glyph--pipeline); }
+.structure-graph__glyph--xslt { fill: var(--structure-graph__glyph--xslt); }
+.structure-graph__glyph--xml-schema { fill: var(--structure-graph__glyph--xml-schema); }
+.structure-graph__glyph--text-converter { fill: var(--structure-graph__glyph--text-converter); }
+.structure-graph__glyph--index { fill: var(--structure-graph__glyph--index); }
+.structure-graph__glyph--plan-b { fill: var(--structure-graph__glyph--plan-b); }
+.structure-graph__glyph--dashboard { fill: var(--structure-graph__glyph--dashboard); }
+.structure-graph__glyph--dictionary { fill: var(--structure-graph__glyph--dictionary); }
+.structure-graph__glyph--endpoint { fill: var(--structure-graph__glyph--endpoint); }
+.structure-graph__glyph--elastic-index { fill: var(--structure-graph__glyph--elastic-index); }
+.structure-graph__glyph--solr-index { fill: var(--structure-graph__glyph--solr-index); }
+.structure-graph__glyph--statistic-store { fill: var(--structure-graph__glyph--statistic-store); }
+.structure-graph__glyph--stroom-stats-store { fill: var(--structure-graph__glyph--stroom-stats-store); }
+.structure-graph__glyph--analytic-rule { fill: var(--structure-graph__glyph--analytic-rule); }
+.structure-graph__glyph--other { fill: var(--structure-graph__glyph--other); }
+
+.structure-graph__glyph-text {
+    fill: var(--structure-graph__glyph-text-color);
+    font-family: var(--regular-font-family), sans-serif;
+    font-size: calc(13px * var(--structure-graph__label-scale));
+    font-weight: 600;
+}
+
+.structure-graph__badge {
+    fill: var(--structure-graph__reference-edge-color);
+    font-size: calc(11px * var(--structure-graph__label-scale));
+    font-weight: 600;
+}
+
+.structure-graph__toggle {
+    fill: var(--structure-graph__meta-color);
+    font-size: calc(17px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__toggle-hit {
+    fill: transparent;
+    cursor: pointer;
+}
+
+.structure-graph__chip {
+    fill: var(--structure-graph__chip-fill);
+    stroke: var(--structure-graph__node-stroke);
+    stroke-width: 1;
+}
+
+/* An empty folder's create slots */
+
+.structure-graph__ghost-body {
+    fill: none;
+    stroke: var(--structure-graph__node-stroke);
+    stroke-width: 1.5;
+    stroke-dasharray: 7 5;
+}
+
+.structure-graph__ghost-label {
+    fill: var(--structure-graph__meta-color);
+    font-family: var(--regular-font-family), sans-serif;
+    font-size: calc(15px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__ghost-line {
+    fill: none;
+    stroke: var(--structure-graph__node-stroke);
+    stroke-width: 1.8;
+    stroke-dasharray: 3 6;
+    vector-effect: non-scaling-stroke;
+}
+
+/* The hover card, anchored to the node it describes */
+
+.structure-graph__hover-card {
+    position: absolute;
+    left: var(--structure-graph__hover-card-left, 0);
+    top: var(--structure-graph__hover-card-top, 0);
+    max-width: 320px;
+    padding: 8px 10px;
+    background-color: var(--tooltip__background-color);
+    color: var(--tooltip__text-color);
+    border-radius: 4px;
+    /* Takes the pointer, so it stays while the pointer is over it (WCAG 1.4.13) */
+    cursor: auto;
+    z-index: 1;
+}
+
+.structure-graph__hover-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.structure-graph__hover-line {
+    font-size: 0.9em;
+}
+
+.structure-graph__message {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 12px;
+    transform: translateX(-50%);
+    max-width: 80%;
+    padding: 6px 12px;
+    background-color: var(--page__background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+@media (forced-colors: active) {
+    .structure-graph__body,
+    .structure-graph__lane,
+    .structure-graph__chip,
+    .structure-graph__ghost-body,
+    .structure-graph__lane-toggle-box {
+        fill: Canvas;
+        stroke: CanvasText;
+    }
+
+    .structure-graph__edge,
+    .structure-graph__ghost-line {
+        stroke: CanvasText;
+    }
+
+    .structure-graph__arrow-head {
+        fill: CanvasText;
+    }
+
+    .structure-graph__name,
+    .structure-graph__meta,
+    .structure-graph__glyph-text,
+    .structure-graph__badge,
+    .structure-graph__toggle,
+    .structure-graph__ghost-label,
+    .structure-graph__lane-toggle-glyph {
+        fill: CanvasText;
+    }
+
+    .structure-graph__node--selected .structure-graph__body,
+    .structure-graph__node--focused .structure-graph__body,
+    /* Problems and matches in system colours of their own, as width and dashes alone are not enough */
+    .structure-graph__node--broken .structure-graph__body,
+    .structure-graph__edge--ambiguous {
+        stroke: Mark;
+    }
+
+    .structure-graph__node--match .structure-graph__body {
+        stroke: LinkText;
+    }
+
+    .structure-graph__edge--highlighted {
+        stroke: Highlight;
+    }
+
+    .structure-graph__node--dimmed .structure-graph__name,
+    .structure-graph__node--dimmed .structure-graph__meta {
+        fill: GrayText;
+    }
+}

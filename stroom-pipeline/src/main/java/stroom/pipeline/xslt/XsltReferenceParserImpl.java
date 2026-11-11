@@ -73,6 +73,10 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
      */
     static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
 
+    /// Bounds how many references one document can report, and so how many lookups and recorded
+    /// dependencies it can cost. Generous: real stylesheets name tens of things.
+    static final int MAX_REFERENCES = 1000;
+
     /**
      * Bounds recursion through variables that refer to other variables.
      */
@@ -254,6 +258,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
         private final XsltValueResolver valueResolver;
         private final long deadline;
         private boolean timedOut;
+        private boolean limitReached;
 
         Walk(final Duration timeout, final XsltValueResolver valueResolver) {
             this.timeout = timeout;
@@ -265,7 +270,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             final java.util.Iterator<XdmNode> iterator = document.axisIterator(Axis.DESCENDANT_OR_SELF);
             while (iterator.hasNext()) {
                 final XdmNode node = iterator.next();
-                if (isPastDeadline()) {
+                if (isPastDeadline() || isAtLimit()) {
                     return;
                 }
                 if (node.getNodeKind() == XdmNodeKind.ELEMENT) {
@@ -275,12 +280,32 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
         }
 
         XsltReferences result() {
+            if (limitReached) {
+                // As for a timeout: what was found is true, but it is not everything
+                return new XsltReferences(references, "Stopped after finding " + MAX_REFERENCES + " references");
+            }
             if (timedOut) {
                 // Partial rather than empty: whatever was found before the deadline is still true. The
                 // message marks the result incomplete so no consumer mistakes it for a full picture.
                 return new XsltReferences(references, "Parsing exceeded " + timeout);
             }
             return XsltReferences.of(references);
+        }
+
+        // Every finding goes through here, so none is added past the cap, whatever found it.
+        private void add(final XsltReference reference) {
+            if (!isAtLimit()) {
+                references.add(reference);
+            }
+        }
+
+        // A stylesheet naming thousands of things would otherwise make as many lookups and recorded
+        // dependencies, on every save and every refresh.
+        private boolean isAtLimit() {
+            if (!limitReached && references.size() >= MAX_REFERENCES) {
+                limitReached = true;
+            }
+            return limitReached;
         }
 
         private boolean isPastDeadline() {
@@ -319,7 +344,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             if (NullSafe.isBlankString(href)) {
                 return;
             }
-            references.add(resolveImport(href, lineNumberOf(element)));
+            add(resolveImport(href, lineNumberOf(element)));
         }
 
         /**
@@ -331,6 +356,9 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
          * case-insensitive element matching.
          */
         private void visitMapOutput(final XdmNode element) {
+            if (isAtLimit()) {
+                return;
+            }
             final int lineNumber = lineNumberOf(element);
             final XsltValue value = valueResolver.resolveElementContent(element);
             for (final String mapName : value.values()) {
@@ -344,12 +372,12 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                 // Indentation around a nested element is a different case and needs no trimming - XSLT
                 // strips whitespace-only text nodes from a stylesheet, so pretty printing costs nothing.
                 if (!mapName.isEmpty()) {
-                    references.add(XsltReference.mapName(
+                    add(XsltReference.mapName(
                             XsltReferenceKind.REF_MAP_WRITE, mapName, lineNumber));
                 }
             }
             if (value.reason() != null) {
-                references.add(XsltReference.unresolved(
+                add(XsltReference.unresolved(
                         XsltReferenceKind.REF_MAP_WRITE,
                         element.getStringValue(),
                         value.reason(),
@@ -415,7 +443,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                 // Only this expression is lost, not the document. A stylesheet with one bad attribute
                 // still yields everything else.
                 LOGGER.debug(() -> "Could not compile '" + expressionText + "': " + e.getMessage(), e);
-                references.add(XsltReference.unresolved(
+                add(XsltReference.unresolved(
                         XsltReferenceKind.UNANALYSED,
                         expressionText,
                         XsltReferenceReason.UNPARSEABLE,
@@ -435,7 +463,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                 // sound: unwinding to here discards the whole recursion, so the stack is intact.
                 LOGGER.warn(() -> "Expression too deeply nested to compile, at "
                                   + describe(element) + ": " + summarise(expressionText));
-                references.add(XsltReference.unresolved(
+                add(XsltReference.unresolved(
                         XsltReferenceKind.UNANALYSED,
                         expressionText,
                         XsltReferenceReason.UNPARSEABLE,
@@ -471,6 +499,11 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
         private void findStroomCalls(final XPathExpr expression,
                                     final XdmNode site,
                                     final String expressionText) {
+            // Recursive, and an expression can hold thousands of calls, so it stops at the cap or the
+            // deadline as the walk itself does
+            if (isAtLimit() || isPastDeadline()) {
+                return;
+            }
             if (expression.functionNamespace().filter(NamespaceConstants.STROOM::equals).isPresent()) {
                 visitStroomCall(expression, site, expressionText);
             }
@@ -512,8 +545,11 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                                     final int lineNumber) {
             final XsltValue value = valueResolver.resolve(argument, site);
             for (final String name : value.values()) {
+                if (isAtLimit()) {
+                    return;
+                }
                 if (!name.isEmpty()) {
-                    references.add(resolveDictionary(name, lineNumber));
+                    add(resolveDictionary(name, lineNumber));
                 }
             }
             addUnresolved(XsltReferenceKind.DICTIONARY, value, expressionText, lineNumber);
@@ -529,11 +565,14 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                                  final int lineNumber) {
             final XsltValue value = valueResolver.resolve(argument, site);
             for (final String mapName : value.values()) {
+                if (isAtLimit()) {
+                    return;
+                }
                 // A chained lookup names several maps in one argument, using each map's value as the key
                 // for the next. Only the components are real map names; the joined string is not one.
                 for (final String component : mapName.split(MAP_NEST_SEPARATOR, -1)) {
                     if (!component.isEmpty()) {
-                        references.add(XsltReference.mapName(
+                        add(XsltReference.mapName(
                                 XsltReferenceKind.REF_MAP_READ, component, lineNumber));
                     }
                 }
@@ -548,8 +587,11 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                                   final XsltReferenceDirection direction) {
             final XsltValue value = valueResolver.resolve(argument, site);
             for (final String url : value.values()) {
+                if (isAtLimit()) {
+                    return;
+                }
                 if (!url.isEmpty()) {
-                    references.add(XsltReference.endpoint(url, direction, lineNumber));
+                    add(XsltReference.endpoint(url, direction, lineNumber));
                 }
             }
             addUnresolved(XsltReferenceKind.HTTP, value, expressionText, lineNumber);
@@ -565,7 +607,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                                    final String expressionText,
                                    final int lineNumber) {
             if (value.reason() != null) {
-                references.add(XsltReference.unresolved(
+                add(XsltReference.unresolved(
                         kind, expressionText, value.reason(), lineNumber));
             }
         }
