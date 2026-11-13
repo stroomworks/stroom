@@ -17,13 +17,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -57,7 +58,7 @@ public class ShapeshifterDeferral extends TableImpl<ShapeshifterDeferralRecord> 
     /**
      * The column <code>stroom.shapeshifter_deferral.id</code>.
      */
-    public final TableField<ShapeshifterDeferralRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<ShapeshifterDeferralRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_deferral.pipeline_uuid</code>.
@@ -219,7 +220,7 @@ public class ShapeshifterDeferral extends TableImpl<ShapeshifterDeferralRecord> 
      */
     @Override
     public ShapeshifterDeferral where(Condition condition) {
-        return new ShapeshifterDeferral(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new ShapeshifterDeferral(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -286,7 +287,7 @@ public class ShapeshifterDeferral extends TableImpl<ShapeshifterDeferralRecord> 
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterDeferral whereExists(Select<?> select) {
+    public ShapeshifterDeferral whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -294,7 +295,7 @@ public class ShapeshifterDeferral extends TableImpl<ShapeshifterDeferralRecord> 
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterDeferral whereNotExists(Select<?> select) {
+    public ShapeshifterDeferral whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

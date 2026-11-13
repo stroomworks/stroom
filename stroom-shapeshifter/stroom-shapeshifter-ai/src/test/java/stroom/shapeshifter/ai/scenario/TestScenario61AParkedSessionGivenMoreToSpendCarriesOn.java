@@ -68,7 +68,8 @@ class TestScenario61AParkedSessionGivenMoreToSpendCarriesOn {
         assertThat(scenarios.worker(learning).advance(10)).isEqualTo(1);
         final Recorded parked = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(parked.status()).describedAs(String.valueOf(parked.decision())).isEqualTo(AttemptStatus.PARKED);
-        assertThat(parked.decision()).contains("budget of 2 tokens is spent");
+        assertThat(parked.decision()).startsWith("Ran out of tokens at ");
+        assertThat(parked.report().getDetails()).first().asString().startsWith("A run may spend 2 tokens;");
         assertThat(parked.grant().tokens()).isZero();
 
         // A grant to a running or finished attempt is refused; to the parked one it is recorded and the

@@ -1,0 +1,17 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- One rule of a step card, read as a sentence: If <condition> then <destination> (rule-row.css) -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="rule-row">
+        <tx:InlineLabel styleName="rule-row__word" text="If"/>
+        <l:SelectionBox ui:field="condition" addStyleNames="rule-row__condition"/>
+        <tx:InlineLabel styleName="rule-row__word" text="then"/>
+        <l:SelectionBox ui:field="destination" addStyleNames="rule-row__destination"/>
+        <b:Toolbar name="Rule actions" addStyleNames="rule-row__tools">
+            <b:ToolbarButton ui:field="remove" svg="DELETE" title="Remove rule"/>
+        </b:Toolbar>
+    </g:FlowPanel>
+</ui:UiBinder>

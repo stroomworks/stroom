@@ -35,6 +35,10 @@ import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepOutcome;
+import stroom.shapeshifter.shared.StopCause;
+import stroom.shapeshifter.shared.StopReport;
+import stroom.shapeshifter.shared.Suggestion;
+import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.shapeshifter.shared.TurnScore;
 import stroom.util.shared.DefaultLocation;
 import stroom.util.shared.PageRequest;
@@ -246,6 +250,34 @@ class TestLearnerStatesAndAttemptsDao {
         attempts.closed(id, AttemptStatus.ABANDONED, "Given up", null, null, 0L);
         attempts.parked(id, "late", 1L);
         assertThat(attempts.byId(id).orElseThrow().status()).isEqualTo(AttemptStatus.ABANDONED);
+    }
+
+    @Test
+    void whyAnAttemptStoppedIsKeptInPartsAndClearedWhenItIsTakenUpAgain() {
+        // A stopped attempt's report is read back as it was written; a reopened attempt is no longer stopped,
+        // so it says nothing, and a failed one says why in parts too.
+        final Learner learner = learner("report");
+        final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
+                PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
+        final StopReport report = new StopReport(StopCause.TIME_BUDGET, "parser",
+                "Ran out of time at \"Write the parser\" (question 6).",
+                List.of("Each run may take 5 minutes; this one had taken 5 minutes 2 seconds."),
+                List.of(new Suggestion("Give it more time.", SuggestionAction.GIVE_MORE),
+                        new Suggestion("Raise \"Time for each run\" on the Setup tab.",
+                                SuggestionAction.CHANGE_LIMITS)));
+
+        attempts.parked(id, report.getError(), report, 10L);
+        final Recorded parked = attempts.byId(id).orElseThrow();
+        assertThat(parked.decision()).isEqualTo(report.getError());
+        assertThat(parked.report()).isEqualTo(report);
+
+        assertThat(attempts.reopened(id, now(), now() + 60_000L)).isTrue();
+        assertThat(attempts.byId(id).orElseThrow().report()).describedAs("taken up again").isNull();
+
+        final StopReport failed = new StopReport(StopCause.MODEL_TIMEOUT, null, "The model didn't reply in time.",
+                List.of(), List.of(new Suggestion("Open the model's document.", SuggestionAction.OPEN_MODEL)));
+        attempts.closed(id, AttemptStatus.ERROR, failed.getError(), null, null, failed, 1L);
+        assertThat(attempts.byId(id).orElseThrow().report()).isEqualTo(failed);
     }
 
     @Test

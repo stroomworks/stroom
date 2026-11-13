@@ -47,8 +47,13 @@ public class FlowStep {
     public static final int DEFAULT_KINDS = 3;
     /// A step id: a letter, then letters, digits, hyphens or underscores; matched without regard to case.
     public static final String ID = "[A-Za-z][A-Za-z0-9_-]*";
-    /// Ruling A10's initial set: what the chain question chooses from until the Chain step says otherwise.
-    public static final List<String> DEFAULT_ELEMENTS = List.of("DSParser", "JSONParser", "XMLParser", "XSLTFilter");
+    /// The element types the AI can learn, one for each of the stage's runners and in their order (a test in
+    /// `stroom-shapeshifter-ai`, `TestStageFactory`, holds the two together). The chain question chooses from
+    /// these where the Chain step names none (A10), and the Setup tab offers them as tick boxes. There is no
+    /// `XMLParser`: a stream that is already XML needs no parser, so its chain begins with the transform and
+    /// the pipeline puts an `XMLParser` in front of it.
+    public static final List<String> LEARNABLE_ELEMENTS = List.of(
+            "DSParser", "JSONParser", "XMLFragmentParser", "XSLTFilter");
     private static final String WHEN = "when";
     private static final String ELEMENTS = "elements";
     private static final String CANDIDATES = "candidates";
@@ -75,7 +80,7 @@ public class FlowStep {
     @JsonProperty
     private final List<Transition> transitions;
     /// The element types the chain question chooses from (A21, A95): the Chain step's alone, and empty
-    /// where it chooses from [#DEFAULT_ELEMENTS]. With exactly one the question is not asked.
+    /// where it chooses from [#LEARNABLE_ELEMENTS]. With exactly one the question is not asked.
     @JsonProperty
     private final List<String> elements;
 
@@ -209,15 +214,15 @@ public class FlowStep {
         return transitions;
     }
 
-    /// The element types a Chain step names, or empty where it chooses from the default set.
+    /// The element types a Chain step names, or empty where it chooses from every learnable one.
     public List<String> getElements() {
         return elements;
     }
 
-    /// The element types the chain question chooses from: the ones named, else the default set.
+    /// The element types the chain question chooses from: the ones named, else every learnable one.
     public List<String> effectiveElements() {
         return elements.isEmpty()
-                ? DEFAULT_ELEMENTS
+                ? LEARNABLE_ELEMENTS
                 : elements;
     }
 
@@ -257,7 +262,7 @@ public class FlowStep {
         return null;
     }
 
-    /// The step as one line, the form the Learning tab edits.
+    /// The step as one line: the shorthand the example flows and the tests write steps in.
     public String format() {
         final StringBuilder text = new StringBuilder();
         if (id != null) {
@@ -452,12 +457,13 @@ public class FlowStep {
         final FlowStep that = (FlowStep) o;
         return Objects.equals(id, that.id) && kind == that.kind && role == that.role && when == that.when
                && Objects.equals(candidates, that.candidates) && Objects.equals(kinds, that.kinds)
-               && checks.equals(that.checks) && transitions.equals(that.transitions);
+               && checks.equals(that.checks) && transitions.equals(that.transitions)
+               && elements.equals(that.elements);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, kind, role, when, candidates, kinds, checks, transitions);
+        return Objects.hash(id, kind, role, when, candidates, kinds, checks, transitions, elements);
     }
 
     @Override

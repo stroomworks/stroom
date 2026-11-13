@@ -96,7 +96,7 @@ public class ScorerListController extends Controller {
         }
         final ScorerType unused = scorers.firstUnusedType();
         if (unused == null) {
-            AlertEvent.fireInfo(this, "Every scorer is already in the set.", null);
+            AlertEvent.fireInfo(this, "Every kind of check is already in the set.", null);
             return;
         }
         editorProvider.get().edit(
@@ -132,8 +132,8 @@ public class ScorerListController extends Controller {
                     final ScorerSetting current = scorers.find(type);
                     if (!scorers.replace(type, scorer)) {
                         AlertEvent.fireWarn(this,
-                                "The " + type.getDisplayValue()
-                                + " scorer was removed while it was being edited, so the change is not kept.",
+                                "The '" + PlainWords.scorer(type)
+                                + "' check was removed while it was being edited, so the change is not kept.",
                                 null);
                         return;
                     }
@@ -151,7 +151,7 @@ public class ScorerListController extends Controller {
             return;
         }
         final ScorerType type = existing.getType();
-        ConfirmEvent.fire(this, "Remove the " + type.getDisplayValue() + " scorer?", ok -> {
+        ConfirmEvent.fire(this, "Remove the '" + PlainWords.scorer(type) + "' check?", ok -> {
             if (ok && !isDisposed() && !readOnly) {
                 scorers.remove(type);
                 view.clearSelection();

@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.element;
 
 import stroom.shapeshifter.ai.learning.Advisor;
 import stroom.shapeshifter.ai.learning.Exchange;
+import stroom.shapeshifter.ai.learning.ModelNotChosenException;
 import stroom.shapeshifter.ai.learning.Question;
 
 import java.util.List;
@@ -30,7 +31,7 @@ public class NoModelAdvisor implements Advisor {
 
     @Override
     public String ask(final List<Exchange> transcript, final Question question) {
-        throw new IllegalStateException("The Shapeshifter AI document names no model to ask. Choose one on its "
-                                        + "Learning tab, or set its learning mode to DISABLED.");
+        throw new ModelNotChosenException("The Shapeshifter AI document names no model to ask. Choose one on its "
+                                        + "Setup tab, or switch learning off there.");
     }
 }

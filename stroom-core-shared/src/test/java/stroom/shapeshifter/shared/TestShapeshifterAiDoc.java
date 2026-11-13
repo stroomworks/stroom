@@ -51,29 +51,31 @@ class TestShapeshifterAiDoc {
         assertThat(new LearningFlow(null, null, null).getSteps()).isEqualTo(FlowExample.DIRECT.steps());
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.of(QuestionKind.CONFIGURE), FlowStep.of(QuestionKind.CHAIN))).problems())
-                .containsExactly("The first step must be CHAIN", "The last step must be CONFIGURE or ADMIT");
+                .containsExactly("The first step must be 'Choose the elements'",
+                        "The last step must write the translation, or be the fallback");
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.SPLIT),
                 FlowStep.of(QuestionKind.SPLIT), FlowStep.of(QuestionKind.CONFIGURE))).problems())
-                .containsExactly("SPLIT may appear once, not 2 times");
+                .containsExactly("The flow has 2 'Find what one record is' steps; it may have only one");
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of()).problems())
                 .containsExactly("The flow has no steps");
         // A transition out of CHAIN would leave the flow with no chain to run: refused at the door, not at a
         // null chain in the interpreter.
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN on refused goto end"), FlowStep.of(QuestionKind.CONFIGURE))).problems())
-                .containsExactly("CHAIN takes no transition; nothing can run until the chain is settled");
+                .containsExactly("'Choose the elements' can't have rules: nothing else can run until the elements "
+                                 + "are chosen");
         // Two transitions on one outcome, or two on spent, contradict each other: refused rather than the
         // first silently winning.
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE on spent goto end on spent abandon"))).problems())
-                .containsExactly("Step 'configure' says 'on spent' twice; the first would be taken and the second "
-                                 + "never");
+                .containsExactly("Step 2 (Write every element) has two rules for when it runs out of tries; only "
+                                 + "the first would be followed");
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"),
                 FlowStep.parse("CONFIGURE on refused goto end on refused abandon on spent abandon"))).problems())
-                .containsExactly("Step 'configure' says 'on refused' twice; the first would be taken and the "
-                                 + "second never");
+                .containsExactly("Step 2 (Write every element) has two rules for when the answer isn't in the "
+                                 + "reply format; only the first would be followed");
     }
 
     @Test
@@ -94,18 +96,19 @@ class TestShapeshifterAiDoc {
                 FlowStep.parse("CONFIGURE transform on spent goto give-up"))).problems()).isEmpty();
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"), FlowStep.parse("park: CONFIGURE"))).problems())
-                .containsExactly("'park' is an exit of the flow and cannot name a step");
+                .containsExactly("Step 2 (Write every element) has the id 'park', which the flow keeps for "
+                                 + "itself; delete the step and add it again");
     }
 
     @Test
     void theChainStepNamesTheElementsTheChainQuestionChoosesFrom() {
         // A95: elements are the Chain step's, written as a word of its line; the document derives what it
-        // allows from them, the default set where the step names none; no other step may name any.
+        // allows from them, every learnable one where the step names none; no other step may name any.
         final FlowStep chain = FlowStep.parse("CHAIN elements DSParser,XSLTFilter candidates 2");
         assertThat(chain.getElements()).containsExactly("DSParser", "XSLTFilter");
         assertThat(chain.format()).isEqualTo("CHAIN candidates 2 elements DSParser,XSLTFilter");
         assertThat(FlowStep.parse("CHAIN").getElements()).isEmpty();
-        assertThat(FlowStep.parse("CHAIN").effectiveElements()).isEqualTo(FlowStep.DEFAULT_ELEMENTS);
+        assertThat(FlowStep.parse("CHAIN").effectiveElements()).isEqualTo(FlowStep.LEARNABLE_ELEMENTS);
         assertThatThrownBy(() -> FlowStep.parse("CONFIGURE parser elements DSParser"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Only CHAIN names elements");
@@ -114,7 +117,7 @@ class TestShapeshifterAiDoc {
                 .build();
         assertThat(doc.getAllowedElements()).containsExactly("DSParser", "XSLTFilter");
         assertThat(ShapeshifterAiDoc.builder().uuid("d").name("n").build().getAllowedElements())
-                .isEqualTo(FlowStep.DEFAULT_ELEMENTS);
+                .isEqualTo(FlowStep.LEARNABLE_ELEMENTS);
         assertThat(ShapeshifterAiDoc.builder().uuid("d").name("n").allowedElements(List.of("XMLParser")).build()
                 .getFlow().getSteps().get(0).getElements()).containsExactly("XMLParser");
     }
@@ -125,16 +128,17 @@ class TestShapeshifterAiDoc {
         final List<FlowProblem> problems = LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CONFIGURE on refused goto nowhere"), FlowStep.parse("SPLIT"))).check();
         assertThat(problems).extracting(FlowProblem::getStep, FlowProblem::getMessage).containsExactly(
-                tuple(0, "The first step must be CHAIN"),
-                tuple(1, "The last step must be CONFIGURE or ADMIT"),
-                tuple(null, "CHAIN must appear"),
-                tuple(0, "'on refused goto nowhere' in step 'configure' names no step"));
+                tuple(0, "The first step must be 'Choose the elements'"),
+                tuple(1, "The last step must write the translation, or be the fallback"),
+                tuple(null, "The flow needs a 'Choose the elements' step"),
+                tuple(0, "The rule 'if the answer isn't in the reply format' on step 1 (Write every element) "
+                         + "goes to 'nowhere', which isn't a step"));
     }
 
     @Test
     void anIdIsAWordHoweverItArrives() {
         // The line form checks the id; the JSON form must too, or a saved id the line form cannot read back
-        // breaks the Learning tab's round trip.
+        // breaks the round trip.
         assertThatThrownBy(() -> new FlowStep("my step", QuestionKind.CONFIGURE, null, null, null, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("'my step' is not a step id");
@@ -157,15 +161,18 @@ class TestShapeshifterAiDoc {
                 .extracting(Transition::format).containsExactly("on passed goto end", "on spent goto target");
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"), FlowStep.parse("end: CONFIGURE"))).problems())
-                .containsExactly("'end' is the end of the flow and cannot name a step");
+                .containsExactly("Step 2 (Write every element) has the id 'end', which the flow keeps for "
+                                 + "itself; delete the step and add it again");
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser"), FlowStep.parse("CONFIGURE parser")))
                 .problems())
-                .containsExactly("Two steps are named 'parser'; give one an id");
+                .containsExactly("Step 3 (Write the parser again) has the same id as an earlier step, 'parser'; "
+                                 + "delete it and add it again");
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE on refused goto nowhere on spent abandon")))
                 .problems())
-                .containsExactly("'on refused goto nowhere' in step 'configure' names no step");
+                .containsExactly("The rule 'if the answer isn't in the reply format' on step 2 (Write every "
+                                 + "element) goes to 'nowhere', which isn't a step");
         // A step's name is matched without regard to case, as everything else on the line is.
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"),
@@ -177,7 +184,8 @@ class TestShapeshifterAiDoc {
         assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                 FlowStep.parse("CHAIN"), FlowStep.parse("target: CONFIGURE parser"), FlowStep.parse("TARGET"),
                 FlowStep.parse("CONFIGURE transform"))).problems())
-                .containsExactly("Two steps are named 'target'; give one an id");
+                .containsExactly("Step 3 (Agree the target events) has the same id as an earlier step, 'target'; "
+                                 + "delete it and add it again");
     }
 
     @Test
@@ -246,8 +254,8 @@ class TestShapeshifterAiDoc {
         assertThat(doc.getLearningMode()).isEqualTo(LearningMode.DISABLED);
         assertThat(doc.getRelearnThreshold()).isEqualTo(0.8);
         assertThat(doc.getAllowedElements())
-                .describedAs("A10's initial set until a document narrows it")
-                .containsExactly("DSParser", "JSONParser", "XMLParser", "XSLTFilter");
+                .describedAs("every learnable element (A10) until a document narrows it")
+                .containsExactly("DSParser", "JSONParser", "XMLFragmentParser", "XSLTFilter");
         assertThat(doc.getFlow()).isEqualTo(LearningFlow.of(FlowExample.DIRECT));
         assertThat(doc.getMaxAttempts()).describedAs("five since the first live run, design 02 §6.2").isEqualTo(5);
         assertThat(doc.getAttemptBudgetMs()).isEqualTo(60_000L);

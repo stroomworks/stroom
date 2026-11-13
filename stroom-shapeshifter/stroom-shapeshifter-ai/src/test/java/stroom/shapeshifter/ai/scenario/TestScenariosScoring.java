@@ -304,7 +304,9 @@ class TestScenariosScoring {
         assertThat(script.scripted()).hasSize(8);
         // Its candidates spent, the session parks for a person (A65) rather than giving the learner up.
         assertThat(run.decision()).isInstanceOf(Parked.class);
-        assertThat(((Parked) run.decision()).reason()).contains("No admission for XSLTFilter after 3");
+        assertThat(((Parked) run.decision()).reason())
+                .isEqualTo("Couldn't translate what's left as marked Unknowns: all 3 answers fell short.");
+        assertThat(((Parked) run.decision()).report().getDetails()).first().isEqualTo("It was serving XSLTFilter.");
         assertThat(feedback(script.scripted().get(4)))
                 .anyMatch(message -> message.contains("against an expected 1.0"));
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();

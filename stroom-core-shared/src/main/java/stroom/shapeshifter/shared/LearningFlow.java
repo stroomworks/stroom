@@ -103,8 +103,9 @@ public class LearningFlow {
     /// What is wrong with the steps, structurally: CHAIN first, once and without transitions, CONFIGURE or
     /// ADMIT last, SPLIT and TARGET at most once each, every id unique and none a reserved name, every `goto`
     /// naming a step, `end` or an exit. Empty where the steps are a flow the stage can hold. Each problem
-    /// names the step it is about where it is about one (A88). The templates' variables are the server's
-    /// to check, since it holds the built-in text.
+    /// names the step it is about where it is about one (A88), and is said in the words of [FlowWords]: a
+    /// person reads it on the Setup tab and when a save is refused. The templates' variables are the
+    /// server's to check, since it holds the built-in text.
     public List<FlowProblem> check() {
         final List<FlowProblem> problems = new ArrayList<>();
         if (steps.isEmpty()) {
@@ -112,12 +113,13 @@ public class LearningFlow {
             return problems;
         }
         if (steps.get(0).getKind() != QuestionKind.CHAIN) {
-            problems.add(new FlowProblem(0, "The first step must be CHAIN"));
+            problems.add(new FlowProblem(0, "The first step must be '"
+                                            + FlowWords.stepName(QuestionKind.CHAIN, null) + "'"));
         }
         final int last = steps.size() - 1;
         final QuestionKind lastKind = steps.get(last).getKind();
         if (lastKind != QuestionKind.CONFIGURE && lastKind != QuestionKind.ADMIT) {
-            problems.add(new FlowProblem(last, "The last step must be CONFIGURE or ADMIT"));
+            problems.add(new FlowProblem(last, "The last step must write the translation, or be the fallback"));
         }
         for (final QuestionKind kind : QuestionKind.values()) {
             int count = 0;
@@ -127,21 +129,27 @@ public class LearningFlow {
                 }
             }
             if (count > 1 && kind != QuestionKind.CONFIGURE) {
-                problems.add(new FlowProblem(null, kind.name() + " may appear once, not " + count + " times"));
+                problems.add(new FlowProblem(null, "The flow has " + count + " '" + FlowWords.stepName(kind, null)
+                                                   + "' steps; it may have only one"));
             }
-            if (count == 0 && (kind == QuestionKind.CHAIN || kind == QuestionKind.CONFIGURE)) {
-                problems.add(new FlowProblem(null, kind.name() + " must appear"));
+            if (count == 0 && kind == QuestionKind.CHAIN) {
+                problems.add(new FlowProblem(null, "The flow needs a '" + FlowWords.stepName(kind, null)
+                                                   + "' step"));
+            }
+            if (count == 0 && kind == QuestionKind.CONFIGURE) {
+                problems.add(new FlowProblem(null, "The flow needs a step that writes the translation"));
             }
         }
         final Map<String, FlowStep> ids = new HashMap<>();
         for (int i = 0; i < steps.size(); i++) {
             final FlowStep step = steps.get(i);
-            if (Transition.END.equals(step.effectiveId())) {
-                problems.add(new FlowProblem(i, "'" + Transition.END + "' is the end of the flow and cannot name a "
-                                                + "step"));
-            } else if (Transition.isReserved(step.effectiveId())) {
-                problems.add(new FlowProblem(i, "'" + step.effectiveId() + "' is an exit of the flow and cannot "
-                                                + "name a step"));
+            final String named = FlowWords.capitalise(FlowWords.step(steps, i));
+            // A step's id is never shown or edited; a step added on the Setup tab is given one of its own,
+            // so deleting the step and adding it again is the way to put a bad one right.
+            if (Transition.isReserved(step.effectiveId())) {
+                problems.add(new FlowProblem(i, named + " has the id '" + step.effectiveId()
+                                                + "', which the flow keeps for itself; delete the step and add it "
+                                                + "again"));
             }
             final FlowStep first = ids.putIfAbsent(step.effectiveId(), step);
             // Two of a kind that may appear once have been reported above, unless one was named on purpose.
@@ -149,40 +157,43 @@ public class LearningFlow {
                                      && step.getKind() != QuestionKind.CONFIGURE
                                      && first.getId() == null && step.getId() == null;
             if (first != null && !reported) {
-                problems.add(new FlowProblem(i, "Two steps are named '" + step.effectiveId() + "'; give one an id"));
+                problems.add(new FlowProblem(i, named + " has the same id as an earlier step, '"
+                                                + step.effectiveId() + "'; delete it and add it again"));
             }
         }
         for (int i = 0; i < steps.size(); i++) {
             final FlowStep step = steps.get(i);
             final Set<String> fired = new HashSet<>();
             for (final Transition transition : step.getTransitions()) {
-                final String on = transition.onSpent()
-                        ? Transition.SPENT
-                        : transition.getOn().getDisplayValue();
+                final String on = FlowWords.condition(transition.getOn());
                 if (!fired.add(on)) {
-                    problems.add(new FlowProblem(i, "Step '" + step.effectiveId() + "' says 'on " + on + "' twice; "
-                                                    + "the first would be taken and the second never"));
+                    problems.add(new FlowProblem(i, FlowWords.capitalise(FlowWords.step(steps, i))
+                                                    + " has two rules for when " + on
+                                                    + "; only the first would be followed"));
                 }
             }
             if (step.getKind() == QuestionKind.CHAIN && !step.getTransitions().isEmpty()) {
                 // No later step can run without a chain: a refused chain is re-asked, and one whose candidates
                 // are spent abandons.
-                problems.add(new FlowProblem(i, "CHAIN takes no transition; nothing can run until the chain is "
-                                                + "settled"));
+                problems.add(new FlowProblem(i, "'" + FlowWords.stepName(QuestionKind.CHAIN, null)
+                                                + "' can't have rules: nothing else can run until the elements are "
+                                                + "chosen"));
             }
             for (final Transition transition : step.getTransitions()) {
                 if (transition.exits() || Transition.END.equals(transition.getGoTo())) {
                     continue;
                 }
                 if (!ids.containsKey(transition.getGoTo())) {
-                    problems.add(new FlowProblem(i, "'" + transition.format() + "' in step '" + step.effectiveId()
-                                                    + "' names no step"));
+                    problems.add(new FlowProblem(i, "The rule 'if " + FlowWords.condition(transition.getOn())
+                                                    + "' on " + FlowWords.step(steps, i) + " goes to '"
+                                                    + transition.getGoTo() + "', which isn't a step"));
                 } else if (ids.get(transition.getGoTo()).getKind() == QuestionKind.ADMIT && !transition.onSpent()) {
                     // The exhaustion step is reached when the candidates are spent and by no other route
                     // (design 04 §4): a flow that sent a model there sooner would be asking for the
                     // admitted form before the trying was done.
-                    problems.add(new FlowProblem(i, "'" + transition.format() + "' in step '" + step.effectiveId()
-                                                    + "' goes to ADMIT, which only 'on spent' may"));
+                    problems.add(new FlowProblem(i, "The rule 'if " + FlowWords.condition(transition.getOn())
+                                                    + "' on " + FlowWords.step(steps, i) + " uses the fallback, "
+                                                    + "which only a rule for running out of tries may"));
                 }
             }
         }
@@ -194,7 +205,7 @@ public class LearningFlow {
         return FlowProblem.messages(check());
     }
 
-    /// The element types the chain question chooses from (A21, A95): the Chain step's, or the default set
+    /// The element types the chain question chooses from (A21, A95): the Chain step's, or every learnable one
     /// where it names none or the flow has no Chain step.
     public List<String> allowedElements() {
         for (final FlowStep step : steps) {
@@ -202,7 +213,7 @@ public class LearningFlow {
                 return step.effectiveElements();
             }
         }
-        return FlowStep.DEFAULT_ELEMENTS;
+        return FlowStep.LEARNABLE_ELEMENTS;
     }
 
     /// This flow with its Chain step naming other elements; a flow with no Chain step is returned as it is.

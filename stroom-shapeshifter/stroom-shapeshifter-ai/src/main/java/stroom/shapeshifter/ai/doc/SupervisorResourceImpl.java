@@ -704,7 +704,8 @@ public class SupervisorResourceImpl implements SupervisorResource {
                 attempt.createTimeMs(),
                 attempt.updateTimeMs(),
                 turns,
-                pipelineDeleted);
+                pipelineDeleted,
+                attempt.report());
     }
 
     private static SupervisorTurn turn(final Turn turn) {

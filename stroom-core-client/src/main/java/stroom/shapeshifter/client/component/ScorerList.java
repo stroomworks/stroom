@@ -142,44 +142,45 @@ public class ScorerList extends Component {
 
     private void addColumns() {
         dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder((ScorerSetting row) -> row.getType().getDisplayValue())
+                DataGridUtil.textColumnBuilder((ScorerSetting row) -> PlainWords.scorer(row.getType()))
                         .build(),
-                DataGridUtil.headingBuilder("Scorer")
-                        .withToolTip("What is measured on every attempt.")
+                DataGridUtil.headingBuilder("Check")
+                        .withToolTip("What is asked of every answer and every record translated.")
                         .build(),
                 ColumnSizeConstants.BIG_COL);
+        dataGrid.addColumn(
+                DataGridUtil.readOnlyTickBoxColumnBuilder((ScorerSetting row) ->
+                        TickBoxState.fromBoolean(row.isGate())).build(),
+                DataGridUtil.headingBuilder("Must pass")
+                        .withToolTip("A check that must pass must reach its pass mark on its own, whatever the "
+                                     + "score overall.")
+                        .build(),
+                90);
+        dataGrid.addResizableColumn(
+                DataGridUtil.textColumnBuilder((ScorerSetting row) -> PlainWords.percent(row.getThreshold()))
+                        .rightAligned()
+                        .build(),
+                DataGridUtil.headingBuilder("Pass mark")
+                        .withToolTip("The score below which an answer fails this check.")
+                        .rightAligned()
+                        .build(),
+                ColumnSizeConstants.MEDIUM_COL);
         dataGrid.addResizableColumn(
                 DataGridUtil.textColumnBuilder((ScorerSetting row) -> Double.toString(row.getWeight()))
                         .rightAligned()
                         .build(),
                 DataGridUtil.headingBuilder("Weight")
-                        .withToolTip("How much this score contributes to the weighted total.")
+                        .withToolTip("How much this check counts towards the score overall.")
                         .rightAligned()
                         .build(),
                 ColumnSizeConstants.MEDIUM_COL);
-        dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder((ScorerSetting row) -> Double.toString(row.getThreshold()))
-                        .rightAligned()
-                        .build(),
-                DataGridUtil.headingBuilder("Threshold")
-                        .withToolTip("The score, from 0 to 1, below which the attempt fails this scorer.")
-                        .rightAligned()
-                        .build(),
-                ColumnSizeConstants.MEDIUM_COL);
-        dataGrid.addColumn(
-                DataGridUtil.readOnlyTickBoxColumnBuilder((ScorerSetting row) ->
-                        TickBoxState.fromBoolean(row.isGate())).build(),
-                DataGridUtil.headingBuilder("Gate")
-                        .withToolTip("A gate must reach its threshold on its own, whatever the weighted total.")
-                        .build(),
-                ColumnSizeConstants.SMALL_COL);
         dataGrid.addResizableColumn(
                 DataGridUtil.textColumnBuilder((ScorerSetting row) -> row.getParameters() == null
                                 ? ""
                                 : row.getParameters().toString())
                         .build(),
-                DataGridUtil.headingBuilder("Parameters")
-                        .withToolTip("The scorer's own settings; edit the row to change them.")
+                DataGridUtil.headingBuilder("Settings")
+                        .withToolTip("The check's own settings; edit the row to change them.")
                         .build(),
                 ColumnSizeConstants.BIG_COL);
     }

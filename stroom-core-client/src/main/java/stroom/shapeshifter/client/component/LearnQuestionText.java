@@ -31,7 +31,7 @@ import java.util.function.Consumer;
 
 /// One text the node selected on the Learn tab's chart is asked with (A85, A86): its name, where its
 /// words come from, the words themselves to edit, and a button to load a built-in's in their place.
-/// [LearnTab] shows one for each of the node's texts.
+/// [ApproachSection] shows one for each of the selected step's texts.
 public class LearnQuestionText extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);

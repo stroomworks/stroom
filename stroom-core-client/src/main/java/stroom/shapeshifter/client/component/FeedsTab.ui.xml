@@ -1,0 +1,20 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A Shapeshifter AI document's Feeds tab (feeds-tab.css): what stops the document learning, where something does,
+     across the top; its
+     feeds on the left, and the one chosen on the right -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:split="urn:import:stroom.widget.layout.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
+    <g:FlowPanel styleName="max dock-container-vertical feeds-tab">
+        <g:SimplePanel ui:field="readinessPanel" styleName="dock-min feeds-tab__readiness" visible="false">
+            <s:ReadinessBanner ui:field="readiness"/>
+        </g:SimplePanel>
+        <split:SplitPane thin="true" sizes="320px, *" names="Feeds, The feed chosen" addStyleNames="dock-max">
+            <g:SimplePanel styleName="max">
+                <s:FeedList ui:field="feedList"/>
+            </g:SimplePanel>
+            <s:FeedDetail ui:field="feedDetail"/>
+        </split:SplitPane>
+    </g:FlowPanel>
+</ui:UiBinder>

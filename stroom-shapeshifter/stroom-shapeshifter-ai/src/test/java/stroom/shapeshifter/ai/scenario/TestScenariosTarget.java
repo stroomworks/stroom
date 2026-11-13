@@ -250,8 +250,9 @@ class TestScenariosTarget {
         assertThat(script.asked()).isEmpty();
         assertThat(run.decision()).isInstanceOf(GivenUp.class);
         assertThat(((GivenUp) run.decision()).reason())
-                .contains("The document's flow cannot be held (see its Learning tab)")
-                .contains("The first step must be CHAIN");
+                .isEqualTo("The learning steps have a problem, so learning can't start.");
+        assertThat(((GivenUp) run.decision()).report().getDetails())
+                .contains("The first step must be 'Choose the elements'.");
     }
 
     @Test

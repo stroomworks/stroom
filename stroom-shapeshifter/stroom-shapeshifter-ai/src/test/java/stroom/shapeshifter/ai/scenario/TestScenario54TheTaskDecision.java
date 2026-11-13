@@ -271,7 +271,7 @@ class TestScenario54TheTaskDecision {
 
         assertThat(((Deferred) again.decision()).reason())
                 .startsWith("Record 3 fell short of the bar: ")
-                .contains("learning for this pipeline");
+                .contains("Waiting for learning run ");
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 2L).orElseThrow().reason())
                 .describedAs("the row keeps why, not what each try found")
                 .startsWith("Record 3 fell short of the bar: ")

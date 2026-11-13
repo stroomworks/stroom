@@ -76,6 +76,36 @@ public class SupervisorAttempt {
     /// nothing offered that would change it.
     @JsonProperty
     private final boolean pipelineDeleted;
+    /// Why it stopped, in parts (error, details, suggestions), where it stopped short of a translation; null
+    /// otherwise, and for a session that stopped before reports were kept.
+    @JsonProperty
+    private final StopReport report;
+
+    /// A session with no stop report.
+    public SupervisorAttempt(final long id,
+                             final DocRef doc,
+                             final LearnerRef learner,
+                             final String feed,
+                             final String type,
+                             final Long inputId,
+                             final String node,
+                             final PromotionMode promotionMode,
+                             final AttemptStatus status,
+                             final String decision,
+                             final String bindingUuid,
+                             final Double score,
+                             final long tokensSpent,
+                             final long grantedTokens,
+                             final long grantedMs,
+                             final boolean exhaustNext,
+                             final long createTimeMs,
+                             final long updateTimeMs,
+                             final List<SupervisorTurn> turns,
+                             final boolean pipelineDeleted) {
+        this(id, doc, learner, feed, type, inputId, node, promotionMode, status, decision, bindingUuid, score,
+                tokensSpent, grantedTokens, grantedMs, exhaustNext, createTimeMs, updateTimeMs, turns,
+                pipelineDeleted, null);
+    }
 
     @JsonCreator
     public SupervisorAttempt(@JsonProperty("id") final long id,
@@ -97,7 +127,8 @@ public class SupervisorAttempt {
                              @JsonProperty("createTimeMs") final long createTimeMs,
                              @JsonProperty("updateTimeMs") final long updateTimeMs,
                              @JsonProperty("turns") final List<SupervisorTurn> turns,
-                             @JsonProperty("pipelineDeleted") final boolean pipelineDeleted) {
+                             @JsonProperty("pipelineDeleted") final boolean pipelineDeleted,
+                             @JsonProperty("report") final StopReport report) {
         this.id = id;
         this.doc = doc;
         this.learner = learner;
@@ -120,6 +151,7 @@ public class SupervisorAttempt {
                 ? List.of()
                 : List.copyOf(turns);
         this.pipelineDeleted = pipelineDeleted;
+        this.report = report;
     }
 
     public long getId() {
@@ -201,5 +233,10 @@ public class SupervisorAttempt {
 
     public List<SupervisorTurn> getTurns() {
         return turns;
+    }
+
+    /// @return Why it stopped, in parts, where it stopped short of a translation; null otherwise.
+    public StopReport getReport() {
+        return report;
     }
 }

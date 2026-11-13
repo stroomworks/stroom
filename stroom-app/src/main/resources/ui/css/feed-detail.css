@@ -1,0 +1,300 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* One feed on a Shapeshifter AI document's Feeds tab (FeedDetail): its heading, where it stands and what to
+   do, the learning run shown and how far it got, and the run's conversation or the streams that wait. */
+
+.feed-detail {
+    overflow: auto;
+    box-sizing: border-box;
+}
+
+.feed-detail__nothing {
+    color: var(--text-color--low-emphasis);
+    padding: 24px;
+}
+
+.feed-detail__content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 10px 16px 16px;
+    max-width: 1100px;
+}
+
+.feed-detail__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+}
+
+.feed-detail__titles {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.feed-detail__title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 500;
+}
+
+.feed-detail__subtitle {
+    color: var(--text-color--low-emphasis);
+}
+
+/* Where it stands, tinted by its tone */
+.feed-detail__status {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.feed-detail__status--warning {
+    background-color: rgba(var(--status__color--warning-rgb), .14);
+}
+
+.feed-detail__status--danger {
+    background-color: rgba(var(--status__color--danger-rgb), .1);
+}
+
+.feed-detail__status--good {
+    background-color: rgba(var(--status__color--success-rgb), .1);
+}
+
+.feed-detail__status--info {
+    background-color: rgba(var(--primary-rgb), .1);
+}
+
+.feed-detail__status-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.feed-detail__chip {
+    padding: 0 8px;
+    border-radius: 10px;
+    font-size: 11.5px;
+    line-height: 18px;
+    white-space: nowrap;
+    color: var(--text-color);
+    background-color: var(--page__background-color);
+    background-image: linear-gradient(rgba(128, 128, 128, .2), rgba(128, 128, 128, .2));
+}
+
+.feed-detail__chip--good {
+    background-image: linear-gradient(rgba(var(--status__color--success-rgb), .25), rgba(var(--status__color--success-rgb), .25));
+}
+
+.feed-detail__chip--warning {
+    background-image: linear-gradient(rgba(var(--status__color--warning-rgb), .35), rgba(var(--status__color--warning-rgb), .35));
+}
+
+.feed-detail__chip--danger {
+    background-image: linear-gradient(rgba(var(--status__color--danger-rgb), .25), rgba(var(--status__color--danger-rgb), .25));
+}
+
+.feed-detail__chip--info {
+    background-image: linear-gradient(rgba(var(--primary-rgb), .22), rgba(var(--primary-rgb), .22));
+}
+
+.feed-detail__headline {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.feed-detail__detail {
+    color: var(--text-color--low-emphasis);
+}
+
+/* Why the run stopped, in parts: a heading, then a short list of lines */
+.feed-detail__report-part {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.feed-detail__report-heading {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-color--low-emphasis);
+}
+
+.feed-detail__report-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-width: 900px;
+}
+
+/* A line of the list, marked as one */
+.feed-detail__report-item {
+    position: relative;
+    padding-left: 14px;
+    overflow-wrap: anywhere;
+}
+
+/* A line of the report, which wraps however long it is, e.g. a reply quoted */
+.feed-detail__report-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* A suggestion the tab can act on, drawn as the link it is */
+.feed-detail .feed-detail__suggestion-link {
+    /* A target large enough to tap, however many links are listed together */
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    color: var(--link__text-color);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-align: start;
+    white-space: normal;
+}
+
+.feed-detail__report-item::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: .6em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background-color: var(--text-color--low-emphasis);
+}
+
+.feed-detail__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.feed-detail__more {
+    margin-left: auto;
+}
+
+.feed-detail__run {
+    max-width: 480px;
+    margin-bottom: 0;
+}
+
+.feed-detail__heading {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.feed-detail__progress-section {
+    display: flex;
+    flex-direction: column;
+}
+
+/* The steps of the run in order, each by where it stands. The space between them is the row's gap, so a
+   step that wraps starts its line where the first did. */
+.feed-detail__progress {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.feed-detail__step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    font-size: 12.5px;
+}
+
+.feed-detail__step::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-color--low-emphasis);
+    box-sizing: border-box;
+}
+
+.feed-detail__step--done::before {
+    border-color: var(--status__color--success);
+    background-color: var(--status__color--success);
+}
+
+.feed-detail__step--now {
+    border-color: var(--status__color--warning);
+}
+
+.feed-detail__step--now::before {
+    border-color: var(--status__color--warning);
+    background-color: var(--status__color--warning);
+}
+
+.feed-detail__step--tried::before {
+    border-color: var(--status__color--warning);
+}
+
+.feed-detail__step--todo {
+    color: var(--text-color--low-emphasis);
+}
+
+.feed-detail__note {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.feed-detail__tab-bar {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.feed-detail__pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.feed-detail__note-box {
+    max-width: 760px;
+}
+
+.feed-detail__note-text {
+    height: 70px;
+}
+
+.feed-detail__note-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+/* The waiting streams' grid needs a height of its own in a pane that scrolls */
+.feed-detail__waiting {
+    height: 320px;
+}

@@ -31,9 +31,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/// What the Learn tab ([LearnTabController]) says about a learning flow and its steps, worked out from
-/// the flow alone, so that it can be tested without a browser: a step's title, what it does by
-/// default, the texts it is asked with, the flow read from its text, and the check of a step's limits.
+/// What the approach on the Setup tab ([ApproachSectionController]) needs to know of a learning flow's
+/// text and its steps, worked out from the flow alone, so that it can be tested without a browser: the
+/// texts a step is asked with and where their words come from, a step's problems, and the check of a
+/// step's limits.
 public final class LearnFlow {
 
     /// The texts that belong to no step: what every question is asked under, and what the questions
@@ -91,64 +92,6 @@ public final class LearnFlow {
         return value == null
                 ? ""
                 : String.valueOf(value);
-    }
-
-    /// Reads the element types a Chain step names, one per line.
-    ///
-    /// @param text The lines.
-    /// @return The element types, trimmed, without blank lines; empty for the default set.
-    public static List<String> elements(final String text) {
-        final List<String> named = new ArrayList<>();
-        if (text != null) {
-            for (final String line : text.split("\n")) {
-                if (!line.trim().isEmpty()) {
-                    named.add(line.trim());
-                }
-            }
-        }
-        return named;
-    }
-
-    /// @param step A step.
-    /// @return Its title in the side panel: its kind, or the role a Configure step configures.
-    public static String title(final FlowStep step) {
-        return step.getKind() == QuestionKind.CONFIGURE && step.getRole() != null
-                ? "Configure " + step.getRole().getDisplayValue()
-                : step.getKind().getDisplayValue();
-    }
-
-    /// @param number The step's place, counted from one.
-    /// @param of     How many steps the flow has.
-    /// @param step   The step.
-    /// @return The heading of the side panel showing the step.
-    public static String heading(final int number, final int of, final FlowStep step) {
-        return "Step " + number + " of " + of + "  ·  " + title(step);
-    }
-
-    /// What the step does where the flow says nothing (A84), said beneath its transitions.
-    ///
-    /// @param step A step.
-    /// @return What it does by default, and that it is judged by its kind's own checks where none is
-    ///         ticked.
-    public static String defaults(final FlowStep step) {
-        final List<String> parts = new ArrayList<>();
-        if (step.transitionOn(StepOutcome.PASSED) == null) {
-            parts.add("passed goes to the next step");
-        }
-        if (step.getCandidates() == null || step.getCandidates() != 1) {
-            parts.add("a shortfall re-asks with the next candidate");
-        }
-        if (step.transitionOnSpent() == null) {
-            parts.add("spent " + (step.getRole() == ConfigureRole.PARSER
-                    ? "gives the learner up, the parser's default"
-                    : "parks for a person"));
-        }
-        final String checks = step.getChecks().isEmpty()
-                ? " No checks are ticked, so the step is judged by its kind's own."
-                : "";
-        return (parts.isEmpty()
-                ? "Every outcome has a transition."
-                : "By default: " + String.join("; ", parts) + ".") + checks;
     }
 
     /// The texts a step is asked with (A85): one for most kinds; for a split, the variant its guard
@@ -240,40 +183,6 @@ public final class LearnFlow {
         return status.toString();
     }
 
-    /// Reads the flow from its text (A87), one step a line; blank lines are skipped.
-    ///
-    /// @param text The flow as text.
-    /// @return The steps.
-    /// @throws IllegalArgumentException Where a line doesn't parse: `Line n: ` and why.
-    public static List<FlowStep> parse(final String text) {
-        final List<FlowStep> parsed = new ArrayList<>();
-        int number = 0;
-        for (final String line : (text == null
-                ? ""
-                : text).split("\n")) {
-            number++;
-            if (line.trim().isEmpty()) {
-                continue;
-            }
-            try {
-                parsed.add(FlowStep.parse(line));
-            } catch (final RuntimeException e) {
-                throw new IllegalArgumentException("Line " + number + ": " + e.getMessage(), e);
-            }
-        }
-        return parsed;
-    }
-
-    /// @param steps The steps.
-    /// @return The flow as text, one step a line.
-    public static String format(final List<FlowStep> steps) {
-        final List<String> lines = new ArrayList<>();
-        for (final FlowStep step : steps) {
-            lines.add(step.format());
-        }
-        return String.join("\n", lines);
-    }
-
     /// @param problems What is wrong with the flow.
     /// @param index    A step's index.
     /// @return What is wrong with that step, or null for nothing.
@@ -289,56 +198,4 @@ public final class LearnFlow {
                 : String.join("; ", mine);
     }
 
-    /// @param problems What is wrong with the flow.
-    /// @return What is wrong with the flow as one line, or null for nothing.
-    public static String flowProblem(final List<FlowProblem> problems) {
-        return problems.isEmpty()
-                ? null
-                : String.join("; ", FlowProblem.messages(problems));
-    }
-
-    /// The steps whose transitions go to one step: what would be left pointing at nothing were it
-    /// removed.
-    ///
-    /// @param steps The flow's steps.
-    /// @param index The step's index.
-    /// @return The ids of the other steps that go to it.
-    public static List<String> pointingAt(final List<FlowStep> steps, final int index) {
-        final FlowStep step = steps.get(index);
-        final String id = step.effectiveId();
-        final List<String> pointing = new ArrayList<>();
-        for (final FlowStep other : steps) {
-            if (other != step && other.getTransitions().stream()
-                    .anyMatch(transition -> id.equals(transition.getGoTo()))) {
-                pointing.add(other.effectiveId());
-            }
-        }
-        return pointing;
-    }
-
-    /// Without its id: two steps of one name is a flow whose transitions cannot say which they mean,
-    /// and the copy is the one that should be renamed.
-    ///
-    /// @param original The step to copy.
-    /// @return A copy of it with no id.
-    public static FlowStep copyWithoutId(final FlowStep original) {
-        return new FlowStep(null, original.getKind(), original.getRole(), original.getWhen(),
-                original.getCandidates(), original.getKinds(), original.getChecks(), original.getTransitions(),
-                original.getElements());
-    }
-
-    /// @param steps  The flow's steps.
-    /// @param index  The step being edited, which may keep its own name.
-    /// @param edited The step as edited.
-    /// @return Why the edited step's name can't be kept, or null if it can: two of one name leaves a
-    ///         transition unable to say which it means.
-    public static String nameClash(final List<FlowStep> steps, final int index, final FlowStep edited) {
-        for (int i = 0; i < steps.size(); i++) {
-            if (i != index && steps.get(i).effectiveId().equals(edited.effectiveId())) {
-                return "Another step is already called '" + edited.effectiveId()
-                       + "'. Two of one name leaves a transition unable to say which it means.";
-            }
-        }
-        return null;
-    }
 }

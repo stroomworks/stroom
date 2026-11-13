@@ -237,7 +237,10 @@ class TestScenariosFlow {
         // The transform's step leaves the flow by its default exit, park (A83).
         assertThat(run.decision()).isInstanceOf(Parked.class);
         assertThat(((Parked) run.decision()).reason())
-                .contains("'on preservation-short goto parser' from step 'transform' a second time");
+                .isEqualTo("The learning steps went round in a loop.");
+        assertThat(((Parked) run.decision()).report().getDetails()).first().asString()
+                .startsWith("The rule \"if the records lose what the targets need, go back to step 4 (Write the "
+                            + "parser)\" on step 5 (Write the transform) would be followed a second time");
     }
 
     @Test
@@ -293,7 +296,10 @@ class TestScenariosFlow {
                         FlowStep.parse("CONFIGURE transform")))), stream(2, CsvLines.lines(6))).learned();
         refused.verifyExhausted();
         assertThat(abandoned.decision()).isInstanceOf(GivenUp.class);
-        assertThat(((GivenUp) abandoned.decision()).reason()).contains("on a pass of step 'parser'");
+        assertThat(((GivenUp) abandoned.decision()).reason())
+                .isEqualTo("Stopped at \"Write the parser\", as its rule says to when it passes.");
+        assertThat(((GivenUp) abandoned.decision()).report().getDetails())
+                .containsExactly("The rule says to stop learning when it passes.");
 
         // An at-once abandon names the outcome and the step, not candidates that were never spent. A fresh
         // stage: the learner above was given up, and a given-up learner asks nothing (scenario 11).
@@ -306,7 +312,8 @@ class TestScenariosFlow {
                 stream(3, CsvLines.lines(6))).learned();
         prose.verifyExhausted();
         assertThat(((GivenUp) atOnce.decision()).reason())
-                .contains("Step 'configure' leaves the flow on refused")
-                .doesNotContain("after 5 attempts");
+                .isEqualTo("Stopped at \"Write every element\", as its rule says to when the answer isn't in the "
+                           + "reply format.")
+                .doesNotContain("answers fell short");
     }
 }

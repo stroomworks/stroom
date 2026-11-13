@@ -21,6 +21,7 @@ import stroom.shapeshifter.ai.stage.DeletedPipelines;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.util.shared.PageRequest;
 
 import jakarta.inject.Inject;
@@ -54,6 +55,8 @@ public final class InMemoryAttempts implements Attempts {
     private final Map<Long, Recorded> attempts = new LinkedHashMap<>();
     private final Map<Long, List<Turn>> turns = new LinkedHashMap<>();
     private final Map<Long, Grant> grants = new LinkedHashMap<>();
+    /// Why each attempt stopped, in parts, where it stopped with a report.
+    private final Map<Long, StopReport> reports = new LinkedHashMap<>();
     private final Set<Long> exhaustNext = new HashSet<>();
     private final AtomicLong nextId = new AtomicLong(1);
     /// Which pipelines are deleted, whose attempts a person sees only when they ask (A137).
@@ -157,12 +160,16 @@ public final class InMemoryAttempts implements Attempts {
     }
 
     @Override
-    public synchronized void parked(final long attemptId, final String reason, final long tokensSpent) {
+    public synchronized void parked(final long attemptId,
+                                    final String reason,
+                                    final StopReport report,
+                                    final long tokensSpent) {
         final Recorded was = attempts.get(attemptId);
         if (was != null && OPEN.contains(was.status())) {
             attempts.put(attemptId, new Recorded(was.id(), claim(was, Long.MAX_VALUE), AttemptStatus.PARKED, reason,
                     was.bindingUuid(), was.score(), was.tokensSpent() + tokensSpent, was.createTimeMs(),
                     System.currentTimeMillis(), List.of()));
+            report(attemptId, report);
         }
     }
 
@@ -172,9 +179,11 @@ public final class InMemoryAttempts implements Attempts {
                                     final String decision,
                                     final String bindingUuid,
                                     final Double score,
+                                    final StopReport report,
                                     final long tokensSpent) {
         final Recorded was = attempts.get(attemptId);
         if (was != null) {
+            report(attemptId, report);
             // A claim that has ended holds nothing (A45), and frees the learner for the next attempt; what it
             // spent is added to what it had spent before it was parked.
             attempts.put(attemptId, new Recorded(was.id(), claim(was, 0L), status, decision, bindingUuid, score,
@@ -263,6 +272,7 @@ public final class InMemoryAttempts implements Attempts {
         attempts.put(attemptId, new Recorded(was.id(), claim(was, expiryMs), AttemptStatus.AWAITING_MODEL,
                 null, null, null, was.tokensSpent(), was.createTimeMs(), System.currentTimeMillis(),
                 List.of()));
+        reports.remove(attemptId);
         return true;
     }
 
@@ -371,7 +381,16 @@ public final class InMemoryAttempts implements Attempts {
         return new Recorded(attempt.id(), attempt.attempt(), attempt.status(), attempt.decision(),
                 attempt.bindingUuid(), attempt.score(), attempt.tokensSpent(), attempt.createTimeMs(),
                 attempt.updateTimeMs(), List.copyOf(turns.getOrDefault(attempt.id(), List.of())),
-                grants.getOrDefault(attempt.id(), Grant.NONE), exhaustNext.contains(attempt.id()));
+                grants.getOrDefault(attempt.id(), Grant.NONE), exhaustNext.contains(attempt.id()),
+                reports.get(attempt.id()));
+    }
+
+    private void report(final long attemptId, final StopReport report) {
+        if (report == null) {
+            reports.remove(attemptId);
+        } else {
+            reports.put(attemptId, report);
+        }
     }
 
     @Override

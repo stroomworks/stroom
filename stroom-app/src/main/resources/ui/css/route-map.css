@@ -1,0 +1,178 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
+/* The Setup tab's route map (RouteMap), how the tab is found around: a translation's life down one line, the
+   sections as squares and the learning flow's steps as circles, each a button; rules that go back as arcs on
+   the left, rules that skip ahead or finish dashed. */
+
+.route-map__svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.route-map__line {
+    stroke: var(--border-color);
+    stroke-width: 3;
+}
+
+.route-map__line--dashed {
+    stroke-dasharray: 4 4;
+}
+
+/* Drawn over the stops' boxes, and not in the way of a click on them */
+.route-map__arcs {
+    pointer-events: none;
+}
+
+.route-map__arc {
+    fill: none;
+    stroke-width: 1.6;
+}
+
+.route-map__arc--back {
+    stroke: var(--status__color--warning);
+}
+
+.route-map__arc--skip {
+    stroke: var(--status__color--success);
+    stroke-dasharray: 4 3;
+}
+
+.route-map__head--back {
+    fill: var(--status__color--warning);
+}
+
+.route-map__head--skip {
+    fill: var(--status__color--success);
+}
+
+/* A stop to choose; its focus is drawn on its area, as an outline on a group is drawn unreliably */
+.route-map__station {
+    cursor: pointer;
+    outline: none;
+}
+
+/* What a click chooses, behind the stop's mark and words */
+.route-map__area {
+    fill: transparent;
+    stroke: none;
+}
+
+.route-map__station:hover .route-map__area {
+    fill: var(--row__background-color--hovered);
+}
+
+.route-map__station--selected .route-map__area {
+    fill: var(--row__background-color--selected);
+}
+
+.route-map__station:focus-visible .route-map__area {
+    stroke: var(--focus-border);
+    stroke-width: 2;
+}
+
+.route-map__stop {
+    fill: var(--control__background-color);
+    stroke: var(--text-color--low-emphasis);
+    stroke-width: 2;
+}
+
+.route-map__stop--section {
+    stroke: var(--text-color);
+}
+
+.route-map__station--selected .route-map__stop {
+    fill: var(--focus-border);
+    stroke: var(--focus-border);
+}
+
+.route-map__stop--problem {
+    stroke: var(--status__color--warning);
+}
+
+.route-map__stop--fallback {
+    stroke-dasharray: 3 2;
+}
+
+.route-map__stop--learned {
+    fill: var(--status__color--success);
+    stroke: var(--status__color--success);
+}
+
+.route-map__label {
+    fill: var(--text-color);
+    font-size: 13px;
+}
+
+.route-map__label--section {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.route-map__label--learned {
+    fill: var(--text-color--low-emphasis);
+}
+
+.route-map__station--selected .route-map__label {
+    font-weight: 600;
+}
+
+.route-map__sub {
+    fill: var(--text-color--low-emphasis);
+    font-size: 11.5px;
+}
+
+/* On the chosen stop's ground, low-emphasis text would be too faint to read */
+.route-map__station--selected .route-map__sub,
+.route-map__sub--problem {
+    fill: var(--text-color);
+}
+
+.route-map__mark {
+    fill: var(--status__color--warning);
+    font-weight: 700;
+}
+
+/* Add step, under the step chosen: a button in the colour of a link */
+.route-map__add {
+    cursor: pointer;
+    outline: none;
+}
+
+.route-map__add-area {
+    fill: transparent;
+    stroke: none;
+}
+
+.route-map__add:hover .route-map__add-area {
+    fill: var(--row__background-color--hovered);
+}
+
+.route-map__add:focus-visible .route-map__add-area {
+    stroke: var(--focus-border);
+    stroke-width: 2;
+}
+
+.route-map__add-label {
+    fill: var(--link__text-color);
+    font-size: 12px;
+}
+
+.route-map__add:hover .route-map__add-label {
+    text-decoration: underline;
+}

@@ -1,0 +1,44 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* One rule of a step card (RuleRow), read as a sentence: If <condition> then <destination>. */
+
+.rule-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: var(--row__background-color--even);
+}
+
+.rule-row__word {
+    color: var(--text-color--low-emphasis);
+}
+
+.rule-row__condition {
+    min-width: 260px;
+}
+
+.rule-row__destination {
+    min-width: 260px;
+}
+
+/* Its delete button, at the end of the line */
+.rule-row__tools {
+    margin-left: auto;
+}

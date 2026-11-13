@@ -17,13 +17,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -57,7 +58,7 @@ public class ShapeshifterCorpus extends TableImpl<ShapeshifterCorpusRecord> {
     /**
      * The column <code>stroom.shapeshifter_corpus.id</code>.
      */
-    public final TableField<ShapeshifterCorpusRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<ShapeshifterCorpusRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_corpus.doc_uuid</code>.
@@ -192,7 +193,7 @@ public class ShapeshifterCorpus extends TableImpl<ShapeshifterCorpusRecord> {
      */
     @Override
     public ShapeshifterCorpus where(Condition condition) {
-        return new ShapeshifterCorpus(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new ShapeshifterCorpus(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -259,7 +260,7 @@ public class ShapeshifterCorpus extends TableImpl<ShapeshifterCorpusRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterCorpus whereExists(Select<?> select) {
+    public ShapeshifterCorpus whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -267,7 +268,7 @@ public class ShapeshifterCorpus extends TableImpl<ShapeshifterCorpusRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterCorpus whereNotExists(Select<?> select) {
+    public ShapeshifterCorpus whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

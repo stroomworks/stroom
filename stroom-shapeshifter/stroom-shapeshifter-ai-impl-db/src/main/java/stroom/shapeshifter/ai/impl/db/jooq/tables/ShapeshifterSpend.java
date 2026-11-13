@@ -16,13 +16,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -55,7 +56,7 @@ public class ShapeshifterSpend extends TableImpl<ShapeshifterSpendRecord> {
     /**
      * The column <code>stroom.shapeshifter_spend.id</code>.
      */
-    public final TableField<ShapeshifterSpendRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<ShapeshifterSpendRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_spend.version</code>.
@@ -195,7 +196,7 @@ public class ShapeshifterSpend extends TableImpl<ShapeshifterSpendRecord> {
      */
     @Override
     public ShapeshifterSpend where(Condition condition) {
-        return new ShapeshifterSpend(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new ShapeshifterSpend(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -262,7 +263,7 @@ public class ShapeshifterSpend extends TableImpl<ShapeshifterSpendRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterSpend whereExists(Select<?> select) {
+    public ShapeshifterSpend whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -270,7 +271,7 @@ public class ShapeshifterSpend extends TableImpl<ShapeshifterSpendRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterSpend whereNotExists(Select<?> select) {
+    public ShapeshifterSpend whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

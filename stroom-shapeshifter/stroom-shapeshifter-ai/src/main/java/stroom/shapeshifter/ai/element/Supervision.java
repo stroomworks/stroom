@@ -251,12 +251,12 @@ public class Supervision {
         // What happened, or — for a step — what would have. A dry run's report is not a fault: a learner
         // nobody has taught yet is the ordinary state of the feed a person has opened the stepper on,
         // and an error marker would say otherwise.
-        errorReceiverProxy.log(stepping
-                        ? Severity.INFO
-                        : produced == null
-                                ? Severity.ERROR
-                                : Severity.INFO, null, elementId,
-                StepDetails.describe(run.decision()), null);
+        final Severity said = stepping
+                ? Severity.INFO
+                : produced == null
+                        ? Severity.ERROR
+                        : Severity.INFO;
+        StepDetails.lines(run.decision()).forEach(line -> errorReceiverProxy.log(said, null, elementId, line, null));
 
         // Recorded only where a fragment really was bound and really did run: a step leaves no trace of
         // having asked, and the bindings of a run nobody made do not belong on the stream.
@@ -332,10 +332,10 @@ public class Supervision {
         fragmentRecords.put(elementId.getId(), List.of());
         stage.takeFragment();
         final Produced produced = run.produced();
-        errorReceiverProxy.log(produced == null
-                        ? Severity.ERROR
-                        : Severity.INFO, null, elementId,
-                StepDetails.describe(run.decision()), null);
+        final Severity said = produced == null
+                ? Severity.ERROR
+                : Severity.INFO;
+        StepDetails.lines(run.decision()).forEach(line -> errorReceiverProxy.log(said, null, elementId, line, null));
         if (produced == null) {
             return;
         }

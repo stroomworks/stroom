@@ -250,7 +250,7 @@ class TestScenario46Json {
                 .describedAs("caught where it is written rather than at the gate: the conversation shows the "
                              + "transform one record and runs it over every record, so the envelope is "
                              + "missing the first time the candidate is judged")
-                .isEqualTo("No admission for XSLTFilter after 1 attempts");
+                .isEqualTo("Couldn't translate what's left as marked Unknowns: its 1 answer fell short.");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).describedAs("and nothing was bound")
                 .isEmpty();
     }

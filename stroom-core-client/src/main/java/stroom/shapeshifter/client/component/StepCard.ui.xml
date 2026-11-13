@@ -1,0 +1,67 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The step of the learning flow chosen on the Setup tab's route map, read as sentences (step-card.css): its
+     name, tags and tools, what is wrong with it, and its rules; beneath them, folded away under Advanced options, what only this step changes: when it is
+     asked, its tries and kinds, the parsers and filters it chooses from, and what judges it -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:t="urn:import:stroom.widget.tickbox.client"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="step-card">
+        <g:FlowPanel styleName="step-card__head">
+            <g:HTMLPanel styleName="step-card__title">
+                <h2 ui:field="heading" class="step-card__heading" tabindex="-1"></h2>
+            </g:HTMLPanel>
+            <g:FlowPanel ui:field="tags" styleName="step-card__tags"/>
+            <b:Toolbar name="Step actions" addStyleNames="step-card__tools">
+                <b:ToolbarButton ui:field="moveUp" svg="UP" title="Move this step up"/>
+                <b:ToolbarButton ui:field="moveDown" svg="DOWN" title="Move this step down"/>
+                <b:ToolbarButton ui:field="copy" svg="COPY" title="Copy this step"/>
+                <b:ToolbarButton ui:field="delete" svg="DELETE" title="Delete this step"/>
+            </b:Toolbar>
+        </g:FlowPanel>
+        <tx:Label ui:field="problem" styleName="step-card__problem" visible="false"/>
+
+        <g:FlowPanel ui:field="rulesSection" styleName="step-card__rules">
+            <g:FlowPanel ui:field="rules" styleName="step-card__rule-list"/>
+            <g:FlowPanel ui:field="usual" styleName="step-card__usual"/>
+            <b:LinkButton ui:field="addRule" addStyleNames="step-card__link" text="+ Add rule"/>
+        </g:FlowPanel>
+
+        <b:LinkButton ui:field="tuneToggle" addStyleNames="step-card__link step-card__tune-toggle"
+                      text="Advanced options"/>
+        <g:FlowPanel ui:field="tune" styleName="step-card__tune" visible="false">
+            <g:FlowPanel styleName="step-card__fields">
+                <form:FormGroup ui:field="whenGroup" label="Ask" addStyleNames="step-card__field">
+                    <l:SelectionBox ui:field="when" addStyleNames="step-card__when"/>
+                </form:FormGroup>
+                <form:FormGroup ui:field="triesGroup" label="Tries" addStyleNames="step-card__field">
+                    <form:TextBox ui:field="tries" addStyleNames="step-card__count"/>
+                </form:FormGroup>
+                <form:FormGroup ui:field="kindsGroup" label="Kinds of record" addStyleNames="step-card__field">
+                    <form:TextBox ui:field="kinds" addStyleNames="step-card__count" placeholder="3"/>
+                </form:FormGroup>
+            </g:FlowPanel>
+
+            <form:FormGroup ui:field="elementsGroup" label="Parsers and filters the AI may choose from"
+                            helpText="The parsers and filters the AI may build a translation from. Untick any it shouldn't use, such as the parser for a format the feed isn't in. Every other element of the pipeline, such as indexing or writing, comes from its template."
+                            addStyleNames="step-card__elements">
+                <g:FlowPanel>
+                    <g:FlowPanel ui:field="elements" styleName="step-card__ticks"/>
+                    <g:FlowPanel ui:field="unlearnable" styleName="step-card__unlearnable" visible="false">
+                        <tx:Label ui:field="unlearnableText" styleName="step-card__unlearnable-text"/>
+                        <b:LinkButton ui:field="removeUnlearnable" addStyleNames="step-card__link"/>
+                    </g:FlowPanel>
+                </g:FlowPanel>
+            </form:FormGroup>
+
+            <g:FlowPanel ui:field="judgedBy" styleName="step-card__judged">
+                <t:TickBox ui:field="ownChecks" label="Choose its own checks"/>
+                <tx:Label ui:field="usualChecks" styleName="step-card__note"/>
+                <g:FlowPanel ui:field="checks" styleName="step-card__ticks"/>
+            </g:FlowPanel>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

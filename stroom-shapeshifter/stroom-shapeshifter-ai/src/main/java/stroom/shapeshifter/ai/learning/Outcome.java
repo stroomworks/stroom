@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.learning;
 
 import stroom.shapeshifter.shared.FlowExit;
 import stroom.shapeshifter.shared.RecordBoundary;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.util.shared.StoredError;
 
 import java.util.List;
@@ -53,14 +54,27 @@ public sealed interface Outcome {
     ///
     /// @param diagnostics What the last failing step reported, if a step failed; the last question's
     ///                    feedback otherwise never reached a question, so it is kept here.
+    /// @param report      Why it stopped, in parts ([StopReports]); null where nothing worded it.
     record Abandoned(String reason,
                      List<StoredError> diagnostics,
                      List<Exchange> transcript,
-                     FlowExit exit) implements Outcome {
+                     FlowExit exit,
+                     StopReport report) implements Outcome {
 
         public Abandoned(final String reason, final List<StoredError> diagnostics,
                          final List<Exchange> transcript) {
             this(reason, diagnostics, transcript, FlowExit.PARK);
+        }
+
+        public Abandoned(final String reason, final List<StoredError> diagnostics,
+                         final List<Exchange> transcript, final FlowExit exit) {
+            this(reason, diagnostics, transcript, exit, null);
+        }
+
+        /// A run stopped as a report says: its reason is the report's error line.
+        public Abandoned(final StopReport report, final List<StoredError> diagnostics,
+                         final List<Exchange> transcript, final FlowExit exit) {
+            this(report.getError(), diagnostics, transcript, exit, report);
         }
 
         /// Whether the learner is to be given up and its streams errored.
