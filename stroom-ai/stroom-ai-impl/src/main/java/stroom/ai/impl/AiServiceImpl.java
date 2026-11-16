@@ -418,12 +418,16 @@ public class AiServiceImpl implements AiService {
         LOGGER.debug(() -> "getChatModel: modelId='" + modelDoc.getModelId()
                            + "' baseUrl='" + NullSafe.toString(modelDoc.getBaseUrl()) + "'");
 
+        final HttpClientConfiguration httpClientConfiguration = resolveHttpClientConfiguration(modelDoc);
         final OpenAiChatModelBuilder modelBuilder = OpenAiChatModel.builder()
-                .modelName(modelDoc.getModelId());
+                .modelName(modelDoc.getModelId())
+                // langchain4j retries a failed call twice unless told otherwise, and a call that timed out
+                // has usually been charged for in full, so the document's retries are the only retries.
+                .maxRetries(httpClientConfiguration.getRetries());
 
         // Need to specify HTTP 1.1 for vLLM interoperability
         // Ref: https://github.com/langchain4j/langchain4j/issues/3682
-        modelBuilder.httpClientBuilder(getClientBuilder(modelDoc));
+        modelBuilder.httpClientBuilder(getClientBuilder(httpClientConfiguration));
 
         if (NullSafe.isNonEmptyString(modelDoc.getBaseUrl())) {
             // Override the base URL. Reject cloud-metadata/wildcard targets to prevent SSRF (private and
@@ -446,12 +450,15 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public EmbeddingModel getEmbeddingModel(final OpenAIModelDoc modelDoc) {
+        final HttpClientConfiguration httpClientConfiguration = resolveHttpClientConfiguration(modelDoc);
         final OpenAiEmbeddingModelBuilder modelBuilder = OpenAiEmbeddingModel.builder()
-                .modelName(modelDoc.getModelId());
+                .modelName(modelDoc.getModelId())
+                // As for a chat model: the document's retries, not langchain4j's default of two.
+                .maxRetries(httpClientConfiguration.getRetries());
 
         // Need to specify HTTP 1.1 for vLLM interoperability
         // Ref: https://github.com/langchain4j/langchain4j/issues/3682
-        modelBuilder.httpClientBuilder(getClientBuilder(modelDoc));
+        modelBuilder.httpClientBuilder(getClientBuilder(httpClientConfiguration));
 
         // Set embedding dimensions
         if (modelDoc.getEmbeddingModelDimensions() > 0) {
@@ -471,11 +478,16 @@ public class AiServiceImpl implements AiService {
         return modelBuilder.build();
     }
 
-    private HttpClientBuilder getClientBuilder(final OpenAIModelDoc modelDoc) {
-        final HttpClientConfiguration httpClientConfiguration = httpConfigResolver.resolve(NullSafe.getOrElse(
+    /// The HTTP client configuration a model's calls are made with: its document's, or the default where
+    /// the document gives none.
+    private HttpClientConfiguration resolveHttpClientConfiguration(final OpenAIModelDoc modelDoc) {
+        return httpConfigResolver.resolve(NullSafe.getOrElse(
                 modelDoc,
                 OpenAIModelDoc::getHttpClientConfiguration,
                 getDefaultHttpClientConfig()));
+    }
+
+    private HttpClientBuilder getClientBuilder(final HttpClientConfiguration httpClientConfiguration) {
         return new ApacheHttpClientBuilder(httpClientCacheProvider.get(), httpClientConfiguration);
     }
 
