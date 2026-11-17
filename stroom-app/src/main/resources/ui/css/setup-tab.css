@@ -132,3 +132,18 @@
     align-items: flex-start;
     gap: 8px;
 }
+
+/* Showing or hiding the steps on the route map, and loading a default setup once they are shown */
+.setup-tab__steps-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+}
+
+/* What a section keeps under Advanced options, spaced as the section is */
+.setup-tab__advanced {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}

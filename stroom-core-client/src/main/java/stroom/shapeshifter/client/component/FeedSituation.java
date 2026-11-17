@@ -174,7 +174,7 @@ public final class FeedSituation {
         }
         if (learner.getState() == LearnerState.LEARNING_OFF) {
             return build(Tone.IDLE, "Off",
-                    "Learning is switched off for this document",
+                    "Learning is switched off in its Learning Flow",
                     "What it has learned goes on translating. Streams that nothing translates wait until learning "
                     + "is switched on.",
                     available, List.of(FeedAction.OPEN_SETTINGS));
@@ -198,13 +198,13 @@ public final class FeedSituation {
                         : "It scored " + PlainWords.percent(learner.getPromotedScore()) + " when it was learned";
                 return build(Tone.GOOD, "On trial",
                         "Translating on trial",
-                        scored + ", but from fewer records than this document asks for. It is accepted once "
+                        scored + ", but from fewer records than its Learning Flow asks for. It is accepted once "
                         + "enough clean records have passed, or you can accept it now.",
                         available, List.of(FeedAction.ACCEPT));
             }
             if (learner.isBelowThreshold()) {
                 return build(Tone.WARNING, "Below par",
-                        "Translating, but scoring below this document's flag",
+                        "Translating, but scoring below its Learning Flow's flag",
                         lately(learner) + (doc == null
                                 ? ""
                                 : " A translation is flagged below " + PlainWords.percent(doc.getRelearnThreshold())
@@ -310,6 +310,19 @@ public final class FeedSituation {
                 EnumSet.noneOf(SuggestionAction.class));
     }
 
+    /// This situation as a person who may only read the feed's pipeline sees it: nothing that would change its
+    /// learning, which the server would refuse them; only what opens something to read, from a suggestion,
+    /// the model's document (the learned translation has its own link). What it says is unchanged.
+    ///
+    /// @return The situation, read only.
+    public FeedSituation readOnly() {
+        final Set<SuggestionAction> readable = EnumSet.noneOf(SuggestionAction.class);
+        if (doable.contains(SuggestionAction.OPEN_MODEL)) {
+            readable.add(SuggestionAction.OPEN_MODEL);
+        }
+        return new FeedSituation(tone, chip, headline, detail, List.of(), List.of(), details, suggestions, readable);
+    }
+
     /// This situation with a run's report: its details and suggestions, and which suggestions the tab can
     /// act on. Those whose action is already a button here are said, not offered twice.
     private FeedSituation withReport(final StopReport report,
@@ -395,16 +408,34 @@ public final class FeedSituation {
         if (serving) {
             available.add(FeedAction.RETRACT);
         }
-        if (live && learner.getPipeline() != null) {
-            available.add(FeedAction.OPEN_PIPELINE);
-        }
-        if (learner.getFragment() != null) {
-            available.add(FeedAction.OPEN_TRANSLATION);
-        }
         if (live && learner.getState() == LearnerState.LEARNING_OFF) {
             available.add(FeedAction.OPEN_SETTINGS);
         }
         return available;
+    }
+
+    /// Whether a feed's Learning history should be open of its own accord: while a run is going or waits for
+    /// someone, or streams wait for the feed. Otherwise, e.g. while it is just translating, it is folded, as a
+    /// Data Provider needs only where it stands.
+    ///
+    /// @param learner The feed's learner row.
+    /// @param run     Its learning run shown, or null for none.
+    /// @return Whether its Learning history should be open.
+    public static boolean needsHistory(final SupervisorLearner learner, final SupervisorAttempt run) {
+        if (learner.isPipelineDeleted()) {
+            return false;
+        }
+        if (learner.getWaiting() > 0) {
+            return true;
+        }
+        if (run == null || run.isPipelineDeleted()) {
+            return false;
+        }
+        final AttemptStatus status = run.getStatus();
+        return status == AttemptStatus.IN_PROGRESS
+               || status == AttemptStatus.AWAITING_MODEL
+               || status == AttemptStatus.PARKED
+               || status == AttemptStatus.AWAITING_REVIEW;
     }
 
     /// @param run A learning run, with its turns.
@@ -470,7 +501,7 @@ public final class FeedSituation {
         }
         said.append('.');
         if (learner.isRaised()) {
-            said.append(" Some have waited longer than this document allows.");
+            said.append(" Some have waited longer than its Learning Flow allows.");
         }
         return said.toString();
     }

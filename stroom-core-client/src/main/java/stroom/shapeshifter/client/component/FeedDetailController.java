@@ -19,6 +19,7 @@ package stroom.shapeshifter.client.component;
 import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.dispatch.client.RestFactory;
+import stroom.docref.DocRef;
 import stroom.document.client.event.OpenDocumentEvent;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.shapeshifter.client.component.ConversationList.Row;
@@ -29,6 +30,7 @@ import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.GuidanceRequest;
 import stroom.shapeshifter.shared.ImproveRequest;
 import stroom.shapeshifter.shared.LearnerRequest;
+import stroom.shapeshifter.shared.QualityResource;
 import stroom.shapeshifter.shared.RejectRequest;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepOutcome;
@@ -39,6 +41,7 @@ import stroom.shapeshifter.shared.SupervisorResource;
 import stroom.shapeshifter.shared.SupervisorTurn;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
+import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
 import stroom.widget.menu.client.Item;
 import stroom.widget.menu.client.ShowMenuEvent;
@@ -57,14 +60,17 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/// One feed on the Feeds tab ([FeedDetail]): reads its learning runs and the one shown, with its turns,
-/// says where the feed stands ([FeedSituation]) and how far the run has got ([FeedProgress]), and does what
-/// a person asks: every action the Supervisor offers on a learner, its translation and its learning run,
-/// together, through the same `SupervisorResource` calls and dialogs (A28, A115, A141). Nothing it does is
-/// the server's to change: the Supervisor in Monitoring and this tab act through the same calls.
+/// One Smart Pipeline's learning on its Learning Status tab ([FeedDetail]): reads its learning runs and the one
+/// shown, with its turns, says where the feed stands ([FeedSituation]) and how far the run has got
+/// ([FeedProgress]), and does what a person asks: every action the Supervisor offers on a learner, its
+/// translation and its learning run, together, through the `SupervisorResource` calls and dialogs (A28, A115,
+/// A141). It is the one place a pipeline's learning is acted on; the Smart Pipelines screen in Monitoring only
+/// lists the pipelines and opens them here. Its Learning history opens of its own accord when it comes to be
+/// needed ([FeedSituation#needsHistory]), and is otherwise left as the user put it.
 public class FeedDetailController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
+    private static final QualityResource QUALITY_RESOURCE = GWT.create(QualityResource.class);
     private static final int RUNS = 50;
 
     private final RestFactory restFactory;
@@ -77,11 +83,16 @@ public class FeedDetailController extends Controller {
     private FeedDetail view;
     private ShapeshifterAiDoc doc;
     private SupervisorLearner learner;
+    /// Whether the feed's pipeline can't be edited here: then nothing is offered that would change its learning.
+    private boolean readOnly;
     private List<SupervisorAttempt> runs = new ArrayList<>();
     /// The run a person chose to look at, or null for the newest.
     private Long chosen;
     /// The run shown, with its turns, or null for none.
     private SupervisorAttempt run;
+    /// Whether the feed's Learning history was wanted open as last shown, so that it opens of its own accord
+    /// only when it comes to be wanted, and is otherwise left as the user put it.
+    private boolean historyWanted;
     /// Which read is current, so that a slower earlier reply is ignored.
     private int asked;
     private Runnable onActed = () -> {
@@ -141,7 +152,19 @@ public class FeedDetailController extends Controller {
         view.setOnAnswer(this::answer);
         view.setOnSendNote(this::sendNote);
         view.setOnShowNotes(this::showNotes);
+        view.setOnOpenTranslation(() -> {
+            if (learner != null && learner.getFragment() != null) {
+                OpenDocumentEvent.fire(this, learner.getFragment(), true);
+            }
+        });
         view.setOnWaitingShown(waitingList::refresh);
+        // Read only where the pipeline can't be edited: nothing is offered that the server would refuse
+        watch(Contexts.READ_ONLY, readOnly -> {
+            this.readOnly = Boolean.TRUE.equals(readOnly);
+            if (learner != null) {
+                show(false);
+            }
+        });
         return this;
     }
 
@@ -188,22 +211,56 @@ public class FeedDetailController extends Controller {
         chosen = null;
         run = null;
         runs = new ArrayList<>();
+        historyWanted = false;
+        view.setHistoryOpen(false);
         waitingList.setLearner(learner);
+        view.setIssues(List.of());
         show(true);
         readRuns(true);
+        readIssues();
     }
 
     /// Reads the feed's runs and the run shown again, keeping what is chosen and open.
     public void refresh() {
         if (learner != null) {
             readRuns(false);
+            readIssues();
             if (view.isWaitingShown()) {
                 waitingList.refresh();
             }
         }
     }
 
+    /// @param onOpenQuality Run when the person asks to see the issues QA flagged, on the Quality Assurance tab.
+    public void setOnOpenQuality(final Runnable onOpenQuality) {
+        view.setOnOpenQuality(onOpenQuality);
+    }
+
     // ---- Reading ----
+
+    // The issues QA people have flagged and nobody has resolved, shown to the Data Provider here; a pipeline
+    // whose issues can't be read shows none
+    private void readIssues() {
+        final SupervisorLearner whose = learner;
+        if (whose == null || whose.isPipelineDeleted()) {
+            view.setIssues(List.of());
+            return;
+        }
+        restFactory
+                .create(QUALITY_RESOURCE)
+                .method(resource -> resource.assessments(whose.getLearner().getPipelineUuid(),
+                        whose.getLearner().getElementId()))
+                .onSuccess(said -> {
+                    if (whose == learner || (learner != null && whose.getLearner().equals(learner.getLearner()))) {
+                        view.setIssues(NullSafe.list(said).stream().filter(QualityFigures::isOpenIssue).toList());
+                    }
+                })
+                .onFailure(error -> {
+                })
+                .owner(this)
+                .taskMonitorFactory(taskMonitor())
+                .exec();
+    }
 
     private void readRuns(final boolean fresh) {
         final int request = ++asked;
@@ -261,7 +318,13 @@ public class FeedDetailController extends Controller {
                 ? ""
                 : "Feed " + run.getFeed() + " · " + run.getType();
         view.showFeed(FeedList.name(learner), feed);
-        view.setSituation(FeedSituation.of(learner, run, doc, System.currentTimeMillis()));
+        final FeedSituation situation = FeedSituation.of(learner, run, doc, System.currentTimeMillis());
+        view.setSituation(readOnly
+                ? situation.readOnly()
+                : situation);
+        view.setTranslation(learner.getFragment() == null
+                ? null
+                : NullSafe.getOrElse(learner.getFragment(), DocRef::getName, "Learned translation"));
         view.setRuns(runs, run == null
                 ? null
                 : run.getId(), this::runLabel);
@@ -269,8 +332,15 @@ public class FeedDetailController extends Controller {
                 ? List.of()
                 : doc.getFlow().getSteps();
         view.setProgress(FeedProgress.of(steps, run));
-        view.setConversation(rows(steps), fresh, run != null && !run.isPipelineDeleted());
-        view.setNotes(!learner.isPipelineDeleted(), learner.getGuidance());
+        view.setConversation(rows(steps), fresh, !readOnly && run != null && !run.isPipelineDeleted());
+        view.setNotes(!readOnly && !learner.isPipelineDeleted(), learner.getGuidance());
+        final boolean waiting = learner.getWaiting() > 0;
+        view.setHistory(!runs.isEmpty() || waiting, waiting);
+        final boolean wanted = FeedSituation.needsHistory(learner, run);
+        if (wanted && !historyWanted) {
+            view.setHistoryOpen(true);
+        }
+        historyWanted = wanted;
     }
 
     private String runLabel(final SupervisorAttempt attempt) {
@@ -382,16 +452,6 @@ public class FeedDetailController extends Controller {
             case RELEARN -> relearn();
             case GIVE_UP -> giveUp();
             case RETRACT -> retract();
-            case OPEN_PIPELINE -> {
-                if (learner.getPipeline() != null) {
-                    OpenDocumentEvent.fire(this, learner.getPipeline(), true);
-                }
-            }
-            case OPEN_TRANSLATION -> {
-                if (learner.getFragment() != null) {
-                    OpenDocumentEvent.fire(this, learner.getFragment(), true);
-                }
-            }
             case OPEN_SETTINGS -> onOpenSettings.run();
             default -> throw new IllegalArgumentException("Unknown action " + action);
         }
@@ -481,7 +541,7 @@ public class FeedDetailController extends Controller {
         ConfirmEvent.fire(this,
                 "Accept this translation now? It scored " + NullSafe.getOrElse(trial.getPromotedScore(),
                         PlainWords::percent, "enough") + " when it was learned, which cleared the pass mark, but from "
-                + "fewer records than this document asks for. Accepting it skips the wait for more.",
+                + "fewer records than its Learning Flow asks for. Accepting it skips the wait for more.",
                 ok -> {
                     if (ok) {
                         restFactory

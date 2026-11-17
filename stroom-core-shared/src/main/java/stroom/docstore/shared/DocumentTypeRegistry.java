@@ -63,7 +63,7 @@ public class DocumentTypeRegistry {
     public static final DocumentType SHAPESHIFTER_AI_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
             "ShapeshifterAi",
-            "Shapeshifter AI",
+            "Learning Flow",
             SvgImage.AI);
     public static final DocumentType ANALYTIC_RULE_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.SEARCH,

@@ -23,7 +23,7 @@ import stroom.shapeshifter.shared.SupervisorLearner;
 /// Which feeds the Feeds tab lists, by where they stand.
 public enum FeedFilter implements HasDisplayValue {
     /// Every feed.
-    ALL("All feeds"),
+    ALL("All pipelines"),
     /// A draft to approve, or a paused run.
     NEEDS_YOU("Needs you"),
     /// A run under way, or nothing translating yet.
@@ -42,6 +42,15 @@ public enum FeedFilter implements HasDisplayValue {
     @Override
     public String getDisplayValue() {
         return displayValue;
+    }
+
+    /// Whether a list filtered by this leaves anything out, or lets deleted pipelines in, so that the filter
+    /// button can say a filter is on rather than leaving a person wondering where the rest went.
+    ///
+    /// @param showDeleted Whether feeds whose pipeline was deleted are listed too.
+    /// @return Whether it is anything but every feed of every pipeline that still exists.
+    public boolean isFiltering(final boolean showDeleted) {
+        return this != ALL || showDeleted;
     }
 
     /// @param learner A feed's learner row.

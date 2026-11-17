@@ -78,6 +78,7 @@ public class LearningPipelinesDao implements LearningPipelines {
                          final Set<String> learningOff,
                          final Collection<LearnerState> states,
                          final boolean showDeleted,
+                         final String pipelineUuid,
                          final long offset,
                          final int limit) {
         if (NullSafe.isEmptyCollection(docUuids)) {
@@ -195,6 +196,9 @@ public class LearningPipelinesDao implements LearningPipelines {
         Condition matching = view.field("doc", String.class).in(docUuids);
         if (!showDeleted) {
             matching = matching.and(view.field("deleted", Boolean.class).isFalse());
+        }
+        if (pipelineUuid != null) {
+            matching = matching.and(view.field("p", String.class).eq(pipelineUuid));
         }
         if (!NullSafe.isEmptyCollection(states)) {
             matching = matching.and(view.field("state", String.class)

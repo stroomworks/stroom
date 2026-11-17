@@ -32,6 +32,18 @@ public interface Outputs {
     /// bound it (design 01 §7.3 rule 3).
     void emitted(long inputId, String pipeline, Produced produced, List<TextRange> spans);
 
+    /// The same, with how many records the stream held, for the volume a Smart Pipeline's Quality Assurance tab
+    /// shows. A store that doesn't count records ignores it.
+    ///
+    /// @param records How many records the stream held, or null where nobody counted them.
+    default void emitted(final long inputId,
+                         final String pipeline,
+                         final Produced produced,
+                         final List<TextRange> spans,
+                         final Integer records) {
+        emitted(inputId, pipeline, produced, spans);
+    }
+
     /// The same, for an output whose records nobody can say the span of: a chain with no parser was
     /// given records that already existed, and where they came from in some earlier stream is not this
     /// stream's business.

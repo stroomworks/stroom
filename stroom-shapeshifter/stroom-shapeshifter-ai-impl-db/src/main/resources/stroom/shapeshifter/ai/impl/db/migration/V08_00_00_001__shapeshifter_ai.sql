@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS shapeshifter_attempt (
     granted_tokens        bigint NOT NULL DEFAULT 0,
     granted_ms            bigint NOT NULL DEFAULT 0,
     exhaust_next          tinyint NOT NULL DEFAULT 0,
+    -- Why it stopped, in parts: the error, the details and the suggestions, with the kind of stop
+    -- (StopReport, as JSON). The decision beside it keeps the error line, for the places that show one line.
+    -- Null for a run that did not stop short.
+    report                longtext DEFAULT NULL,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_attempt_claim (pipeline_uuid, element_id, claimed),
     KEY                   shapeshifter_attempt_doc_uuid (doc_uuid),
@@ -182,6 +186,9 @@ CREATE TABLE IF NOT EXISTS shapeshifter_output (
     produce_time_ms       bigint NOT NULL DEFAULT 0,
     record_spans          mediumtext DEFAULT NULL,
     snapshot_id           varchar(255) DEFAULT NULL,
+    -- How many records the stream held, for the volume a Smart Pipeline's Quality Assurance tab shows: the
+    -- spans beside it are capped, so can't be counted. Null where nobody counted them.
+    record_count          int DEFAULT NULL,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_output_binding_input_pipeline (binding_uuid, input_meta_id, pipeline_uuid),
     KEY                   shapeshifter_output_doc_uuid (doc_uuid)
@@ -282,6 +289,32 @@ CREATE TABLE IF NOT EXISTS shapeshifter_deleted_pipeline (
     deleted_time_ms       bigint NOT NULL,
     PRIMARY KEY           (pipeline_uuid),
     KEY                   shapeshifter_deleted_pipeline_deleted_time_ms (deleted_time_ms)
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+--
+-- What a QA person said about a Smart Pipeline's translated output (its Quality Assurance tab): that it looks
+-- right, or an issue for the Data Provider to fix at the pipeline. One row per assessment per learner (the
+-- pipeline and the element); an issue stays open until someone who may edit the pipeline resolves it. The
+-- binding is the translation that was in use when it was said, so an assessment is read against what it was
+-- about after the pipeline has learned again.
+--
+CREATE TABLE IF NOT EXISTS shapeshifter_assessment (
+    id                    bigint NOT NULL AUTO_INCREMENT,
+    create_time_ms        bigint NOT NULL,
+    pipeline_uuid         varchar(255) NOT NULL,
+    element_id            varchar(255) NOT NULL,
+    doc_uuid              varchar(255) NOT NULL,
+    binding_uuid          varchar(255) DEFAULT NULL,
+    -- LOOKS_RIGHT or ISSUE
+    verdict               varchar(20) NOT NULL,
+    comment               longtext DEFAULT NULL,
+    -- Who said it, and who resolved it and when; the resolver null while an issue is open
+    author                varchar(255) NOT NULL,
+    resolved_by           varchar(255) DEFAULT NULL,
+    resolve_time_ms       bigint DEFAULT NULL,
+    PRIMARY KEY           (id),
+    KEY                   shapeshifter_assessment_learner (pipeline_uuid, element_id, id),
+    KEY                   shapeshifter_assessment_doc_uuid (doc_uuid)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 SET SQL_NOTES=@OLD_SQL_NOTES;

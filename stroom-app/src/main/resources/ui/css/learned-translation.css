@@ -1,0 +1,83 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+   What an AI Translator element has learned, on its pipeline's Structure tab
+   (stroom.shapeshifter.client.component.LearnedTranslation): folded above the element's properties, then its
+   learned translation and that translation's elements, each with the documents it uses as links.
+*/
+
+/* At most a third of the pane above the element's properties, scrolling beyond, so the properties stay in sight */
+.learned-translation {
+    max-height: 180px;
+    overflow: auto;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.learned-translation__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.learned-translation__message {
+    color: var(--text-color--low-emphasis);
+    max-width: 760px;
+}
+
+.learned-translation__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.learned-translation__label {
+    color: var(--text-color--low-emphasis);
+}
+
+.learned-translation__parts {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+/* An element: its type, its name, then its documents */
+.learned-translation__part {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+}
+
+.learned-translation__type {
+    min-width: 140px;
+    color: var(--text-color--low-emphasis);
+}
+
+.learned-translation__name {
+    font-weight: 500;
+}
+
+.learned-translation .learned-translation__link {
+    align-self: flex-start;
+    color: var(--link__text-color);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    white-space: normal;
+    text-align: start;
+}

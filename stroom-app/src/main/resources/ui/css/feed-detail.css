@@ -298,3 +298,31 @@
 .feed-detail__waiting {
     height: 320px;
 }
+
+/* The learned translation the feed runs: a line saying which, whose name is the link that opens it */
+.feed-detail__translation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.feed-detail__translation-label {
+    color: var(--text-color--low-emphasis);
+}
+
+.feed-detail .feed-detail__translation-link {
+    color: var(--link__text-color);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    white-space: normal;
+    text-align: start;
+}
+
+/* Learning history, folded until a run needs someone: the runs, the one shown's progress and conversation, and
+   the waiting streams */
+.feed-detail__history-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}

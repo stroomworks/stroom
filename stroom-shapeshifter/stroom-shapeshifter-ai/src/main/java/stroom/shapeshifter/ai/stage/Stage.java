@@ -987,7 +987,7 @@ public final class Stage {
             states.scored(learner, doc.getUuid(), served.meanTotal(), served.records(),
                     doc.getMinRecordsToLearn());
         }
-        outputs.emitted(input.id(), input.pipeline(), producedBy(doc, binding), List.of());
+        outputs.emitted(input.id(), input.pipeline(), producedBy(doc, binding), List.of(), served.records());
         return served;
     }
 
@@ -2132,7 +2132,7 @@ public final class Stage {
                           final List<Exchange> transcript) {
         final Produced produced = new Produced(doc.getUuid(), binding.getUuid(), binding.getPipeline(),
                 binding.getRecordBoundary(), binding.isProvisional(), judged.score(), binding.getSnapshot());
-        outputs.emitted(input.id(), input.pipeline(), produced, judged.spans());
+        outputs.emitted(input.id(), input.pipeline(), produced, judged.spans(), judged.records());
         return new StageRun(doc, decision, learner, produced, judged.output(), judged.verdicts(), transcript,
                 judged.events(), judged.diagnostics());
     }

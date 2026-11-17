@@ -29,12 +29,9 @@ import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
 import stroom.shapeshifter.client.component.BuiltInTextController;
-import stroom.shapeshifter.client.component.GrantEditorController;
-import stroom.shapeshifter.client.component.GuidanceEditorController;
+import stroom.shapeshifter.client.component.FeedFilterEditorController;
 import stroom.shapeshifter.client.component.ScorerSettingEditorController;
 import stroom.shapeshifter.client.component.ShapeshifterAiEditor;
-import stroom.shapeshifter.client.component.SupervisorPromptController;
-import stroom.shapeshifter.client.component.TurnAnswerEditorController;
 import stroom.shapeshifter.client.component.XPathAssertionEditorController;
 import stroom.shapeshifter.shared.ShapeshifterAiResource;
 
@@ -42,13 +39,13 @@ import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Widget;
 
 /// The `App/Editors/ShapeshifterAiEditor` stories, showing Stroom's real [ShapeshifterAiEditor] (a
-/// Shapeshifter AI document's tab: Feeds, Setup, Documentation and Permissions) with fake REST replies.
+/// Learning Flow document's tabs: Pipelines, Setup, Documentation and Permissions) with fake REST replies.
 ///
 /// As `ShapeshifterAiPlugin` does, the story fetches the document and reads it into the editor
-/// ([DocEditors#open]). Its dialogs: on the Feeds tab, giving a paused run more ([GrantEditorController]),
-/// answering a question ([TurnAnswerEditorController]), the prompt that asks why a feed stops learning
-/// ([SupervisorPromptController]) and the notes left for a feed ([GuidanceEditorController]); on the Setup
-/// tab, a check's ([ScorerSettingEditorController]) and a business rule's assertion within it
+/// ([DocEditors#open]). The Pipelines tab lists the document's feeds, each opening its pipeline, whose AI
+/// Translation tab has its own stories ([PipelineAiTranslationStories]), with a quick filter and a dialog of
+/// which feeds to show ([FeedFilterEditorController]). Its dialogs on the Setup tab: a check's
+/// ([ScorerSettingEditorController]) and a business rule's assertion within it
 /// ([XPathAssertionEditorController]), and loading a built-in text ([BuiltInTextController]).
 ///
 /// | Stroom endpoint | Used for |
@@ -56,11 +53,6 @@ import com.google.gwt.user.client.ui.Widget;
 /// | `GET` and `PUT /shapeshifterAi/v1/{uuid}` | the document, fetched and saved |
 /// | `GET /shapeshifterAi/v1/templates` | the built-in texts the Setup tab's question texts start from |
 /// | `POST /shapeshifterAiSupervisor/v1/learners` | the document's feeds |
-/// | `POST /shapeshifterAiSupervisor/v1/find` | a feed's learning runs |
-/// | `GET /shapeshifterAiSupervisor/v1/{id}` | a learning run, with its turns |
-/// | `POST /shapeshifterAiSupervisor/v1/{id}/grant`, `turns/{number}` | acting on a run |
-/// | `POST /shapeshifterAiSupervisor/v1/learners/{docUuid}/giveUp`, `waiting` | stopping a feed; its waiting streams |
-/// | `GET` and `POST /shapeshifterAiSupervisor/v1/guidance/{docUuid}` | the notes left for a feed, and leaving one |
 /// | `POST /explorer/v2/decorate` and `getFromDocRef` | the Setup tab's model picker |
 /// | the Permissions tab's routes | the Permissions tab |
 public final class ShapeshifterAiEditorStories {
@@ -68,8 +60,9 @@ public final class ShapeshifterAiEditorStories {
     private static final String SAVE_PATH = "/shapeshifterAi/v1/ss-1";
     // A FormGroup gives its control the group's identity as its id
     private static final String WEIGHT = "#scorerWeight";
-    private static final String PAUSED = "Paused: ran out of time at \"Write the parser\" (question 4).";
     private static final String MAP = "Setup route map";
+    private static final String FEED_FILTER = "Which pipelines to show";
+    private static final String FEEDS_FILTERED = "Pipelines are being filtered; click to change or clear";
 
     private ShapeshifterAiEditorStories() {
         // Static utility
@@ -81,181 +74,75 @@ public final class ShapeshifterAiEditorStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Editors/ShapeshifterAiEditor", ShapeshifterAiEditorStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // The Feeds tab first: ready to learn, so with no banner, its feeds, and the first chosen,
-                // paused out of time
+                // The Pipelines tab first: ready to learn, so with no banner; its feeds in a table, each with a
+                // button that opens its pipeline, where its learning is followed
                 .story("Default", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
-                    for (final String label : new String[]{"Feeds", "Setup", "Documentation",
+                    for (final String label : new String[]{"Pipelines", "Setup", "Documentation",
                             "Permissions"}) {
                         play.waitFor(() -> play.expect(DocEditors.tab(play, label)).toBeInTheDocument());
                     }
-                    final Play grid = play.within(play.findByRole("grid", "Feeds"));
+                    final Play grid = play.within(play.findByRole("grid", "Pipelines"));
                     play.expect(grid.findByText("Firewall pipeline")).toBeInTheDocument();
                     play.expect(grid.getByText("Proxy pipeline")).toBeInTheDocument();
                     play.expect(grid.getByText("Needs you")).toBeInTheDocument();
-                    play.expect(play.findByRole("heading", "Firewall pipeline")).toBeInTheDocument();
-                    play.expect(play.findByText(PAUSED)).toBeInTheDocument();
+                    play.expect(grid.getByText("Translating")).toBeInTheDocument();
+                    play.expect(grid.getByRole("button", "Open pipeline Firewall pipeline")).toBeInTheDocument();
+                    play.expect(grid.getByRole("button", "Open pipeline Proxy pipeline")).toBeInTheDocument();
+                    // Where a feed stands in detail is on its pipeline, not here
+                    play.expect(play.queryByRole("heading", "Firewall pipeline")).toBeNull();
                     play.expect(play.queryByText("This document won't learn anything yet")).toBeNull();
-                    // Why it paused, in parts; "Give it more" is a button already, so it is said, not linked
-                    final Play reportDetails = play.within(play.getByRole("list", "Details"));
-                    play.expect(reportDetails.getByText(
-                            "Each run may take 5 minutes; this one had taken 5 minutes 2 seconds."))
-                            .toBeInTheDocument();
-                    final Play suggestions = play.within(play.getByRole("list", "Suggestions"));
-                    play.expect(suggestions.getByText("Give it more time.")).toBeInTheDocument();
-                    play.expect(suggestions.queryByRole("button", "Give it more time.")).toBeNull();
-                    play.expect(suggestions.getByRole("button", "Raise \"Time for each run\" on the Setup tab."))
-                            .toBeInTheDocument();
-                    play.expect(play.getByText("Feed FIREWALL · Raw Events")).toBeInTheDocument();
-                    play.expect(play.getByRole("button", StroomDom.button("Give it more…"))).toBeInTheDocument();
-                    play.expect(play.getByRole("button", StroomDom.button("Finish with Unknowns")))
-                            .toBeInTheDocument();
-                    play.expect(play.getByRole("button", StroomDom.button("Answer it myself"))).toBeInTheDocument();
-                    play.expect(play.getByText(TextMatch.startingWith("Went back once"))).toBeInTheDocument();
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // The last question is open, with what it asked; another opens to its score and answer
-                .story("Conversation", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                // The quick filter above the table lists the feeds whose pipeline's name has its text
+                .story("FeedsQuickFilter", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
-                    play.expect(play.findByText(ShapeshifterAiFixtures.TURN_4)).toBeInTheDocument();
-                    play.expect(play.getByText(TextMatch.startingWith("Not answered yet"))).toBeInTheDocument();
-                    final Query second = play.getByRole("button",
-                            TextMatch.startingWith("Question 2: Write the parser"));
-                    play.expect(second).toHaveAttribute("aria-expanded", "false");
-                    play.click(second);
-                    play.expect(second).toHaveAttribute("aria-expanded", "true");
-                    play.expect(play.getByText("Reading the input scored 42%. It needs 90%.")).toBeInTheDocument();
-                    play.expect(play.getByText(TextMatch.containing("<var id='field' />"))).toBeInTheDocument();
+                    final Play grid = play.within(play.findByRole("grid", "Pipelines"));
+                    play.expect(grid.findByText("Firewall pipeline")).toBeInTheDocument();
+                    play.type(play.getByRole("searchbox", "Filter pipelines by name"), "proxy");
+                    play.waitFor(() -> play.expect(grid.queryByText("Firewall pipeline")).toBeNull());
+                    play.expect(grid.getByText("Proxy pipeline")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // Another feed chosen: translating, with what it scores and Improve; its pipeline and its
-                // translation are opened from More
-                .story("ATranslatingFeed", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                // The filter button's dialog: where feeds stand, each with how many, and deleted pipelines;
+                // OK lists only those, asks for the deleted ones too and says the list is filtered
+                .story("FeedsFilterDialogOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
-                    play.click(play.within(play.findByRole("grid", "Feeds")).findByText("Proxy pipeline"));
-                    play.expect(play.findByRole("heading", "Proxy pipeline")).toBeInTheDocument();
-                    play.expect(play.findByText("It scores 98% lately, over 1,204 records. It scored 95% when it "
-                                                + "was put to use.")).toBeInTheDocument();
-                    play.expect(play.getByRole("button", StroomDom.button("Improve…"))).toBeInTheDocument();
-                    play.expect(play.queryByRole("button", StroomDom.button("Open the translation"))).toBeNull();
-                    play.expect(play.queryByRole("button", StroomDom.button("Open the pipeline"))).toBeNull();
                     final Play screen = play.screen();
-                    play.click(play.getByRole("button", StroomDom.button("More…")));
-                    play.expect(screen.findByText("Open the pipeline", StroomDom.MENU_ITEM_TEXT))
-                            .toBeInTheDocument();
-                    play.expect(screen.getByText("Open the translation", StroomDom.MENU_ITEM_TEXT))
-                            .toBeInTheDocument();
-                    play.keyboard("{Escape}");
-                    play.waitFor(() -> play.expect(screen.queryByText("Open the pipeline", StroomDom.MENU_ITEM_TEXT))
+                    final Play grid = play.within(play.findByRole("grid", "Pipelines"));
+                    play.expect(grid.findByText("Firewall pipeline")).toBeInTheDocument();
+                    openFeedFilter(play);
+                    play.click(screen.querySelector("#shapeshifterAiFeedFilter " + StroomDom.SELECTION_BOX));
+                    play.click(screen.findByText("Translating (1)"));
+                    play.click(screen.getByRole("checkbox", "Show deleted pipelines"));
+                    play.click(screen.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(screen.queryByText(FEED_FILTER, StroomDom.DIALOG_TITLE))
                             .toBeNull());
+                    play.waitFor(() -> play.expect(grid.queryByText("Firewall pipeline")).toBeNull());
+                    play.expect(grid.getByText("Proxy pipeline")).toBeInTheDocument();
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners")
+                                    .withJsonBodyContaining("{\"showDeletedPipelines\": true}")
+                                    .toSpyMatcher());
+                    play.expect(play.getByRole("button", FEEDS_FILTERED)).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The streams waiting for a feed, on the second tab beneath it
-                .story("WaitingStreams", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    play.findByText(PAUSED);
-                    play.click(DocEditors.tab(play, "Waiting streams"));
-                    play.expect(play.findByText("Coverage short")).toBeInTheDocument();
-                    DocEditors.expectNoProblems(play);
-                })
-                // A paused run given more time: OK sends it
-                .story("GrantDialogOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play screen = play.screen();
-                    openGrant(play);
-                    final Query minutes = screen.getByLabelText("More minutes for each run");
-                    play.clear(minutes);
-                    play.type(minutes, "10");
-                    play.tab();
-                    play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/grant")
-                                    .withJsonBodyContaining("{\"ms\": 600000}").toSpyMatcher()));
-                    DocEditors.expectNoProblems(play);
-                })
-                .story("GrantDialogCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                // The filter button's dialog, cancelled: every feed stays listed, unfiltered
+                .story("FeedsFilterDialogCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openGrant(play);
+                    final Play grid = play.within(play.findByRole("grid", "Pipelines"));
+                    play.expect(grid.findByText("Firewall pipeline")).toBeInTheDocument();
+                    openFeedFilter(play);
+                    play.click(screen.querySelector("#shapeshifterAiFeedFilter " + StroomDom.SELECTION_BOX));
+                    play.click(screen.findByText("Translating (1)"));
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Give this session more to spend",
-                            StroomDom.DIALOG_TITLE)).toBeNull());
-                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/grant").toSpyMatcher());
-                    DocEditors.expectNoProblems(play);
-                })
-                // The question the run stopped at, answered by hand: OK sends it
-                .story("AnswerDialogOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play screen = play.screen();
-                    openAnswer(play);
-                    play.click(screen.querySelector(".ace_content"));
-                    play.keyboard("x");
-                    play.waitFor(() -> play.expect(screen.querySelector(".ace_content"))
-                            .toHaveTextContent(TextMatch.containing("x")));
-                    play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/turns/4").toSpyMatcher()));
-                    DocEditors.expectNoProblems(play);
-                })
-                .story("AnswerDialogCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play screen = play.screen();
-                    openAnswer(play);
-                    play.click(screen.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(screen.queryByText(TextMatch.startingWith("Answer question 4"),
-                            StroomDom.DIALOG_TITLE)).toBeNull());
-                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/turns/4").toSpyMatcher());
-                    DocEditors.expectNoProblems(play);
-                })
-                // Stop learning, from More: the prompt asks why, and OK sends it
-                .story("StopLearningPromptOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play screen = play.screen();
-                    openStopLearning(play);
-                    play.type(screen.getByLabelText("Answer"), "Not a feed we translate.");
-                    play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners/ss-1/giveUp")
-                                    .withJsonBodyContaining("{\"reason\": \"Not a feed we translate.\"}")
-                                    .toSpyMatcher()));
-                    DocEditors.expectNoProblems(play);
-                })
-                .story("StopLearningPromptCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play screen = play.screen();
-                    openStopLearning(play);
-                    play.click(screen.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Stop learning this feed",
-                            StroomDom.DIALOG_TITLE)).toBeNull());
-                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners/ss-1/giveUp").toSpyMatcher());
-                    DocEditors.expectNoProblems(play);
-                })
-                // A note left for the AI, sent from beneath the conversation
-                .story("NoteSent", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    play.findByText(PAUSED);
-                    play.type(play.getByLabelText("Note to the AI"), "Ports are numbers.");
-                    play.click(play.getByRole("button", StroomDom.button("Send note")));
-                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/guidance/ss-1")
-                                    .withJsonBodyContaining("{\"message\": \"Ports are numbers.\"}")
-                                    .toSpyMatcher()));
-                    // Sent, the box is emptied for the next
-                    play.waitFor(() -> play.expect(play.getByLabelText("Note to the AI")).toHaveValue(""));
-                    DocEditors.expectNoProblems(play);
-                })
-                // The notes in use, shown in the guidance dialog, closed with Close
-                .story("NotesDialog", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play screen = play.screen();
-                    play.click(play.findByRole("button", "View notes, 1 note in use"));
-                    play.expect(screen.findByText("Timestamps are in UTC.")).toBeInTheDocument();
-                    play.click(screen.getByRole("button", StroomDom.button("Close")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Timestamps are in UTC.")).toBeNull());
+                    play.waitFor(() -> play.expect(screen.queryByText(FEED_FILTER, StroomDom.DIALOG_TITLE))
+                            .toBeNull());
+                    play.expect(grid.getByText("Firewall pipeline")).toBeInTheDocument();
+                    play.expect(grid.getByText("Proxy pipeline")).toBeInTheDocument();
+                    play.expect(play.getByRole("button", "Filter Pipelines")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
                 // A new document won't learn: the banner says why, and each fix opens its tab and makes the
@@ -267,10 +154,10 @@ public final class ShapeshifterAiEditorStories {
                             .toBeInTheDocument();
                     play.click(play.getByRole("button", StroomDom.button("Switch on")));
                     play.expect(play.findByRole("radio", "On: learn new feeds automatically")).toBeChecked();
-                    openTab(play, "Feeds");
+                    openTab(play, "Pipelines");
                     play.click(play.findByRole("button", StroomDom.button("Use the Standard checks")));
                     play.expect(play.findByText("Events carry real content")).toBeInTheDocument();
-                    openTab(play, "Feeds");
+                    openTab(play, "Pipelines");
                     play.expect(play.findByText("Learning is on")).toBeInTheDocument();
                     play.expect(play.getByText("4 quality checks")).toBeInTheDocument();
                     play.expect(play.getByText(TextMatch.startingWith("This is the document as you have it now")))
@@ -278,36 +165,6 @@ public final class ShapeshifterAiEditorStories {
                     save(play, "{\"learningMode\": \"AUTOMATIC\", \"scorers\": [{\"type\": \"COMPILE\"}, "
                                + "{\"type\": \"YIELD\"}, {\"type\": \"SCHEMA_CONFORMANCE\"}, "
                                + "{\"type\": \"EXTRACTION_QUALITY\"}]}");
-                })
-                // A suggestion followed: the Setup tab, at the limits on a learning run
-                .story("SuggestionOpensTheLimits", context -> render(context, false, ShapeshifterAiFixtures.DOC))
-                .withPlay(play -> {
-                    final Play suggestions = play.within(play.findByRole("list", "Suggestions"));
-                    play.click(suggestions.getByRole("button", "Raise \"Time for each run\" on the Setup tab."));
-                    final Play sections = play.within(play.findByRole("navigation", MAP));
-                    play.waitFor(() -> play.expect(sections.getByRole("button",
-                            TextMatch.startingWith("Learning steps:"))).toHaveAttribute("aria-current", "location"));
-                    play.expect(play.getByRole("group", "Time for each run")).toBeVisible();
-                    DocEditors.expectNoProblems(play);
-                })
-                // A run whose model didn't reply in time: failed, not still learning, with what to do about it
-                .story("FailedRun", context -> render(context, false, ShapeshifterAiFixtures.DOC,
-                        ShapeshifterAiFixtures.FAILED))
-                .withPlay(play -> {
-                    play.expect(play.findByText("Failed: the model \"GPT-4o\" didn't reply in time."))
-                            .toBeInTheDocument();
-                    play.expect(play.getByText(TextMatch.startingWith("Learning tries again from the feed's next "
-                                                                      + "stream."))).toBeInTheDocument();
-                    final Play suggestions = play.within(play.getByRole("list", "Suggestions"));
-                    play.expect(suggestions.getByRole("button",
-                            "Raise the timeout in the model document's HTTP Client Configuration."))
-                            .toBeInTheDocument();
-                    play.click(suggestions.getByRole("button", "Or choose a faster model on the Setup tab."));
-                    final Play sections = play.within(play.findByRole("navigation", MAP));
-                    play.waitFor(() -> play.expect(sections.getByRole("button",
-                                    TextMatch.startingWith("AI model and instructions:")))
-                            .toHaveAttribute("aria-current", "location"));
-                    DocEditors.expectNoProblems(play);
                 })
                 // Read only: the banner offers nothing that changes the document
                 .story("NotReadyReadOnly", context -> render(context, true, ShapeshifterAiFixtures.NEW_DOC))
@@ -615,6 +472,7 @@ public final class ShapeshifterAiEditorStories {
                 .story("Fallback", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
+                    openAdvanced(play);
                     play.expect(play.findByRole("radio", TextMatch.startingWith("Serve what it can"))).toBeChecked();
                     play.expect(play.getByRole("button", "Show the fallback's question text")).toBeVisible();
                     final Query pause = play.getByRole("radio", "Pause for a person");
@@ -629,6 +487,7 @@ public final class ShapeshifterAiEditorStories {
                 .story("FallbackText", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
+                    openAdvanced(play);
                     play.click(play.findByRole("button", "Show the fallback's question text"));
                     final Play map = play.within(play.getByRole("navigation", MAP));
                     play.waitFor(() -> play.expect(map.getByRole("button", "Fallback: marked Unknowns"))
@@ -636,6 +495,62 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(play.getByRole("heading", "Fallback: marked Unknowns")).toBeVisible();
                     play.expect(play.getByText("Question text of the fallback")).toBeVisible();
                     play.expect(play.getByRole("region", "Learning step")).toHaveFocus();
+                    DocEditors.expectNoProblems(play);
+                })
+                // A new document's Setup: what an Admin rarely changes is folded under each section's Advanced
+                // options, and unfolds on request
+                .story("SetupAdvancedFolded", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
+                .withPlay(play -> {
+                    openStop(play, "Approving new translations:");
+                    play.expect(play.findByLabelText("Pass mark (%)")).toBeVisible();
+                    final Query advanced = play.getByRole("button", "Advanced options");
+                    play.expect(advanced).toHaveAttribute("aria-expanded", "false");
+                    play.expect(play.getByLabelText("Records before a translation is trusted")).not().toBeVisible();
+                    play.click(advanced);
+                    play.waitFor(() -> play.expect(advanced).toHaveAttribute("aria-expanded", "true"));
+                    play.expect(play.getByLabelText("Records before a translation is trusted")).toBeVisible();
+                    openStop(play, "Quality checks:");
+                    play.expect(play.getByRole("button", "Advanced options")).toHaveAttribute("aria-expanded", "false");
+                    openStop(play, "Monitoring translations in use:");
+                    play.expect(play.getByLabelText("Flag a translation in use below (%)")).toBeVisible();
+                    play.expect(play.getByLabelText("Records kept to check against later")).not().toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // A document whose rarely changed settings aren't as a new one has them: their Advanced options
+                // are open, so nothing changed is out of sight
+                .story("SetupAdvancedOpenWhereChanged",
+                        context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    openStop(play, "Approving new translations:");
+                    play.expect(play.findByRole("button", "Advanced options"))
+                            .toHaveAttribute("aria-expanded", "true");
+                    play.expect(play.getByLabelText("Records before a translation is trusted")).toBeVisible();
+                    openStop(play, "Quality checks:");
+                    play.expect(play.findByRole("grid", "Quality checks")).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // A new document's steps are a starting point, so they are off the route map until the person
+                // asks to customise them; then they are on it, with Load default setup, and can be hidden again
+                .story("SetupStepsCustomise", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
+                .withPlay(play -> {
+                    openStop(play, "Learning steps:");
+                    final Play map = play.within(play.getByRole("navigation", MAP));
+                    play.expect(map.queryByRole("button", TextMatch.startingWith("Step 1:"))).toBeNull();
+                    play.expect(play.queryByRole("button", StroomDom.button("Load default setup"))).toBeNull();
+                    play.click(play.getByRole("button", TextMatch.startingWith("Customise the learning steps")));
+                    play.waitFor(() -> play.expect(map.getByRole("button", TextMatch.startingWith("Step 1:")))
+                            .toBeInTheDocument());
+                    play.expect(play.getByRole("button", StroomDom.button("Load default setup"))).toBeVisible();
+                    // A step chosen shows its card in place of Learning steps' own part, hiding nothing
+                    openStop(play, "Step 1:");
+                    play.expect(play.findByRole("heading", "Step 1: Choose the elements")).toBeVisible();
+                    openStop(play, "Learning steps:");
+                    play.click(play.getByRole("button", TextMatch.startingWith("Hide the learning steps")));
+                    play.waitFor(() -> play.expect(map.queryByRole("button", TextMatch.startingWith("Step 1:")))
+                            .toBeNull());
+                    play.expect(map.getByRole("button", TextMatch.startingWith("Learning steps:")))
+                            .toHaveAttribute("aria-current", "location");
+                    play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
                 // A step fine-tuned: its tries, out of sight until unfolded, and a tag on its heading for them
@@ -736,6 +651,12 @@ public final class ShapeshifterAiEditorStories {
                 });
     }
 
+    // Opens the dialog of which pipelines the Pipelines tab lists, from the filter button of its table's toolbar
+    private static void openFeedFilter(final Play play) {
+        play.click(play.getByRole("button", "Filter Pipelines"));
+        play.expect(play.screen().findByText(FEED_FILTER, StroomDom.DIALOG_TITLE)).toBeInTheDocument();
+    }
+
     // Opens one of the document's tabs once it is shown
     private static void openTab(final Play play, final String label) {
         play.waitFor(() -> play.expect(DocEditors.tab(play, label)).toBeInTheDocument());
@@ -752,6 +673,13 @@ public final class ShapeshifterAiEditorStories {
         play.waitFor(() -> play.expect(button).toHaveAttribute("aria-current", "location"));
     }
 
+    // Unfolds the Advanced options of the Setup section shown
+    private static void openAdvanced(final Play play) {
+        final Query advanced = play.findByRole("button", "Advanced options");
+        play.click(advanced);
+        play.waitFor(() -> play.expect(advanced).toHaveAttribute("aria-expanded", "true"));
+    }
+
     // Selects a check's row on the Setup tab and opens its dialog with Edit
     private static void openScorer(final Play play, final String check) {
         final Play screen = play.screen();
@@ -759,25 +687,6 @@ public final class ShapeshifterAiEditorStories {
         play.click(play.findByText(check));
         play.click(play.getByRole("button", "Edit the selected check"));
         play.expect(screen.findByText("Scorer", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
-    }
-
-    private static void openGrant(final Play play) {
-        play.click(play.findByRole("button", StroomDom.button("Give it more…")));
-        play.expect(play.screen().findByText("Give this session more to spend", StroomDom.DIALOG_TITLE))
-                .toBeInTheDocument();
-    }
-
-    private static void openAnswer(final Play play) {
-        play.click(play.findByRole("button", StroomDom.button("Answer it myself")));
-        play.expect(play.screen().findByText(TextMatch.startingWith("Answer question 4:"), StroomDom.DIALOG_TITLE))
-                .toBeInTheDocument();
-    }
-
-    private static void openStopLearning(final Play play) {
-        final Play screen = play.screen();
-        play.click(play.findByRole("button", StroomDom.button("More…")));
-        play.click(screen.findByText("Stop learning…", StroomDom.MENU_ITEM_TEXT));
-        play.expect(screen.findByText("Stop learning this feed", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
     }
 
     // Saves, and checks the document sent holds what is given
@@ -791,16 +700,8 @@ public final class ShapeshifterAiEditorStories {
     }
 
     private static Widget render(final StoryContext context, final boolean readOnly, final String doc) {
-        return render(context, readOnly, doc, ShapeshifterAiFixtures.PAUSED);
-    }
-
-    private static Widget render(final StoryContext context,
-                                 final boolean readOnly,
-                                 final String doc,
-                                 final String firewall) {
         final RestFixtures fixtures = ShapeshifterAiFixtures.editorRoutes(
-                        DocEditors.docSelectionRoutes(DocEditors.permissionRoutes(RestFixtures.builder())), doc,
-                        firewall)
+                        DocEditors.docSelectionRoutes(DocEditors.permissionRoutes(RestFixtures.builder())), doc)
                 .build();
         final ShapeshifterAiResource resource = GWT.create(ShapeshifterAiResource.class);
         final String uuid = ShapeshifterAiFixtures.DOC_REF.getUuid();

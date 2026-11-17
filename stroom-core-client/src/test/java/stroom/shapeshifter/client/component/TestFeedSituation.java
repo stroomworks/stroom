@@ -82,8 +82,7 @@ class TestFeedSituation {
         assertThat(situation.getDetail()).isEqualTo("This run has used 12,000 tokens. 2 streams are waiting, the "
                                                     + "oldest for 3 hours.");
         assertThat(situation.getPrimary()).containsExactly(FeedAction.GRANT, FeedAction.EXHAUST, FeedAction.ANSWER);
-        assertThat(situation.getMore()).containsExactly(FeedAction.RELEARN, FeedAction.GIVE_UP,
-                FeedAction.OPEN_PIPELINE);
+        assertThat(situation.getMore()).containsExactly(FeedAction.RELEARN, FeedAction.GIVE_UP);
     }
 
     @Test
@@ -126,23 +125,26 @@ class TestFeedSituation {
         assertThat(situation.getDetail()).isEqualTo("It scores 98% lately, over 1,204 records. It scored 95% when "
                                                     + "it was put to use.");
         assertThat(situation.getPrimary()).containsExactly(FeedAction.IMPROVE);
-        assertThat(situation.getMore()).containsExactly(FeedAction.RELEARN, FeedAction.GIVE_UP, FeedAction.RETRACT,
-                FeedAction.OPEN_PIPELINE, FeedAction.OPEN_TRANSLATION);
+        assertThat(situation.getMore()).containsExactly(FeedAction.RELEARN, FeedAction.GIVE_UP, FeedAction.RETRACT);
     }
 
+    /// A person who may only read the feed's pipeline is offered nothing that changes its learning: what it
+    /// says is the same, and nothing is left under More (its translation has its own link).
     @Test
-    void thePipelineIsOpenedFromMoreOnlyWhereThereIsOne() {
-        // A feed that has never been learned has no translation to open, only its pipeline
-        final FeedSituation fresh = FeedSituation.of(learner(LearnerState.LEARNING, null, 1, false), null, DOC,
-                NOW);
-        assertThat(fresh.getPrimary()).doesNotContain(FeedAction.OPEN_PIPELINE, FeedAction.OPEN_TRANSLATION);
-        assertThat(fresh.getMore()).contains(FeedAction.OPEN_PIPELINE).doesNotContain(FeedAction.OPEN_TRANSLATION);
+    void readOnlyOffersOnlyWhatOpensSomethingToRead() {
+        final FeedSituation serving = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0, false),
+                run(AttemptStatus.PROMOTED, List.of()), DOC, NOW);
+        final FeedSituation read = serving.readOnly();
 
-        // A learner whose pipeline isn't known has nothing to open
-        final SupervisorLearner unknown = new SupervisorLearner(new LearnerRef("p-3", "shapeshifterAi"), null,
-                DOC_REF, LearnerState.LEARNING, null, null, null, false, null, null, 0, 0, null, false, null, 0,
-                false, false);
-        assertThat(FeedSituation.of(unknown, null, DOC, NOW).getMore()).doesNotContain(FeedAction.OPEN_PIPELINE);
+        assertThat(read.getHeadline()).isEqualTo(serving.getHeadline());
+        assertThat(read.getDetail()).isEqualTo(serving.getDetail());
+        assertThat(read.getPrimary()).isEmpty();
+        assertThat(read.getMore()).isEmpty();
+
+        final FeedSituation paused = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2, false),
+                run(AttemptStatus.PARKED, STOPPED_AT_PARSER), DOC, NOW).readOnly();
+        assertThat(paused.getPrimary()).isEmpty();
+        assertThat(paused.getMore()).isEmpty();
     }
 
     @Test
@@ -173,7 +175,7 @@ class TestFeedSituation {
         final FeedSituation situation = FeedSituation.of(learner, parked, DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Deleted");
         assertThat(situation.getPrimary()).isEmpty();
-        assertThat(situation.getMore()).containsExactly(FeedAction.OPEN_TRANSLATION);
+        assertThat(situation.getMore()).isEmpty();
         assertThat(FeedSituation.listChip(learner)).isEqualTo("Deleted");
     }
 
@@ -250,6 +252,42 @@ class TestFeedSituation {
         assertThat(FeedSituation.feedAction(SuggestionAction.GIVE_MORE)).isEqualTo(FeedAction.GRANT);
         assertThat(FeedSituation.feedAction(SuggestionAction.LEARN_AGAIN)).isEqualTo(FeedAction.RELEARN);
         assertThat(FeedSituation.feedAction(SuggestionAction.CHANGE_LIMITS)).isNull();
+    }
+
+    @Test
+    void historyIsWantedWhileARunIsGoingOrWaitsForSomeone() {
+        final SupervisorLearner learning = learner(LearnerState.LEARNING, null, 0, false);
+        assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.IN_PROGRESS, List.of()))).isTrue();
+        assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.AWAITING_MODEL, List.of()))).isTrue();
+        assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.PARKED, STOPPED_AT_PARSER))).isTrue();
+        assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.AWAITING_REVIEW, List.of()))).isTrue();
+    }
+
+    @Test
+    void historyIsFoldedWhileItIsJustTranslating() {
+        final SupervisorLearner serving = learner(LearnerState.SERVING, "b-1", 0, false);
+        assertThat(FeedSituation.needsHistory(serving, run(AttemptStatus.PROMOTED, List.of()))).isFalse();
+        assertThat(FeedSituation.needsHistory(serving, null)).isFalse();
+    }
+
+    @Test
+    void historyIsWantedWhereStreamsWait() {
+        final SupervisorLearner waiting = learner(LearnerState.SERVING, "b-1", 2, false);
+        assertThat(FeedSituation.needsHistory(waiting, run(AttemptStatus.PROMOTED, List.of()))).isTrue();
+    }
+
+    @Test
+    void historyIsFoldedForAStoppedRunWhoseReportIsInSight() {
+        final SupervisorLearner stopped = learner(LearnerState.GIVEN_UP, null, 0, false);
+        assertThat(FeedSituation.needsHistory(stopped, run(AttemptStatus.ABANDONED, STOPPED_AT_PARSER))).isFalse();
+    }
+
+    @Test
+    void historyIsNeverWantedForADeletedPipeline() {
+        final SupervisorLearner deleted = new SupervisorLearner(new LearnerRef("p-2", "shapeshifterAi"), null,
+                DOC_REF, LearnerState.LEARNING, null, null, null, false, null, null, 0, 3, null, false, null, 0,
+                true, false);
+        assertThat(FeedSituation.needsHistory(deleted, run(AttemptStatus.PARKED, STOPPED_AT_PARSER))).isFalse();
     }
 
     private static SupervisorLearner learner(final LearnerState state,

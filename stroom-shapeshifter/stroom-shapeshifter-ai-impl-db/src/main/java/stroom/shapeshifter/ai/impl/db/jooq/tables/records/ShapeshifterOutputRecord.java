@@ -228,6 +228,20 @@ public class ShapeshifterOutputRecord extends UpdatableRecordImpl<ShapeshifterOu
         return (String) get(14);
     }
 
+    /**
+     * Setter for <code>stroom.shapeshifter_output.record_count</code>.
+     */
+    public void setRecordCount(Integer value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_output.record_count</code>.
+     */
+    public Integer getRecordCount() {
+        return (Integer) get(15);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -251,7 +265,7 @@ public class ShapeshifterOutputRecord extends UpdatableRecordImpl<ShapeshifterOu
     /**
      * Create a detached, initialised ShapeshifterOutputRecord
      */
-    public ShapeshifterOutputRecord(Long id, Long createTimeMs, String docUuid, String bindingUuid, Long inputMetaId, String pipelineUuid, String fragmentUuid, Boolean provisional, Double score, String boundaryElement, String boundaryArray, Integer boundaryDepth, Long produceTimeMs, String recordSpans, String snapshotId) {
+    public ShapeshifterOutputRecord(Long id, Long createTimeMs, String docUuid, String bindingUuid, Long inputMetaId, String pipelineUuid, String fragmentUuid, Boolean provisional, Double score, String boundaryElement, String boundaryArray, Integer boundaryDepth, Long produceTimeMs, String recordSpans, String snapshotId, Integer recordCount) {
         super(ShapeshifterOutput.SHAPESHIFTER_OUTPUT);
 
         setId(id);
@@ -269,6 +283,7 @@ public class ShapeshifterOutputRecord extends UpdatableRecordImpl<ShapeshifterOu
         setProduceTimeMs(produceTimeMs);
         setRecordSpans(recordSpans);
         setSnapshotId(snapshotId);
+        setRecordCount(recordCount);
         resetTouchedOnNotNull();
     }
 }

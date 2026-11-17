@@ -30,7 +30,7 @@ import java.util.Set;
 /// learners as it has feeds. Read-only, and off the hot path.
 public interface LearningPipelines {
 
-    /// A page of learners, most waiting streams first, then the most recent session.
+    /// A page of learners, most waiting streams first, then the most recent session, of every pipeline.
     ///
     /// @param docUuids    The documents the person may read. Empty answers empty.
     /// @param learningOff Those of them with learning turned off, whose learners are said to be so.
@@ -38,12 +38,33 @@ public interface LearningPipelines {
     /// @param showDeleted Whether the learning of pipelines since deleted is shown too (A137).
     /// @param offset      The first row of the page.
     /// @param limit       How many rows.
+    /// @return The page, as [#learners(Collection, Set, Collection, boolean, String, long, int)] answers.
+    default Page learners(final Collection<String> docUuids,
+                          final Set<String> learningOff,
+                          final Collection<LearnerState> states,
+                          final boolean showDeleted,
+                          final long offset,
+                          final int limit) {
+        return learners(docUuids, learningOff, states, showDeleted, null, offset, limit);
+    }
+
+    /// A page of learners, most waiting streams first, then the most recent session.
+    ///
+    /// @param docUuids     The documents the learners may be listed under. Empty answers empty.
+    /// @param learningOff  Those of them with learning turned off, whose learners are said to be so.
+    /// @param states       The states asked for; empty for every state.
+    /// @param showDeleted  Whether the learning of pipelines since deleted is shown too (A137).
+    /// @param pipelineUuid The one pipeline whose learners are asked for, e.g. from its own editor; null for
+    ///                     every pipeline.
+    /// @param offset       The first row of the page.
+    /// @param limit        How many rows.
     /// @return The page, its rows naming their pipeline and document by uuid alone, and none raised: the
     /// resource names them and judges their waits against each document's maximum age.
     Page learners(Collection<String> docUuids,
                   Set<String> learningOff,
                   Collection<LearnerState> states,
                   boolean showDeleted,
+                  String pipelineUuid,
                   long offset,
                   int limit);
 

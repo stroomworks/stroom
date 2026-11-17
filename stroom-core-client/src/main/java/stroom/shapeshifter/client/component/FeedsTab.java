@@ -24,9 +24,10 @@ import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 
-/// A Shapeshifter AI document's Feeds tab (design 07), the Supervisor brought into the document: what stops
-/// the document learning anything ([ReadinessBanner]) across the top, only where something does; its feeds
-/// ([FeedList]) on the left; and the feed chosen ([FeedDetail]) on the right. [FeedsTabController] fills it.
+/// A Shapeshifter AI document's Feeds tab (design 07): what stops the document learning anything
+/// ([ReadinessBanner]) across the top, only where something does; beneath, the pipelines that learn under it
+/// ([FeedList]), each opening its pipeline, whose AI Translation tab ([PipelineAiTab]) follows and acts on
+/// its learning. [FeedsTabController] fills it.
 public class FeedsTab extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -37,8 +38,6 @@ public class FeedsTab extends Component {
     ReadinessBanner readiness;
     @UiField
     FeedList feedList;
-    @UiField
-    FeedDetail feedDetail;
 
     /// Makes the tab, empty.
     public FeedsTab() {
@@ -61,11 +60,6 @@ public class FeedsTab extends Component {
     /// @return The document's feeds.
     public FeedList getFeedList() {
         return feedList;
-    }
-
-    /// @return The feed chosen, which its controller attaches to.
-    public FeedDetail getFeedDetail() {
-        return feedDetail;
     }
 
 

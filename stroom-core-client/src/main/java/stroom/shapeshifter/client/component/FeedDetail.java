@@ -20,6 +20,7 @@ import stroom.shapeshifter.client.component.ConversationList.Row;
 import stroom.shapeshifter.client.component.FeedProgress.Item;
 import stroom.shapeshifter.client.component.FeedProgress.State;
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
+import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.Suggestion;
 import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.shapeshifter.shared.SupervisorAttempt;
@@ -52,11 +53,12 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/// One feed on a Shapeshifter AI document's Feeds tab: its name and feed; where it stands, said in a sentence
-/// with a chip, and what can be done about it as buttons, the rest (opening its pipeline and its translation
-/// among them) under More ([FeedSituation]); which learning run is shown; how far that run has got
-/// ([FeedProgress]); and on two tabs, the run's conversation ([ConversationList]) with a note to the AI
-/// beneath it, and the streams waiting for the feed. [FeedDetailController] fills it.
+/// One pipeline's learning, on its Learning Status tab: its name and feed; where it stands, said in a sentence
+/// with a chip, and what can be done about it as buttons, the rest under More ([FeedSituation]); the learned
+/// translation it runs, as a link; and a note to the AI. Folded under **Learning history** ([Disclosure]),
+/// which is open while a run needs someone ([FeedSituation#needsHistory]): which learning run is shown, how far
+/// it has got ([FeedProgress]) and its conversation ([ConversationList]), and, on a second tab shown only where
+/// streams wait, the streams waiting for the feed. [FeedDetailController] fills it.
 public class FeedDetail extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -80,6 +82,10 @@ public class FeedDetail extends Component {
     @UiField
     Label detail;
     @UiField
+    FlowPanel translationLine;
+    @UiField
+    LinkButton translation;
+    @UiField
     FlowPanel detailsPart;
     @UiField
     AriaPanel details;
@@ -88,7 +94,17 @@ public class FeedDetail extends Component {
     @UiField
     AriaPanel suggestions;
     @UiField
+    FlowPanel issuesPart;
+    @UiField
+    Label issuesHeading;
+    @UiField
+    AriaPanel issues;
+    @UiField
+    LinkButton openQuality;
+    @UiField
     FlowPanel actions;
+    @UiField
+    Disclosure history;
     @UiField
     FormGroup runGroup;
     @UiField
@@ -99,6 +115,8 @@ public class FeedDetail extends Component {
     FlowPanel progress;
     @UiField
     Label progressNote;
+    @UiField
+    FlowPanel tabBarPanel;
     @UiField
     LinkTabBar tabBar;
     @UiField
@@ -143,6 +161,11 @@ public class FeedDetail extends Component {
         run.setOnChange(chosen -> onRun.accept(chosen));
         sendNote.setOnClick(() -> onSendNote.accept(note.getValue()));
         showNotes.setOnClick(() -> onShowNotes.run());
+        history.setOnToggle(open -> {
+            if (open && isWaitingShown()) {
+                onWaitingShown.run();
+            }
+        });
         showNothing();
     }
 
@@ -202,6 +225,23 @@ public class FeedDetail extends Component {
         }
     }
 
+    /// Shows the learned translation the feed runs, as a link that opens it, or hides the line where it
+    /// has none.
+    ///
+    /// @param name The translation's name, or null where there is none.
+    public void setTranslation(final String name) {
+        translationLine.setVisible(name != null);
+        if (name != null) {
+            translation.setText(name);
+            translation.setTitle("Open the learned translation " + name);
+        }
+    }
+
+    /// @param onOpenTranslation Told when the learned translation's link is pressed.
+    public void setOnOpenTranslation(final Runnable onOpenTranslation) {
+        translation.setOnClick(onOpenTranslation);
+    }
+
     /// The learning runs to choose from, newest first.
     ///
     /// @param runs   The runs; empty where it has had none.
@@ -245,6 +285,52 @@ public class FeedDetail extends Component {
         progressNote.setVisible(shown.getNote() != null);
     }
 
+    /// Shows the issues QA people have flagged with the pipeline's translated output and nobody has resolved, for
+    /// the Data Provider to fix at the pipeline; nothing where there are none.
+    ///
+    /// @param open The open issues, newest first.
+    public void setIssues(final List<QualityAssessment> open) {
+        issues.clear();
+        for (final QualityAssessment issue : open) {
+            issues.add(item(text(Objects.requireNonNullElse(issue.getComment(), "No comment") + " (" + issue.getAuthor()
+                                 + ")")));
+        }
+        issuesHeading.setText(open.size() == 1
+                ? "Flagged by QA: 1 open issue"
+                : "Flagged by QA: " + open.size() + " open issues");
+        issuesPart.setVisible(!open.isEmpty());
+    }
+
+    /// @param onOpenQuality Run when the person asks to see the issues on the Quality Assurance tab.
+    public void setOnOpenQuality(final Runnable onOpenQuality) {
+        openQuality.setOnClick(onOpenQuality);
+    }
+
+    /// Whether there is any learning history to show, and whether streams wait, whose tab is shown only then.
+    ///
+    /// @param shown   Whether Learning history is shown at all: not for a feed with no runs and nothing waiting.
+    /// @param waiting Whether any streams wait for the feed.
+    public void setHistory(final boolean shown, final boolean waiting) {
+        history.setVisible(shown);
+        tabBarPanel.setVisible(waiting);
+        if (!waiting && waitingPane.isVisible()) {
+            showTab(CONVERSATION);
+        }
+    }
+
+    /// @param open Whether Learning history is unfolded.
+    public void setHistoryOpen(final boolean open) {
+        history.setOpen(open);
+        if (open && isWaitingShown()) {
+            onWaitingShown.run();
+        }
+    }
+
+    /// @return Whether Learning history is unfolded.
+    public boolean isHistoryOpen() {
+        return history.isOpen();
+    }
+
     /// Shows the run's conversation.
     ///
     /// @param rows       Its questions, in order.
@@ -268,10 +354,8 @@ public class FeedDetail extends Component {
                 : "View notes, " + PlainWords.count(notes, "note") + " in use");
     }
 
-    /// Brings the note box into view on the conversation's tab, and puts the focus in it, where a
-    /// suggestion says to leave the AI a note.
+    /// Brings the note box into view, and puts the focus in it, where a suggestion says to leave the AI a note.
     public void focusNote() {
-        showTab(CONVERSATION);
         note.getElement().scrollIntoView();
         note.setFocus(true);
     }
@@ -326,9 +410,9 @@ public class FeedDetail extends Component {
         this.onWaitingShown = onWaitingShown;
     }
 
-    /// @return Whether the waiting streams' tab is shown.
+    /// @return Whether the waiting streams' tab is shown, and Learning history open to show it.
     public boolean isWaitingShown() {
-        return waitingPane.isVisible();
+        return waitingPane.isVisible() && history.isOpen() && history.isVisible();
     }
 
     // Why the run stopped, under Details and Suggestions; a suggestion the tab can act on is a link
@@ -373,7 +457,7 @@ public class FeedDetail extends Component {
         final boolean waiting = WAITING.equals(tab);
         conversationPane.setVisible(!waiting);
         waitingPane.setVisible(waiting);
-        if (waiting) {
+        if (waiting && history.isOpen()) {
             onWaitingShown.run();
         }
     }

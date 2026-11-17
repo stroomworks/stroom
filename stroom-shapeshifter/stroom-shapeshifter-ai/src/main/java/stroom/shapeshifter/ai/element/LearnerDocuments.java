@@ -38,14 +38,14 @@ import java.util.Optional;
 /// Shapeshifter AI document named on the element, read from the pipeline as it is merged, so that one
 /// inherited from a parent counts.
 ///
-/// What a person may do about a learner is decided by the document, and a request names the learner and
-/// the document separately. Asking the pipeline is what joins them: rows record the document too, but
-/// only as of when they were written.
+/// A request names the learner and the document separately, and what a person may do about a learner is
+/// decided by its pipeline. Asking the pipeline is what joins learner and document: rows record the
+/// document too, but only as of when they were written.
 public class LearnerDocuments {
 
     /// The element's property naming its document: the name Stroom gives
     /// [ShapeshifterAiParser#setShapeshifterAi].
-    static final String DOCUMENT_PROPERTY = "shapeshifterAi";
+    static final String DOCUMENT_PROPERTY = ShapeshifterAiElements.DOCUMENT_PROPERTY;
 
     private final Provider<PipelineStore> pipelineStoreProvider;
     private final Provider<PipelineDataCache> pipelineDataCacheProvider;

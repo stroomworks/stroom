@@ -79,6 +79,7 @@ public final class InMemoryLearningPipelines implements LearningPipelines {
                          final Set<String> learningOff,
                          final Collection<LearnerState> wanted,
                          final boolean showDeleted,
+                         final String pipelineUuid,
                          final long offset,
                          final int limit) {
         if (NullSafe.isEmptyCollection(docUuids)) {
@@ -94,6 +95,9 @@ public final class InMemoryLearningPipelines implements LearningPipelines {
 
         final List<SupervisorLearner> matched = new ArrayList<>();
         for (final Learner learner : learners) {
+            if (pipelineUuid != null && !pipelineUuid.equals(learner.pipelineUuid())) {
+                continue;
+            }
             final List<Held> mine = held.stream().filter(row -> row.learner().equals(learner)).toList();
             final List<Recorded> sessions = recorded.stream()
                     .filter(attempt -> attempt.attempt().learner().equals(learner))

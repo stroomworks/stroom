@@ -146,6 +146,17 @@ class TestLearningPipelinesDao {
         assertThat(summarise(rows.learners(readable, learningOff, List.of(), false, 1L, 2).learners()))
                 .describedAs("a page from the middle")
                 .isEqualTo(summarise(memory.learners(readable, learningOff, List.of(), false, 1L, 2).learners()));
+        // One pipeline's learners, as its own editor asks for them
+        final String onePipeline = rows.learners(readable, learningOff, List.of(), false, 0L, 100).learners()
+                .getFirst().getLearner().getPipelineUuid();
+        final List<SupervisorLearner> ofOne = rows.learners(readable, learningOff, List.of(), false, onePipeline,
+                0L, 100).learners();
+        assertThat(ofOne).isNotEmpty()
+                .allSatisfy(row -> assertThat(row.getLearner().getPipelineUuid()).isEqualTo(onePipeline));
+        assertThat(summarise(ofOne))
+                .describedAs("one pipeline's")
+                .isEqualTo(summarise(memory.learners(readable, learningOff, List.of(), false, onePipeline, 0L, 100)
+                        .learners()));
     }
 
     @Test

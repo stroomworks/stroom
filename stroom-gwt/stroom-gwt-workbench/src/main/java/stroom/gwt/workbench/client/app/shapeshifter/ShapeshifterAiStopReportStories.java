@@ -17,23 +17,19 @@
 package stroom.gwt.workbench.client.app.shapeshifter;
 
 import stroom.gwt.workbench.client.app.editors.DocEditors;
-import stroom.gwt.workbench.client.app.editors.DocEditors.DocResource;
 import stroom.gwt.workbench.client.app.rest.RestFixtures;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
-import stroom.shapeshifter.client.component.ShapeshifterAiEditor;
-import stroom.shapeshifter.shared.ShapeshifterAiResource;
 
-import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Widget;
 
 import java.util.HashMap;
 import java.util.Map;
 
-/// The `App/Editors/ShapeshifterAiStopReports` stories: the Feeds tab of Stroom's real
-/// [ShapeshifterAiEditor] with the firewall's learning run stopped in each of the ways a run can stop, a
+/// The `App/Editors/ShapeshifterAiStopReports` stories: the AI Translation tab of Stroom's real pipeline
+/// editor ([AiPipelines]) with the firewall's learning run stopped in each of the ways a run can stop, a
 /// story each, with its report (error, details, suggestions) as the engine's `StopReports` words it. They
 /// are there to be seen: each says the headline is shown, and that the page has no problems.
 ///
@@ -136,11 +132,11 @@ public final class ShapeshifterAiStopReportStories {
                 + "TP 502).\", \"details\": [\"The server said: Bad gateway\"], \"suggestions\": [{\"text\": "
                 + "\"Open the model's document.\", \"action\": \"OPEN_MODEL\"}]}");
         REPORTS.put("no-model",
-                "{\"cause\": \"NO_MODEL\", \"error\": \"The document names no model to ask.\", \"details\":"
+                "{\"cause\": \"NO_MODEL\", \"error\": \"The Learning Flow names no model to ask.\", \"details\":"
                 + " [], \"suggestions\": [{\"text\": \"Choose a model on the Setup tab, or switch learning of"
                 + "f there.\", \"action\": \"CHANGE_MODEL\"}]}");
         REPORTS.put("no-elements",
-                "{\"cause\": \"SETUP\", \"error\": \"None of the element types this document allows can be "
+                "{\"cause\": \"SETUP\", \"error\": \"None of the element types this Learning Flow allows can be "
                 + "learned with.\", \"details\": [\"It allows: XMLParser, CombinedParser.\"], \"suggestions"
                 + "\": [{\"text\": \"Tick the parsers and filters the AI may choose from, under \\\"Fine-tune"
                 + " this step\\\" on the first learning step on the Setup tab.\", \"action\": \"CHANGE_STEPS\"}]}");
@@ -254,12 +250,12 @@ public final class ShapeshifterAiStopReportStories {
                 .story("NoModel", context -> render(context, ShapeshifterAiFixtures.NEW_DOC, "Error",
                         "no-model", false))
                 .withPlay(play -> expectReport(play,
-                        "Failed: the document names no model to ask."))
+                        "Failed: the Learning Flow names no model to ask."))
                 // None of the allowed element types can be learned with
                 .story("NoElementTypes", context -> render(context, ShapeshifterAiFixtures.DOC, "Parked",
                         "no-elements", false))
                 .withPlay(play -> expectReport(play,
-                        "Paused: none of the element types this document allows can be learned with."))
+                        "Paused: none of the element types this Learning Flow allows can be learned with."))
                 // The learning steps have a problem, so learning can't start
                 .story("InvalidSteps", context -> render(context, ShapeshifterAiFixtures.DOC, "Abandoned",
                         "invalid-steps", true))
@@ -290,7 +286,8 @@ public final class ShapeshifterAiStopReportStories {
         DocEditors.expectNoProblems(play);
     }
 
-    // The editor with the firewall's run stopped as the report says, its learner given up where it is
+    // The firewall's pipeline at its AI Translation tab, its run stopped as the report says, its learner given
+    // up where it is
     private static Widget render(final StoryContext context,
                                  final String doc,
                                  final String status,
@@ -300,21 +297,11 @@ public final class ShapeshifterAiStopReportStories {
         final String error = error(json);
         final String run = ShapeshifterAiFixtures.firewallRun(status, error, json);
         final String learners = givenUp
-                ? ShapeshifterAiFixtures.learnersGivenUp(error)
-                : ShapeshifterAiFixtures.LEARNERS;
-        final RestFixtures fixtures = ShapeshifterAiFixtures.editorRoutes(
-                        DocEditors.docSelectionRoutes(DocEditors.permissionRoutes(RestFixtures.builder())), doc, run,
-                        learners)
-                .build();
-        final ShapeshifterAiResource resource = GWT.create(ShapeshifterAiResource.class);
-        final String uuid = ShapeshifterAiFixtures.DOC_REF.getUuid();
-        return DocEditors.render(context, fixtures, false, (harness, injector) -> DocEditors.open(harness,
-                ShapeshifterAiFixtures.DOC_REF,
-                injector.getShapeshifterAiEditor(),
-                DocResource.of(
-                        restFactory -> restFactory.create(resource).method(res -> res.fetch(uuid)),
-                        (restFactory, doc2) -> restFactory.create(resource)
-                                .method(res -> res.update(doc2.getUuid(), doc2)))));
+                ? ShapeshifterAiFixtures.firewallGivenUp(error)
+                : "[" + ShapeshifterAiFixtures.FIREWALL_LEARNER + "]";
+        return AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
+                ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder(), doc, run, learners),
+                AiPipelines.ELEMENT);
     }
 
     // A report's error line, read from its JSON, where it comes after the cause and the step

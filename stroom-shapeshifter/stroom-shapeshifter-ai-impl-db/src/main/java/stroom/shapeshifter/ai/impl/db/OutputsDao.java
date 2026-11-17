@@ -90,6 +90,15 @@ public class OutputsDao implements Outputs {
                         final String pipeline,
                         final Produced produced,
                         final List<TextRange> spans) {
+        emitted(inputId, pipeline, produced, spans, null);
+    }
+
+    @Override
+    public void emitted(final long inputId,
+                        final String pipeline,
+                        final Produced produced,
+                        final List<TextRange> spans,
+                        final Integer records) {
         final long now = System.currentTimeMillis();
         final RecordBoundary boundary = produced.boundary();
         JooqUtil.context(connProvider, context -> context
@@ -112,6 +121,7 @@ public class OutputsDao implements Outputs {
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PROVISIONAL, produced.provisional())
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SCORE, produced.score())
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS, written(spans))
+                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_COUNT, records)
                 // A stream processed twice by one pipeline under one binding is one thing to replay; the
                 // later run is what its output is, so the row says the later one — including when it
                 // was produced, since the row keeps the id it was inserted with and the id cannot then
@@ -136,6 +146,10 @@ public class OutputsDao implements Outputs {
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS, written(spans) == null
                         ? ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS
                         : DSL.val(written(spans)))
+                // Likewise the count: a replay that can't count its records keeps what was counted
+                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_COUNT, records == null
+                        ? ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_COUNT
+                        : DSL.val(records))
                 .execute());
     }
 

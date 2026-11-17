@@ -32,6 +32,7 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.List;
+import java.util.Map;
 
 /// A Shapeshifter AI document's Setup tab ([SetupTab]): reads the document into its parts and writes it
 /// back. The model is chosen from the `stroom-ai` model documents the user may use; the checks are
@@ -44,6 +45,11 @@ import java.util.List;
 /// and the part shown is the stop chosen on it ([SetupStop]): a section, or a step, which the approach is
 /// told to show. The editor reaches it to put a readiness check right: [#switchLearningOn()],
 /// [#focusModel()], [#usePreset] and [#showSection].
+///
+/// What an Admin rarely changes is out of sight until it is needed. A section's Advanced options open of their
+/// own accord where they hold something not as a new document has it ([AdvancedSettings]). The steps are on the
+/// map once the user asks for them, and always where they are the document's own or something is wrong with them,
+/// which is where a readiness check sends a person to put them right.
 public class SetupTabController extends Controller {
 
     private final SetupTab view;
@@ -55,6 +61,10 @@ public class SetupTabController extends Controller {
     /// The stop chosen on the route map, whose part is shown.
     private SetupStop stop = SetupStop.of(SetupSection.LEARNING);
     private boolean readOnly = true;
+    /// Whether the user asked for the learning flow's steps on the route map.
+    private boolean stepsAsked;
+    /// Whether the steps were on the map as last drawn.
+    private boolean stepsWereShown;
 
     /// Made by GIN, with its tab.
     ///
@@ -90,11 +100,13 @@ public class SetupTabController extends Controller {
         view.setOnFallbackText(() -> {
             final int fallback = approach.fallbackIndex();
             if (fallback >= 0) {
+                stepsAsked = true;
                 go(SetupStop.step(fallback));
                 view.focus(stop);
             }
         });
         view.setOnLoadDefault(approach::showDefaultsMenu);
+        view.setOnStepsToggle(this::toggleSteps);
         view.setOnAddStep(approach::addAfterSelected);
         view.setOnStop(this::go);
         scorerList.setOnChange(() -> {
@@ -103,6 +115,8 @@ public class SetupTabController extends Controller {
         });
         // The approach marks the document changed itself; a change may choose another step
         approach.setOnChange(() -> {
+            // Steps changed in sight stay in sight, e.g. once a default setup is loaded over the document's own
+            stepsAsked = stepsAsked || stepsWereShown;
             view.setFallback(approach.hasFallback());
             followApproach();
             showSummary();
@@ -122,6 +136,9 @@ public class SetupTabController extends Controller {
     /// @param doc    Its content.
     public void read(final DocRef docRef, final ShapeshifterAiDoc doc) {
         this.doc = doc;
+        stepsAsked = false;
+        stepsWereShown = false;
+        view.foldAdvanced();
         view.setLearningMode(doc.getLearningMode());
         modelSelection.setSelectedEntityReference(doc.getModel(), true);
         view.setInstructions(doc.getInstructions());
@@ -249,6 +266,26 @@ public class SetupTabController extends Controller {
         showSummary();
     }
 
+    // The steps shown on the map, or hidden where they may be; the step shown, if one is, gives way to Learning
+    // steps
+    private void toggleSteps() {
+        stepsAsked = !stepsShown();
+        if (!stepsShown() && stop.isStep()) {
+            go(SetupStop.of(SetupSection.APPROACH));
+        } else {
+            showSummary();
+        }
+    }
+
+    // Whether the steps must be in sight: they are the document's own, or something is wrong with them
+    private boolean stepsNeeded() {
+        return approach.example() == null || approach.flowProblem() != null || !approach.stepProblems().isEmpty();
+    }
+
+    private boolean stepsShown() {
+        return stepsAsked || stepsNeeded();
+    }
+
     // A stop chosen on the route map: its part shown, and the map drawn with it chosen
     private void go(final SetupStop chosen) {
         if (chosen.isStep()) {
@@ -269,10 +306,22 @@ public class SetupTabController extends Controller {
     }
 
     private void showSummary() {
+        final boolean stepsShown = stepsShown();
+        stepsWereShown = stepsShown;
         if (doc != null) {
-            view.showMap(approach.getSteps(), SetupSummary.of(write(doc)), approach.stepProblems(), stop,
+            final ShapeshifterAiDoc shown = write(doc);
+            view.showMap(stepsShown
+                            ? approach.getSteps()
+                            : List.of(),
+                    SetupSummary.of(shown),
+                    stepsShown
+                            ? approach.stepProblems()
+                            : Map.of(),
+                    stop,
                     !readOnly && stop.isStep() && approach.canAddAfterSelected());
+            view.openAdvanced(AdvancedSettings.changed(shown));
         }
+        view.setStepsShown(stepsShown, !stepsNeeded());
         view.setStartingPoint(approach.example());
         view.setFlowProblem(approach.flowProblem());
     }

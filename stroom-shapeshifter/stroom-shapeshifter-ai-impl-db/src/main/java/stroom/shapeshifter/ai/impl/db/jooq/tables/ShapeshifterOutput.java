@@ -130,6 +130,11 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      */
     public final TableField<ShapeshifterOutputRecord, String> SNAPSHOT_ID = createField(DSL.name("snapshot_id"), SQLDataType.VARCHAR(255), this, "");
 
+    /**
+     * The column <code>stroom.shapeshifter_output.record_count</code>.
+     */
+    public final TableField<ShapeshifterOutputRecord, Integer> RECORD_COUNT = createField(DSL.name("record_count"), SQLDataType.INTEGER, this, "");
+
     private ShapeshifterOutput(Name alias, Table<ShapeshifterOutputRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

@@ -35,9 +35,9 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import javax.inject.Singleton;
 
-/// The Supervisor of ruling A28 in the menu: a screen of its own beside Jobs and the other monitoring
-/// screens, not a tab on one Shapeshifter AI document, because what a person wants to see is every
-/// attempt every document has made.
+/// The Smart Pipelines screen (the Supervisor of ruling A28) in the Monitoring menu: a screen of its own beside
+/// Jobs and the other monitoring screens, not a tab on one Learning Flow, because what an Admin wants to see is
+/// every Smart Pipeline of every Learning Flow, and where each stands ([SupervisorController]).
 @Singleton
 public class ShapeshifterAiSupervisorPlugin extends MonitoringPlugin<SupervisorController> {
 
@@ -45,7 +45,7 @@ public class ShapeshifterAiSupervisorPlugin extends MonitoringPlugin<SupervisorC
     ///
     /// @param eventBus               The application's event bus.
     /// @param contentManager         Opens the tab.
-    /// @param controllerProvider     Makes the Supervisor.
+    /// @param controllerProvider     Makes the Smart Pipelines screen.
     /// @param securityContext        Says whether the user may see it.
     /// @param documentPluginRegistry Where the tab's type is registered, to open it again.
     @Inject
@@ -65,7 +65,7 @@ public class ShapeshifterAiSupervisorPlugin extends MonitoringPlugin<SupervisorC
                             .priority(12)
                             .icon(SvgImage.AI)
                             .iconColour(IconColour.GREY)
-                            .text("Shapeshifter AI Supervisor")
+                            .text("Smart Pipelines")
                             .command(this::open)
                             .build());
         }

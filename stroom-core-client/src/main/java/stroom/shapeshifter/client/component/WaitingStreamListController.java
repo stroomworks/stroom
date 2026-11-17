@@ -33,9 +33,9 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// The selected learning pipeline's waiting streams ([WaitingStreamList]), the Supervisor's second tab
-/// beneath the pipelines (design 06 A115), fetched a page at a time. A stream waits until its learner's
-/// session promotes, or the learner gives up, and both are done from the pipeline's row and its sessions.
+/// A Smart Pipeline's waiting streams ([WaitingStreamList]), on its Learning Status tab under Learning history
+/// (design 06 A115), fetched a page at a time. A stream waits until its learner's session promotes, or the
+/// learner gives up, and both are done from Learning Status.
 public class WaitingStreamListController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);

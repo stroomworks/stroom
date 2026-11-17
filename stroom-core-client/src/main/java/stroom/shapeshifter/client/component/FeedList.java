@@ -16,79 +16,123 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.docref.DocRef;
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
 import stroom.shapeshifter.shared.SupervisorLearner;
+import stroom.svg.shared.SvgImage;
 import stroom.util.client.DataGridUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
+import stroom.widget.button.client.ToolbarButton;
+import stroom.widget.button.client.ToolbarButtonCell;
 import stroom.widget.button.client.ToolbarToggleButton;
 import stroom.widget.component.client.Component;
 import stroom.widget.datagrid.client.DataGrid;
 import stroom.widget.datagrid.client.PagerPanel;
-import stroom.widget.selection.client.SelectionBox;
+import stroom.widget.datagrid.client.model.ColumnSizing;
+import stroom.widget.quickfilter.client.QuickFilterPage;
 import stroom.widget.task.client.TaskMonitorFactory;
-import stroom.widget.tickbox.client.TickBox;
 import stroom.widget.util.client.MultiSelectionModel;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
+import com.google.gwt.cell.client.Cell.Context;
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.safehtml.client.SafeHtmlTemplates;
 import com.google.gwt.safehtml.shared.SafeHtml;
+import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.gwt.view.client.AbstractDataProvider;
 import com.google.gwt.view.client.Range;
 
-import java.util.EnumMap;
-import java.util.Map;
 import java.util.function.Consumer;
 
-/// The feeds a Shapeshifter AI document learns and translates, on its Feeds tab: a row each, named by its
-/// pipeline (one pipeline per feed, as the Pipeline Factory makes them), with a chip saying where it stands
-/// and a line of what it scores or what waits ([FeedSituation#listChip]). Above, which feeds to show, with
-/// how many there are of each, and whether to show those whose pipeline was deleted; the pager's toolbar
-/// has the tab's auto refresh.
+/// Smart Pipelines and where each stands: a Learning Flow's Pipelines tab, and the Smart Pipelines screen of
+/// every Learning Flow's ([FeedListController] fills it). A row each, named by its pipeline (one pipeline per
+/// feed, as the Pipeline Factory makes them), with a button that opens the pipeline at its Learning Status tab,
+/// where its learning is followed and acted on; on the Smart Pipelines screen, the Learning Flow it learns
+/// under; a chip saying where it stands; and a line of what it scores, what waits or why it stopped
+/// ([FeedSituation#listChip]). Above, a quick filter of the names; the pager's toolbar has auto refresh and the
+/// filter button, which opens the dialog of which pipelines to show ([FeedFilterEditorController]), as Stroom's
+/// other lists are filtered.
 public class FeedList extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
     private static final Templates TEMPLATES = GWT.create(Templates.class);
 
+    private static final String FILTER_TITLE = "Filter Pipelines";
+    private static final String FILTERING_TITLE = "Pipelines are being filtered; click to change or clear";
+
     @UiField
-    SelectionBox<FeedFilter> filter;
-    @UiField
-    TickBox showDeleted;
+    QuickFilterPage page;
     @UiField
     PagerPanel pager;
     @UiField
     ToolbarToggleButton autoRefreshButton;
     @UiField
+    ToolbarButton filterButton;
+    @UiField
     DataGrid<SupervisorLearner> dataGrid;
 
     private final MultiSelectionModelImpl<SupervisorLearner> selectionModel;
-    private final Map<FeedFilter, Integer> counts = new EnumMap<>(FeedFilter.class);
-    private Consumer<FeedFilter> onFilter = chosen -> {
-    };
-    private Consumer<Boolean> onShowDeleted = show -> {
+    private final Column<SupervisorLearner, String> learningFlowColumn =
+            DataGridUtil.textColumnBuilder(FeedList::learningFlow).build();
+    private boolean learningFlowShown;
+    private Consumer<SupervisorLearner> onOpen = learner -> {
     };
 
-    /// Makes an empty list, showing every feed.
+    /// Makes an empty list, unfiltered.
     public FeedList() {
         initWidget(BINDER.createAndBindUi(this));
         selectionModel = dataGrid.addDefaultSelectionModel(false);
+        // A pipeline since deleted has no button: there is nothing to open
+        final ToolbarButtonCell<SupervisorLearner> open = new ToolbarButtonCell<SupervisorLearner>(SvgImage.OPEN,
+                "feed-list__open",
+                learner -> "Open pipeline " + name(learner),
+                learner -> onOpen.accept(learner)) {
+            @Override
+            public void render(final Context context, final SupervisorLearner value, final SafeHtmlBuilder sb) {
+                if (value != null && !value.isPipelineDeleted()) {
+                    super.render(context, value, sb);
+                }
+            }
+        };
+        dataGrid.addColumn(DataGridUtil.column(learner -> learner, () -> open),
+                DataGridUtil.headingBuilder("Open").build(),
+                48);
         dataGrid.addResizableColumn(
-                DataGridUtil.htmlColumnBuilder(FeedList::row).build(),
-                DataGridUtil.headingBuilder("Feed").build(),
-                280);
-        filter.setDisplayValueFunction(value -> value == null
-                ? ""
-                : value.getDisplayValue() + (counts.containsKey(value)
-                        ? " (" + counts.get(value) + ")"
-                        : ""));
-        filter.addItems(FeedFilter.values());
-        filter.setValue(FeedFilter.ALL);
-        filter.setOnChange(chosen -> onFilter.accept(chosen));
-        showDeleted.setOnChange(show -> onShowDeleted.accept(Boolean.TRUE.equals(show)));
+                DataGridUtil.textColumnBuilder(FeedList::name).build(),
+                DataGridUtil.headingBuilder("Pipeline").build(),
+                320);
+        dataGrid.addResizableColumn(
+                DataGridUtil.htmlColumnBuilder(FeedList::chip).build(),
+                DataGridUtil.headingBuilder("Where it stands").build(),
+                160);
+        dataGrid.addAutoResizableColumn(
+                DataGridUtil.textColumnBuilder(FeedSituation::listSummary).build(),
+                DataGridUtil.headingBuilder("Detail").build(),
+                300);
+    }
+
+    /// Shows or hides the column of the Learning Flow each pipeline learns under, after the pipeline's name:
+    /// shown where the list is of more than one Learning Flow's pipelines.
+    ///
+    /// @param shown Whether the column is shown.
+    public void setLearningFlowShown(final boolean shown) {
+        if (shown == learningFlowShown) {
+            return;
+        }
+        learningFlowShown = shown;
+        if (shown) {
+            dataGrid.insertColumn(2, learningFlowColumn, DataGridUtil.headingBuilder("Learning Flow")
+                            .withToolTip("The Learning Flow the pipeline's AI Translator element learns under.")
+                            .build(),
+                    ColumnSizing.resizable(220));
+        } else {
+            dataGrid.removeColumn(learningFlowColumn);
+        }
     }
 
     /// @param dataProvider Gives the list its rows, a page at a time.
@@ -111,33 +155,29 @@ public class FeedList extends Component {
         dataGrid.setVisibleRange(new Range(0, PageRequest.DEFAULT_PAGE_LENGTH));
     }
 
-    /// Shows how many feeds each filter lists.
+    /// The filter button says whether anything is being left out, or deleted pipelines let in.
     ///
-    /// @param byFilter How many, by filter.
-    public void setCounts(final Map<FeedFilter, Integer> byFilter) {
-        if (!counts.equals(byFilter)) {
-            counts.clear();
-            counts.putAll(byFilter);
-            final FeedFilter chosen = filter.getValue();
-            filter.clear();
-            filter.addItems(FeedFilter.values());
-            filter.setValue(chosen);
-        }
+    /// @param filtering Whether the list is filtered by the dialog.
+    public void setFiltering(final boolean filtering) {
+        filterButton.setTitle(filtering
+                ? FILTERING_TITLE
+                : FILTER_TITLE);
     }
 
-    /// @param value Which feeds to show.
-    public void setFilter(final FeedFilter value) {
-        filter.setValue(value);
+    /// @param onFilterButton Told when the filter button is pressed, to open the dialog of which feeds to
+    ///                       show.
+    public void setOnFilterButton(final Runnable onFilterButton) {
+        filterButton.setOnClick(onFilterButton);
     }
 
-    /// @param onFilter Told which feeds the user wants shown.
-    public void setOnFilter(final Consumer<FeedFilter> onFilter) {
-        this.onFilter = onFilter;
+    /// @param onNameFilter Told the quick filter's text when it changes.
+    public void setOnNameFilter(final Consumer<String> onNameFilter) {
+        page.setOnFilterChange(onNameFilter);
     }
 
-    /// @param onShowDeleted Told whether the user wants feeds whose pipeline was deleted shown.
-    public void setOnShowDeleted(final Consumer<Boolean> onShowDeleted) {
-        this.onShowDeleted = onShowDeleted;
+    /// @param onOpen Told the feed whose pipeline the user opens.
+    public void setOnOpen(final Consumer<SupervisorLearner> onOpen) {
+        this.onOpen = onOpen;
     }
 
     /// @param onAutoRefreshToggle Told whether auto refresh is now on, when its button is pressed.
@@ -159,11 +199,22 @@ public class FeedList extends Component {
                 : pipeline + " / " + element;
     }
 
-    private static SafeHtml row(final SupervisorLearner learner) {
-        return TEMPLATES.row(name(learner),
-                chipClasses(FeedSituation.listTone(learner)),
-                FeedSituation.listChip(learner),
-                FeedSituation.listSummary(learner));
+    /// A pipeline's Learning Flow, by name.
+    ///
+    /// @param learner A pipeline's learner row.
+    /// @return Its Learning Flow's name, or its uuid where the name isn't known; empty for none.
+    static String learningFlow(final SupervisorLearner learner) {
+        final DocRef doc = learner.getDoc();
+        if (doc == null) {
+            return "";
+        }
+        return doc.getName() == null
+                ? NullSafe.string(doc.getUuid())
+                : doc.getName();
+    }
+
+    private static SafeHtml chip(final SupervisorLearner learner) {
+        return TEMPLATES.chip(chipClasses(FeedSituation.listTone(learner)), FeedSituation.listChip(learner));
     }
 
 
@@ -196,9 +247,8 @@ public class FeedList extends Component {
 
     interface Templates extends SafeHtmlTemplates {
 
-        // A feed's row: its name and chip on one line, what it scores or what waits beneath (escaped)
-        @Template("<div class=\"feed-list__row\"><span class=\"feed-list__name\">{0}</span>"
-                  + "<span class=\"{1}\">{2}</span><span class=\"feed-list__summary\">{3}</span></div>")
-        SafeHtml row(String name, String chipClasses, String chip, String summary);
+        // Where a feed stands, as a chip (escaped)
+        @Template("<span class=\"{0}\">{1}</span>")
+        SafeHtml chip(String chipClasses, String chip);
     }
 }

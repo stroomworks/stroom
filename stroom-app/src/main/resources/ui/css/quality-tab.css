@@ -1,0 +1,268 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+   A Smart Pipeline's Quality Assurance tab (stroom.shapeshifter.client.component.QualityTab): which AI Translator
+   element, where there are several; the figures its translation is judged by, as tiles that wrap, each tinted by
+   whether it calls for attention; and its learning runs' scores in a grid.
+*/
+
+.quality-tab {
+    overflow: auto;
+}
+
+.quality-tab__chooser {
+    padding: 10px 12px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.quality-tab__element {
+    width: 360px;
+    max-width: 100%;
+}
+
+.quality-tab__nothing {
+    padding: 24px 16px;
+    color: var(--text-color--low-emphasis);
+}
+
+.quality-tab__content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 12px 16px 16px;
+    max-width: 1100px;
+}
+
+.quality-tab__head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.quality-tab__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.quality-tab__question,
+.quality-tab__message {
+    color: var(--text-color--low-emphasis);
+}
+
+.quality-tab__figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+/* A figure: what it is, its value large, and what it rests on */
+.quality-tab__figure {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.quality-tab__figure--good {
+    background-color: rgba(var(--status__color--success-rgb), .1);
+}
+
+.quality-tab__figure--warning {
+    background-color: rgba(var(--status__color--warning-rgb), .14);
+}
+
+.quality-tab__figure--danger {
+    background-color: rgba(var(--status__color--danger-rgb), .1);
+}
+
+.quality-tab__figure--info {
+    background-color: rgba(var(--primary-rgb), .1);
+}
+
+.quality-tab__figure--idle {
+    background-color: transparent;
+}
+
+.quality-tab__figure-label {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+}
+
+.quality-tab__figure-value {
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.quality-tab__figure-note {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+}
+
+/* The runs' grid, a fixed height inside the tab, which scrolls as a whole */
+.quality-tab__runs {
+    flex-shrink: 0;
+    height: 280px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+/* The volume chart: one measure, one colour, thin bars with a gap, on a recessive baseline */
+.quality-tab__chart {
+    max-width: 640px;
+}
+
+.quality-tab__chart-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.quality-tab__chart-axis {
+    stroke: var(--border-color);
+    stroke-width: 1;
+}
+
+.quality-tab__chart-bar {
+    fill: rgb(var(--primary-rgb));
+}
+
+/* Each day's hit target, the height of the plot, so a short bar's tooltip is easy to reach */
+.quality-tab__chart-hit {
+    fill: transparent;
+}
+
+.quality-tab__chart-day:hover .quality-tab__chart-hit {
+    fill: rgba(var(--primary-rgb), .08);
+}
+
+.quality-tab__chart-label {
+    fill: var(--text-color--low-emphasis);
+    font-size: 11px;
+}
+
+.quality-tab__days {
+    flex-shrink: 0;
+    height: 240px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+/* Samples: a record beside what it became */
+.quality-tab__samples,
+.quality-tab__assessments {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.quality-tab__sample {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.quality-tab__sample-head {
+    font-weight: 500;
+}
+
+.quality-tab__sample-pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.quality-tab__sample-side {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.quality-tab__sample-title {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+}
+
+.quality-tab__code {
+    max-height: 200px;
+    overflow: auto;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background-color: rgba(127, 127, 127, .1);
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Assessments: what was said, by whom, and Mark resolved on an open issue */
+.quality-tab__actions {
+    display: flex;
+    gap: 8px;
+}
+
+.quality-tab__assessment {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.quality-tab__verdict {
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.quality-tab__verdict--good {
+    background-color: rgba(var(--status__color--success-rgb), .15);
+}
+
+.quality-tab__verdict--warning {
+    background-color: rgba(var(--status__color--warning-rgb), .2);
+}
+
+.quality-tab__verdict--idle {
+    background-color: transparent;
+}
+
+.quality-tab__assessment-comment {
+    max-width: 760px;
+    white-space: pre-wrap;
+}
+
+.quality-tab__assessment-meta {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+}
+
+.quality-tab__resolve {
+    margin-top: 4px;
+}

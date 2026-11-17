@@ -43,7 +43,7 @@ import com.google.web.bindery.event.shared.EventBus;
 /// the editor makes and owns both from the start.
 public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
 
-    private static final TabData FEEDS = new TabDataImpl("Feeds");
+    private static final TabData FEEDS = new TabDataImpl("Pipelines");
     private static final TabData SETUP = new TabDataImpl("Setup");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
@@ -83,8 +83,12 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
         setDefaultTab(FEEDS);
 
         feeds.setOnFix(this::fix);
-        feeds.setOnOpenSettings(() -> showSection(SetupSection.LEARNING));
-        feeds.setOnOpenSetup(this::openSetup);
+    }
+
+    /// Shows the Setup tab's AI model and instructions, e.g. from a pipeline whose feed waits because learning
+    /// is switched off.
+    public void showLearning() {
+        showSection(SetupSection.LEARNING);
     }
 
     @Override
@@ -142,8 +146,11 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
         }
     }
 
-    // A stopped run's suggestion followed on the Setup tab: the limits, the learning steps or the model
-    private void openSetup(final SuggestionAction action) {
+    /// A stopped run's suggestion followed on the Setup tab, from the pipeline whose run stopped: the limits,
+    /// the learning steps or the model.
+    ///
+    /// @param action The suggestion's action.
+    public void followSuggestion(final SuggestionAction action) {
         switch (action) {
             case CHANGE_LIMITS -> {
                 selectTab(SETUP);

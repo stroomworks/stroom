@@ -55,7 +55,7 @@ final class ShapeshifterAiFixtures {
                     "transitions": [{"on": "COVERAGE_SHORT", "goTo": "chain"}]}]}}""";
 
     /// A document as it is made: learning off, no model, no checks, the direct flow. It won't learn
-    /// anything, and its Feeds tab says so.
+    /// anything, and its Pipelines tab says so.
     static final String NEW_DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "promotionMode": "AUTOMATIC", "promotionFloor": 0.9, "heldOutFraction": 0.2,
@@ -83,25 +83,36 @@ final class ShapeshifterAiFixtures {
     private static final String DOC_JSON = "{\"type\": \"ShapeshifterAi\", \"uuid\": \"ss-1\", "
                                            + "\"name\": \"Firewall logs\"}";
 
-    /// `POST /shapeshifterAiSupervisor/v1/learners` for the document: the firewall's pipeline, waiting for
-    /// a person with two streams waiting, and the proxy's, translating. A learner's state and a run's status
-    /// are sent as their display values.
-    static final String LEARNERS = """
-            {"values": [
-              {"learner": {"pipelineUuid": "p-1", "elementId": "shapeshifterAi"}, "doc": DOC,
-                "pipeline": {"type": "Pipeline", "uuid": "p-1", "name": "Firewall pipeline"},
-                "state": "Waiting for a person", "waiting": 2, "records": 0, "guidance": 1, "raised": false,
-                "belowThreshold": false, "provisional": false, "pipelineDeleted": false,
-                "lastSessionMs": 1761800600000, "oldestWaitMs": 1761700000000},
-              {"learner": {"pipelineUuid": "p-3", "elementId": "shapeshifterAi"}, "doc": DOC,
-                "pipeline": {"type": "Pipeline", "uuid": "p-3", "name": "Proxy pipeline"},
-                "state": "Serving", "bindingUuid": "b-1",
-                "fragment": {"type": "Pipeline", "uuid": "f-1", "name": "Proxy translation"},
-                "promotedScore": 0.95, "rollingScore": 0.98, "records": 1204,
-                "waiting": 0, "guidance": 0, "raised": false, "belowThreshold": false, "provisional": false,
-                "pipelineDeleted": false, "lastSessionMs": 1761600000000}],
-              "pageResponse": {"offset": 0, "length": 2, "total": 2, "exact": true}}"""
-            .replace("DOC", DOC_JSON);
+    /// The firewall's learner: its pipeline waiting for a person, with two streams waiting. A learner's state
+    /// and a run's status are sent as their display values.
+    static final String FIREWALL_LEARNER = """
+            {"learner": {"pipelineUuid": "p-1", "elementId": "shapeshifterAi"}, "doc": DOC,
+              "pipeline": {"type": "Pipeline", "uuid": "p-1", "name": "Firewall pipeline"},
+              "state": "Waiting for a person", "waiting": 2, "records": 0, "guidance": 1, "raised": false,
+              "belowThreshold": false, "provisional": false, "pipelineDeleted": false,
+              "lastSessionMs": 1761800600000, "oldestWaitMs": 1761700000000}""".replace("DOC", DOC_JSON);
+
+    /// The firewall's learner translating with what it learned: its pipeline's learned translation, as the
+    /// Learning Status tab links to it.
+    static final String FIREWALL_TRANSLATING = FIREWALL_LEARNER.replace("\"state\": \"Waiting for a person\",",
+            "\"state\": \"Serving\", \"bindingUuid\": \"b-2\", \"fragment\": {\"type\": \"Pipeline\", "
+            + "\"uuid\": \"f-2\", \"name\": \"Firewall pipeline learned\"}, \"promotedScore\": 0.97,");
+
+    /// The proxy's learner: its pipeline translating.
+    static final String PROXY_LEARNER = """
+            {"learner": {"pipelineUuid": "p-3", "elementId": "shapeshifterAi"}, "doc": DOC,
+              "pipeline": {"type": "Pipeline", "uuid": "p-3", "name": "Proxy pipeline"},
+              "state": "Serving", "bindingUuid": "b-1",
+              "fragment": {"type": "Pipeline", "uuid": "f-1", "name": "Proxy translation"},
+              "promotedScore": 0.95, "rollingScore": 0.98, "records": 1204,
+              "waiting": 0, "guidance": 0, "raised": false, "belowThreshold": false, "provisional": false,
+              "pipelineDeleted": false, "lastSessionMs": 1761600000000}""".replace("DOC", DOC_JSON);
+
+    /// `POST /shapeshifterAiSupervisor/v1/learners` for the document: the firewall's pipeline and the
+    /// proxy's.
+    static final String LEARNERS = "{\"values\": [" + FIREWALL_LEARNER + ", " + PROXY_LEARNER + "], "
+                                   + "\"pageResponse\": {\"offset\": 0, \"length\": 2, \"total\": 2, "
+                                   + "\"exact\": true}}";
 
     /// The question the paused run stopped at, as a turn records it.
     static final String TURN_4 = "Configure: dsParser TextConverter, after 1 shortfall(s)";
@@ -192,13 +203,14 @@ final class ShapeshifterAiFixtures {
                 .replace("REPORT", report);
     }
 
-    /// [#LEARNERS] with the firewall's learner given up, for the reason given.
+    /// The firewall's pipeline's learners ([#FIREWALL_LEARNER]) with its learner given up, for the reason
+    /// given, as `GET /shapeshifterAiSupervisor/v1/pipelines/p-1/learners` lists them.
     ///
     /// @param reason Why it gave up: its run's error line.
     /// @return The learners, as JSON.
-    static String learnersGivenUp(final String reason) {
-        return LEARNERS.replace("\"state\": \"Waiting for a person\",",
-                "\"state\": \"Given up\", \"givenUpReason\": \"" + json(reason) + "\",");
+    static String firewallGivenUp(final String reason) {
+        return "[" + FIREWALL_LEARNER.replace("\"state\": \"Waiting for a person\",",
+                "\"state\": \"Given up\", \"givenUpReason\": \"" + json(reason) + "\",") + "]";
     }
 
     // Text as it goes between a JSON string's quotes
@@ -220,6 +232,11 @@ final class ShapeshifterAiFixtures {
                 {"number": 2, "stepId": "parse", "kind": "CONFIGURE", "candidate": 1,
                   "question": "Configure: dsParser TextConverter", "answer": "<dataSplitter/>",
                   "outcome": "PASSED", "answeredBy": "model"}]}""".replace("DOC", DOC_JSON);
+
+    /// The firewall's run that learned the translation it runs, promoted: [#PROMOTED] as the firewall's.
+    static final String FIREWALL_PROMOTED = PROMOTED
+            .replace("\"id\": 9", "\"id\": 7")
+            .replace("\"pipelineUuid\": \"p-3\"", "\"pipelineUuid\": \"p-1\"");
 
     private static final String GUIDANCE = """
             [{"id": 1, "message": "Timestamps are in UTC.", "author": "admin", "timeMs": 1761700000000}]""";
@@ -265,7 +282,7 @@ final class ShapeshifterAiFixtures {
     /// @param builder  The story's fixtures.
     /// @param doc      The document, as JSON.
     /// @param firewall The firewall's learning run, as JSON.
-    /// @param learners The document's learners, as JSON, e.g. [#LEARNERS] or [#learnersGivenUp].
+    /// @param learners The document's learners, as JSON, e.g. [#LEARNERS].
     /// @return The builder.
     static RestFixtures.Builder editorRoutes(final RestFixtures.Builder builder,
                                              final String doc,
@@ -288,6 +305,29 @@ final class ShapeshifterAiFixtures {
                 .post("/shapeshifterAiSupervisor/v1/learners/ss-1/waiting", RestReply.json(WAITING))
                 .get("/shapeshifterAiSupervisor/v1/guidance/ss-1", RestReply.json(GUIDANCE))
                 .post("/shapeshifterAiSupervisor/v1/guidance/ss-1", RestReply.json(MORE_GUIDANCE));
+    }
+
+    /// Adds the routes a pipeline's AI Translation tab asks for: what the Supervisor says about the firewall's
+    /// and the proxy's pipelines' learners (the firewall's as given), their runs, and does when asked; and the
+    /// settings of the document they learn under.
+    ///
+    /// @param builder          The story's fixtures.
+    /// @param doc              The document they learn under, as JSON, e.g. [#DOC].
+    /// @param firewall         The firewall's learning run, as JSON, e.g. [#PAUSED] or [#FAILED].
+    /// @param firewallLearners The firewall's pipeline's learners, as JSON, e.g. `[FIREWALL_LEARNER]`.
+    /// @return The builder.
+    static RestFixtures.Builder pipelineRoutes(final RestFixtures.Builder builder,
+                                               final String doc,
+                                               final String firewall,
+                                               final String firewallLearners) {
+        return editorRoutes(builder, doc, firewall)
+                .get("/shapeshifterAiSupervisor/v1/pipelines/p-1/learners", RestReply.json(firewallLearners))
+                .get("/shapeshifterAiSupervisor/v1/pipelines/p-3/learners",
+                        RestReply.json("[" + PROXY_LEARNER + "]"))
+                .get("/shapeshifterAiSupervisor/v1/learners/ss-1/settings", RestReply.json(doc))
+                // Nothing said by QA of any pipeline, which Learning Status asks to flag open issues; a story of
+                // the Quality Assurance tab gives its own replies first
+                .route(RequestMatcher.get("/shapeshifterAiQuality/v1/*"), RestReply.json("[]"));
     }
 
     private static String page(final String run) {

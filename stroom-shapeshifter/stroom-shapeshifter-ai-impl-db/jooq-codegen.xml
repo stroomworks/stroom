@@ -21,7 +21,7 @@
             <name>org.jooq.meta.mysql.MySQLDatabase</name>
             <inputSchema>__INPUT_SCHEMA__</inputSchema>
             <outputSchema>stroom</outputSchema>
-            <includes>shapeshifter_learner_state|shapeshifter_binding|shapeshifter_spend|shapeshifter_attempt|shapeshifter_turn|shapeshifter_output|shapeshifter_guidance|shapeshifter_deferral|shapeshifter_corpus|shapeshifter_snapshot|shapeshifter_deleted_pipeline</includes>
+            <includes>shapeshifter_learner_state|shapeshifter_binding|shapeshifter_spend|shapeshifter_attempt|shapeshifter_turn|shapeshifter_output|shapeshifter_guidance|shapeshifter_deferral|shapeshifter_corpus|shapeshifter_snapshot|shapeshifter_deleted_pipeline|shapeshifter_assessment</includes>
             <excludes>shapeshifter_ai_schema_history</excludes>
             <recordVersionFields>version</recordVersionFields>
             <forcedTypes>

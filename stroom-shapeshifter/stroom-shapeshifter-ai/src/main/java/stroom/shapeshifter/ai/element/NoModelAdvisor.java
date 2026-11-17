@@ -31,7 +31,7 @@ public class NoModelAdvisor implements Advisor {
 
     @Override
     public String ask(final List<Exchange> transcript, final Question question) {
-        throw new ModelNotChosenException("The Shapeshifter AI document names no model to ask. Choose one on its "
+        throw new ModelNotChosenException("The Learning Flow names no model to ask. Choose one on its "
                                         + "Setup tab, or switch learning off there.");
     }
 }

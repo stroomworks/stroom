@@ -55,6 +55,7 @@ import org.xml.sax.XMLReader;
  */
 @ConfigurableElement(
         type = ShapeshifterAiParser.TYPE,
+        displayValue = "AI Translator",
         category = Category.PARSER,
         description = """
                 A supervised stage over a raw stream: runs each stream through the fragment this \
@@ -85,7 +86,7 @@ public class ShapeshifterAiParser extends AbstractParser implements HasStepDetai
         this.supervision = supervision;
     }
 
-    @PipelineProperty(description = "The Shapeshifter AI document that governs this stage.", displayPriority = 1)
+    @PipelineProperty(description = "The Learning Flow that governs this stage.", displayPriority = 1)
     @PipelinePropertyDocRef(types = ShapeshifterAiDoc.TYPE)
     public void setShapeshifterAi(final DocRef docRef) {
         this.docRef = docRef;

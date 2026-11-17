@@ -6,7 +6,7 @@
              xmlns:ps="urn:import:stroom.pipeline.structure.client.component"
              xmlns:form="urn:import:stroom.widget.form.client">
     <!-- A pipeline's Structure tab (pipeline-structure.css): its elements above their properties
-         and pipeline references -->
+         and pipeline references, with anything more about the element selected above its properties -->
     <g:SimplePanel addStyleNames="dock-container-vertical">
         <split:SplitPane vertical="true" thin="true" sizes="40%, *"
                          names="Pipeline elements, Properties and references" addStyleNames="dock-max">
@@ -41,9 +41,14 @@
             </g:FlowPanel>
             <split:SplitPane vertical="true" thin="true" sizes="50%, *"
                              names="Properties, Pipeline references" addStyleNames="max">
-                <g:SimplePanel>
-                    <ps:PropertyList ui:field="properties"/>
-                </g:SimplePanel>
+                <!-- Above the properties, what else there is to say about the element selected, e.g. what an
+                     AI Translator has learned; empty for most -->
+                <g:FlowPanel styleName="max dock-container-vertical">
+                    <g:SimplePanel ui:field="elementDetail" styleName="dock-min"/>
+                    <g:SimplePanel styleName="dock-max">
+                        <ps:PropertyList ui:field="properties"/>
+                    </g:SimplePanel>
+                </g:FlowPanel>
                 <g:SimplePanel>
                     <ps:PipelineReferenceList ui:field="pipelineReferences"/>
                 </g:SimplePanel>

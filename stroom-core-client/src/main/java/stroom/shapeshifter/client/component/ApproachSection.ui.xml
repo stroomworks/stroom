@@ -1,6 +1,6 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
-<!-- The step of the learning flow chosen on the Setup tab's route map (approach-section.css): its card and the
-     place to add a step after it, or, for the fallback, what it is; then the question text it is asked with -->
+<!-- The step of the learning flow chosen on the Setup tab's route map (approach-section.css): its card, or, for
+     the fallback, what it is; then the question text it is asked with -->
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:b="urn:import:stroom.widget.button.client"

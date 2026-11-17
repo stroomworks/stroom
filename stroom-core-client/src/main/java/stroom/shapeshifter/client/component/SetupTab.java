@@ -20,6 +20,7 @@ import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.PromotionMode;
+import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.Button;
 import stroom.widget.button.client.LinkButton;
 import stroom.widget.component.client.AriaPanel;
@@ -41,21 +42,28 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
-/// A Shapeshifter AI document's Setup tab (design 07): a route map ([RouteMap]) down the side, and beside it
-/// the one part of the setup chosen on it ([SetupStop]). The map's stops are the sections ([SetupSection]),
-/// in the order a translation meets them, with the learning flow's steps under Learning steps; each says
+/// A Learning Flow's Setup tab (design 07): a route map ([RouteMap]) down the side, and beside it the one part
+/// of the setup chosen on it ([SetupStop]). The map's stops are the sections ([SetupSection]), in the order a
+/// translation meets them, with the learning flow's steps under Learning steps once they are shown; each says
 /// what it is set to or what is wrong in it ([SetupSummary]).
 ///
+/// What an Admin needs to configure the AI is in sight; what they rarely change is folded under each section's
+/// "Advanced options" ([Disclosure], [AdvancedSettings]), and the steps are on the map only once someone
+/// customises them, or they are no starting point, or something is wrong with them.
+///
 /// The parts: **AI model and instructions**: whether it learns, the model and the instructions. **Learning steps**:
-/// Load default setup (a menu of the starting points), what is wrong with the flow as a whole, and what a run may
-/// spend. **A step**: its card and question text ([ApproachSection]). **Quality checks**: the checks ([ScorerList])
-/// and the lines kept back to test against. **Approving new translations**: the pass mark, whether a person
-/// approves, how many records before a translation is trusted, and what a feed gets when the transform can't be
-/// finished (the fallback). **Monitoring translations in use**: when a translation in use is flagged, how many
-/// records are kept to check later ones against, and when a waiting stream is overdue. Fractions are shown as whole
-/// percentages. [SetupTabController] fills it.
+/// which starting point the steps are, showing or hiding them, Load default setup (a menu of the starting points,
+/// once they are shown), what is wrong with the flow as a whole, and what a run may spend; under Advanced options,
+/// the tries per step and the largest sample. **A step**: its card and question text ([ApproachSection]).
+/// **Quality checks**: the starting set; under Advanced options, the checks ([ScorerList]) and the lines kept back
+/// to test against. **Approving new translations**: the pass mark and whether a person approves; under Advanced
+/// options, how many records before a translation is trusted, and what a feed gets when the transform can't be
+/// finished (the fallback). **Monitoring translations in use**: when a translation in use is flagged; under
+/// Advanced options, how many records are kept to check later ones against, and when a waiting stream is overdue.
+/// Fractions are shown as whole percentages. [SetupTabController] fills it.
 public class SetupTab extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -84,6 +92,8 @@ public class SetupTab extends Component {
     @UiField
     TextArea instructions;
     @UiField
+    LinkButton stepsToggle;
+    @UiField
     Button loadDefault;
     @UiField
     Label approachStatus;
@@ -91,6 +101,8 @@ public class SetupTab extends Component {
     Label flowProblem;
     @UiField
     ApproachSection approach;
+    @UiField
+    Disclosure approachAdvanced;
     @UiField
     ValueSpinner maxAttempts;
     @UiField
@@ -104,6 +116,8 @@ public class SetupTab extends Component {
     @UiField
     Label presetDescription;
     @UiField
+    Disclosure qualityAdvanced;
+    @UiField
     ScorerList scorerList;
     @UiField
     ValueSpinner heldOutFraction;
@@ -111,6 +125,8 @@ public class SetupTab extends Component {
     ValueSpinner promotionFloor;
     @UiField
     RadioGroup<PromotionMode> promotionMode;
+    @UiField
+    Disclosure goingLiveAdvanced;
     @UiField
     ValueSpinner minRecordsToLearn;
     @UiField
@@ -120,11 +136,14 @@ public class SetupTab extends Component {
     @UiField
     ValueSpinner relearnThreshold;
     @UiField
+    Disclosure inServiceAdvanced;
+    @UiField
     ValueSpinner regressionCap;
     @UiField
     DurationPicker maxDeferralAge;
 
     private final Map<SetupSection, AriaPanel> parts = new EnumMap<>(SetupSection.class);
+    private final Map<SetupSection, Disclosure> advanced = new EnumMap<>(SetupSection.class);
     /// The durations as read, kept while the pickers still show them ([MillisDurations#toMillis]).
     private long readAttemptBudgetMs;
     private long readMaxDeferralAgeMs;
@@ -133,6 +152,8 @@ public class SetupTab extends Component {
     private Runnable onChange = () -> {
     };
     private Consumer<Element> onLoadDefault = opener -> {
+    };
+    private Runnable onStepsToggle = () -> {
     };
     private Runnable onMaxAttempts = () -> {
     };
@@ -151,6 +172,11 @@ public class SetupTab extends Component {
         parts.put(SetupSection.QUALITY, qualityPart);
         parts.put(SetupSection.GOING_LIVE, goingLivePart);
         parts.put(SetupSection.IN_SERVICE, inServicePart);
+        advanced.put(SetupSection.APPROACH, approachAdvanced);
+        advanced.put(SetupSection.QUALITY, qualityAdvanced);
+        advanced.put(SetupSection.GOING_LIVE, goingLiveAdvanced);
+        advanced.put(SetupSection.IN_SERVICE, inServiceAdvanced);
+        stepsToggle.setOnClick(() -> onStepsToggle.run());
         loadDefault.getElement().setAttribute("aria-haspopup", "menu");
         loadDefault.setOnClick(() -> {
             if (!isReadOnly()) {
@@ -273,13 +299,48 @@ public class SetupTab extends Component {
 
     // ---- Learning steps ----
 
+    /// Shows the learning flow's steps on the route map, or hides them.
+    ///
+    /// @param shown   Whether they are shown.
+    /// @param canHide Whether they may be hidden again: not where they are the document's own, or something
+    ///                is wrong with them.
+    public void setStepsShown(final boolean shown, final boolean canHide) {
+        stepsToggle.setVisible(!shown || canHide);
+        stepsToggle.setText(shown
+                ? "Hide the learning steps"
+                : "Customise the learning steps");
+        stepsToggle.setAriaLabel(shown
+                ? "Hide the learning steps from the route map"
+                : "Customise the learning steps: show them on the route map");
+        loadDefault.setVisible(shown);
+    }
+
+    /// Opens the Advanced options of some sections, e.g. those holding something not as a new document has it
+    /// ([AdvancedSettings]); the others are left as they are.
+    ///
+    /// @param sections The sections.
+    public void openAdvanced(final Set<SetupSection> sections) {
+        sections.forEach(section -> NullSafe.consume(advanced.get(section), disclosure -> disclosure.setOpen(true)));
+    }
+
+    /// Folds every section's Advanced options, e.g. before another document is read.
+    public void foldAdvanced() {
+        advanced.values().forEach(disclosure -> disclosure.setOpen(false));
+    }
+
+    /// @param section A section.
+    /// @return Whether its Advanced options are open; false for one with none.
+    public boolean isAdvancedOpen(final SetupSection section) {
+        return NullSafe.test(advanced.get(section), Disclosure::isOpen);
+    }
+
     /// Says which default setup the flow is exactly, or that it is the document's own.
     ///
     /// @param example The example the steps are, or null for none.
     public void setStartingPoint(final FlowExample example) {
         approachStatus.setText(example == null
                 ? "This is the document's own approach. Load a default setup to replace it."
-                : "In use: " + PlainWords.example(example) + ". Change any step and it becomes the "
+                : "In use: " + PlainWords.example(example) + ". Customise any step and it becomes the "
                   + "document's own.");
     }
 
@@ -465,6 +526,11 @@ public class SetupTab extends Component {
     ///                  the step chosen opens.
     public void setOnAddStep(final Consumer<Element> onAddStep) {
         map.setOnAdd(onAddStep);
+    }
+
+    /// @param onStepsToggle Run when the user asks to show or hide the learning steps on the route map.
+    public void setOnStepsToggle(final Runnable onStepsToggle) {
+        this.onStepsToggle = onStepsToggle;
     }
 
     /// @param onMaxAttempts Run when the user changes the tries a step has where it doesn't say.

@@ -1,0 +1,18 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A QA person's assessment of a Smart Pipeline's translated output (assessment-editor.css): whether it looks
+     right or has an issue for the Data Provider, and what they found -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client">
+    <g:FlowPanel styleName="max form assessment-editor">
+        <form:FormGroup identity="shapeshifterAiAssessmentVerdict" label="The translated output"
+                        helpText="An issue is flagged to the Data Provider on the pipeline's Learning Status tab, and stays open until someone who may edit the pipeline resolves it.">
+            <form:RadioGroup ui:field="verdict"/>
+        </form:FormGroup>
+        <form:FormGroup ui:field="commentGroup" identity="shapeshifterAiAssessmentComment" label="What you found"
+                        helpText="Which records or fields, and what is wrong or right with them. Needed for an issue, so that the Data Provider can fix it.">
+            <form:TextArea ui:field="comment" addStyleNames="w-100 assessment-editor__comment"
+                           placeholder="For example: the source and destination ports are swapped in Network/Open events."/>
+        </form:FormGroup>
+    </g:FlowPanel>
+</ui:UiBinder>

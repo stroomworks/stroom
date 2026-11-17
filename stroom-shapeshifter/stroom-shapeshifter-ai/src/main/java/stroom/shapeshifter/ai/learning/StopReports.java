@@ -236,7 +236,7 @@ public final class StopReports {
     /// @param allowed The element types it allows.
     /// @return The report.
     public static StopReport noElements(final List<String> allowed) {
-        return setup("None of the element types this document allows can be learned with.",
+        return setup("None of the element types this Learning Flow allows can be learned with.",
                 List.of("It allows: " + String.join(", ", allowed) + "."),
                 "Tick the parsers and filters the AI may choose from, under \"Fine-tune this step\" on the "
                 + "first learning step on the Setup tab.");
@@ -296,7 +296,7 @@ public final class StopReports {
                 : "The model \"" + model + "\"";
         final Suggestion openModel = new Suggestion("Open the model's document.", SuggestionAction.OPEN_MODEL);
         if (find(failure, ModelNotChosenException.class) != null) {
-            return new StopReport(StopCause.NO_MODEL, null, "The document names no model to ask.", List.of(),
+            return new StopReport(StopCause.NO_MODEL, null, "The Learning Flow names no model to ask.", List.of(),
                     List.of(new Suggestion("Choose a model on the Setup tab, or switch learning off there.",
                             SuggestionAction.CHANGE_MODEL)));
         }

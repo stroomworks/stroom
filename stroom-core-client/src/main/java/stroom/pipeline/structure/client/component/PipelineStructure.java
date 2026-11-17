@@ -25,13 +25,17 @@ import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.IsWidget;
+import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 
 import java.util.function.BiConsumer;
 
 /// A pipeline's Structure tab: its elements (a tree, with buttons to add, remove, edit and restore
 /// them, the pipeline it inherits from and a button to view its source) above the selected
-/// element's properties and pipeline references (lists its controller shows here).
+/// element's properties and pipeline references (lists its controller shows here), with, above the
+/// properties, anything more its owner has to say about the element selected (e.g. what an AI
+/// Translator has learned).
 public class PipelineStructure extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -48,6 +52,8 @@ public class PipelineStructure extends Component {
     DropDownBox inherit;
     @UiField
     PipelineTree tree;
+    @UiField
+    SimplePanel elementDetail;
     @UiField
     PropertyList properties;
     @UiField
@@ -82,6 +88,12 @@ public class PipelineStructure extends Component {
     /// controller to.
     public PropertyList getProperties() {
         return properties;
+    }
+
+    /// @param detail What more there is to say about the element selected, shown above its
+    ///               properties, which shows or hides itself; null for nothing.
+    public void setElementDetail(final IsWidget detail) {
+        elementDetail.setWidget(detail);
     }
 
     /// @return The selected element's pipeline references, which its controller attaches the

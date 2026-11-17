@@ -16,7 +16,8 @@
 
 package stroom.shapeshifter.client.component;
 
-/// Something a person can do to a feed on the Feeds tab, whichever of the Supervisor's levels it acts on:
+/// Something a person can do to a Smart Pipeline on its Learning Status tab, whichever of the Supervisor's
+/// levels it acts on:
 /// its learning run (approve, reject, grant, exhaust, answer), its learner (learn again, stop) or the
 /// translation it has (accept, improve, remove, open). Each says what its button says.
 public enum FeedAction {
@@ -40,10 +41,6 @@ public enum FeedAction {
     GIVE_UP("Stop learning…"),
     /// Takes the translation back (A28); asks why.
     RETRACT("Remove translation…"),
-    /// Opens the feed's pipeline.
-    OPEN_PIPELINE("Open the pipeline"),
-    /// Opens the translation's pipeline fragment.
-    OPEN_TRANSLATION("Open the translation"),
     /// Opens the document's Setup tab at Learning, where learning is switched on.
     OPEN_SETTINGS("Go to Setup");
 

@@ -75,7 +75,7 @@ public class WaitingStreamList extends Component {
                         ? "Raised"
                         : "")).build(),
                 DataGridUtil.headingBuilder("Raised")
-                        .withToolTip("A stream that has waited past the document's maximum deferral age. It "
+                        .withToolTip("A stream that has waited past its Learning Flow's maximum deferral age. It "
                                      + "goes on waiting; this is the flag that says somebody should look.")
                         .build(),
                 70);

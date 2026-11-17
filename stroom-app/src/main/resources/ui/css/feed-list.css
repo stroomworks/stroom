@@ -14,43 +14,9 @@
  * limitations under the License.
  */
 
-/* The feeds on a Shapeshifter AI document's Feeds tab (FeedList): which to show, and a row each with its
-   name, a chip of where it stands and a line of what it scores or what waits. */
-
-/* Kept at its own height: it scrolls (a form), so in the column it would else be squeezed by the list, and
-   the list's toolbar would sit against its last control. Its own padding (form-padding), not the focus
-   ring's room and the negative margin a form has otherwise. */
-.feed-list__tools {
-    flex-shrink: 0;
-    padding: 10px 12px 12px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.feed-list__row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 2px 8px;
-    padding: 3px 0;
-    white-space: normal;
-}
-
-.feed-list__name {
-    font-weight: 500;
-    overflow-wrap: anywhere;
-}
-
-.feed-list__summary {
-    grid-column: 1 / -1;
-    font-size: 12px;
-    color: var(--text-color--low-emphasis);
-}
-
-/* On a selected or focused row the low-emphasis grey would not read against the row's colour */
-.data-grid__row--selected .feed-list__summary,
-.data-grid__cell--keyboard .feed-list__summary {
-    color: inherit;
-}
+/* The feeds on a Shapeshifter AI document's Feeds tab (FeedList): a row each with a button that opens its
+   pipeline, a chip of where it stands and a line of what it scores or what waits. The quick filter above and
+   the filter button in the pager's toolbar are Stroom's own, styled as everywhere else. */
 
 /* Where it stands: the theme's status colours, tinted, never the accent; the text stays the text colour */
 .feed-list__chip {

@@ -81,9 +81,13 @@ import java.util.stream.Collectors;
 /// The Supervisor of A28: attempts across every Shapeshifter AI document, and what a person may do to
 /// one they are reading.
 ///
-/// Every attempt names the document it was learning for, and a person sees only the attempts of the
-/// documents they may see: an attempt's transcript carries what the model was told about a feed's data,
-/// so it is read by the document's permission and not by a permission of its own.
+/// What is learned for a feed belongs to the feed's pipeline, and is held to the pipeline's permissions: a
+/// person who may view a pipeline may read its learners' sessions, waiting streams and notes (an attempt's
+/// transcript carries what the model was told about that feed's data), and a person who may edit it may
+/// act on them: leave a note, approve, reject, give more, relearn, give up, improve, accept or retract. A
+/// pipeline since deleted has no permissions to ask; its learning is read by its document's VIEW instead,
+/// and nothing more is done with it (A137). The lists across documents (the learners and attempts of every
+/// document, the backlog) are of the documents a person may view, as an administrator's overview.
 @AutoLogged
 public class SupervisorResourceImpl implements SupervisorResource {
 
@@ -167,17 +171,50 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), found.total(), true));
     }
 
+    /// The learners of one pipeline, as its own editor shows them: those of its Shapeshifter AI elements that
+    /// have learned or are learning, under whichever documents they run under. Held to the pipeline's VIEW.
+    @Override
+    public List<SupervisorLearner> pipelineLearners(final String pipelineUuid) {
+        if (NullSafe.isBlankString(pipelineUuid) || !mayPipeline(pipelineUuid, DocumentPermission.VIEW)) {
+            throw new PermissionException(securityContextProvider.get().getUserRef(),
+                    "You do not have permission to read this pipeline");
+        }
+        final Map<String, DocRef> every = new LinkedHashMap<>();
+        storeProvider.get().listDocuments().forEach(docRef -> every.put(docRef.getUuid(), docRef));
+        final Map<String, ShapeshifterAiDoc> docs = documents(every.values());
+        final Set<String> learningOff = docs.values().stream()
+                .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
+                .map(ShapeshifterAiDoc::getUuid)
+                .collect(Collectors.toSet());
+        final LearningPipelines.Page found = learningPipelinesProvider.get().learners(every.keySet(),
+                learningOff, List.of(), false, pipelineUuid, 0L, PAGE_LIMIT);
+        final DocFinder docFinder = docFinderProvider.get();
+        final long now = System.currentTimeMillis();
+        return found.learners().stream()
+                .map(row -> row.named(docFinder.decorate(row.getPipeline()),
+                        every.get(row.getDoc().getUuid()),
+                        row.getOldestWaitMs() != null
+                        && now - row.getOldestWaitMs() > maxDeferralAge(docs, row.getDoc().getUuid()),
+                        belowThreshold(docs.get(row.getDoc().getUuid()), row.getRollingScore())))
+                .toList();
+    }
+
+    /// The document a learner runs under, for its pipeline's editor to show where it stands: its flow,
+    /// pass mark and limits. Held to the pipeline's VIEW: the settings are how that pipeline's feed is
+    /// learned, which a person who may see the pipeline may read without being able to open the document.
+    @Override
+    public ShapeshifterAiDoc settings(final String docUuid, final String pipelineUuid, final String elementId) {
+        readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid);
+        return document(docUuid);
+    }
+
     /// What waits on one learner (design 06 A115), oldest first, a page at a time.
     @Override
     public ResultPage<BacklogStream> waiting(final String docUuid,
                                              final String pipelineUuid,
                                              final String elementId,
                                              final PageRequest pageRequest) {
-        if (!may(docUuid, DocumentPermission.VIEW)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to read this document");
-        }
-        final Learner learner = learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId));
+        final Learner learner = readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid);
         final PageRequest page = pageRequest == null
                 ? new PageRequest(0, 100)
                 : pageRequest;
@@ -224,17 +261,13 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return Boolean.TRUE;
     }
 
-    /// The learner a request about a row names, where this person may change how the document learns and
-    /// its pipeline has not been deleted (A137).
+    /// The learner a request about a row names, where this person may edit its pipeline and the pipeline has
+    /// not been deleted (A137).
     private Learner changeable(final String docUuid, final LearnerRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Say which learner: its pipeline and element");
         }
-        if (!may(docUuid, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change how this document learns");
-        }
-        return live(learnerOf(docUuid, request.getLearner()));
+        return changeable(live(learnerOf(docUuid, request.getLearner())));
     }
 
     /// The documents, read once each; one that cannot be read is left out, and its rows take the defaults.
@@ -333,8 +366,12 @@ public class SupervisorResourceImpl implements SupervisorResource {
                 : criteria;
         // The documents this person may see go into the query rather than filtering its answer: a count
         // taken before the filtering would tell them how many attempts exist on documents they may not
-        // see, and the pages they turned would come back short with no way to reach the end.
-        final Page page = attemptsProvider.get().found(asked, mayRead(asked.getDocUuid()));
+        // see, and the pages they turned would come back short with no way to reach the end. One learner's
+        // sessions, as its pipeline's editor asks for them, are held to the pipeline instead, and may be
+        // under any document.
+        final Page page = attemptsProvider.get().found(asked, asked.getLearner() == null
+                ? mayRead(asked.getDocUuid())
+                : learnersDocuments(asked.getLearner()));
         // Which of the page's pipelines are deleted, asked once for the page rather than once a row.
         final Set<String> deleted = deletedPipelinesProvider.get().deletedOf(page.attempts().stream()
                 .map(attempt -> attempt.attempt().learner().pipelineUuid())
@@ -351,8 +388,8 @@ public class SupervisorResourceImpl implements SupervisorResource {
 
     /// Ask for a binding that is already serving to be made better (A46).
     ///
-    /// Held to EDIT, as approving a draft is: it spends a model's tokens and may rebind the
-    /// learner.
+    /// Held to EDIT on the binding's pipeline, as approving a draft is: it spends a model's tokens and may
+    /// rebind the learner.
     ///
     /// It runs while the request is open, which is the one thing here that is not yet what A46 asks for:
     /// the ruling says an improvement is taken by the deferred worker. The stage says why in
@@ -362,15 +399,11 @@ public class SupervisorResourceImpl implements SupervisorResource {
     /// the ordinary gate.
     @Override
     public ImproveOutcome improve(final String docUuid, final String bindingUuid, final ImproveRequest request) {
-        if (!may(docUuid, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change the bindings of this document");
-        }
+        changeableBinding(docUuid, bindingUuid);
         final String by = securityContextProvider.get().getUserIdentityForAudit();
         final String message = request == null
                 ? null
                 : request.getMessage();
-        liveBinding(bindingUuid);
         final ShapeshifterAiDoc doc = document(docUuid);
         final Decision decision = pipelineScopeProvider.get().scopeResult(() ->
                 stageFactoryProvider.get().create().improve(doc, bindingUuid, message, by).decision());
@@ -382,17 +415,13 @@ public class SupervisorResourceImpl implements SupervisorResource {
     /// Accept a provisional binding now (design 01 §6, §11.6), rather than waiting for the records
     /// that would promote it.
     ///
-    /// Held to EDIT, as the other acts that change what serves a learner are. Not a way round the
-    /// gate: the binding cleared the promotion floor when it was bound, and what is skipped is the wait
-    /// for more records to judge it on.
+    /// Held to EDIT on the binding's pipeline, as the other acts that change what serves a learner are.
+    /// Not a way round the gate: the binding cleared the promotion floor when it was bound, and what is
+    /// skipped is the wait for more records to judge it on.
     @Override
     public Boolean accept(final String docUuid, final String bindingUuid) {
-        if (!may(docUuid, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change the bindings of this document");
-        }
+        changeableBinding(docUuid, bindingUuid);
         final String by = securityContextProvider.get().getUserIdentityForAudit();
-        liveBinding(bindingUuid);
         final ShapeshifterAiDoc doc = document(docUuid);
         pipelineScopeProvider.get().scopeRunnable(() ->
                 stageFactoryProvider.get().create().accept(doc, bindingUuid, by));
@@ -406,19 +435,15 @@ public class SupervisorResourceImpl implements SupervisorResource {
     /// Answers how many streams the binding produced output for, which is the one consequence the person
     /// cannot see for themselves, and what they would reprocess (A129).
     ///
-    /// Held to EDIT, as approving a draft is: it changes what serves the document's pipelines.
+    /// Held to EDIT on the binding's pipeline, as approving a draft is: it changes what serves it.
     @Override
     public Integer retract(final String docUuid, final String bindingUuid, final RejectRequest request) {
         if (request == null || NullSafe.isBlankString(request.getReason())) {
             throw new IllegalArgumentException("A retraction says why: the reason is recorded against "
                                                + "the attempt that wrote the binding");
         }
-        if (!may(docUuid, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change the bindings of this document");
-        }
+        changeableBinding(docUuid, bindingUuid);
         final String by = securityContextProvider.get().getUserIdentityForAudit();
-        liveBinding(bindingUuid);
         final ShapeshifterAiDoc doc = document(docUuid);
         return pipelineScopeProvider.get().scopeResult(() ->
                 stageFactoryProvider.get().create().retract(doc, bindingUuid, request.getReason(), by));
@@ -429,27 +454,19 @@ public class SupervisorResourceImpl implements SupervisorResource {
     public List<SupervisorGuidance> guidance(final String docUuid,
                                              final String pipelineUuid,
                                              final String elementId) {
-        if (!may(docUuid, DocumentPermission.VIEW)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to read this document");
-        }
-        return said(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)));
+        return said(readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid));
     }
 
     /// Tell a learner something, without asking for anything to be run.
     ///
-    /// Held to EDIT rather than VIEW: what is written here is carried into every question the learner
-    /// asks from now on, which is a change to how the document learns.
+    /// Held to EDIT on the pipeline rather than VIEW: what is written here is carried into every question
+    /// the learner asks from now on, which is a change to how its feed is learned.
     @Override
     public List<SupervisorGuidance> hint(final String docUuid, final GuidanceRequest request) {
         if (request == null || NullSafe.isBlankString(request.getMessage())) {
             throw new IllegalArgumentException("There is nothing to record: the message is empty");
         }
-        if (!may(docUuid, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change how this document learns");
-        }
-        final Learner learner = live(learnerOf(docUuid, request.getLearner()));
+        final Learner learner = changeable(live(learnerOf(docUuid, request.getLearner())));
         guidanceProvider.get().given(learner, docUuid, request.getMessage(),
                 securityContextProvider.get().getUserIdentityForAudit());
         return said(learner);
@@ -465,11 +482,8 @@ public class SupervisorResourceImpl implements SupervisorResource {
                                              final long id,
                                              final String pipelineUuid,
                                              final String elementId) {
-        if (!may(docUuid, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change how this document learns");
-        }
-        final Learner learner = live(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)));
+        final Learner learner = changeable(live(learnerOf(docUuid,
+                new LearnerRef(pipelineUuid, elementId))));
         guidanceProvider.get().withdraw(docUuid, id);
         return said(learner);
     }
@@ -574,9 +588,16 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return learner;
     }
 
-    /// The binding's learner held to the same, where the binding is still there to say whose it is.
-    private void liveBinding(final String bindingUuid) {
-        learnerBindingsProvider.get().byUuid(bindingUuid).ifPresent(held -> live(held.learner()));
+    /// A binding this person may change: its learner runs under the document named, its pipeline has not
+    /// been deleted, and they may edit the pipeline. A binding that isn't there answers as one they may not
+    /// change, or the answer would say which bindings exist.
+    private void changeableBinding(final String docUuid, final String bindingUuid) {
+        final Learner learner = learnerBindingsProvider.get().byUuid(bindingUuid)
+                .map(held -> held.learner())
+                .filter(held -> runsUnder(held, docUuid))
+                .orElseThrow(() -> new PermissionException(securityContextProvider.get().getUserRef(),
+                        "You do not have permission to change binding " + bindingUuid));
+        changeable(live(learner));
     }
 
     /// An attempt whose learner still runs under the document it was learning for. An attempt is history
@@ -610,7 +631,7 @@ public class SupervisorResourceImpl implements SupervisorResource {
         final ShapeshifterAiDoc doc = storeProvider.get().readDocument(
                 new DocRef(ShapeshifterAiDoc.TYPE, docUuid));
         if (doc == null) {
-            throw new IllegalArgumentException("There is no Shapeshifter AI document " + docUuid);
+            throw new IllegalArgumentException("There is no Learning Flow " + docUuid);
         }
         return doc;
     }
@@ -624,23 +645,68 @@ public class SupervisorResourceImpl implements SupervisorResource {
 
     /// An attempt a person may change. Approving a draft puts its binding in force, rejecting one gives a
     /// learner up, and running an attempt again spends a model's tokens: these change what serves the
-    /// document's learners and are held to the same permission as editing the document.
+    /// attempt's pipeline and are held to the same permission as editing the pipeline.
     private Recorded change(final long id) {
         return permitted(id, DocumentPermission.EDIT);
     }
 
     private Recorded permitted(final long id, final DocumentPermission permission) {
         final Recorded attempt = attemptsProvider.get().byId(id).orElse(null);
-        if (attempt == null || !may(attempt.attempt().docUuid(), permission)) {
+        if (attempt == null
+            || !mayLearner(attempt.attempt().learner(), attempt.attempt().docUuid(), permission)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to read attempt " + id);
         }
         return attempt;
     }
 
+    /// The learner, where this person may view its pipeline (or, for a pipeline since deleted, its document).
+    private Learner readable(final Learner learner, final String docUuid) {
+        if (!mayLearner(learner, docUuid, DocumentPermission.VIEW)) {
+            throw new PermissionException(securityContextProvider.get().getUserRef(),
+                    "You do not have permission to read the pipeline of element " + learner.elementId());
+        }
+        return learner;
+    }
+
+    /// The learner, where this person may edit its pipeline. Called once the pipeline is known to be live.
+    private Learner changeable(final Learner learner) {
+        if (!mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
+            throw new PermissionException(securityContextProvider.get().getUserRef(),
+                    "You do not have permission to change how the pipeline of element " + learner.elementId()
+                    + " learns");
+        }
+        return learner;
+    }
+
+    /// Whether this person may do a thing to a learner: by its pipeline's permission, or, for a pipeline since
+    /// deleted, which has none to ask, by its document's, to read alone. Nothing is changed for a deleted
+    /// pipeline's learner (A137), so a change asked of one is refused.
+    private boolean mayLearner(final Learner learner, final String docUuid, final DocumentPermission permission) {
+        return access().mayLearner(learner, docUuid, permission);
+    }
+
+    private boolean mayPipeline(final String pipelineUuid, final DocumentPermission permission) {
+        return access().mayPipeline(pipelineUuid, permission);
+    }
+
     private boolean may(final String docUuid, final DocumentPermission permission) {
-        return securityContextProvider.get().hasDocumentPermission(
-                new DocRef(ShapeshifterAiDoc.TYPE, docUuid), permission);
+        return access().mayDocument(docUuid, permission);
+    }
+
+    // The rules, shared with the Quality Assurance tab's resource
+    private LearnerAccess access() {
+        return new LearnerAccess(securityContextProvider, deletedPipelinesProvider);
+    }
+
+    /// The documents a learner's sessions may be under, where this person may read its pipeline: every
+    /// document, since its pipeline may have run under more than one; none where they may not.
+    private List<String> learnersDocuments(final LearnerRef ref) {
+        final Learner learner = learner(ref);
+        return storeProvider.get().listDocuments().stream()
+                .map(DocRef::getUuid)
+                .filter(uuid -> mayLearner(learner, uuid, DocumentPermission.VIEW))
+                .toList();
     }
 
     /// The documents this person may see, narrowed to the one they asked about if they asked about one.
@@ -667,7 +733,7 @@ public class SupervisorResourceImpl implements SupervisorResource {
         final ShapeshifterAiDoc doc = storeProvider.get().readDocument(
                 new DocRef(ShapeshifterAiDoc.TYPE, attempt.attempt().docUuid()));
         if (doc == null) {
-            throw new IllegalStateException("The Shapeshifter AI document of attempt " + attempt.id()
+            throw new IllegalStateException("The Learning Flow of attempt " + attempt.id()
                                             + " has been deleted");
         }
         pipelineScopeProvider.get().scopeRunnable(() ->

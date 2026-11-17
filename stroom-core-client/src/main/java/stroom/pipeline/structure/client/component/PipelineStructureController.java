@@ -59,6 +59,7 @@ import stroom.widget.util.client.Rect;
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.user.client.Command;
+import com.google.gwt.user.client.ui.IsWidget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
@@ -72,6 +73,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /// A pipeline's Structure tab ([PipelineStructure]): its elements, which can be added, removed,
 /// edited, restored and moved (in advanced mode, unless the pipeline is read only), the pipeline it
@@ -94,6 +96,8 @@ public class PipelineStructureController extends Controller {
     private final Provider<CodeEditorController> jsonEditorProvider;
     private final PipelineTree pipelineTree;
     private PipelineElement selectedElement;
+    private Consumer<PipelineElement> onSelect = element -> {
+    };
     private PipelineModel pipelineModel;
     private DocRef docRef;
     private PipelineDoc pipelineDoc;
@@ -188,6 +192,7 @@ public class PipelineStructureController extends Controller {
                     pipelineReferenceList.setCurrentElement(selectedElement);
 
                     enableButtons();
+                    onSelect.accept(selectedElement);
                 }));
         // The Delete key removes the selected element (which has the focus), as Remove does
         pipelineTree.setOnRemove(element -> {
@@ -224,6 +229,17 @@ public class PipelineStructureController extends Controller {
     // Whether the pipeline may not be changed, as its document says
     private boolean isReadOnly() {
         return context(Contexts.READ_ONLY);
+    }
+
+    /// @param detail What more its owner has to say about the element selected, shown above its
+    ///               properties (e.g. what an AI Translator has learned), which shows or hides itself.
+    public void setElementDetail(final IsWidget detail) {
+        view.setElementDetail(detail);
+    }
+
+    /// @param onSelect Told the element selected each time the selection changes, or null for none.
+    public void setOnSelect(final Consumer<PipelineElement> onSelect) {
+        this.onSelect = onSelect;
     }
 
     /// @return Whether the pipeline's structure has been changed since it was read: what this tab

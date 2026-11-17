@@ -21,6 +21,8 @@ import stroom.shapeshifter.ai.cache.CachedLearnerBindings;
 import stroom.shapeshifter.ai.cache.CachedLearnerStates;
 import stroom.shapeshifter.ai.cache.Rows;
 import stroom.shapeshifter.ai.element.KeptLearning;
+import stroom.shapeshifter.ai.quality.Assessments;
+import stroom.shapeshifter.ai.quality.Volumes;
 import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.CorpusIndex;
 import stroom.shapeshifter.ai.stage.Deferrals;
@@ -67,6 +69,8 @@ public class ShapeshifterAiDaoModule extends AbstractModule {
         bind(Learners.class).to(LearnersDao.class);
         bind(CorpusIndex.class).to(CorpusIndexDao.class);
         bind(Snapshots.class).to(SnapshotsDao.class);
+        bind(Volumes.class).to(VolumesDao.class);
+        bind(Assessments.class).to(AssessmentsDao.class);
         // One table of marks, and the retention job's view of every table a learner keeps rows in.
         bind(DeletedPipelines.class).to(DeletedPipelinesDao.class);
         bind(KeptLearning.class).to(DeletedPipelinesDao.class);

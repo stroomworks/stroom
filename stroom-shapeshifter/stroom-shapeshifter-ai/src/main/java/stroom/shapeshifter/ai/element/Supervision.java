@@ -158,11 +158,11 @@ public class Supervision {
     /// @param elementId The element to name in the refusal.
     public ShapeshifterAiDoc document(final DocRef docRef, final ElementId elementId) {
         if (docRef == null) {
-            throw ProcessException.create("No Shapeshifter AI document is set on element " + elementId);
+            throw ProcessException.create("No Learning Flow is set on element " + elementId);
         }
         final ShapeshifterAiDoc doc = store.readDocument(docRef);
         if (doc == null) {
-            throw ProcessException.create("Shapeshifter AI document " + docRef + " was not found");
+            throw ProcessException.create("Learning Flow " + docRef + " was not found");
         }
         return doc;
     }
@@ -181,7 +181,7 @@ public class Supervision {
         final ReplayUnit allowed = ReplayUnits.ofElements(doc.getAllowedElements(), this::parses);
         if (allowed != ReplayUnit.STREAM) {
             throw ProcessException.create(ReplayUnits.mismatch(allowed,
-                    "The allowed elements of Shapeshifter AI document " + doc.getName()));
+                    "The allowed elements of Learning Flow " + doc.getName()));
         }
     }
 
@@ -412,7 +412,7 @@ public class Supervision {
     /// it. An element outside a running pipeline has nothing to learn as, so it is refused.
     private Learner learner(final ElementId elementId) {
         if (pipelineHolder.getPipeline() == null) {
-            throw ProcessException.create("A Shapeshifter AI element learns as the pipeline it runs in, and "
+            throw ProcessException.create("An AI Translator element learns as the pipeline it runs in, and "
                                           + "element " + elementId + " is not running in one");
         }
         return new Learner(pipelineHolder.getPipeline().getUuid(), elementId.getId());
