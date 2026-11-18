@@ -10,6 +10,8 @@ Branch `ai_translations` · revised 12 November 2026 · Companion to the server-
 >
 > Sections 1 and 2 explain the system using one worked example. Section 3 sets out the options, each with what it is today, what we'd change, what we'd lose, and a recommendation. Section 4 brings them together, and section 6 lists the decisions we need.
 
+> **Update, 18 November 2026.** The agreed UI ([ui-design.md](ui-design.md)) keeps editable flows, every Supervisor action and per-document question texts. So options B, D and E are off the table as UI changes: the screens would have to be rebuilt to remove what they offer. The other options stand as written.
+
 ## Contents
 
 1. [The problem Shapeshifter solves](#1-the-problem-shapeshifter-solves)

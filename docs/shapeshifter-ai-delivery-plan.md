@@ -1,0 +1,1231 @@
+# Shapeshifter AI: delivery plan for the raised tasks and the UI rework
+
+*Written 17 November 2026 · updated 18 November 2026 for the final UI · branch `ai_translations_server`*
+
+## Summary
+
+Two bodies of work were in flight:
+
+- **Correctness fixes** to the learning engine, raised as tasks in `docs/shapeshifter-ai-*.md`.
+- **The UI rework**, done separately on `ai_translations_ui_rework`.
+
+The UI rework has now been merged (`7e06bb589c`), and its screens are the final UI design, apart from minor bug fixes.
+They are described in [ui-design.md](ai-translations/ui-design.md).
+That changes the plan in three ways:
+
+- The UI was built on **today's server**, with editable learning flows, every Supervisor action and per-document question texts.
+  It was not built on the simplified server, so the simplifications that would remove what the UI shows (options B, D and E in [simplification-options.md](ai-translations/simplification-options.md)) are no longer on the table.
+  Decisions SIM-2, SIM-4 and SIM-5 are settled by the UI; see [stage 0b](#stage-0b-settle-the-open-decisions).
+- Most of the old Track 2's UI phases are done.
+  What is left of Track 2 is server work: the simplifications the UI doesn't depend on, the safety items, and the additions the UI would show (approval evidence, who approved, spend-breaker state).
+- Some Track 1 work was done on the UI branch (stop reports, the waiting reason, the default element list), and the UI added a Quality Assurance tab with assessments, which bears on the gates and reference corpora.
+
+Decision N1 is settled as option C: learned stylesheets may use only what is on an allow-list.
+The list starts hard-coded ([Track 2 step 2](#step-2-a-hard-coded-ai-translations-list)).
+Towards the end of the project, Track 2 pulls in the `ai_translations_egress` branch, which adds an egress policy and an Egress Policy screen to lock down Stroom's risky XSLT features for all translations, and the list moves onto that screen ([Track 2 step 6](#step-6-the-egress-policy-and-the-list-on-its-screen)).
+
+The plan is still two tracks that run side by side, after a short round of decisions:
+
+| Stage | What | Depends on |
+|---|---|---|
+| 0a | Audit the code for hidden assumptions (done) | Nothing |
+| 0b | Settle the open decisions, using what the audit found; SIM-2, SIM-4 and SIM-5 are settled by the final UI, and N1 is decided | Stage 0a |
+| Track 1 | Correctness fixes (server only) | Tasks 1, 2, 4, 5, 6, 9 and 10 can start now (N1, N2, UM-2 and UM-3 are decided); task 3 waits on Track 2 step 2's list, tasks 7 and 8 on stage 0b decisions |
+| Track 2 | Server simplification, the AI Translations list, the other safety items, the server additions the UI would show, and finally the egress policy; the UI itself is done | Stages 0a and 0b; step 2 can start now |
+| Later | Calibration and larger step sizes | Track 1 |
+
+## Stage 0a: audit the code for hidden assumptions
+
+### Why
+
+It turned out to be hard to change the target schema.
+The setting suggested the schema was configurable, but `event-logging:3` was assumed in the prompts, the target checks and several scorers.
+That is a hidden assumption, not untidy structure, and making the code simpler or more modular would not have exposed it: the same value would just sit inside tidier modules.
+
+The simplification is also the most expensive time to find more of these.
+Its estimates (about 5,000–6,000 server lines removed) and its "what we lose" sections assume we know what each part does.
+A hidden assumption found halfway through removing the flow language costs much more than one found beforehand.
+
+A first grep of the `stroom-shapeshifter` production code (about 30,000 lines) shows where to look:
+
+| Assumption | Production files that mention it |
+|---|---|
+| `event-logging` | 7 |
+| `EventDetail` | 8 |
+| Parser names (`DSParser`, `JSONParser`, `XMLFragmentParser`) | 11 |
+| `UTC` / `ZoneOffset` | 5 |
+
+Not every mention is a problem; sorting them out is the work.
+
+### How
+
+**1. Sweep for hard-coded assumptions.**
+List every value that the design treats as variable: target schema, parser types, time zone, record boundary, model, promotion mode, node count, feed type.
+For each, check whether every part of the code honours it.
+Sort each finding as *configurable in practice*, *hard-coded but harmless*, or *hard-coded and contradicts a setting*.
+
+**2. "What would it take to…?" walkthroughs.**
+Trace each change we know is coming through the code before committing to it:
+
+| # | Change | Plan item it informs |
+|---|---|---|
+| W1 | A target schema other than event-logging | Track 1 task 7; decisions D1 and D2 |
+| W2 | Prompts in code, and removing the flow language | Simplification options E and B |
+| W3 | Removing provisional bindings | Simplification option C |
+| W4 | Judging input coverage while serving | Track 1 task 2 |
+| W5 | A new parser type, or a record boundary that isn't one element name | Track 1 task 4 |
+| W6 | A different model provider, or a weaker model | Unknown-models proposal |
+| W7 | Several nodes learning and serving at once | Track 1 tasks 5 and 6 |
+| W8 | A feed with no timestamps, or local times | Track 1 task 3 |
+
+Each walkthrough records the files that would change, the hard-coded values met on the way, the tests that would catch a regression, and an effort estimate.
+
+**3. Start from what is already written.**
+`stroom-shapeshifter/stroom-shapeshifter-ai/ISSUES.md`, the design rulings A1–A147 (`stroom-shapeshifter/stroom-shapeshifter-ai/design/09-rulings.md`) and the boundary findings in [server-side-inventory.html §12](ai-translations/server-side-inventory.html) already record some of these.
+The audit cites them rather than rediscovering them.
+
+### Output
+
+`docs/shapeshifter-ai-code-assumption-audit.md`: one entry per finding, each with:
+
+- evidence (`file:line`)
+- the assumption, and what breaks because of it
+- severity: *blocks a planned change*, *changes an estimate*, or *minor*
+- the plan item or decision it affects
+- whether it is already known (with the `ISSUES.md` entry or ruling)
+- a test that would catch it
+
+Findings that contradict [simplification-options.md](ai-translations/simplification-options.md) or this plan go into the stage 0b decisions, and this plan is updated to match.
+
+The audit does not block Track 1 tasks 1–4, which are already well understood.
+It should finish before Track 2's server removals start.
+
+### Result
+
+**Done, 17 November 2026: [shapeshifter-ai-code-assumption-audit.md](shapeshifter-ai-code-assumption-audit.md).**
+It has 66 findings: 8 block a planned change as written, 41 change an estimate and 17 are minor.
+Its new decisions (N1–N9) are added to stage 0b below, and Tracks 1 and 2 have been updated to match.
+The main effects on this plan:
+
+- Track 1 task 3 can't ship as written: its fix uses a function that ruling A147 bans (decision N1).
+- Track 1 task 2 is M to L, not a contained change.
+- Promotion and learning see only the first 64 KiB of a stream, which affects tasks 2 and 4 (decision N2, since decided).
+- Option B's proposed recipe drops steps the demo depends on, and option C doesn't behave as described.
+- Several nodes learning at once has races the plan didn't cover: new task 8.
+
+## Stage 0b: settle the open decisions
+
+Several documents end in a "Decisions needed" table.
+Some of the answers change where code goes, so they should be settled before either track gets far.
+This should take days, not weeks.
+
+The decisions come from four documents, and several of them ask the same question in different words.
+This section gathers them, groups the ones that have to be answered together, and sets out the options for each.
+
+### Where the decisions come from
+
+| Label | Source | Decisions in stage 0b |
+|---|---|---|
+| SIM-*n* | [simplification-options.md §6](ai-translations/simplification-options.md#6-decisions-needed) | SIM-1 to SIM-5 and SIM-7 to SIM-9 (options A, B, C, D, E, G and H); SIM-2, SIM-4 and SIM-5 are settled by the final UI |
+| D*n* | [shapeshifter-ai-single-target-schema.md](shapeshifter-ai-single-target-schema.md) | D1 and D2 |
+| UM-*n* | [ai-translation-approach-for-unknown-models.html §8](ai-translations/ai-translation-approach-for-unknown-models.html) | UM-2, UM-3, UM-6 and UM-9 |
+| N*n* | [shapeshifter-ai-code-assumption-audit.md](shapeshifter-ai-code-assumption-audit.md#new-decisions-for-stage-0b) | N1 to N9 |
+
+Three decisions in those documents are not part of stage 0b:
+
+- **SIM-6** (who decides which feeds' data may go to which model, and who may switch a feed to automatic) is a question of ownership, not design.
+  It needs an owner from security or the data owners before any real data is sent to a model, but it doesn't change where code goes.
+- **SIM-10** (structural work i–iv) is for the server-side engineers to decide after the others, on whatever code remains.
+- **UM-1, UM-4, UM-5, UM-7 and UM-8** (calibration, step sizes, model review, reference corpora) belong to the [later](#later-calibration-and-larger-step-sizes) work.
+  UM-5 (step sizes) does constrain N3, and is covered there.
+
+### Summary
+
+| Group | Decisions | Recommendation in one line | What it unblocks |
+|---|---|---|---|
+| 1. XSLT functions | N1 | **Decided: option C.** An allow-list covering standard XSLT as well as `stroom:` functions, hard-coded at first, moving to the Egress Policy screen towards the end of the project | Track 1 task 3; Track 2 steps 2 and 6 |
+| 2. What is judged | N2 | **Decided.** Option B: coverage judged on the whole held stream. Option E: large single documents not learned, with a stop report that says why and what to change. Option F: one sample-size setting in bytes that the prompt honours | Track 1 tasks 2, 4 and 9 |
+| 3. Promotion | SIM-1, UM-6, SIM-3, N4 | **Decided.** SIM-1 and UM-6: option B, review by default, one promotion path, automatic behind a permission. SIM-3: option E, no provisional bindings. N4: option F, a person must act behind a too-small draft; the record minimum applies to first learning only, not to relearns | Track 2 steps 1 and 1a |
+| 4. Gates | UM-2, UM-3 | **Decided.** One list of checks on the Learning Flow, each Off, Advice or Gate, chosen by the user; compile always a gate; a candidate passes when every gate passes (no weights or pass mark); serving uses the same gates; steps don't name checks; the score shown is the average of the checks that ran. Defaults: the objective checks as gates (literals and time plausibility as advice), the heuristic checks off. QA assessments: deleted, since no requirement for them can be found | Track 1 tasks 1–3 and 10; the *Quality checks* section (Track 2 step 4); the removal (Track 2 step 1b) |
+| 5. Learning recipe | SIM-2, N3 | **Decided.** SIM-2: editable flows stay (settled by the UI). N3: option D, `ESCALATING` is the default setup, subject to a `TestLiveScenarios` run. Flows are defined in JSON with Stroom's normal Jackson conversion, and the flow DSL is removed (a requirement) | Track 2 step 1c |
+| 6. Prompts | SIM-5, N9, D2 | **SIM-5 settled by the UI: per-document question texts stay**, with *Instructions to the AI* beside them. **N9 decided: option D extended**, record the templates and texts each run used and rebuild the prompt for someone with *View Data*; **D2 decided: option G**, a schema summary generated from the XSD, since every target schema must be usable | Track 1 task 7; N9 in Track 2 steps 1 and 4 |
+| 7. Where settings live | D1, N6 | Target schema on the document; time zone decided with it | Track 1 tasks 3 and 7; a field on the Setup tab |
+| 8. Supervisor | SIM-4 | **Settled by the UI: every action stays**, on the Learning Status tab. Improve may still move to the worker | Track 2 step 1 (Improve only) |
+| 9. Pipeline creation | SIM-7, SIM-8, SIM-9 | Drop the Pipeline Factory; AI on existing feeds by hand; drop the `claimTasksOnWorker` requirement | Track 1 task 5; Track 2 step 1 (option G) |
+| 10. Cost | N7 | Estimate tokens from characters when usage is missing, and charge failed calls | The spend breaker (Track 2 step 3) |
+| 11. Several nodes | N8 | Yes, if any multi-node installation will run it | Track 1 task 8 |
+| 12. Database changes | N5 | Edit the unreleased migration in place, and reset dev and demo databases (what the UI merge did) | Every step that changes tables |
+| 13. Order of work | UM-9 | Gates first, as Track 1 already orders them | Track 1 |
+
+### Suggested order for settling them
+
+Groups 1 to 6 are decided (N1, N2, promotion, the gates, the learning recipe and the prompts; the QA assessments are to be deleted).
+
+1. **Group 7 (where settings live)**: D1 now matters, since every target schema must be usable (D2), and the setting has to live somewhere. Decide N6 with it, so that the Setup tab is changed once.
+2. **The rest**, which are independent of each other and can be settled in any order.
+
+### 1. N1: which Stroom XSLT extension functions a learned stylesheet may use
+
+**Decided, 18 November 2026: option C, in two stages.**
+A learned stylesheet may use only what is on an allow-list, which covers standard XSLT and XPath as well as `stroom:` functions.
+
+1. **First, a hard-coded list** in Shapeshifter, applied by the static stylesheet check (when a candidate is judged and promoted) and by the scenario test harness ([Track 2 step 2](#step-2-a-hard-coded-ai-translations-list)).
+2. **Towards the end of the project**, the list moves onto the Egress Policy screen from the `ai_translations_egress` branch, where an administrator maintains it, and is also enforced at run time ([Track 2 step 6](#step-6-the-egress-policy-and-the-list-on-its-screen)).
+
+The analysis behind the decision is kept below.
+
+**The question.**
+On a node, learned stylesheets run in the real `XSLTFilter`, which allows every `stroom:` extension function.
+The scenario test harness allows none.
+Ruling A147 says every candidate that calls any extension function must be refused, and Track 2 step 2 builds a static check to do that.
+But Track 1 task 3 (missing year) wants the model to use `stroom:format-date`, which takes a missing year from the stream's received time.
+Both can't ship as written (audit finding S8).
+
+**The question is wider than extension functions.**
+Saxon-HE in `XSLTFilter` has no runtime URI resolver, unparsed-text resolver, collection finder or output resolver, so standard XSLT and XPath reach the node's host with no `stroom:` function involved.
+A147 doesn't cover these, because they aren't extension functions.
+On the dev instance on 11 November, a pipeline XSLT listed `/etc` with `uri-collection('file:///etc/…')` and wrote a file with `xsl:result-document href="file:///tmp/…"`.
+
+| Group | What | Why it is dangerous |
+|---|---|---|
+| Standard: host files | `unparsed-text()`, `unparsed-text-lines()`, `document()`, `doc()`, `collection()`, `uri-collection()` with `file:` URIs; `xsl:result-document` | Reads and lists files the `stroom` user can read (listing confirmed); **writes files** (confirmed) |
+| Standard: network | The same functions with `http(s):` URIs; `json-doc()` (to check on Saxon-HE 9.9) | Outbound requests from the node, including to cloud metadata addresses |
+| Standard: environment | `environment-variable()`, `available-environment-variables()` | Secrets passed in the environment |
+| Standard: indirect calls | `function-lookup()`, function references such as `stroom:http-call#5` | Calls any function without its name appearing as a call, defeating a check of named calls |
+| `stroom:` outbound | `http-call` (a POST to any URL), `fetch-json`, `send-email`, `ask-ai`, `host-name` and `host-address` (DNS lookups) | Data leaves the node; model spend; a DNS channel |
+| `stroom:` reads beyond the record | `lookup`, `bitmap-lookup`, `dictionary`, `manifest-for-id`, `meta-stream-for-id`, `parent-for-id`; less so `feed-attribute`, `classification`, `current-user` | Other feeds' reference data, dictionaries and stream metadata, with the processing user's access |
+| `stroom:` side effects | `log` (an ERROR or FATAL drops records from the output), `add-meta`, `put` and `get` | Quiet record loss that can still score well; state carried between records |
+| `stroom:` not repeatable | `current-time`, `current-unix-time`, `random`, `random-integer` | Judging and serving give different results |
+| `stroom:` pure, or the current stream only | The date parse, format and conversion functions (including `format-date`, subject to AS6), `hash`, the `hex-to-*` functions, `numeric-ip`, `ip-in-cidr`, `cidr-to-numeric-ip-range`, `encode-url`, `decode-url`, `parse-uri`, `json-to-xml`, `shannon-entropy`; `meta`, `meta-keys`, `meta-attribute`, `manifest`, `meta-stream`, `feed-name`, `pipeline-name`, `source`, `source-id`, `stream-id`, `parent-id`, `part-no`, `record-no`, `line-from`, `line-to`, `col-from`, `col-to` | Candidates for the allow-list |
+
+The `ai_translations_egress` branch closes the first two standard groups for all of Stroom at run time, and guards the outbound `stroom:` functions other than the DNS lookups.
+The rest is for this decision's list.
+Until that branch is pulled in (Track 2 step 6), the static check is the only guard, so the list must refuse every group above except the last.
+
+**Options.**
+
+- **A. Allow none (A147 as written).**
+  - For: the simplest rule, and the safest; the model can't reach anything outside the record it is translating.
+  - Against: task 3's fix can't use `stroom:format-date`.
+    The model would have to rebuild dates in plain XSLT, and it has no way to learn the stream's received year unless that is passed to the stylesheet some other way.
+- **B. Allow all (what a node does today).**
+  - For: no work.
+  - Against: a model-written stylesheet could call functions with side effects or wider access, such as `stroom:http-call` or `stroom:lookup`.
+    On an automatic feed nobody reads the stylesheet before it runs.
+- **C. An allow-list of pure functions and the current stream's own metadata (chosen).**
+  Functions that only compute a value from their arguments and the stream's own metadata are allowed: the last group in the table above, starting with `stroom:format-date`.
+  Everything else is refused, standard functions and instructions as well as `stroom:` ones, and so are `function-lookup()` and function references.
+  The list is in code at first (Track 2 step 2).
+  Towards the end of the project it moves onto the Egress Policy screen from the `ai_translations_egress` branch, editable only with *Manage Egress Policy*, and audited, with the outbound functions and the routes the egress policy denies outright never allowed (Track 2 step 6).
+  The static check and the test harness apply the same list, so a stylesheet that passes the tests also passes on a node; from step 6 the serving pipeline applies it too, so one the static check misses is still refused when it runs.
+  - For: fixes the missing-year fault properly, keeps A147's intent, and closes the standard-XSLT routes A147 never covered. From step 6, sites can review the list, and add a function they have checked, without a release.
+  - Against: the list has to be maintained, and each function on it checked for side effects. Until step 6, changing it needs a release, and there is no run-time enforcement.
+
+**Example.**
+
+```xml
+<!-- Allowed under option C: pure, and takes the year from the stream -->
+<xsl:value-of select="stroom:format-date('Oct 19 09:06:02', 'MMM dd HH:mm:ss')"/>
+
+<!-- Refused under options A and C -->
+<xsl:value-of select="stroom:http-call('https://example.com/lookup', ...)"/>
+
+<!-- Refused under option C, though neither is an extension function call -->
+<xsl:value-of select="unparsed-text('file:///etc/passwd')"/>
+<xsl:value-of select="function-lookup(QName($stroom-ns, 'http-call'), 5)(...)"/>
+```
+
+**Ruling A147** should change from "any candidate that calls an extension function is refused" to "a learned stylesheet may use only what is on the AI Translations list, checked when it is judged and promoted" now, adding "and enforced when it runs" at step 6.
+
+**Affects:** Track 1 task 3; Track 2 step 2 (the hard-coded list and the static stylesheet check) and step 6 (the egress branch, the list on its screen, run-time enforcement); ruling A147, which must be amended to match.
+
+### 2. N2: whole stream or the first 64 KiB, and how large documents are sampled
+
+**Decided, 18 November 2026**, one part at a time:
+
+| Part | Decision |
+|---|---|
+| What is judged (options A–C) | **Option B**: judge input coverage on the whole held stream, in the full pass; the model is still shown a sample from the prefix. |
+| Sampling a large single document (options D–E) | **Option E, leave it**: a single XML or JSON document larger than the prefix is not learned. Learning must say so plainly, and say what would have to change (see below). |
+| The sample size (options F–G) | **Option F**: one setting, in bytes, that the prompt honours. Option G waits for calibration. |
+
+Each part has its own letters, so "N2 option B" means only "judge coverage on the whole held stream".
+
+**The question.**
+The design says a candidate is judged "over the whole held stream".
+In fact the stream-level checks (compile, input coverage, yield, the floor, "no lower than the incumbent") see only the first 64 KiB of any larger stream (audit finding S2).
+Only the worker's full pass and serving read the whole stream, and they run only the record checks.
+Two related problems sit beside it:
+
+- A single XML or JSON document of 64 KiB or more is learned from a prefix that doesn't parse, so no record boundary is found (W5-4).
+- The sample-size setting is overridden by two fixed caps (6,000 characters in the prompt, 64 KiB in the reader), and is in characters although the editor says bytes (S4).
+
+**Options for what is judged.**
+
+- **A. Keep judging the 64 KiB prefix, and document it.**
+  - For: no work, and judging stays fast.
+  - Against: drift past the first 64 KiB is never seen at promotion, which defeats the point of Track 1 task 2.
+- **B. Judge coverage on the whole held stream; keep the prefix for what the model is shown (chosen).**
+  The full pass already reads the whole stream, so it can count records in against events out.
+  - For: closes the gap for the check that matters most (completeness), at little extra cost.
+  - Against: the other stream-level checks still see only the prefix.
+- **C. Judge everything on the whole stream.**
+  - For: matches the design exactly.
+  - Against: slow for large streams, and the judged run is also capped at 10,000 records, so that cap would need its own decision.
+
+**Options for sampling a large single document.**
+
+- **D. Cut at the record boundary (was recommended).** Keep whole records up to the size limit, and close the document so it parses.
+- **E. Leave it**, and accept that large exports can't be learned **(chosen)**.
+
+The demo's GATEWAY-AUDIT stream is about 17 KB, inside the prefix, so this choice doesn't affect it: its failure is the mixed record elements (Track 1 task 4).
+Real exports of 64 KiB or more, as one XML or JSON document, are what can't be learned.
+
+**What option E still needs: a clear refusal.**
+Today such a stream fails quietly or misleadingly: the prefix doesn't parse, so it is treated as lines and the split step finds no record boundary (W5-4).
+Instead:
+
+- **Detect it before asking the model anything**: the stream is larger than the prefix (`Input.complete()` is false), it starts as one XML or JSON document, and the prefix doesn't parse as one.
+  No model call is made, and so no tokens are spent.
+- **Stop the run with a stop report** (`StopReports`), shown under *Where it stands* on the pipeline's Learning Status tab, and the same words on the stream's Error stream:
+  - **Error:** "This stream is one XML document of 1.4 MB. Learning reads only the first 64 KiB of a stream, so a single document larger than that can't be learned."
+  - **Details:** the stream's size, the limit, and that the limit applies to each stream as a whole, not to each record.
+  - **Suggestions:** what would have to change to attempt learning it: have the source send smaller exports, each a whole document under 64 KiB (for example one export per batch or per time period); or, if that can't change, translate this feed with a hand-written pipeline instead.
+    The limit is a constant in the code (`Input.PREFIX_BYTES`), not a setting, so the suggestions don't point at the Setup tab.
+- **Don't retry the same stream**: learning again from it would end the same way. Later streams of the feed that are small enough are learned as usual.
+- **Test**: a scenario with a single XML document and a single JSON document just over 64 KiB, asserting the stop report's error and suggestions, and that no model call is made.
+
+**Options for the sample size.**
+
+**Option F, decided 18 November 2026.** Calibration will be a late phase at best (see [Later](#later-calibration-and-larger-step-sizes)), so option G isn't available now; it can be reconsidered once calibration exists.
+
+- **F. One setting, in bytes, that the prompt honours (chosen).**
+  The Learning Flow keeps *Largest sample of a stream (bytes)* (Setup tab, *Learning steps* > *Advanced options*), and the work makes it mean what it says:
+  - the fixed 6,000-character cap in the prompt (`QuestionText.INPUT_SHOWN`) goes, so the setting is the real limit;
+  - it is counted in bytes, as the screen says, not characters;
+  - it stays within the 64 KiB prefix (`Input.PREFIX_BYTES`), or the prefix grows with it.
+
+  The default (8,192, `ShapeshifterAiDoc.DEFAULT_SAMPLE_SIZE_LIMIT`) has to be chosen without calibration. It is a cautious value for an unknown or weak self-hosted model; keep it unless the demo feeds show it is too small.
+  Optionally, where the model document's *Max context window tokens* is set, the sample is also capped at a share of it, at about 4 characters a token (the estimate N7 uses). That is arithmetic, not calibration. The field defaults to 0 (unknown), and then the setting alone applies; Shapeshifter doesn't read the field today.
+- **G. Remove the setting** and size the sample from the model's context window, once calibration exists. **Deferred** with calibration.
+
+The other two parts of N2 don't depend on calibration.
+
+**Example (illustrative numbers).**
+A 200 KiB syslog stream whose lines change format at 150 KiB.
+Today the candidate is judged on the first 64 KiB, coverage is 1.0, and it is promoted.
+Under option B (what is judged) the full pass counts 2,400 records in and 1,800 events out, and promotion is refused.
+
+**Affects:** Track 1 task 2 (input coverage on the whole stream), task 4 (the refusal of large documents), and task 9's sample-size fix (S4); simplification option i inherits whole-stream coverage.
+
+### 3. Promotion: SIM-1, UM-6, SIM-3 and N4
+
+These four decide what happens between "a candidate clears the gate" and "it serves", so they should be answered together.
+
+Option letters are unique across the group: SIM-1 and UM-6 are A–C, SIM-3 is D–E, and N4 is F–G.
+
+#### SIM-1 and UM-6: the default promotion mode
+
+**Decided, 18 November 2026: option B, review by default.**
+Every result that clears the gate is written as a draft, through one promotion path for both modes.
+A new Learning Flow starts with *New translations* set to *Wait for someone to approve them*; automatic is a deliberate choice behind a permission.
+UM-6's stricter option C (automatic only once the model is calibrated) waits for calibration, which is a late phase at best.
+
+What this means for the work:
+
+- **One promotion path**: simplification option A (remove the in-place promotion path), in Track 2 step 1. Automatic mode approves the same draft at once, through the same code.
+- **The default**: the promotion mode's default on `ShapeshifterAiDoc` changes to review, and the demo's `Any feed` document changes with it (or is documented as a deliberate automatic example).
+- **The permission**: choosing *Use them as soon as they pass* needs a permission beyond EDIT on the Learning Flow; without it, the choice is shown but can't be changed. Which permission (a new application permission, or an existing one) is still to settle. This is a small change on the Setup tab, within the final UI design (AS18).
+- **"Per feed" is per Learning Flow** in the final UI: the mode is a setting on the Learning Flow, and one Learning Flow can serve many feeds (AS4). A feed that needs a different mode needs its own Learning Flow. A per-pipeline override would be a change to the design, and isn't planned.
+
+**The question.**
+Today the default is automatic, and the two modes write learned content in different ways: automatic relearning rewrites the parser and XSLT in place, while review writes a numbered draft that approval points the learner at.
+SIM-1 asks whether review should be the default, with one promotion path for both modes.
+UM-6 asks the same question from the model's side: whether a person should approve until the model is calibrated and the feed has reference output.
+The demo's `Any feed` document is `AUTOMATIC` today.
+The final UI offers both modes on the Setup tab (*Approving new translations* > *New translations*), so changing the default doesn't change the screens.
+
+**Options.**
+
+- **A. Keep automatic as the default, with two paths (today).**
+  - For: no work, and feeds go live with no one involved.
+  - Against: two code paths to test; a model nobody has calibrated changes production content unwatched.
+    NETFILTER was promoted automatically with a score of 1.0 although it lost a line and hard-coded a year.
+- **B. Review by default, one path, automatic per feed behind a permission (chosen).**
+  Every result that clears the gate is written as a draft.
+  Under review a person approves it; under automatic the system approves it at once, through the same code.
+  - For: one path; a feed can move between modes without its content being handled differently; switching to automatic becomes a deliberate, permitted act.
+  - Against: slower onboarding until feeds are switched to automatic; one short-lived draft per automatic promotion.
+- **C. Option B, plus automatic allowed only once the model is calibrated and the feed has references (UM-6).**
+  - For: the strongest guard against an unknown model.
+  - Against: depends on calibration, which comes [later](#later-calibration-and-larger-step-sizes).
+    Until then, no feed could be automatic.
+
+Option B now, tightened to option C when calibration exists, satisfies both documents; option B is what was decided.
+
+**Example.**
+The firewall feed changes its timestamp format, and a relearn clears the gate.
+On a feed left on review, the draft waits on the pipeline's Learning Status tab ("A new translation is ready for you to check"), showing "412/412 events valid, no regressions" once approval evidence is added (Track 2 step 4), and a person approves it.
+On a feed switched to automatic, the system approves the same draft at once.
+Either way the learner ends with one set of documents and a new snapshot.
+
+#### SIM-3: provisional bindings
+
+**Decided, 18 November 2026: option E, remove them.**
+A result learned from fewer than `minRecordsToLearn` records is a draft, even on an automatic Learning Flow, and waits for a person (N4 option F).
+What this means for the work (Track 2 steps 1 and 1a):
+
+- The server removes provisional bindings, the serve-time confirmation, the Accept action and its endpoint. Old `PROVISIONAL` attempt rows are mapped before the enum value goes (N5: the unreleased migration is edited in place).
+- The UI loses the *On trial* chip, *Accept now* on the Learning Status tab, and "trusted or on trial" on the Quality Assurance tab, removed before the server removes the endpoint (AS13). This is a minor change to the final UI (AS18).
+- One of task 8's lost-update writers goes with them.
+
+**The question.**
+In automatic mode, a first result learned from fewer than `minRecordsToLearn` (default 10) records is provisional: it serves at once and is confirmed later.
+Should provisional bindings go, so that a result learned from too few records always waits for a person?
+
+**Options.**
+
+- **D. Keep them.**
+  - For: small feeds on automatic go live with no one involved.
+  - Against: the audit found they don't behave as described.
+    Confirmation needs one stream with enough records, not enough records in total, so a feed that sends 4 records a file stays provisional for ever and never gets a rolling score.
+    The serve-time confirmation is also one of the lost-update writers in task 8.
+- **E. Remove them (chosen).** A result from too few records is a draft, even on an automatic feed.
+  - For: "when in doubt, it's a draft" fits SIM-1; removes the Accept action, its endpoint and a race.
+  - Against: small automatic feeds wait for a person.
+    About 20 production files change, and old `PROVISIONAL` attempt rows must be mapped before the enum value is removed (see N5).
+    The final UI shows provisional bindings: the *On trial* chip, *Accept now* on the Learning Status tab, and "trusted or on trial" on the Quality Assurance tab.
+    Removing them takes those out, which is a minor change to the UI design rather than a redesign.
+
+#### N4: what happens behind a too-small draft
+
+**Decided, 18 November 2026: option F, a person must act.**
+A draft learned from too few records waits for a person; later streams of the feed defer with "Awaiting review" until it is approved or rejected.
+No new code is needed for it.
+It may be revisited later, if quiet feeds on automatic Learning Flows wait too long (see [Later](#later-calibration-and-larger-step-sizes)).
+
+**Decided, 18 November 2026: the record minimum applies to first learning only.**
+With one promotion path (SIM-1 option B), a relearn writes a draft, which an automatic Learning Flow approves at once, however few records the stream that prompted it had.
+
+- **Why:** the minimum exists because a first result has nothing else to be judged on. A relearn does: it must pass the regression corpus (records accepted from earlier streams, up to the regression cap) and score no worse than the translation already in use. So a relearn from 3 records is still judged on far more than 3.
+- **The existing gate stays:** a relearn a person asks for (*Learn again*, or a learner marked to learn again) still starts only on a stream with at least the minimum (`Stage.relearnOnMark`).
+- **For feeds that need every change watched:** use a Learning Flow set to review, the default since SIM-1.
+- **Work:** no new code beyond the one promotion path. Write the rule into the module's design notes (rulings), and add a scenario test showing that a relearn prompted by a stream with fewer than `minRecordsToLearn` records is approved at once on an automatic Learning Flow, and waits as a draft on a review one.
+- **Rejected alternative:** holding relearns to the minimum too. It needs a new condition at automatic approval, a choice of what to count (the stream alone, or with the corpus), and a reason on the draft for the Learning Status tab; and on a low-volume feed it would make every relearn wait for a person.
+
+**The question.**
+If SIM-3 option E is chosen, a draft blocks its learner: every later stream defers with "Awaiting review", and no new session starts behind a draft.
+The simplification document says the feed "waits until a later session has learned from more data", but the code doesn't do that (W3-1).
+And relearns rebind in place with no record minimum at all, so "never approved automatically on too few records" would cover first learning only (W3-2).
+
+**Options.**
+
+- **F. A person must act (today's behaviour for drafts; chosen for v1).** The draft waits; later streams defer until it is approved or rejected.
+  - For: no new code; the rule is simple to explain.
+  - Against: a quiet feed on automatic can wait a long time for someone to notice.
+- **G. A later session may replace a too-small draft.** When a later stream brings enough records, a new session learns from it and its result replaces the draft.
+  - For: small feeds can still finish on their own.
+  - Against: new code and new states; the Learning Status tab has to show a draft being replaced.
+
+Separately, decide whether relearns are held to the same minimum.
+If they are, a relearn from a small stream also becomes a draft; if not, the rule only applies to first learning, and that should be written down. (Decided above: first learning only.)
+
+**Example.**
+A new low-volume feed sends a first file of 4 lines.
+
+| | First file | Next file, 12 lines |
+|---|---|---|
+| Today | Binds provisionally and serves | Promoted to a full binding, because this one stream has 10 or more records |
+| SIM-3 E with N4 F | Becomes a draft | Defers with "Awaiting review" until a person acts |
+| SIM-3 E with N4 G | Becomes a draft | A new session learns from 12 records; its result replaces the draft and, on an automatic feed, is approved |
+
+### 4. Gates: UM-2 and UM-3
+
+Option letters are unique across the group: UM-2 is A–C, UM-3 is D–F, and the QA assessments are G–I.
+UM-2 and UM-3 are decided, including what the monitoring score is made of. The QA assessments are to be deleted: no requirement for them can be found.
+
+#### How checks work (decided, 18 November 2026)
+
+UM-2 and UM-3 are decided together, as one simple model of checks that the user controls.
+In one sentence for a user: *each check is Off, Advice or Gate; a candidate goes live when every gate passes, and a served record that fails a gate holds its stream back; learning steps route on any check that applies to them.*
+
+- **One list of checks, on the Learning Flow.** Every check has a row under the Setup tab's *Quality checks*, heuristic or not: the existing scorers, the checks that today exist only on learning steps (wholeness, preservation, fidelity), and the new ones (completeness, no data-like literals, time plausibility, the regression corpus). Each row has a state and, where one means something, a threshold and its own parameters. Nothing is removed for being heuristic.
+- **Each check is Off, Advice or Gate:**
+  - **Off**: not run, not shown.
+  - **Advice**: run; shown beside a draft on the Learning Status tab and fed back to the model; never decides promotion.
+  - **Gate**: refuses a candidate that falls below the check's threshold.
+- **A candidate passes when every gate passes.** There are no weights and no weighted total, so no pass mark: a non-gated check can't change the result through the total, and several near misses no longer add up to a failure on their own.
+- **Serving uses the same gates.** The serving record bar is every check set to Gate that judges records one by one, not a fixed set in the code. A served record that fails one holds its stream back and starts a relearn; the *Quality checks* section says so where a check is made a gate.
+- **Steps don't name checks.** A check applies to a learning step whenever it has something to measure there (the scorecard already scores "every setting whose scorer has a signal on the step"): a split step is judged on coverage, yield and wholeness, a transform step on schema, preservation and the rest. Steps keep their rules (`on yield-short goto split`), which fire on whichever checks applied. A check set to Advice still routes; routing isn't promotion.
+- **A step rule that uses a check set to Off is warned about** on the step's card ("This rule uses Yield, which is off"), because it can never fire.
+- **The score people see is the average of the checks that ran**, gates and advice alike: "It scored 87%" on the Learning Status tab, the rolling score behind *Below par*, and "scores lately" on the Quality Assurance tab. (This settles what the monitoring score is made of.)
+- **Compile is always a gate** and can't be changed: every other check depends on the candidate building and running.
+- **Everything else is the user's choice.** Turning off a check the rest of the system relies on is the user's decision and the user's risk, on review and automatic Learning Flows alike. No permission is needed beyond what changing the Learning Flow's other settings needs (EDIT).
+- **The defaults turn on only the non-heuristic checks**: a new Learning Flow has the objective checks as gates and the heuristic checks off (UM-2 and UM-3 below give the table). The presets (*Lenient*, *Standard*, *Strict*) are redefined over the three states; *Standard* is the defaults.
+- **One concept in the code.** Every check is the same kind of thing, judged and reported the same way; compile stays special, and nothing is forced into the structure where it doesn't fit.
+
+**What goes:**
+
+- `FlowStep.checks`, and *what judges it* on a step's card.
+- Weights, the weighted total and the pass mark (`promotionFloor`): the *Weight* field on each check and the *Pass mark* field under *Approving new translations*.
+- The fixed serving record bar (`RECORD_SCORERS`) and the fixed wholeness threshold (`TargetChecks.SPLIT_WHOLENESS`, 90%, which becomes wholeness's default threshold).
+- The split between checks that wrap scorers and checks "that have nothing to weight or threshold" (the two kinds in the `Check` enum).
+
+**What it costs:**
+
+- A check can no longer be limited to some of the steps it applies to. No case is known that needs it.
+- Several checks each just short no longer fail a candidate unless one of them is a gate. That is the intent, but it is a change of behaviour.
+- Medium effort, leaving less code than it starts with: the scorecard, `Conversation`'s per-step check sets, `FlowStep` and its serialisation, the store's flow validation, the step card, the check editor and *Approving new translations*, and scenario tests that rely on example flows' check lists or on pass-mark arithmetic. It is Track 1 task 10 (server) and part of Track 2 step 4 (the *Quality checks* change); the client stops using the weight, the pass mark and step checks before the server removes them (AS13).
+
+#### UM-2: the gates
+
+**Decided, 18 November 2026: option B as the defaults, with literals as advice first** (option C for literals only), within the model of checks above.
+
+| Check | Default | Today | Built by |
+|---|---|---|---|
+| Compiles | Gate, always | Exists (`CompileScorer`) | – |
+| Schema-valid | Gate | Exists (`SchemaConformanceScorer`) | – |
+| Completeness: records in = events out + declared skips | Gate | Partly: input coverage counts characters, on the first 64 KiB only; nothing counts records in against events out | Track 1 task 2, on the whole held stream (N2 option B) |
+| Preservation | Gate | Exists in the target checks (`TargetChecks`), but broken for JSON feeds | Track 1 task 1 |
+| Regression corpus: records accepted from earlier streams still come out right | Gate | Exists (the per-learner regression set), outside the scorecard | Brought into the one structure of checks |
+| No data-like literals (a year, a zone, an environment name written into the XSLT) | **Advice first**, then Gate | Doesn't exist | Track 1 task 3 |
+| Time plausibility: each event's time falls in a window around the stream's received time | **Advice**, with the window settable per Learning Flow | Doesn't exist | Track 1 task 3, fix 3 |
+| Input coverage (characters consumed) | Gate | Exists (`InputCoverageScorer`) | Kept; completeness covers what it misses |
+| Wholeness: the records hold enough of the document's text (split steps) | Gate, threshold 90% | Exists only on learning steps, with the 90% fixed in the code | Brought into the list (Track 1 task 10) |
+| Fidelity: the transform reproduces the target events agreed in the target step | Gate | Exists only on learning steps | Brought into the list (Track 1 task 10) |
+
+What goes with the decision:
+
+- **Declared skips must be designed before completeness ships.** A feed with header lines or heartbeats legitimately makes fewer events than records, so a translation needs an agreed way to say which records it skipped and why (for example an `xsl:message` in an agreed form, or a marker in the output that the writer drops). Without it, completeness fails any feed with lines that aren't events, and users would turn it off. This is part of Track 1 task 2.
+- **Literals start as advice.** The check is itself a heuristic ("looks like data"), so it runs on the demo feeds as advice first. Its default becomes Gate once it has run on every demo feed without a false failure, or with the false failures understood and fixed. A user may make it a gate sooner.
+- **Time plausibility is advice by default, with its window settable per Learning Flow** (decided 18 November 2026). It judges whether an event's time is plausible, not whether it is right, so it fails correct output on back-loaded or historical data, on reprocessed streams and on devices with wrong clocks; as a gate it would also hold back every stream of a back-load while serving. As advice it still shows beside a draft and goes back to the model, which is where NETFILTER's invented year is caught on a review Learning Flow (the default since SIM-1). A user may make it a gate.
+  - **The window** is set on the Learning Flow, with the check's other settings under *Quality checks*: how far before the stream's received time an event may be (default one year) and how far after (default one day).
+  - **Its reference time** is the stream's received time. Regression corpus records keep the received time of the stream they came from, so that re-judging them doesn't fail them against the current stream (audit W8).
+  - **Its time field** is `EventTime/TimeCreated`, which is event-logging's. For another target schema (D1, D2) the field has to be named, or the check doesn't apply.
+  - It doesn't catch time-zone errors, which are hours, not years; the prompt fix (never assume UTC) and N6 cover those.
+- **"Reference regression" is the regression corpus for v1.** The corpus is built from the system's own accepted output, so it means "no worse than what was accepted before", not "matches approved output". Checks against hand-approved reference output come with UM-8 (reference corpora), in the later work.
+
+A correction to how the question was first put: *Error load* and *Event classification* are defined as scorer types but nothing implements them, so neither gates today.
+
+**The question, as it was asked.**
+Which checks decide promotion (gates), and which only inform the model and the reviewer (advice)?
+Today every configured scorer can decide, including the heuristic ones (yield, extraction quality, business rules).
+The demo evaluation found that the heuristic scorers give both false confidence and false failures.
+
+**Options for UM-2 (the gates).**
+
+- **A. Keep today's set.**
+- **B. Objective gates only (chosen as the defaults, with literals as in C):** compiles, schema-valid, completeness, preservation (once task 1 fixes it), no data-like literals, and reference regression.
+  Time plausibility (task 3 fix 3) is added as a check (decided: Advice by default, window settable per Learning Flow).
+- **C. Option B, but with completeness and literals as warnings at first** (taken for literals only; completeness is a gate from the start), until they have run on the demo feeds without false failures.
+
+#### UM-3: the heuristic scorers
+
+**Decided, 18 November 2026: option E as the default, with the user free to choose** (see [How checks work](#how-checks-work-decided-18-november-2026)).
+The heuristic checks stay available. By default they are **off**; a user may make any of them Advice or Gate.
+
+| Check | Default | Why it is heuristic |
+|---|---|---|
+| Yield (output records per input record, against an expected ratio) | Off | The right ratio is a guess per feed |
+| Extraction quality (typed fields rather than `Data`, real `EventDetail` branches rather than `Unknown`, required fields present) | Off | Rewards looking full, not being right |
+| Business rules (the Learning Flow's own XPath assertions) | Off until a site writes rules | Only as good as the rules; a precise site-written rule is as objective as schema validation, and a site may make it a gate |
+
+A heuristic made a gate acts while serving too (it joins the record bar), so a false failure holds streams back and starts relearns, at a cost in tokens. That is the user's choice, and the *Quality checks* section says so.
+Option F (remove them) was rejected: it would break learning steps that route on their shortfalls, which matter now that editable flows stay (SIM-2), and lose their feedback to the model, for little saving.
+
+**Options for UM-3 (the heuristic scorers), as they were put.**
+
+- **D. Keep them as gates.**
+- **E. Show them as advice (recommended; taken as the user's choice, off by default).** They appear beside a draft on the Learning Status tab and in the feedback to the model, but never refuse a candidate.
+- **F. Remove them (rejected).** Some faults they catch would then rely on review alone.
+
+**Example (with the decided defaults).**
+NETFILTER today: 30 lines in, 29 events out, an XSLT containing `select="2023"`, promoted at 1.0.
+With the decided gates:
+
+```text
+✓ Compiles
+✓ Schema-valid (29 / 29)
+✕ Completeness: 30 in, 29 out, 0 skips declared
+✓ Preservation
+✓ Regression corpus: no earlier records for this feed
+⚠ Literals (advice): 2023, Production
+```
+
+It can't be approved as it stands, because completeness, a gate, fails. Its score, the average of the checks that ran, is shown beside it but doesn't decide.
+The literals advice shows beside the draft and goes back to the model, but doesn't refuse it on its own.
+The heuristic checks are off by default, so "Outcome not in record" from business rules doesn't appear unless the site turns that check on.
+
+#### The QA person's assessments
+
+**Decided, 18 November 2026: delete the feature** (replacing an earlier decision the same day to keep it as option G, people only).
+No requirement for it can be found: the assessments and the roles of *QA person* and *Data Provider* arrived with the UI rework branch (`c40284265b`), and no earlier design document, design note or plan mentions them.
+So none of the options below is taken; the feature is removed (Track 2 step 1b).
+
+What goes:
+
+- **Client:** the *Assessments* section of the Quality Assurance tab and its *Record an assessment…* and *Mark resolved* buttons; the assessment dialog (`AssessmentEditor`, its controller, template and `assessment-editor.css`); "Flagged by QA" and its link on the Learning Status tab (`FeedDetail`, `FeedDetailController`, `FeedSituation`); open issues in `QualityFigures`; the assessment stories in `PipelineQualityStories` and `PipelineAiTranslationStories`.
+- **Shared:** `QualityAssessment`, `AssessmentRequest`, `AssessmentVerdict`, and the assessment and resolve calls on `QualityResource`.
+- **Server:** `Assessments`, `InMemoryAssessments`, `AssessmentsDao` and their module bindings; the assessment parts of `QualityService` and `QualityResourceImpl`; their tests (`TestAssessmentsDao`, and the assessment cases in `TestQualityService` and `TestSupervisorResourceImpl`).
+- **Database:** the `shapeshifter_assessment` table, taken out of the unreleased `V08_00_00_001` migration (N5) and out of `jooq-codegen.xml`, with the jOOQ code regenerated.
+- **Words:** the *QA person* and *Data Provider* roles, in the UI's text, code comments and the migration's comments.
+
+If a requirement for checking live output, or for people's judgements becoming reference output (UM-8), turns up later, it should start from that requirement rather than from this code.
+
+**The rest of the Quality Assurance tab stays** (decided 18 November 2026): the quality figures, the daily volume, what its records became, the samples and the learning runs' scores, with `QualityResource`'s report and samples calls, the volumes code and `shapeshifter_output.record_count`. There is a verbal requirement for it, which should be written down, with who asked for it, so that the tab can be judged against it.
+
+**The options, as they were put.** The final UI adds a Quality Assurance tab on each Smart Pipeline, where a QA person records an assessment of its translated output: *looks right*, or *has an issue for the Data Provider to fix*.
+Should assessments feed in?
+
+- **G. People only (as built).** Assessments are shown on the Quality Assurance tab and, while open, as "Flagged by QA" on the Learning Status tab.
+- **H. An open issue holds back promotion** of the next draft for that pipeline until it is resolved, or is shown beside the gates as advice.
+- **I. Assessed output becomes reference output** for the reference-regression gate, which is UM-8's "approved output becomes references" (later work).
+
+**Affects:** Track 2 step 1b (the removal).
+
+### 5. Learning recipe: SIM-2 and N3
+
+Option letters are unique across the group: SIM-2 is A–B, and N3 is C–E.
+Both are decided, and the group also records the requirement to define flows in JSON rather than the flow DSL.
+
+**Settled by the final UI: option A, editable flows stay.**
+The Setup tab's *Learning steps* section is built around editing the flow: a route map of the steps, a card per step with its rules and question text, *Add step*, and *Load default setup* to start from one of the example flows.
+Fixing the recipe in code would remove that section, which is more than a minor change to the design.
+So simplification option B (remove the flow language) is dropped, and with it Track 2's largest removal and the audit's W2 findings about it.
+The options are kept below as the record of why the question was asked.
+
+#### N3: the default setup
+
+**Decided, 18 November 2026: option D, `ESCALATING` (*Quick, then careful*) is the default setup for a new Learning Flow**, subject to a `TestLiveScenarios` run.
+
+- **Why:** under the checks model (group 4) a check applies only to steps it can measure. `DIRECT` has no split step and no target step, so wholeness, preservation and fidelity, three of the default gates, would never apply, and XML and JSON inputs would be judged as one record each. `ESCALATING` gives every default gate something to measure, and it is what the demo content already runs "for formats nobody has seen yet".
+- **Before switching:** run `TestLiveScenarios`, which compares `DIRECT`, `TARGET_FIRST` and `ESCALATING`, and record the results. If they show `TARGET_FIRST` clearly better, choose that instead and record why.
+- **Where the default is set today**, all to change together: `ShapeshifterAiDoc.DEFAULT_FLOW`, the fallback in `LearningFlow` ("a document naming no steps is read as `DIRECT`'s"), the fallback in `ShapeshifterAiSerialiser`, and the Setup tab's starting flow (`ApproachSectionController`). Changing the fallback changes how a stored document with no steps is read; nothing is released, so only dev and demo documents and the scenario tests that rely on the old default are affected.
+- **Work:** S, plus the `TestLiveScenarios` run. Part of Track 2 step 1c, with the move to JSON below, since both change how flows are defined.
+
+#### Flows defined in JSON, not the flow DSL
+
+**A requirement (18 November 2026): stop using the flow DSL, and define flows as JSON, using Stroom's normal Jackson conversion between JSON and objects.**
+
+**Where the DSL is today.** A Learning Flow is already stored as JSON: `LearningFlow`, `FlowStep` and `Transition` are Jackson-annotated, and the document serialiser reads and writes them with `JsonUtil`. The DSL is a second, text form of the same objects, which a person never edits (the Setup tab edits steps on cards, never as text):
+
+- `FlowStep.parse(String)`, a hand-written parser of lines such as `CONFIGURE parser on yield-short goto split`, with its own error messages;
+- the written form, `FlowStep.toString()`, `Transition.toString()` ("the transition as it is written") and `LearningFlow.toString()`;
+- the built-in default setups, `FlowExample`, which are written as DSL lines and parsed when the class loads;
+- about 116 `FlowStep.parse` calls in tests, across `stroom-core-shared`, `stroom-shapeshifter-ai`, `stroom-core-client` and `stroom-app`;
+- examples written in the DSL in the design notes, the rulings, `FlowWords`' and `FlowProblem`'s wording, and this plan.
+
+**The change.**
+
+- **The default setups become JSON resources** (for example `escalating.json`, `target-first.json`, `direct.json` beside `FlowExample`), read with the same Jackson mapper as a stored document, so a built-in setup and a saved Learning Flow are the same format.
+- **Tests build flows from JSON** (fixtures, or the same resources), or from the objects' builders, not from DSL lines.
+- **`FlowStep.parse`, the written forms and the DSL's grammar are deleted.** Where a person sees a step or a rule (the Setup tab, stop reports, `FlowProblem` messages, the progress strip), the wording comes from `FlowWords`, the plain-language form the UI already uses, never from the DSL.
+- **The JSON is the objects as they are**, with no custom serialisers: one model, one format. Tidy the model where the DSL shaped it, for example the reserved `goTo` names (`end`, `park`, `give-up`), which the JSON can name more plainly. Do it together with Track 1 task 10, which removes `FlowStep.checks`, so the step model changes once.
+- **Documents:** the stored form is already JSON, so no document migration is needed beyond what task 10 and any tidying of the model require (N5: the unreleased migration and dev and demo documents are reset rather than migrated).
+- **Design notes and rulings** that show flows in the DSL are updated to JSON (the module's `design/05-learning-flow.md` especially); this plan's DSL examples are kept as the record of the question as it was asked.
+
+**Work:** M, mostly mechanical: the three default setups, the parser and written forms removed, about 116 test call sites, and the design notes. It is Track 2 step 1c, done with Track 1 task 10 and the N3 default change.
+
+**N3, as it was put.**
+What was left of N3 after SIM-2 was a smaller question: **which default setup a new Learning Flow starts with**.
+The client starts a new document from `DIRECT` (*Straight to it*); the audit's points about `DIRECT` (no SPLIT, so no record boundary for XML and JSON; no TARGET, so no target, preservation or fidelity checks) argued for making `ESCALATING` (*Quick, then careful*) or `TARGET_FIRST` (*Agree the events first*) the default, not for removing flows.
+
+**The question, as it was asked.**
+The order of questions is data on each document, written in a small flow language that a person can edit (then on the Learn tab, now on the Setup tab).
+SIM-2 asked whether the recipe could be fixed in code.
+N3 asked which recipe, because the audit found the one proposed (`DIRECT`) drops steps the demo depends on, and because the unknown-models proposal assumes flows stay editable so that step size can be a property of the document (W2-6).
+
+A flow looked like this in the DSL, which is being replaced by JSON (`ESCALATING`, abridged):
+
+```text
+CHAIN
+SPLIT
+CONFIGURE parser on yield-short goto split
+first: CONFIGURE transform candidates 2
+       on passed goto end on spent goto target
+TARGET kinds 3
+again: CONFIGURE parser
+CONFIGURE transform on preservation-short
+       goto again on spent goto admit
+ADMIT
+```
+
+**Options for SIM-2.**
+
+- **A. Keep the editable flow language (chosen, with the final UI).**
+  - For: strategies can be tried without a code change, and the unknown-models step sizes fit as more flows.
+  - Against: every site can run a different, untested strategy, unattended on automatic feeds; the server must parse, validate and run arbitrary flows; the client keeps the flow editor.
+    The first risk is reduced by the default setups and the store refusing a flow with problems, but not removed; review by default (SIM-1 option B) is the main guard.
+- **B. Fix the recipe in code (was recommended), with a few plain settings** on the document: the model, retries per step, budgets and scorers.
+  - For: every document runs a tested recipe; the flow language, its shared types and most of the flow editor go.
+  - Against: experimenting needs a release.
+    The audit puts the effort at L, not M: the server saving is about 1,500 lines (only about 250 of `Conversation`'s 1,288 lines interpret flows), about 35 scenario tests are bound to the example flows, the allowed-elements field has to come back to the document (reversing A95), and the progress strip needs the recipe from somewhere.
+    The final UI would also lose its *Learning steps* section.
+
+**Options for N3 (which recipe), as asked.** With flows kept, read "recipe" as "default setup for a new Learning Flow".
+
+- **C. `DIRECT`** (chain, parser, transform, admit), as the simplification document proposed.
+  - Against: with no SPLIT step, XML and JSON inputs get no record boundary and the transform isn't run one record at a time.
+    With no TARGET step, the target, preservation and fidelity checks never run.
+    This is a behaviour change, not a simplification.
+- **D. Close to `ESCALATING`, keeping SPLIT and TARGET (chosen: `ESCALATING`).**
+  The demo already runs `ESCALATING` "for formats nobody has seen yet".
+  - For: keeps today's behaviour for XML and JSON.
+  - Against: keeps most of `Conversation`, so the saving is smaller.
+- **E. `TARGET_FIRST`.** 27 of the scenario tests use it, so it would move fewest tests, but it hasn't been compared with the others on the live scenarios.
+
+Before choosing, run `TestLiveScenarios` (which compares `DIRECT`, `TARGET_FIRST` and `ESCALATING`) against the candidates, and record the results.
+
+**How step sizes fit.**
+The unknown-models proposal adds coarse steps (parser and XSLT in one reply) and a whole-pipeline agent loop.
+With flows kept, these become new kinds of step and new default setups, offered under *Load default setup*, rather than a code setting.
+
+**Example: what DIRECT loses.**
+An `OTEL-TRACES` JSON stream holds many spans under `resourceSpans`.
+With SPLIT, the boundary `resourceSpans` is learned, and the transform is shown and run one span at a time.
+With `DIRECT`, there is no boundary, so the whole stream goes through the transform as one record, and the target and preservation checks never run.
+
+### 6. Prompts: SIM-5, N9 and D2
+
+Option letters are unique across the group: SIM-5 is A–B, N9 is C–E, and D2 is F–H. [shapeshifter-ai-single-target-schema.md](shapeshifter-ai-single-target-schema.md) uses the same letters for D2; the audit, written earlier, calls them A–C.
+
+#### SIM-5: prompts in code
+
+**Settled by the final UI: per-document question texts stay, and the notes field is added beside them.**
+Each step's card on the Setup tab shows the question text it is asked with, which can be edited or loaded from a built-in, and the *AI model and instructions* section has a free-text *Instructions to the AI* field.
+A pipeline's Learning Status tab also keeps a per-feed *Note to the AI* (guidance).
+So the UI has both option A's overrides and option B's notes field (SIM-5's options).
+Simplification option E (prompts only in code) is dropped.
+That makes N9 more important, because past turns may have been asked in a document's own words as well as an older built-in.
+
+**The question, as it was asked.**
+Each document can override the built-in text of every question it sends to the model.
+Should prompts live only in code?
+
+**Options.**
+
+- **A. Keep per-document overrides (chosen, with the final UI, together with B's notes field).**
+  - For: a site can tune wording without a release; D2 option F depends on it.
+  - Against: each site can quietly run an untested prompt, and on an automatic feed nobody sees the effect before it goes live.
+- **B. Code only, plus a free-text "notes for the model" field per document (was recommended).**
+  - For: prompts are reviewed and tested like code; support can tell what the model was asked; the notes field gives sites a safer way to add context.
+  - Against: a site can't change the wording, only add to it.
+
+**Example.**
+A site edits the transform prompt to "output only the fields you're sure of".
+Its events now pass validation but lose detail, and nobody else's tests show it.
+Under option B, the site would write "the `src` field is the client address, not the server's" in the notes field instead, which adds context without replacing the rules.
+
+#### N9: recording which prompt the model saw
+
+**Decided, 18 November 2026: option D, extended.** Record what the prompt was built from, not the prompt itself, and rebuild the prompt as submitted for a person allowed to see the data.
+
+- **Recorded on each learning run** (`shapeshifter_attempt`, in the unreleased migration, N5), and again when a paused run resumes:
+  - the text of every question template the run used, the built-in ones and the Learning Flow's own, with the built-in version (`Templates.VERSION`). Recording the text rather than only the version means the prompt can be rebuilt after an upgrade without the old templates in the code;
+  - the Learning Flow's *Instructions to the AI* and the pipeline's *Notes to the AI*, as the run had them;
+  - the build of Stroom that ran it, so that a rebuild after an upgrade can say the checks' wording may have changed.
+
+  None of this is stream text. The sample is already identified by the run (the stream and the part of it learned from), so it isn't copied.
+- **Rebuilt when viewed.** On the Learning Status tab, a person with the *View Data* permission who opens a question in the conversation sees the prompt as it was submitted: the recorded templates and texts, filled with the sample read from the stream, and the feedback re-derived by re-walking the run (A45: a re-walk over the same sample re-derives the same questions). Anyone else sees the summary, as today, and a sentence saying why (as the Quality Assurance tab's samples do).
+- **Limits, said where they apply:** a prompt can't be rebuilt once its stream has been deleted (retention), and after an upgrade the re-derived feedback may differ from what was sent if the checks' wording changed; the conversation says so rather than showing a guess.
+- **Resuming uses the recorded templates**, so a paused run that resumes after an upgrade or an edit shows the model its own history in the words it was first asked, not new ones.
+- **Why not option E** (store the rendered text): it would copy stream text into `shapeshifter_turn`, where it could be read without the data permission and would outlive the stream under retention, and it repeats the sample in every question. The module already keeps pointers rather than copies (`shapeshifter_corpus` holds a stream id and segment, not the record).
+
+**Work:** M. Server: record the template set and texts per run, a service that rebuilds a turn's prompt behind the *View Data* check, and resume rendering from the recorded set. Client: the conversation's *what was asked* shows the rebuilt prompt, or the summary and why. In Track 2 step 1 (server) and step 4 (client).
+
+**The question, as it was asked.**
+SIM-5's support benefit ("what exactly did the model see?") doesn't hold today.
+Turns store only a question summary, such as "Configuration: XSLTFilter XSLT", and every earlier question is re-rendered from the current templates on each call (W2-5).
+After an upgrade, a past turn can't be reproduced, and a resumed attempt's history is shown to the model in new words.
+
+**Options.**
+
+- **C. Record nothing more.** Accept that past turns can't be explained after an upgrade.
+- **D. Record the prompt version per turn (chosen, extended as above).** One column holding `Templates.VERSION`. Cheap, and enough to find the wording in source control.
+  With per-document question texts kept (SIM-5), it only identifies the built-in wording; a turn asked in a document's own words would also need the document's version, or option E.
+- **E. Record the rendered text per turn.** Exact, but much more storage, and it includes sample data.
+
+#### D2: how the model is told about a schema other than event-logging
+
+**A requirement (18 November 2026): every target schema must be usable**, not only event-logging.
+
+**Decided, 18 November 2026: option G, generate a structural summary from the XSD**, since it is the option that gives any schema a usable prompt without work at each site.
+
+- The prompt gets a summary generated from the target schema's XSD: the root element, the record element, the required children in order and the allowed choices, capped in length. The hand-written event-logging guidance stays as the built-in text when the target is event-logging.
+- A site can add anything the summary misses through *Instructions to the AI*, or a step's own question text (SIM-5 keeps both).
+- The wording is tested against at least one schema other than event-logging, with a second XSD test fixture (already in Track 1 task 7).
+
+What "every target schema must be usable" means beyond the prompt, and so for Track 1 task 7:
+
+- **Where the target schema is set** must be decided (D1, group 7); D2 needs the one setting to read.
+- **Checks that read event-logging's own fields** must work for other schemas or say they don't apply: time plausibility reads `EventTime/TimeCreated`, so its time field is named per Learning Flow (a field beside its window, defaulting to event-logging's); extraction quality reads `EventDetail` and `Unknown`, so it doesn't apply to other schemas unless its fields are named. A check that doesn't apply to the Learning Flow's schema is shown as such under *Quality checks*, not silently passed.
+- **The other event-logging assumptions** the audit found (W1-1 to W1-7: the Java-literal wording, ADMIT for other schemas, `Data` counted as untyped, "a record is a child of the root" in five classes), and preservation's records:2 assumption (W5-6, Track 1 task 1), are part of the same work.
+- **Effort:** task 7 is L rather than M.
+
+**The question, as it was asked.**
+The prompts describe event-logging in hand-written text.
+If the target schema can be something else (D1), how does the model learn that schema's structure?
+
+**Options.**
+
+- **F. Require a template override** in which someone writes the rules by hand.
+  Possible again, since the final UI keeps overrides (SIM-5), but it puts the burden on every site that uses another schema.
+- **G. Generate a structural summary from the XSD (chosen):** root element, record element, required children in order, and allowed choices, capped in length.
+  - For: the schema is really set in one place, and any schema gets a usable prompt.
+  - Against: more work; the wording must be tested against real schemas.
+- **H. Generic rules only**, and let the model learn the structure from validation errors.
+  - Against: costs more attempts and budget, and is likely to stall on schemas with deep required structure.
+
+Whichever is chosen, the hand-written event-logging guidance stays as the built-in text when the target is event-logging.
+
+**Example (illustrative).**
+For a schema `acme-audit:1`, option G would add something like this to the prompt:
+
+```text
+Target schema: acme-audit:1 (namespace urn:acme:audit:1), root element <AuditLog>.
+Write one <Entry> per input record.
+Each <Entry> has, in this order: <When> (required), <Who> (required), <What> (required), <Outcome> (optional).
+<What> contains exactly one of: <Login>, <Logout>, <FileAccess>.
+```
+
+**Affects:** Track 1 task 7 (M, or L with option G).
+
+### 7. Where settings live: D1 and N6
+
+Option letters are unique across the group: D1 is A–B, and N6 is C–F.
+
+#### D1: the target-schema setting
+
+**The question.**
+Today the target schema is the conformance scorer's `schemaGroup` parameter, while the prompts and target checks assume `event-logging:3`.
+Where should the one setting live?
+
+**Options.**
+
+- **A. A top-level field on the Shapeshifter AI document (recommended).**
+  - For: the schema describes what the document produces; it is still defined if the conformance scorer is removed.
+  - Against: a document migration and a new field on the Setup tab, most naturally under *AI model and instructions* or *Quality checks*, with its route-map summary and workbench stories.
+    This is a small addition within the final UI design.
+- **B. Keep it on the conformance scorer**, and have the prompts and checks read it from there.
+  - For: no new field.
+  - Against: a document without that scorer has no target, so it needs a fallback, which hard-codes event-logging again.
+
+#### N6: where a feed's time zone lives
+
+**The question.**
+Nothing in Shapeshifter knows a time zone, and the prompt tells the model to write times "with a trailing Z" (S9).
+Receipt headers reach the stage but are never read.
+Where should the time zone of timestamps that carry no offset come from?
+
+**Options.**
+
+- **C. A field on the Shapeshifter AI document.**
+  - For: one place, beside the target schema.
+  - Against: one document can serve many feeds (the demo's `Any feed` document does), and they may be in different zones.
+- **D. A property of the feed.**
+  - For: the zone belongs to where the data comes from.
+  - Against: a change to the feed document, outside Shapeshifter.
+- **E. A receipt header, such as `TimeZone: Europe/London`.**
+  - For: the sender knows best, and headers already reach the stage.
+  - Against: senders often don't set it.
+- **F. A combination:** a header if present, otherwise the feed's or document's default, otherwise ask the model to state its assumption rather than silently write UTC.
+
+Whichever is chosen, the zone is shown to the model and passed to `stroom:format-date` as its third argument, which needs N1.
+The audit suggests deciding it alongside D1, so that the Setup tab is changed once.
+
+**Example.**
+A London firewall logs `Oct 19 09:06:02`, during British Summer Time (UTC+1).
+The right `TimeCreated` is `2026-10-19T08:06:02.000Z`.
+With no zone, today's prompt makes the model write `2026-10-19T09:06:02.000Z`, an hour out, and no check can tell.
+
+### 8. SIM-4: which Supervisor actions are in v1
+
+**Settled by the final UI: option A, every action stays.**
+The Supervisor as a screen is gone.
+Monitoring > Smart Pipelines and a Learning Flow's Pipelines tab only list pipelines; every action is on the pipeline's Learning Status tab, offered only where it applies, by the pipeline's permissions (see [ui-design.md](ai-translations/ui-design.md#a-pipelines-learning-status-tab)).
+Simplification option D (a smaller Supervisor) is dropped as a UI change.
+
+What is still open is server-side only:
+
+| Action | On screen as | What is left to decide |
+|---|---|---|
+| Watch | The list, *Where it stands*, *Learning history* | Nothing |
+| Approve, reject | *Approve and use it*, *Reject…* | Approval evidence and who approved (Track 2 step 4) |
+| Retract | *Remove translation…* | Nothing |
+| Relearn, give up | *Learn again*, *Stop learning…* | Nothing |
+| Grant | *Give it more…* | Nothing |
+| Guidance | *Note to the AI* (per feed), beside the Learning Flow's *Instructions to the AI* | Nothing |
+| Improve | *Improve…* | It calls the model inside a web request, against the design's own rule. Move it to the worker (Track 2 step 1); the button stays. |
+| Amend a turn | *Answer it myself*, or change an answer and run again, in the conversation | Nothing; the UI keeps it |
+| Exhaust | *Finish with Unknowns* | Nothing; it stays with editable flows (SIM-2) |
+| Accept | *Accept now* | Goes, with provisional bindings (SIM-3 option E; Track 2 step 1a) |
+
+**Affects:** Track 2 step 1 (Improve to the worker); supervisor-visibility items in Track 1 task 6.
+
+### 9. Pipeline creation: SIM-7, SIM-8 and SIM-9
+
+Option letters are unique across the group: SIM-7 is A–C, SIM-8 is D–F, and SIM-9 is G–H.
+
+#### SIM-7: drop the Pipeline Factory
+
+**The question.**
+Two features each turn a new feed into a pipeline that inherits from a template: Content Templates (core Stroom, released in 7.9) and the Pipeline Factory (new on this branch).
+A feed that matches both gets two pipelines and two filters, so every stream is translated twice, with two learners and twice the model spend.
+
+**Options.**
+
+- **A. Keep both.** Double processing remains, and someone has to make sure they never match the same feed.
+- **B. Drop the factory; Content Templates of type `INHERIT_PIPELINE` make each feed's AI pipeline (recommended).**
+  - For: about 6,000 lines and two tables go, and three security problems the factory has go with it (any run-as user, unclean substitutions, no separation between accounts).
+  - Against: no automatic coverage of existing feeds; no record of what was made, with retries; fewer filter settings.
+- **C. Keep the factory and stop using Content Templates for AI.** Keeps the security problems, and the factory is unreleased while Content Templates already ship.
+
+**Example.**
+Account `1234` sends its first data for `ACME-FIREWALL-EVENTS`.
+The Content Template creates the feed in `Feeds/1234`, a pipeline `Feeds/1234/ACME-FIREWALL-EVENTS` inheriting from the AI template, and a filter for that feed.
+Its learned content lands in `Feeds/1234/ACME-FIREWALL-EVENTS learned`, which the account's groups can already see.
+`learnedFolder` and `learnedName` must be left unset on the template pipeline, or every feed would write to the same place.
+
+#### SIM-8: AI on existing feeds
+
+**The question.**
+Must existing feeds get AI pipelines automatically?
+
+**Options.**
+
+- **D. By hand, per feed, once its data is approved for the model (recommended).**
+  A person creates a pipeline inheriting from the AI template, with a filter and a minimum creation time, then disables the old translation filter.
+- **E. Automatically, with a scan trigger added to Content Templates later**, off by default, with a minimum creation time for AI templates.
+- **F. Automatically, through the factory.** Not available if SIM-7 option B is chosen.
+  It also attaches a second pipeline beside any hand-built one, so every stream is translated twice, and unless a minimum creation time is set it sends the feed's history to the model.
+
+#### SIM-9: drop the `claimTasksOnWorker` requirement
+
+**The question.**
+Shapeshifter refuses to create a filter over an AI pipeline unless the experimental `stroom.processor.claimTasksOnWorker` setting is on, which needs the whole cluster stopped to change.
+The stated reason, that the master queue wouldn't see woken tasks, doesn't hold: waking is a database update the master's next fill reads, and `TestDeferredTask` already covers it in both modes.
+
+**Options.**
+
+- **G. Keep the requirement.**
+  Every site needs an experimental mode to use AI translation, and a Content Template that makes an AI pipeline fails at receipt on a default install (so SIM-7 option B wouldn't work).
+- **H. Remove it, after a test-cluster trial with the master queue (recommended).**
+  A wake then takes up to about 10 seconds plus the queue's fill cycle; worker claiming stays available as a site's choice.
+
+**Affects:** Track 1 task 5 is SIM-9; Track 2 step 1 (option G) needs SIM-9.
+
+### 10. N7: counting spend when usage is unknown
+
+**The question.**
+When a provider doesn't report token usage, which some OpenAI-compatible local servers don't, Shapeshifter counts zero tokens, so the token budget never trips and spend reads zero (S10).
+Failed calls also count as zero (W6-3).
+The planned spend breaker would never open.
+
+**Options.**
+
+- **A. Refuse models that don't report usage.** Simple and strict, but rules out some self-hosted models.
+- **B. Estimate tokens from characters when usage is missing, and charge failed calls (recommended).** An estimate of about 4 characters a token is enough for a breaker.
+- **C. Add a second limit on the number of calls**, which needs no usage at all, alongside A or B.
+
+**Example (illustrative).**
+A site points Shapeshifter at a local server that omits `usage`, with a token budget of 200,000.
+A feed that keeps failing runs 300 sessions overnight; the budget and the spend counter both read zero.
+Under option B the budget trips part-way through the first session that exceeds it.
+
+### 11. N8: several nodes learning at once
+
+**The question.**
+The audit found races when several nodes learn and serve the same learner (W7-1 to W7-4).
+For example, a node with a stale cache can open a new attempt after a promotion and append a second binding for the same learner; nothing in the table prevents it.
+Must this be sound for the first release?
+
+**Options.**
+
+- **A. Yes (recommended if any multi-node installation will run it).** Track 1 task 8: a backstop expiry, a guard against a second live binding, a version-checked `replace`, waking first-learning deferrals, and a two-cache test harness. Effort M.
+- **B. No: the first release supports one node only**, stated in the documentation, with task 8 later.
+  Cheaper now, but it rules out clustered installations until task 8 is done.
+
+### 12. N5: editing the unreleased migration
+
+**The question.**
+Shapeshifter has one database migration, `V08_00_00_001`, which hasn't been released.
+Several steps (removing provisional bindings, the children-of boundary, the prompt-version column) change tables.
+Edit that migration, or add new ones?
+
+**Options.**
+
+- **A. Edit it in place until the first release, and reset dev and demo databases (recommended).**
+  - For: the release ships one clean migration, not one that creates columns and the next that drops them.
+  - Against: every database that has already applied it fails Flyway's checksum and has to be reset.
+- **B. Add migrations (`V08_00_00_002`, …).**
+  - For: existing dev and demo databases keep working.
+  - Against: the release carries the branch's history; the migration that removes provisional bindings must also map old rows.
+
+Whichever is chosen, record the rule in `ISSUES.md` so every step follows it, and run `generateJooq` after each change.
+
+The UI merge has in effect chosen option A: it edited `V08_00_00_001` in place to add `shapeshifter_attempt.report`, `shapeshifter_output.record_count` and the `shapeshifter_assessment` table.
+Record N5 as decided unless someone objects.
+
+### 13. UM-9: the order of the raised tasks
+
+**The question.**
+In what order should the raised tasks be done?
+
+**Options.**
+
+- **A. Gates first (recommended):** preservation, parser drift fix 1 and missing year fixes 1 and 3, then mixed record elements and the single target schema.
+  Supervisor visibility items 3 and 5 are small and can ship at any time (and are largely done; see Track 1 task 6).
+- **B. What users see first:** supervisor visibility and the single target schema, then the gates.
+  Easier to demonstrate, but the later gates would change what the Learning Status tab shows.
+
+Track 1 already follows option A, adjusted for the audit.
+Confirming it is all that is needed.
+
+## Track 1: correctness fixes (server only)
+
+These change the checks and the serving code.
+The final UI shows their results (stop reports, chips, quality figures) but needs no change for them, except where a task says so.
+Re-find each task's audit findings in the merged code before starting (AS2): the UI merge changed `Stage`, `Conversation`, `Supervision`, `StageFactory`, `AttemptsDao`, `OutputsDao`, `FlowStep` and `StepDetails`.
+The order is the one the unknown-models proposal recommends, adjusted for what the [code assumption audit](shapeshifter-ai-code-assumption-audit.md) found.
+The audit's finding IDs are given so each task starts from what is already known.
+
+| # | Task | Fixes to do | Needs | Effort | Audit findings |
+|---|---|---|---|---|---|
+| 1 | [Preservation check matches record markup](shapeshifter-ai-preservation-matches-record-markup.md) | The proposed fix in that document. It currently stops JSON feeds such as `OTEL-TRACES` from learning at all, and preservation is one of the promotion gates. | Nothing | As in that document | W5-6 (preservation assumes records:2 `data/@value`) |
+| 2 | [Parser drift not detected](shapeshifter-ai-parser-drift-not-detected.md) | Fix 1, re-scoped: measure input coverage with a filter in the real pipeline run (the one refactor i needs), report it through `ServedStream`, make the stand-in runner agree, check it in the worker's full pass and `settle` as well as in `Stage.stream`, and stop the unbounded relearn after `Kept`. Build completeness as a check (default Gate; UM-2): records in = events out + declared skips, with the way a translation declares a skip designed first. | N2 (decided: option B); UM-2 (decided) | M to L | W4-1 to W4-7, S2, W5-8 |
+| 3 | [Missing year hard-coded](shapeshifter-ai-missing-year-hard-coded.md) | Fix 1: replace the prompt's "trailing Z" sentence and explain partial dates. Fix 3: a time plausibility check, in the one structure of checks, Advice by default, with its window (how far before and after the stream's received time) settable per Learning Flow; regression corpus records keep their own stream's received time. Set the stream's metadata in the learning worker so `format-date` gets the stream's year. Add a rollout note for bindings that already hard-code a year. Build the no-data-like-literals check (default Advice until it has run on the demo feeds without false failures, then Gate) as a check in the one structure of checks (UM-2). | N1 (decided: option C), with `format-date` on Track 2 step 2's list; N6 for fix 4 | M | S8, S9, W8-1 to W8-8 |
+| 4 | [Mixed record elements](shapeshifter-ai-mixed-record-elements.md) | Fix 1: a "children of element" record boundary, as a real field (not `batch/*` in the element field), with every consumer of the boundary handling it explicitly. Refuse a single XML or JSON document larger than the prefix with a stop report that says why and what to change, as N2 option E decides. | N5 for the new column | M, plus S for the refusal | W5-1, W5-2, W5-4, W5-5, W5-8 |
+| 5 | [Remove the `claimTasksOnWorker` requirement](ai-translations/remove-claim-tasks-on-worker-requirement.md) | As written; option H. Add a Shapeshifter scenario test that runs with the master queue, and correct the reason repeated in the code comment and design documents 03 and 08. | Nothing | S, plus the test-cluster trial | W7-6 |
+| 6 | [Supervisor visibility](shapeshifter-ai-supervisor-visibility.md) items 3 and 5 | **Largely done on the UI branch.** Item 3: `StopReports` gives every stopped run an error, details and suggestions, shown on the Learning Status tab; check it covers every candidate failing the same way, the model's refused reply, and a truncated sample. Item 5: `Stage.why(...)` words the waiting reason by what holds the claim; check all three states (waiting for the model, in progress, parked). The other items are re-scoped against the final UI in that document. | Nothing | S (checks and gaps only) | W7-5 |
+| 7 | [Single target schema](shapeshifter-ai-single-target-schema.md) | Every target schema usable (a requirement): the setting where D1 decides; the prompt's schema summary generated from the XSD (D2 option G); the Java-literal wording, ADMIT for other schemas, `Data` counted as untyped, "a record is a child of the root" in five classes; time plausibility's time field named per Learning Flow; checks that read event-logging's fields shown as not applying to other schemas unless their fields are named; and a second XSD test fixture. | D1 (D2 decided: option G) | L | S1, W1-1 to W1-7 |
+| 8 | Sound multi-node learning (new) | A backstop expiry that busy feeds can't keep alive, a guard against a second live binding per learner, a version-checked `replace`, waking first-learning deferrals, and a test harness with two caches. | N8 | M | W7-1 to W7-4, W7-7 |
+| 9 | Small fixes (new) | The worker's encoding (S3); `heldOutFraction` for XML and JSON (S5); one sample-size setting, in bytes, that the prompt honours (S4; N2 option F): remove the 6,000-character prompt cap, count bytes, keep it within the prefix, and optionally cap it at a share of the model's *Max context window tokens* where that is set; the JSON description (W5-7), the default element list (S6) being done on the UI branch (`FlowStep.LEARNABLE_ELEMENTS` offers `XMLFragmentParser`; confirm only); a token budget of 0 (S11); `asDocument`'s `"<Events"` test (W1-2); the stale comment (W3-4); the corpus stream type (S13, verify first); correct the comments that still give redaction (rulings A17 and A38, superseded by A146) as the reason stream text isn't stored, in `Question`, `Inputs`, `Stage`, `ModelAdvisor` and `Sample`, and `Question`'s claim that `stroom-ai` audits the raw exchange, which no code does. | Nothing | S each | As listed |
+| 10 | One model of checks (new; UM-2 and UM-3) | The server side of [How checks work](#how-checks-work-decided-18-november-2026): one list of checks on the Learning Flow, each Off, Advice or Gate, with compile fixed as a gate; wholeness, preservation, fidelity and the regression corpus brought into the list (wholeness's 90% as its default threshold); a candidate passes when every gate passes, with weights, the weighted total and `promotionFloor` removed; the serving record bar built from the gates that judge records; `FlowStep.checks` removed, a check applying to every step it can measure; the displayed and rolling score as the average of the checks that ran; presets redefined; a document migration for the removed fields (N5). Tasks 1–3 build their new checks into this structure, so it goes first or alongside them. Do it with Track 2 step 1c (flows in JSON), so the step model changes once. The client changes are in Track 2 step 4, and land before the server removes the fields (AS13). | UM-2, UM-3 (decided) | M | – |
+
+Tasks 1, 2, 4, 5, 6, 9 and 10 can start straight away: N2 is decided, and task 4's N5 is decided in effect. Task 3 needs `format-date` on Track 2 step 2's list.
+Task 3 no longer has to wait for task 2: the serving record checks can already defer a stream (W8-6).
+
+Each fix comes with a regression test that fails before the fix and passes after it.
+Most can use the scenario fixtures (`stroom-shapeshifter/stroom-shapeshifter-ai/src/testFixtures/resources/stroom/shapeshifter/ai/scenario`).
+Task 3 needs a `stroom-app` test, because the module's own test harness refuses Stroom's XSLT functions.
+Tasks 2 and 4 need one as well, because the stand-in runner and the real pipeline can disagree.
+No existing test uses the `netfilter*` or `gateway-audit*` fixtures.
+
+When Track 1 is done, rerun the [demo evaluation](ai-translations/shapeshifter-ai-demo-evaluation.md) and compare it with the 16–17 November results.
+At least NETFILTER (Poor), GATEWAY-AUDIT (not learned) and the NETFILTER drift sample (no events) should change.
+
+## Track 2: server simplification, safety items and what the UI would show
+
+The UI rework is done: the Pipelines and Setup tabs, the Learning Status and Quality Assurance tabs, What it learned, and Monitoring > Smart Pipelines are built and merged ([ui-design.md](ai-translations/ui-design.md)).
+The old Track 2's UI phases are therefore finished or dropped:
+
+| Old step | Status |
+|---|---|
+| UI phase 1 (words, wiring, hiding Accept, Improve, Exhaust, Answer, Guidance and flow editing) | Dropped. The final UI keeps them all (SIM-2, SIM-4, SIM-5). |
+| UI phase 2 (Feeds tab) | Done, as a Learning Flow's Pipelines tab and each pipeline's Learning Status tab. |
+| UI phase 3 (quality presets; delete the Learn tab and flow editor) | Presets done (*Lenient*, *Standard*, *Strict*). The Learn and Score tabs are deleted; the flow editor is rebuilt on the Setup tab, not removed. |
+| UI phase 4 (Monitoring overview) | Done as Monitoring > Smart Pipelines, without system-wide spending or approval filters (see step 4). |
+| UI phase 5 (setup wizard) | Dropped. The readiness banner and default setups cover it. |
+
+The ordering rule still holds: **the client stops using a feature before the server removes it** (AS13).
+Since the final UI uses the flow language, every Supervisor action and per-document question texts, those are not removed.
+What is left:
+
+| Step | Side | What | Source |
+|---|---|---|---|
+| 1 | Server | Review by default (SIM-1 option B): new Learning Flows default to review, and choosing automatic needs a permission (a small Setup tab change). Removals the UI doesn't depend on: the in-place promotion path (A), so both modes share one promotion path, provisional bindings (C; SIM-3 option E), with old `PROVISIONAL` rows mapped, unfinished and unused parts (F), the Pipeline Factory (G). Move Improve from the web request to the worker. Record each run's templates and texts, rebuild a turn's prompt for someone with *View Data*, and resume from the recorded templates (N9 option D, extended). | [simplification-options.md §3](ai-translations/simplification-options.md#3-the-options) |
+| 1a | UI | Take out the *On trial* chip, *Accept now* and the "on trial" figure, in step with step 1 and before the server removes the endpoint. | [ui-design.md](ai-translations/ui-design.md) |
+| 1b | Both | Delete the QA assessments (stage 0b group 4): the client's assessment section, dialog and "Flagged by QA" first, then the shared types, the server's assessment code and the `shapeshifter_assessment` table (edited out of the unreleased migration, N5; jOOQ regenerated). | [Group 4: the QA person's assessments](#the-qa-persons-assessments) |
+| 1c | Both | Flows in JSON, not the DSL, and `ESCALATING` as the default setup (group 5): the default setups as JSON resources read with Jackson; tests built from JSON or builders; `FlowStep.parse`, the written forms and the grammar deleted, with people's wording from `FlowWords`; the default changed in `ShapeshifterAiDoc`, `LearningFlow`, the serialiser and the Setup tab, after a `TestLiveScenarios` run. Done with Track 1 task 10, so the step model changes once. | [Group 5](#5-learning-recipe-sim-2-and-n3) |
+| 2 | Server | **The AI Translations list, hard-coded** (decision N1, option C): the functions and instructions a learned stylesheet may use, as a list in code, applied by the static stylesheet check and the scenario test harness. See [Step 2](#step-2-a-hard-coded-ai-translations-list). | [N1](#1-n1-which-stroom-xslt-extension-functions-a-learned-stylesheet-may-use) |
+| 3 | Server | The other safety items that must exist before any feed runs automatically: the spend breaker and rate limit. | [simplification-options.md §5](ai-translations/simplification-options.md#5-what-must-exist-before-any-feed-runs-automatically) |
+| 4 | Both | Additions the final UI doesn't yet show: approval evidence beside a draft (the gate strip, warnings such as literals, and advice) and who approved, on the Learning Status tab; the spend-breaker state, on the readiness banner and Monitoring > Smart Pipelines. These are additions within the design. Also the conversation's *what was asked*, which shows the rebuilt prompt to someone with *View Data* (N9). **Also the *Quality checks* change from UM-2 and UM-3**: each check Off, Advice or Gate (compile fixed as a gate), every check listed (wholeness, preservation, fidelity and the new ones included), the *Weight* field and the *Pass mark* field removed, *what judges it* removed from a step's card, a note where a check made a gate also acts while serving, a warning on a step's card when a rule uses a check that is off, presets redefined over the three states, and the readiness check ("no quality checks") updated. A change within the existing section, with its workbench stories updated. | [ui-design.md](ai-translations/ui-design.md#what-changed-from-the-proposals) |
+| 5 | Server | Structural work i–iv: judge with the same code that serves, fewer storage interfaces, break up the central class, test code out of the product. | [simplification-options.md §3](ai-translations/simplification-options.md#options-that-only-change-the-codes-organisation) |
+| 6 | Both | **Towards the end of the project: pull in the `ai_translations_egress` branch**, move the AI Translations list onto its Egress Policy screen, and enforce the list at run time. See [Step 6](#step-6-the-egress-policy-and-the-list-on-its-screen). | `ai_translations_egress`: `docs/ai_translations/egress-ui-plan.md` |
+
+Step 2 is needed for review mode too, and must be done before any Content Template makes an AI pipeline.
+It doesn't depend on step 1, so if Track 1 has capacity it can be pulled forward; Track 1 task 3 needs it for `format-date`.
+Step 6 replaces step 2's list in code with one an administrator maintains, and adds the run-time enforcement step 2 lacks.
+
+### Step 2: a hard-coded AI Translations list
+
+**Why.**
+A learned stylesheet runs in the real `XSLTFilter`, and nothing limits what Saxon can reach from it (decision N1): standard XSLT can read and list host files, make outbound requests and write files, and several `stroom:` functions call out, read other feeds' data, drop records or give different results each run.
+N1 is decided as option C: an allow-list.
+To start with, the list is in code, so that it can ship without the egress branch.
+
+**The work.**
+
+1. **The list, in code**, in `stroom-shapeshifter-ai`, with a reason for each entry: the pure date, string and conversion functions and the current stream's own metadata, as in [N1](#1-n1-which-stroom-xslt-extension-functions-a-learned-stylesheet-may-use), plus the standard XPath and XSLT functions and instructions a translation needs.
+   Anything not on it is refused.
+   Keep it behind a small interface (for example `AiXsltAllowList`), so that step 6 can swap the source without touching the callers.
+2. **The static stylesheet check**, when a candidate is judged and again when it is promoted: parse the stylesheet and refuse any function or instruction not on the list, any `function-lookup()` or function reference (such as `stroom:http-call#5`), and any computed URI or destination.
+   The refusal is fed back to the model as the reason, like any other check, and shows as a failed check in the conversation on the Learning Status tab.
+3. **The scenario test harness** stops refusing every extension function and applies the same list, so that a stylesheet that passes the tests passes on a node.
+4. **Tests**: one per refused group in N1's table (at least `unparsed-text`, `xsl:result-document`, `environment-variable`, `function-lookup`, a function reference, `stroom:http-call`, `stroom:lookup`, `stroom:log`, `stroom:random`), and one that a stylesheet calling `stroom:format-date` passes judging and the harness alike (Track 1 task 3 depends on it).
+
+**What it doesn't do.**
+There is no run-time enforcement: a learned stylesheet is only as safe as the static check is thorough.
+So the check must be an allow-list over every function and instruction, never a list of banned names.
+Changing the list needs a release.
+
+**Effort.** M.
+
+**Affects:** ruling A147; Track 1 task 3 (it needs `format-date` on the list).
+
+### Step 6: the egress policy, and the list on its screen
+
+Planned for towards the end of the project.
+
+**Why.**
+The `ai_translations_egress` branch adds an egress policy and an Egress Policy screen that lock down Stroom's risky XSLT features for all translations, not only AI ones.
+Its screen is where the AI Translations list belongs once sites need to maintain it, and its Saxon confinement gives the run-time enforcement step 2 lacks.
+
+**What the branch holds** (`origin/ai_translations_egress`, three commits of 4–5 November 2026 on top of `579e4969b8`; its own plan and status are in `docs/ai_translations/egress-ui-plan.md` §12):
+
+- **An egress policy engine** (`stroom-egress-api`, `-impl`, `-impl-db`): one registry of permitted destinations, by kind (HTTP, EMAIL, AI_MODEL, FILE, OBJECT_STORE, MESSAGE_BUS, SEARCH_BACKEND), matched exactly or by prefix on a normalised destination; one guard that every sink calls; report-only or enforce per kind, and a kill switch; denied and reported attempts aggregated. Rules are in two new tables, `egress_rule` and `egress_setting`.
+- **Guard calls at every sink**: `http-call`, `fetch-json`, `send-email`, `ask-ai`, the HTTP and file appenders, `HttpPostFilter`, model calls, S3, Kafka, Elasticsearch, Solr and the content-store icon servlet. Redirects forced off. A build-failing test (`TestEgressSinks`) that finds any I/O class with no guard and no reasoned allow-list entry.
+- **Saxon confinement** (`SaxonConfinement` in `stroom-util`): reflexive external functions off; `unparsed-text()` (and with it `unparsed-text-lines()`, `json-doc()`), `collection()` and `xsl:result-document` denied outright, in every mode; `doc()` and `document()` governed by the HTTP and FILE rules. Applied in `XsltPoolImpl`, the `xpath()` query function, the extraction filter, and Shapeshifter's `XsltStep` and `OutputRecords`, where everything is refused.
+- **The Egress Policy screen**, a content tab on the Monitoring menu for holders of a new application permission, *Manage Egress Policy*: the mode and kill switch of each kind, the permitted destinations (with a rule dialog and a Test button), and the blocked and reported attempts. Workbench stories in `EgressPolicyScreenStories`.
+- Tests: about 94 unit tests in the engine, `TestSaxonConfinement`, `TestXsltPoolConfinement` on the real pool, and `TestEgressRealNode` running real pipelines.
+- Design notes in `docs/ai_translations/` (note the underscore): the egress plan, the shared-modules design note, the review-panel design, the AI-authored flag design note, a Shapeshifter assessment, and about 14,000 lines of pilot evaluation material.
+
+**What it doesn't cover, which the AI Translations list does** (its plan says so: assumption A10, and §6.5.11 of the shared-modules note):
+
+| Gap | Examples |
+|---|---|
+| Functions that read beyond the record | `lookup`, `bitmap-lookup`, `dictionary`, `manifest-for-id`, `meta-stream-for-id`, `parent-for-id` |
+| Side effects inside the pipeline | `log` (an ERROR or FATAL drops records), `add-meta`, `put` and `get` |
+| Results that differ between judging and serving | `current-time`, `current-unix-time`, `random`, `random-integer` |
+| Network use that isn't a sink | `host-name`, `host-address` (DNS lookups) |
+| Standard functions with no egress hook | `environment-variable()`, `available-environment-variables()` |
+| Calls that a check of named calls misses | `function-lookup()`, function references such as `stroom:http-call#5` |
+| Report-only mode | Every kind starts in report-only, where `doc()` over HTTP or FILE is reported but allowed. A learned stylesheet would be confined only once an administrator enforces HTTP and FILE. |
+
+**The work.**
+
+1. **Merge the branch** into `ai_translations_server`, by a person (`AGENTS.md` doesn't allow an agent to run `git merge`).
+   How much of it to take (the whole branch, with its design notes and pilot material in `docs/ai_translations/`, or only the egress commit `3eecde7f1f`) is **to be decided when this step starts**.
+   A trial merge (`git merge-tree`, 18 November 2026) found three conflicts, which will have grown by then:
+   - `AiServiceImpl`: this branch's model timeout fix and the egress branch's guard and redirect changes both change how the client is built. Keep both.
+   - `stroom.json` and `stroom.yaml`: regenerate with `./gradlew :stroom-app:resolve` rather than merging by hand.
+
+   `XsltPoolImpl`, `XsltStep` and `OutputRecords` merged without conflict, but Shapeshifter has changed since the branch was cut, and Tracks 1 and 2 will change it further; check that the confinement still sits where learning and judging build their Saxon configurations.
+2. **Finish what the branch left undone**:
+   - The data access uses jOOQ's plain-SQL form because no database was available. Generate the jOOQ classes (`./gradlew :stroom-egress:stroom-egress-impl-db:generateJooq`) and use them, as every other module does.
+   - The migration is `V07_15_00_001__egress_policy.sql`. Rename it to match the 8.0 numbering before it ships (N5 applies while it is unreleased).
+   - Run the stories with the leak check, look at the screen in a browser, and add the read-only story `UI-GUIDE.md` expects (or record why it has none).
+   - Run `TestEgressDaoImpl` and `TestDbEgressRegistry` against MySQL.
+   - Settle the sinks the branch left as `UNGUARDED, TO DO` (Solr's ZooKeeper hosts, SQS, the receive path's S3 events, the account email sender).
+3. **Move the AI Translations list onto the Egress Policy screen.**
+   A fourth part of the screen, *AI-written content*, seeded with step 2's list and its reasons.
+   - Some things can never be added, whatever an administrator chooses: the routes the branch denies outright, `function-lookup()`, function references, and the outbound functions (`http-call`, `fetch-json`, `send-email`, `ask-ai`). The screen shows them greyed with the reason.
+   - Changing it needs *Manage Egress Policy*, asks first, and is audited, as the rest of the screen is.
+   - It is held in the egress tables, reaches every node within the branch's bound, and replaces the source behind step 2's interface, so the static check and the harness don't change.
+4. **Enforce the list at run time** for learned stylesheets: the fragment pipeline that serves a learned translation runs with its XSLT confined in enforce mode whatever the kinds' global modes, and its `stroom:` calls checked against the list.
+   That closes the report-only gap above, and anything the static check misses.
+   Later, once the AI-authored flag (`docs/ai_translations/ai-provenance-design-note.md` on the branch) exists, "learned stylesheet" can become "any content marked AI-authored and not yet accepted by a person".
+5. **Tests**: a run-time regression test per refused route and function, using the real pool as `TestEgressRealNode` does; a test that a stylesheet calling `stroom:format-date` passes judging, the harness and serving alike; a test that changing the list on one node reaches the others; and workbench stories for the new part of the screen (default, read-only, an entry added with OK, Cancel, and the greyed never-allowed rows).
+
+**Effort.** L: S to M to merge and regenerate (more, the later it is done); M to finish the branch's open items; M for the list's screen part and run-time enforcement.
+
+**Affects:** ruling A147's run-time half; [ui-design.md](ai-translations/ui-design.md), which gains a related screen outside the AI Translations screens.
+
+Dropping options B, D and E shrinks the server saving: the simplification document's estimate of about 5,000–6,000 server lines removed loses about 1,500 lines for B alone, plus D's endpoints and E's template overrides.
+The server keeps parsing, validating and running editable flows, so the risks SIM-2 option A lists stay, and review by default (SIM-1) matters more.
+
+The audit changes the scope of the remaining steps:
+
+| Option or item | Change | Audit findings |
+|---|---|---|
+| B: no flow language | Dropped. The audit's W2 findings about removing it no longer apply; W2-6 (step sizes as flows) now fits as it stands. | W2-1 to W2-4, W2-6, W2-7 |
+| C: no provisional bindings (SIM-3 option E) | Later streams defer behind a too-small draft until a person acts (N4 option F); relearns are not held to the minimum (first learning only). Map old `PROVISIONAL` attempt rows before removing the enum value. Removing C also removes one of the lost-update writers in task 8. | W3-1 to W3-3, W3-5, W7-3 |
+| E: prompts in code | Dropped. Record each run's templates and texts instead (N9 option D, extended), so a past prompt can be rebuilt after an upgrade or an edit | W2-5 |
+| Spend breaker | Count spend when the provider reports no usage, and charge failed calls (N7), or the breaker never trips. | S10, W6-3 |
+| Static stylesheet check (step 2) | Apply the N1 list, the same in the check and the test harness. | S8 |
+| Database changes | Follow decision N5 for every step that changes tables, including the egress branch's migration. The UI merge already edited `V08_00_00_001` in place (option A). | W3-5 |
+
+## Where the tracks meet
+
+| Overlap | How to handle it |
+|---|---|
+| Supervisor visibility items 1, 2, 7 and 8 (status line, Streams tab, getting there, API and MCP) | Items 1 and 7 are largely met by the final UI (*Where it stands* on the Learning Status tab; the tab itself, What it learned, and Monitoring > Smart Pipelines). Items 2 and 8 remain, re-scoped in [supervisor-visibility](shapeshifter-ai-supervisor-visibility.md) against the Learning Status and Quality Assurance tabs. |
+| Single target schema, if D1 puts the setting on the document | Add the field to the Setup tab at the same time as Track 1 task 7, so the tab is changed once. |
+| Missing year, fix 1 (prompt wording) and per-document question texts | Put the new wording in the built-in templates. Documents that have their own question text for the step keep their old wording, so the rollout note for task 3 should say how to reload the built-in (*Load built-in* on the step's card). |
+| Structural refactor i and parser drift fix 1 | Refactor i rewrites the code that fix 1 touches. Build fix 1's coverage measure as the filter refactor i needs (W4-7), so the refactor keeps it and its tests. |
+| Supervisor visibility item 6 (a "what might be wrong" check) | Build it on the Track 1 gates once they exist; its findings feed *Where it stands* on the Learning Status tab, and the Quality Assurance tab's figures. |
+| QA assessments and the gates | None: the QA assessments are deleted (stage 0b group 4; Track 2 step 1b). |
+| Missing year (Track 1 task 3) and the hard-coded list (Track 2 step 2) | Task 3's fix needs `stroom:format-date` on the list, and the test harness applying it. Do step 2 first, or build the list and the harness change as part of task 3. |
+| Egress branch (Track 2 step 6) and Shapeshifter's Saxon sites | The branch confines `XsltStep` and `OutputRecords`, which have changed since it was cut and will change again in Tracks 1 and 2. The later the merge, the more to reconcile; re-check the confinement after it. |
+
+## Later: calibration and larger step sizes
+
+The [unknown-models proposal](ai-translations/ai-translation-approach-for-unknown-models.html) adds calibration of each model against the scenario suite, and coarser step sizes (parser and XSLT in one reply, then a whole-pipeline agent loop).
+Both rely on the gates Track 1 builds, so they come after it.
+Calibration is a late phase at best (decided 18 November 2026); nothing earlier in the plan depends on it.
+Until then, the sample size is a setting on each Learning Flow (N2 option F), and automatic mode is guarded by review by default and a permission (SIM-1 option B), not by calibration (UM-6 option C).
+When calibration comes, reconsider N2 option G (sizing the sample from the model) and UM-6 option C.
+
+**N4 may be revisited.** Behind a draft learned from too few records, a person must act (N4 option F).
+If quiet feeds on automatic Learning Flows are found to wait too long for someone to notice, reconsider option G: a later stream with enough records starts a new learning run whose result replaces the draft.
+That needs new states, and the Learning Status tab would have to show a draft being replaced.
+Coarse steps come first; the whole-pipeline size only when an installation with a strong model needs it.
+
+Before calibrating, the live test harness must build its model client the same way the node does (W6-6), or calibration measures a different client.
+Weaker and self-hosted models also need the transcript kept within the model's context window, truncated replies detected, and more tolerant reply parsing (W6-1, W6-2, W6-4, W6-5).
+
+## Assumptions
+
+This plan, and the options and recommendations in stage 0b, rest on the assumptions below.
+Each one says what would change if it turned out to be wrong.
+Where an assumption has been checked, the evidence is given; the rest should be confirmed when the decision it affects is made.
+
+### About the state of the code
+
+| # | Assumption | Basis | If it is wrong |
+|---|---|---|---|
+| AS1 | Nothing in Shapeshifter or the Pipeline Factory has been released, so no installation has data or configuration to migrate. | `ISSUES.md` #18 (one unreleased migration, `V08_00_00_001`); the factory is new on this branch. | N5 option A (edit the migration in place) and SIM-7's "delete the factory's migration rather than undo it" are no longer possible. Every table change needs a new migration that maps existing rows. |
+| AS2 | The audit's findings and line references describe the code as it was on 17 November 2026. | The audit was done that day on `ai_translations_server`. | The UI merge (`7e06bb589c`) has since moved or removed lines it cites, and deleted the UI classes it cites. Each Track 1 task should re-find its audit findings in the merged code before starting. |
+| AS3 | The demo evaluation of 16–17 November reflects how the system behaves today. | [shapeshifter-ai-demo-evaluation.md](ai-translations/shapeshifter-ai-demo-evaluation.md). | The NETFILTER and GATEWAY-AUDIT examples used throughout stage 0b, and the "should change" list after Track 1, would need re-running before they are used as a baseline. |
+| AS4 | One Shapeshifter AI document can serve many pipelines, and so many feeds. | Ruling A114: a learner is the pipeline's UUID and the element's id, and the document is not part of the key. The demo's `Any feed` document is used this way. | The case against a time zone on the document (N6 option C) falls away, and a document-level setting becomes the simplest choice. |
+| AS5 | Deferring and waking work with the master task queue, so `claimTasksOnWorker` isn't needed for correctness. | Simplification option H, reviewed independently; `TestDeferredTask` runs in both modes. | SIM-9 option H is wrong, and SIM-7 option B (Content Templates make AI pipelines) only works on clusters switched to worker claiming. The test-cluster trial in Track 1 task 5 is there to catch this. |
+| AS6 | `stroom:format-date` is pure: it computes its result only from its arguments and the stream's metadata. | `FormatDate.java` fills missing fields from a reference time taken from the stream. | It can't go on the N1 allow-list as it stands, and Track 1 task 3 needs another way to give the model the stream's year. |
+
+### About the product
+
+| # | Assumption | Basis | If it is wrong |
+|---|---|---|---|
+| AS7 | Autonomous (automatic) mode must stay available, even if it isn't the default. | The premise of [simplification-options.md §3](ai-translations/simplification-options.md#3-the-options). | Much more can be removed: the serving-path promotion, the spend breaker's urgency, provisional bindings outright, and N4 becomes moot. |
+| AS8 | Some installations will be clusters, and will run learning on more than one node. | Stroom is commonly deployed as a cluster. Not confirmed for the first Shapeshifter customers. | N8 can be answered "no" for the first release, and Track 1 task 8 can wait. |
+| AS9 | Some installations will use models whose provider doesn't report token usage, such as OpenAI-compatible local servers. | Audit finding S10; the unknown-models proposal. | N7 matters less, but failed calls still need charging (W6-3). |
+| AS10 | Calibrating each model is a late phase at best, after Track 1, so for most of the project no model is calibrated. | [Later: calibration and larger step sizes](#later-calibration-and-larger-step-sizes); the decision of 18 November 2026. | UM-6 option C (automatic only once calibrated) could be adopted straight away instead of SIM-1 option B, and N2's sample size could be taken from the model (N2 option G) rather than a setting. |
+| AS11 | A person must approve each feed before its data goes to a model. | Ruling A146; simplification decision 6. | SIM-8 option E (automatic coverage of existing feeds) becomes reasonable, and the case for keeping some form of the Pipeline Factory is stronger. |
+
+### About the plan
+
+| # | Assumption | Basis | If it is wrong |
+|---|---|---|---|
+| AS12 | The UI merged from `ai_translations_ui_rework` is the final design, apart from minor bug fixes. It is built on today's server (editable flows, every Supervisor action, per-document question texts), not on the simplified one, and Track 1 changes what it shows but not its screens. | The decision of 18 November 2026; [ui-design.md](ai-translations/ui-design.md). | If the design changes, SIM-2, SIM-4 and SIM-5 reopen, and with them simplification options B, D and E. |
+| AS13 | The client stops using a feature before the server removes it. | The UI delivery plan's ordering rule. | Track 2's step order no longer holds, and server removals could break the client. With the UI final, this mainly matters for provisional bindings (step 1a). |
+| AS18 | Removing provisional bindings, adding approval evidence, who approved and the spend-breaker state, and adding a target-schema field count as minor changes to the final UI, not redesigns. (The *Quality checks* change from UM-2 and UM-3, three states per check and step-card warnings, is a change within the existing section, agreed with those decisions.) | Each adds to or removes from an existing section or tab, without new screens. | If any of them is treated as a design change, it needs agreeing before Track 2 step 1a or 4, or Track 1 task 7. |
+| AS14 | The people who own each decision (the product owner, security and the data owners, server-side engineers) are available to settle stage 0b in days, not weeks. | Stated in stage 0b. | Track 1 tasks 7 and 8, and all of Track 2's removals, wait longer. Tasks 1, 2, 4, 5, 6, 9 and 10 are unaffected, now that N1, N2, UM-2 and UM-3 are decided. |
+| AS15 | Effort sizes (S, M, L) are relative estimates for one engineer who knows the module. | The audit's walkthroughs. | They are not durations, and shouldn't be added up into a schedule without that conversion. |
+| AS19 | The `ai_translations_egress` branch is the agreed way to lock down XSLT for all of Stroom, and its Egress Policy screen is where the AI Translations list will be maintained. | The decision of 18 November 2026; the branch's plan (`docs/ai_translations/egress-ui-plan.md`). | The list would stay in code, or need its own screen, and the standard-XSLT routes would need confining by Shapeshifter alone, for learned stylesheets only. |
+| AS20 | Learned stylesheets can be confined in enforce mode whatever the egress kinds' global modes, and their `stroom:` calls checked at run time, without changing how other translations run. | Not yet checked: `XsltPoolImpl` pools one Saxon `Processor` per compiled stylesheet, and the branch installs one guard for all of them. | Run-time enforcement for learned stylesheets would wait until HTTP and FILE are enforced for everything. |
+| AS21 | Until Track 2 step 6, a static check with an allow-list over every function and instruction is enough protection for learned stylesheets. | The check refuses anything not on the list, including indirect calls and computed URIs. | A route the check misses would run unchecked on a node until step 6. If that is not acceptable for automatic feeds, decide with SIM-1 whether automatic mode waits for step 6. |
+
+### About the stage 0b write-up
+
+| # | Assumption | If it is wrong |
+|---|---|---|
+| AS16 | The recommendations are those of the source documents, except where stage 0b says otherwise. The options not in any source document are: N6 option F (header with a fallback), N7 option C (a limit on calls), N8 option B (one node only), and the "about 4 characters a token" estimate in N7. | These additions need the same review as the rest before they are relied on. |
+| AS17 | The examples marked "illustrative" (N2, N7 and the `acme-audit:1` schema in D2) show the shape of the problem, not measured results. | They shouldn't be quoted as evidence. |
+
+## Ready to start now
+
+- **Stage 0b decisions**, now including N3–N9 from the audit, less SIM-2, SIM-4 and SIM-5, which the final UI settles.
+  Groups 1 to 6 are decided (N1, N2, promotion, the gates, the learning recipe and the prompts); group 7 (D1 and N6) is next.
+- **Track 1 tasks 1, 2, 4, 5, 6, 9 and 10**, which need no further decisions. Task 10 (one model of checks) is best done first or alongside tasks 1–3, which build new checks into it.
+  The preservation fix (task 1) is the best first piece of work; task 6 is now only checks and gaps.
+- **Track 2 step 2, the hard-coded AI Translations list**, now that N1 is decided. It also unblocks Track 1 task 3.
+- **Bringing the module's design notes into line** with the final UI (`design/07-ui.md` and `05-learning-flow.md`), which the code's javadoc cites.
