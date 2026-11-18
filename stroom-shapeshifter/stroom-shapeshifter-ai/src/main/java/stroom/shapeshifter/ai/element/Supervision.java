@@ -158,11 +158,11 @@ public class Supervision {
     /// @param elementId The element to name in the refusal.
     public ShapeshifterAiDoc document(final DocRef docRef, final ElementId elementId) {
         if (docRef == null) {
-            throw ProcessException.create("No Shapeshifter AI document is set on element " + elementId);
+            throw ProcessException.create("No Learning Flow is set on element " + elementId);
         }
         final ShapeshifterAiDoc doc = store.readDocument(docRef);
         if (doc == null) {
-            throw ProcessException.create("Shapeshifter AI document " + docRef + " was not found");
+            throw ProcessException.create("Learning Flow " + docRef + " was not found");
         }
         return doc;
     }
@@ -181,7 +181,7 @@ public class Supervision {
         final ReplayUnit allowed = ReplayUnits.ofElements(doc.getAllowedElements(), this::parses);
         if (allowed != ReplayUnit.STREAM) {
             throw ProcessException.create(ReplayUnits.mismatch(allowed,
-                    "The allowed elements of Shapeshifter AI document " + doc.getName()));
+                    "The allowed elements of Learning Flow " + doc.getName()));
         }
     }
 
@@ -251,12 +251,12 @@ public class Supervision {
         // What happened, or — for a step — what would have. A dry run's report is not a fault: a learner
         // nobody has taught yet is the ordinary state of the feed a person has opened the stepper on,
         // and an error marker would say otherwise.
-        errorReceiverProxy.log(stepping
-                        ? Severity.INFO
-                        : produced == null
-                                ? Severity.ERROR
-                                : Severity.INFO, null, elementId,
-                StepDetails.describe(run.decision()), null);
+        final Severity said = stepping
+                ? Severity.INFO
+                : produced == null
+                        ? Severity.ERROR
+                        : Severity.INFO;
+        StepDetails.lines(run.decision()).forEach(line -> errorReceiverProxy.log(said, null, elementId, line, null));
 
         // Recorded only where a fragment really was bound and really did run: a step leaves no trace of
         // having asked, and the bindings of a run nobody made do not belong on the stream.
@@ -332,10 +332,10 @@ public class Supervision {
         fragmentRecords.put(elementId.getId(), List.of());
         stage.takeFragment();
         final Produced produced = run.produced();
-        errorReceiverProxy.log(produced == null
-                        ? Severity.ERROR
-                        : Severity.INFO, null, elementId,
-                StepDetails.describe(run.decision()), null);
+        final Severity said = produced == null
+                ? Severity.ERROR
+                : Severity.INFO;
+        StepDetails.lines(run.decision()).forEach(line -> errorReceiverProxy.log(said, null, elementId, line, null));
         if (produced == null) {
             return;
         }
@@ -412,7 +412,7 @@ public class Supervision {
     /// it. An element outside a running pipeline has nothing to learn as, so it is refused.
     private Learner learner(final ElementId elementId) {
         if (pipelineHolder.getPipeline() == null) {
-            throw ProcessException.create("A Shapeshifter AI element learns as the pipeline it runs in, and "
+            throw ProcessException.create("An AI Translator element learns as the pipeline it runs in, and "
                                           + "element " + elementId + " is not running in one");
         }
         return new Learner(pipelineHolder.getPipeline().getUuid(), elementId.getId());

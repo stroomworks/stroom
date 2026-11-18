@@ -17,13 +17,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -57,7 +58,7 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
     /**
      * The column <code>stroom.shapeshifter_attempt.id</code>.
      */
-    public final TableField<ShapeshifterAttemptRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<ShapeshifterAttemptRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_attempt.version</code>.
@@ -164,6 +165,11 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
      */
     public final TableField<ShapeshifterAttemptRecord, Byte> EXHAUST_NEXT = createField(DSL.name("exhaust_next"), SQLDataType.TINYINT.nullable(false).defaultValue(DSL.inline("0", SQLDataType.TINYINT)), this, "");
 
+    /**
+     * The column <code>stroom.shapeshifter_attempt.report</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> REPORT = createField(DSL.name("report"), SQLDataType.CLOB, this, "");
+
     private ShapeshifterAttempt(Name alias, Table<ShapeshifterAttemptRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -269,7 +275,7 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
      */
     @Override
     public ShapeshifterAttempt where(Condition condition) {
-        return new ShapeshifterAttempt(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new ShapeshifterAttempt(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -336,7 +342,7 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterAttempt whereExists(Select<?> select) {
+    public ShapeshifterAttempt whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -344,7 +350,7 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterAttempt whereNotExists(Select<?> select) {
+    public ShapeshifterAttempt whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

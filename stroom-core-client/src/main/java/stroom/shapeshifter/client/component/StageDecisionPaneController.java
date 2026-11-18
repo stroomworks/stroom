@@ -40,7 +40,7 @@ import java.util.Map;
 /// was learned. Stepping is a dry run (A30, A121), so a learner nothing serves shows what the stage
 /// *would* do and the pane says so.
 ///
-/// Read only. Approving, rejecting and retracting are the Supervisor's.
+/// Read only. Approving, rejecting and retracting are done on the pipeline's Learning Status tab.
 public class StageDecisionPaneController extends Controller implements ElementStepDetailsPane {
 
     private final StageDecisionPane view;

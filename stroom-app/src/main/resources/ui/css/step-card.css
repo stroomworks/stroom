@@ -1,0 +1,217 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* The step of the learning flow chosen on the Setup tab's route map (StepCard): its heading, tags and tools,
+   and its rules, read as sentences, with what only it changes folded beneath them. The card is the page it is
+   shown on, so it has no frame of its own, and its heading is made as every part's heading on the Setup tab. */
+
+.step-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.step-card__head {
+    display: flex;
+    align-items: center;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.step-card__title {
+    min-width: 0;
+}
+
+/* Focused only when the step moves, to keep the reader's place */
+.step-card__heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--text-color);
+    outline: none;
+}
+
+.step-card__number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid var(--focus-border);
+    background-color: var(--focus-border);
+    color: var(--page__background-color);
+    font-size: 13px;
+}
+
+/* The heading's size and weight, which base.css would set back on a span */
+.step-card__name {
+    font-size: inherit;
+    font-weight: inherit;
+    overflow-wrap: anywhere;
+    text-align: start;
+}
+
+.step-card__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+/* What the step sets of its own under "Fine-tune this step" */
+.step-card__tag {
+    padding: 0 7px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    font-size: 11.5px;
+    line-height: 18px;
+    color: var(--text-color--low-emphasis);
+    white-space: nowrap;
+}
+
+.step-card__tools {
+    margin-left: auto;
+}
+
+.step-card__problem {
+    color: var(--invalid);
+    margin-top: 12px;
+}
+
+.step-card__fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 32px;
+}
+
+.step-card__field {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.step-card__when {
+    min-width: 200px;
+}
+
+/* A number of tries or kinds; under the card, to outrank the text box's own width */
+.step-card .step-card__count {
+    width: 120px;
+}
+
+.step-card__ticks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+}
+
+.step-card__judged {
+    margin-top: 12px;
+}
+
+/* The parsers and filters a Choose the elements step may choose from, under its tries */
+.step-card__elements {
+    margin-top: 12px;
+    margin-bottom: 0;
+}
+
+/* Element types the step names that the AI can't learn, and the link that removes them */
+.step-card__unlearnable {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    margin-top: 6px;
+}
+
+/* As the step's problem, whose colour is legible on the card in either theme */
+.step-card__unlearnable-text {
+    color: var(--invalid);
+}
+
+.step-card__note {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+    margin: 4px 0;
+}
+
+.step-card__rules {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.step-card__rule-list {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    gap: 8px;
+}
+
+.step-card__rule-list:empty {
+    display: none;
+}
+
+.step-card__usual {
+    margin: 0;
+}
+
+.step-card__usual-line {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+}
+
+/* A text button (LinkButton), in the colour of a link so that it reads as one before it is hovered */
+.step-card__link {
+    align-self: flex-start;
+    color: var(--link__text-color);
+    font-size: 12px;
+}
+
+/* Advanced options, a disclosure: a chevron that points down once it is unfolded */
+.step-card__tune-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.step-card__tune-toggle::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+}
+
+.step-card__tune-toggle[aria-expanded="true"]::before {
+    transform: rotate(45deg);
+}
+
+/* What only this step changes, unfolded */
+.step-card__tune {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border-color);
+}

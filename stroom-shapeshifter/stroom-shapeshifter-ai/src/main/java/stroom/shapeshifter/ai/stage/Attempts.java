@@ -21,6 +21,7 @@ import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepOutcome;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.shapeshifter.shared.TurnScore;
 
 import java.util.Collection;
@@ -64,9 +65,15 @@ public interface Attempts {
     /// alone, and what it stopped on is recorded as its decision for the Supervisor to show.
     ///
     /// @param attemptId   The attempt.
-    /// @param reason      What it stopped on.
+    /// @param reason      What it stopped on, in one line.
+    /// @param report      Why, in parts (error, details, suggestions); null where nothing worded it.
     /// @param tokensSpent What this leg cost.
-    void parked(long attemptId, String reason, long tokensSpent);
+    void parked(long attemptId, String reason, StopReport report, long tokensSpent);
+
+    /// As [#parked(long, String, StopReport, long)], with no report.
+    default void parked(final long attemptId, final String reason, final long tokensSpent) {
+        parked(attemptId, reason, null, tokensSpent);
+    }
 
     /// Take up an attempt that stopped, as this node, and hold it while it runs (A45). An attempt parked
     /// awaiting an answer is nobody's to carry — no thread is behind it — so whichever worker reaches it
@@ -116,8 +123,20 @@ public interface Attempts {
 
     /// What an attempt came to, and when it stopped. The tokens are added to what it had spent before it
     /// was last parked, so a resumed attempt records the whole of its cost.
+    ///
+    /// @param report Why it stopped, in parts, where it stopped short of a translation; null otherwise.
     void closed(long attemptId, AttemptStatus status, String decision, String bindingUuid, Double score,
-                long tokensSpent);
+                StopReport report, long tokensSpent);
+
+    /// As [#closed(long, AttemptStatus, String, String, Double, StopReport, long)], with no report.
+    default void closed(final long attemptId,
+                        final AttemptStatus status,
+                        final String decision,
+                        final String bindingUuid,
+                        final Double score,
+                        final long tokensSpent) {
+        closed(attemptId, status, decision, bindingUuid, score, null, tokensSpent);
+    }
 
     /// A person's answer in place of a turn's (A28): *answer instead*, for the question an attempt
     /// stopped at, and *edit and re-run from here*, for one it had already been answered. The turns after
@@ -256,6 +275,7 @@ public interface Attempts {
     ///                    question that would be put to the model is not put, and the flow's spent
     ///                    transition is taken instead. Stands until the attempt closes, through any park
     ///                    and grant between.
+    /// @param report      Why it stopped, in parts, where it stopped short of a translation; null otherwise.
     record Recorded(long id,
                     Attempt attempt,
                     AttemptStatus status,
@@ -267,7 +287,16 @@ public interface Attempts {
                     long updateTimeMs,
                     List<Turn> turns,
                     Grant grant,
-                    boolean exhaustNext) {
+                    boolean exhaustNext,
+                    StopReport report) {
+
+        public Recorded(final long id, final Attempt attempt, final AttemptStatus status, final String decision,
+                        final String bindingUuid, final Double score, final long tokensSpent, final long createTimeMs,
+                        final long updateTimeMs, final List<Turn> turns, final Grant grant,
+                        final boolean exhaustNext) {
+            this(id, attempt, status, decision, bindingUuid, score, tokensSpent, createTimeMs, updateTimeMs, turns,
+                    grant, exhaustNext, null);
+        }
 
         public Recorded(final long id, final Attempt attempt, final AttemptStatus status, final String decision,
                         final String bindingUuid, final Double score, final long tokensSpent, final long createTimeMs,

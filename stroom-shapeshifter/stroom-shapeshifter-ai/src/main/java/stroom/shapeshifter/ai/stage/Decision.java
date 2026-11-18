@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.stage;
 
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.util.shared.StoredError;
 
 import java.util.List;
@@ -82,12 +83,17 @@ public sealed interface Decision {
      * last candidate's — what the sentinel names beside the reason (design 02 §4 step 5), and what a person
      * reads to see why the model could not.
      */
-    record GivenUp(String reason, List<StoredError> diagnostics) implements Decision {
+    ///
+    /// @param report Why, in parts, where the run that gave up stopped with a report; null otherwise.
+    record GivenUp(String reason, List<StoredError> diagnostics, StopReport report) implements Decision {
 
         public GivenUp {
             diagnostics = List.copyOf(diagnostics);
         }
 
+        public GivenUp(final String reason, final List<StoredError> diagnostics) {
+            this(reason, diagnostics, null);
+        }
     }
 
     /**
@@ -103,9 +109,13 @@ public sealed interface Decision {
     /// and parked for a person (A65): its claim held with a lease that does not lapse, its streams
     /// waiting, nothing baked as Unknown because money ran out.
     ///
-    /// @param reason What it stopped on.
-    record Parked(String reason) implements Decision {
+    /// @param reason What it stopped on, in one line.
+    /// @param report Why, in parts; null where nothing worded it as a report.
+    record Parked(String reason, StopReport report) implements Decision {
 
+        public Parked(final String reason) {
+            this(reason, null);
+        }
     }
 
     /// The stream waits (design 04 §3): nothing is emitted, nothing is errored, and the task that carries

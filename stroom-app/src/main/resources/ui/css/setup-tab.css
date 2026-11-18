@@ -1,0 +1,149 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* A Shapeshifter AI document's Setup tab (SetupTab): the route map down the side, and beside it the part of the
+   setup chosen on it, alone. */
+
+.setup-tab {
+    display: flex;
+    box-sizing: border-box;
+}
+
+/* The route map, as wide as it is drawn, which scrolls on its own. Its stops' boxes start level with the
+   heading of the part beside it. */
+.setup-tab__map {
+    flex: 0 0 auto;
+    max-width: 40%;
+    overflow: auto;
+    padding: 18px 12px 24px 8px;
+    border-right: 1px solid var(--border-color);
+    box-sizing: border-box;
+}
+
+/* The part chosen, which scrolls on its own. Under the tab, to outrank the form's own gap. */
+.setup-tab .setup-tab__page {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: auto;
+    box-sizing: border-box;
+    padding: 20px 32px 32px;
+    gap: 0;
+}
+
+/* A part: its heading, then its fields with room between each. The page is the part's frame. */
+.setup-tab__section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex-shrink: 0;
+    max-width: 1080px;
+    box-sizing: border-box;
+}
+
+/* Focused only when a fix or a link shows it */
+.setup-tab__section:focus {
+    outline: none;
+}
+
+.setup-tab__head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.setup-tab__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.setup-tab__question {
+    color: var(--text-color--low-emphasis);
+}
+
+/* A group of fields within a section, set off from what is above it */
+.setup-tab__subheading {
+    font-weight: 600;
+    margin-top: 4px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.setup-tab__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px 32px;
+}
+
+.setup-tab__note {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+    max-width: 760px;
+}
+
+.setup-tab__instructions {
+    height: 90px;
+    max-width: 720px;
+}
+
+/* A wide number; under the tab, to outrank the spinner's own width */
+.setup-tab .setup-tab__number {
+    width: 140px;
+}
+
+/* The checks' list, a grid, given a height of its own on a page that scrolls */
+.setup-tab__checks {
+    flex-shrink: 0;
+    height: 280px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+/* A text button (LinkButton), in the colour of a link so that it reads as one before it is hovered */
+.setup-tab__link-button {
+    align-self: flex-start;
+    color: var(--link__text-color);
+}
+
+.setup-tab__problem {
+    color: var(--invalid);
+}
+
+/* Load default setup, and what is in use, kept together */
+.setup-tab__start-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+/* Showing or hiding the steps on the route map, and loading a default setup once they are shown */
+.setup-tab__steps-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+}
+
+/* What a section keeps under Advanced options, spaced as the section is */
+.setup-tab__advanced {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}

@@ -57,6 +57,7 @@ import stroom.shapeshifter.ai.stage.Spend;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.Wake;
 import stroom.shapeshifter.ai.transformation.XsltStep;
+import stroom.shapeshifter.shared.FlowStep;
 import stroom.task.api.TaskContextFactory;
 
 import jakarta.inject.Inject;
@@ -178,12 +179,8 @@ public class StageFactory {
         // what each record consumed, which input coverage (A11) is scored on and a pipeline does not
         // tell anyone. The transform is the one place the module drives Saxon itself — its own
         // configuration, no pool, no function library — so it is the one wrapped.
-        final List<StepRunner> runners = List.of(
-                new DataSplitterStep(dataSplitterCompiler),
-                new JsonStep(),
-                new XmlFragmentStep(),
-                new PipelineStepRunner(new XsltStep(), pipelineFactoryProvider, headlessCaptureProvider,
-                        injectedCodeProvider, errorReceiverProvider, taskContextFactory));
+        final List<StepRunner> runners = runners(dataSplitterCompiler, pipelineFactoryProvider,
+                headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider, taskContextFactory);
         final List<Scorer> scorers = List.of(
                 new CompileScorer(), new InputCoverageScorer(), new YieldScorer(), schemaConformanceScorer,
                 new ExtractionQualityScorer(), new BusinessRulesScorer());
@@ -215,5 +212,30 @@ public class StageFactory {
                 configProvider.get().getSessionLease().getDuration(),
                 ThreadLocalRandom.current().nextLong(),
                 nodeInfo.getThisNodeName());
+    }
+
+    /// The runners a stage learns elements with, one for each of [FlowStep#LEARNABLE_ELEMENTS] and in its
+    /// order: that list is what a document chooses from, and anything else it names is passed over when a
+    /// run starts. Making one runs nothing, so a test can make them to check the list.
+    ///
+    /// @param dataSplitterCompiler    Compiles a Data Splitter configuration.
+    /// @param pipelineFactoryProvider Makes the pipeline the transform is run in.
+    /// @param headlessCaptureProvider Captures what the transform wrote.
+    /// @param injectedCodeProvider    Gives the transform its candidate stylesheet.
+    /// @param errorReceiverProvider   Collects what went wrong in the pipeline.
+    /// @param taskContextFactory      Runs the pipeline as a task.
+    /// @return The runners.
+    static List<StepRunner> runners(final DataSplitterCompiler dataSplitterCompiler,
+                                    final Provider<PipelineFactory> pipelineFactoryProvider,
+                                    final Provider<HeadlessCapture> headlessCaptureProvider,
+                                    final Provider<InjectedCode> injectedCodeProvider,
+                                    final Provider<ErrorReceiverProxy> errorReceiverProvider,
+                                    final TaskContextFactory taskContextFactory) {
+        return List.of(
+                new DataSplitterStep(dataSplitterCompiler),
+                new JsonStep(),
+                new XmlFragmentStep(),
+                new PipelineStepRunner(new XsltStep(), pipelineFactoryProvider, headlessCaptureProvider,
+                        injectedCodeProvider, errorReceiverProvider, taskContextFactory));
     }
 }

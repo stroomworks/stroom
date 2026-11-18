@@ -1,0 +1,88 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
+/* The step chosen on the Setup tab's route map (ApproachSection): its card and the place to add a step after
+   it, or what the fallback is; then the question text it is asked with. */
+
+.approach-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Empty while the fallback is shown */
+.approach-section__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.approach-section__cards:empty {
+    display: none;
+}
+
+/* A text button (LinkButton), in the colour of a link so that it reads as one before it is hovered */
+.approach-section__link {
+    color: var(--link__text-color);
+}
+
+/* What the fallback is, under a heading made as every part's heading on the Setup tab */
+.approach-section__fallback {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.approach-section__fallback-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.approach-section__note {
+    margin: 0;
+    color: var(--text-color--low-emphasis);
+    max-width: 760px;
+}
+
+/* The question text, set off from the step above it */
+.approach-section__texts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border-color);
+}
+
+/* Under the fallback's heading, whose own line sets it off */
+.approach-section__texts--under-heading {
+    padding-top: 0;
+    border-top: none;
+}
+
+.approach-section__texts-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.approach-section__heading {
+    font-weight: 600;
+}

@@ -37,10 +37,12 @@ import stroom.shapeshifter.ai.stage.Decision.Would;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.Produced;
 import stroom.shapeshifter.ai.stage.StageRun;
+import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.ShapeshifterAiStepDetails;
 import stroom.shapeshifter.shared.StageScore;
 import stroom.shapeshifter.shared.StageVerdict;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.shapeshifter.shared.SupervisorTurn;
 import stroom.util.shared.NullSafe;
 
@@ -118,9 +120,9 @@ public final class StepDetails {
         return switch (decision) {
             case Bound bound -> bound.binding() == null
                     ? "Served by the fragment that produced this input's output before"
-                    : "Served by binding " + bound.binding().getUuid();
-            case Promoted promoted -> "Promoted binding " + promoted.binding().getUuid() + ", scoring "
-                                      + promoted.score();
+                    : "Served by " + named(bound.binding());
+            case Promoted promoted -> "Learned " + named(promoted.binding()) + " from this stream and served it, "
+                                      + "scoring " + percent(promoted.score());
             case Provisional provisional -> "Bound provisionally, scoring " + provisional.score() + " on "
                                             + provisional.records() + " records of the "
                                             + provisional.required() + " a held-out judgement needs";
@@ -129,12 +131,44 @@ public final class StepDetails {
             case Kept kept -> "Relearned and the incumbent kept: " + kept.reason();
             case Drafted drafted -> "Awaiting review: draft binding " + drafted.binding().getUuid() + " binds "
                                     + drafted.binding().getPipeline().getName();
-            case GivenUp givenUp -> "Given up: " + givenUp.reason();
+            case GivenUp givenUp -> "Stopped learning: " + givenUp.reason();
             case Sentinel sentinel -> sentinel.reason();
             case Deferred deferred -> "Deferred: " + deferred.reason();
             case Parked parked -> "Parked for a person: " + parked.reason();
             case Would would -> would.said();
         };
+    }
+
+    /// What was decided as lines for the Error stream: [#describe], and where the decision stopped a
+    /// learning run with a report, its details and suggestions beneath, each labelled ([StopReport#lines()]).
+    ///
+    /// @param decision What was decided.
+    /// @return The lines, the first of them [#describe]'s.
+    public static List<String> lines(final Decision decision) {
+        final StopReport report = switch (decision) {
+            case Parked parked -> parked.report();
+            case GivenUp givenUp -> givenUp.report();
+            default -> null;
+        };
+        final List<String> lines = new ArrayList<>();
+        lines.add(describe(decision));
+        if (report != null) {
+            // The error line is the decision's own reason, said in the first line already
+            lines.addAll(report.lines().subList(1, report.lines().size()));
+        }
+        return lines;
+    }
+
+    // A translation by its fragment's name, as a person knows it, not its binding's UUID
+    private static String named(final Binding binding) {
+        final String name = NullSafe.get(binding.getPipeline(), DocRef::getName);
+        return name == null
+                ? "binding " + binding.getUuid()
+                : "\"" + name + "\"";
+    }
+
+    private static String percent(final double score) {
+        return Math.round(score * 100) + "%";
     }
 
     private static List<StageVerdict> verdicts(final List<Verdict> verdicts) {

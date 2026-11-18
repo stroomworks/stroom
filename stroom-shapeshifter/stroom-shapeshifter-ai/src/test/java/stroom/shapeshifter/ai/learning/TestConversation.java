@@ -129,7 +129,10 @@ class TestConversation {
         final Outcome outcome = conversation.run(policy().copy().attemptBudgetMs(90_000).build(), SAMPLE);
 
         assertThat(outcome).isInstanceOf(Abandoned.class);
-        assertThat(((Abandoned) outcome).reason()).contains("This run's time budget of 90000 ms is spent");
+        assertThat(((Abandoned) outcome).reason())
+                .isEqualTo("Ran out of time at \"Choose the elements\" (question 1).");
+        assertThat(((Abandoned) outcome).report().getDetails())
+                .containsExactly("Each run may take 1 minute 30 seconds; this one had taken 2 minutes.");
         assertThat(model.questions()).describedAs("the first question was asked; the second was not").hasSize(1);
         assertThat(outcome.transcript()).hasSize(1);
     }
@@ -157,7 +160,9 @@ class TestConversation {
         final Outcome outcome = conversation(model).run(policy().copy().tokenBudget(1000L).build(), SAMPLE);
 
         assertThat(outcome).isInstanceOf(Abandoned.class);
-        assertThat(((Abandoned) outcome).reason()).contains("budget of 1000 tokens is spent after 1400 tokens");
+        assertThat(((Abandoned) outcome).reason()).startsWith("Ran out of tokens at ");
+        assertThat(((Abandoned) outcome).report().getDetails())
+                .containsExactly("A run may spend 1,000 tokens; this one had spent 1,400.");
         assertThat(model.questions()).hasSize(2);
     }
 
@@ -291,7 +296,8 @@ class TestConversation {
 
         assertThat(outcome).isInstanceOf(Abandoned.class);
         final Abandoned abandoned = (Abandoned) outcome;
-        assertThat(abandoned.reason()).contains("DSParser").contains("2 attempts");
+        assertThat(abandoned.reason()).isEqualTo("Couldn't write the parser: all 2 answers fell short.");
+        assertThat(abandoned.report().getDetails()).first().isEqualTo("It was writing DSParser.");
         assertThat(abandoned.diagnostics())
                 .describedAs("the last try's diagnostics never reached a question, so they travel here")
                 .isNotEmpty();
@@ -306,7 +312,7 @@ class TestConversation {
         final Outcome outcome = conversation(model).run(jsonOnly, SAMPLE);
 
         assertThat(outcome).isInstanceOf(Abandoned.class);
-        assertThat(((Abandoned) outcome).reason()).contains("JSONParser");
+        assertThat(((Abandoned) outcome).report().getDetails()).containsExactly("It allows: JSONParser.");
         assertThat(model.questions()).isEmpty();
     }
 
@@ -338,11 +344,13 @@ class TestConversation {
         final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
                 new Scorecard(List.of(), List.of()), Clock.systemUTC());
 
-        final Outcome outcome = conversation.run(policy(), SAMPLE);
+        // A run-only element with no runner in a node, named so that the conversation offers it
+        final ShapeshifterAiDoc doc = policy().copy().allowedElements(List.of("XMLParser", "XSLTFilter")).build();
+        final Outcome outcome = conversation.run(doc, SAMPLE);
 
         assertThat(outcome).isInstanceOf(Abandoned.class);
         final Abandoned abandoned = (Abandoned) outcome;
-        assertThat(abandoned.reason()).isEqualTo("XMLParser failed on its input");
+        assertThat(abandoned.reason()).endsWith(": XMLParser failed on its input.");
         assertThat(abandoned.diagnostics()).extracting(StoredError::getMessage).containsExactly("not XML");
         assertThat(model.questions()).hasSize(1);
     }
@@ -381,7 +389,8 @@ class TestConversation {
         for (final String transition : List.of("on run-failed goto end", "on spent goto end")) {
             final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
             final ShapeshifterAiDoc doc = policy().copy().flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                    FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser " + transition),
+                    FlowStep.parse("CHAIN elements XMLParser,XSLTFilter"),
+                    FlowStep.parse("CONFIGURE parser " + transition),
                     FlowStep.parse("CONFIGURE transform")))).build();
             final Conversation conversation = new Conversation(model, List.of(failing, new XsltStep()),
                     new Scorecard(List.of(), List.of()), Clock.systemUTC());
@@ -392,16 +401,17 @@ class TestConversation {
             // rather than abandoning at the parser.
             assertThat(outcome).describedAs(transition).isInstanceOf(Abandoned.class);
             assertThat(((Abandoned) outcome).reason()).describedAs(transition)
-                    .contains("was never configured; the flow ended without a CONFIGURE step");
+                    .startsWith("The learning steps ended without writing ");
         }
         final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
         final ShapeshifterAiDoc doc = policy().copy().flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser on compile-failed goto end"),
+                FlowStep.parse("CHAIN elements XMLParser,XSLTFilter"),
+                FlowStep.parse("CONFIGURE parser on compile-failed goto end"),
                 FlowStep.parse("CONFIGURE transform")))).build();
         final Outcome outcome = new Conversation(model, List.of(failing, new XsltStep()),
                 new Scorecard(List.of(), List.of()), Clock.systemUTC()).run(doc, SAMPLE);
         assertThat(((Abandoned) outcome).reason()).describedAs("nothing was compiled, so compile-failed is not it")
-                .isEqualTo("XMLParser failed on its input");
+                .isEqualTo("Couldn't write the parser: XMLParser failed on its input.");
     }
 
     @Test
@@ -437,7 +447,8 @@ class TestConversation {
         final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter", "not a stylesheet",
                 Scenarios.fenced(XSLT));
         final ShapeshifterAiDoc doc = policy().copy().flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser"),
+                FlowStep.parse("CHAIN elements XMLParser,XSLTFilter"),
+                FlowStep.parse("CONFIGURE parser"),
                 FlowStep.parse("CONFIGURE transform on refused goto parser")))).build();
         final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
                 new Scorecard(List.of(), List.of()), Clock.systemUTC());

@@ -82,7 +82,7 @@ class TestStepDetails {
                 .describedAs("the feed and type are what the model is shown of the stream")
                 .containsExactly(Map.entry("Feed", FEED), Map.entry("Type", "Raw Events"));
         assertThat(details.getDecision()).isEqualTo("Promoted");
-        assertThat(details.getReason()).startsWith("Promoted binding ");
+        assertThat(details.getReason()).startsWith("Learned \"").contains("from this stream and served it");
         assertThat(details.getBindingUuid()).isEqualTo(scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0)
                 .getUuid());
         assertThat(details.getFragment())

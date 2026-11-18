@@ -27,7 +27,7 @@ import stroom.util.shared.EntityServiceException;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
-/// The document's own resource: reading and writing it, and the built-in templates its Learn tab starts
+/// The document's own resource: reading and writing it, and the built-in templates its Setup tab starts
 /// from. What a learner has learned under it is the learner's (design 06 phase J slice 2b), and a person
 /// acts on that from the Supervisor.
 @AutoLogged

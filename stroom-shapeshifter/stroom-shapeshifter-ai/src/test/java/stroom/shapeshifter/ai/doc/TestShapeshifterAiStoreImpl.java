@@ -82,21 +82,22 @@ class TestShapeshifterAiStoreImpl {
                         FlowStep.of(QuestionKind.CONFIGURE), FlowStep.of(QuestionKind.CHAIN))))
                 .build()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("The first step must be CHAIN")
-                .hasMessageContaining("The last step must be CONFIGURE");
+                .hasMessageContaining("The first step must be 'Choose the elements'")
+                .hasMessageContaining("The last step must write the translation");
         assertThatThrownBy(() -> store.writeDocument(store.readDocument(docRef).copy()
                 .flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                         FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.SPLIT),
                         FlowStep.of(QuestionKind.SPLIT), FlowStep.of(QuestionKind.CONFIGURE))))
                 .build()))
-                .hasMessageContaining("SPLIT may appear once");
+                .hasMessageContaining("The flow has 2 'Find what one record is' steps");
         assertThatThrownBy(() -> store.writeDocument(store.readDocument(docRef).copy()
                 .flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
                         FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser on spent goto nowhere"),
                         FlowStep.parse("CONFIGURE parser"))))
                 .build()))
-                .hasMessageContaining("Two steps are named 'parser'")
-                .hasMessageContaining("'on spent goto nowhere' in step 'parser' names no step");
+                .hasMessageContaining("Step 3 (Write the parser again) has the same id as an earlier step, 'parser'")
+                .hasMessageContaining("The rule 'if it runs out of tries' on step 2 (Write the parser) goes to "
+                                      + "'nowhere', which isn't a step");
         assertThatThrownBy(() -> store.writeDocument(store.readDocument(docRef).copy()
                 .flow(LearningFlow.of(FlowExample.DIRECT)
                         .withTemplates(Map.of(Template.TARGET, "Become ${nothing}")))

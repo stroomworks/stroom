@@ -25,7 +25,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Map;
 
 /**
- * The built-in text of every template and its version, as the node serves it to the Learning tab, so that an
+ * The built-in text of every template and its version, as the node serves it to the Setup tab, so that an
  * override is edited from the words it replaces (design 01 §10.2).
  */
 @JsonPropertyOrder({"version", "templates"})

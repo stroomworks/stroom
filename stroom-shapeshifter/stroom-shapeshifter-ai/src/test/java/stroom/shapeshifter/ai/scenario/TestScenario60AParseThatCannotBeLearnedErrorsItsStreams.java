@@ -94,7 +94,7 @@ class TestScenario60AParseThatCannotBeLearnedErrorsItsStreams {
         final Recorded session = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(session.status()).describedAs(String.valueOf(session.decision())).isEqualTo(AttemptStatus.ABANDONED);
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).isPresent()
-                .get().asString().contains("No passing configuration for DSParser");
+                .get().asString().isEqualTo("Couldn't write the parser: its 1 answer fell short.");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
                 .describedAs("every waiting stream is woken to error").contains(1L, 2L);

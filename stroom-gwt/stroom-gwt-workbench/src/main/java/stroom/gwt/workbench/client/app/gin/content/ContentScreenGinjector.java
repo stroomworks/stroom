@@ -66,7 +66,7 @@ public interface ContentScreenGinjector extends ScreenGinjector {
     /// @return The 'Caches' tab.
     CachesController getCachesController();
 
-    /// @return The Shapeshifter AI Supervisor, as `ShapeshifterAiSupervisorPlugin` opens it.
+    /// @return The Smart Pipelines screen, as `ShapeshifterAiSupervisorPlugin` opens it.
     SupervisorController getSupervisorController();
 
     /// @return The 'Database Tables' tab.

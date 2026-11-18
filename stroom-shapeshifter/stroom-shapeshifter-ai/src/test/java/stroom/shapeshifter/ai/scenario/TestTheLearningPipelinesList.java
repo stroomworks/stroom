@@ -81,6 +81,25 @@ class TestTheLearningPipelinesList {
         assertThat(page.learners().get(0).getState()).isEqualTo(LearnerState.SERVING);
     }
 
+    /// One pipeline's learners, as its own editor asks for them: the others' are left out, and the count is
+    /// of that pipeline's alone.
+    @Test
+    void onePipelinesLearnersAreAskedForAlone() {
+        final Scenarios scenarios = new Scenarios();
+        scenarios.learnerBindings.append(DOOR, "doc-1", binding("door"));
+        scenarios.deferrals.deferred(LIFT, "doc-1", 1L, "LIFT", "Raw Events", null, "Learning.", 0);
+
+        final LearningPipelines.Page lift = scenarios.learningPipelines
+                .learners(List.of("doc-1"), Set.of(), List.of(), false, LIFT.pipelineUuid(), 0L, 100);
+
+        assertThat(lift.total()).isEqualTo(1L);
+        assertThat(lift.learners()).extracting(row -> row.getLearner().getPipelineUuid())
+                .containsExactly(LIFT.pipelineUuid());
+        assertThat(scenarios.learningPipelines
+                .learners(List.of("doc-1"), Set.of(), List.of(), false, "pipeline-none", 0L, 100)
+                .learners()).isEmpty();
+    }
+
     /// Most waiting streams first (A142): the learner holding the most of a feed back is the one a person
     /// should look at first, whatever its score.
     @Test

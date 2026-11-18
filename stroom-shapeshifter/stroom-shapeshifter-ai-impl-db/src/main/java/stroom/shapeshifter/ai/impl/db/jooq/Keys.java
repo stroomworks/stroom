@@ -11,6 +11,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
 import org.jooq.impl.QOM.ForeignKeyRule;
 
+import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAssessment;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAttempt;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterBinding;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterCorpus;
@@ -22,6 +23,7 @@ import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterOutput;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterSnapshot;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterSpend;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterTurn;
+import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterAssessmentRecord;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterAttemptRecord;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterBindingRecord;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterCorpusRecord;
@@ -46,6 +48,7 @@ public class Keys {
     // UNIQUE and PRIMARY KEY definitions
     // -------------------------------------------------------------------------
 
+    public static final UniqueKey<ShapeshifterAssessmentRecord> KEY_SHAPESHIFTER_ASSESSMENT_PRIMARY = Internal.createUniqueKey(ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT, DSL.name("KEY_shapeshifter_assessment_PRIMARY"), new TableField[] { ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT.ID }, true);
     public static final UniqueKey<ShapeshifterAttemptRecord> KEY_SHAPESHIFTER_ATTEMPT_PRIMARY = Internal.createUniqueKey(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, DSL.name("KEY_shapeshifter_attempt_PRIMARY"), new TableField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.ID }, true);
     public static final UniqueKey<ShapeshifterAttemptRecord> KEY_SHAPESHIFTER_ATTEMPT_SHAPESHIFTER_ATTEMPT_CLAIM = Internal.createUniqueKey(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, DSL.name("KEY_shapeshifter_attempt_shapeshifter_attempt_claim"), new TableField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.PIPELINE_UUID, ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.ELEMENT_ID, ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.CLAIMED }, true);
     public static final UniqueKey<ShapeshifterBindingRecord> KEY_SHAPESHIFTER_BINDING_PRIMARY = Internal.createUniqueKey(ShapeshifterBinding.SHAPESHIFTER_BINDING, DSL.name("KEY_shapeshifter_binding_PRIMARY"), new TableField[] { ShapeshifterBinding.SHAPESHIFTER_BINDING.ID }, true);

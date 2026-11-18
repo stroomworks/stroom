@@ -43,6 +43,7 @@ import stroom.shapeshifter.ai.learning.RecordedAdvisor.AwaitingAnswer;
 import stroom.shapeshifter.ai.learning.Sample;
 import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.ai.learning.StepRunner;
+import stroom.shapeshifter.ai.learning.StopReports;
 import stroom.shapeshifter.ai.learning.Target;
 import stroom.shapeshifter.ai.learning.TargetChecks;
 import stroom.shapeshifter.ai.scoring.Attempted;
@@ -73,6 +74,7 @@ import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.logging.LogUtil;
@@ -985,7 +987,7 @@ public final class Stage {
             states.scored(learner, doc.getUuid(), served.meanTotal(), served.records(),
                     doc.getMinRecordsToLearn());
         }
-        outputs.emitted(input.id(), input.pipeline(), producedBy(doc, binding), List.of());
+        outputs.emitted(input.id(), input.pipeline(), producedBy(doc, binding), List.of(), served.records());
         return served;
     }
 
@@ -1167,8 +1169,7 @@ public final class Stage {
         if (opened.isEmpty()) {
             // Another attempt holds the learner's claim (A45): it is still learning, parked or not, and
             // this stream takes what that attempt comes to rather than learning the same thing beside it.
-            return waiting.apply("Another node is learning for this pipeline; this stream waits for what it "
-                                 + "learns");
+            return waiting.apply(waitingFor(attempts.open(learner, clock.millis())));
         }
         return carrying(doc, learner, input, opened.get(), 0L, Grant.NONE, false, Map.of(), advisor, false, waiting,
                 attempt);
@@ -1213,22 +1214,61 @@ public final class Stage {
                                  + awaiting.question().summary());
         } catch (final RuntimeException e) {
             // The model, the node or the database failed: the attempt says so, with the turns it had got
-            // to, rather than vanishing. Nothing here may throw over the failure that brought us.
-            record(() -> attempts.closed(attemptId, AttemptStatus.ERROR,
-                    e.getClass().getSimpleName() + ": " + e.getMessage(), null, null,
-                    Math.max(0L, advisor.tokensUsed() - before)));
+            // to, rather than vanishing, and in words a person can act on. Nothing here may throw over the
+            // failure that brought us.
+            record(() -> {
+                final StopReport report = StopReports.failure(e, NullSafe.get(doc.getModel(), DocRef::getName));
+                attempts.closed(attemptId, AttemptStatus.ERROR, report.getError(), null, null, report,
+                        Math.max(0L, advisor.tokensUsed() - before));
+            });
             throw e;
         }
         if (run.decision() instanceof final Parked parked) {
             // Parked for a person (A65): the attempt keeps its claim with a lease that does not lapse, and
             // the worker leaves it alone. Not closed — a person's answer carries it on.
-            record(() -> attempts.parked(attemptId, parked.reason(), Math.max(0L, advisor.tokensUsed() - before)));
+            record(() -> attempts.parked(attemptId, parked.reason(), parked.report(),
+                    Math.max(0L, advisor.tokensUsed() - before)));
             return run;
         }
         // The run is done and its binding is written: the record of it must not be what fails the stream.
         record(() -> attempts.closed(attemptId, statusOf(run.decision()), reason(run.decision()),
-                bindingOf(run.decision()), scoreOf(run.decision()), Math.max(0L, advisor.tokensUsed() - before)));
+                bindingOf(run.decision()), scoreOf(run.decision()), reportOf(run.decision()),
+                Math.max(0L, advisor.tokensUsed() - before)));
         return run;
+    }
+
+    /// Why a stream waits on the attempt that holds its learner's claim, by what that attempt is doing: a
+    /// stream that waits on a session paused for a person waits until someone acts, which is not what
+    /// "learning" would say.
+    static String waitingFor(final Optional<Recorded> holder) {
+        if (holder.isEmpty()) {
+            return "Waiting for the learning run that holds this pipeline, which has just finished; this stream "
+                   + "is tried again.";
+        }
+        final Recorded attempt = holder.get();
+        final String run = "learning run " + attempt.id();
+        return switch (attempt.status()) {
+            case PARKED -> "Waiting for " + run + ", which is paused for a person" + why(attempt.decision())
+                           + ". This stream carries on once it is answered, given more, or stopped, on the "
+                           + "document's Feeds tab.";
+            case AWAITING_MODEL -> "Waiting for " + run + ", which is waiting for the model to answer.";
+            case AWAITING_REVIEW -> "Waiting for a new translation, learned by " + run + ", to be approved or "
+                                    + "rejected on the document's Feeds tab.";
+            default -> "Waiting for " + run + ", which is learning" + (attempt.attempt().node() == null
+                    ? ""
+                    : " on node " + attempt.attempt().node()) + "; this stream takes what it learns.";
+        };
+    }
+
+    // What a paused attempt stopped on, in brackets, without its full stop; empty where it says nothing
+    private static String why(final String decision) {
+        if (NullSafe.isBlankString(decision)) {
+            return "";
+        }
+        final String line = decision.strip();
+        return " (" + Character.toLowerCase(line.charAt(0)) + (line.endsWith(".")
+                ? line.substring(1, line.length() - 1)
+                : line.substring(1)) + ")";
     }
 
     /**
@@ -1382,6 +1422,12 @@ public final class Stage {
         };
     }
 
+    private static StopReport reportOf(final Decision decision) {
+        return decision instanceof final GivenUp givenUp
+                ? givenUp.report()
+                : null;
+    }
+
     private static String bindingOf(final Decision decision) {
         return switch (decision) {
             case Promoted promoted -> promoted.binding().getUuid();
@@ -1431,17 +1477,18 @@ public final class Stage {
                 // any step's where the flow says so. The learner gives up, and the streams waiting on it
                 // are woken to error with the reason, as a given-up learner's streams do.
                 final StageRun givenUp = givenUp(doc, learner, abandoned.reason(),
-                        abandoned.reason(), abandoned.diagnostics(), List.of(), outcome.transcript());
+                        abandoned.reason(), abandoned.diagnostics(), List.of(), outcome.transcript(),
+                        abandoned.report());
                 wake(learner);
                 return givenUp;
             }
             if (recorder.worker()) {
                 // A session that cannot finish parks for a person (A65) rather than giving up: its
                 // streams go on waiting, and nothing is baked because money or candidates ran out.
-                return parked(doc, learner, abandoned.reason(), outcome.transcript());
+                return parked(doc, learner, abandoned.reason(), abandoned.report(), outcome.transcript());
             }
             return givenUp(doc, learner, abandoned.reason(), abandoned.reason(),
-                    abandoned.diagnostics(), List.of(), outcome.transcript());
+                    abandoned.diagnostics(), List.of(), outcome.transcript(), abandoned.report());
         }
         final Learned learned = (Learned) outcome;
 
@@ -1496,7 +1543,7 @@ public final class Stage {
             // would error streams that are being served.
             if (recorder.worker()) {
                 // As a first learning does (A65): the incumbent serves what it can, the held stream waits.
-                return parked(doc, learner, abandoned.reason(), outcome.transcript());
+                return parked(doc, learner, abandoned.reason(), abandoned.report(), outcome.transcript());
             }
             return emit(doc, new Kept(incumbent, "No candidate: " + abandoned.reason()), learner, input, incumbent,
                     served, outcome.transcript());
@@ -2020,7 +2067,17 @@ public final class Stage {
                             final Learner learner,
                             final String reason,
                             final List<Exchange> transcript) {
-        return new StageRun(doc, new Parked(reason), learner, null, null, List.of(), transcript, null, List.of());
+        return parked(doc, learner, reason, null, transcript);
+    }
+
+    /// The session parks for a person (A65), with why in parts where the run worded it as a report.
+    private StageRun parked(final ShapeshifterAiDoc doc,
+                            final Learner learner,
+                            final String reason,
+                            final StopReport report,
+                            final List<Exchange> transcript) {
+        return new StageRun(doc, new Parked(reason, report), learner, null, null, List.of(), transcript, null,
+                List.of());
     }
 
     /// What one record is for a learned chain: the boundary the flow settled, or for a chain that begins
@@ -2075,7 +2132,7 @@ public final class Stage {
                           final List<Exchange> transcript) {
         final Produced produced = new Produced(doc.getUuid(), binding.getUuid(), binding.getPipeline(),
                 binding.getRecordBoundary(), binding.isProvisional(), judged.score(), binding.getSnapshot());
-        outputs.emitted(input.id(), input.pipeline(), produced, judged.spans());
+        outputs.emitted(input.id(), input.pipeline(), produced, judged.spans(), judged.records());
         return new StageRun(doc, decision, learner, produced, judged.output(), judged.verdicts(), transcript,
                 judged.events(), judged.diagnostics());
     }
@@ -2097,9 +2154,22 @@ public final class Stage {
                              final List<StoredError> diagnostics,
                              final List<Verdict> verdicts,
                              final List<Exchange> transcript) {
+        return givenUp(doc, learner, decision, reason, diagnostics, verdicts, transcript, null);
+    }
+
+    /// As [#givenUp(ShapeshifterAiDoc, Learner, String, String, List, List, List)], with why in parts where
+    /// the run worded it as a report.
+    private StageRun givenUp(final ShapeshifterAiDoc doc,
+                             final Learner learner,
+                             final String decision,
+                             final String reason,
+                             final List<StoredError> diagnostics,
+                             final List<Verdict> verdicts,
+                             final List<Exchange> transcript,
+                             final StopReport report) {
         states.giveUp(learner, doc.getUuid(), reason);
-        return new StageRun(doc, new GivenUp(decision, diagnostics), learner, null, null, verdicts, transcript,
-                null, List.of());
+        return new StageRun(doc, new GivenUp(decision, diagnostics, report), learner, null, null, verdicts,
+                transcript, null, List.of());
     }
 
     /**

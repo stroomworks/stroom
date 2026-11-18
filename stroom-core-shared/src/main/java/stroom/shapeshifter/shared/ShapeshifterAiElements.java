@@ -33,6 +33,13 @@ public final class ShapeshifterAiElements {
     public static final String PARSER = "ShapeshifterAi";
 
     /**
+     * The element's property naming the Shapeshifter AI document it learns under: the name Stroom gives
+     * the element's {@code setShapeshifterAi}. The server reads it to join a learner to its document, and a
+     * pipeline's editor to find the documents its AI elements learn under.
+     */
+    public static final String DOCUMENT_PROPERTY = "shapeshifterAi";
+
+    /**
      * The transformation stage: sits where a filter sits, which a parser cannot.
      */
 

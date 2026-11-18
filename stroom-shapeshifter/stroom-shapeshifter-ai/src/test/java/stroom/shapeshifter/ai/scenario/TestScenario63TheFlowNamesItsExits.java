@@ -112,7 +112,7 @@ class TestScenario63TheFlowNamesItsExits {
         final Recorded session = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(session.status()).describedAs(String.valueOf(session.decision())).isEqualTo(AttemptStatus.ABANDONED);
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).isPresent()
-                .get().asString().contains("No passing configuration for XSLTFilter");
+                .get().asString().isEqualTo("Couldn't write the transform: its 1 answer fell short.");
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).contains(1L, 2L);
         for (final long id : List.of(1L, 2L)) {
             final StageRun run = scenarios.stage(silent).decide(doc, Scenarios.LEARNER, input(id));

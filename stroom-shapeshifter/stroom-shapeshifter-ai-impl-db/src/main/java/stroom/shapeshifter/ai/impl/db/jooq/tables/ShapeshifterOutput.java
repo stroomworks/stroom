@@ -17,13 +17,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -57,7 +58,7 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
     /**
      * The column <code>stroom.shapeshifter_output.id</code>.
      */
-    public final TableField<ShapeshifterOutputRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<ShapeshifterOutputRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_output.create_time_ms</code>.
@@ -128,6 +129,11 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      * The column <code>stroom.shapeshifter_output.snapshot_id</code>.
      */
     public final TableField<ShapeshifterOutputRecord, String> SNAPSHOT_ID = createField(DSL.name("snapshot_id"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_output.record_count</code>.
+     */
+    public final TableField<ShapeshifterOutputRecord, Integer> RECORD_COUNT = createField(DSL.name("record_count"), SQLDataType.INTEGER, this, "");
 
     private ShapeshifterOutput(Name alias, Table<ShapeshifterOutputRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -227,7 +233,7 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      */
     @Override
     public ShapeshifterOutput where(Condition condition) {
-        return new ShapeshifterOutput(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new ShapeshifterOutput(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -294,7 +300,7 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterOutput whereExists(Select<?> select) {
+    public ShapeshifterOutput whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -302,7 +308,7 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterOutput whereNotExists(Select<?> select) {
+    public ShapeshifterOutput whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

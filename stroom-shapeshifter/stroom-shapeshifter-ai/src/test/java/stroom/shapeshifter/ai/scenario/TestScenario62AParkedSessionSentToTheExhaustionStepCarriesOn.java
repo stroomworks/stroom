@@ -31,6 +31,7 @@ import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.StopCause;
 
 import org.junit.jupiter.api.Test;
 
@@ -88,7 +89,8 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         learning.verifyExhausted();
         final Recorded parked = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(parked.status()).describedAs(String.valueOf(parked.decision())).isEqualTo(AttemptStatus.PARKED);
-        assertThat(parked.decision()).contains("budget of 4 tokens is spent");
+        assertThat(parked.decision()).startsWith("Ran out of tokens at ");
+        assertThat(parked.report().getDetails()).first().asString().startsWith("A run may spend 4 tokens;");
         assertThat(parked.exhaustNext()).isFalse();
 
         // Sent to the exhaustion step: the row says so, and the attempt is opened again for the worker.
@@ -164,8 +166,9 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         assertThat(scenarios.worker(nothing).advance(10)).isEqualTo(1);
         final Recorded again = scenarios.attempts.byId(parked.id()).orElseThrow();
         assertThat(again.status()).isEqualTo(AttemptStatus.PARKED);
-        assertThat(again.decision()).contains("Sent to the exhaustion step by a person")
-                .contains("no 'on spent' transition");
+        assertThat(again.decision()).startsWith("Couldn't finish with Unknowns: ")
+                .endsWith("has no rule to use the fallback.");
+        assertThat(again.report().getCause()).isEqualTo(StopCause.FALLBACK_MISSING);
         assertThat(nothing.asked()).describedAs("no transform's question").isEmpty();
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
                 .describedAs("round one's fragment stays bound")

@@ -3,6 +3,6 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:dg="urn:import:stroom.widget.datagrid.client">
     <dg:PagerPanel ui:field="pager">
-        <dg:DataGrid ui:field="dataGrid" tableName="Shapeshifter AI Waiting Streams" multiLine="true"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Waiting Streams" multiLine="true"/>
     </dg:PagerPanel>
 </ui:UiBinder>

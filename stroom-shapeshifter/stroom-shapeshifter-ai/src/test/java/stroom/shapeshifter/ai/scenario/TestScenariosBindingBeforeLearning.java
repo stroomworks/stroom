@@ -227,7 +227,9 @@ class TestScenariosBindingBeforeLearning {
         final StageRun run = scenarios.process(silent, doorAccess(), stream("CSV")).learned();
 
         assertThat(run.decision()).isInstanceOf(Deferred.class);
-        assertThat(((Deferred) run.decision()).reason()).contains("Another node is learning for this pipeline");
+        assertThat(((Deferred) run.decision()).reason())
+                .isEqualTo("Waiting for learning run 1, which is learning on node node-2; this stream takes what it "
+                           + "learns.");
         assertThat(silent.asked()).describedAs("the model is asked once for a learner, not once per node")
                 .isEmpty();
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 1L)).isPresent();
@@ -534,7 +536,8 @@ class TestScenariosBindingBeforeLearning {
         final Recorded refused = scenarios.attempts.byId(waiting.id()).orElseThrow();
         assertThat(refused.status()).describedAs("and the attempt says why it could not go on")
                 .isEqualTo(AttemptStatus.ERROR);
-        assertThat(refused.decision()).contains("ReplayDiverged");
+        assertThat(refused.decision()).startsWith("The learning run failed: The attempt cannot be resumed");
+        assertThat(refused.report().getDetails()).containsExactly("It failed with ReplayDiverged.");
     }
 
 

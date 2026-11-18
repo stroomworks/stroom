@@ -38,7 +38,12 @@ import stroom.query.api.ExpressionOperator;
 import stroom.security.client.api.ClientSecurityContext;
 import stroom.security.client.component.DocumentUserPermissionsTabController;
 import stroom.security.shared.AppPermission;
+import stroom.shapeshifter.client.component.LearnedTranslationController;
+import stroom.shapeshifter.client.component.PipelineAiTabController;
+import stroom.shapeshifter.client.component.QualityTabController;
+import stroom.shapeshifter.shared.ShapeshifterAiElements;
 import stroom.svg.shared.SvgImage;
+import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ToolbarToggleButton;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Listeners;
@@ -53,9 +58,11 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// A pipeline's editor: its Data (for a user who may view data), Structure, Processors and Active
-/// Tasks (for a user who may manage processors), Documentation and Permissions tabs (see
-/// [DocumentEditor]). It opens on Data, or Processors, or Structure, the first the user may see.
+/// A pipeline's editor: its Data (for a user who may view data), Structure (where an AI Translator element
+/// selected unfolds to what it has learned), Learning Status (where the pipeline, or a parent it inherits from,
+/// has an AI Translator element), Quality Assurance (likewise), Processors and Active Tasks (for a
+/// user who may manage processors), Documentation and Permissions tabs (see [DocumentEditor]). It opens on
+/// Data, or Processors, or Structure, the first the user may see.
 ///
 /// With the Structure tab showing, Stepping Mode shows the stepping screen in its place. The
 /// structure and the stepping screen share the pipeline's model, and the documents edited while
@@ -64,6 +71,8 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
 
     private static final TabData DATA = new TabDataImpl("Data");
     private static final TabData STRUCTURE = new TabDataImpl("Structure");
+    private static final TabData AI_TRANSLATION = new TabDataImpl("Learning Status");
+    private static final TabData QUALITY = new TabDataImpl("Quality Assurance");
     private static final TabData PROCESSORS = new TabDataImpl("Processors");
     private static final TabData TASKS = new TabDataImpl("Active Tasks");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
@@ -71,6 +80,9 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
 
     private final ProcessorsController processors;
     private final PipelineStructureController pipelineStructure;
+    private final PipelineAiTabController aiTranslation;
+    private final LearnedTranslationController learnedTranslation;
+    private final QualityTabController quality;
     private final SteppingScreenController stepping;
     private final PipelineElementTypesFactory pipelineElementTypesFactory;
     private final PipelineModelFactory pipelineModelFactory;
@@ -81,6 +93,8 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
     private PipelineModel pipelineModel;
     private boolean steppingMetaListLoaded;
     private ExpressionOperator steppingMetaExpression;
+    /// Whether the editor is the content tab shown: the AI Translation tab is read again only while it is.
+    private boolean contentVisible = true;
 
     /// Makes the editor, with the tabs the user may see.
     ///
@@ -96,6 +110,9 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
     /// @param steppingProvider            Makes the stepping.
     /// @param pipelineElementTypesFactory The pipeline element types factory.
     /// @param pipelineModelFactory        The pipeline model factory.
+    /// @param aiTranslationProvider       Makes the AI Translation tab.
+    /// @param learnedTranslationProvider  Makes what an AI Translator has learned, on the Structure tab.
+    /// @param qualityProvider             Makes the Quality Assurance tab.
     @Inject
     public PipelineEditor(final EventBus eventBus,
                           final LinkTabPanel view,
@@ -108,7 +125,10 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
                           final ClientSecurityContext securityContext,
                           final Provider<SteppingScreenController> steppingProvider,
                           final PipelineElementTypesFactory pipelineElementTypesFactory,
-                          final PipelineModelFactory pipelineModelFactory) {
+                          final PipelineModelFactory pipelineModelFactory,
+                          final Provider<PipelineAiTabController> aiTranslationProvider,
+                          final Provider<LearnedTranslationController> learnedTranslationProvider,
+                          final Provider<QualityTabController> qualityProvider) {
         super(eventBus, view);
         this.processors = own(processors);
         this.pipelineElementTypesFactory = pipelineElementTypesFactory;
@@ -130,6 +150,47 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
                 pipelineStructure,
                 this::readStructure,
                 PipelineStructureController::write);
+        // An AI Translator selected on the Structure tab can be unfolded to what it has learned: the pipeline and
+        // its learned translation are one thing to a person, though two documents behind the scenes
+        learnedTranslation = make(learnedTranslationProvider);
+        pipelineStructure.setElementDetail(learnedTranslation);
+        pipelineStructure.setOnSelect(element -> {
+            if (element != null && ShapeshifterAiElements.PARSER.equals(element.getType())) {
+                learnedTranslation.show(getDocRef(), element.getId());
+            } else {
+                learnedTranslation.hide();
+            }
+        });
+        learnedTranslation.setOnOpenStatus(() -> NullSafe.consume(learnedTranslation.getElementId(),
+                this::showAiTranslation));
+
+        // Made with the editor and read with the pipeline (in onRead, as a tab's content is otherwise read only
+        // once the tab is shown, and this one is hidden until it has read the pipeline): it is what says whether
+        // the pipeline has an AI element, and is shown only where it has. What it shows is the feed's
+        // learning, not the pipeline being edited.
+        aiTranslation = make(aiTranslationProvider);
+        addOwnedTab(AI_TRANSLATION, aiTranslation, (tab, docRef, doc) -> {
+            // Read in onRead
+        });
+        setTabHidden(AI_TRANSLATION, true);
+        aiTranslation.setOnAvailable(any -> setTabHidden(AI_TRANSLATION, !any));
+
+        // Beside it, the figures a QA person judges the translation by, for the same elements, which Learning
+        // Status finds, so that the pipeline isn't read twice
+        quality = make(qualityProvider);
+        addOwnedTab(QUALITY, quality, (tab, docRef, doc) -> {
+            // Told the elements by Learning Status
+        });
+        setTabHidden(QUALITY, true);
+        // The issues QA flagged, shown on Learning Status, are read on the Quality Assurance tab, at the same element
+        aiTranslation.setOnOpenQuality(() -> {
+            NullSafe.consume(aiTranslation.getChosenElementId(), quality::showElement);
+            selectTab(QUALITY);
+        });
+        aiTranslation.setOnElements(found -> {
+            quality.setElements(getDocRef(), found);
+            setTabHidden(QUALITY, found.isEmpty());
+        });
 
         if (securityContext.hasAppPermission(AppPermission.MANAGE_PROCESSORS_PERMISSION)) {
             addOwnedTab(PROCESSORS,
@@ -179,6 +240,16 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
             selectTab(PROCESSORS);
             processors.refresh(processorFilter);
         }
+    }
+
+    /// Shows the AI Translation tab at one of the pipeline's Shapeshifter AI elements, e.g. from the Feeds tab
+    /// of the document it learns under.
+    ///
+    /// @param elementId The element's id.
+    public void showAiTranslation(final String elementId) {
+        aiTranslation.showElement(elementId);
+        setTabHidden(AI_TRANSLATION, false);
+        selectTab(AI_TRANSLATION);
     }
 
     /// Shows the stepping screen in place of the structure, or the structure again.
@@ -265,8 +336,23 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
     }
 
     @Override
+    protected void onRead(final DocRef docRef, final PipelineDoc doc) {
+        aiTranslation.read(docRef);
+    }
+
+    @Override
     protected void afterSelectTab(final TabData tab) {
         steppingModeButton.setVisible(STRUCTURE.equals(tab));
+        aiTranslation.setShowing(contentVisible && AI_TRANSLATION.equals(tab));
+        quality.setShowing(contentVisible && QUALITY.equals(tab));
+    }
+
+    /// The AI Translation tab is read again only while it is on screen.
+    @Override
+    public void onContentTabVisible(final boolean visible) {
+        contentVisible = visible;
+        aiTranslation.setShowing(visible && AI_TRANSLATION.equals(getSelectedTab()));
+        quality.setShowing(visible && QUALITY.equals(getSelectedTab()));
     }
 
     @Override

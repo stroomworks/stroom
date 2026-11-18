@@ -34,6 +34,7 @@ import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowExit;
 import stroom.shapeshifter.shared.FlowStep;
+import stroom.shapeshifter.shared.FlowWords;
 import stroom.shapeshifter.shared.LearnedUnknown;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.QuestionKind;
@@ -41,6 +42,8 @@ import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepGuard;
 import stroom.shapeshifter.shared.StepOutcome;
+import stroom.shapeshifter.shared.StopCause;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.shapeshifter.shared.Transition;
 import stroom.shapeshifter.shared.TurnScore;
 import stroom.util.shared.ElementId;
@@ -249,7 +252,7 @@ public final class Conversation {
         } catch (final BudgetExhausted e) {
             // A5: an attempt has a wall-clock and token budget for the whole conversation, whichever mode; one that
             // runs out is abandoned, not left to block a task or spend without end.
-            return abandoned(e.getMessage(), List.of(), walk.transcript);
+            return abandoned(e.report(), walk.transcript);
         }
     }
 
@@ -259,15 +262,13 @@ public final class Conversation {
                 .filter(runners::containsKey)
                 .toList();
         if (allowed.isEmpty()) {
-            return abandoned("The document allows no element this conversation can run: "
-                             + policy.getAllowedElements(), List.of(), walk.transcript);
+            return abandoned(StopReports.noElements(policy.getAllowedElements()), walk.transcript);
         }
         final LearningFlow flow = policy.getFlow();
         final List<String> problems = new ArrayList<>(flow.problems());
         problems.addAll(Templates.problems(flow));
         if (!problems.isEmpty()) {
-            return abandoned("The document's flow cannot be held (see its Learning tab): "
-                             + String.join("; ", problems), List.of(), walk.transcript);
+            return abandoned(StopReports.invalidSteps(problems), walk.transcript);
         }
         final List<FlowStep> steps = flow.getSteps();
 
@@ -287,17 +288,19 @@ public final class Conversation {
                 // skips passes it on rather than dropping it.
                 case NEXT -> at++;
                 case ABANDON -> {
-                    return new Abandoned(visit.reason(), List.copyOf(visit.feedback()), List.copyOf(walk.transcript),
-                            visit.exit() == null
-                                    ? FlowExit.PARK
-                                    : visit.exit());
+                    final FlowExit exit = visit.exit() == null
+                            ? FlowExit.PARK
+                            : visit.exit();
+                    final StopReport report = StopReports.ofStep(visit.cause(), steps, at, visit.reason(),
+                            visit.feedback(), walk.transcript, exit);
+                    return new Abandoned(report, List.copyOf(visit.feedback()), List.copyOf(walk.transcript), exit);
                 }
                 case GOTO -> {
                     final String edge = step.effectiveId() + " " + visit.transition().format();
                     if (!walk.taken.add(edge)) {
-                        return abandoned("The flow would take '" + visit.transition().format() + "' from step '"
-                                         + step.effectiveId() + "' a second time; a transition is taken once "
-                                         + "per attempt", visit.feedback(), walk.transcript);
+                        return new Abandoned(StopReports.loop(FlowWords.rule(steps, at, visit.transition()),
+                                FlowWords.step(steps, at)), List.copyOf(visit.feedback()),
+                                List.copyOf(walk.transcript), FlowExit.PARK);
                     }
                     walk.carried = visit.feedback();
                     jumped = true;
@@ -309,8 +312,7 @@ public final class Conversation {
         }
         for (int i = 0; i < walk.chain.size(); i++) {
             if (walk.learned[i] == null) {
-                return abandoned(walk.chain.get(i) + " was never configured; the flow ended without a CONFIGURE "
-                                 + "step for it", List.of(), walk.transcript);
+                return abandoned(StopReports.notWritten(walk.chain.get(i)), walk.transcript);
             }
         }
         return new Learned(List.of(walk.learned), walk.learned[walk.learned.length - 1].result().output(),
@@ -383,9 +385,10 @@ public final class Conversation {
                 // Sent to the exhaustion step by a person (A65): this candidate is not asked for, and the
                 // step goes where it would have gone with its candidates spent. Taken once.
                 exhaustFirst = false;
-                return spent(step, feedback, "Sent to the exhaustion step by a person, and step '"
-                                             + step.effectiveId()
-                                             + "' has no 'on spent' transition to take it there");
+                return spent(step, feedback, "A person chose Finish with Unknowns, but '"
+                                             + FlowWords.stepName(step.getKind(), step.getRole())
+                                             + "' has no rule to use the fallback when it runs out of tries",
+                        StopCause.FALLBACK_MISSING);
             }
             final Judged judged = unit.attempt(candidate, feedback);
             judge(walk.transcript, step, candidate, judged.outcome(), judged.score());
@@ -395,24 +398,26 @@ public final class Conversation {
             final Transition at = step.transitionOn(judged.outcome());
             if (at != null) {
                 return at.exits()
-                        ? Visit.abandon("Step '" + step.effectiveId() + "' leaves the flow on "
-                                        + judged.outcome().getDisplayValue() + ", as the flow says: " + at.format(),
+                        ? Visit.abandon(StopCause.STEP_RULE, leaves(step, at),
                                 judged.feedback(), at.namedExit())
                         : Visit.take(at, judged.feedback());
             }
             feedback = judged.feedback();
         }
-        return spent(step, feedback, spent);
+        return spent(step, feedback, spent, StopCause.STEP_SPENT);
     }
 
     /// Where a step goes with its candidates spent: the transition on spent, else the attempt is
-    /// abandoned with the reason.
-    private static Visit spent(final FlowStep step, final List<StoredError> feedback, final String reason) {
+    /// abandoned, for the cause given, with what more there is to say about the step (or null).
+    private static Visit spent(final FlowStep step,
+                               final List<StoredError> feedback,
+                               final String about,
+                               final StopCause cause) {
         final Transition when = step.transitionOnSpent();
         if (when != null && !when.exits()) {
             return Visit.take(when, feedback);
         }
-        return Visit.abandon(reason, feedback, when == null
+        return Visit.abandon(cause, about, feedback, when == null
                 ? null
                 : when.namedExit());
     }
@@ -435,7 +440,9 @@ public final class Conversation {
         final Transition exiting = at != null
                 ? at
                 : when;
-        return Visit.abandon(reason, judged.feedback(), exiting == null
+        return Visit.abandon(at != null
+                        ? StopCause.STEP_RULE
+                        : StopCause.STEP_FAILED, reason, judged.feedback(), exiting == null
                 ? null
                 : exiting.namedExit());
     }
@@ -454,9 +461,17 @@ public final class Conversation {
             return Visit.next();
         }
         return at.exits()
-                ? Visit.abandon("The flow leaves on a pass of step '" + step.effectiveId() + "': " + at.format(),
+                ? Visit.abandon(StopCause.STEP_RULE, leaves(step, at),
                         List.of(), at.namedExit())
                 : Visit.take(at, List.of());
+    }
+
+    /// Why a run left the flow by a step's rule, in the words of the Setup tab, e.g. "At 'Write the
+    /// transform', the answer isn't in the reply format, and the step's rule says to pause for a person".
+    /// Whether it then stops learning or pauses is the run's decision, shown beside this.
+    private static String leaves(final FlowStep step, final Transition rule) {
+        return "At '" + FlowWords.stepName(step.getKind(), step.getRole()) + "', "
+               + FlowWords.condition(rule.getOn()) + ", and the step's rule says to " + FlowWords.exit(step, rule);
     }
 
     /**
@@ -476,7 +491,7 @@ public final class Conversation {
             }
             walk.chosen(chain.get(), runners);
             return Judged.passed();
-        }, "No usable chain after " + candidates(step, walk.policy) + " candidates"));
+        }, null));
     }
 
     /**
@@ -490,7 +505,8 @@ public final class Conversation {
     private Visit split(final FlowStep step, final Walk walk) {
         final StepRunner first = walk.first(runners);
         final Set<Check> checks = checks(step, SPLIT_CHECKS);
-        final String spent = "No record boundary after " + candidates(step, walk.policy) + " candidates";
+        // Nothing more to say about the step than its report does
+        final String spent = null;
         if (walk.kind == InputKind.JSON) {
             return passed(step, splitJson(step, walk, first, checks, spent));
         }
@@ -664,8 +680,7 @@ public final class Conversation {
                 }
                 proposed.add(Target.of(record, event.get()));
                 return Judged.passed(verdict);
-            }, "No acceptable target for record kind " + kind + " after " + candidates(step, walk.policy)
-                + " candidates");
+            }, "For record kind " + kind + ".");
             if (visit.kind() != Visit.Kind.NEXT) {
                 return visit;
             }
@@ -691,7 +706,7 @@ public final class Conversation {
         for (final int index : walk.elements(role, runners)) {
             final StepRunner runner = runners.get(walk.chain.get(index));
             if (index > 0 && walk.learned[index - 1] == null) {
-                return Visit.abandon(runner.elementType() + " cannot be configured before "
+                return Visit.abandon(StopCause.STEP_FAILED, runner.elementType() + " cannot be configured before "
                                      + walk.chain.get(index - 1) + " has been", List.of());
             }
             final String input = index == 0
@@ -782,9 +797,8 @@ public final class Conversation {
                     walk.learn(index, judged.learned());
                     return judged;
                 }, (admitting
-                        ? "No admission for "
-                        : "No passing configuration for ") + runner.elementType() + " after "
-                    + candidates(step, walk.policy) + " attempts", exhaustible);
+                        ? "It was serving "
+                        : "It was writing ") + runner.elementType() + ".", exhaustible);
                 // Where the flow names no exit, the step's own default (A83): a parser whose candidates
                 // are spent is the one failure nothing can serve (A52, A54), so its learner is given up;
                 // any other step parks for a person (A65).
@@ -964,10 +978,8 @@ public final class Conversation {
                 .orElse(List.of());
     }
 
-    private static Abandoned abandoned(final String reason,
-                                       final List<StoredError> diagnostics,
-                                       final List<Exchange> transcript) {
-        return new Abandoned(reason, List.copyOf(diagnostics), List.copyOf(transcript));
+    private static Abandoned abandoned(final StopReport report, final List<Exchange> transcript) {
+        return new Abandoned(report, List.of(), List.copyOf(transcript), FlowExit.PARK);
     }
 
     /// How many records the stream holds and how many kinds they are of, for an element that is shown
@@ -1029,7 +1041,7 @@ public final class Conversation {
     }
 
     private String ask(final Walk walk, final FlowStep step, final int candidate, final Question question) {
-        budget.check(clock.millis(), advisor.tokensUsed());
+        budget.check(clock.millis(), advisor.tokensUsed(), step, walk.transcript.size() + 1);
         heartbeat.run();
         final String reply;
         try {
@@ -1046,7 +1058,7 @@ public final class Conversation {
                 advisor.carried(standing));
         walk.transcript.add(exchange);
         onTurn.accept(walk.transcript.size(), exchange);
-        budget.check(clock.millis(), advisor.tokensUsed());
+        budget.check(clock.millis(), advisor.tokensUsed(), step, walk.transcript.size());
         return reply;
     }
 
@@ -1127,18 +1139,20 @@ public final class Conversation {
      */
     /// @param parse Whether an abandonment is the parser's candidates spent (A54).
     /// @param exit Where an abandonment leaves to (A83), or null where the step's default is still to apply.
+    /// @param cause Why an abandonment stopped the run, for its report ([StopReports#ofStep]); null for any
+    ///              other visit.
     private record Visit(Kind kind, Transition transition, String reason, List<StoredError> feedback,
-                         FlowExit exit) {
+                         FlowExit exit, StopCause cause) {
 
         Visit(final Kind kind, final Transition transition, final String reason, final List<StoredError> feedback) {
-            this(kind, transition, reason, feedback, null);
+            this(kind, transition, reason, feedback, null, null);
         }
 
         /// This abandonment with the step's default exit, where the flow named none; any other visit as
         /// it is.
         Visit withDefaultExit(final FlowExit fallback) {
             return kind == Kind.ABANDON && exit == null
-                    ? new Visit(kind, transition, reason, feedback, fallback)
+                    ? new Visit(kind, transition, reason, feedback, fallback, cause)
                     : this;
         }
 
@@ -1150,12 +1164,15 @@ public final class Conversation {
             return new Visit(Kind.GOTO, transition, null, feedback);
         }
 
-        static Visit abandon(final String reason, final List<StoredError> feedback) {
-            return new Visit(Kind.ABANDON, null, reason, feedback);
+        static Visit abandon(final StopCause cause, final String reason, final List<StoredError> feedback) {
+            return new Visit(Kind.ABANDON, null, reason, feedback, null, cause);
         }
 
-        static Visit abandon(final String reason, final List<StoredError> feedback, final FlowExit exit) {
-            return new Visit(Kind.ABANDON, null, reason, feedback, exit);
+        static Visit abandon(final StopCause cause,
+                             final String reason,
+                             final List<StoredError> feedback,
+                             final FlowExit exit) {
+            return new Visit(Kind.ABANDON, null, reason, feedback, exit, cause);
         }
 
         enum Kind {
@@ -1260,29 +1277,36 @@ public final class Conversation {
                           long grantedTokens,
                           long grantedMs) {
 
-        void check(final long nowMs, final long tokensNow) {
+        /// @param step     The step the run is at, for the report should it be spent.
+        /// @param question The number of the question it is at.
+        void check(final long nowMs, final long tokensNow, final FlowStep step, final int question) {
             final long elapsed = nowMs - startedMs;
             final long allowedMs = policy.getAttemptBudgetMs() + grantedMs;
             if (elapsed > allowedMs) {
-                throw new BudgetExhausted("This run's time budget of " + allowedMs
-                                          + " ms is spent after " + elapsed + " ms; each run of the session "
-                                          + "has the whole of it");
+                throw new BudgetExhausted(StopReports.outOfTime(step, question, allowedMs, elapsed));
             }
             final long tokens = tokensNow - tokensAtStart;
             if (policy.getTokenBudget() != null) {
                 final long allowed = policy.getTokenBudget() + grantedTokens;
                 if (tokens > allowed) {
-                    throw new BudgetExhausted("The session's budget of " + allowed
-                                              + " tokens is spent after " + tokens + " tokens");
+                    throw new BudgetExhausted(StopReports.outOfTokens(step, question, allowed, tokens));
                 }
             }
         }
     }
 
+    /// A run's budget spent, with the report of where.
     private static final class BudgetExhausted extends RuntimeException {
 
-        private BudgetExhausted(final String message) {
-            super(message);
+        private final transient StopReport report;
+
+        private BudgetExhausted(final StopReport report) {
+            super(report.getError());
+            this.report = report;
+        }
+
+        StopReport report() {
+            return report;
         }
     }
 }

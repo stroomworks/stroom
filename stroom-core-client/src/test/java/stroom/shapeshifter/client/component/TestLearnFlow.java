@@ -17,23 +17,17 @@
 
 package stroom.shapeshifter.client.component;
 
-import stroom.shapeshifter.shared.Check;
-import stroom.shapeshifter.shared.ConfigureRole;
-import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowProblem;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepGuard;
-import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.Template;
-import stroom.shapeshifter.shared.Transition;
 
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestLearnFlow {
 
@@ -56,38 +50,6 @@ class TestLearnFlow {
         assertThat(LearnFlow.parseLimit("abc")).isNull();
         assertThat(LearnFlow.limitText(null)).isEmpty();
         assertThat(LearnFlow.limitText(4)).isEqualTo("4");
-    }
-
-    @Test
-    void elementsSkipBlankLines() {
-        assertThat(LearnFlow.elements(" XMLParser \n\n XSLTFilter")).containsExactly("XMLParser", "XSLTFilter");
-        assertThat(LearnFlow.elements(null)).isEmpty();
-    }
-
-    @Test
-    void titleNamesTheRoleOfAConfigureStep() {
-        final FlowStep parser = new FlowStep(null, QuestionKind.CONFIGURE, ConfigureRole.PARSER, null, null, null,
-                null, null);
-        assertThat(LearnFlow.title(parser)).isEqualTo("Configure " + ConfigureRole.PARSER.getDisplayValue());
-        assertThat(LearnFlow.title(FlowStep.of(QuestionKind.SPLIT)))
-                .isEqualTo(QuestionKind.SPLIT.getDisplayValue());
-        assertThat(LearnFlow.heading(2, 5, FlowStep.of(QuestionKind.SPLIT)))
-                .isEqualTo("Step 2 of 5  ·  " + QuestionKind.SPLIT.getDisplayValue());
-    }
-
-    @Test
-    void defaultsSayWhatTheFlowLeavesUnsaid() {
-        final FlowStep parser = new FlowStep(null, QuestionKind.CONFIGURE, ConfigureRole.PARSER, null, null, null,
-                null, null);
-        assertThat(LearnFlow.defaults(parser))
-                .startsWith("By default: passed goes to the next step; a shortfall re-asks")
-                .contains("gives the learner up")
-                .endsWith("judged by its kind's own.");
-
-        final FlowStep full = new FlowStep(null, QuestionKind.TARGET, null, null, 1, null,
-                List.of(Check.values()[0]),
-                List.of(new Transition(StepOutcome.PASSED, Transition.END), new Transition(null, Transition.PARK)));
-        assertThat(LearnFlow.defaults(full)).isEqualTo("Every outcome has a transition.");
     }
 
     @Test
@@ -135,49 +97,10 @@ class TestLearnFlow {
     }
 
     @Test
-    void textRoundTrips() {
-        final List<FlowStep> steps = FlowExample.DIRECT.steps();
-        final String text = LearnFlow.format(steps);
-        assertThat(LearnFlow.parse(text + "\n\n")).isEqualTo(steps);
-        assertThat(LearnFlow.parse("")).isEmpty();
-    }
-
-    @Test
-    void aLineThatDoesNotParseIsNamed() {
-        assertThatThrownBy(() -> LearnFlow.parse("CHAIN\nNOT_A_KIND"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageStartingWith("Line 2: ");
-    }
-
-    @Test
     void problems() {
         final List<FlowProblem> problems = List.of(new FlowProblem(1, "a"), new FlowProblem(1, "b"),
                 new FlowProblem(null, "c"));
         assertThat(LearnFlow.problemsOf(problems, 1)).isEqualTo("a; b");
         assertThat(LearnFlow.problemsOf(problems, 0)).isNull();
-        assertThat(LearnFlow.flowProblem(List.of())).isNull();
-        assertThat(LearnFlow.flowProblem(problems)).isNotNull();
-    }
-
-    @Test
-    void pointingAtAndNameClash() {
-        final FlowStep target = new FlowStep("target", QuestionKind.TARGET, null, null, null, null, null, null);
-        final FlowStep split = new FlowStep("split", QuestionKind.SPLIT, null, null, null, null, null,
-                List.of(new Transition(StepOutcome.PASSED, "target")));
-        final List<FlowStep> steps = List.of(split, target);
-        assertThat(LearnFlow.pointingAt(steps, 1)).containsExactly("split");
-        assertThat(LearnFlow.pointingAt(steps, 0)).isEmpty();
-        assertThat(LearnFlow.nameClash(steps, 0, split)).isNull();
-        assertThat(LearnFlow.nameClash(steps, 0, target)).contains("'target'");
-    }
-
-    @Test
-    void copyDropsOnlyTheId() {
-        final FlowStep chain = new FlowStep("pick", QuestionKind.CHAIN, null, null, 2, null, null, null,
-                List.of("XMLParser"));
-        final FlowStep copy = LearnFlow.copyWithoutId(chain);
-        assertThat(copy.getId()).isNull();
-        assertThat(copy.getCandidates()).isEqualTo(2);
-        assertThat(copy.getElements()).containsExactly("XMLParser");
     }
 }

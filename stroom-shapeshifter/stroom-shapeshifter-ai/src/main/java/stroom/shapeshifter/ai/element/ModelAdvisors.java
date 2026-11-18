@@ -50,7 +50,7 @@ public class ModelAdvisors implements Advisors {
         }
         final OpenAIModelDoc modelDoc = aiService.getOpenAIModelDoc(doc.getModel());
         if (modelDoc == null) {
-            throw new IllegalStateException("Shapeshifter AI document " + doc.getName() + " names model "
+            throw new IllegalStateException("Learning Flow " + doc.getName() + " names model "
                                             + doc.getModel() + ", which cannot be read");
         }
         return new ModelAdvisor(aiService.getChatModel(modelDoc), modelDoc.getName(), DocRefUtil.create(doc),

@@ -18,7 +18,11 @@
 package stroom.shapeshifter.ai.doc;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocFinder;
+import stroom.pipeline.shared.PipelineDoc;
+import stroom.security.api.SecurityContext;
 import stroom.security.mock.MockSecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.shapeshifter.ai.element.LearnerDocuments;
 import stroom.shapeshifter.ai.stage.Guidance;
 import stroom.shapeshifter.ai.stage.Learner;
@@ -32,19 +36,28 @@ import stroom.shapeshifter.shared.ImproveRequest;
 import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.LearnerRequest;
 import stroom.shapeshifter.shared.RejectRequest;
+import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.SupervisorLearner;
+import stroom.util.shared.PermissionException;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// A Supervisor request names a learner and a document separately, and the permission it is held to is
-/// the document's (design 06 phase J slice 2b). So the learner must be one that runs under that
-/// document: otherwise a person who may edit one document could tell, read or relearn another's learner
-/// by naming it.
+/// A Supervisor request names a learner and a document separately (design 06 phase J slice 2b). The
+/// learner must be one that runs under that document: otherwise a person could tell, read or relearn
+/// another document's learner by naming it. What may be done to a learner is held to its pipeline's
+/// permissions: a Data Provider who owns a pipeline acts on its learning without needing the document, and
+/// the document's permission alone does nothing to a pipeline's learner (except read one whose pipeline
+/// has been deleted, which has no permissions of its own to ask).
 class TestSupervisorResourceImpl {
 
     private static final LearnerRef OURS = new LearnerRef("pipeline-1", "shapeshifterAi");
@@ -54,7 +67,9 @@ class TestSupervisorResourceImpl {
     private final InMemoryGuidance guidance = new InMemoryGuidance();
     private final InMemoryDeletedPipelines deletedPipelines = new InMemoryDeletedPipelines();
     private final InMemoryLearnerBindings learnerBindings = new InMemoryLearnerBindings();
-    private final SupervisorResourceImpl resource = resource();
+    private final ShapeshifterAiStore store = Mockito.mock(ShapeshifterAiStore.class);
+    private final LearningPipelines pipelines = Mockito.mock(LearningPipelines.class);
+    private final SupervisorResourceImpl resource = resource(MockSecurityContext::new);
 
     @Test
     void guidanceIsGivenToALearnerOfTheDocument() {
@@ -166,27 +181,172 @@ class TestSupervisorResourceImpl {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    private SupervisorResourceImpl resource() {
+    /// A Data Provider who may edit their pipeline acts on its learning without being able to see the
+    /// document it learns under: tells it something, reads what was said, and reads the document's settings.
+    @Test
+    void thePipelinesEditorActsWithoutTheDocument() {
+        final SupervisorResourceImpl provider = resource(grants(Map.of(
+                pipeline(OURS), Set.of(DocumentPermission.VIEW, DocumentPermission.EDIT))));
+
+        assertThat(provider.hint("doc-1", new GuidanceRequest(OURS, "Times are local.")))
+                .singleElement()
+                .satisfies(said -> assertThat(said.getMessage()).isEqualTo("Times are local."));
+        assertThat(provider.guidance("doc-1", OURS.getPipelineUuid(), OURS.getElementId())).hasSize(1);
+        Mockito.when(store.readDocument(new DocRef(ShapeshifterAiDoc.TYPE, "doc-1")))
+                .thenReturn(ShapeshifterAiDoc.builder().uuid("doc-1").name("Firewall").build());
+        assertThat(provider.settings("doc-1", OURS.getPipelineUuid(), OURS.getElementId()).getName())
+                .isEqualTo("Firewall");
+        // But not another pipeline's learner, under the same document or another
+        assertThatThrownBy(() -> provider.guidance("doc-2", THEIRS.getPipelineUuid(), THEIRS.getElementId()))
+                .isInstanceOf(PermissionException.class);
+    }
+
+    /// The document's permission alone does nothing to a pipeline's learner: the pipeline's owner decides
+    /// what its feed is told, approved and relearned with.
+    @Test
+    void theDocumentAloneIsNotEnough() {
+        final SupervisorResourceImpl owner = resource(grants(Map.of(
+                new DocRef(ShapeshifterAiDoc.TYPE, "doc-1"),
+                Set.of(DocumentPermission.VIEW, DocumentPermission.EDIT))));
+
+        assertThatThrownBy(() -> owner.hint("doc-1", new GuidanceRequest(OURS, "Planted.")))
+                .describedAs("told something")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> owner.guidance("doc-1", OURS.getPipelineUuid(), OURS.getElementId()))
+                .describedAs("read")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> owner.settings("doc-1", OURS.getPipelineUuid(), OURS.getElementId()))
+                .describedAs("or its settings read from the pipeline's side")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> owner.pipelineLearners(OURS.getPipelineUuid()))
+                .describedAs("nor its pipeline's learners listed")
+                .isInstanceOf(PermissionException.class);
+        assertThat(guidance.standing(learner(OURS))).isEmpty();
+    }
+
+    /// Viewing a pipeline reads its learning; changing it takes editing the pipeline.
+    @Test
+    void viewingThePipelineReadsAndChangesNothing() {
+        final long said = guidance.given(learner(OURS), "doc-1", "Times are local.", "jo");
+        learnerBindings.append(learner(OURS), "doc-1", Binding.builder()
+                .uuid("rule-1")
+                .pipeline(new DocRef("Pipeline", "fragment-1", "FIREWALL learned"))
+                .build());
+        final SupervisorResourceImpl viewer = resource(grants(Map.of(
+                pipeline(OURS), Set.of(DocumentPermission.VIEW))));
+
+        assertThat(viewer.guidance("doc-1", OURS.getPipelineUuid(), OURS.getElementId())).hasSize(1);
+        assertThatThrownBy(() -> viewer.hint("doc-1", new GuidanceRequest(OURS, "And the year.")))
+                .describedAs("told nothing")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> viewer.withdraw("doc-1", said, OURS.getPipelineUuid(), OURS.getElementId()))
+                .describedAs("nothing taken back")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> viewer.giveUp("doc-1", new LearnerRequest(OURS, "Retired.")))
+                .describedAs("not given up")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> viewer.accept("doc-1", "rule-1"))
+                .describedAs("its translation not accepted")
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> viewer.retract("doc-1", "rule-1", new RejectRequest("Wrong.")))
+                .describedAs("or taken back")
+                .isInstanceOf(PermissionException.class);
+        assertThat(guidance.standing(learner(OURS))).hasSize(1);
+    }
+
+    /// A binding is acted on only under the document its learner runs under, and one that isn't there
+    /// answers as one that may not be changed.
+    @Test
+    void aBindingIsChangedOnlyUnderItsOwnDocument() {
+        learnerBindings.append(learner(OURS), "doc-1", Binding.builder()
+                .uuid("rule-1")
+                .pipeline(new DocRef("Pipeline", "fragment-1", "FIREWALL learned"))
+                .build());
+
+        assertThatThrownBy(() -> resource.accept("doc-2", "rule-1"))
+                .isInstanceOf(PermissionException.class);
+        assertThatThrownBy(() -> resource.accept("doc-1", "no-such-binding"))
+                .isInstanceOf(PermissionException.class);
+    }
+
+    /// A deleted pipeline has no permissions to ask: its learning is read by its document's VIEW, and
+    /// without that, not at all.
+    @Test
+    void aDeletedPipelinesLearningIsReadByItsDocument() {
+        deletedPipelines.deleted(GONE.getPipelineUuid(), 1_000L);
+        final SupervisorResourceImpl reader = resource(grants(Map.of(
+                new DocRef(ShapeshifterAiDoc.TYPE, "doc-1"), Set.of(DocumentPermission.VIEW))));
+        final SupervisorResourceImpl stranger = resource(grants(Map.of()));
+
+        assertThat(reader.guidance("doc-1", GONE.getPipelineUuid(), GONE.getElementId())).isEmpty();
+        assertThatThrownBy(() -> stranger.guidance("doc-1", GONE.getPipelineUuid(), GONE.getElementId()))
+                .isInstanceOf(PermissionException.class);
+    }
+
+    /// A pipeline's own editor lists its learners, under any document, by asking for that pipeline alone.
+    @Test
+    void aPipelinesLearnersAreListedForItsViewer() {
+        Mockito.when(store.listDocuments()).thenReturn(Set.of(new DocRef(ShapeshifterAiDoc.TYPE, "doc-1",
+                "Firewall")));
+        Mockito.when(store.readDocument(new DocRef(ShapeshifterAiDoc.TYPE, "doc-1", "Firewall")))
+                .thenReturn(ShapeshifterAiDoc.builder().uuid("doc-1").name("Firewall").build());
+        Mockito.when(pipelines.learners(Mockito.anyCollection(), Mockito.anySet(), Mockito.anyCollection(),
+                        Mockito.anyBoolean(), Mockito.eq(OURS.getPipelineUuid()), Mockito.anyLong(),
+                        Mockito.anyInt()))
+                .thenReturn(new LearningPipelines.Page(List.of(), 0L));
+        final SupervisorResourceImpl viewer = resource(grants(Map.of(
+                pipeline(OURS), Set.of(DocumentPermission.VIEW))));
+
+        final List<SupervisorLearner> listed = viewer.pipelineLearners(OURS.getPipelineUuid());
+
+        assertThat(listed).isEmpty();
+        // Under every document, not only those the viewer may see
+        Mockito.verify(pipelines).learners(Mockito.argThat(docs -> docs.contains("doc-1")),
+                Mockito.anySet(), Mockito.anyCollection(), Mockito.eq(false),
+                Mockito.eq(OURS.getPipelineUuid()), Mockito.eq(0L), Mockito.anyInt());
+    }
+
+    private SupervisorResourceImpl resource(final Supplier<SecurityContext> securityContext) {
         final LearnerDocuments documents = Mockito.mock(LearnerDocuments.class);
         Mockito.when(documents.documentOf(learner(OURS))).thenReturn(Optional.of("doc-1"));
         Mockito.when(documents.documentOf(learner(THEIRS))).thenReturn(Optional.of("doc-2"));
         // A deleted pipeline names no document; the learning pipelines list says which it is read under.
         Mockito.when(documents.documentOf(learner(GONE))).thenReturn(Optional.empty());
-        final LearningPipelines pipelines = Mockito.mock(LearningPipelines.class);
         Mockito.when(pipelines.documentOf(learner(GONE))).thenReturn(Optional.of("doc-1"));
+        final DocFinder docFinder = Mockito.mock(DocFinder.class);
+        Mockito.when(docFinder.decorate(Mockito.any())).thenAnswer(invocation -> invocation.getArgument(0));
         return new SupervisorResourceImpl(
                 () -> null,
+                () -> store,
                 () -> null,
                 () -> null,
-                () -> null,
-                MockSecurityContext::new,
+                securityContext::get,
                 () -> guidance,
                 () -> null,
                 () -> documents,
                 () -> deletedPipelines,
                 () -> learnerBindings,
                 () -> pipelines,
-                () -> null);
+                () -> docFinder);
+    }
+
+    // A person granted these permissions on these documents (by type and uuid), and none on any other
+    private static Supplier<SecurityContext> grants(final Map<DocRef, Set<DocumentPermission>> granted) {
+        final SecurityContext context = Mockito.mock(SecurityContext.class);
+        Mockito.when(context.getUserIdentityForAudit()).thenReturn("jo");
+        Mockito.when(context.hasDocumentPermission(Mockito.any(), Mockito.any())).thenAnswer(invocation -> {
+            final DocRef asked = invocation.getArgument(0);
+            final DocumentPermission permission = invocation.getArgument(1);
+            return granted.entrySet().stream()
+                    .anyMatch(entry -> entry.getKey().getType().equals(asked.getType())
+                                       && entry.getKey().getUuid().equals(asked.getUuid())
+                                       && entry.getValue().contains(permission));
+        });
+        return () -> context;
+    }
+
+    private static DocRef pipeline(final LearnerRef ref) {
+        return new DocRef(PipelineDoc.TYPE, ref.getPipelineUuid());
     }
 
     private static Learner learner(final LearnerRef ref) {

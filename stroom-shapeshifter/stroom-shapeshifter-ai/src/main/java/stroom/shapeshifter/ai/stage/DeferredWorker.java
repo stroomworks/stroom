@@ -121,7 +121,7 @@ public final class DeferredWorker {
         }
         final Optional<ShapeshifterAiDoc> doc = documents.byUuid(attempt.attempt().docUuid());
         if (doc.isEmpty()) {
-            return abandon(attempt, "The Shapeshifter AI document has been deleted");
+            return abandon(attempt, "The Learning Flow has been deleted");
         }
         final Long inputId = attempt.attempt().inputId();
         final Optional<Input> input = inputId == null

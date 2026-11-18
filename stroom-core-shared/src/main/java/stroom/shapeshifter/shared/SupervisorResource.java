@@ -166,6 +166,23 @@ public interface SupervisorResource extends RestResource, DirectRestService {
             operationId = "findShapeshifterAiLearners")
     ResultPage<SupervisorLearner> learners(LearnerCriteria criteria);
 
+    @GET
+    @Path("/pipelines/{pipelineUuid}/learners")
+    @Operation(
+            summary = "The learners of one pipeline: each of its Shapeshifter AI elements that has learned or is "
+                      + "learning, where it stands, what serves it and what waits on it",
+            operationId = "findShapeshifterAiPipelineLearners")
+    List<SupervisorLearner> pipelineLearners(@PathParam("pipelineUuid") String pipelineUuid);
+
+    @GET
+    @Path("/learners/{docUuid}/settings")
+    @Operation(
+            summary = "The settings of the Shapeshifter AI document a learner runs under, for its pipeline's editor",
+            operationId = "fetchShapeshifterAiLearnerSettings")
+    ShapeshifterAiDoc settings(@PathParam("docUuid") String docUuid,
+                               @QueryParam("pipelineUuid") String pipelineUuid,
+                               @QueryParam("elementId") String elementId);
+
     @POST
     @Path("/learners/{docUuid}/waiting")
     @Operation(

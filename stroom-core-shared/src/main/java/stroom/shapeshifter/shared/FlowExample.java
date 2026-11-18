@@ -20,7 +20,7 @@ import stroom.docref.HasDisplayValue;
 
 import java.util.List;
 
-/// The flows as measured (design 02 §6.3), which the Learning tab loads into a document's steps and nothing
+/// The flows as measured (design 02 §6.3), which the Setup tab loads into a document's steps and nothing
 /// more (A34, A37) — a document owns its steps, and these are three it might start from. `DIRECT` asks for
 /// the chain and then each element's configuration (A21), and is what a new document starts with.
 /// `TARGET_FIRST` first settles the record boundary, then asks what one record of each kind should become,

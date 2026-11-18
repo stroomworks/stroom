@@ -143,7 +143,10 @@ import stroom.gwt.workbench.client.app.security.UserGroupsScreenStories;
 import stroom.gwt.workbench.client.app.security.UserProfileScreenStories;
 import stroom.gwt.workbench.client.app.security.UserTabScreenStories;
 import stroom.gwt.workbench.client.app.security.UsersScreenStories;
+import stroom.gwt.workbench.client.app.shapeshifter.PipelineAiTranslationStories;
+import stroom.gwt.workbench.client.app.shapeshifter.PipelineQualityStories;
 import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiEditorStories;
+import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiStopReportStories;
 import stroom.gwt.workbench.client.app.shapeshifter.StageDecisionPaneStories;
 import stroom.gwt.workbench.client.app.shapeshifter.SupervisorStories;
 import stroom.gwt.workbench.client.app.vis.ChartVisStories;
@@ -369,6 +372,10 @@ public final class AppStories {
         ReportEditorStories.addTo(registry);
         // App/Editors/ShapeshifterAiEditor
         ShapeshifterAiEditorStories.addTo(registry);
+        ShapeshifterAiStopReportStories.addTo(registry);
+        // App/Editors/PipelineAiTranslation
+        PipelineAiTranslationStories.addTo(registry);
+        PipelineQualityStories.addTo(registry);
         // App/Editors/StatisticStoreEditor
         StatisticStoreEditorStories.addTo(registry);
         // App/Editors/ViewEditor

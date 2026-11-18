@@ -26,7 +26,9 @@ import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepOutcome;
+import stroom.shapeshifter.shared.StopReport;
 import stroom.shapeshifter.shared.TurnScore;
+import stroom.util.json.JsonUtil;
 import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
@@ -219,6 +221,7 @@ public class AttemptsDao implements Attempts {
                         .set(SHAPESHIFTER_ATTEMPT.CLAIMED, CLAIMED)
                         .set(SHAPESHIFTER_ATTEMPT.EXPIRY_MS, expiryMs)
                         .setNull(SHAPESHIFTER_ATTEMPT.DECISION)
+                        .setNull(SHAPESHIFTER_ATTEMPT.REPORT)
                         .setNull(SHAPESHIFTER_ATTEMPT.BINDING_UUID)
                         .setNull(SHAPESHIFTER_ATTEMPT.SCORE)
                         .set(SHAPESHIFTER_ATTEMPT.VERSION, SHAPESHIFTER_ATTEMPT.VERSION.plus(1))
@@ -343,11 +346,12 @@ public class AttemptsDao implements Attempts {
     }
 
     @Override
-    public void parked(final long attemptId, final String reason, final long tokensSpent) {
+    public void parked(final long attemptId, final String reason, final StopReport report, final long tokensSpent) {
         JooqUtil.context(connProvider, context -> context
                 .update(SHAPESHIFTER_ATTEMPT)
                 .set(SHAPESHIFTER_ATTEMPT.STATUS, AttemptStatus.PARKED.name())
                 .set(SHAPESHIFTER_ATTEMPT.DECISION, reason)
+                .set(SHAPESHIFTER_ATTEMPT.REPORT, json(report))
                 // A lease that does not lapse: nothing takes the claim from a parked attempt but a person.
                 .set(SHAPESHIFTER_ATTEMPT.EXPIRY_MS, Long.MAX_VALUE)
                 .set(SHAPESHIFTER_ATTEMPT.TOKENS_SPENT, SHAPESHIFTER_ATTEMPT.TOKENS_SPENT.plus(tokensSpent))
@@ -364,11 +368,13 @@ public class AttemptsDao implements Attempts {
                        final String decision,
                        final String bindingUuid,
                        final Double score,
+                       final StopReport report,
                        final long tokensSpent) {
         JooqUtil.context(connProvider, context -> context
                 .update(SHAPESHIFTER_ATTEMPT)
                 .set(SHAPESHIFTER_ATTEMPT.STATUS, status.name())
                 .set(SHAPESHIFTER_ATTEMPT.DECISION, decision)
+                .set(SHAPESHIFTER_ATTEMPT.REPORT, json(report))
                 .set(SHAPESHIFTER_ATTEMPT.BINDING_UUID, bindingUuid)
                 .set(SHAPESHIFTER_ATTEMPT.SCORE, score)
                 .set(SHAPESHIFTER_ATTEMPT.TOKENS_SPENT, SHAPESHIFTER_ATTEMPT.TOKENS_SPENT.plus(tokensSpent))
@@ -579,7 +585,22 @@ public class AttemptsDao implements Attempts {
                 turns,
                 new Grant(record.get(SHAPESHIFTER_ATTEMPT.GRANTED_TOKENS),
                         record.get(SHAPESHIFTER_ATTEMPT.GRANTED_MS)),
-                record.get(SHAPESHIFTER_ATTEMPT.EXHAUST_NEXT) != 0);
+                record.get(SHAPESHIFTER_ATTEMPT.EXHAUST_NEXT) != 0,
+                report(record.get(SHAPESHIFTER_ATTEMPT.REPORT)));
+    }
+
+    // A stop report as its column holds it, JSON; null for none
+    private static String json(final StopReport report) {
+        return report == null
+                ? null
+                : JsonUtil.writeValueAsString(report, false);
+    }
+
+    // A stop report read back from its column; null for none
+    private static StopReport report(final String json) {
+        return NullSafe.isBlankString(json)
+                ? null
+                : JsonUtil.readValue(json, StopReport.class);
     }
 
     @Override

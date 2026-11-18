@@ -326,6 +326,20 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
         return (Byte) get(21);
     }
 
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.report</code>.
+     */
+    public void setReport(String value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.report</code>.
+     */
+    public String getReport() {
+        return (String) get(22);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -349,7 +363,7 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
     /**
      * Create a detached, initialised ShapeshifterAttemptRecord
      */
-    public ShapeshifterAttemptRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String feedName, String typeName, Long inputMetaId, String nodeName, String promotionMode, String status, String decision, String bindingUuid, Double score, Long tokensSpent, Long expiryMs, Byte claimed, Long grantedTokens, Long grantedMs, Byte exhaustNext) {
+    public ShapeshifterAttemptRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String feedName, String typeName, Long inputMetaId, String nodeName, String promotionMode, String status, String decision, String bindingUuid, Double score, Long tokensSpent, Long expiryMs, Byte claimed, Long grantedTokens, Long grantedMs, Byte exhaustNext, String report) {
         super(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT);
 
         setId(id);
@@ -374,6 +388,7 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
         setGrantedTokens(grantedTokens);
         setGrantedMs(grantedMs);
         setExhaustNext(exhaustNext);
+        setReport(report);
         resetTouchedOnNotNull();
     }
 }

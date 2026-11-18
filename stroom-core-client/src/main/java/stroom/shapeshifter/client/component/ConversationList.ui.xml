@@ -1,0 +1,12 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A learning run's conversation on the Feeds tab (conversation-list.css): a row per question, each opening to
+     what was asked, the answer and how it was judged -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="conversation-list">
+        <tx:Label ui:field="empty" styleName="conversation-list__empty"
+                  text="No questions have been asked in this learning run yet."/>
+        <g:FlowPanel ui:field="turns" styleName="conversation-list__turns"/>
+    </g:FlowPanel>
+</ui:UiBinder>

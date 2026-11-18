@@ -20,7 +20,7 @@ import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorAttempt;
 
 /// What a grant to a parked session (A65, A77) is said as: what the grant dialog ([GrantEditorController])
-/// tells a person before they grant, and what the sessions' list ([SessionList]) says has been granted
+/// tells a person before they grant, and what Learning Status says a paused run has been given
 /// (design 06 A145). Plain logic, so that it is tested without a browser.
 public final class GrantText {
 
@@ -38,39 +38,22 @@ public final class GrantText {
                 .append(" tokens");
         if (doc != null) {
             if (doc.getTokenBudget() == null || doc.getTokenBudget() == 0L) {
-                text.append(", and its document sets no token budget");
+                text.append(", and its Learning Flow sets no token budget");
             } else {
-                text.append(" of its document's ").append(doc.getTokenBudget());
+                text.append(" of its Learning Flow's ").append(doc.getTokenBudget());
             }
         }
         if (attempt.getGrantedTokens() > 0L) {
             text.append(", with ").append(attempt.getGrantedTokens()).append(" more granted");
         }
         text.append(". Each run of it may take ").append(doc == null
-                ? "its document's time budget"
-                : duration(doc.getAttemptBudgetMs()) + " by its document");
+                ? "its Learning Flow's time budget"
+                : duration(doc.getAttemptBudgetMs()) + " by its Learning Flow");
         if (attempt.getGrantedMs() > 0L) {
             text.append(" and ").append(duration(attempt.getGrantedMs())).append(" more granted");
         }
         return text.append(". Tokens are counted over the session's life; time over each run, so a run "
                            + "carried on has the whole of it again.").toString();
-    }
-
-    /// What has been granted to a session, said as the grant dialog asks for it (design 06 A145): tokens
-    /// over its life, and time for each run.
-    ///
-    /// @param attempt The session.
-    /// @return E.g. `5000 tokens, 10 min each run`, or empty where nothing has been granted.
-    public static String granted(final SupervisorAttempt attempt) {
-        final String tokens = attempt.getGrantedTokens() > 0L
-                ? attempt.getGrantedTokens() + " tokens"
-                : "";
-        final String time = attempt.getGrantedMs() > 0L
-                ? duration(attempt.getGrantedMs()) + " each run"
-                : "";
-        return tokens.isEmpty() || time.isEmpty()
-                ? tokens + time
-                : tokens + ", " + time;
     }
 
     /// Minutes where the time is whole minutes, seconds otherwise.

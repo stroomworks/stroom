@@ -17,6 +17,8 @@
 package stroom.shapeshifter.ai.state;
 
 import stroom.shapeshifter.ai.element.KeptLearning;
+import stroom.shapeshifter.ai.quality.Assessments;
+import stroom.shapeshifter.ai.quality.Volumes;
 import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.CorpusIndex;
 import stroom.shapeshifter.ai.stage.Deferrals;
@@ -59,6 +61,8 @@ public class InMemoryStateModule extends AbstractModule {
         bind(Spend.class).to(InMemorySpend.class).in(Scopes.SINGLETON);
         bind(CorpusIndex.class).to(InMemoryCorpusIndex.class).in(Scopes.SINGLETON);
         bind(Snapshots.class).to(InMemorySnapshots.class).in(Scopes.SINGLETON);
+        bind(Volumes.class).to(InMemoryVolumes.class).in(Scopes.SINGLETON);
+        bind(Assessments.class).to(InMemoryAssessments.class).in(Scopes.SINGLETON);
         // One set of marks, which the attempts and the serving view read to leave a deleted pipeline out.
         bind(InMemoryDeletedPipelines.class).in(Scopes.SINGLETON);
         bind(DeletedPipelines.class).to(InMemoryDeletedPipelines.class);

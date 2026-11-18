@@ -1,0 +1,128 @@
+/*
+ * Copyright 2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.shapeshifter.client.component;
+
+import stroom.docref.DocRef;
+import stroom.shapeshifter.client.component.Readiness.Fix;
+import stroom.shapeshifter.shared.FlowExample;
+import stroom.shapeshifter.shared.FlowStep;
+import stroom.shapeshifter.shared.LearningFlow;
+import stroom.shapeshifter.shared.LearningMode;
+import stroom.shapeshifter.shared.PromotionMode;
+import stroom.shapeshifter.shared.QuestionKind;
+import stroom.shapeshifter.shared.ScorerSetting;
+import stroom.shapeshifter.shared.ScorerType;
+import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class TestSetupSummary {
+
+    @Test
+    void aDocumentWithEverythingSaysWhatEachSectionIsSetTo() {
+        final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .name("Firewall logs")
+                .learningMode(LearningMode.AUTOMATIC)
+                .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
+                .scorers(QualityPreset.STANDARD.getSettings())
+                .flow(LearningFlow.of(FlowExample.DIRECT))
+                .promotionFloor(0.8)
+                .promotionMode(PromotionMode.REVIEW)
+                .relearnThreshold(0.6)
+                .build());
+
+        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o");
+        // The fallback is a step of the flow, but not a card
+        assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Straight to it · 3 steps");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 4 checks");
+        assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Pass mark 80% · approved first");
+        assertThat(summary.summary(SetupSection.IN_SERVICE)).isEqualTo("Flagged below 60%");
+        for (final SetupSection section : SetupSection.values()) {
+            assertThat(summary.problem(section)).as(section.name()).isNull();
+        }
+    }
+
+    @Test
+    void aNewDocumentsProblemsAreShownAgainstTheSectionsTheyAreFixedIn() {
+        // Learning off, no model, no checks, the direct flow
+        final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder().uuid("new").name("New").build());
+
+        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("Off · no model");
+        // Learning off and no model are both fixed under Learning: the first is shown
+        assertThat(summary.problem(SetupSection.LEARNING))
+                .isEqualTo("Learning is switched off, so streams of new feeds wait.");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("No checks");
+        assertThat(summary.problem(SetupSection.QUALITY))
+                .isEqualTo("There are no quality checks, so every answer would pass.");
+        assertThat(summary.problem(SetupSection.APPROACH)).isNull();
+        assertThat(summary.problem(SetupSection.GOING_LIVE)).isNull();
+        assertThat(summary.problem(SetupSection.IN_SERVICE)).isNull();
+    }
+
+    @Test
+    void aDocumentsOwnApproachAndChecksAreSaidToBeItsOwn() {
+        final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .name("Own")
+                .scorers(List.of(new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null)))
+                .flow(new LearningFlow(List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.CONFIGURE)),
+                        null, null))
+                .promotionMode(PromotionMode.AUTOMATIC)
+                .build());
+
+        assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Its own approach · 2 steps");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Own checks · 1 check");
+        assertThat(summary.summary(SetupSection.GOING_LIVE)).endsWith("· used once it passes");
+    }
+
+    @Test
+    void anApproachWithAProblemIsShownAgainstHowItLearns() {
+        final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .name("Broken")
+                .flow(new LearningFlow(List.of(FlowStep.of(QuestionKind.SPLIT)), null, null))
+                .build());
+
+        assertThat(summary.problem(SetupSection.APPROACH)).startsWith("The approach has a problem: ");
+    }
+
+    @Test
+    void aModelWithNoNameIsStillSaidToBeChosen() {
+        final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .name("Unnamed model")
+                .learningMode(LearningMode.AUTOMATIC)
+                .model(new DocRef("OpenAIModel", "m-1", null))
+                .build());
+
+        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · a model");
+        assertThat(summary.problem(SetupSection.LEARNING)).isNull();
+    }
+
+    @Test
+    void everyFixIsMadeInASection() {
+        assertThat(Fix.SWITCH_ON.getSection()).isEqualTo(SetupSection.LEARNING);
+        assertThat(Fix.CHOOSE_MODEL.getSection()).isEqualTo(SetupSection.LEARNING);
+        assertThat(Fix.USE_STANDARD_CHECKS.getSection()).isEqualTo(SetupSection.QUALITY);
+        assertThat(Fix.OPEN_APPROACH.getSection()).isEqualTo(SetupSection.APPROACH);
+    }
+}

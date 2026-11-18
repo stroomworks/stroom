@@ -8,6 +8,6 @@
         <b:ToolbarButton ui:field="addButton" svg="ADD" title="Tell this learner something else"/>
         <b:ToolbarButton ui:field="removeButton" svg="DELETE"
                          title="Take this back, so that it stops being carried" enabled="false"/>
-        <dg:DataGrid ui:field="dataGrid" tableName="Shapeshifter AI Guidance" multiLine="true"/>
+        <dg:DataGrid ui:field="dataGrid" tableName="Guidance" multiLine="true"/>
     </dg:PagerPanel>
 </ui:UiBinder>

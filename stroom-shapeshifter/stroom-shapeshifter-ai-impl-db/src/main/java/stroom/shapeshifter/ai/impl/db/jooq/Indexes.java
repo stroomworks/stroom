@@ -9,6 +9,7 @@ import org.jooq.OrderField;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
 
+import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAssessment;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAttempt;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterBinding;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterCorpus;
@@ -30,6 +31,8 @@ public class Indexes {
     // INDEX definitions
     // -------------------------------------------------------------------------
 
+    public static final Index SHAPESHIFTER_ASSESSMENT_SHAPESHIFTER_ASSESSMENT_DOC_UUID = Internal.createIndex(DSL.name("shapeshifter_assessment_doc_uuid"), ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT, new OrderField[] { ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT.DOC_UUID }, false);
+    public static final Index SHAPESHIFTER_ASSESSMENT_SHAPESHIFTER_ASSESSMENT_LEARNER = Internal.createIndex(DSL.name("shapeshifter_assessment_learner"), ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT, new OrderField[] { ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT.PIPELINE_UUID, ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT.ELEMENT_ID, ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT.ID }, false);
     public static final Index SHAPESHIFTER_ATTEMPT_SHAPESHIFTER_ATTEMPT_CREATE_TIME_MS = Internal.createIndex(DSL.name("shapeshifter_attempt_create_time_ms"), ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, new OrderField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.CREATE_TIME_MS }, false);
     public static final Index SHAPESHIFTER_ATTEMPT_SHAPESHIFTER_ATTEMPT_DOC_UUID = Internal.createIndex(DSL.name("shapeshifter_attempt_doc_uuid"), ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, new OrderField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.DOC_UUID }, false);
     public static final Index SHAPESHIFTER_ATTEMPT_SHAPESHIFTER_ATTEMPT_STATUS = Internal.createIndex(DSL.name("shapeshifter_attempt_status"), ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, new OrderField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.STATUS }, false);

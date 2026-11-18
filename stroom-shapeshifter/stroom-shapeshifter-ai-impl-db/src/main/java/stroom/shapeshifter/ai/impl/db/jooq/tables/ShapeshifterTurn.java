@@ -17,13 +17,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -56,7 +57,7 @@ public class ShapeshifterTurn extends TableImpl<ShapeshifterTurnRecord> {
     /**
      * The column <code>stroom.shapeshifter_turn.id</code>.
      */
-    public final TableField<ShapeshifterTurnRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<ShapeshifterTurnRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_turn.create_time_ms</code>.
@@ -226,7 +227,7 @@ public class ShapeshifterTurn extends TableImpl<ShapeshifterTurnRecord> {
      */
     @Override
     public ShapeshifterTurn where(Condition condition) {
-        return new ShapeshifterTurn(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new ShapeshifterTurn(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -293,7 +294,7 @@ public class ShapeshifterTurn extends TableImpl<ShapeshifterTurnRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterTurn whereExists(Select<?> select) {
+    public ShapeshifterTurn whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -301,7 +302,7 @@ public class ShapeshifterTurn extends TableImpl<ShapeshifterTurnRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public ShapeshifterTurn whereNotExists(Select<?> select) {
+    public ShapeshifterTurn whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

@@ -16,154 +16,157 @@
 
 package stroom.shapeshifter.client.component;
 
-import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.component.DocumentationTabController;
 import stroom.document.client.editor.DocumentEditor;
 import stroom.document.client.editor.LinkTabPanel;
 import stroom.security.client.component.DocumentUserPermissionsTabController;
-import stroom.shapeshifter.client.component.ProcessHeader.Stage;
-import stroom.shapeshifter.shared.AttemptCriteria;
-import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.client.component.Readiness.Fix;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
-import stroom.shapeshifter.shared.SupervisorResource;
-import stroom.util.shared.PageRequest;
+import stroom.shapeshifter.shared.SuggestionAction;
+import stroom.widget.component.client.Contexts;
 import stroom.widget.tab.client.TabData;
 import stroom.widget.tab.client.TabDataImpl;
 
-import com.google.gwt.core.client.GWT;
+import com.google.gwt.core.client.Scheduler;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
-import java.util.ArrayList;
-import java.util.List;
-
-/// A Shapeshifter AI document's editor: the two stages of the process, in the order a stream meets them
-/// (design 06, A110) — the scores that judge what is served and what is learned, and the flow that
-/// learns — then its Documentation and Permissions. Which streams reach the document is its pipelines'
-/// filters' to say. Each stage's tab shows the process across its top ([ProcessHeader], A98), its own
-/// stage marked, with this document's figures from the Supervisor.
+/// A Shapeshifter AI document's editor (design 07): **Feeds**, the document's feeds and what each needs,
+/// which it opens on; **Setup**, everything the document holds, on one page in the order a translation
+/// meets it (how it is learned, its quality checks, approving it, monitoring it in use); then Documentation and
+/// Permissions. Which streams reach the document is its pipelines' filters' to say.
+///
+/// The Feeds tab says, across its top, whether the document will learn anything ([Readiness]), worked out
+/// from the document as the Setup tab has it; its fixes are made in the Setup tab's sections, which is why
+/// the editor makes and owns both from the start.
 public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
 
-    private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
-
-    private static final TabData SCORE = new TabDataImpl("Score");
-    private static final TabData LEARN = new TabDataImpl("Learn");
+    private static final TabData FEEDS = new TabDataImpl("Pipelines");
+    private static final TabData SETUP = new TabDataImpl("Setup");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
-    /// The stages' tabs' headers, as each tab is made, which the figures are shown in.
-    private final List<ProcessHeader> headers = new ArrayList<>();
-    private final RestFactory restFactory;
-    /// The last read asked for, so that a slower earlier reply arriving after a later one is ignored.
-    private int asked;
-    /// What the two reads have answered so far: streams waiting, sessions parked.
-    private Long waiting;
-    private Long parked;
+    private final FeedsTabController feeds;
+    private final SetupTabController setup;
+    /// Whether the document's own tab is the one shown in Stroom.
+    private boolean contentVisible = true;
 
     /// Makes the editor, with its tabs.
     ///
     /// @param eventBus                 The application's event bus.
     /// @param view                     Its component.
-    /// @param scoreTabProvider         Makes the Score tab.
-    /// @param learnTabProvider         Makes the Learn tab.
+    /// @param feedsProvider            Makes the Feeds tab.
+    /// @param setupProvider            Makes the Setup tab.
     /// @param documentationTabProvider Makes the Documentation tab's editor.
     /// @param permissionsProvider      Makes the Permissions tab.
-    /// @param restFactory              Reads the document's figures from the Supervisor.
     @Inject
     public ShapeshifterAiEditor(final EventBus eventBus,
                                 final LinkTabPanel view,
-                                final Provider<ScoreTabController> scoreTabProvider,
-                                final Provider<LearnTabController> learnTabProvider,
+                                final Provider<FeedsTabController> feedsProvider,
+                                final Provider<SetupTabController> setupProvider,
                                 final Provider<DocumentationTabController> documentationTabProvider,
-                                final Provider<DocumentUserPermissionsTabController> permissionsProvider,
-                                final RestFactory restFactory) {
+                                final Provider<DocumentUserPermissionsTabController> permissionsProvider) {
         super(eventBus, view);
-        this.restFactory = restFactory;
+        feeds = make(feedsProvider);
+        setup = make(setupProvider);
 
-        addTab(SCORE,
-                () -> {
-                    final ScoreTabController scoreTab = scoreTabProvider.get();
-                    addHeader(scoreTab.getProcessHeader(), Stage.SCORE);
-                    return scoreTab;
-                },
-                ScoreTabController::read,
-                ScoreTabController::write);
-        addTab(LEARN,
-                () -> {
-                    final LearnTabController learnTab = learnTabProvider.get();
-                    addHeader(learnTab.getProcessHeader(), Stage.LEARN);
-                    return learnTab;
-                },
-                LearnTabController::read,
-                LearnTabController::write);
+        // The feeds are what is saved, not what is being edited: learning runs under the saved document
+        addOwnedTab(FEEDS, feeds, FeedsTabController::read);
+        addOwnedTab(SETUP, setup, SetupTabController::read, SetupTabController::write);
         addDocumentationTab(DOCUMENTATION,
                 documentationTabProvider,
                 ShapeshifterAiDoc::getDescription,
                 (doc, description) -> doc.copy().description(description).build());
         addPermissionsTab(PERMISSIONS, permissionsProvider);
-        setDefaultTab(SCORE);
+        setDefaultTab(FEEDS);
+
+        feeds.setOnFix(this::fix);
     }
 
-    // A stage's tab's header: its own stage marked, the other a way to its tab, and the figures so far
-    private void addHeader(final ProcessHeader header, final Stage stage) {
-        header.setStage(stage);
-        header.setOnStage(chosen -> selectTab(chosen == Stage.SCORE
-                ? SCORE
-                : LEARN));
-        header.setFigures(waiting, parked);
-        headers.add(header);
+    /// Shows the Setup tab's AI model and instructions, e.g. from a pipeline whose feed waits because learning
+    /// is switched off.
+    public void showLearning() {
+        showSection(SetupSection.LEARNING);
     }
 
-    private void showFigures() {
-        headers.forEach(header -> header.setFigures(waiting, parked));
-    }
-
-    /// The figures beside the stages are this document's alone: the streams waiting on a session of its,
-    /// and the sessions of its parked for a person. Read with the document, and guarded against a slower
-    /// earlier read arriving after a later one.
     @Override
     protected void onRead(final DocRef docRef, final ShapeshifterAiDoc doc) {
-        // Cleared as a set: a figure from the last read must not stand beside a new one until its own
-        // reply arrives.
-        waiting = null;
-        parked = null;
-        showFigures();
-        final int request = ++asked;
-        final String uuid = docRef.getUuid();
-        restFactory.create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.backlog(uuid, new PageRequest(0, 1)))
-                .onSuccess(page -> {
-                    if (request == asked) {
-                        waiting = total(page.getPageResponse().getTotal(), page.size());
-                        showFigures();
-                    }
-                })
-                .onFailure(error -> {
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
-        restFactory.create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.find(new AttemptCriteria(new PageRequest(0, 1), null, uuid, null,
-                        null, List.of(AttemptStatus.PARKED))))
-                .onSuccess(page -> {
-                    if (request == asked) {
-                        parked = total(page.getPageResponse().getTotal(), page.size());
-                        showFigures();
-                    }
-                })
-                .onFailure(error -> {
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
+        feeds.setReadiness(Readiness.of(doc), false);
     }
 
-    private static Long total(final Long total, final int size) {
-        return total != null
-                ? total
-                : (long) size;
+    /// Whether the document will learn anything is worked out again each time the Feeds tab is shown, from
+    /// the document as the Setup tab has it, so that a change made there is seen before it is saved.
+    @Override
+    protected void afterSelectTab(final TabData tab) {
+        if (FEEDS.equals(tab)) {
+            showReadiness();
+        }
+        feeds.setShowing(contentVisible && FEEDS.equals(tab));
+    }
+
+    /// The Feeds tab is read again only while it is on screen.
+    @Override
+    public void onContentTabVisible(final boolean visible) {
+        contentVisible = visible;
+        feeds.setShowing(visible && FEEDS.equals(getSelectedTab()));
+    }
+
+    private void showReadiness() {
+        final ShapeshifterAiDoc written = write();
+        if (written != null) {
+            feeds.setReadiness(Readiness.of(written), isDirty());
+        }
+    }
+
+    // A readiness check's fix: the Setup tab shown (which reads the document into it, if it hasn't been shown
+    // before) at the fix's section and, where the document can be changed, the change made there, for the
+    // person to see and save
+    private void fix(final Fix fix) {
+        final boolean editable = !Boolean.TRUE.equals(context(Contexts.READ_ONLY));
+        showSection(fix.getSection());
+        switch (fix) {
+            case SWITCH_ON -> {
+                if (editable) {
+                    setup.switchLearningOn();
+                }
+            }
+            // Once the tab is on the page and scrolled
+            case CHOOSE_MODEL -> Scheduler.get().scheduleDeferred(setup::focusModel);
+            case USE_STANDARD_CHECKS -> {
+                if (editable) {
+                    setup.usePreset(QualityPreset.STANDARD);
+                }
+            }
+            case OPEN_APPROACH -> {
+                // Shown by its section
+            }
+            default -> throw new IllegalArgumentException("Unknown fix " + fix);
+        }
+    }
+
+    /// A stopped run's suggestion followed on the Setup tab, from the pipeline whose run stopped: the limits,
+    /// the learning steps or the model.
+    ///
+    /// @param action The suggestion's action.
+    public void followSuggestion(final SuggestionAction action) {
+        switch (action) {
+            case CHANGE_LIMITS -> {
+                selectTab(SETUP);
+                Scheduler.get().scheduleDeferred(setup::showLimits);
+            }
+            case CHANGE_MODEL -> {
+                showSection(SetupSection.LEARNING);
+                Scheduler.get().scheduleDeferred(setup::focusModel);
+            }
+            default -> showSection(SetupSection.APPROACH);
+        }
+    }
+
+    // The Setup tab shown, scrolled to a section once it is laid out
+    private void showSection(final SetupSection section) {
+        selectTab(SETUP);
+        Scheduler.get().scheduleDeferred(() -> setup.showSection(section));
     }
 }
