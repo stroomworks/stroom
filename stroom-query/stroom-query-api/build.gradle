@@ -22,7 +22,7 @@ dependencies {
     implementation project(':stroom-util-shared')
 
     //--------3rd party--------
-    implementation libs.jackson.annotations
+    api libs.jackson.annotations
     implementation libs.swagger.annotations
 
 

@@ -390,6 +390,8 @@ public class AskStroomAi extends Component implements Focus, TaskMonitorFactory 
     /// @param attachmentId For an attachment, the id of the data attached, or null.
     /// @param time         When it was sent, e.g. "5 minutes ago".
     /// @param fullTime     When it was sent, in full.
+    // GWT exposes record accessors to JavaScript; nothing calls them from there.
+    @SuppressWarnings("unusable-by-js")
     public record Message(AiMessageType type,
                           int id,
                           String text,

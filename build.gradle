@@ -198,6 +198,24 @@ subprojects {
         }
     }
 
+    // The event-logging library's classes carry javax.xml.bind annotations, but Stroom uses
+    // jakarta.xml.bind, so javac warns "unknown enum constant XmlAccessType.FIELD" wherever it
+    // compiles against them. Give javac the javax API to read them with, on the compile classpaths
+    // only (never at runtime), in the projects that use the library.
+    afterEvaluate {
+        final boolean usesEventLogging = ['implementation', 'testImplementation'].any { configName ->
+            configurations.findByName(configName)?.dependencies?.any { dependency ->
+                dependency.group == 'uk.gov.gchq.eventlogging'
+            }
+        }
+        if (usesEventLogging) {
+            dependencies {
+                compileOnly libs.jaxb.api.gwt
+                testCompileOnly libs.jaxb.api.gwt
+            }
+        }
+    }
+
     //println project.getConfigurations().getByName("implementation").getAllDependencies()
 
     configurations {

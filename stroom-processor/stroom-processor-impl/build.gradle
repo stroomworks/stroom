@@ -53,6 +53,8 @@ dependencies {
     implementation libs.jackson.databind
     implementation libs.jakarta.validation.api
     implementation libs.jooq
+    // jOOQ's Settings carry jakarta.xml.bind annotations; javac needs the API to read them
+    compileOnly libs.jaxb.api
     implementation libs.restygwt
     implementation libs.slf4j.api
     implementation libs.ws.rs.api

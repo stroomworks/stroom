@@ -22,6 +22,6 @@ dependencies {
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
 
-    implementation libs.jackson.annotations
+    api libs.jackson.annotations
     implementation libs.ws.rs.api
 }

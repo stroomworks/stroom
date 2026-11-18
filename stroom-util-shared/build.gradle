@@ -19,7 +19,7 @@ ext.moduleName = 'stroom.util.shared'
 dependencies {
     implementation project(':stroom-docref')
 
-    implementation libs.jackson.annotations
+    api libs.jackson.annotations
     implementation libs.jakarta.validation.api
     implementation libs.swagger.annotations
 

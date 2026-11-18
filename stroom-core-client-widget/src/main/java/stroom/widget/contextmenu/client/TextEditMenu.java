@@ -154,6 +154,8 @@ public final class TextEditMenu {
     /// @param canRedo      Whether there may be something to redo, as `canUndo`.
     /// @param paste        Whether Paste can read the clipboard.
     /// @param mac          Whether the user is on a Mac, whose shortcuts use Cmd rather than Ctrl.
+    // GWT exposes record accessors to JavaScript; nothing calls them from there.
+    @SuppressWarnings("unusable-by-js")
     public record TextFieldState(boolean editable,
                                  boolean password,
                                  boolean hasSelection,

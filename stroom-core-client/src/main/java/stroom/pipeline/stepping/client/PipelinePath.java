@@ -230,6 +230,8 @@ public final class PipelinePath {
     ///                       null for none.
     /// @param hiddenFilters  Whether any element in the branches of the other alternatives has
     ///                       active stepping filters.
+    // GWT exposes record accessors to JavaScript; nothing calls them from there.
+    @SuppressWarnings("unusable-by-js")
     public record Step(PipelineElement element,
                        List<PipelineElement> alternatives,
                        Severity hiddenSeverity,

@@ -34,6 +34,8 @@ dependencies {
     implementation libs.hikari
     implementation libs.guice
     implementation libs.jooq
+    // jOOQ's Settings carry jakarta.xml.bind annotations; javac needs the API to read them
+    compileOnly libs.jaxb.api
     implementation libs.vavr
 
     testImplementation project(':stroom-test-common')
