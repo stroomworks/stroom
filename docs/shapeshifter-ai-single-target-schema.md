@@ -19,6 +19,11 @@ Today the only way round this is to change the schema group *and* override the `
 
 ### D1. Where the target-schema setting lives
 
+> **Decided, 19 November 2026: option A**, a *Target schema* field on the Learning Flow under *AI model and instructions* (delivery plan, stage 0b group 7).
+> Each target schema gets its own Learning Flow, since the business rules, required fields, prompts and the Target and Admit steps all depend on it.
+> The field names **one schema version, not a group**: `EVENTS` holds seven event-logging versions, from 3.0.0 to 4.1.0. Step 1 below resolves to that one schema, not to a group.
+> A new Learning Flow defaults to the latest event-logging version installed, saved on the document so a later install doesn't change it.
+
 - **Option A (recommended): a top-level field on `ShapeshifterAiDoc`.**
   It is set once on the Learning Flow's Setup tab, and the prompts, `TargetChecks` and the conformance scorer all read it.
   The scorer's `schemaGroup` parameter is removed (or deprecated and ignored), and existing values are migrated into the new field.

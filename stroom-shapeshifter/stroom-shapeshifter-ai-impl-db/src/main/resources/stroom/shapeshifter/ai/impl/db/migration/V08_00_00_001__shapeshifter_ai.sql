@@ -14,6 +14,12 @@
 -- limitations under the License.
 -- ------------------------------------------------------------------------
 
+-- Until Stroom 8.0 is first released, change this migration in place rather than adding new ones
+-- (decision N5, docs/shapeshifter-ai-delivery-plan.md). A database that has already applied it then fails
+-- Flyway's checksum, so reset dev and demo databases after a change. After every change, regenerate the
+-- jOOQ code with ./gradlew :stroom-shapeshifter:stroom-shapeshifter-ai-impl-db:generateJooq
+-- Once 8.0 is released, this file is frozen and changes go in new migrations.
+
 -- Stop NOTE level warnings about objects (not)? existing
 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0;
 

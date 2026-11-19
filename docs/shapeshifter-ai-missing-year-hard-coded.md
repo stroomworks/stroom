@@ -134,6 +134,11 @@ For time zones, fix 1 (never assume UTC) and a document- or feed-level time zone
 
 ### 4. Optionally: a document- or feed-level time zone
 
+> **Decided, 19 November 2026** (delivery plan, stage 0b group 7, N6): per pipeline, not on the document or the feed.
+> The zone comes from the stream's header if it has one, otherwise from a `timeZone` text property on the AI Translator element, otherwise UTC.
+> The stage puts the resolved zone into the stream's metadata, where the stylesheet reads it with `stroom:meta`, so a change needs no relearning.
+> The text below is the original proposal.
+
 Let the Shapeshifter AI document, or the feed, state the time zone of timestamps that have no offset.
 Pass it to the model as a header, and to `stroom:format-date` as its third argument.
 Without it the right answer can't be known, and the rule in fix 1 should then ask the model to state its assumption in a comment rather than silently write UTC.

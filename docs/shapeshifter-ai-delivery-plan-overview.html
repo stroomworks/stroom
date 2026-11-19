@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shapeshifter AI Delivery Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Shared styles for the AI translations notes, following the stroomworks.com design tokens. */
+
+:root {
+  --bg: #ffffff;
+  --bg-sunken: #f4f6f8;
+  --surface: #f8f9fb;
+  --surface-2: #eef1f5;
+  --hair: #dee2e9;
+  --hair-strong: #c6ccd6;
+  --fg: #14161a;
+  --fg-muted: #576070;
+  --fg-faint: #646d7c;
+  --accent: #bb4b00;
+  --accent-tint: #fff1e6;
+  --brand-orange: #ff6f00;
+  --wordmark-ink: #4d4d4d;
+  --data-1: #0891b2;
+  --data-2: #7c3aed;
+  --ok: #047857;
+  --warn: #a16207;
+  --danger: #b91c1c;
+  --ok-tint: #e7f5ef;
+  --warn-tint: #fbf3df;
+  --danger-tint: #fcecec;
+  --shadow-card: 0 1px 2px #10141e0a, 0 8px 24px -12px #10141e1f;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0b0d;
+    --bg-sunken: #07080a;
+    --surface: #101318;
+    --surface-2: #171b22;
+    --hair: #242832;
+    --hair-strong: #363c48;
+    --fg: #e9ecf1;
+    --fg-muted: #9aa3b2;
+    --fg-faint: #858e9c;
+    --accent: #ff6f00;
+    --accent-tint: #1e1408;
+    --wordmark-ink: #c9ced8;
+    --data-1: #12a2c0;
+    --data-2: #8b5cf6;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --ok-tint: #0d1f18;
+    --warn-tint: #211a08;
+    --danger-tint: #261313;
+    --shadow-card: 0 1px 0 #ffffff08 inset, 0 16px 40px -24px #000c;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0b0d;
+  --bg-sunken: #07080a;
+  --surface: #101318;
+  --surface-2: #171b22;
+  --hair: #242832;
+  --hair-strong: #363c48;
+  --fg: #e9ecf1;
+  --fg-muted: #9aa3b2;
+  --fg-faint: #858e9c;
+  --accent: #ff6f00;
+  --accent-tint: #1e1408;
+  --wordmark-ink: #c9ced8;
+  --data-1: #12a2c0;
+  --data-2: #8b5cf6;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --ok-tint: #0d1f18;
+  --warn-tint: #211a08;
+  --danger-tint: #261313;
+  --shadow-card: 0 1px 0 #ffffff08 inset, 0 16px 40px -24px #000c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 15.5px/1.65 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+/* ---------- Header and footer ---------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--hair);
+}
+.site-header .wrap, .site-footer .wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 60px;
+  flex-wrap: wrap;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  text-decoration: none;
+}
+.wordmark .mark { width: 26px; height: 26px; display: block; }
+.wordmark .wordmark-type { height: 19px; width: auto; display: block; }
+.wordmark .sub { font-weight: 400; font-size: 0.875rem; color: var(--fg-muted); padding-left: 12px; border-left: 1px solid var(--hair-strong); line-height: 1.2; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.site-header nav { margin-left: auto; display: flex; gap: 18px; font-size: 0.875rem; }
+.site-header nav a { color: var(--fg-muted); text-decoration: none; }
+.site-header nav a:hover { color: var(--fg); }
+.site-header nav a[aria-current="page"] { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); padding-bottom: 2px; }
+
+.site-footer { border-top: 1px solid var(--hair); background: var(--bg-sunken); margin-top: 64px; }
+.site-footer .wrap { padding-top: 28px; padding-bottom: 36px; font-size: 0.8125rem; color: var(--fg-muted); }
+
+/* ---------- Page body ---------- */
+
+main { max-width: 1080px; margin: 0 auto; padding: 48px 20px 40px; }
+@media (min-width: 640px) { main, .site-header .wrap, .site-footer .wrap { padding-left: 32px; padding-right: 32px; } }
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  margin: 0 0 14px;
+}
+.eyebrow::before { content: ""; width: 10px; height: 10px; background: var(--accent); }
+
+h1 {
+  font-size: clamp(2rem, 4.6vw, 3rem);
+  line-height: 1.06;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+h2 {
+  font-size: clamp(1.45rem, 2.6vw, 1.9rem);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 64px 0 12px;
+  padding-left: 16px;
+  border-left: 2px solid var(--accent);
+  text-wrap: balance;
+}
+h3 { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; margin: 32px 0 6px; }
+h4 { font-size: 0.8125rem; font-weight: 600; margin: 20px 0 4px; color: var(--fg); }
+p, li { max-width: 78ch; }
+.meta { color: var(--fg-muted); font-size: 1.0625rem; margin: 0 0 28px; max-width: 72ch; }
+.group-heading { margin-top: 48px; }
+
+code {
+  font: 500 0.85em/1.4 var(--font-mono);
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+pre {
+  font: 0.82rem/1.6 var(--font-mono);
+  background: var(--bg-sunken);
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 8px 0 16px;
+}
+pre code { background: none; padding: 0; }
+pre .c { color: var(--fg-faint); }
+
+/* Lists of short points marked with the accent rule. */
+ul.marks { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+ul.marks li { border-left: 2px solid var(--accent); padding-left: 10px; line-height: 1.3; }
+
+/* ---------- Contents ---------- */
+
+nav.toc {
+  border-top: 2px solid var(--fg);
+  border-bottom: 1px solid var(--hair);
+  padding: 14px 0 16px;
+  margin: 24px 0 8px;
+}
+nav.toc strong { font-size: 0.8125rem; font-weight: 600; }
+nav.toc ol { margin: 8px 0 0; padding-left: 22px; }
+nav.toc ol.cols { columns: 2; column-gap: 40px; }
+@media (max-width: 640px) { nav.toc ol.cols { columns: 1; } }
+nav.toc li { margin: 2px 0; }
+nav.toc a { color: var(--fg); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); }
+
+/* ---------- Callouts, cards, panels ---------- */
+
+.callout {
+  border-left: 2px solid var(--accent);
+  background: var(--accent-tint);
+  padding: 12px 18px;
+  margin: 20px 0;
+}
+.callout p { margin: 6px 0; }
+.callout.warn { border-color: var(--warn); background: var(--warn-tint); }
+.callout.bad { border-color: var(--danger); background: var(--danger-tint); }
+.callout.ok { border-color: var(--ok); background: var(--ok-tint); }
+
+.figure, .option {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  box-shadow: var(--shadow-card);
+  margin: 20px 0;
+}
+.figure { padding: 14px; overflow-x: auto; }
+.figure svg { display: block; width: 100%; min-width: 720px; height: auto; }
+.option { padding: 4px 22px 18px; border-top: 2px solid var(--accent); }
+.option > h3 { margin-top: 18px; font-size: 1.25rem; }
+.caption { color: var(--fg-muted); font-size: 0.85rem; margin: 8px 2px 0; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid2 > div { min-width: 0; }
+@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+.panel { border: 1px solid var(--hair); border-radius: 2px; padding: 8px 16px; background: var(--bg); }
+.panel h4 { margin-top: 10px; }
+.verdict { font-weight: 600; border-left: 2px solid var(--accent); padding-left: 12px; }
+
+/* ---------- Tables ---------- */
+
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; line-height: 1.55; }
+th, td { text-align: left; vertical-align: top; padding: 10px 16px 10px 0; border-bottom: 1px solid var(--hair); }
+thead th, tr:first-child th {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom: 2px solid var(--fg);
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+td { color: var(--fg-muted); }
+td:first-child { color: var(--fg); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Dependency structure matrix. */
+.dsm th, .dsm td { text-align: center; padding: 6px 6px; font-variant-numeric: tabular-nums; }
+.dsm td:first-child { color: inherit; }
+.dsm th.row { text-align: left; padding-right: 12px; }
+.dsm td.self { background: var(--surface-2); }
+.dsm td.cyc { background: var(--danger-tint); color: var(--danger); font-weight: 700; }
+.dsm td.dep { background: var(--accent-tint); color: var(--fg); }
+
+/* ---------- Badges ---------- */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.6;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.tag::before { content: ""; width: 6px; height: 6px; background: currentColor; }
+.tag.bad { color: var(--danger); }
+.tag.warn { color: var(--warn); }
+.tag.ok { color: var(--ok); }
+.tag.info { color: var(--accent); }
+
+/* ---------- Misc ---------- */
+
+ol.findings > li { margin-bottom: 10px; }
+dl.terms { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 10px 0; }
+dl.terms dt { font-weight: 600; }
+dl.terms dd { margin: 0; }
+@media (max-width: 620px) { dl.terms { grid-template-columns: 1fr; } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 0.8125rem; color: var(--fg-muted); margin: 10px 2px 0; }
+.legend span::before { content: ""; display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--fg-faint); vertical-align: middle; margin-right: 6px; }
+.legend .l-bad::before { border-top-color: var(--danger); }
+.legend .l-dash::before { border-top: 2px dashed var(--danger); }
+
+/* ---------- Diagrams ---------- */
+
+svg text { fill: var(--fg); font-family: var(--font-sans); }
+svg .t-title { font-size: 13px; font-weight: 600; }
+svg .t-sub { font-size: 11px; fill: var(--fg-muted); }
+svg .t-head, svg .t-lane { font-size: 12px; font-weight: 600; fill: var(--fg-muted); }
+svg .t-edge { font-size: 10.5px; fill: var(--fg-muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+svg .t-edge.bad { fill: var(--danger); }
+svg .box { fill: var(--bg); stroke: var(--hair-strong); stroke-width: 1.25; }
+svg .box.focus { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.5; }
+svg .box.ai, svg .box.db { fill: var(--warn-tint); stroke: var(--warn); }
+svg .box.gone { fill: var(--danger-tint); stroke: var(--danger); stroke-dasharray: 5 3; }
+svg .box.ext { fill: var(--surface-2); stroke: var(--hair-strong); stroke-dasharray: 4 3; }
+svg .lane, svg .div { fill: none; stroke: var(--hair); stroke-dasharray: 2 4; }
+svg .e { fill: none; stroke: var(--fg-faint); stroke-width: 1.4; }
+svg .e.bad { stroke: var(--danger); }
+svg .e.dash { stroke-dasharray: 6 4; }
+svg .ah { fill: var(--fg-faint); }
+svg .ah.bad { fill: var(--danger); }
+
+/* ---------- Plan diagrams ---------- */
+
+svg .box.ok { fill: var(--ok-tint); stroke: var(--ok); }
+svg .lane-bg { fill: var(--surface-2); stroke: var(--hair); }
+svg text.mono { font-family: var(--font-mono); }
+svg text.ok-t { fill: var(--ok); }
+svg text.bad-t { fill: var(--danger); }
+.callout ul { margin: 6px 0; padding-left: 20px; }
+.callout li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<header class="site-header"><div class="wrap">
+  <span class="wordmark"><img class="mark" src="data:image/png;base64,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" alt="" width="26" height="26"><svg viewBox="0 0 4282.3598 617.98461" class="wordmark-type" aria-hidden="true" focusable="false"><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="matrix(0.8,0,0,0.8,0,-0.001)" d="m 1249.283,1156.912 c -142.494,0 -257.494,115.008 -257.504,257.5 -0,85.84 0,171.66 0,257.5 l 97.5,0 c -0.015,-85.812 0.022,-171.836 0,-257.5 0.106,-88.66 71.322,-161.25 160.006,-161.25 6.608,0 13.123,0.411 19.527,1.191 22.777,-30.64 52.231,-56.355 85.531,-75.189 -32.063,-14.297 -67.608,-22.252 -105.059,-22.252 l 0,0 z"></path><path fill="var(--wordmark-ink)" d="m 3658.8,925.028 c -16.196,0.159 -30.655,0.277 -38.962,0.277 l 0,0 c -113.995,0 -205.995,92.007 -206.003,206 -0,68.672 0,137.327 0,206 l 78,0 c -0.012,-68.649 0.018,-137.469 0,-206 0.085,-70.928 57.057,-129 128.005,-129 1.464,0 23.616,0.158 38.962,0.264 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" d="m 1818.531,1099.528 c 0,-53 43,-97 96,-97 53,0 97,44 97,97 l 0,238 77,0 0,-238 c 0,-53 43,-97 97,-97 53,0 96,44 96,97 l 0,238 77,0 0,-238 c 0,-96 -77,-174 -173,-174 -55,0 -104,25 -136,65 -32,-40 -80,-65 -135,-65 -96,0 -174,78 -174,174 l 0,238 78,0 z"></path><path fill="var(--wordmark-ink)" d="m 2445.935,1163.304 c 0,53 43,97 96,97 53,0 97,-44 97,-97 l 0,-238 77,0 0,238 c 0,53 43,97 97,97 53,0 96,-44 96,-97 l 0,-238 77,0 0,238 c 0,96 -77,174 -173,174 -55,0 -104,-25 -136,-65 -32,40 -80,65 -135,65 -96,0 -174,-78 -174,-174 l 0,-238 78,0 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="translate(0,217.527)" d="m 1524.474,708.001 c -114,0 -206,92 -206,206 0,113 92,206 206,206 114,0 206,-93 206,-206 0,-114 -92,-206 -206,-206 z m 0,334 c -71,0 -129,-57 -129,-128 0,-71 58,-129 129,-129 71,0 129,58 129,129 0,71 -58,128 -129,128 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="translate(0,217.527)" d="m 1189.415,708.001 c -114,0 -206,92 -206,206 0,113 92,206 206,206 114,0 206,-93 206,-206 0,-114 -92,-206 -206,-206 z m 0,334 c -71,0 -129,-57 -129,-128 0,-71 58,-129 129,-129 71,0 129,58 129,129 0,71 -58,128 -129,128 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="matrix(0.8,0,0,0.8,0,-0.001)" d="m 851.807,899.43 c -35.983,10.463 -68.687,28.53 -96.25,52.379 l 0,204.859 0.002,0.244 -0.002,0 c -81.388,0.001 -153.789,37.525 -200.934,96.25 l 200.934,0 0,418.75 96.25,0 0,-418.75 181.066,0 c 33.952,-45.074 82.455,-79.241 136.277,-96.25 l -317.344,0 0,-257.482 z"></path></g><g transform="translate(-80,-742.016)"><path fill="var(--brand-orange)" transform="matrix(0.8,0,0,0.8,0,22.472)" d="m 252.5,1156.912 c -83.75,0 -152.5,67.5 -152.5,152.5 0,83.75 68.75,152.5 152.5,152.5 l 210,0 c 31.25,0 56.25,26.25 56.25,56.25 0,31.25 -25,56.25 -56.25,56.25 l -225.988,0 c -54.032,17.359 -102.636,51.986 -136.498,97.5 l 362.486,0 c 83.75,0 152.5,-68.75 152.5,-153.75 0,-83.75 -68.75,-152.5 -152.5,-152.5 l -210,0 c -31.25,0 -56.25,-25 -56.25,-56.25 0,-31.25 25,-56.25 56.25,-56.25 l 285.988,0 c 33.738,-44.854 81.839,-78.982 135.27,-96.25 l -421.258,0 z"></path><path fill="var(--wordmark-ink)" d="m 3200.535,947.777 c -114,0 -206,92 -206,206 0,113 92,206 206,206 114,0 206,-93 206,-206 0,-114 -92,-206 -206,-206 z m 0,334 c -71,0 -129,-57 -129,-128 0,-71 58,-129 129,-129 71,0 129,58 129,129 0,71 -58,128 -129,128 z"></path><path fill="var(--wordmark-ink)" d="m 3745.8,742.31 c -33.458,9.33 -59.871,27.204 -77,41.575 l 0,575.892 77,0 0,-207 0,-410.467 z m 0,410.467 157,206 98,0 -158,-206 158,-206 -98,0 -157,206 z"></path><path fill="var(--wordmark-ink)" d="m 4072.36,947.777 c -67,0 -122,54 -122,122 0,67 55,122 122,122 l 168,0 c 25,0 45,21 45,45 0,25 -20,45 -45,45 l -286.014,0 c 19.941,26 39.882,52 59.823,78 l 226.19,0 c 67,0 122,-55 122,-123 0,-67 -55,-122 -122,-122 l -168,0 c -25,0 -45,-20 -45,-45 0,-25 20,-45 45,-45 l 290,0 0,-77 -290,0 z"></path></g></svg><span class="visually-hidden">Stroomworks</span><span class="sub">AI translations</span></span>
+</div></header>
+
+<main>
+
+<p class="eyebrow">Delivery plan · for the team</p>
+<h1>Shapeshifter AI: the delivery plan</h1>
+<p class="meta">19 November 2026 · branch <code>ai_translations_server</code> · A guide to <a href="shapeshifter-ai-delivery-plan.md">shapeshifter-ai-delivery-plan.md</a>, which holds every decision in full. Where the two differ, the plan is right.</p>
+
+<div class="callout">
+  <p><strong>In short.</strong></p>
+  <ul>
+    <li><strong>Every decision is made.</strong> The UI rework is merged and final, the code audit is done, and all of stage 0b was settled on 18 and 19 November.</li>
+    <li><strong>Two tracks run side by side from now.</strong> Track 1 fixes correctness on the server. Track 2 simplifies the server, adds the safety items and fills in what the final UI expects.</li>
+    <li><strong>Start with</strong> the preservation fix (Track 1 task 1) and the one model of checks (task 10), plus the hard-coded allow-list (Track 2 step 2), which task 3 needs.</li>
+  </ul>
+</div>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol class="cols">
+    <li><a href="#what">What Shapeshifter AI does</a></li>
+    <li><a href="#where">Where we are</a></li>
+    <li><a href="#checks">Checks: Off, Advice or Gate</a></li>
+    <li><a href="#promotion">Review by default</a></li>
+    <li><a href="#allow">What a learned stylesheet may use</a></li>
+    <li><a href="#judged">What is judged</a></li>
+    <li><a href="#settings">Target schema and time zone</a></li>
+    <li><a href="#creation">How feeds get an AI pipeline</a></li>
+    <li><a href="#other">The other decisions</a></li>
+    <li><a href="#track1">Track 1: correctness fixes</a></li>
+    <li><a href="#track2">Track 2: simplification, safety, UI additions</a></li>
+    <li><a href="#rules">Rules for working across both tracks</a></li>
+    <li><a href="#start">Ready to start</a></li>
+    <li><a href="#waiting">Waiting on, and later</a></li>
+  </ol>
+</nav>
+
+<!-- ===================================================================== -->
+
+<h2 id="what">1. What Shapeshifter AI does</h2>
+<p>Shapeshifter AI turns a feed's raw data into events without anyone writing a translation by hand. A pipeline has an <em>AI Translator</em> element where the parser and XSLT would normally be. While it has nothing to run, it learns: it asks a model, step by step, for a parser and a stylesheet, judges every answer against the feed's own data, and keeps the result once it passes. Later streams are served by what it learned, and every record it serves is still checked.</p>
+
+<div class="figure"><svg viewBox="0 0 960 395" role="img" aria-label="Serving and learning in Shapeshifter AI"><text x="20" y="24" class="t-head">Serving: every stream</text><rect class="box ext" x="190" y="40" width="560" height="98" rx="6"/><text x="204" y="58" class="t-sub">Smart Pipeline (one per feed, usually)</text><rect class="box" x="20" y="66" width="140" height="56" rx="4"/><text x="32" y="87" class="t-title">Stream arrives</text><text x="32" y="104" class="t-sub">ACME-FIREWALL-EVENTS</text><rect class="box focus" x="210" y="70" width="170" height="56" rx="4"/><text x="222" y="91" class="t-title">AI Translator</text><text x="222" y="108" class="t-sub">runs what was learned</text><rect class="box" x="410" y="70" width="140" height="56" rx="4"/><text x="422" y="91" class="t-title">Schema Filter</text><text x="422" y="108" class="t-sub">validates events</text><rect class="box" x="580" y="70" width="150" height="56" rx="4"/><text x="592" y="91" class="t-title">Stream Appender</text><text x="592" y="108" class="t-sub">writes Events</text><rect class="box ok" x="780" y="70" width="160" height="56" rx="4"/><text x="792" y="91" class="t-title">Events</text><text x="792" y="108" class="t-sub">event-logging</text><path class="e " d="M160 94 L206 98"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(206 98) rotate(5.0)"/><path class="e " d="M380 98 L406 98"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(406 98) rotate(0.0)"/><path class="e " d="M550 98 L576 98"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(576 98) rotate(0.0)"/><path class="e " d="M730 98 L776 98"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(776 98) rotate(0.0)"/><text x="20" y="214" class="t-head">Learning: when nothing is bound, or a served record fails a gate</text><rect class="box" x="20" y="230" width="190" height="80" rx="4"/><text x="32" y="251" class="t-title">Learning Flow</text><text x="32" y="268" class="t-sub">how feeds are learned:</text><text x="32" y="283" class="t-sub">steps, checks, model, target</text><rect class="box ai" x="250" y="230" width="200" height="80" rx="4"/><text x="262" y="251" class="t-title">Learning run</text><text x="262" y="268" class="t-sub">asks the model, step by step</text><text x="262" y="283" class="t-sub">default: Quick, then careful</text><rect class="box" x="500" y="230" width="180" height="80" rx="4"/><text x="512" y="251" class="t-title">Checks</text><text x="512" y="268" class="t-sub">Off, Advice or Gate</text><text x="512" y="283" class="t-sub">on the feed&#x27;s own data</text><rect class="box ok" x="730" y="230" width="210" height="80" rx="4"/><text x="742" y="251" class="t-title">Draft, then approved</text><text x="742" y="268" class="t-sub">review by default</text><text x="742" y="283" class="t-sub">then bound to the learner</text><rect class="box ext" x="275" y="345" width="150" height="36" rx="4"/><text x="350.0" y="366" class="t-title" text-anchor="middle">AI model</text><path class="e " d="M270 126 L270 226"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(270 226) rotate(90.0)"/><text x="276" y="160" class="t-edge">learn</text><path class="e " d="M210 270 L246 270"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(246 270) rotate(0.0)"/><text x="228" y="262" class="t-edge" text-anchor="middle">governs</text><path class="e " d="M450 262 L496 262"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(496 262) rotate(0.0)"/><text x="473" y="254" class="t-edge" text-anchor="middle">candidate</text><path class="e dash" d="M500 290 L474 290 L454 290"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(454 290) rotate(180.0)"/><text x="476" y="304" class="t-edge" text-anchor="middle">feedback</text><path class="e " d="M680 270 L726 270"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(726 270) rotate(0.0)"/><text x="703" y="262" class="t-edge" text-anchor="middle">all gates pass</text><path class="e " d="M835 230 L835 182 L340 182 L340 130"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(340 130) rotate(-90.0)"/><text x="588" y="176" class="t-edge" text-anchor="middle">approved: bound to the learner, serves later streams</text><path class="e" d="M350 310 V341"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(350 341) rotate(90.0)"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(350 314) rotate(-90.0)"/></svg></div>
+<p class="caption">Figure 1. The two loops. Serving runs on every stream; learning starts when nothing is bound, or when a served record fails a gate.</p>
+
+<dl class="terms">
+  <dt>Learning Flow</dt><dd>The Shapeshifter AI document. It says <em>how</em> feeds are learned: the model, the instructions, the learning steps, the checks, the approval mode and, now, the target schema.</dd>
+  <dt>Smart Pipeline</dt><dd>A pipeline with an AI Translator. It is <em>where</em> a feed's learning happens, so the work on one feed is done on its pipeline, under the pipeline's permissions.</dd>
+  <dt>Learner</dt><dd>One AI Translator in one pipeline, identified by the pipeline's UUID and the element's id. What is learned belongs to the learner.</dd>
+  <dt>Learning run</dt><dd>One session of questions to the model. Each answer is a candidate.</dd>
+  <dt>Check</dt><dd>A test of a candidate on the feed's own data, such as Schema-valid, Completeness or Preservation. Each is Off, Advice or Gate.</dd>
+  <dt>Draft</dt><dd>A candidate that passed every gate and is waiting for a person to approve it.</dd>
+</dl>
+
+<!-- ===================================================================== -->
+
+<h2 id="where">2. Where we are</h2>
+<ul>
+  <li><strong>The UI is final.</strong> The UI rework (<code>7e06bb589c</code>) is merged, and its screens are the final design apart from minor fixes (<a href="ai-translations/ui-design.md">ui-design.md</a>). It was built on today's server, so editable flows, every Supervisor action and per-document question texts all stay.</li>
+  <li><strong>The audit is done</strong> (<a href="shapeshifter-ai-code-assumption-audit.md">stage 0a</a>). It looked for values the code treats as fixed: the target schema, parser types, time zone, record boundary, model, promotion mode and node count. It added decisions N1 to N9 and Track 1 tasks 8 to 10.</li>
+  <li><strong>Every decision is made</strong> (stage 0b). Sections 3 to 9 explain them with examples.</li>
+</ul>
+
+<div class="figure"><svg viewBox="0 0 960 290" role="img" aria-label="The plan at a glance: two finished stages, two parallel tracks, then later work"><rect class="box ok" x="20" y="44" width="110" height="56" rx="4"/><text x="32" y="65" class="t-title">Stage 0a</text><text x="32" y="82" class="t-sub">audit · done</text><rect class="box ok" x="150" y="44" width="110" height="56" rx="4"/><text x="162" y="65" class="t-title">Stage 0b</text><text x="162" y="82" class="t-sub">decisions · done</text><path class="e " d="M130 72 L146 72"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(146 72) rotate(0.0)"/><rect class="lane-bg" x="282" y="20" width="540" height="122" rx="6"/><rect class="lane-bg" x="282" y="160" width="540" height="122" rx="6"/><text x="294" y="40" class="t-head">Track 1: correctness fixes (server)</text><text x="294" y="180" class="t-head">Track 2: simplification, safety, UI additions</text><rect class="box focus" x="294" y="56" width="68" height="52" rx="4"/><text x="328.0" y="77" class="t-title" text-anchor="middle">10</text><text x="328.0" y="94" class="t-sub" text-anchor="middle">checks</text><rect class="box" x="368" y="56" width="68" height="52" rx="4"/><text x="402.0" y="77" class="t-title" text-anchor="middle">1</text><text x="402.0" y="94" class="t-sub" text-anchor="middle">preserve</text><rect class="box" x="442" y="56" width="68" height="52" rx="4"/><text x="476.0" y="77" class="t-title" text-anchor="middle">2</text><text x="476.0" y="94" class="t-sub" text-anchor="middle">drift</text><rect class="box" x="516" y="56" width="68" height="52" rx="4"/><text x="550.0" y="77" class="t-title" text-anchor="middle">3</text><text x="550.0" y="94" class="t-sub" text-anchor="middle">year, zone</text><rect class="box" x="590" y="56" width="68" height="52" rx="4"/><text x="624.0" y="77" class="t-title" text-anchor="middle">4</text><text x="624.0" y="94" class="t-sub" text-anchor="middle">records</text><rect class="box" x="664" y="56" width="68" height="52" rx="4"/><text x="698.0" y="77" class="t-title" text-anchor="middle">7</text><text x="698.0" y="94" class="t-sub" text-anchor="middle">schema</text><rect class="box" x="738" y="56" width="68" height="52" rx="4"/><text x="772.0" y="77" class="t-title" text-anchor="middle">8</text><text x="772.0" y="94" class="t-sub" text-anchor="middle">nodes</text><text x="294" y="128" class="t-sub">5, 6 and 9 at any time; gates first (UM-9); task 10 goes first or alongside 1–3</text><rect class="box" x="294" y="196" width="60" height="52" rx="4"/><text x="324.0" y="217" class="t-title" text-anchor="middle">1</text><text x="324.0" y="234" class="t-sub" text-anchor="middle">review</text><rect class="box" x="359" y="196" width="60" height="52" rx="4"/><text x="389.0" y="217" class="t-title" text-anchor="middle">1a–1b</text><text x="389.0" y="234" class="t-sub" text-anchor="middle">UI out</text><rect class="box" x="424" y="196" width="60" height="52" rx="4"/><text x="454.0" y="217" class="t-title" text-anchor="middle">1c</text><text x="454.0" y="234" class="t-sub" text-anchor="middle">JSON</text><rect class="box focus" x="489" y="196" width="60" height="52" rx="4"/><text x="519.0" y="217" class="t-title" text-anchor="middle">2</text><text x="519.0" y="234" class="t-sub" text-anchor="middle">list</text><rect class="box" x="554" y="196" width="60" height="52" rx="4"/><text x="584.0" y="217" class="t-title" text-anchor="middle">3</text><text x="584.0" y="234" class="t-sub" text-anchor="middle">spend</text><rect class="box" x="619" y="196" width="60" height="52" rx="4"/><text x="649.0" y="217" class="t-title" text-anchor="middle">4</text><text x="649.0" y="234" class="t-sub" text-anchor="middle">UI adds</text><rect class="box" x="684" y="196" width="60" height="52" rx="4"/><text x="714.0" y="217" class="t-title" text-anchor="middle">5</text><text x="714.0" y="234" class="t-sub" text-anchor="middle">structure</text><rect class="box" x="749" y="196" width="60" height="52" rx="4"/><text x="779.0" y="217" class="t-title" text-anchor="middle">6</text><text x="779.0" y="234" class="t-sub" text-anchor="middle">egress</text><text x="294" y="268" class="t-sub">Step 2 before any Content Template makes an AI pipeline; step 6 towards the end</text><path class="e " d="M260 72 L272 72 L272 82 L290 82"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(290 82) rotate(0.0)"/><path class="e " d="M272 82 L272 222 L290 222"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(290 222) rotate(0.0)"/><rect class="box ext" x="850" y="110" width="100" height="72" rx="4"/><text x="862" y="131" class="t-title">Later</text><text x="862" y="148" class="t-sub">calibration,</text><text x="862" y="163" class="t-sub">larger steps</text><path class="e " d="M822 82 L846 128"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(846 128) rotate(62.4)"/><path class="e " d="M822 222 L846 166"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(846 166) rotate(-66.8)"/></svg></div>
+<p class="caption">Figure 2. The plan at a glance. Numbers are Track 1 tasks and Track 2 steps; the highlighted ones go first.</p>
+
+<!-- ===================================================================== -->
+
+<h2 id="checks">3. Checks: Off, Advice or Gate</h2>
+<p class="verdict">Each check is Off, Advice or Gate. A candidate goes live when every gate passes, and a served record that fails a gate holds its stream back.</p>
+<ul>
+  <li><strong>One list of checks, on the Learning Flow</strong>, under the Setup tab's <em>Quality checks</em>. This includes the checks that used to live only on learning steps (wholeness, preservation, fidelity) and the new ones (completeness, no data-like literals, time plausibility, the regression corpus).</li>
+  <li><strong>Off</strong> isn't run. <strong>Advice</strong> is run, shown beside a draft and fed back to the model, but never decides. <strong>Gate</strong> refuses a candidate that falls below its threshold. Compile is always a gate.</li>
+  <li><strong>No weights and no pass mark.</strong> Several near misses no longer add up to a failure, and a check that isn't a gate can't change the result.</li>
+  <li><strong>Serving uses the same gates.</strong> Each record is judged by every gate that judges records.</li>
+  <li><strong>Steps don't name checks.</strong> A check applies to any step where it has something to measure, and step rules still route on it.</li>
+  <li><strong>The score people see</strong> is the average of the checks that ran.</li>
+</ul>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Default</th><th>Checks</th></tr></thead>
+<tbody>
+<tr><td>Gate</td><td>Compile (always), Schema-valid, Completeness, Preservation, the regression corpus, Input coverage, Wholeness (90%), Fidelity</td></tr>
+<tr><td>Advice</td><td>No data-like literals (a gate once it has run on the demo feeds without false failures), Time plausibility (its window set per Learning Flow)</td></tr>
+<tr><td>Off</td><td>The heuristic ones: Yield, Extraction quality, Business rules</td></tr>
+</tbody>
+</table></div>
+
+<h3>Example: NETFILTER</h3>
+<p>Today it has 30 lines in, 29 events out, and a stylesheet containing <code>select="2023"</code>, and it was promoted at 1.0. With the decided defaults:</p>
+<pre><code>✓ Compiles
+✓ Schema-valid (29 / 29)
+✕ Completeness: 30 in, 29 out, 0 skips declared
+✓ Preservation
+✓ Regression corpus: no earlier records for this feed
+⚠ Literals (advice): 2023, Production</code></pre>
+<p>It can't be approved, because Completeness is a gate and fails. The literals advice goes back to the model and shows beside the draft, but wouldn't refuse it on its own.</p>
+<p><strong>Where it is built:</strong> Track 1 task 10 on the server; the <em>Quality checks</em> change on the Setup tab in Track 2 step 4. Tasks 1 to 3 build their new checks into it.</p>
+
+<!-- ===================================================================== -->
+
+<h2 id="promotion">4. Review by default</h2>
+<ul>
+  <li><strong>A new Learning Flow waits for someone to approve</strong> each new translation. There is one promotion path for both modes, and automatic mode approves the same draft at once through the same code.</li>
+  <li><strong>Approving a draft needs EDIT on its pipeline</strong>, so the pipeline's owner decides.</li>
+  <li><strong>Switching a Learning Flow to automatic</strong> needs a new application permission, provisionally <em>Approve AI Translations Automatically</em>. It is checked whenever a Learning Flow is saved, including on import. Switching back to review needs only EDIT. By default only administrators have it.</li>
+  <li><strong>No provisional bindings.</strong> <em>On trial</em> and <em>Accept now</em> go. A first result learned from fewer than 10 records is always a draft, and later streams wait for a person. The minimum applies to first learning only, not to relearns.</li>
+</ul>
+
+<div class="figure"><svg viewBox="0 0 960 320" role="img" aria-label="From learning run to live translation, with review, automatic approval and relearning"><rect class="box ai" x="20" y="140" width="150" height="56" rx="4"/><text x="32" y="161" class="t-title">Learning run</text><text x="32" y="178" class="t-sub">the model answers</text><rect class="box" x="230" y="140" width="160" height="56" rx="4"/><text x="242" y="161" class="t-title">Judged</text><text x="242" y="178" class="t-sub">every gate must pass</text><rect class="box focus" x="450" y="40" width="180" height="60" rx="4"/><text x="462" y="61" class="t-title">Draft</text><text x="462" y="78" class="t-sub">waits for a person</text><rect class="box ok" x="720" y="140" width="200" height="56" rx="4"/><text x="732" y="161" class="t-title">Live</text><text x="732" y="178" class="t-sub">bound; serves streams</text><path class="e " d="M170 168 L226 168"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(226 168) rotate(0.0)"/><text x="198" y="160" class="t-edge" text-anchor="middle">candidate</text><path class="e " d="M390 150 L446 92"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(446 92) rotate(-46.0)"/><text x="420" y="112" class="t-edge" text-anchor="end">review (default)</text><path class="e " d="M630 72 L716 150"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(716 150) rotate(42.2)"/><text x="690" y="100" class="t-edge">Approve</text><path class="e dash" d="M390 182 L716 182"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(716 182) rotate(0.0)"/><text x="553" y="176" class="t-edge" text-anchor="middle">automatic Learning Flow: approved at once</text><path class="e " d="M310 196 L310 240 L95 240 L95 200"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(95 200) rotate(-90.0)"/><text x="202" y="256" class="t-edge" text-anchor="middle">a gate fails: told why, tries again</text><path class="e " d="M820 196 L820 290 L60 290 L60 200"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(60 200) rotate(-90.0)"/><text x="440" y="306" class="t-edge" text-anchor="middle">a served record fails a gate: its stream is held back and the feed is learned again</text><path class="e " d="M450 60 L95 60 L95 136"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(95 136) rotate(90.0)"/><text x="272" y="54" class="t-edge" text-anchor="middle">Reject…</text><rect class="box ext" x="660" y="14" width="290" height="48" rx="4"/><text x="672" y="33" class="t-sub">Fewer than 10 records at first learning:</text><text x="672" y="50" class="t-sub">always a draft, even on automatic (N4)</text></svg></div>
+<p class="caption">Figure 3. From a learning run to a live translation. The dashed path is an automatic Learning Flow.</p>
+
+<!-- ===================================================================== -->
+
+<h2 id="allow">5. What a learned stylesheet may use</h2>
+<p>A learned stylesheet runs in the real <code>XSLTFilter</code>. Nothing limits what Saxon can reach from there. On the dev instance, a pipeline XSLT listed <code>/etc</code> and wrote a file under <code>/tmp</code> using standard XSLT alone, and several <code>stroom:</code> functions call out, read other feeds' data, drop records or give different answers each run.</p>
+<p class="verdict">A learned stylesheet may use only what is on an allow-list, covering standard XSLT and XPath as well as <code>stroom:</code> functions (N1, option C).</p>
+
+<div class="figure"><svg viewBox="0 0 960 312" role="img" aria-label="The allow-list check on learned stylesheets"><rect class="box ai" x="20" y="125" width="170" height="60" rx="4"/><text x="32" y="146" class="t-title">Learned stylesheet</text><text x="32" y="163" class="t-sub">written by the model</text><rect class="box focus" x="250" y="115" width="190" height="80" rx="4"/><text x="262" y="136" class="t-title">Static check</text><text x="262" y="153" class="t-sub">when judged and promoted</text><text x="262" y="168" class="t-sub">Track 2 step 2</text><path class="e " d="M190 155 L246 155"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(246 155) rotate(0.0)"/><rect class="box ok" x="520" y="30" width="420" height="66" rx="4"/><text x="532" y="51" class="t-title">On the list: allowed</text><text x="532" y="68" class="t-sub">Pure stroom: functions: format-date, meta, hash, numeric-ip, …</text><text x="532" y="83" class="t-sub">Standard XPath and XSLT a translation needs</text><rect class="box gone" x="520" y="120" width="420" height="152" rx="4"/><text x="532" y="141" class="t-title">Not on the list: refused, with the reason fed back</text><text x="532" y="162" class="t-sub">✕  Host files: unparsed-text(), doc(), collection(), xsl:result-document</text><text x="532" y="182" class="t-sub">✕  Network: http(s) URIs, json-doc()</text><text x="532" y="202" class="t-sub">✕  Environment: environment-variable()</text><text x="532" y="222" class="t-sub">✕  Indirect calls: function-lookup(), stroom:http-call#5</text><text x="532" y="242" class="t-sub">✕  stroom: outbound, lookups, log, put/get, random, current-time</text><path class="e " d="M440 140 L480 140 L480 63 L516 63"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(516 63) rotate(0.0)"/><text x="480" y="110" class="t-edge" text-anchor="middle">allowed</text><path class="e bad" d="M440 175 L480 175 L480 196 L516 196"/><path class="ah bad" d="M0 0 l-8 -4.5 v9 z" transform="translate(516 196) rotate(0.0)"/><text x="20" y="300" class="t-sub">Later (Track 2 step 6): the list moves to the Egress Policy screen, where an administrator keeps it, and is enforced at run time too.</text></svg></div>
+<p class="caption">Figure 4. The static check refuses anything not on the list, including indirect calls and computed URIs. A refusal goes back to the model like any other failed check.</p>
+
+<ul>
+  <li><strong>First, a list in code</strong> (Track 2 step 2), applied by the static check and the scenario test harness alike. It must exist before any Content Template makes an AI pipeline, and Track 1 task 3 needs <code>format-date</code> and <code>meta</code> on it.</li>
+  <li><strong>Later, the Egress Policy screen</strong> (Track 2 step 6). The <code>ai_translations_egress</code> branch is pulled in, an administrator maintains the list, and it is enforced at run time too.</li>
+</ul>
+
+<!-- ===================================================================== -->
+
+<h2 id="judged">6. What is judged</h2>
+<p>The design says a candidate is judged over the whole held stream. In fact, the stream-level checks only see its first 64 KiB.</p>
+<div class="figure"><svg viewBox="0 0 960 250" role="img" aria-label="What the model sees, and what is judged, for one held stream"><text x="20" y="24" class="t-head">One held stream, 2 MB of firewall lines</text><rect class="box" x="20" y="40" width="920" height="44" rx="3"/><rect class="box ai" x="20" y="40" width="210" height="44" rx="3"/><rect class="box focus" x="20" y="40" width="64" height="44" rx="3"/><text x="52" y="67" class="t-sub" text-anchor="middle">sample</text><text x="157" y="67" class="t-sub" text-anchor="middle">first 64 KiB</text><text x="585" y="67" class="t-sub" text-anchor="middle">the rest of the stream</text><path class="e" d="M20 100 V110 H940 V100"/><text x="480" y="128" class="t-edge">Input coverage and the stream checks: judged over the whole held stream (N2 option B)</text><path class="e" d="M20 100 V150 H84 V100"/><text x="20" y="168" class="t-sub">Shown to the model: the Sample size setting, in bytes (8,192 by default), honoured by the prompt (N2 option F)</text><rect class="box gone" x="20" y="190" width="920" height="48" rx="4"/><text x="32" y="210" class="t-sub">A single XML or JSON document bigger than the prefix has no record boundary inside it, so it isn&#x27;t learned (N2 option E).</text><text x="32" y="227" class="t-sub">The stop report says why, and what would have to change.</text></svg></div>
+<p class="caption">Figure 5. The model sees a sample; the checks see the whole stream.</p>
+<ul>
+  <li><strong>Coverage is judged on the whole held stream</strong>, in the full pass (N2 option B).</li>
+  <li><strong>One sample-size setting, in bytes</strong>, that the prompt honours (option F). The 6,000-character prompt cap goes. The default stays cautious, because there is no calibration yet.</li>
+  <li><strong>Large single documents aren't learned</strong> (option E). The stop report says why, and what to change.</li>
+</ul>
+
+<!-- ===================================================================== -->
+
+<h2 id="settings">7. Target schema and time zone</h2>
+<p>The options for both are on <a href="shapeshifter-ai-group-7-settings-options.html">the group 7 options page</a>, with mockups.</p>
+
+<h3>Target schema: one version, on the Learning Flow</h3>
+<p>The target schema is a <em>Target schema</em> field under <em>AI model and instructions</em> on the Setup tab (D1, option A). Everything that depends on the schema already lives in the Learning Flow: the business rules, the required fields, the prompts, and the Target and Admit steps. So each target schema gets its own Learning Flow.</p>
+<div class="figure"><svg viewBox="0 0 960 210" role="img" aria-label="Each Learning Flow names one target schema version, used by every pipeline it serves"><rect class="box focus" x="20" y="30" width="290" height="60" rx="4"/><text x="32" y="51" class="t-title">Learning Flow: Firewalls</text><text x="32" y="68" class="t-sub">Target schema: event-logging 4.1.0</text><rect class="box focus" x="20" y="130" width="290" height="60" rx="4"/><text x="32" y="151" class="t-title">Learning Flow: ACME audit</text><text x="32" y="168" class="t-sub">Target schema: acme-audit 1.0 (illustrative)</text><rect class="box" x="420" y="20" width="240" height="44" rx="4"/><text x="432" y="41" class="t-title">ACME-FIREWALL-EVENTS AI</text><rect class="box" x="420" y="75" width="240" height="44" rx="4"/><text x="432" y="96" class="t-title">NYC-PROXY-EVENTS AI</text><rect class="box" x="420" y="150" width="240" height="44" rx="4"/><text x="432" y="171" class="t-title">ACME-AUDIT AI</text><path class="e " d="M310 55 L416 42"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(416 42) rotate(-7.0)"/><path class="e " d="M310 65 L416 97"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(416 97) rotate(16.8)"/><path class="e " d="M310 160 L416 172"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(416 172) rotate(6.5)"/><text x="690" y="40" class="t-sub">Prompts, the XSD summary, the target</text><text x="690" y="56" class="t-sub">checks and Schema-valid all read the</text><text x="690" y="72" class="t-sub">Learning Flow&#x27;s one schema version.</text><text x="690" y="120" class="t-sub">A new Learning Flow starts with the</text><text x="690" y="136" class="t-sub">latest installed event-logging version,</text><text x="690" y="152" class="t-sub">saved on it; moving up is a deliberate</text><text x="690" y="168" class="t-sub">edit, then learning again.</text></svg></div>
+<p class="caption">Figure 6. The field names one schema version, not a group: <code>EVENTS</code> holds seven event-logging versions, from 3.0.0 to 4.1.0.</p>
+<ul>
+  <li><strong>The prompt's description of the schema</strong> is generated from the XSD (D2 option G), so every target schema is usable, not only event-logging.</li>
+  <li><strong>The hand-written event-logging guidance</strong>, written today for 3.0.0, is checked against the latest version and updated. The namespace, location and version are filled in from the chosen schema.</li>
+  <li><strong>With no event-logging schema installed</strong>, the field starts empty, and the readiness banner says so.</li>
+</ul>
+
+<h3>Time zone: header, then pipeline, then UTC</h3>
+<p>Today the prompt tells the model to write times "with a trailing Z", so local times are written as UTC. Now each stream's zone is resolved before the stylesheet runs.</p>
+<div class="figure"><svg viewBox="0 0 960 250" role="img" aria-label="How a stream&#x27;s time zone is resolved, with the London example"><text x="20" y="22" class="t-head">The first that has a zone wins</text><rect class="box focus" x="20" y="36" width="180" height="58" rx="4"/><text x="32" y="57" class="t-title">1. TimeZone header</text><text x="32" y="74" class="t-sub">sent with the stream</text><path class="e " d="M200 65 L236 65"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(236 65) rotate(0.0)"/><text x="218" y="58" class="t-edge" text-anchor="middle">none</text><rect class="box" x="236" y="36" width="180" height="58" rx="4"/><text x="248" y="57" class="t-title">2. timeZone property</text><text x="248" y="74" class="t-sub">on the AI Translator</text><path class="e " d="M416 65 L452 65"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(452 65) rotate(0.0)"/><text x="434" y="58" class="t-edge" text-anchor="middle">none</text><rect class="box" x="452" y="36" width="180" height="58" rx="4"/><text x="464" y="57" class="t-title">3. UTC</text><text x="464" y="74" class="t-sub">when neither is set</text><path class="e " d="M632 65 L676 65"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(676 65) rotate(0.0)"/><rect class="box ok" x="680" y="36" width="260" height="58" rx="4"/><text x="692" y="57" class="t-title">ResolvedTimeZone</text><text x="692" y="74" class="t-sub">in the stream&#x27;s metadata</text><text x="20" y="124" class="t-sub">The learned stylesheet reads it:</text><text x="196" y="124" class="t-sub mono">stroom:format-date(…, stroom:meta(&#x27;ResolvedTimeZone&#x27;))</text><text x="570" y="124" class="t-sub">so changing a zone needs no relearning.</text><text x="20" y="168" class="t-head">A London firewall logs Oct 19 09:06:02 during British Summer Time (UTC+1):</text><text x="20" y="192" class="t-sub">Stream sent with TimeZone: Europe/London</text><text x="470" y="192" class="t-sub mono ok-t">2026-10-19T08:06:02.000Z</text><text x="20" y="214" class="t-sub">No header; its pipeline&#x27;s timeZone is Europe/London</text><text x="470" y="214" class="t-sub mono ok-t">2026-10-19T08:06:02.000Z</text><text x="20" y="236" class="t-sub">Nothing set anywhere: UTC</text><text x="470" y="236" class="t-sub mono bad-t">2026-10-19T09:06:02.000Z  (an hour out)</text></svg></div>
+<p class="caption">Figure 7. The resolved zone is written under its own key, so the sender's <code>TimeZone</code> attribute is left alone.</p>
+<ul>
+  <li><strong>The header is <code>TimeZone</code></strong>, a Stroom header like <code>Feed</code> or <code>System</code>, with an IANA zone ID. HTTP has no standard header for this, and the header describes the data's zone, not that of whatever posted it.</li>
+  <li><strong>The pipeline property is <code>timeZone</code></strong> on the AI Translator, which in practice means one per feed. It is checked as a zone ID when the pipeline is saved.</li>
+  <li><strong>The Learning Status tab</strong> shows the zone in use, and whether it came from the header, the pipeline, or UTC because neither was set.</li>
+  <li><strong>Known and accepted:</strong> pipelines made by a Content Template inherit the template's <code>timeZone</code>. Most installations take data from systems in one zone, so that will usually be right.</li>
+</ul>
+
+<!-- ===================================================================== -->
+
+<h2 id="creation">8. How feeds get an AI pipeline</h2>
+<div class="figure"><svg viewBox="0 0 960 250" role="img" aria-label="How feeds get an AI pipeline: new feeds through Content Templates, existing feeds by hand"><text x="20" y="22" class="t-head">New feeds</text><rect class="box" x="20" y="36" width="180" height="56" rx="4"/><text x="32" y="57" class="t-title">First data arrives</text><text x="32" y="74" class="t-sub">for a new feed</text><rect class="box focus" x="240" y="36" width="190" height="56" rx="4"/><text x="252" y="57" class="t-title">Content Template</text><text x="252" y="74" class="t-sub">type INHERIT_PIPELINE</text><rect class="box" x="470" y="36" width="210" height="56" rx="4"/><text x="482" y="57" class="t-title">The feed&#x27;s pipeline</text><text x="482" y="74" class="t-sub">inherits the AI template</text><rect class="box ok" x="720" y="36" width="220" height="56" rx="4"/><text x="732" y="57" class="t-title">Learns at once</text><text x="732" y="74" class="t-sub">the template was the decision</text><path class="e " d="M200 64 L236 64"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(236 64) rotate(0.0)"/><path class="e " d="M430 64 L466 64"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(466 64) rotate(0.0)"/><path class="e " d="M680 64 L716 64"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(716 64) rotate(0.0)"/><text x="20" y="134" class="t-head">Existing feeds</text><rect class="box" x="20" y="148" width="180" height="56" rx="4"/><text x="32" y="169" class="t-title">An existing feed</text><text x="32" y="186" class="t-sub">with its old translation</text><rect class="box focus" x="240" y="148" width="280" height="56" rx="4"/><text x="252" y="169" class="t-title">A person adds a pipeline</text><text x="252" y="186" class="t-sub">inheriting the AI template, with a filter</text><rect class="box" x="560" y="148" width="160" height="56" rx="4"/><text x="572" y="169" class="t-title">Old filter off</text><text x="572" y="186" class="t-sub">minimum creation time</text><rect class="box ok" x="760" y="148" width="180" height="56" rx="4"/><text x="772" y="169" class="t-title">Learns</text><text x="772" y="186" class="t-sub">from new streams on</text><path class="e " d="M200 176 L236 176"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(236 176) rotate(0.0)"/><path class="e " d="M520 176 L556 176"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(556 176) rotate(0.0)"/><path class="e " d="M720 176 L756 176"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(756 176) rotate(0.0)"/><text x="20" y="236" class="t-sub">No Pipeline Factory (SIM-7). Runs on the default master task queue once the claimTasksOnWorker requirement goes (SIM-9, after a trial).</text></svg></div>
+<p class="caption">Figure 8. New feeds through Content Templates; existing feeds by hand.</p>
+<ul>
+  <li><strong>The Pipeline Factory goes</strong> (SIM-7 option B), with about 6,000 lines, two tables and three security problems. Content Templates, which already ship, make each new feed's AI pipeline.</li>
+  <li><strong>Setting up the template is the decision</strong> that the feeds it matches may send data to the model. No one inspects each feed first, so its pipelines learn at once.</li>
+  <li><strong>Existing feeds are moved by hand</strong> (SIM-8 option D). A minimum creation time keeps the feed's history away from the model.</li>
+  <li><strong>The <code>claimTasksOnWorker</code> requirement goes</strong> (SIM-9 option H) after a test-cluster trial with the master queue (Track 1 task 5). Without that, a Content Template can't make an AI pipeline on a default install. If the trial fails, SIM-7 reopens.</li>
+</ul>
+
+<!-- ===================================================================== -->
+
+<h2 id="other">9. The other decisions</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Decision</th><th>What was decided</th><th>Example or consequence</th></tr></thead>
+<tbody>
+<tr><td>Learning recipe (SIM-2, N3)</td><td>Editable flows stay, defined in JSON with Jackson. The flow DSL is removed. <em>Quick, then careful</em> (<code>ESCALATING</code>) is the default setup.</td><td>The default is confirmed by a <code>TestLiveScenarios</code> run first. The Setup tab never showed the DSL, so the screens don't change.</td></tr>
+<tr><td>Prompts (SIM-5, N9)</td><td>Per-document question texts stay. Each run records the templates and texts it used, not the prompt itself.</td><td>Someone with <em>View Data</em> who opens a question sees the prompt rebuilt as it was sent. Once the stream is deleted, it can't be rebuilt, and the screen says so.</td></tr>
+<tr><td>Supervisor (SIM-4)</td><td>Every action stays, on the pipeline's Learning Status tab.</td><td><em>Improve…</em> moves from the web request to the worker.</td></tr>
+<tr><td>Spend (N7)</td><td>When a provider reports no usage, tokens are estimated at about 4 characters a token, and failed calls are charged.</td><td>A local server that omits <code>usage</code> no longer reads as zero spend, so the spend breaker can trip.</td></tr>
+<tr><td>Several nodes (N8)</td><td>Learning is sound on more than one node for the first release.</td><td>Track 1 task 8: a guard against a second live binding, a version-checked replace, a backstop expiry, and a two-cache test harness.</td></tr>
+<tr><td>Database (N5)</td><td>Edit the one unreleased migration, <code>V08_00_00_001</code>, in place until 8.0 ships.</td><td>Reset dev and demo databases after each change, and regenerate jOOQ. The rule is in a comment at the top of the migration.</td></tr>
+<tr><td>QA assessments</td><td>Deleted, because no requirement for them was found. The rest of the Quality Assurance tab stays as it is.</td><td>The <em>QA person</em> and <em>Data Provider</em> roles and the <code>shapeshifter_assessment</code> table go (Track 2 step 1b).</td></tr>
+<tr><td>Order (UM-9)</td><td>Gates first.</td><td>Preservation, parser drift and missing year come before mixed record elements and the target schema.</td></tr>
+</tbody>
+</table></div>
+
+<!-- ===================================================================== -->
+
+<h2 id="track1">10. Track 1: correctness fixes</h2>
+<p>These change the checks and the serving code on the server. The final UI already shows their results. Every fix comes with a regression test that fails before it and passes after.</p>
+
+<div class="figure"><svg viewBox="0 0 960 332" role="img" aria-label="Track 1 tasks and what they depend on"><rect class="box ext" x="20" y="20" width="210" height="56" rx="4"/><text x="32" y="41" class="t-title">Track 2 step 1c</text><text x="32" y="58" class="t-sub">flows in JSON</text><rect class="box focus" x="20" y="110" width="210" height="60" rx="4"/><text x="32" y="131" class="t-title">10  One model of checks</text><text x="32" y="148" class="t-sub">Off, Advice, Gate</text><rect class="box ext" x="20" y="214" width="210" height="56" rx="4"/><text x="32" y="235" class="t-title">Track 2 step 2</text><text x="32" y="252" class="t-sub">the allow-list</text><path class="e dash" d="M125 76 V106"/><text x="135" y="96" class="t-edge">change the step model once</text><rect class="box" x="320" y="20" width="240" height="56" rx="4"/><text x="332" y="41" class="t-title">1  Preservation</text><text x="332" y="58" class="t-sub">first piece of work</text><rect class="box" x="320" y="100" width="240" height="56" rx="4"/><text x="332" y="121" class="t-title">2  Parser drift</text><text x="332" y="138" class="t-sub">coverage; completeness</text><rect class="box" x="320" y="180" width="240" height="56" rx="4"/><text x="332" y="201" class="t-title">3  Missing year, time zone</text><text x="332" y="218" class="t-sub">plausibility; literals</text><path class="e " d="M230 140 L270 140 L270 48 L316 48"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(316 48) rotate(0.0)"/><path class="e " d="M230 140 L316 128"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(316 128) rotate(-7.9)"/><path class="e " d="M230 140 L270 140 L270 208 L316 208"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(316 208) rotate(0.0)"/><path class="e " d="M230 242 L290 242 L290 222 L316 222"/><path class="ah " d="M0 0 l-8 -4.5 v9 z" transform="translate(316 222) rotate(0.0)"/><text x="262" y="262" class="t-edge" text-anchor="middle">format-date, meta</text><text x="600" y="30" class="t-head">Independent, in any order</text><rect class="box" x="600" y="44" width="340" height="38" rx="4"/><text x="612" y="68" class="t-title">4  Mixed record elements</text><rect class="box" x="600" y="92" width="340" height="38" rx="4"/><text x="612" y="116" class="t-title">5  claimTasksOnWorker + trial</text><rect class="box" x="600" y="140" width="340" height="38" rx="4"/><text x="612" y="164" class="t-title">6  Supervisor visibility (checks)</text><rect class="box" x="600" y="188" width="340" height="38" rx="4"/><text x="612" y="212" class="t-title">7  Single target schema</text><rect class="box" x="600" y="236" width="340" height="38" rx="4"/><text x="612" y="260" class="t-title">8  Sound multi-node learning</text><rect class="box" x="600" y="284" width="340" height="38" rx="4"/><text x="612" y="308" class="t-title">9  Small fixes</text></svg></div>
+<p class="caption">Figure 9. Task 10 is the structure tasks 1 to 3 build their checks into. Task 3 needs the allow-list. The right-hand tasks can start in any order.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Task</th><th>In one line</th><th>Effort</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="shapeshifter-ai-preservation-matches-record-markup.md">Preservation matches record markup</a></td><td>Stops JSON feeds such as <code>OTEL-TRACES</code> from learning at all. The best first piece of work.</td><td>As its document says</td></tr>
+<tr><td>2</td><td><a href="shapeshifter-ai-parser-drift-not-detected.md">Parser drift not detected</a></td><td>Measure input coverage in the real pipeline run. Add completeness as a gate: records in = events out + declared skips.</td><td>M to L</td></tr>
+<tr><td>3</td><td><a href="shapeshifter-ai-missing-year-hard-coded.md">Missing year hard-coded</a></td><td>New prompt wording. The time-plausibility and literals checks. The stream's metadata set in the learning worker. The time-zone resolution from section 7.</td><td>M</td></tr>
+<tr><td>4</td><td><a href="shapeshifter-ai-mixed-record-elements.md">Mixed record elements</a></td><td>A "children of element" record boundary. Large single documents refused with a stop report.</td><td>M + S</td></tr>
+<tr><td>5</td><td><a href="ai-translations/remove-claim-tasks-on-worker-requirement.md">Remove the <code>claimTasksOnWorker</code> requirement</a></td><td>A scenario test on the master queue, then the test-cluster trial.</td><td>S + trial</td></tr>
+<tr><td>6</td><td><a href="shapeshifter-ai-supervisor-visibility.md">Supervisor visibility</a> items 3 and 5</td><td>Largely done on the UI branch. Check the stop reports and the waiting reasons, and fill any gaps.</td><td>S</td></tr>
+<tr><td>7</td><td><a href="shapeshifter-ai-single-target-schema.md">Single target schema</a></td><td>The <em>Target schema</em> field. The XSD summary. Every event-logging assumption made general. A second XSD test fixture.</td><td>L</td></tr>
+<tr><td>8</td><td>Sound multi-node learning</td><td>The races between nodes learning and serving the same learner.</td><td>M</td></tr>
+<tr><td>9</td><td>Small fixes</td><td>Encoding, held-out fraction, the sample-size setting in bytes, a token budget of 0, and stale comments.</td><td>S each</td></tr>
+<tr><td>10</td><td>One model of checks</td><td>Section 3 on the server. Done with Track 2 step 1c, so the step model changes once.</td><td>M</td></tr>
+</tbody>
+</table></div>
+<p><strong>Afterwards</strong>, rerun the <a href="ai-translations/shapeshifter-ai-demo-evaluation.md">demo evaluation</a> and compare it with the 16–17 November results. NETFILTER (Poor), GATEWAY-AUDIT (not learned) and the NETFILTER drift sample (no events) should all change.</p>
+
+<!-- ===================================================================== -->
+
+<h2 id="track2">11. Track 2: simplification, safety, UI additions</h2>
+<p>The UI phases of the old Track 2 are done or dropped. What remains is mostly server work.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Step</th><th>Side</th><th>What</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Server</td><td>Review by default and the new permission. One promotion path. Provisional bindings, unused parts and the Pipeline Factory removed. <em>Improve…</em> moved to the worker. Templates and texts recorded for each run (N9).</td></tr>
+<tr><td>1a</td><td>UI</td><td>Take out <em>On trial</em>, <em>Accept now</em> and the "on trial" figure, before the server removes the endpoint.</td></tr>
+<tr><td>1b</td><td>Both</td><td>Delete the QA assessments, client first, then server and table.</td></tr>
+<tr><td>1c</td><td>Both</td><td>Flows in JSON, with the DSL removed. <code>ESCALATING</code> as the default after a <code>TestLiveScenarios</code> run. Done with Track 1 task 10.</td></tr>
+<tr><td>2</td><td>Server</td><td>The hard-coded allow-list, applied by the static check and the test harness (M).</td></tr>
+<tr><td>3</td><td>Server</td><td>The spend breaker and the rate limit.</td></tr>
+<tr><td>4</td><td>Both</td><td>What the final UI doesn't show yet: approval evidence and who approved, the spend breaker's state, the rebuilt prompt, and the <em>Quality checks</em> change from section 3.</td></tr>
+<tr><td>5</td><td>Server</td><td>Structure: judge with the code that serves, fewer storage interfaces, break up the central class, take test code out of the product.</td></tr>
+<tr><td>6</td><td>Both</td><td>Towards the end: pull in the egress branch, move the list onto its Egress Policy screen, and enforce it at run time (L).</td></tr>
+</tbody>
+</table></div>
+
+<!-- ===================================================================== -->
+
+<h2 id="rules">12. Rules for working across both tracks</h2>
+<ul>
+  <li><strong>The client stops using a feature before the server removes it.</strong> This covers provisional bindings, the weights and pass mark, and the QA assessments.</li>
+  <li><strong>Change the step model once.</strong> Track 1 task 10 (checks) and Track 2 step 1c (flows in JSON) go together.</li>
+  <li><strong>Change the Setup tab once</strong> for the target schema. The field lands with Track 1 task 7.</li>
+  <li><strong>Re-find each audit finding in the merged code</strong> before starting a task. The UI merge moved much of what the audit cites.</li>
+  <li><strong>Build parser drift's coverage measure as the filter</strong> that structural refactor i needs, so the refactor keeps it.</li>
+  <li><strong>Merge the egress branch while it is still cheap.</strong> It confines <code>XsltStep</code> and <code>OutputRecords</code>, which both tracks change. Re-check the confinement after the merge.</li>
+  <li><strong>Every changed screen</strong> gets its workbench stories: default, read-only, and dialog OK and Cancel, run with the leak check.</li>
+</ul>
+
+<!-- ===================================================================== -->
+
+<h2 id="start">13. Ready to start</h2>
+<div class="grid2">
+  <div class="panel">
+    <h4>Start now</h4>
+    <ul>
+      <li>Track 1 tasks 1, 2, 4, 5, 6, 7, 8, 9 and 10.</li>
+      <li>Track 2 step 2, the allow-list, which unblocks task 3.</li>
+      <li>Bringing the module's design notes (<code>design/07-ui.md</code>, <code>05-learning-flow.md</code>) into line with the final UI.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4>Suggested first pieces</h4>
+    <ol>
+      <li>Task 1, preservation: small, and it unblocks JSON feeds.</li>
+      <li>Task 10 with step 1c: the structure the other checks go into.</li>
+      <li>Step 2, the allow-list: then task 3 can follow.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+
+<h2 id="waiting">14. Waiting on, and later</h2>
+<h3>Runs and checks still to do</h3>
+<ul>
+  <li><strong>The test-cluster trial</strong> for the master queue (Track 1 task 5). If it fails, SIM-9 and SIM-7 reopen.</li>
+  <li><strong>A <code>TestLiveScenarios</code> run</strong> to confirm <em>Quick, then careful</em> as the default. It uses a real model, so it costs money.</li>
+  <li><strong>Assumptions nobody has checked yet:</strong>
+    <ul>
+      <li>clusters are real for the first customers (AS8; N8 rests on it);</li>
+      <li><code>format-date</code> is pure (AS6);</li>
+      <li>learned stylesheets can be confined on their own (AS20);</li>
+      <li>the demo evaluation needs re-running before it is used as a baseline (AS3).</li>
+    </ul>
+  </li>
+</ul>
+<h3>Later: calibration and larger step sizes</h3>
+<p>Calibrating each model against the scenario suite, and coarser steps (parser and XSLT in one reply, then a whole-pipeline loop), both rely on Track 1's gates, so they come after it. When calibration comes:</p>
+<ul>
+  <li>reconsider sizing the sample from the model (N2 option G);</li>
+  <li>reconsider allowing automatic mode only for calibrated models (UM-6 option C);</li>
+  <li>if quiet automatic feeds wait too long behind a small draft, reconsider letting a later stream replace it (N4 option G).</li>
+</ul>
+<p>Release and rollout are outside this project for now.</p>
+
+<h3>Sources</h3>
+<ul class="marks">
+  <li><a href="shapeshifter-ai-delivery-plan.md">The delivery plan</a></li>
+  <li><a href="shapeshifter-ai-code-assumption-audit.md">The code audit</a></li>
+  <li><a href="shapeshifter-ai-group-7-settings-options.html">Group 7 options</a></li>
+  <li><a href="ai-translations/ui-design.md">The UI design</a></li>
+  <li><a href="ai-translations/simplification-options.html">Simplification options</a></li>
+  <li><a href="ai-translations/content-templates-and-pipeline-factory.html">Content Templates and the factory</a></li>
+</ul>
+
+</main>
+<footer class="site-footer"><div class="wrap">Stroomworks · internal engineering note · branch <code>ai_translations_server</code> · not for external distribution</div></footer>
+</body>
+</html>
