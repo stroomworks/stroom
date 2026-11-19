@@ -346,17 +346,20 @@ public final class TargetChecks {
         return shortfalls;
     }
 
-    /**
-     * The event's values that came from the record: every leaf and attribute value that occurs in the
-     * record's text, long enough to mean something.
-     */
+    /// The event's values that came from the record: every leaf and attribute value of the event, long
+    /// enough to mean something, that occurs within one of the record's values. Where the record is
+    /// markup, its values are its text and attribute values, never its element or attribute names, so a
+    /// JSON key the event uses as a name is not demanded of the parser; where it is text, the record
+    /// itself is its one value.
     static Set<String> sourceValues(final Target target) {
+        final Set<String> recordValues = recordValues(target.record());
         final Set<String> values = new TreeSet<>();
         OutputRecords.parse(asDocument(target.event().orElseThrow())).ifPresent(document -> {
             for (final XdmNode event : document.records()) {
                 document.evaluate(event, "descendant::text() | descendant::*/@*").forEach(item -> {
                     final String value = item.getStringValue().strip();
-                    if (value.length() >= VALUE_LENGTH_COUNTED && target.record().contains(value)) {
+                    if (value.length() >= VALUE_LENGTH_COUNTED
+                        && recordValues.stream().anyMatch(recordValue -> recordValue.contains(value))) {
                         values.add(value);
                     }
                 });
@@ -365,9 +368,28 @@ public final class TargetChecks {
         return values;
     }
 
+    /// The values a record carries: its text and attribute values where it is markup that parses, else
+    /// the record itself.
+    private static Set<String> recordValues(final String record) {
+        return OutputRecords.parse(record)
+                .map(parsed -> markupValues(parsed, parsed.root()))
+                .orElse(Set.of(record));
+    }
+
+    /// The values the parser emitted in one of its records.
     private static Set<String> dataValues(final OutputRecords records, final XdmNode record) {
+        return markupValues(records, record);
+    }
+
+    /// The text and attribute values in and under an element. A `key` attribute of the XSL/json
+    /// vocabulary is a field's name by construction (as `RecordSkeleton` treats it), so it is not a value.
+    /// It is recognised by its element's local name, since a record cut from the parser's output need not
+    /// declare the vocabulary's namespace.
+    private static Set<String> markupValues(final OutputRecords records, final XdmNode element) {
         final Set<String> values = new TreeSet<>();
-        records.evaluate(record, "descendant::*[local-name() = 'data']/@value | descendant::text()")
+        records.evaluate(element, "descendant::text() | descendant-or-self::*/@*[not(local-name() = 'key' "
+                                  + "and local-name(..) = ('map', 'array', 'string', 'number', 'boolean', "
+                                  + "'null'))]")
                 .forEach(item -> values.add(item.getStringValue()));
         return values;
     }

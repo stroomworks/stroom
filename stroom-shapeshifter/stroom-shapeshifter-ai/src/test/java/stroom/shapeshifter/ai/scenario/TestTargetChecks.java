@@ -44,6 +44,7 @@ class TestTargetChecks {
 
     private static final String RECORD = "2020-06-17T08:00:00.000Z,jim,warehouse,logon";
     private static final String EVENT = firstEvent(Scenarios.resource("csv-logon.events.xml"));
+    private static final String JSON = "http://www.w3.org/2013/XSL/json";
 
     /**
      * The full scorer set of a strict document, with a yield expectation of one event in five lines that
@@ -136,6 +137,69 @@ class TestTargetChecks {
                 .contains("Produce exactly:")
                 .contains("The nearest event produced was:")
                 .contains("<Name>jim</Name>");
+    }
+
+    @Test
+    void preservationDoesNotDemandAJsonKeyThatTheTargetUsesAsAName() {
+        // A JSONParser record: every key is a `key` attribute, a name no parser emits as a value.
+        final String record = "<map xmlns=\"" + JSON + "\"><string key=\"traceId\">a479ab28</string>"
+                              + "<string key=\"name\">Get variable</string></map>";
+        final String event = """
+                <Event><EventDetail><Unknown>\
+                <Data Name="traceId" Value="a479ab28"/><Data Name="name" Value="Get variable"/>\
+                </Unknown></EventDetail></Event>""";
+        final String parsed = "<array xmlns=\"" + JSON + "\">" + record + "</array>";
+        assertThat(TargetChecks.preservation(parsed, List.of(Target.of(record, event)))).isEmpty();
+    }
+
+    @Test
+    void preservationStillReportsAValueTheParserDropped() {
+        final String record = "<map xmlns=\"" + JSON + "\"><string key=\"traceId\">a479ab28</string>"
+                              + "<string key=\"name\">Get variable</string></map>";
+        final String event = """
+                <Event><EventDetail><Unknown>\
+                <Data Name="traceId" Value="a479ab28"/><Data Name="name" Value="Get variable"/>\
+                </Unknown></EventDetail></Event>""";
+        // The parser lost the name's value.
+        final String parsed = "<array xmlns=\"" + JSON + "\"><map><string key=\"traceId\">a479ab28</string>"
+                              + "</map></array>";
+        final List<StoredError> shortfalls = TargetChecks.preservation(parsed, List.of(Target.of(record, event)));
+        assertThat(shortfalls).hasSize(1);
+        assertThat(missing(shortfalls.get(0))).isEqualTo("[Get variable]");
+    }
+
+    @Test
+    void preservationCountsAnXmlRecordsAttributeValuesAsData() {
+        // An XMLFragmentParser record: its attribute values are data, as Windows events carry them.
+        final String record = "<Event><System><TimeCreated SystemTime=\"2026-10-19T08:06:02Z\"/></System>"
+                              + "<EventData><Data Name=\"TargetUserName\">alice</Data></EventData></Event>";
+        final String event = """
+                <Event><EventTime><TimeCreated>2026-10-19T08:06:02Z</TimeCreated></EventTime>\
+                <EventDetail><Unknown><Data Name="TargetUserName" Value="alice"/></Unknown></EventDetail>\
+                </Event>""";
+        final String parsed = "<Events>" + record + "</Events>";
+        assertThat(TargetChecks.preservation(parsed, List.of(Target.of(record, event)))).isEmpty();
+    }
+
+    @Test
+    void preservationOfATextRecordIsUnchanged() {
+        // A DSParser record is text: the record itself is the only value, so any part of it counts.
+        final String parsed = "<records xmlns=\"records:2\"><record>"
+                              + "<data name=\"when\" value=\"2020-06-17T08:00:00.000Z\"/>"
+                              + "<data name=\"who\" value=\"jim\"/></record></records>";
+        final List<StoredError> shortfalls = TargetChecks.preservation(parsed, List.of(Target.of(RECORD, EVENT)));
+        assertThat(shortfalls).hasSize(1);
+        assertThat(missing(shortfalls.get(0)))
+                .contains("warehouse")
+                .contains("logon")
+                .doesNotContain("jim");
+    }
+
+    /// The values a preservation shortfall names as missing, without the record it quotes.
+    private static String missing(final StoredError shortfall) {
+        final String message = shortfall.getMessage();
+        final int start = message.indexOf("no value for ") + "no value for ".length();
+        return message.substring(start, message.indexOf(", which the target event needs"));
     }
 
     private static String firstEvent(final String events) {
