@@ -24,11 +24,15 @@ import stroom.gwt.workbench.client.app.rest.RestFixtures;
 import stroom.gwt.workbench.client.app.rest.RestReply;
 import stroom.gwt.workbench.client.app.screen.ScreenHarness;
 import stroom.gwt.workbench.client.app.screen.StroomDom;
+import stroom.gwt.workbench.client.widgets.tree.ExplorerFixture;
+import stroom.gwt.workbench.client.widgets.tree.TreeFixtures;
+import stroom.gwt.workbench.framework.client.play.EventInit;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.play.Query;
 import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
+import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipelinefactory.client.component.FactoryPropertyEditorController;
 import stroom.pipelinefactory.client.component.PipelineFactoryEditor;
 import stroom.pipelinefactory.shared.PipelineFactoryDoc;
@@ -47,6 +51,7 @@ import com.google.gwt.user.client.ui.Widget;
 /// | `GET` and `PUT /pipelineFactory/v1/{uuid}` | the document, fetched and saved |
 /// | `GET /pipelineFactory/v1/{uuid}/combinations` | the Made tab |
 /// | `POST /explorer/v2/decorate` and `getFromDocRef` | the template's picker |
+/// | `POST /explorer/v2/fetchExplorerNodes` ([ExplorerFixture]) | the template's chooser |
 /// | the Permissions tab's routes | the Permissions tab |
 public final class PipelineFactoryEditorStories {
 
@@ -70,6 +75,11 @@ public final class PipelineFactoryEditorStories {
               "pipeline": {"type": "Pipeline", "uuid": "m-1", "name": "FIREWALL pipeline"},
               "pipelineExists": true, "state": "MADE", "tries": 1,
               "createTimeMs": 1761700000000, "updateTimeMs": 1761700000000}]""";
+
+    // The explorer tree the template's chooser shows
+    private static final ExplorerFixture TREE = new ExplorerFixture(ExplorerFixture.folder("System",
+            ExplorerFixture.doc("Template pipeline", PipelineDoc.TYPE).withUuid("t-1"),
+            ExplorerFixture.doc("Other template", PipelineDoc.TYPE).withUuid("t-2")));
 
     private PipelineFactoryEditorStories() {
         // Static utility
@@ -121,6 +131,31 @@ public final class PipelineFactoryEditorStories {
                     play.expect(play.findByText("FIREWALL pipeline")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
+                // The template is chosen from the explorer, which offers only what the user may view;
+                // with no permission asked for, the server offered nothing and the chooser was empty
+                .story("ChooseTemplate", context -> render(context, false))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.waitFor(() -> play.expect(play.getByLabelText("Folder")).toHaveValue("Made/${feed}"));
+                    play.fireEvent().mouseDown(play.querySelectorAll(".drop-down").nth(0), EventInit.create());
+                    final Play chooser = screen.within(screen.findByText("Choose Template", StroomDom.DIALOG_TITLE)
+                            .closest(StroomDom.DIALOG));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post(TreeFixtures.FETCH_EXPLORER_NODES)
+                                    .withJsonBodyContaining("{\"filter\": {\"requiredPermissions\": [\"VIEW\"]}}")
+                                    .toSpyMatcher()));
+                    play.click(chooser.findByText("Other template"));
+                    play.click(chooser.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(screen.queryByText("Choose Template", StroomDom.DIALOG_TITLE))
+                            .toBeNull());
+                    final Query save = play.getByRole("button", "Save");
+                    play.waitFor(() -> play.expect(save).not().toHaveAttribute("aria-disabled"));
+                    play.click(save);
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.put(SAVE_PATH).withJsonBodyContaining(
+                                    "{\"template\": {\"type\": \"Pipeline\", \"uuid\": \"t-2\"}}").toSpyMatcher()));
+                    DocEditors.expectNoProblems(play);
+                })
                 // A property value added in its dialog: OK and Save write it
                 .story("PropertyDialogOk", context -> render(context, false))
                 .withPlay(play -> {
@@ -169,6 +204,7 @@ public final class PipelineFactoryEditorStories {
 
     private static Widget render(final StoryContext context, final boolean readOnly) {
         final RestFixtures fixtures = DocEditors.docSelectionRoutes(DocEditors.permissionRoutes(RestFixtures.builder()))
+                .post(TreeFixtures.FETCH_EXPLORER_NODES, request -> RestReply.json(TREE.fetch(request.getBody())))
                 .get("/pipelineFactory/v1/pf-1/combinations", RestReply.json(COMBINATIONS))
                 .get("/pipelineFactory/v1/pf-1", RestReply.json(DOC))
                 .put("/pipelineFactory/v1/pf-1", request -> RestReply.json(request.getBody()))

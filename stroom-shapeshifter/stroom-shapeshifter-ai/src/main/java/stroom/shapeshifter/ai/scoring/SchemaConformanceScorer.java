@@ -24,7 +24,6 @@ import stroom.pipeline.filter.SplitFilter;
 import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.security.api.SecurityContext;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
 import stroom.shapeshifter.shared.ScorerType;
 import stroom.util.shared.ElementId;
@@ -59,7 +58,8 @@ import java.util.regex.Pattern;
 
 /**
  * Schema conformance (design 01 §8.2), a gate by ruling A16: the proportion of records that validate
- * against the schemas of the document's schema group, judged per record as {@code SchemaFilterSplit}
+ * against the document's target schema ({@link TargetSchema}, D1) — one schema, a single version, where the
+ * document names it, and the hints taken from that schema alone — judged per record as {@code SchemaFilterSplit}
  * judges them — the output split one top-level element at a time into Stroom's own {@code SchemaFilter}.
  * The feedback is the first failing records' messages, as Stroom post-processes them for people:
  * "Invalid content was found starting with element 'EventDetail'. One of '{EventSource}' is expected." —
@@ -87,7 +87,7 @@ public final class SchemaConformanceScorer implements Scorer {
     private final ErrorReceiverProxy errorReceiverProxy;
     private final XmlSchemaStore schemaStore;
     private final SecurityContext securityContext;
-    private final Map<String, ContentModels> contentModels = new HashMap<>();
+    private final Map<TargetSchema, ContentModels> contentModels = new HashMap<>();
 
     @Inject
     public SchemaConformanceScorer(final Provider<SchemaFilter> schemaFilters,
@@ -105,8 +105,16 @@ public final class SchemaConformanceScorer implements Scorer {
         return ScorerType.SCHEMA_CONFORMANCE;
     }
 
+    /// Scores against the default target, event-logging v3.0.0, for a caller with no document's target.
     @Override
     public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+        return score(parameters, step, TargetSchema.DEFAULT);
+    }
+
+    @Override
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         final String output = step.result().output();
         final Optional<OutputRecords> parsed = OutputRecords.ofTransformed(step)
                 .filter(records -> !records.records().isEmpty());
@@ -114,7 +122,6 @@ public final class SchemaConformanceScorer implements Scorer {
             return Optional.empty();
         }
         final int total = parsed.get().records().size();
-        final SchemaConformanceParameters conformance = (SchemaConformanceParameters) parameters;
         final RecordErrors errors = new RecordErrors();
         final RecordCounter counter = new RecordCounter(errors);
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();
@@ -122,9 +129,7 @@ public final class SchemaConformanceScorer implements Scorer {
         try {
             final SchemaFilter schemaFilter = schemaFilters.get();
             schemaFilter.setElementId(CONFORMANCE);
-            final FindXMLSchemaCriteria constraint = new FindXMLSchemaCriteria();
-            constraint.setSchemaGroup(conformance.getSchemaGroup());
-            schemaFilter.setSchemaConstraint(constraint);
+            schemaFilter.setSchemaConstraint(target.criteria());
             counter.setTarget(schemaFilter);
             final SplitFilter split = new SplitFilter();
             split.setSplitCount(1);
@@ -154,7 +159,7 @@ public final class SchemaConformanceScorer implements Scorer {
         final List<StoredError> diagnostics = new ArrayList<>();
         // The schema's own account first: it is what turns one missing child per candidate into one step.
         if (!errors.failing.isEmpty()) {
-            diagnostics.addAll(hints(conformance.getSchemaGroup(), errors.failing.values()));
+            diagnostics.addAll(hints(target, errors.failing.values()));
         }
         int shown = 0;
         for (final Map.Entry<Integer, String> failure : errors.failing.entrySet()) {
@@ -187,11 +192,11 @@ public final class SchemaConformanceScorer implements Scorer {
      * element reported incomplete, and of the parents that could hold an unexpected child beside what
      * was expected instead. A few, distinct, so the feedback stays readable.
      */
-    private List<StoredError> hints(final String schemaGroup, final Collection<String> messages) {
+    private List<StoredError> hints(final TargetSchema target, final Collection<String> messages) {
         final Set<String> texts = new LinkedHashSet<>();
         final Set<String> misplaced = new LinkedHashSet<>();
         try {
-            final ContentModels models = contentModels.computeIfAbsent(schemaGroup, this::load);
+            final ContentModels models = contentModels.computeIfAbsent(target, this::load);
             for (final String message : messages) {
                 final Matcher incomplete = INCOMPLETE.matcher(message);
                 if (incomplete.find()) {
@@ -238,12 +243,12 @@ public final class SchemaConformanceScorer implements Scorer {
     }
 
     /**
-     * The group's schemas as the validator reads them — as the processing user, since the stream's user
-     * need not be able to read schema documents to have their output judged against them.
+     * The target's schemas as the validator reads them — one, where the target names a version — as the
+     * processing user, since the stream's user need not be able to read schema documents to have their
+     * output judged against them.
      */
-    private ContentModels load(final String schemaGroup) {
-        final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
-        criteria.setSchemaGroup(schemaGroup);
+    private ContentModels load(final TargetSchema target) {
+        final FindXMLSchemaCriteria criteria = target.criteria();
         return securityContext.asProcessingUserResult(() -> new ContentModels(
                 schemaStore.find(criteria).getValues().stream()
                         .map(XmlSchemaDoc::getData)

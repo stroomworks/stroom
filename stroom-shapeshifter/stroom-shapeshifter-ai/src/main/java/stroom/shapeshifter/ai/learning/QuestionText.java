@@ -21,6 +21,7 @@ import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Records;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.learning.Question.TargetFor;
+import stroom.shapeshifter.ai.scoring.TargetSchema;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.LearnedUnknown;
@@ -72,18 +73,31 @@ public final class QuestionText {
 
     private final Templates templates;
     private final String system;
+    /// The schema the transform's events must conform to (D1), which the transformation rules name.
+    private final TargetSchema target;
 
-    private QuestionText(final Templates templates, final String system) {
+    private QuestionText(final Templates templates, final String system, final TargetSchema target) {
         this.templates = templates;
         this.system = system;
+        this.target = target;
     }
 
     /**
      * The words of a document's flow: its templates, and a system text carrying its instructions
      * and what its scorers will demand of every event — the fields required and the rules asserted —
-     * said up front, so the model aims at them rather than learning them from a shortfall.
+     * said up front, so the model aims at them rather than learning them from a shortfall. The events asked
+     * for are of the default target schema, event-logging v3.0.0: for a test or a harness with no schema store.
      */
     public static QuestionText of(final ShapeshifterAiDoc doc) {
+        return of(doc, TargetSchema.DEFAULT);
+    }
+
+    /// The words of a document's flow, asking for events of its target schema (D1).
+    ///
+    /// @param doc    The document.
+    /// @param target The schema its translations must conform to.
+    /// @return Its words.
+    public static QuestionText of(final ShapeshifterAiDoc doc, final TargetSchema target) {
         final Templates templates = Templates.of(doc.getFlow());
         final StringBuilder demands = new StringBuilder();
         for (final ScorerSetting setting : doc.getScorers()) {
@@ -104,7 +118,8 @@ public final class QuestionText {
             }
         }
         return new QuestionText(templates, templates.render(Template.SYSTEM,
-                Map.of("instructions", instructions(doc.getInstructions()), "demands", demands.toString())));
+                Map.of("instructions", instructions(doc.getInstructions()), "demands", demands.toString())),
+                target);
     }
 
     /**
@@ -113,7 +128,7 @@ public final class QuestionText {
     public static QuestionText builtIn(final String instructions) {
         final Templates templates = Templates.builtIn();
         return new QuestionText(templates, templates.render(Template.SYSTEM,
-                Map.of("instructions", instructions(instructions), "demands", "")));
+                Map.of("instructions", instructions(instructions), "demands", "")), TargetSchema.DEFAULT);
     }
 
     public static QuestionText of(final LearningFlow flow) {
@@ -184,10 +199,16 @@ public final class QuestionText {
         variables.put("headers", headers(question.sample()));
         variables.put("kind", String.valueOf(question.kind()));
         variables.put("total", String.valueOf(question.total()));
-        variables.put("transformationRules", templates.text(Template.TRANSFORMATION_RULES));
+        variables.put("transformationRules", transformationRules());
         variables.put("record", fenced(question.record()));
         variables.put("feedback", feedback(question.feedback()));
         return templates.render(Template.TARGET, variables);
+    }
+
+    /// The transformation rules, naming the root of the target schema's events. Filled before they go into a
+    /// question, since a question's variables are filled in one pass and a slot in a value is left as it is.
+    private String transformationRules() {
+        return templates.render(Template.TRANSFORMATION_RULES, Map.of("targetRoot", target.eventsOpen()));
     }
 
     private String configuration(final Configuration question) {
@@ -196,9 +217,9 @@ public final class QuestionText {
         variables.put("headers", headers(question.sample()));
         variables.put("elementType", question.elementType());
         variables.put("documentType", question.documentType());
-        variables.put("rules", templates.text(extraction
-                ? Template.EXTRACTION_RULES
-                : Template.TRANSFORMATION_RULES));
+        variables.put("rules", extraction
+                ? templates.text(Template.EXTRACTION_RULES)
+                : transformationRules());
         variables.put("input", shown(question.input()) + ownMarkup(extraction, question.input()));
         variables.put("split", split(question.split(), question.oneRecord(), question.records(),
                 question.otherKinds()));

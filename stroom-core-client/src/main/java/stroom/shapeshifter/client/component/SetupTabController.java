@@ -26,6 +26,7 @@ import stroom.shapeshifter.shared.ScorerSetting;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -35,7 +36,8 @@ import java.util.List;
 import java.util.Map;
 
 /// A Shapeshifter AI document's Setup tab ([SetupTab]): reads the document into its parts and writes it
-/// back. The model is chosen from the `stroom-ai` model documents the user may use; the checks are
+/// back. The model is chosen from the `stroom-ai` model documents the user may use, and the target schema
+/// from the XML schema documents the user may see (none chosen is the default, event-logging v3.0.0); the checks are
 /// [ScorerListController]'s, and the approach, with the step chosen, [ApproachSectionController]'s. Choosing
 /// a starting set of checks replaces the checks, and asks first where that would lose checks of the
 /// document's own. The fallback, chosen under Approving new translations, is a step of the approach's flow,
@@ -54,6 +56,7 @@ public class SetupTabController extends Controller {
 
     private final SetupTab view;
     private final DocSelectionController modelSelection;
+    private final DocSelectionController targetSchemaSelection;
     private final ScorerListController scorerList;
     private final ApproachSectionController approach;
     /// The document as last read, which what the tab shows is written over to sum it up.
@@ -86,10 +89,16 @@ public class SetupTabController extends Controller {
         modelSelection.attach(view.getModelBox());
         modelSelection.setIncludedTypes(OpenAIModelDoc.TYPE);
         modelSelection.setRequiredPermissions(DocumentPermission.USE);
+        // A schema the user can see: what judges a translation is read as the processing user
+        targetSchemaSelection = make(docSelectionProvider);
+        targetSchemaSelection.attach(view.getTargetSchemaBox());
+        targetSchemaSelection.setIncludedTypes(XmlSchemaDoc.TYPE);
+        targetSchemaSelection.setRequiredPermissions(DocumentPermission.VIEW);
         this.scorerList = own(scorerList).attach(view.getScorerList());
         this.approach = own(approach).attach(view.getApproach());
 
         own(modelSelection.addSelectionListener(docRef -> changed()));
+        own(targetSchemaSelection.addSelectionListener(docRef -> changed()));
         view.setOnChange(this::changed);
         view.setOnMaxAttempts(() -> {
             approach.setDefaultTries(view.getMaxAttempts());
@@ -125,6 +134,7 @@ public class SetupTabController extends Controller {
             this.readOnly = readOnly;
             view.setReadOnly(readOnly);
             modelSelection.setReadOnly(readOnly);
+            targetSchemaSelection.setReadOnly(readOnly);
             // The map offers Add step only where the document can be changed
             showSummary();
         });
@@ -141,6 +151,7 @@ public class SetupTabController extends Controller {
         view.foldAdvanced();
         view.setLearningMode(doc.getLearningMode());
         modelSelection.setSelectedEntityReference(doc.getModel(), true);
+        targetSchemaSelection.setSelectedEntityReference(doc.getTargetSchema(), true);
         view.setInstructions(doc.getInstructions());
 
         view.setMaxAttempts(doc.getMaxAttempts());
@@ -173,6 +184,7 @@ public class SetupTabController extends Controller {
         return approach.write(doc.copy()
                 .learningMode(view.getLearningMode())
                 .model(modelSelection.getSelectedEntityReference())
+                .targetSchema(targetSchemaSelection.getSelectedEntityReference())
                 .instructions(view.getInstructions())
                 .maxAttempts(view.getMaxAttempts())
                 .attemptBudgetMs(view.getAttemptBudgetMs())
@@ -218,6 +230,11 @@ public class SetupTabController extends Controller {
     /// Puts the focus on the model picker, where the Feeds tab sends a person to choose a model.
     public void focusModel() {
         view.focusModel();
+    }
+
+    /// Puts the focus on the target schema picker, where the Feeds tab sends a person to choose one.
+    public void focusTargetSchema() {
+        view.focusTargetSchema();
     }
 
     /// Puts a starting set of checks in place, as the Feeds tab's readiness check offers for a document with

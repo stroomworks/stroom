@@ -53,7 +53,7 @@ import com.google.gwt.user.client.ui.Widget;
 /// | `GET` and `PUT /shapeshifterAi/v1/{uuid}` | the document, fetched and saved |
 /// | `GET /shapeshifterAi/v1/templates` | the built-in texts the Setup tab's question texts start from |
 /// | `POST /shapeshifterAiSupervisor/v1/learners` | the document's feeds |
-/// | `POST /explorer/v2/decorate` and `getFromDocRef` | the Setup tab's model picker |
+/// | `POST /explorer/v2/decorate` and `getFromDocRef` | the Setup tab's model and target schema pickers |
 /// | the Permissions tab's routes | the Permissions tab |
 public final class ShapeshifterAiEditorStories {
 
@@ -61,6 +61,9 @@ public final class ShapeshifterAiEditorStories {
     // A FormGroup gives its control the group's identity as its id
     private static final String WEIGHT = "#scorerWeight";
     private static final String MAP = "Setup route map";
+    private static final String TARGET_SCHEMA = "#shapeshifterAiTargetSchema";
+    private static final String NO_TARGET_SCHEMA =
+            "No target schema is chosen, so the AI has no schema to write to.";
     private static final String FEED_FILTER = "Which pipelines to show";
     private static final String FEEDS_FILTERED = "Pipelines are being filtered; click to change or clear";
 
@@ -152,6 +155,7 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(play.findByText("This document won't learn anything yet")).toBeInTheDocument();
                     play.expect(play.getByText("There are no quality checks, so every answer would pass."))
                             .toBeInTheDocument();
+                    play.expect(play.getByText(NO_TARGET_SCHEMA)).toBeInTheDocument();
                     play.click(play.getByRole("button", StroomDom.button("Switch on")));
                     play.expect(play.findByRole("radio", "On: learn new feeds automatically")).toBeChecked();
                     openTab(play, "Pipelines");
@@ -172,6 +176,8 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(play.findByText("This document won't learn anything yet")).toBeInTheDocument();
                     play.expect(play.queryByRole("button", StroomDom.button("Switch on"))).toBeNull();
                     play.expect(play.getByRole("button", StroomDom.button("Choose a model"))).toBeInTheDocument();
+                    play.expect(play.getByRole("button", StroomDom.button("Choose a target schema")))
+                            .toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
                 // The Setup tab: learning, the model, what a run may spend and whether a person approves, saved
@@ -201,13 +207,68 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(play.findByRole("button", "Advanced options")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
+                // The target schema (D1): a document with none won't learn, which the banner says; its fix shows
+                // the field, and the route map says the section needs attention, and why
+                .story("SetupTargetSchema",
+                        context -> render(context, false, ShapeshifterAiFixtures.DOC_UNTARGETED))
+                .withPlay(play -> {
+                    play.expect(play.findByText(NO_TARGET_SCHEMA)).toBeInTheDocument();
+                    play.click(play.getByRole("button", StroomDom.button("Choose a target schema")));
+                    play.expect(play.findByRole("navigation", MAP)).toBeInTheDocument();
+                    final Play map = play.within(play.getByRole("navigation", MAP));
+                    // The problem is wrapped over lines on the map, and said whole in the station's name
+                    play.expect(map.getByRole("button", TextMatch.containing(
+                            "AI model and instructions: needs attention. " + NO_TARGET_SCHEMA))).toBeInTheDocument();
+                    play.waitFor(() -> play.expect(play.querySelector(TARGET_SCHEMA)).toBeVisible());
+                    DocEditors.expectNoProblems(play);
+                })
+                // A document naming its own target schema shows it, says so on the route map, and keeps it
+                // when something else on the tab is changed and saved
+                .story("SetupTargetSchemaChosen",
+                        context -> render(context, false, ShapeshifterAiFixtures.DOC_TARGETED))
+                .withPlay(play -> {
+                    openStop(play, "AI model and instructions:");
+                    final Play map = play.within(play.findByRole("navigation", MAP));
+                    play.expect(map.getByRole("button", TextMatch.startingWith("AI model and instructions:")))
+                            .toHaveTextContent(TextMatch.containing("event-logging v4.1.0"));
+                    play.waitFor(() -> play.expect(play.querySelector(TARGET_SCHEMA))
+                            .toHaveTextContent(TextMatch.containing("event-logging v4.1.0")));
+                    play.click(play.findByRole("radio", "Off: translations in use keep working, new feeds wait"));
+                    save(play, "{\"learningMode\": \"DISABLED\", \"targetSchema\": "
+                               + "{\"uuid\": \"befcc474-36e4-4db4-a610-bd1fe6825cb1\"}}");
+                })
+                // Read only, the target schema can be read but not changed
+                .story("SetupTargetSchemaReadOnly",
+                        context -> render(context, true, ShapeshifterAiFixtures.DOC_TARGETED))
+                .withPlay(play -> {
+                    openStop(play, "AI model and instructions:");
+                    play.waitFor(() -> play.expect(play.querySelector(TARGET_SCHEMA))
+                            .toHaveTextContent(TextMatch.containing("event-logging v4.1.0")));
+                    play.expect(play.querySelector(TARGET_SCHEMA + " [aria-disabled='true']")).toBeInTheDocument();
+                    DocEditors.expectNoProblems(play);
+                })
+                // The schema conformance check has no settings of its own: its dialog says it validates against
+                // the target schema, and OK changes nothing it holds
+                .story("ScorerDialogSchemaConformance",
+                        context -> render(context, false, ShapeshifterAiFixtures.DOC_TARGETED))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    openScorer(play, "Valid against the event schema");
+                    play.expect(screen.getByText(TextMatch.startingWith(
+                            "Each record is validated against the Learning Flow's target schema"))).toBeVisible();
+                    play.click(screen.getByRole("button", StroomDom.button("Cancel")));
+                    play.waitFor(() -> play.expect(screen.queryByText("Scorer", StroomDom.DIALOG_TITLE)).toBeNull());
+                    play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
+                    DocEditors.expectNoProblems(play);
+                })
                 // The route map says what each section is set to; choosing a stop marks it and shows its part,
                 // alone
                 .story("SetupRouteMap", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
                     final Play map = play.within(play.findByRole("navigation", MAP));
-                    play.expect(map.findByRole("button", "AI model and instructions: On · GPT-4o"))
+                    play.expect(map.findByRole("button",
+                            "AI model and instructions: On · GPT-4o · event-logging v3.0.0"))
                             .toHaveAttribute("aria-current", "location");
                     play.expect(play.getByRole("region", "AI model and instructions")).toBeVisible();
                     play.expect(map.getByRole("button", "Learning steps: Its own approach · 2 steps"))

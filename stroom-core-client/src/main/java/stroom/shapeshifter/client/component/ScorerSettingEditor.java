@@ -62,8 +62,6 @@ public class ScorerSettingEditor extends Component {
     @UiField
     FlowPanel schemaConformanceParameters;
     @UiField
-    TextBox schemaGroup;
-    @UiField
     FlowPanel extractionQualityParameters;
     @UiField
     TickBox allowUnknownEventDetail;
@@ -193,16 +191,6 @@ public class ScorerSettingEditor extends Component {
         basis.setValue(value);
     }
 
-    /// @return The schema group entered.
-    public String getSchemaGroup() {
-        return schemaGroup.getValue();
-    }
-
-    /// @param value The schema group.
-    public void setSchemaGroup(final String value) {
-        schemaGroup.setValue(value);
-    }
-
     /// @return Whether records classified as Unknown are tolerated.
     public boolean isAllowUnknownEventDetail() {
         return allowUnknownEventDetail.getValue();
@@ -267,7 +255,6 @@ public class ScorerSettingEditor extends Component {
         gate.setReadOnly(readOnly);
         expectedRatio.setReadOnly(readOnly);
         basis.setReadOnly(readOnly);
-        schemaGroup.setReadOnly(readOnly);
         allowUnknownEventDetail.setReadOnly(readOnly);
         requiredFields.setReadOnly(readOnly);
         includeTransformMessages.setReadOnly(readOnly);

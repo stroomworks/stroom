@@ -17,6 +17,8 @@
 package stroom.shapeshifter.ai.doc;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.Store;
+import stroom.docstore.api.StoreFactory;
 import stroom.docstore.impl.Serialiser2FactoryImpl;
 import stroom.docstore.impl.StoreFactoryImpl;
 import stroom.docstore.impl.memory.MemoryPersistence;
@@ -51,11 +53,41 @@ final class ShapeshifterAiFixture {
     }
 
     static ShapeshifterAiStoreImpl store() {
-        final MockSecurityContext securityContext = new MockSecurityContext();
+        return store(EventLoggingSchemas.NONE);
+    }
+
+    static ShapeshifterAiStoreImpl store(final EventLoggingSchemas eventLogging) {
+        return store(eventLogging, storeFactory());
+    }
+
+    /// @param eventLogging The event-logging schemas installed.
+    /// @param storeFactory What the store persists through, which a test may also write through underneath it.
+    /// @return A store.
+    static ShapeshifterAiStoreImpl store(final EventLoggingSchemas eventLogging, final StoreFactory storeFactory) {
         return new ShapeshifterAiStoreImpl(
-                new StoreFactoryImpl(new MemoryPersistence(), null, securityContext, null, () -> null),
-                securityContext,
-                new ShapeshifterAiSerialiser(new Serialiser2FactoryImpl()));
+                storeFactory,
+                new MockSecurityContext(),
+                serialiser(),
+                eventLogging);
+    }
+
+    /// @return A store factory over its own in-memory persistence.
+    static StoreFactory storeFactory() {
+        return new StoreFactoryImpl(new MemoryPersistence(), null, new MockSecurityContext(), null, () -> null);
+    }
+
+    /// The persistence beneath a store, for writing a document as a store before this one would have: with
+    /// none of what the store adds on create and save.
+    ///
+    /// @param storeFactory What the store persists through.
+    /// @return A store of the persistence alone.
+    static Store<ShapeshifterAiDoc> raw(final StoreFactory storeFactory) {
+        return storeFactory.createStore(serialiser(), ShapeshifterAiDoc.TYPE, ShapeshifterAiDoc::builder,
+                ShapeshifterAiDoc::copy, () -> null);
+    }
+
+    private static ShapeshifterAiSerialiser serialiser() {
+        return new ShapeshifterAiSerialiser(new Serialiser2FactoryImpl());
     }
 
     static ShapeshifterAiDoc.Builder configured(final ShapeshifterAiDoc doc) {

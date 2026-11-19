@@ -40,6 +40,7 @@ public class ShapeshifterAiModule extends AbstractModule {
         GuiceUtil.buildMultiBinder(binder(), SupervisedPipelines.class)
                 .addBinding(SupervisedPipelineCheck.class);
         bind(ContentCreator.class).to(ExplorerContentCreator.class);
+        bind(EventLoggingSchemas.class).to(StoreEventLoggingSchemas.class);
 
         DocumentStoreBinder.create(binder())
                 .bind(ShapeshifterAiDoc.TYPE, ShapeshifterAiStore.class, ShapeshifterAiStoreImpl.class);

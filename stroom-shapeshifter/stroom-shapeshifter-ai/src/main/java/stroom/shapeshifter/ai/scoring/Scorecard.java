@@ -28,6 +28,7 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -47,8 +48,19 @@ public final class Scorecard {
 
     private final List<ScorerSetting> settings;
     private final Map<ScorerType, Scorer> scorers;
+    private final TargetSchema target;
 
+    /// A scorecard judging against the default target schema, event-logging v3.0.0: for a test or a harness
+    /// that has no document's target to hand.
     public Scorecard(final List<ScorerSetting> settings, final List<Scorer> scorers) {
+        this(settings, scorers, TargetSchema.DEFAULT);
+    }
+
+    /// @param settings The document's scorer settings, in its order.
+    /// @param scorers  The scorers installed, one per type.
+    /// @param target   The schema the document's translations must conform to (D1).
+    public Scorecard(final List<ScorerSetting> settings, final List<Scorer> scorers, final TargetSchema target) {
+        this.target = Objects.requireNonNull(target, "target");
         this.settings = List.copyOf(settings);
         this.scorers = scorers.stream().collect(Collectors.toUnmodifiableMap(Scorer::type, Function.identity()));
         for (final ScorerSetting setting : settings) {
@@ -65,7 +77,7 @@ public final class Scorecard {
      */
     public Scorecard meaning() {
         return new Scorecard(settings.stream().filter(setting -> MEANING.contains(setting.getType())).toList(),
-                List.copyOf(scorers.values()));
+                List.copyOf(scorers.values()), target);
     }
 
     /// This scorecard with only the scorers a flow step names as its checks (A37), and the compile gate,
@@ -74,7 +86,7 @@ public final class Scorecard {
         return new Scorecard(settings.stream()
                 .filter(setting -> setting.getType() == ScorerType.COMPILE
                                    || checks.contains(Check.of(setting.getType())))
-                .toList(), List.copyOf(scorers.values()));
+                .toList(), List.copyOf(scorers.values()), target);
     }
 
     /// The outcome of a verdict (A37): passed, or the shortfall that decided it — a failed gate before any
@@ -129,12 +141,17 @@ public final class Scorecard {
         return Check.of(judgement.setting().getType()) != null;
     }
 
+    /// @return The schema this scorecard judges conformance to, and a proposed target is wrapped for.
+    public TargetSchema target() {
+        return target;
+    }
+
     public Verdict judge(final Attempted step) {
         final List<Judgement> judgements = new ArrayList<>();
         double weightedSum = 0.0;
         double weights = 0.0;
         for (final ScorerSetting setting : settings) {
-            final Optional<Score> score = scorers.get(setting.getType()).score(setting.getParameters(), step);
+            final Optional<Score> score = scorers.get(setting.getType()).score(setting.getParameters(), step, target);
             if (score.isPresent()) {
                 judgements.add(new Judgement(setting, score.get()));
                 weightedSum += setting.getWeight() * score.get().value();

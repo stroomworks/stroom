@@ -36,6 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TestSetupSummary {
 
+    private static final DocRef EVENTS_V3 = new DocRef("XMLSchema", "4fe14042-770e-4297-8711-d92e607bc4d5",
+            "event-logging v3.0.0");
+
     @Test
     void aDocumentWithEverythingSaysWhatEachSectionIsSetTo() {
         final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder()
@@ -43,6 +46,7 @@ class TestSetupSummary {
                 .name("Firewall logs")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
+                .targetSchema(EVENTS_V3)
                 .scorers(QualityPreset.STANDARD.getSettings())
                 .flow(LearningFlow.of(FlowExample.DIRECT))
                 .promotionFloor(0.8)
@@ -50,7 +54,7 @@ class TestSetupSummary {
                 .relearnThreshold(0.6)
                 .build());
 
-        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o");
+        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o · event-logging v3.0.0");
         // The fallback is a step of the flow, but not a card
         assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Straight to it · 3 steps");
         assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 4 checks");
@@ -66,8 +70,8 @@ class TestSetupSummary {
         // Learning off, no model, no checks, the direct flow
         final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder().uuid("new").name("New").build());
 
-        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("Off · no model");
-        // Learning off and no model are both fixed under Learning: the first is shown
+        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("Off · no model · no target schema");
+        // Learning off, no model and no target schema are all fixed under Learning: the first is shown
         assertThat(summary.problem(SetupSection.LEARNING))
                 .isEqualTo("Learning is switched off, so streams of new feeds wait.");
         assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("No checks");
@@ -112,10 +116,35 @@ class TestSetupSummary {
                 .name("Unnamed model")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", null))
+                .targetSchema(EVENTS_V3)
                 .build());
 
-        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · a model");
+        assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · a model · event-logging v3.0.0");
         assertThat(summary.problem(SetupSection.LEARNING)).isNull();
+    }
+
+    /// The route map names the target schema (D1), so that what a Learning Flow writes to is seen without
+    /// opening the section; where none is chosen, that is said, and is the section's problem.
+    @Test
+    void theTargetSchemaIsNamedUnderAiModelAndInstructions() {
+        final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .name("Version 4")
+                .learningMode(LearningMode.AUTOMATIC)
+                .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
+                .targetSchema(new DocRef("XMLSchema", "s-1", "event-logging v4.1.0"))
+                .build();
+
+        assertThat(SetupSummary.of(doc).summary(SetupSection.LEARNING))
+                .isEqualTo("On · GPT-4o · event-logging v4.1.0");
+        assertThat(SetupSummary.of(doc.copy().targetSchema(new DocRef("XMLSchema", "s-1", null)).build())
+                .summary(SetupSection.LEARNING))
+                .describedAs("a schema with no name is still said to be chosen")
+                .isEqualTo("On · GPT-4o · a schema");
+        final SetupSummary none = SetupSummary.of(doc.copy().targetSchema(null).build());
+        assertThat(none.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o · no target schema");
+        assertThat(none.problem(SetupSection.LEARNING))
+                .isEqualTo("No target schema is chosen, so the AI has no schema to write to.");
     }
 
     @Test

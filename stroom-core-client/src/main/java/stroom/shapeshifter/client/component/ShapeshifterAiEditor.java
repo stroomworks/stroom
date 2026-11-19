@@ -134,6 +134,7 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
             }
             // Once the tab is on the page and scrolled
             case CHOOSE_MODEL -> Scheduler.get().scheduleDeferred(setup::focusModel);
+            case CHOOSE_TARGET_SCHEMA -> Scheduler.get().scheduleDeferred(setup::focusTargetSchema);
             case USE_STANDARD_CHECKS -> {
                 if (editable) {
                     setup.usePreset(QualityPreset.STANDARD);

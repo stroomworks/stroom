@@ -62,6 +62,7 @@ import java.util.Objects;
         "description",
         "learningMode",
         "model",
+        "targetSchema",
         "relearnThreshold",
         "instructions",
         "flow",
@@ -121,6 +122,12 @@ public class ShapeshifterAiDoc extends AbstractDoc {
      */
     @JsonProperty
     private final DocRef model;
+    /// The XML schema every translation this document learns must conform to (D1): what the questions ask
+    /// the AI to write, what a proposed target is wrapped in, and what the schema conformance check validates
+    /// against. One version, not a group. A new document is given the latest event-logging version installed,
+    /// and null means none is chosen, so nothing is learned until one is.
+    @JsonProperty
+    private final DocRef targetSchema;
     /**
      * The rolling per-record score below which a bound learner is marked for relearning (A29, §5), so that a
      * new kind of record reaching a bound learner — which its binding goes on serving — is still learned.
@@ -232,11 +239,13 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             @JsonProperty("minRecordsToLearn") final Integer minRecordsToLearn,
             @JsonProperty("regressionCap") final Integer regressionCap,
             @JsonProperty("regressionRetentionDays") final Integer regressionRetentionDays,
-            @JsonProperty("scorers") final List<ScorerSetting> scorers) {
+            @JsonProperty("scorers") final List<ScorerSetting> scorers,
+            @JsonProperty("targetSchema") final DocRef targetSchema) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.learningMode = Objects.requireNonNullElse(learningMode, DEFAULT_LEARNING_MODE);
         this.model = model;
+        this.targetSchema = targetSchema;
         this.relearnThreshold = Objects.requireNonNullElse(relearnThreshold, DEFAULT_RELEARN_THRESHOLD);
         this.instructions = instructions;
         // A document written before the flow was named so carried it as "plan" (A81): the store's
@@ -283,6 +292,12 @@ public class ShapeshifterAiDoc extends AbstractDoc {
 
     public DocRef getModel() {
         return model;
+    }
+
+    /// @return The XML schema document every translation must conform to, or null for the default
+    ///         (event-logging v3.0.0).
+    public DocRef getTargetSchema() {
+        return targetSchema;
     }
 
     public double getRelearnThreshold() {
@@ -379,6 +394,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                Objects.equals(flow, that.flow) &&
                promotionMode == that.promotionMode &&
                Objects.equals(model, that.model) &&
+               Objects.equals(targetSchema, that.targetSchema) &&
                Objects.equals(instructions, that.instructions) &&
                Objects.equals(tokenBudget, that.tokenBudget) &&
                maxDeferralAgeMs == that.maxDeferralAgeMs &&
@@ -392,6 +408,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                 description,
                 learningMode,
                 model,
+                targetSchema,
                 relearnThreshold,
                 instructions,
                 flow,
@@ -415,6 +432,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                "name='" + getName() + '\'' +
                ", learningMode=" + learningMode +
                ", model=" + model +
+               ", targetSchema=" + targetSchema +
                ", relearnThreshold=" + relearnThreshold +
                ", flow=" + flow +
                ", maxAttempts=" + maxAttempts +
@@ -448,6 +466,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         private String description;
         private LearningMode learningMode = DEFAULT_LEARNING_MODE;
         private DocRef model;
+        private DocRef targetSchema;
         private double relearnThreshold = DEFAULT_RELEARN_THRESHOLD;
         private String instructions;
         private LearningFlow flow = DEFAULT_FLOW;
@@ -472,6 +491,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             this.description = doc.description;
             this.learningMode = doc.learningMode;
             this.model = doc.model;
+            this.targetSchema = doc.targetSchema;
             this.relearnThreshold = doc.relearnThreshold;
             this.instructions = doc.instructions;
             this.flow = doc.flow;
@@ -501,6 +521,14 @@ public class ShapeshifterAiDoc extends AbstractDoc {
 
         public Builder model(final DocRef model) {
             this.model = model;
+            return self();
+        }
+
+        /// @param targetSchema The XML schema document every translation must conform to, or null for none
+        ///                     chosen.
+        /// @return This builder.
+        public Builder targetSchema(final DocRef targetSchema) {
+            this.targetSchema = targetSchema;
             return self();
         }
 
@@ -612,7 +640,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                     description,
                     learningMode,
                     model,
-                        relearnThreshold,
+                    relearnThreshold,
                     instructions,
                     flow,
                     maxAttempts,
@@ -626,7 +654,8 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                     minRecordsToLearn,
                     regressionCap,
                     regressionRetentionDays,
-                    scorers);
+                    scorers,
+                    targetSchema);
         }
     }
 }

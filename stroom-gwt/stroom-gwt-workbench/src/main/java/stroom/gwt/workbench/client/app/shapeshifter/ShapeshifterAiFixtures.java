@@ -28,9 +28,9 @@ final class ShapeshifterAiFixtures {
 
     static final DocRef DOC_REF = new DocRef(ShapeshifterAiDoc.TYPE, "ss-1", "Firewall logs");
 
-    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, two checks (a compile gate, and business
-    /// rules with one assertion), and a flow of two steps, the second going back to the first when it
-    /// doesn't read all the input.
+    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, event-logging v3.0.0 as its target schema, two
+    /// checks (a compile gate, and business rules with one assertion), and a flow of two steps, the second
+    /// going back to the first when it doesn't read all the input.
     static final String DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "description": "# Firewall logs",
@@ -45,6 +45,8 @@ final class ShapeshifterAiFixtures {
                       "xpath": "EventDetail/Authenticate/User/Id != ''"}]}}],
               "learningMode": "AUTOMATIC",
               "model": {"type": "OpenAIModel", "uuid": "model-1", "name": "GPT-4o"},
+              "targetSchema": {"type": "XMLSchema", "uuid": "4fe14042-770e-4297-8711-d92e607bc4d5",
+                "name": "event-logging v3.0.0"},
               "instructions": "Prefer the standard schema.", "maxAttempts": 3,
               "attemptBudgetMs": 300000, "tokenBudget": 0, "sampleSizeLimit": 65536,
               "maxDeferralAgeMs": 86400000,
@@ -54,8 +56,8 @@ final class ShapeshifterAiFixtures {
                   {"kind": "CONFIGURE", "role": "PARSER", "id": "parse",
                     "transitions": [{"on": "COVERAGE_SHORT", "goTo": "chain"}]}]}}""";
 
-    /// A document as it is made: learning off, no model, no checks, the direct flow. It won't learn
-    /// anything, and its Pipelines tab says so.
+    /// A document as it is made where no event-logging schema is installed: learning off, no model, no target
+    /// schema, no checks, the direct flow. It won't learn anything, and its Pipelines tab says so.
     static final String NEW_DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "promotionMode": "AUTOMATIC", "promotionFloor": 0.9, "heldOutFraction": 0.2,
@@ -72,6 +74,22 @@ final class ShapeshifterAiFixtures {
     /// the AI can't learn.
     static final String DOC_UNLEARNABLE = DOC.replace("{\"kind\": \"CHAIN\", \"id\": \"chain\"}",
             "{\"kind\": \"CHAIN\", \"id\": \"chain\", \"elements\": [\"XMLParser\", \"XSLTFilter\"]}");
+
+    /// [#DOC] with event-logging v4.1.0 as its target schema (D1), and with a schema conformance check, which
+    /// validates against it.
+    static final String DOC_TARGETED = DOC.replace(
+            "{\"type\": \"COMPILE\", \"weight\": 1.0, \"threshold\": 1.0, \"gate\": true},",
+            "{\"type\": \"COMPILE\", \"weight\": 1.0, \"threshold\": 1.0, \"gate\": true}, "
+            + "{\"type\": \"SCHEMA_CONFORMANCE\", \"weight\": 1.0, \"threshold\": 1.0, \"gate\": true, "
+            + "\"parameters\": {\"type\": \"schemaConformance\"}},").replace(
+            "\"uuid\": \"4fe14042-770e-4297-8711-d92e607bc4d5\",\n    \"name\": \"event-logging v3.0.0\"",
+            "\"uuid\": \"befcc474-36e4-4db4-a610-bd1fe6825cb1\", \"name\": \"event-logging v4.1.0\"");
+
+    /// [#DOC] with no target schema (D1): learning on and a model, but nothing for the AI to write to, so it
+    /// won't learn anything.
+    static final String DOC_UNTARGETED = DOC.replace(
+            "\"targetSchema\": {\"type\": \"XMLSchema\", \"uuid\": \"4fe14042-770e-4297-8711-d92e607bc4d5\",\n"
+            + "    \"name\": \"event-logging v3.0.0\"},\n  ", "");
 
     /// `GET /shapeshifterAi/v1/templates`: the built-in texts.
     static final String TEMPLATES = """

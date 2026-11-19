@@ -42,7 +42,7 @@ public final class Templates {
     /**
      * Raised when the built-in text changes in a way a stored run should be told apart from.
      */
-    public static final int VERSION = 6;
+    public static final int VERSION = 7;
 
     private static final Map<Template, String> BUILT_IN = new EnumMap<>(Template.class);
 
@@ -240,8 +240,7 @@ public final class Templates {
             ```""");
         BUILT_IN.put(Template.TRANSFORMATION_RULES, """
             The stylesheet reads records:2 (use xpath-default-namespace="records:2") and writes event-logging:3 \
-            events: <Events xmlns="event-logging:3" xsi:schemaLocation="event-logging:3 \
-            file://event-logging-v3.0.0.xsd" Version="3.0.0"> holding one <Event> per record. Every Event needs \
+            events: ${targetRoot} holding one <Event> per record. Every Event needs \
             EventTime/TimeCreated, EventSource and EventDetail, in that order. EventSource needs System (Name, \
             Environment), Generator and one of Device, Client, Server or Door, and should name the User where the \
             input has one. EventDetail needs TypeId and then exactly one branch describing what happened, from \

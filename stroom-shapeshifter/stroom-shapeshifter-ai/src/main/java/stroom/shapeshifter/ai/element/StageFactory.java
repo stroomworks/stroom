@@ -55,6 +55,7 @@ import stroom.shapeshifter.ai.stage.RegressionSet;
 import stroom.shapeshifter.ai.stage.Snapshots;
 import stroom.shapeshifter.ai.stage.Spend;
 import stroom.shapeshifter.ai.stage.Stage;
+import stroom.shapeshifter.ai.stage.TargetSchemas;
 import stroom.shapeshifter.ai.stage.Wake;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.FlowStep;
@@ -108,6 +109,7 @@ public class StageFactory {
     private final Places places;
     private final Snapshots snapshots;
     private final FragmentCodes codes;
+    private final TargetSchemas targets;
     private final Provider<ShapeshifterAiConfig> configProvider;
 
     @Inject
@@ -139,6 +141,7 @@ public class StageFactory {
                         final Places places,
                         final Snapshots snapshots,
                         final FragmentCodes codes,
+                        final TargetSchemas targets,
                         final Provider<ShapeshifterAiConfig> configProvider) {
         this.advisors = advisors;
         this.dataSplitterCompiler = dataSplitterCompiler;
@@ -168,6 +171,7 @@ public class StageFactory {
         this.places = places;
         this.snapshots = snapshots;
         this.codes = codes;
+        this.targets = targets;
         this.configProvider = configProvider;
     }
 
@@ -208,6 +212,7 @@ public class StageFactory {
                 places,
                 snapshots,
                 codes,
+                targets,
                 Clock.systemUTC(),
                 configProvider.get().getSessionLease().getDuration(),
                 ThreadLocalRandom.current().nextLong(),

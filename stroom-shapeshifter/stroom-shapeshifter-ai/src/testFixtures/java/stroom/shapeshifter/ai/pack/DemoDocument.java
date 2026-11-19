@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.pack;
 
+import stroom.docref.DocRef;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
@@ -25,6 +26,7 @@ import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import java.util.List;
 
@@ -41,6 +43,13 @@ import java.util.List;
 /// into a document and go stale against it. The model reference and the feeds belong to the pack,
 /// since the scenario has neither.
 public final class DemoDocument {
+
+    /// The target schema (D1): event-logging v3.0.0, as Stroom's event-logging content pack names it. It is the
+    /// version scenario 51 proved these settings against, so the demo names it rather than the latest.
+    public static final DocRef TARGET_SCHEMA = XmlSchemaDoc.buildDocRef()
+            .uuid("4fe14042-770e-4297-8711-d92e607bc4d5")
+            .name("event-logging v3.0.0")
+            .build();
 
     /// Every parser the stage knows how to write a configuration for. Narrowing this list is what every
     /// format scenario before 51 did, and it is exactly what a person setting up an unknown feed cannot
@@ -84,7 +93,7 @@ public final class DemoDocument {
                 new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
                         new YieldParameters(1.0, YieldBasis.RECORDS)),
                 new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
-                        new SchemaConformanceParameters("EVENTS")),
+                        new SchemaConformanceParameters()),
                 new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
                         new ExtractionQualityParameters(false, List.of())));
     }
@@ -102,6 +111,7 @@ public final class DemoDocument {
     public static ShapeshifterAiDoc.Builder configure(final ShapeshifterAiDoc.Builder builder) {
         return builder
                 .learningMode(LearningMode.AUTOMATIC)
+                .targetSchema(TARGET_SCHEMA)
                 .flow(FlowExample.ESCALATING)
                 .allowedElements(ALLOWED_ELEMENTS)
                 .instructions(INSTRUCTIONS)

@@ -21,9 +21,11 @@
     width: 120px;
 }
 
-/* A short name, e.g. a schema group */
-.scorer-setting-editor__text {
-    width: 300px;
+/* What a check with no settings of its own judges against, e.g. schema conformance's target */
+.scorer-setting-editor__note {
+    color: var(--text-color--low-emphasis);
+    font-size: 12px;
+    max-width: 500px;
 }
 
 /* A list typed one item per line: required fields' XPaths, recognised type ids */

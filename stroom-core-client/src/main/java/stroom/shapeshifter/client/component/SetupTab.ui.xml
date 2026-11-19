@@ -25,8 +25,8 @@
                          tabIndex="-1">
                 <g:HTMLPanel styleName="setup-tab__head">
                     <h2 class="setup-tab__title">AI model and instructions</h2>
-                    <span class="setup-tab__question">Whether new feeds are learned, which model learns them, and what
-                        it is told</span>
+                    <span class="setup-tab__question">Whether new feeds are learned, which model learns them, what
+                        it is told, and the schema it writes to</span>
                 </g:HTMLPanel>
                 <form:FormGroup identity="shapeshifterAiLearningMode"
                                 label="Learning"
@@ -37,6 +37,11 @@
                                 label="Model"
                                 helpText="The OpenAI-compatible model the learning runs ask. A feed's data is sent to it as it is, so choose one the data may go to.">
                     <dd:DropDownBox ui:field="model"/>
+                </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiTargetSchema"
+                                label="Target schema"
+                                helpText="The XML schema version every translation must conform to. The AI is asked for events of it, and the schema conformance check validates against it, so changing it changes both. A new Learning Flow starts with the latest event-logging version installed; moving to another is a change you make here, and applies to what is learned next. Only event-logging schemas can be learned against so far.">
+                    <dd:DropDownBox ui:field="targetSchema"/>
                 </form:FormGroup>
                 <form:FormGroup identity="shapeshifterAiInstructions"
                                 label="Instructions to the AI"

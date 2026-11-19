@@ -54,7 +54,8 @@ import java.util.function.Consumer;
 /// "Advanced options" ([Disclosure], [AdvancedSettings]), and the steps are on the map only once someone
 /// customises them, or they are no starting point, or something is wrong with them.
 ///
-/// The parts: **AI model and instructions**: whether it learns, the model and the instructions. **Learning steps**:
+/// The parts: **AI model and instructions**: whether it learns, the model, the target schema and the instructions.
+/// **Learning steps**:
 /// which starting point the steps are, showing or hiding them, Load default setup (a menu of the starting points,
 /// once they are shown), what is wrong with the flow as a whole, and what a run may spend; under Advanced options,
 /// the tries per step and the largest sample. **A step**: its card and question text ([ApproachSection]).
@@ -89,6 +90,8 @@ public class SetupTab extends Component {
     RadioGroup<LearningMode> learningMode;
     @UiField
     DropDownBox model;
+    @UiField
+    DropDownBox targetSchema;
     @UiField
     TextArea instructions;
     @UiField
@@ -272,6 +275,11 @@ public class SetupTab extends Component {
         return model;
     }
 
+    /// @return The target schema picker, which its controller attaches a document picker's controller to.
+    public DropDownBox getTargetSchemaBox() {
+        return targetSchema;
+    }
+
     /// @return Whether the document learns.
     public LearningMode getLearningMode() {
         return learningMode.getValue();
@@ -295,6 +303,11 @@ public class SetupTab extends Component {
     /// Puts the focus on the model picker, where a document with none is sent to choose one.
     public void focusModel() {
         model.focus();
+    }
+
+    /// Puts the focus on the target schema picker, where a document with none is sent to choose one.
+    public void focusTargetSchema() {
+        targetSchema.focus();
     }
 
     // ---- Learning steps ----

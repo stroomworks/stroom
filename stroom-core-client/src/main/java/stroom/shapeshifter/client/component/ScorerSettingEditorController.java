@@ -121,12 +121,11 @@ public class ScorerSettingEditorController extends Controller {
     }
 
     private void readParameters(final ScorerParameters parameters) {
+        // Nothing to show for schema conformance: it validates against the document's target schema.
         // GWT compiles instanceof patterns but not pattern switches.
         if (parameters instanceof final YieldParameters yield) {
             view.setExpectedRatio(yield.getExpectedRatio());
             view.setBasis(yield.getBasis());
-        } else if (parameters instanceof final SchemaConformanceParameters schema) {
-            view.setSchemaGroup(schema.getSchemaGroup());
         } else if (parameters instanceof final ExtractionQualityParameters quality) {
             view.setAllowUnknownEventDetail(quality.isAllowUnknownEventDetail());
             view.setRequiredFields(quality.getRequiredFields());
@@ -144,7 +143,7 @@ public class ScorerSettingEditorController extends Controller {
         return switch (type) {
             case COMPILE, INPUT_COVERAGE -> null;
             case YIELD -> new YieldParameters(view.getExpectedRatio(), view.getBasis());
-            case SCHEMA_CONFORMANCE -> new SchemaConformanceParameters(view.getSchemaGroup());
+            case SCHEMA_CONFORMANCE -> new SchemaConformanceParameters();
             case EXTRACTION_QUALITY -> new ExtractionQualityParameters(
                     view.isAllowUnknownEventDetail(), view.getRequiredFields());
             case BUSINESS_RULES -> new BusinessRulesParameters(

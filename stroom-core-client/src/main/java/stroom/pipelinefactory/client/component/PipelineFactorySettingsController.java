@@ -29,6 +29,7 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.client.component.ExpressionEditorController;
 import stroom.query.client.model.SimpleFieldSelectionListModel;
 import stroom.security.client.component.UserRefSelectionController;
+import stroom.security.shared.DocumentPermission;
 import stroom.security.shared.FindUserContext;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
@@ -94,6 +95,9 @@ public class PipelineFactorySettingsController extends Controller {
         template = make(docSelectionProvider);
         template.attach(view.getTemplateBox());
         template.setIncludedTypes(PipelineDoc.TYPE);
+        // The explorer offers nothing when no permission is required, so the chooser would be empty
+        template.setRequiredPermissions(DocumentPermission.VIEW);
+        template.setCaption("Choose Template");
         own(template.addSelectionListener(docRef -> onSettingChange()));
 
         runAsUser = make(runAsUserProvider).attach(view.getRunAsUserBox());

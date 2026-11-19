@@ -44,6 +44,7 @@ import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.ai.stage.LearnerBindings;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
+import stroom.shapeshifter.ai.stage.TargetSchemas;
 import stroom.shapeshifter.ai.state.InMemoryAttempts;
 import stroom.shapeshifter.ai.state.InMemoryDeferrals;
 import stroom.shapeshifter.ai.state.InMemoryDeletedPipelines;
@@ -212,6 +213,9 @@ public final class Scenarios {
                 places,
                 snapshots,
                 stores.codes(),
+                // A scenario's documents name no target schema: they learn against the default, which is
+                // the one schema the scenario's store holds
+                TargetSchemas.DEFAULT,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 LEASE,
                 SEED,

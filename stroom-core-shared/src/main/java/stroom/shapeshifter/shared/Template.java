@@ -36,7 +36,9 @@ public enum Template implements HasDisplayValue {
             "targets", "previous", "feedback", "marker", "admitted"),
     SPLIT_RULES("Split rules"),
     EXTRACTION_RULES("Extraction rules"),
-    TRANSFORMATION_RULES("Transformation rules");
+    /// `targetRoot` is the opening tag of the root a translation writes, naming the document's target schema
+    /// (D1).
+    TRANSFORMATION_RULES("Transformation rules", "targetRoot");
 
     private final String displayValue;
     private final String[] variables;

@@ -4,6 +4,7 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
              xmlns:l="urn:import:stroom.widget.selection.client"
              xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
              xmlns:s="urn:import:stroom.shapeshifter.client.component">
@@ -45,11 +46,8 @@
         </g:FlowPanel>
         <!-- Schema conformance -->
         <g:FlowPanel ui:field="schemaConformanceParameters" styleName="form">
-            <form:FormGroup identity="schemaGroup"
-                            label="Schema group"
-                            helpText="The XML schema group each record is validated against, e.g. EVENTS for event-logging.">
-                <form:TextBox ui:field="schemaGroup" addStyleNames="scorer-setting-editor__text"/>
-            </form:FormGroup>
+            <tx:Label styleName="scorer-setting-editor__note"
+                      text="Each record is validated against the Learning Flow's target schema, which is set under AI model and instructions."/>
         </g:FlowPanel>
         <!-- Extraction quality -->
         <g:FlowPanel ui:field="extractionQualityParameters" styleName="form">

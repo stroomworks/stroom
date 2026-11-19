@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.doc;
 
+import stroom.docref.DocRef;
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
@@ -29,21 +30,76 @@ import jakarta.inject.Singleton;
 import java.util.ArrayList;
 import java.util.List;
 
+/// The Learning Flow documents.
+///
+/// Each has one target schema version (D1). A new one is given the latest event-logging version installed,
+/// saved on it, so moving up to a later version is a deliberate edit. One saved before the setting existed
+/// reads as event-logging v3.0.0, which it was learned against, and keeps it once saved. Where neither is
+/// installed the field is empty, and the document's readiness says so.
 @Singleton
 public class ShapeshifterAiStoreImpl
         extends AbstractDocumentStore<ShapeshifterAiDoc>
         implements ShapeshifterAiStore {
 
+    /// The built-in text's version (`Templates.VERSION`) from which a saved document can name its target
+    /// schema. One stamped with an earlier version, or none, was saved before the setting existed.
+    static final int FIRST_VERSION_WITH_TARGET_SCHEMA = 7;
+
+    private final EventLoggingSchemas eventLogging;
+
     @Inject
     public ShapeshifterAiStoreImpl(final StoreFactory storeFactory,
-                                      final SecurityContext securityContext,
-                                      final ShapeshifterAiSerialiser serialiser) {
+                                   final SecurityContext securityContext,
+                                   final ShapeshifterAiSerialiser serialiser,
+                                   final EventLoggingSchemas eventLogging) {
         super(storeFactory,
                 securityContext,
                 serialiser,
                 ShapeshifterAiDoc.TYPE,
                 ShapeshifterAiDoc::builder,
                 ShapeshifterAiDoc::copy);
+        this.eventLogging = eventLogging;
+    }
+
+    /// A new document has the latest event-logging version installed as its target schema, or none where none
+    /// is installed, and is stamped as able to name one.
+    @Override
+    public DocRef createDocument(final String name) {
+        final DocRef latest = eventLogging.latest().orElse(null);
+        return getStore().createDocument(name,
+                (uuid, docName, version, createTime, updateTime, createUser, updateUser) -> {
+                    final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder()
+                            .uuid(uuid)
+                            .name(docName)
+                            .version(version)
+                            .createTimeMs(createTime)
+                            .updateTimeMs(updateTime)
+                            .createUser(createUser)
+                            .updateUser(updateUser)
+                            .targetSchema(latest)
+                            .build();
+                    return doc.copy()
+                            .flow(doc.getFlow().withBuiltInVersion(Templates.VERSION))
+                            .build();
+                });
+    }
+
+    /// A document saved before it could name a target schema reads as event-logging v3.0.0, where that is
+    /// installed: what it was learned against, so that what serves it is judged as it was.
+    @Override
+    public ShapeshifterAiDoc readDocument(final DocRef docRef) {
+        final ShapeshifterAiDoc doc = super.readDocument(docRef);
+        if (doc == null || doc.getTargetSchema() != null || !savedBeforeTargetSchema(doc)) {
+            return doc;
+        }
+        return eventLogging.v3()
+                .map(v3 -> doc.copy().targetSchema(v3).build())
+                .orElse(doc);
+    }
+
+    private static boolean savedBeforeTargetSchema(final ShapeshifterAiDoc doc) {
+        final Integer builtInVersion = doc.getFlow().getBuiltInVersion();
+        return builtInVersion == null || builtInVersion < FIRST_VERSION_WITH_TARGET_SCHEMA;
     }
 
     /**
@@ -65,12 +121,12 @@ public class ShapeshifterAiStoreImpl
     }
 
     /**
-     * A Shapeshifter AI document depends on its model document, and on nothing else: since A41 the bindings
-     * are rows and the fragments are named by them, not by the document, so an exported document
-     * carries its configuration and none of what it learned — as a processor filter's state is not part of
-     * the pipeline it runs. Declaring the model here is what makes a content-pack import re-point it at the
-     * imported copy, what lets a copied document follow it, and what draws the edge in the explorer's
-     * dependency view; the inherited null would silently disable all three.
+     * A Shapeshifter AI document depends on its model document and its target schema (D1), and on nothing
+     * else: since A41 the bindings are rows and the fragments are named by them, not by the document, so an
+     * exported document carries its configuration and none of what it learned — as a processor filter's state
+     * is not part of the pipeline it runs. Declaring the model and the schema here is what makes a content-pack import
+     * re-point them at the imported copies, what lets a copied document follow them, and what draws the edges
+     * in the explorer's dependency view; the inherited null would silently disable all three.
      */
     @Override
     protected DependencyRemapFunction<ShapeshifterAiDoc> getDependencyRemapFunction() {
@@ -78,6 +134,9 @@ public class ShapeshifterAiStoreImpl
             final ShapeshifterAiDoc.Builder builder = doc.copy();
             if (doc.getModel() != null) {
                 builder.model(remapper.remap(doc.getModel()));
+            }
+            if (doc.getTargetSchema() != null) {
+                builder.targetSchema(remapper.remap(doc.getTargetSchema()));
             }
             return builder.build();
         };

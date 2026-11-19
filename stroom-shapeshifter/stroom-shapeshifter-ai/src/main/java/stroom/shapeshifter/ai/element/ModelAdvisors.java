@@ -23,6 +23,7 @@ import stroom.openai.shared.OpenAIModelDoc;
 import stroom.shapeshifter.ai.learning.Advisor;
 import stroom.shapeshifter.ai.learning.Advisors;
 import stroom.shapeshifter.ai.learning.QuestionText;
+import stroom.shapeshifter.ai.stage.TargetSchemas;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import jakarta.inject.Inject;
@@ -36,11 +37,15 @@ public class ModelAdvisors implements Advisors {
 
     private final AiService aiService;
     private final DocumentEventLog eventLog;
+    private final TargetSchemas targets;
 
     @Inject
-    public ModelAdvisors(final AiService aiService, final DocumentEventLog eventLog) {
+    public ModelAdvisors(final AiService aiService,
+                         final DocumentEventLog eventLog,
+                         final TargetSchemas targets) {
         this.aiService = aiService;
         this.eventLog = eventLog;
+        this.targets = targets;
     }
 
     @Override
@@ -54,6 +59,6 @@ public class ModelAdvisors implements Advisors {
                                             + doc.getModel() + ", which cannot be read");
         }
         return new ModelAdvisor(aiService.getChatModel(modelDoc), modelDoc.getName(), DocRefUtil.create(doc),
-                QuestionText.of(doc), eventLog);
+                QuestionText.of(doc, targets.of(doc)), eventLog);
     }
 }

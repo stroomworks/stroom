@@ -32,6 +32,12 @@ import static org.assertj.core.api.Assertions.tuple;
 
 class TestShapeshifterAiDoc {
 
+    private static final DocRef EVENTS_V4 = DocRef.builder()
+            .type("XMLSchema")
+            .uuid("befcc474-36e4-4db4-a610-bd1fe6825cb1")
+            .name("event-logging v4.1.0")
+            .build();
+
     @Test
     void fullyPopulatedDocRoundTrips() {
         final ShapeshifterAiDoc doc = populated();
@@ -249,9 +255,11 @@ class TestShapeshifterAiDoc {
         // rather than only from the builder.
         final ShapeshifterAiDoc doc = new ShapeshifterAiDoc(
                 "uuid", "name", "1", null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThat(doc.getLearningMode()).isEqualTo(LearningMode.DISABLED);
+        assertThat(doc.getTargetSchema()).describedAs("unset is the default target, event-logging v3.0.0")
+                .isNull();
         assertThat(doc.getRelearnThreshold()).isEqualTo(0.8);
         assertThat(doc.getAllowedElements())
                 .describedAs("every learnable element (A10) until a document narrows it")
@@ -278,7 +286,7 @@ class TestShapeshifterAiDoc {
         final ShapeshifterAiDoc created = new ShapeshifterAiDoc(
                 "uuid", "name", null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null);
 
         assertThat(built).isEqualTo(created);
     }
@@ -334,6 +342,58 @@ class TestShapeshifterAiDoc {
         assertThat(binding.isProvisional()).isFalse();
     }
 
+    /// A copy keeps the target schema: every tab of the editor writes the document through a copy, and a
+    /// field a copy dropped would be lost whenever another tab saved.
+    @Test
+    void aCopyKeepsTheTargetSchema() {
+        final ShapeshifterAiDoc doc = populated();
+
+        final ShapeshifterAiDoc copied = doc.copy().build();
+
+        assertThat(copied.getTargetSchema()).isEqualTo(EVENTS_V4);
+        assertThat(copied).isEqualTo(doc);
+    }
+
+    /// The target schema is part of what makes two documents differ, so a change to it alone marks the
+    /// document changed in the editor, which decides by comparing the document read with the one written.
+    @Test
+    void theTargetSchemaIsPartOfEquality() {
+        final ShapeshifterAiDoc doc = populated();
+
+        final ShapeshifterAiDoc unset = doc.copy().targetSchema(null).build();
+
+        assertThat(unset).isNotEqualTo(doc);
+        assertThat(unset.hashCode()).isNotEqualTo(doc.hashCode());
+        assertThat(JsonUtil.writeValueAsString(unset)).doesNotContain("\"targetSchema\"");
+        assertThat(JsonUtil.writeValueAsString(doc)).contains("\"targetSchema\"");
+    }
+
+    /// A check saved before D1 with the default group, as every check was, is the check a new document gets:
+    /// the starting sets of checks are found by comparing a document's checks with theirs, and a document
+    /// saved then must still be seen to use the set it was given.
+    @Test
+    void aConformanceCheckSavedWithTheDefaultGroupIsANewOne() {
+        final String json = "{\"type\":\"schemaConformance\",\"schemaGroup\":\"EVENTS\"}";
+
+        final ScorerParameters read = JsonUtil.readValue(json, ScorerParameters.class);
+
+        assertThat(read).isEqualTo(new SchemaConformanceParameters());
+        assertThat(read).isEqualTo(ScorerParameters.defaultsFor(ScorerType.SCHEMA_CONFORMANCE));
+        assertThat(JsonUtil.writeValueAsString(read)).doesNotContain("schemaGroup");
+    }
+
+    /// A check saved before D1 with a group of its own drops it: a group is not one version, and the check
+    /// validates against the document's target schema, which is one.
+    @Test
+    void aConformanceCheckSavedWithAnotherGroupDropsIt() {
+        final String json = "{\"type\":\"schemaConformance\",\"schemaGroup\":\" MY_EVENTS \"}";
+
+        final ScorerParameters read = JsonUtil.readValue(json, ScorerParameters.class);
+
+        assertThat(read).isEqualTo(new SchemaConformanceParameters());
+        assertThat(JsonUtil.writeValueAsString(read)).doesNotContain("schemaGroup");
+    }
+
     static ShapeshifterAiDoc populated() {
         final DocRef model = OpenAIModelDoc.buildDocRef().uuid("model-uuid").name("local-model").build();
         return ShapeshifterAiDoc.builder()
@@ -347,6 +407,7 @@ class TestShapeshifterAiDoc {
                 .description("A document")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(model)
+                .targetSchema(EVENTS_V4)
                 .relearnThreshold(0.75)
                 .allowedElements(List.of("XSLTFilter"))
                 .instructions("Prefer named fields.")

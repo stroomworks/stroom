@@ -22,6 +22,7 @@ import stroom.shapeshifter.ai.learning.Question.Chain;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.scoring.Records;
+import stroom.shapeshifter.ai.scoring.TargetSchema;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
@@ -182,6 +183,56 @@ class TestQuestionText {
                 .contains("Do not put fields into Data elements or use the Unknown branch")
                 .contains("<records xmlns=\"records:2\"/>")
                 .doesNotContain("previous configuration");
+    }
+
+    /// A document naming no target is asked for the events root it always was: v3.0.0, with the slot filled
+    /// rather than written out.
+    @Test
+    void theTransformQuestionNamesTheDefaultTargetsRoot() {
+        final String text = WORDS.render(transform());
+
+        assertThat(text)
+                .contains("<Events xmlns=\"event-logging:3\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
+                          + "xsi:schemaLocation=\"event-logging:3 file://event-logging-v3.0.0.xsd\" "
+                          + "Version=\"3.0.0\">")
+                .doesNotContain("${targetRoot}");
+    }
+
+    /// The transform is asked for events of the document's target schema (D1), the version the check will
+    /// validate them against.
+    @Test
+    void theTransformQuestionNamesTheDocumentsTargetSchema() {
+        final TargetSchema version4 = new TargetSchema("EVENTS", "event-logging:3", "file://event-logging-v4.1.0.xsd",
+                "4.1.0");
+        final QuestionText words = QuestionText.of(ShapeshifterAiDoc.builder().uuid("doc").name("doc").build(),
+                version4);
+
+        final String text = words.render(transform());
+
+        assertThat(text)
+                .contains("xsi:schemaLocation=\"event-logging:3 file://event-logging-v4.1.0.xsd\" Version=\"4.1.0\"")
+                .doesNotContain("v3.0.0")
+                .doesNotContain("${targetRoot}");
+    }
+
+    /// A document's own transformation rules that name the root as text are its own words, and kept.
+    @Test
+    void ownTransformationRulesWithoutTheSlotAreKept() {
+        final LearningFlow flow = new LearningFlow(null,
+                Map.of(Template.TRANSFORMATION_RULES, "Write <Events> of my own."), null);
+        final TargetSchema version4 = new TargetSchema("EVENTS", "event-logging:3", "file://event-logging-v4.1.0.xsd",
+                "4.1.0");
+        final QuestionText words = QuestionText.of(ShapeshifterAiDoc.builder().uuid("doc").name("doc").flow(flow)
+                .build(), version4);
+
+        assertThat(words.render(transform()))
+                .contains("Write <Events> of my own.")
+                .doesNotContain("v4.1.0");
+    }
+
+    private static Configuration transform() {
+        return new Configuration("XSLTFilter", "XSLT", SAMPLE, "<records xmlns=\"records:2\"/>", null, null,
+                List.of(), false, Question.Records.UNKNOWN, List.of(), false, List.of());
     }
 
     @Test

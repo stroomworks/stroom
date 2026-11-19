@@ -146,6 +146,39 @@ class TestPerRecordScoring {
         assertThat(score.failingRecords()).containsExactlyInAnyOrder(1, 3);
     }
 
+    /// The check validates against the document's target schema (D1), one version, not the whole group:
+    /// output written for v3.0.0 conforms where the target is v3.0.0 and fails, every record, where the
+    /// document names another version of the same namespace. Before D1 the check took the group, and any
+    /// version in it passed.
+    @Test
+    void schemaConformanceJudgesAgainstTheTargetVersionNotTheGroup() {
+        final String events = """
+                <Events xmlns="event-logging:3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xsi:schemaLocation="event-logging:3 file://event-logging-v3.0.0.xsd" Version="3.0.0">
+                  <Event>
+                    <EventTime><TimeCreated>2020-06-17T08:00:00.000Z</TimeCreated></EventTime>
+                    <EventSource><System><Name>Door</Name><Environment>Test</Environment></System>
+                      <Generator>CSV</Generator><Device><Name>d</Name></Device><User><Id>jim</Id></User></EventSource>
+                    <EventDetail><TypeId>logon</TypeId><Authenticate><Action>Logon</Action><User><Id>jim</Id></User>
+                      </Authenticate></EventDetail>
+                  </Event>
+                </Events>
+                """;
+        final Attempted transform = new Attempted("XSLTFilter", false, "<a/>", new StepResult(events, List.of()));
+        final SchemaConformanceScorer scorer = new NodeFixture().schemaConformanceScorer();
+        final TargetSchema version4 = new TargetSchema(NodeFixture.EVENTS_SCHEMA_GROUP, "event-logging:3",
+                "file://event-logging-v4.1.0.xsd", "4.1.0");
+
+        final Score asTargeted = scorer.score(new SchemaConformanceParameters(), transform, TargetSchema.DEFAULT)
+                .orElseThrow();
+        final Score againstAnother = scorer.score(new SchemaConformanceParameters(), transform, version4)
+                .orElseThrow();
+
+        assertThat(asTargeted.value()).isEqualTo(1.0);
+        assertThat(againstAnother.value()).isEqualTo(0.0);
+        assertThat(againstAnother.failingRecords()).containsExactly(0);
+    }
+
     private static ScorerSetting setting(final ScorerType type, final boolean gate) {
         return new ScorerSetting(type, 1.0, 1.0, gate, null);
     }

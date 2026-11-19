@@ -22,29 +22,34 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
-import java.util.Objects;
-
 /**
  * Schema conformance (§8.2, §8.4): the proportion of records that validate, per record, against the
- * schema group the stage's output is meant to conform to. Ruling A16 makes this a gate, not a maximand.
+ * document's target schema ({@link ShapeshifterAiDoc#getTargetSchema()}, D1). Ruling A16 makes this a gate,
+ * not a maximand.
+ * <p>
+ * The check takes no setting of its own: what it validates against is the document's one schema version, so
+ * that it is still defined when the check is off, and the questions and the check cannot disagree. A document
+ * saved before D1 may carry a schema group here. It is read and dropped, since a group is not one version.
  */
 @JsonPropertyOrder({"schemaGroup"})
 @JsonInclude(Include.NON_NULL)
 public final class SchemaConformanceParameters extends ScorerParameters {
 
-    /**
-     * The event-logging schema's group in Stroom's content packs; a transformation stage's default.
-     */
-    static final String DEFAULT_SCHEMA_GROUP = "EVENTS";
-
+    /// Always null. The property is kept so that a document saved before D1 still reads, and so that the
+    /// parameters are a bean with a property to serialise.
     @JsonProperty
     private final String schemaGroup;
 
+    /// @param schemaGroup The schema group a document saved before D1 named, which is dropped: the check
+    ///                    validates against the document's target schema.
     @JsonCreator
     public SchemaConformanceParameters(@JsonProperty("schemaGroup") final String schemaGroup) {
-        this.schemaGroup = schemaGroup == null || schemaGroup.isEmpty()
-                ? DEFAULT_SCHEMA_GROUP
-                : schemaGroup;
+        this.schemaGroup = null;
+    }
+
+    /// The parameters a check is given: none of its own, since it validates against the document's target.
+    public SchemaConformanceParameters() {
+        this(null);
     }
 
     @Override
@@ -52,28 +57,18 @@ public final class SchemaConformanceParameters extends ScorerParameters {
         return ScorerType.SCHEMA_CONFORMANCE;
     }
 
-    public String getSchemaGroup() {
-        return schemaGroup;
-    }
-
     @Override
     public boolean equals(final Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        return Objects.equals(schemaGroup, ((SchemaConformanceParameters) o).schemaGroup);
+        return this == o || (o != null && getClass() == o.getClass());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(schemaGroup);
+        return SchemaConformanceParameters.class.hashCode();
     }
 
     @Override
     public String toString() {
-        return "schema group " + schemaGroup;
+        return "the document's target schema";
     }
 }

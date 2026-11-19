@@ -141,6 +141,8 @@ public final class Stage {
     private final Advisors advisors;
     private final List<StepRunner> runners;
     private final List<Scorer> scorers;
+    /// What each document's translations must conform to (D1), which its scorecards judge against.
+    private final TargetSchemas targets;
     private final FragmentWriter writer;
     private final FragmentRunner fragmentRunner;
     private final Attempts attempts;
@@ -188,6 +190,7 @@ public final class Stage {
                  final Places places,
                  final Snapshots snapshots,
                  final FragmentCodes codes,
+                 final TargetSchemas targets,
                  final Clock clock,
                  final Duration lease,
                  final long seed,
@@ -210,6 +213,7 @@ public final class Stage {
         this.places = places;
         this.snapshots = snapshots;
         this.codes = codes;
+        this.targets = targets;
         this.clock = clock;
         this.lease = lease;
         this.seed = seed;
@@ -257,7 +261,7 @@ public final class Stage {
             record(() -> attempts.closed(attemptId, AttemptStatus.ABANDONED, stop.get(), null, null, 0L));
             return refused(doc, learner, stop.get());
         }
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = scorecard(doc);
         final RecordedAdvisor replay = new RecordedAdvisor(recorded.turns(), answerer);
         // Who answered each turn the first time, by its number: a replayed turn is rewritten as it is
         // re-walked, and it must not come back saying the model answered what a person answered (A28).
@@ -490,7 +494,7 @@ public final class Stage {
         // No feed and no type: there is no stream here to read them off, and a learner does not know its
         // feed (A126), so the model is shown the corpus alone.
         final Input input = new Input(-1L, null, null, Map.of(), sample, null);
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = scorecard(doc);
         // Asked where it was asked from, not by the worker. The worker exists because a model call
         // inside a *processing task* holds a task slot (A5); an improvement is not
         // a processing task, the incumbent is serving throughout, and nothing waits on it but the person
@@ -752,7 +756,7 @@ public final class Stage {
                            final Learner learner,
                            final Input input,
                            final boolean asProcessed) {
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = scorecard(doc);
 
         if (asProcessed) {
             final Optional<Produced> recorded = outputs.asProcessed(doc.getUuid(), input.id(), input.pipeline());
@@ -836,7 +840,7 @@ public final class Stage {
         // What the learner keeps goes with it to the document it runs under now, so that this document's
         // Supervisor shows what serves its pipeline and no other document's editors can act on it.
         learners.runsUnder(learner, doc.getUuid());
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = scorecard(doc);
         final Optional<Binding> matched = bindingFor(learner);
 
         if (matched.isPresent()) {
@@ -964,7 +968,7 @@ public final class Stage {
                                           .findFirst()
                                           .orElse("a gate failed");
             final StageRun deferred = session(doc, learner, binding, input,
-                    new Scorecard(doc.getScorers(), scorers), Judged.shortOf(served, short_), reason, stamp(binding),
+                    scorecard(doc), Judged.shortOf(served, short_), reason, stamp(binding),
                             1);
             throw new DeferTaskException(((Deferred) deferred.decision()).reason());
         }
@@ -991,13 +995,18 @@ public final class Stage {
         return served;
     }
 
+    /// The document's scorecard: its checks, judging against its target schema (D1).
+    private Scorecard scorecard(final ShapeshifterAiDoc doc) {
+        return new Scorecard(doc.getScorers(), scorers, targets.of(doc));
+    }
+
     /// The bar a record is held to (A55): the document's gates that judge a record. The scorers that
     /// measure a stream — compile, coverage, yield — judged the candidate when it was promoted and have
     /// nothing to say about one record.
     private Scorecard recordBar(final ShapeshifterAiDoc doc) {
         return new Scorecard(doc.getScorers().stream()
                 .filter(setting -> RECORD_SCORERS.contains(setting.getType()))
-                .toList(), scorers);
+                .toList(), scorers, targets.of(doc));
     }
 
     private static Produced producedBy(final ShapeshifterAiDoc doc, final Binding binding) {

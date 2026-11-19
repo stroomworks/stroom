@@ -55,7 +55,7 @@ public abstract sealed class ScorerParameters
         return switch (type) {
             case COMPILE, INPUT_COVERAGE -> null;
             case YIELD -> new YieldParameters(null, null);
-            case SCHEMA_CONFORMANCE -> new SchemaConformanceParameters(null);
+            case SCHEMA_CONFORMANCE -> new SchemaConformanceParameters();
             case EXTRACTION_QUALITY -> new ExtractionQualityParameters(null, null);
             case BUSINESS_RULES -> new BusinessRulesParameters(null, null);
             case ERROR_LOAD -> new ErrorLoadParameters(null);

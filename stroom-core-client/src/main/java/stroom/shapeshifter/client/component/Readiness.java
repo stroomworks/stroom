@@ -27,7 +27,8 @@ import java.util.List;
 import java.util.Objects;
 
 /// Whether a Shapeshifter AI document will learn anything, worked out from the document alone (the
-/// "document checks" of design 07): learning is switched on, a model is chosen, there is at least one
+/// "document checks" of design 07): learning is switched on, a model is chosen, a target schema is chosen
+/// (D1: none where no event-logging schema was installed when the document was made), there is at least one
 /// quality check (a document with none passes every answer, ISSUES item 22), and the approach has no
 /// problems. Each check that fails names the fix the Feeds tab offers for it.
 ///
@@ -57,6 +58,13 @@ public final class Readiness {
         } else {
             items.add(new Item(true, "Model: " + Objects.requireNonNullElse(doc.getModel().getName(),
                     doc.getModel().getUuid()), null));
+        }
+        if (doc.getTargetSchema() == null) {
+            items.add(new Item(false, "No target schema is chosen, so the AI has no schema to write to.",
+                    Fix.CHOOSE_TARGET_SCHEMA));
+        } else {
+            items.add(new Item(true, "Target schema: " + Objects.requireNonNullElse(
+                    doc.getTargetSchema().getName(), doc.getTargetSchema().getUuid()), null));
         }
         final int checks = doc.getScorers() == null
                 ? 0
@@ -100,6 +108,8 @@ public final class Readiness {
         SWITCH_ON("Switch on", SetupSection.LEARNING),
         /// Shows where the model is chosen.
         CHOOSE_MODEL("Choose a model", SetupSection.LEARNING),
+        /// Shows where the target schema is chosen.
+        CHOOSE_TARGET_SCHEMA("Choose a target schema", SetupSection.LEARNING),
         /// Puts the Standard quality checks in place.
         USE_STANDARD_CHECKS("Use the Standard checks", SetupSection.QUALITY),
         /// Shows the approach, where the problem is.

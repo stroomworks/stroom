@@ -669,7 +669,7 @@ public final class Conversation {
                 if (event.isEmpty()) {
                     return Judged.refused("The reply was not a single event document, nor the word none");
                 }
-                final String document = TargetChecks.asDocument(event.get());
+                final String document = TargetChecks.asDocument(event.get(), scorecard.target());
                 final Optional<StoredError> refusal = TargetChecks.refusal(document);
                 if (refusal.isPresent()) {
                     return new Judged(StepOutcome.REFUSED, List.of(refusal.get()), null);

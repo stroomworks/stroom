@@ -68,7 +68,7 @@ public final class SetupSummary {
     }
 
     /// @param section A section.
-    /// @return What it is set to, e.g. "On · GPT-4o".
+    /// @return What it is set to, e.g. "On · GPT-4o · event-logging v3.0.0".
     public String summary(final SetupSection section) {
         return summaries.get(section);
     }
@@ -86,7 +86,15 @@ public final class SetupSummary {
         final String model = doc.getModel() == null
                 ? "no model"
                 : Objects.requireNonNullElse(doc.getModel().getName(), "a model");
-        return mode + " · " + model;
+        return mode + " · " + model + " · " + targetSchema(doc);
+    }
+
+    /// @param doc A document.
+    /// @return What its translations are written to, e.g. "event-logging v4.1.0", or "no target schema".
+    static String targetSchema(final ShapeshifterAiDoc doc) {
+        return doc.getTargetSchema() == null
+                ? "no target schema"
+                : Objects.requireNonNullElse(doc.getTargetSchema().getName(), "a schema");
     }
 
     private static String approach(final List<FlowStep> steps) {

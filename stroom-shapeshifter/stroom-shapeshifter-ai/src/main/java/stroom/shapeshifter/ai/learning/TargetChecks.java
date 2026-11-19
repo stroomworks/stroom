@@ -19,6 +19,7 @@ package stroom.shapeshifter.ai.learning;
 import stroom.shapeshifter.ai.scoring.Attempted;
 import stroom.shapeshifter.ai.scoring.OutputRecords;
 import stroom.shapeshifter.ai.scoring.Scorecard;
+import stroom.shapeshifter.ai.scoring.TargetSchema;
 import stroom.shapeshifter.ai.scoring.Verdict;
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
 import stroom.shapeshifter.shared.RecordBoundary;
@@ -55,10 +56,6 @@ public final class TargetChecks {
     public static final String NONE = "none";
     private static final ElementId TARGET = new ElementId("Target");
     private static final int VALUE_LENGTH_COUNTED = 2;
-    private static final String EVENTS_OPEN = "<Events xmlns=\"event-logging:3\" "
-            + "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
-            + "xsi:schemaLocation=\"event-logging:3 file://event-logging-v3.0.0.xsd\" "
-            + "Version=\"3.0.0\">";
     private static final String EVENTS_CLOSE = "</Events>";
 
     private TargetChecks() {
@@ -212,10 +209,21 @@ public final class TargetChecks {
     }
 
     /**
-     * A proposed target as a whole document the scorers can judge: the event wrapped in the events root
-     * where the model gave the event alone.
+     * A proposed target as a whole document the scorers can judge: the event wrapped in the default target
+     * schema's events root where the model gave the event alone.
      */
     public static String asDocument(final String event) {
+        return asDocument(event, TargetSchema.DEFAULT);
+    }
+
+    /// A proposed target as a whole document the scorers can judge: the event wrapped in the events root of
+    /// the document's target schema (D1) where the model gave the event alone, so that it is validated
+    /// against the version the transform will be.
+    ///
+    /// @param event  The event the model proposed, or a whole events document.
+    /// @param target The schema the document's translations must conform to.
+    /// @return The events document.
+    public static String asDocument(final String event, final TargetSchema target) {
         String stripped = event.strip();
         if (stripped.startsWith("<?xml")) {
             final int end = stripped.indexOf("?>");
@@ -225,7 +233,7 @@ public final class TargetChecks {
         }
         return stripped.contains("<Events")
                 ? stripped
-                : EVENTS_OPEN + stripped + EVENTS_CLOSE;
+                : target.eventsOpen() + stripped + EVENTS_CLOSE;
     }
 
     /**

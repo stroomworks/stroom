@@ -89,7 +89,7 @@ public class ReadinessBanner extends Component {
                 final Button button = new Button(fix.getLabel());
                 button.addStyleName("readiness-banner__fix");
                 button.setOnClick(() -> onFix.accept(fix));
-                button.setVisible(!isReadOnly() || fix == Fix.OPEN_APPROACH || fix == Fix.CHOOSE_MODEL);
+                button.setVisible(!isReadOnly() || showsOnly(fix));
                 fixes.add(button);
                 row.add(button);
             }
@@ -110,8 +110,14 @@ public class ReadinessBanner extends Component {
             final String text = button.getText();
             button.setVisible(!readOnly
                               || Fix.OPEN_APPROACH.getLabel().equals(text)
-                              || Fix.CHOOSE_MODEL.getLabel().equals(text));
+                              || Fix.CHOOSE_MODEL.getLabel().equals(text)
+                              || Fix.CHOOSE_TARGET_SCHEMA.getLabel().equals(text));
         }
+    }
+
+    // Whether a fix only shows where the change is made, rather than making it, so is offered read-only too
+    private static boolean showsOnly(final Fix fix) {
+        return fix == Fix.OPEN_APPROACH || fix == Fix.CHOOSE_MODEL || fix == Fix.CHOOSE_TARGET_SCHEMA;
     }
 
 

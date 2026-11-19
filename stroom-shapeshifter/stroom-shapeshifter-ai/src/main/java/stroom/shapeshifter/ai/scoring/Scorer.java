@@ -37,6 +37,20 @@ public interface Scorer {
      */
     Optional<Score> score(ScorerParameters parameters, Attempted step);
 
+    /// Scores a step against the document's target schema (D1). Only a scorer that judges conformance to
+    /// the schema reads the target; the rest score as [#score(ScorerParameters, Attempted)] does.
+    ///
+    /// @param parameters The document's parameters for this scorer, as [#score(ScorerParameters, Attempted)]
+    ///                   takes them.
+    /// @param step       The step.
+    /// @param target     The schema the document's translations must conform to.
+    /// @return The score, empty where the scorer has no signal on the step.
+    default Optional<Score> score(final ScorerParameters parameters,
+                                  final Attempted step,
+                                  final TargetSchema target) {
+        return score(parameters, step);
+    }
+
     /**
      * Refuse parameters this scorer cannot work with — a path that does not compile — when the
      * scorecard is built, before a model is asked or a stream fails on them.

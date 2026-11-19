@@ -25,6 +25,7 @@ import stroom.shapeshifter.ai.stage.Documents;
 import stroom.shapeshifter.ai.stage.Inputs;
 import stroom.shapeshifter.ai.stage.Places;
 import stroom.shapeshifter.ai.stage.RegressionSet;
+import stroom.shapeshifter.ai.stage.TargetSchemas;
 import stroom.shapeshifter.ai.stage.Wake;
 import stroom.util.RunnableWrapper;
 import stroom.util.entityevent.EntityEvent;
@@ -53,6 +54,8 @@ public class ShapeshifterAiElementModule extends PipelineElementModule {
         bind(Wake.class).to(TaskWake.class).in(Scopes.SINGLETON);
         // What a learner learns goes where its element says, read from its pipeline (A113).
         bind(Places.class).to(PipelinePlaces.class);
+        // What a Learning Flow's translations must conform to, read from the schema store (D1).
+        bind(TargetSchemas.class).to(StoreTargetSchemas.class);
         // What the worker needs and a processing task is handed: the document an attempt
         // names, and the stream it was raised on (A5, A28).
         bind(Documents.class).to(StoreDocuments.class).in(Scopes.SINGLETON);
