@@ -26,30 +26,36 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * The scorecard's verdict on one step: every judgement, the weighted total of the scores that carry
- * weight, and whether the step passes — every gate met and every threshold met. The feedback is what
- * the model is told to try again: each failing scorer's diagnostics, prefaced by which scorer and by
- * how much it fell short.
+ * The scorecard's verdict on one step: every judgement, and their average. Whether the step passes is
+ * [Scorecard#outcome]'s to say, since an advice check that falls short fails a step only where the step
+ * has a rule for it (the one model of checks, D1). The feedback is what the model is told to try again:
+ * each check that fell short, by how much, and its diagnostics.
  *
- * @param judgements    One per scorer that applied, in the document's order.
- * @param weightedTotal The weight-averaged score in [0, 1], or 1.0 if no scorer carried weight.
+ * @param judgements One per check that applied, in the order of the checks.
+ * @param score      The average of the checks that ran, gates and advice alike, in [0, 1]; 1.0 where none
+ *                   ran.
  */
-public record Verdict(List<Judgement> judgements, double weightedTotal) {
+public record Verdict(List<Judgement> judgements, double score) {
 
     private static final ElementId SCORECARD = new ElementId("Scorecard");
 
-    public boolean passed() {
-        return judgements.stream().allMatch(Judgement::metThreshold);
+    /// @param judgements One per check that applied.
+    /// @return The verdict, with the average of the judgements as its score.
+    public static Verdict of(final List<Judgement> judgements) {
+        return new Verdict(List.copyOf(judgements), judgements.isEmpty()
+                ? 1.0
+                : judgements.stream().mapToDouble(judgement -> judgement.score().value()).average().orElse(1.0));
     }
 
+    /// @return Whether no gate fell below its threshold.
     public boolean gatesPassed() {
         return judgements.stream().noneMatch(Judgement::failedGate);
     }
 
     /// The records that fell short of the bar (design 04 §3, A55): a record clears it when every gate
-    /// scorer that judges records one by one passed on *that* record, so this is the union of the gates'
+    /// that judges records one by one passed on *that* record, so this is the union of the gates'
     /// failing records. Zero-based, in output order. Empty where every record cleared it — or where no
-    /// gate judges per record, which is a document that has chosen not to have a bar.
+    /// gate judges per record.
     public Set<Integer> failingRecords() {
         final Set<Integer> failing = new TreeSet<>();
         for (final Judgement judgement : judgements) {
@@ -68,12 +74,12 @@ public record Verdict(List<Judgement> judgements, double weightedTotal) {
                         Severity.ERROR,
                         null,
                         SCORECARD,
-                        judgement.setting().getType().getDisplayValue() + " scored "
+                        Scorecard.name(judgement.setting().getCheck()) + " scored "
                         + judgement.score().value() + " against a threshold of "
-                        + judgement.setting().getThreshold()
+                        + judgement.setting().getPassingValue()
                         + (judgement.setting().isGate()
                                 ? " (a gate)"
-                                : "")));
+                                : " (advice)")));
                 feedback.addAll(judgement.score().diagnostics());
             }
         }

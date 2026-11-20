@@ -108,8 +108,10 @@ public class StageDecisionPane extends Component {
         this.onOpenFragment = onOpenFragment;
     }
 
-    /// What the scorers made of each step of the chain (design 01 §8.4), in chain order. A gate that was
-    /// missed is what decides a promotion, so it is named as one.
+    /// What each check made of each step of the chain (design 01 §8.4; the one model of checks), in chain
+    /// order: every check that ran, with the value it gave, the bar it had to clear, and whether it was a
+    /// gate or only advice. A step passes when every gate passes, so there is no total to show; the figure
+    /// beside the step is the average of the checks that ran.
     ///
     /// @param stages The verdicts, or empty for none.
     public void setVerdicts(final List<StageVerdict> stages) {
@@ -121,20 +123,23 @@ public class StageDecisionPane extends Component {
         html.table(table -> {
             for (final StageVerdict verdict : stages) {
                 table.tr(row -> row.th(cell -> cell.append("Step " + verdict.getStep() + " — "
-                                                             + verdict.getWeightedTotal()
+                                                             + PlainWords.percent(verdict.getScore())
                                                              + (verdict.isPassed()
-                                                                     ? " (passed)"
-                                                                     : " (failed)")),
+                                                                     ? ", every gate passed"
+                                                                     : ", a gate was missed")),
                                 new Attribute("colspan", "2")),
                         Attribute.className("stage-decision-pane__step"));
                 for (final StageScore score : NullSafe.list(verdict.getScores())) {
                     table.tr(row -> {
-                        row.td(score.getScorer().getDisplayValue(), TERM);
-                        row.td(score.getValue() + (score.isMet()
-                                ? " (met "
-                                : " (missed ") + score.getThreshold() + (score.isGate()
-                                ? ", a gate)"
-                                : ")"), VALUE);
+                        row.td(PlainWords.checkName(score.getCheck()), TERM);
+                        row.td(PlainWords.percent(score.getValue())
+                               + (score.isMet()
+                                       ? " (met "
+                                       : " (missed ")
+                               + PlainWords.percent(score.getThreshold())
+                               + (score.isGate()
+                                       ? ", a gate)"
+                                       : ", advice)"), VALUE);
                     });
                 }
             }

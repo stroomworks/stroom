@@ -28,12 +28,13 @@ import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -127,53 +128,56 @@ class TestLiveScenarios {
                 .flow(FLOW_UNDER_TEST)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .instructions(INSTRUCTIONS)
-                .minRecordsToLearn(5)
-                .promotionFloor(0.85);
+                .minRecordsToLearn(5);
         Optional.ofNullable(System.getenv(MAX_ATTEMPTS)).map(Integer::valueOf).ifPresent(builder::maxAttempts);
         return builder
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, coverageThreshold, false, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.ADVICE, coverageThreshold, null),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false,
-                                        List.of("EventSource/User/Id", "EventSource/Device/Name"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 0.5, false,
+                                                List.of("EventSource/User/Id", "EventSource/Device/Name"))),
+                        new CheckSetting(Check.RULES, CheckState.ADVICE, 0.5,
                                 new BusinessRulesParameters(List.of(new XPathAssertion(
-                                        "interactive events name the user",
-                                        "not(EventDetail/Authenticate) "
-                                        + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
-                                        true))))
+                                                "interactive events name the user",
+                                                "not(EventDetail/Authenticate) "
+                                                + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
+                                                true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 
     /**
-     * The scorers with the yield setting replaced: a feed whose record spans several lines says so by its
+     * The checks with the yield setting replaced: a feed whose record spans several lines says so by its
      * expected yield per line (design 02 scenario 44).
      */
-    private static List<ScorerSetting> withYield(final List<ScorerSetting> scorers,
-                                                 final YieldBasis basis,
-                                                 final double expected,
-                                                 final double threshold) {
-        return scorers.stream()
-                .map(setting -> setting.getType() == ScorerType.YIELD
-                        ? new ScorerSetting(ScorerType.YIELD, setting.getWeight(), threshold, false,
+    private static List<CheckSetting> withYield(final List<CheckSetting> checks,
+                                                final YieldBasis basis,
+                                                final double expected,
+                                                final double threshold) {
+        return checks.stream()
+                .map(setting -> setting.getCheck() == Check.YIELD
+                        ? new CheckSetting(Check.YIELD, CheckState.ADVICE, threshold,
                                 new YieldParameters(expected, basis))
                         : setting)
                 .toList();
     }
 
     /**
-     * The scorers with one more business rule beside the standing one.
+     * The checks with one more business rule beside the standing one.
      */
-    private static List<ScorerSetting> withRule(final List<ScorerSetting> scorers, final XPathAssertion rule) {
-        return scorers.stream()
-                .map(setting -> setting.getType() == ScorerType.BUSINESS_RULES
-                        ? new ScorerSetting(ScorerType.BUSINESS_RULES, setting.getWeight(), setting.getThreshold(),
-                                setting.isGate(), new BusinessRulesParameters(Stream.concat(
+    private static List<CheckSetting> withRule(final List<CheckSetting> checks, final XPathAssertion rule) {
+        return checks.stream()
+                .map(setting -> setting.getCheck() == Check.RULES
+                        ? new CheckSetting(Check.RULES, setting.getState(), setting.getThreshold(),
+                                new BusinessRulesParameters(Stream.concat(
                                         ((BusinessRulesParameters) setting.getParameters()).getAssertions().stream(),
                                         Stream.of(rule)).toList(), true))
                         : setting)
@@ -278,7 +282,7 @@ class TestLiveScenarios {
                                   + "(USER_LOGIN) are Authenticate events naming the user and the client address; "
                                   + "an execve (SYSCALL with EXECVE) is a Process event whose command and arguments "
                                   + "are the EXECVE's a0, a1… The time is seconds since the epoch.")
-                    .scorers(withYield(doc("auditd", 0.9).getScorers(), YieldBasis.LINES, 0.35, 0.6))
+                    .checks(withYield(doc("auditd", 0.9).getChecks(), YieldBasis.LINES, 0.35, 0.6))
                     .build();
             return List.of(scenarios.process(advisor, doc,
                     new Input(1, "LINUX-AUDITD", "Raw Events", Map.of(), AUDITD)).learned());
@@ -330,7 +334,7 @@ class TestLiveScenarios {
                                   + "result (GRANTED or DENIED) and a reason, which may hold spaces. Each line is "
                                   + "an Authenticate event stating its outcome and the reason; the terminal is the "
                                   + "device.")
-                    .scorers(withRule(doc("fixed-width", 0.9).getScorers(), new XPathAssertion(
+                    .checks(withRule(doc("fixed-width", 0.9).getChecks(), new XPathAssertion(
                             "a sign-on decision states its outcome",
                             "not(EventDetail/Authenticate) "
                             + "or EventDetail/Authenticate/Outcome/Success[. = 'true' or . = 'false']")))
@@ -350,7 +354,7 @@ class TestLiveScenarios {
                                   + "record may span lines. Each record is one View or Delete event on a "
                                   + "Document, its note the outcome's description; the workstation is the "
                                   + "device.")
-                    .scorers(withYield(doc("csv-multiline", 0.9).getScorers(), YieldBasis.LINES, 0.77, 0.9))
+                    .checks(withYield(doc("csv-multiline", 0.9).getChecks(), YieldBasis.LINES, 0.77, 0.9))
                     .build();
             return List.of(scenarios.process(advisor, doc,
                     new Input(1, "DOCUMENT-STORE", "Raw Events", Map.of("Format", "CSV"), CSV_MULTILINE)).learned());
@@ -413,7 +417,7 @@ class TestLiveScenarios {
                         .append(": ").append(error.getMessage()).append('\n'));
             }
             run.verdicts().forEach(verdict -> verdict.judgements().forEach(judgement -> text.append("- ")
-                    .append(judgement.setting().getType().getDisplayValue()).append(": ")
+                    .append(judgement.setting().getCheck().getDisplayValue()).append(": ")
                     .append(judgement.score().value()).append('\n')));
             text.append('\n');
         }

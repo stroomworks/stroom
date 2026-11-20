@@ -17,8 +17,8 @@
 package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.ai.extraction.InputCoverage;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
@@ -42,8 +42,8 @@ public final class InputCoverageScorer implements Scorer {
     private static final int UNCOVERED_LINES_SHOWN = 5;
 
     @Override
-    public ScorerType type() {
-        return ScorerType.INPUT_COVERAGE;
+    public Check type() {
+        return Check.COVERAGE;
     }
 
     @Override

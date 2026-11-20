@@ -27,9 +27,10 @@ import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import org.junit.jupiter.api.Test;
@@ -177,10 +178,10 @@ class TestScenario53TheCorpusHoldsACandidateToNoWorse {
         final ShapeshifterAiDoc demo = DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door").build();
         return demo.copy()
                 .heldOutFraction(0.0)
-                .scorers(demo.getScorers().stream()
-                        .map(setting -> setting.getType() == ScorerType.EXTRACTION_QUALITY
-                                ? new ScorerSetting(setting.getType(), setting.getWeight(), setting.getThreshold(),
-                                        setting.isGate(), new ExtractionQualityParameters(true, List.of()))
+                .checks(demo.getChecks().stream()
+                        .map(setting -> setting.getCheck() == Check.QUALITY
+                                ? new CheckSetting(setting.getCheck(), setting.getState(), setting.getThreshold(),
+                                        new ExtractionQualityParameters(true, List.of()))
                                 : setting)
                         .toList())
                 .build();

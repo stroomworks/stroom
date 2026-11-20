@@ -19,6 +19,7 @@ package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowProblem;
+import stroom.shapeshifter.shared.FlowProblem.Severity;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepGuard;
@@ -187,9 +188,22 @@ public final class LearnFlow {
     /// @param index    A step's index.
     /// @return What is wrong with that step, or null for nothing.
     public static String problemsOf(final List<FlowProblem> problems, final int index) {
+        return problemsOf(problems, index, Severity.PROBLEM);
+    }
+
+    /// What is said about a step at one severity: its problems, which stop the flow being held, or its
+    /// warnings, which only say.
+    ///
+    /// @param problems What is wrong with the flow.
+    /// @param index    A step's index.
+    /// @param severity The severity wanted.
+    /// @return What is said about that step at that severity, or null for nothing.
+    public static String problemsOf(final List<FlowProblem> problems,
+                                    final int index,
+                                    final Severity severity) {
         final List<String> mine = new ArrayList<>();
         for (final FlowProblem problem : problems) {
-            if (problem.getStep() != null && problem.getStep() == index) {
+            if (problem.getStep() != null && problem.getStep() == index && problem.getSeverity() == severity) {
                 mine.add(problem.getMessage());
             }
         }

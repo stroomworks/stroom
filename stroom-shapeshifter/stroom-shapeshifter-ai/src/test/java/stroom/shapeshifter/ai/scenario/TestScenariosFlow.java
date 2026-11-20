@@ -26,14 +26,15 @@ import stroom.shapeshifter.ai.stage.Decision.Promoted;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.XPathAssertion;
@@ -42,6 +43,7 @@ import stroom.shapeshifter.shared.YieldParameters;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -68,22 +70,43 @@ class TestScenariosFlow {
                 .flow(flow)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, 0.9, false, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.9, null),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false,
+                        new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0,
                                 new BusinessRulesParameters(List.of(new XPathAssertion(
-                                        "interactive events name the user",
-                                        "not(EventDetail/Authenticate) "
-                                        + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
-                                        true))))
+                                                "interactive events name the user",
+                                                "not(EventDetail/Authenticate) "
+                                                + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
+                                                true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
+    }
+
+    /// [#doc(LearningFlow)] with one check switched off. A step used to name the checks that judged it, so
+    /// a flow could leave preservation to the transform; the one model of checks took that away, and whether
+    /// a check judges at all is the document's to say.
+    ///
+    /// @param flow  The flow.
+    /// @param off   The check to switch off.
+    /// @return The document.
+    private static ShapeshifterAiDoc without(final LearningFlow flow, final Check off) {
+        final List<CheckSetting> checks = new ArrayList<>();
+        for (final CheckSetting setting : doc(flow).getChecks()) {
+            checks.add(setting.getCheck() == off
+                    ? setting.withState(CheckState.OFF)
+                    : setting);
+        }
+        return doc(flow).copy().checks(checks).build();
     }
 
     private static Input stream(final long id, final String data) {
@@ -164,7 +187,7 @@ class TestScenariosFlow {
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
         final LearningFlow flow = LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
                 FlowStep.parse("CHAIN"),
-                FlowStep.parse("SPLIT checks coverage on wholeness-short abandon"),
+                FlowStep.parse("SPLIT on wholeness-short abandon"),
                 FlowStep.parse("TARGET kinds 3"),
                 FlowStep.parse("CONFIGURE parser"),
                 FlowStep.parse("CONFIGURE transform")));
@@ -177,17 +200,17 @@ class TestScenariosFlow {
     }
 
     /**
-     * Target-first, with preservation not judged at the parser so that the transform meets the gap: the
-     * transform's checks are fidelity alone, so the stream-level scorers do not fail it first on the fields
-     * it cannot find.
+     * Target-first, with the transform sent back to the parser when preservation falls short. The callers
+     * switch preservation off on the document ({@link #without}), so that the stream-level scorers do not
+     * fail the parser first on the fields it cannot find.
      */
     private static LearningFlow preservationAtTheTransform() {
         return LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
                 FlowStep.parse("CHAIN"),
                 FlowStep.parse("SPLIT"),
                 FlowStep.parse("TARGET kinds 3"),
-                FlowStep.parse("CONFIGURE parser checks coverage,yield"),
-                FlowStep.parse("CONFIGURE transform checks fidelity on preservation-short goto parser")));
+                FlowStep.parse("CONFIGURE parser"),
+                FlowStep.parse("CONFIGURE transform on preservation-short goto parser")));
     }
 
     @Test
@@ -202,7 +225,7 @@ class TestScenariosFlow {
                 .reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
 
-        final StageRun run = scenarios.process(script, doc(preservationAtTheTransform()),
+        final StageRun run = scenarios.process(script, without(preservationAtTheTransform(), Check.PRESERVATION),
                 stream(1, CsvLines.lines(6))).learned();
 
         script.verifyExhausted();
@@ -230,7 +253,7 @@ class TestScenariosFlow {
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(TWO_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
 
-        final StageRun run = scenarios.process(script, doc(preservationAtTheTransform()),
+        final StageRun run = scenarios.process(script, without(preservationAtTheTransform(), Check.PRESERVATION),
                 stream(1, CsvLines.lines(6))).learned();
 
         script.verifyExhausted();
@@ -248,11 +271,15 @@ class TestScenariosFlow {
         // 'goto split' over raw text where the split step is guarded 'when xml': the step is skipped, and the
         // preservation shortfall the jump carried reaches the parser, which is what is asked next. The targets
         // are asked before the split so that the parser is the first question after it.
+        //
+        // The rule is on the parser, not the transform. It used to be on the transform, which named fidelity
+        // as its only check so that preservation fell to it alone; the one model of checks ended that, since
+        // every check that can measure a step now judges it, and the parser is measured by preservation
+        // first. What the test is about — feedback surviving a jump to a step that is skipped — is unchanged.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser").withoutFeedback()).reply(Scenarios.fenced(TWO_FIELDS))
-                .expect(QuestionMatcher.configuration("XSLTFilter").withoutFeedback()).reply(Scenarios.fenced(XSLT))
                 .expect(QuestionMatcher.configuration("DSParser")
                         .withFeedbackMentioning("the records carry no value for [logon, office]"))
                 .reply(Scenarios.fenced(FOUR_FIELDS))
@@ -261,8 +288,8 @@ class TestScenariosFlow {
                 FlowStep.parse("CHAIN"),
                 FlowStep.parse("TARGET kinds 3"),
                 FlowStep.parse("SPLIT when xml"),
-                FlowStep.parse("CONFIGURE parser checks coverage,yield"),
-                FlowStep.parse("CONFIGURE transform checks fidelity on preservation-short goto split")))),
+                FlowStep.parse("CONFIGURE parser on preservation-short goto split"),
+                FlowStep.parse("CONFIGURE transform")))),
                 stream(1, CsvLines.lines(6))).learned();
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();

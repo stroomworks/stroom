@@ -203,7 +203,7 @@ public final class RecordGate implements ContentHandler {
         final String document = alone(events);
         final Verdict verdict = judge.judge(index, document, () -> parsedAt.apply(index));
         records++;
-        totals += verdict.weightedTotal();
+        totals += verdict.score();
         if (!RecordJudge.clears(verdict)) {
             if (judge.stops()) {
                 throw new RecordShortfall(index, verdict, document);

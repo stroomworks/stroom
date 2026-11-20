@@ -26,8 +26,9 @@ import stroom.openai.shared.OpenAIModelDoc;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.security.mock.MockSecurityContext;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 
@@ -43,11 +44,18 @@ final class ShapeshifterAiFixture {
     static final DocRef MODEL = OpenAIModelDoc.buildDocRef().uuid("model-1").name("local-model").build();
     static final DocRef FRAGMENT = PipelineDoc.buildDocRef().uuid("fragment-1").name("syslog-v1").build();
 
-    static final List<ScorerSetting> SCORERS = List.of(
-            new ScorerSetting(ScorerType.COMPILE, 1.0, 1.0, true, null),
-            new ScorerSetting(ScorerType.INPUT_COVERAGE, 2.0, 0.8, false, null),
-            new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false, new BusinessRulesParameters(
-                    List.of(new XPathAssertion("has a time", "EventTime/TimeCreated != ''")), true)));
+    static final List<CheckSetting> CHECKS = List.of(
+            new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+            new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.8, null),
+            CheckSetting.of(Check.YIELD, CheckState.OFF),
+            CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+            CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
+            CheckSetting.of(Check.QUALITY, CheckState.OFF),
+            new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0, new BusinessRulesParameters(
+                    List.of(new XPathAssertion("has a time", "EventTime/TimeCreated != ''")), true)),
+            CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+            CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+            CheckSetting.of(Check.REGRESSION, CheckState.GATE));
 
     private ShapeshifterAiFixture() {
     }
@@ -94,6 +102,6 @@ final class ShapeshifterAiFixture {
         return doc.copy()
                 .model(MODEL)
                 .instructions("Prefer named fields.")
-                .scorers(SCORERS);
+                .checks(CHECKS);
     }
 }

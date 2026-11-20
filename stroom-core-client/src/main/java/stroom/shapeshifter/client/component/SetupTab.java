@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningMode;
@@ -60,7 +61,7 @@ import java.util.function.Consumer;
 /// once they are shown), what is wrong with the flow as a whole, and what a run may spend; under Advanced options,
 /// the tries per step, the largest sample, and the question text every step shares ([QuestionTexts]).
 /// **A step**: its card and its own question text ([ApproachSection]).
-/// **Quality checks**: the starting set; under Advanced options, the checks ([ScorerList]) and the lines kept back
+/// **Quality checks**: the starting set; under Advanced options, the checks ([CheckList]) and the lines kept back
 /// to test against. **Approving new translations**: the pass mark and whether a person approves; under Advanced
 /// options, how many records before a translation is trusted, and what a feed gets when the transform can't be
 /// finished (the fallback). **Monitoring translations in use**: when a translation in use is flagged; under
@@ -69,7 +70,7 @@ import java.util.function.Consumer;
 public class SetupTab extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
-    private static final String OWN = "These are this document's own checks.";
+    private static final String OWN = "These are this Learning Flow's own checks.";
 
     @UiField
     RouteMap map;
@@ -118,17 +119,15 @@ public class SetupTab extends Component {
     @UiField
     ValueSpinner sampleSizeLimit;
     @UiField
-    RadioGroup<QualityPreset> preset;
+    RadioGroup<CheckPreset> preset;
     @UiField
     Label presetDescription;
     @UiField
     Disclosure qualityAdvanced;
     @UiField
-    ScorerList scorerList;
+    CheckList checkList;
     @UiField
     ValueSpinner heldOutFraction;
-    @UiField
-    ValueSpinner promotionFloor;
     @UiField
     RadioGroup<PromotionMode> promotionMode;
     @UiField
@@ -163,7 +162,7 @@ public class SetupTab extends Component {
     };
     private Runnable onMaxAttempts = () -> {
     };
-    private Consumer<QualityPreset> onPreset = value -> {
+    private Consumer<CheckPreset> onPreset = value -> {
     };
     private Consumer<Boolean> onFallback = on -> {
     };
@@ -198,7 +197,7 @@ public class SetupTab extends Component {
         tokenBudget.setMax(Long.MAX_VALUE);
         sampleSizeLimit.setMin(1);
         sampleSizeLimit.setMax(Integer.MAX_VALUE);
-        for (final QualityPreset value : QualityPreset.values()) {
+        for (final CheckPreset value : CheckPreset.values()) {
             preset.addItem(value, value.getDisplayValue(), value.getDescription());
         }
         promotionMode.addItem(PromotionMode.AUTOMATIC, "Use them as soon as they pass");
@@ -215,7 +214,6 @@ public class SetupTab extends Component {
         sampleSizeLimit.setOnChange(value -> onChange.run());
         preset.setOnChange(value -> onPreset.accept(value));
         heldOutFraction.setOnChange(value -> onChange.run());
-        promotionFloor.setOnChange(value -> onChange.run());
         promotionMode.setOnChange(value -> onChange.run());
         minRecordsToLearn.setOnChange(value -> onChange.run());
         fallback.setOnChange(on -> onFallback.accept(Boolean.TRUE.equals(on)));
@@ -430,14 +428,14 @@ public class SetupTab extends Component {
     // ---- Quality checks ----
 
     /// @return The checks' list, which its controller attaches to.
-    public ScorerList getScorerList() {
-        return scorerList;
+    public CheckList getCheckList() {
+        return checkList;
     }
 
     /// Shows which starting set the checks are, and what it asks.
     ///
     /// @param value The set, or null where the checks are the document's own.
-    public void setPreset(final QualityPreset value) {
+    public void setPreset(final CheckPreset value) {
         preset.setValue(value, false);
         presetDescription.setText(value == null
                 ? OWN
@@ -455,16 +453,6 @@ public class SetupTab extends Component {
     }
 
     // ---- Approving new translations ----
-
-    /// @return The pass mark, a fraction in [0, 1].
-    public double getPromotionFloor() {
-        return ScoreValues.fromPercent(promotionFloor.getIntValue());
-    }
-
-    /// @param fraction The pass mark, a fraction in [0, 1].
-    public void setPromotionFloor(final double fraction) {
-        promotionFloor.setValue(ScoreValues.toPercent(fraction));
-    }
 
     /// @return Whether what is learned is approved first.
     public PromotionMode getPromotionMode() {
@@ -561,7 +549,7 @@ public class SetupTab extends Component {
     }
 
     /// @param onPreset Told the starting set of checks the user chooses.
-    public void setOnPreset(final Consumer<QualityPreset> onPreset) {
+    public void setOnPreset(final Consumer<CheckPreset> onPreset) {
         this.onPreset = onPreset;
     }
 
@@ -589,7 +577,6 @@ public class SetupTab extends Component {
         sampleSizeLimit.setReadOnly(readOnly);
         preset.setEnabled(!readOnly);
         heldOutFraction.setReadOnly(readOnly);
-        promotionFloor.setReadOnly(readOnly);
         promotionMode.setEnabled(!readOnly);
         minRecordsToLearn.setReadOnly(readOnly);
         fallback.setEnabled(!readOnly);

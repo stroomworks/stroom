@@ -24,8 +24,8 @@ import stroom.pipeline.filter.SplitFilter;
 import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.security.api.SecurityContext;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Location;
@@ -101,8 +101,8 @@ public final class SchemaConformanceScorer implements Scorer {
     }
 
     @Override
-    public ScorerType type() {
-        return ScorerType.SCHEMA_CONFORMANCE;
+    public Check type() {
+        return Check.CONFORMANCE;
     }
 
     /// Scores against the default target, event-logging v3.0.0, for a caller with no document's target.

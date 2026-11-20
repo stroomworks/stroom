@@ -17,8 +17,8 @@
 package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.ErrorType;
@@ -45,8 +45,8 @@ public final class BusinessRulesScorer implements Scorer {
     private static final ElementId RULES = new ElementId("BusinessRules");
 
     @Override
-    public ScorerType type() {
-        return ScorerType.BUSINESS_RULES;
+    public Check type() {
+        return Check.RULES;
     }
 
     @Override

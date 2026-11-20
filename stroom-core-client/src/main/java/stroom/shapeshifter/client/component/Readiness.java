@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowProblem;
 import stroom.shapeshifter.shared.LearningMode;
@@ -28,9 +29,9 @@ import java.util.Objects;
 
 /// Whether a Shapeshifter AI document will learn anything, worked out from the document alone (the
 /// "document checks" of design 07): learning is switched on, a model is chosen, a target schema is chosen
-/// (D1: none where no event-logging schema was installed when the document was made), there is at least one
-/// quality check (a document with none passes every answer, ISSUES item 22), and the approach has no
-/// problems. Each check that fails names the fix the Feeds tab offers for it.
+/// (D1: none where no event-logging schema was installed when the document was made), at least one quality
+/// check besides compile is a gate (with none, any answer that runs passes, ISSUES item 22), and the approach
+/// has no problems. Each check that fails names the fix the Feeds tab offers for it.
 ///
 /// Whether pipelines use the document is not asked here: it needs other documents, and a pipeline built by
 /// hand is as good as one a factory made.
@@ -66,14 +67,15 @@ public final class Readiness {
             items.add(new Item(true, "Target schema: " + Objects.requireNonNullElse(
                     doc.getTargetSchema().getName(), doc.getTargetSchema().getUuid()), null));
         }
-        final int checks = doc.getScorers() == null
-                ? 0
-                : doc.getScorers().size();
-        if (checks == 0) {
-            items.add(new Item(false, "There are no quality checks, so every answer would pass.",
+        // Compile is always a gate, and alone it lets through any answer that runs
+        final long gates = doc.getChecks().stream()
+                .filter(setting -> setting.isGate() && setting.getCheck() != Check.COMPILE)
+                .count();
+        if (gates == 0) {
+            items.add(new Item(false, "No quality check is a gate, so any answer that runs would pass.",
                     Fix.USE_STANDARD_CHECKS));
         } else {
-            items.add(new Item(true, PlainWords.count(checks, "quality check"), null));
+            items.add(new Item(true, PlainWords.count(gates, "quality gate"), null));
         }
         final List<FlowProblem> problems = doc.getFlow().check();
         if (!problems.isEmpty()) {

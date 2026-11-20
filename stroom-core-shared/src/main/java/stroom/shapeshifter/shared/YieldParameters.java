@@ -48,8 +48,8 @@ public final class YieldParameters extends ScorerParameters {
     }
 
     @Override
-    public ScorerType scorerType() {
-        return ScorerType.YIELD;
+    public Check check() {
+        return Check.YIELD;
     }
 
     public double getExpectedRatio() {

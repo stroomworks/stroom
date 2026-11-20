@@ -22,14 +22,14 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * What one scorer made of one step of a chain, as a surface shows it (design 01 §8): the number, what it
+ * What one check made of one step of a chain, as a surface shows it (design 01 §8): the number, what it
  * was measured against, and whether that was a gate it failed or a threshold it merely fell short of.
  */
 @JsonInclude(Include.NON_NULL)
 public class StageScore {
 
     @JsonProperty
-    private final ScorerType scorer;
+    private final Check check;
     @JsonProperty
     private final double value;
     @JsonProperty
@@ -40,20 +40,20 @@ public class StageScore {
     private final boolean met;
 
     @JsonCreator
-    public StageScore(@JsonProperty("scorer") final ScorerType scorer,
+    public StageScore(@JsonProperty("check") final Check check,
                       @JsonProperty("value") final double value,
                       @JsonProperty("threshold") final double threshold,
                       @JsonProperty("gate") final boolean gate,
                       @JsonProperty("met") final boolean met) {
-        this.scorer = scorer;
+        this.check = check;
         this.value = value;
         this.threshold = threshold;
         this.gate = gate;
         this.met = met;
     }
 
-    public ScorerType getScorer() {
-        return scorer;
+    public Check getCheck() {
+        return check;
     }
 
     public double getValue() {
@@ -74,7 +74,7 @@ public class StageScore {
 
     @Override
     public String toString() {
-        return scorer + " " + value + (met
+        return check + " " + value + (met
                 ? " (met "
                 : " (missed ") + threshold + (gate
                 ? ", a gate)"

@@ -24,7 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * The scorecard's verdict on one step of a chain, as a surface shows it (design 01 §8.4): every scorer
+ * The scorecard's verdict on one step of a chain, as a surface shows it (design 01 §8.4): every check
  * that applied, the weighted total of those that carry weight, and whether the step passed.
  * <p>
  * The steps are in chain order and named by position rather than by element, because what a step is
@@ -36,7 +36,7 @@ public class StageVerdict {
     @JsonProperty
     private final int step;
     @JsonProperty
-    private final double weightedTotal;
+    private final double score;
     @JsonProperty
     private final boolean passed;
     @JsonProperty
@@ -44,11 +44,11 @@ public class StageVerdict {
 
     @JsonCreator
     public StageVerdict(@JsonProperty("step") final int step,
-                        @JsonProperty("weightedTotal") final double weightedTotal,
+                        @JsonProperty("score") final double score,
                         @JsonProperty("passed") final boolean passed,
                         @JsonProperty("scores") final List<StageScore> scores) {
         this.step = step;
-        this.weightedTotal = weightedTotal;
+        this.score = score;
         this.passed = passed;
         this.scores = scores;
     }
@@ -57,8 +57,8 @@ public class StageVerdict {
         return step;
     }
 
-    public double getWeightedTotal() {
-        return weightedTotal;
+    public double getScore() {
+        return score;
     }
 
     public boolean isPassed() {
@@ -71,7 +71,7 @@ public class StageVerdict {
 
     @Override
     public String toString() {
-        return "step " + step + ": " + weightedTotal + (passed
+        return "step " + step + ": " + score + (passed
                 ? " (passed)"
                 : " (failed)");
     }

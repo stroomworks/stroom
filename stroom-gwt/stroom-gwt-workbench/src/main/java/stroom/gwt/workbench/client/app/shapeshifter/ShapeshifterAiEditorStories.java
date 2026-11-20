@@ -29,14 +29,22 @@ import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
 import stroom.shapeshifter.client.component.BuiltInTextController;
+import stroom.shapeshifter.client.component.CheckEditorController;
 import stroom.shapeshifter.client.component.FeedFilterEditorController;
-import stroom.shapeshifter.client.component.ScorerSettingEditorController;
 import stroom.shapeshifter.client.component.ShapeshifterAiEditor;
 import stroom.shapeshifter.client.component.XPathAssertionEditorController;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckPreset;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckSettings;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ShapeshifterAiResource;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Widget;
+
+import java.util.List;
+import java.util.Map;
 
 /// The `App/Editors/ShapeshifterAiEditor` stories, showing Stroom's real [ShapeshifterAiEditor] (a
 /// Learning Flow document's tabs: Pipelines, Setup, Documentation and Permissions) with fake REST replies.
@@ -45,7 +53,7 @@ import com.google.gwt.user.client.ui.Widget;
 /// ([DocEditors#open]). The Pipelines tab lists the document's feeds, each opening its pipeline, whose AI
 /// Translation tab has its own stories ([PipelineAiTranslationStories]), with a quick filter and a dialog of
 /// which feeds to show ([FeedFilterEditorController]). Its dialogs on the Setup tab: a check's
-/// ([ScorerSettingEditorController]) and a business rule's assertion within it
+/// ([CheckEditorController]) and a business rule's assertion within it
 /// ([XPathAssertionEditorController]), and loading a built-in text ([BuiltInTextController]).
 ///
 /// | Stroom endpoint | Used for |
@@ -59,7 +67,13 @@ public final class ShapeshifterAiEditorStories {
 
     private static final String SAVE_PATH = "/shapeshifterAi/v1/ss-1";
     // A FormGroup gives its control the group's identity as its id
-    private static final String WEIGHT = "#scorerWeight";
+    private static final String THRESHOLD = "#checkThreshold";
+    private static final String RULES = "Meets the business rules";
+    private static final String CONFORMANCE = "Valid against the event schema";
+    // The fixture's checks, every one, as a save sends them: the Standard set with business rules as advice
+    private static final List<CheckSetting> DOC_CHECKS = CheckSettings.complete(List.of(
+            CheckSetting.of(Check.COMPILE, CheckState.GATE),
+            new CheckSetting(Check.RULES, CheckState.ADVICE, 0.9, null)));
     private static final String MAP = "Setup route map";
     private static final String TARGET_SCHEMA = "#shapeshifterAiTargetSchema";
     private static final String NO_TARGET_SCHEMA =
@@ -156,22 +170,33 @@ public final class ShapeshifterAiEditorStories {
                 .story("NotReady", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
                 .withPlay(play -> {
                     play.expect(play.findByText("This document won't learn anything yet")).toBeInTheDocument();
-                    play.expect(play.getByText("There are no quality checks, so every answer would pass."))
-                            .toBeInTheDocument();
+                    // A new Learning Flow has the Standard checks, so they are not what stops it
+                    play.expect(play.getByText("6 quality gates")).toBeInTheDocument();
                     play.expect(play.getByText(NO_TARGET_SCHEMA)).toBeInTheDocument();
                     play.click(play.getByRole("button", StroomDom.button("Switch on")));
                     play.expect(play.findByRole("radio", "On: learn new feeds automatically")).toBeChecked();
                     openTab(play, "Pipelines");
-                    play.click(play.findByRole("button", StroomDom.button("Use the Standard checks")));
-                    play.expect(play.findByText("Events carry real content")).toBeInTheDocument();
-                    openTab(play, "Pipelines");
                     play.expect(play.findByText("Learning is on")).toBeInTheDocument();
-                    play.expect(play.getByText("4 quality checks")).toBeInTheDocument();
                     play.expect(play.getByText(TextMatch.startingWith("This is the document as you have it now")))
                             .toBeVisible();
-                    save(play, "{\"learningMode\": \"AUTOMATIC\", \"scorers\": [{\"type\": \"COMPILE\"}, "
-                               + "{\"type\": \"YIELD\"}, {\"type\": \"SCHEMA_CONFORMANCE\"}, "
-                               + "{\"type\": \"EXTRACTION_QUALITY\"}]}");
+                    save(play, "{\"learningMode\": \"AUTOMATIC\"}");
+                })
+                // Checks that are no gate but compile: the banner offers the Standard set, which is put in place
+                .story("NoGates", context -> render(context, false, ShapeshifterAiFixtures.NO_GATES_DOC))
+                .withPlay(play -> {
+                    play.expect(play.findByText("No quality check is a gate, so any answer that runs would pass."))
+                            .toBeInTheDocument();
+                    play.click(play.getByRole("button", StroomDom.button("Use the Standard checks")));
+                    play.expect(play.findByRole("radio", "Standard")).toBeChecked();
+                    openTab(play, "Pipelines");
+                    // The Standard set gates six checks besides compile, so nothing stops it learning any
+                    // longer and the banner goes, rather than counting the gates. Its words stay in the DOM,
+                    // since the tab hides the banner rather than emptying it, so this is about what is seen.
+                    final Play grid = play.within(play.findByRole("grid", "Pipelines"));
+                    play.expect(grid.findByText("Firewall pipeline")).toBeInTheDocument();
+                    play.waitFor(() -> play.expect(play.getByText("This document won't learn anything yet"))
+                            .not().toBeVisible());
+                    save(play, checks(CheckPreset.STANDARD.settings(), Map.of()));
                 })
                 // Read only: the banner offers nothing that changes the document
                 .story("NotReadyReadOnly", context -> render(context, true, ShapeshifterAiFixtures.NEW_DOC))
@@ -256,11 +281,12 @@ public final class ShapeshifterAiEditorStories {
                         context -> render(context, false, ShapeshifterAiFixtures.DOC_TARGETED))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, "Valid against the event schema");
+                    openScorer(play, CONFORMANCE);
                     play.expect(screen.getByText(TextMatch.startingWith(
                             "Each record is validated against the Learning Flow's target schema"))).toBeVisible();
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Scorer", StroomDom.DIALOG_TITLE)).toBeNull());
+                    play.waitFor(() -> play.expect(screen.queryByText(CONFORMANCE, StroomDom.DIALOG_TITLE))
+                            .toBeNull());
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
@@ -278,10 +304,10 @@ public final class ShapeshifterAiEditorStories {
                             .toBeInTheDocument();
                     play.expect(map.getByRole("button", "Step 1: Choose the elements")).toBeInTheDocument();
                     play.expect(map.getByRole("button", "Step 2: Write the parser")).toBeInTheDocument();
-                    play.expect(map.getByRole("button", "Quality checks: Own checks · 2 checks"))
+                    play.expect(map.getByRole("button", "Quality checks: Own checks · 7 gates, 1 advice check"))
                             .toBeInTheDocument();
                     play.expect(map.getByRole("button",
-                            "Approving new translations: Pass mark 80% · used once it passes")).toBeInTheDocument();
+                            "Approving new translations: Used once it passes")).toBeInTheDocument();
                     final Query inService = map.getByRole("button",
                             "Monitoring translations in use: Flagged below 60%");
                     play.click(inService);
@@ -299,7 +325,7 @@ public final class ShapeshifterAiEditorStories {
                     openStop(play, "Approving new translations:");
                     play.click(play.findByRole("radio", "Wait for someone to approve them"));
                     play.expect(map.findByRole("button",
-                            "Approving new translations: Pass mark 80% · approved first")).toBeInTheDocument();
+                            "Approving new translations: Approved first")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
                 // The route map from the keyboard: only the stop chosen is in the tab order, the arrow keys move
@@ -332,17 +358,18 @@ public final class ShapeshifterAiEditorStories {
                 .story("Quality", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Quality checks:");
-                    play.expect(play.findByText("Meets the business rules")).toBeInTheDocument();
+                    play.expect(play.findByText(RULES)).toBeInTheDocument();
                     play.expect(play.getByText("Compiles")).toBeInTheDocument();
-                    play.expect(play.getByText("These are this document's own checks.")).toBeInTheDocument();
-                    play.expect(play.getByRole("button", "Add a check")).not().toHaveAttribute("aria-disabled");
+                    play.expect(play.getByText("Records are whole")).toBeInTheDocument();
+                    play.expect(play.getByText("These are this Learning Flow's own checks.")).toBeInTheDocument();
+                    // Every check has a row, so a check is edited, never added
+                    play.expect(play.queryByRole("button", "Add a check")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
                 .story("QualityReadOnly", context -> render(context, true, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Quality checks:");
-                    play.click(play.findByText("Meets the business rules"));
-                    play.expect(play.getByRole("button", "Add a check")).toHaveAttribute("aria-disabled", "true");
+                    play.click(play.findByText(RULES));
                     play.expect(play.getByRole("button", "Edit the selected check"))
                             .toHaveAttribute("aria-disabled", "true");
                     play.expect(play.getByRole("radio", "Standard")).toBeDisabled();
@@ -354,76 +381,74 @@ public final class ShapeshifterAiEditorStories {
                     final Play screen = play.screen();
                     openStop(play, "Quality checks:");
                     play.click(play.findByRole("radio", "Standard"));
-                    play.expect(screen.findByText(TextMatch.startingWith("Replace this document's 2 checks")))
+                    play.expect(screen.findByText(TextMatch.startingWith("Replace this Learning Flow's own checks")))
                             .toBeInTheDocument();
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.expect(play.findByText("Events carry real content")).toBeInTheDocument();
-                    play.expect(play.queryByText("Meets the business rules")).toBeNull();
-                    save(play, "{\"scorers\": [{\"type\": \"COMPILE\"}, {\"type\": \"YIELD\"}, "
-                               + "{\"type\": \"SCHEMA_CONFORMANCE\"}, {\"type\": \"EXTRACTION_QUALITY\"}]}");
+                    play.expect(play.findByRole("radio", "Standard")).toBeChecked();
+                    save(play, checks(CheckPreset.STANDARD.settings(), Map.of()));
                 })
                 .story("QualityPresetConfirmCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
                     openStop(play, "Quality checks:");
                     play.click(play.findByRole("radio", "Standard"));
-                    play.expect(screen.findByText(TextMatch.startingWith("Replace this document's 2 checks")))
+                    play.expect(screen.findByText(TextMatch.startingWith("Replace this Learning Flow's own checks")))
                             .toBeInTheDocument();
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
                     play.waitFor(() -> play.expect(play.getByRole("radio", "Standard")).not().toBeChecked());
-                    play.expect(play.getByText("Meets the business rules")).toBeInTheDocument();
+                    play.expect(play.getByText(RULES)).toBeInTheDocument();
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // A check's dialog: a new weight, OK and Save write it
+                // A check's dialog: a new threshold, OK and Save write it
                 .story("ScorerDialogOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, "Meets the business rules");
-                    final Query weight = screen.querySelector(WEIGHT);
-                    play.clear(weight);
-                    play.type(weight, "2.5");
+                    openScorer(play, RULES);
+                    final Query threshold = screen.querySelector(THRESHOLD);
+                    play.clear(threshold);
+                    play.type(threshold, "0.75");
                     play.tab();
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Scorer", StroomDom.DIALOG_TITLE)).toBeNull());
-                    play.waitFor(() -> play.expect(play.getByText("2.5")).toBeInTheDocument());
-                    save(play, "{\"scorers\": [{\"type\": \"COMPILE\"}, "
-                               + "{\"type\": \"BUSINESS_RULES\", \"weight\": 2.5}]}");
+                    play.waitFor(() -> play.expect(screen.queryByText(RULES, StroomDom.DIALOG_TITLE)).toBeNull());
+                    play.waitFor(() -> play.expect(play.getByText("75%")).toBeInTheDocument());
+                    save(play, checks(DOC_CHECKS, Map.of(Check.RULES,
+                            "{\"check\": \"RULES\", \"state\": \"ADVICE\", \"threshold\": 0.75}")));
                 })
                 // A check's dialog, cancelled: nothing changes
                 .story("ScorerDialogCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, "Meets the business rules");
-                    final Query weight = screen.querySelector(WEIGHT);
-                    play.clear(weight);
-                    play.type(weight, "7");
+                    openScorer(play, RULES);
+                    final Query threshold = screen.querySelector(THRESHOLD);
+                    play.clear(threshold);
+                    play.type(threshold, "0.4");
                     play.tab();
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Scorer", StroomDom.DIALOG_TITLE)).toBeNull());
-                    play.expect(play.queryByText("7.0")).toBeNull();
+                    play.waitFor(() -> play.expect(screen.queryByText(RULES, StroomDom.DIALOG_TITLE)).toBeNull());
+                    play.expect(play.queryByText("40%")).toBeNull();
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // A weight that isn't a number is refused, not changed: OK says why and stays open
+                // A threshold that isn't a number it can be is refused, not changed: OK says why and stays open
                 .story("ScorerDialogRefusesBadNumber", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, "Meets the business rules");
-                    final Query weight = screen.querySelector(WEIGHT);
-                    play.clear(weight);
-                    play.type(weight, "heavy");
+                    openScorer(play, RULES);
+                    final Query threshold = screen.querySelector(THRESHOLD);
+                    play.clear(threshold);
+                    play.type(threshold, "most");
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.expect(screen.findByText("Must be a number of zero or more")).toBeInTheDocument();
-                    play.expect(screen.getByText("Scorer", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
-                    play.expect(weight).toHaveValue("heavy");
+                    play.expect(screen.findByText("Must be a number from 0 to 1")).toBeInTheDocument();
+                    play.expect(screen.getByText(RULES, StroomDom.DIALOG_TITLE)).toBeInTheDocument();
+                    play.expect(threshold).toHaveValue("most");
                     DocEditors.expectNoProblems(play);
                 })
                 // A business rule's assertion, added in its own dialog within the check's
                 .story("AssertionDialogOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, "Meets the business rules");
+                    openScorer(play, RULES);
                     play.click(screen.getByRole("button", "Add assertion"));
                     play.expect(screen.findByText("Assertion", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
                     play.type(screen.getByLabelText("Name"), "events have a time");
@@ -434,16 +459,16 @@ public final class ShapeshifterAiEditorStories {
                     play.click(assertion.getByRole("button", StroomDom.button("OK")));
                     play.waitFor(() -> play.expect(screen.getByText("events have a time")).toBeInTheDocument());
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
-                    play.waitFor(() -> play.expect(screen.queryByText("Scorer", StroomDom.DIALOG_TITLE)).toBeNull());
-                    save(play, "{\"scorers\": [{\"type\": \"COMPILE\"}, {\"type\": \"BUSINESS_RULES\", "
+                    play.waitFor(() -> play.expect(screen.queryByText(RULES, StroomDom.DIALOG_TITLE)).toBeNull());
+                    save(play, checks(DOC_CHECKS, Map.of(Check.RULES, "{\"check\": \"RULES\", "
                                + "\"parameters\": {\"assertions\": [{\"name\": \"users are named\"}, "
-                               + "{\"name\": \"events have a time\", \"xpath\": \"EventTime/TimeCreated\"}]}}]}");
+                               + "{\"name\": \"events have a time\", \"xpath\": \"EventTime/TimeCreated\"}]}}")));
                 })
                 // An assertion's dialog, cancelled: the check keeps its one assertion
                 .story("AssertionDialogCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, "Meets the business rules");
+                    openScorer(play, RULES);
                     play.click(screen.getByRole("button", "Add assertion"));
                     play.expect(screen.findByText("Assertion", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
                     play.type(screen.getByLabelText("Name"), "never kept");
@@ -570,7 +595,7 @@ public final class ShapeshifterAiEditorStories {
                 .story("SetupAdvancedFolded", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
-                    play.expect(play.findByLabelText("Pass mark (%)")).toBeVisible();
+                    play.expect(play.findByRole("radio", "Wait for someone to approve them")).toBeVisible();
                     final Query advanced = play.getByRole("button", "Advanced options");
                     play.expect(advanced).toHaveAttribute("aria-expanded", "false");
                     play.expect(play.getByLabelText("Records before a translation is trusted")).not().toBeVisible();
@@ -662,6 +687,30 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(map.getByRole("button", TextMatch.startingWith("Learning steps:")))
                             .toHaveAttribute("aria-current", "location");
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
+                    DocEditors.expectNoProblems(play);
+                })
+                // A rule that fires when a check falls short, on a Learning Flow where that check is off:
+                // the step's card says the rule never fires, but the document can still be saved, since
+                // the user may be about to switch the check on
+                .story("ApproachRuleOnCheckThatIsOff",
+                        context -> render(context, false, ShapeshifterAiFixtures.RULE_ON_OFF_CHECK_DOC))
+                .withPlay(play -> {
+                    openStop(play, "Step 2:");
+                    play.expect(play.findByRole("heading", "Step 2: Write the parser")).toBeVisible();
+                    play.expect(play.findByText(TextMatch.containing("never fires"))).toBeVisible();
+                    play.expect(play.getByText(TextMatch.containing("the coverage check is off"))).toBeVisible();
+                    // The warning doesn't mark the document changed: it is about the document as saved.
+                    // That a warning never stops a save is pinned by TestLearningFlow, since the store
+                    // refuses on problems() alone.
+                    play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
+                    DocEditors.expectNoProblems(play);
+                })
+                // The same rule where the check is a gate: nothing is said
+                .story("ApproachRuleOnCheckThatIsOn", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    openStop(play, "Step 2:");
+                    play.expect(play.findByRole("heading", "Step 2: Write the parser")).toBeVisible();
+                    play.expect(play.queryByText(TextMatch.containing("never fires"))).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
                 // A step fine-tuned: its tries, out of sight until unfolded, and a tag on its heading for them
@@ -797,7 +846,23 @@ public final class ShapeshifterAiEditorStories {
         openStop(play, "Quality checks:");
         play.click(play.findByText(check));
         play.click(play.getByRole("button", "Edit the selected check"));
-        play.expect(screen.findByText("Scorer", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
+        play.expect(screen.findByText(check, StroomDom.DIALOG_TITLE)).toBeInTheDocument();
+    }
+
+    // The checks a save sends, every one in order, as JSON the save is to contain: each check's state, or
+    // what is given instead for a check
+    private static String checks(final List<CheckSetting> settings, final Map<Check, String> instead) {
+        final StringBuilder json = new StringBuilder("{\"checks\": [");
+        for (int i = 0; i < settings.size(); i++) {
+            final CheckSetting setting = settings.get(i);
+            if (i > 0) {
+                json.append(", ");
+            }
+            json.append(instead.getOrDefault(setting.getCheck(), "{\"check\": \"" + setting.getCheck().name()
+                                                                 + "\", \"state\": \"" + setting.getState().name()
+                                                                 + "\"}"));
+        }
+        return json.append("]}").toString();
     }
 
     // Saves, and checks the document sent holds what is given

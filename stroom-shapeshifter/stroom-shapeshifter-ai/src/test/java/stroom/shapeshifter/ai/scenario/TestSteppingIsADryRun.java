@@ -30,9 +30,10 @@ import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -208,13 +209,20 @@ class TestSteppingIsADryRun {
                 .learningMode(mode)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                .promotionFloor(0.85)
-                // Named, because a document with no scorers scores every chain 1.0 and nothing it binds
-                // could ever fail the gate it is on trial for.
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.8, false,
-                                new YieldParameters(1.0, YieldBasis.RECORDS))))
+                // Yield a gate, so that a binding that makes nothing of its records fails the gate it is on trial
+                // for.
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        CheckSetting.of(Check.COVERAGE, CheckState.OFF),
+                        new CheckSetting(Check.YIELD, CheckState.GATE, 0.8,
+                                new YieldParameters(1.0, YieldBasis.RECORDS)),
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
+                        CheckSetting.of(Check.QUALITY, CheckState.OFF),
+                        CheckSetting.of(Check.RULES, CheckState.OFF),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 

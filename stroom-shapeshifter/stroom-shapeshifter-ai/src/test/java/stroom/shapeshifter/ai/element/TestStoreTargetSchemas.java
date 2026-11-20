@@ -20,9 +20,10 @@ import stroom.docref.DocRef;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.security.mock.MockSecurityContext;
 import stroom.shapeshifter.ai.scoring.TargetSchema;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.xmlschema.shared.XmlSchemaDoc;
 
@@ -155,7 +156,7 @@ class TestStoreTargetSchemas {
                 .uuid("doc")
                 .name("Learning flow")
                 .targetSchema(target)
-                .scorers(List.of(new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                .checks(List.of(new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                         new SchemaConformanceParameters())))
                 .build();
     }

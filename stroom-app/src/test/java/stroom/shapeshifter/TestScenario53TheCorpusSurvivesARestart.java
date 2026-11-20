@@ -57,9 +57,10 @@ import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
 import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.test.AbstractProcessIntegrationTest;
 import stroom.test.CommonTranslationTestHelper;
@@ -220,10 +221,10 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
                 .heldOutFraction(0.0)
                 .build();
         shapeshifterAiStore.writeDocument(configured.copy()
-                .scorers(configured.getScorers().stream()
-                        .map(setting -> setting.getType() == ScorerType.EXTRACTION_QUALITY
-                                ? new ScorerSetting(setting.getType(), setting.getWeight(), setting.getThreshold(),
-                                        setting.isGate(), new ExtractionQualityParameters(true, List.of()))
+                .checks(configured.getChecks().stream()
+                        .map(setting -> setting.getCheck() == Check.QUALITY
+                                ? new CheckSetting(setting.getCheck(), setting.getState(), setting.getThreshold(),
+                                        new ExtractionQualityParameters(true, List.of()))
                                 : setting)
                         .toList())
                 .build());

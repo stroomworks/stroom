@@ -21,11 +21,12 @@ import stroom.shapeshifter.ai.learning.Target;
 import stroom.shapeshifter.ai.learning.TargetChecks;
 import stroom.shapeshifter.ai.scoring.OutputRecords;
 import stroom.shapeshifter.ai.scoring.Scorecard;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
 import stroom.util.shared.StoredError;
@@ -44,19 +45,20 @@ class TestTargetChecks {
 
     private static final String RECORD = "2020-06-17T08:00:00.000Z,jim,warehouse,logon";
     private static final String EVENT = firstEvent(Scenarios.resource("csv-logon.events.xml"));
+    private static final String JSON = "http://www.w3.org/2013/XSL/json";
 
     /**
      * The full scorer set of a strict document, with a yield expectation of one event in five lines that
      * no single-line record could meet were it applied.
      */
     private static Scorecard scorecard() {
-        return new Scorecard(List.of(
-                new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, 0.9, true, null),
-                new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, true, new YieldParameters(0.2, YieldBasis.LINES)),
-                new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+        return Scorecard.of(List.of(
+                CheckSetting.of(Check.COMPILE, CheckState.GATE),
+                new CheckSetting(Check.COVERAGE, CheckState.GATE, 0.9, null),
+                new CheckSetting(Check.YIELD, CheckState.GATE, 0.5, new YieldParameters(0.2, YieldBasis.LINES)),
+                new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                         new SchemaConformanceParameters("EVENTS")),
-                new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                         new ExtractionQualityParameters(false, List.of("EventSource/User/Id")))),
                 new Scenarios().scorers());
     }
@@ -138,6 +140,69 @@ class TestTargetChecks {
                 .contains("<Name>jim</Name>");
     }
 
+    @Test
+    void preservationDoesNotDemandAJsonKeyThatTheTargetUsesAsAName() {
+        // A JSONParser record: every key is a `key` attribute, a name no parser emits as a value.
+        final String record = "<map xmlns=\"" + JSON + "\"><string key=\"traceId\">a479ab28</string>"
+                              + "<string key=\"name\">Get variable</string></map>";
+        final String event = """
+                <Event><EventDetail><Unknown>\
+                <Data Name="traceId" Value="a479ab28"/><Data Name="name" Value="Get variable"/>\
+                </Unknown></EventDetail></Event>""";
+        final String parsed = "<array xmlns=\"" + JSON + "\">" + record + "</array>";
+        assertThat(TargetChecks.preservation(parsed, List.of(Target.of(record, event)))).isEmpty();
+    }
+
+    @Test
+    void preservationStillReportsAValueTheParserDropped() {
+        final String record = "<map xmlns=\"" + JSON + "\"><string key=\"traceId\">a479ab28</string>"
+                              + "<string key=\"name\">Get variable</string></map>";
+        final String event = """
+                <Event><EventDetail><Unknown>\
+                <Data Name="traceId" Value="a479ab28"/><Data Name="name" Value="Get variable"/>\
+                </Unknown></EventDetail></Event>""";
+        // The parser lost the name's value.
+        final String parsed = "<array xmlns=\"" + JSON + "\"><map><string key=\"traceId\">a479ab28</string>"
+                              + "</map></array>";
+        final List<StoredError> shortfalls = TargetChecks.preservation(parsed, List.of(Target.of(record, event)));
+        assertThat(shortfalls).hasSize(1);
+        assertThat(missing(shortfalls.get(0))).isEqualTo("[Get variable]");
+    }
+
+    @Test
+    void preservationCountsAnXmlRecordsAttributeValuesAsData() {
+        // An XMLFragmentParser record: its attribute values are data, as Windows events carry them.
+        final String record = "<Event><System><TimeCreated SystemTime=\"2026-10-19T08:06:02Z\"/></System>"
+                              + "<EventData><Data Name=\"TargetUserName\">alice</Data></EventData></Event>";
+        final String event = """
+                <Event><EventTime><TimeCreated>2026-10-19T08:06:02Z</TimeCreated></EventTime>\
+                <EventDetail><Unknown><Data Name="TargetUserName" Value="alice"/></Unknown></EventDetail>\
+                </Event>""";
+        final String parsed = "<Events>" + record + "</Events>";
+        assertThat(TargetChecks.preservation(parsed, List.of(Target.of(record, event)))).isEmpty();
+    }
+
+    @Test
+    void preservationOfATextRecordIsUnchanged() {
+        // A DSParser record is text: the record itself is the only value, so any part of it counts.
+        final String parsed = "<records xmlns=\"records:2\"><record>"
+                              + "<data name=\"when\" value=\"2020-06-17T08:00:00.000Z\"/>"
+                              + "<data name=\"who\" value=\"jim\"/></record></records>";
+        final List<StoredError> shortfalls = TargetChecks.preservation(parsed, List.of(Target.of(RECORD, EVENT)));
+        assertThat(shortfalls).hasSize(1);
+        assertThat(missing(shortfalls.get(0)))
+                .contains("warehouse")
+                .contains("logon")
+                .doesNotContain("jim");
+    }
+
+    /// The values a preservation shortfall names as missing, without the record it quotes.
+    private static String missing(final StoredError shortfall) {
+        final String message = shortfall.getMessage();
+        final int start = message.indexOf("no value for ") + "no value for ".length();
+        return message.substring(start, message.indexOf(", which the target event needs"));
+    }
+
     private static String firstEvent(final String events) {
         final int start = events.indexOf("<Event>");
         final int end = events.indexOf("</Event>") + "</Event>".length();
@@ -152,22 +217,22 @@ class TestTargetChecks {
         // check agree on two.
         assertThat(TargetChecks.elementsNamed(document, "item")).hasSize(2);
         assertThat(TargetChecks.elementsNamed(document, "item").get(0)).contains("1a");
-        assertThat(TargetChecks.recordElement(document, "item")).isEmpty();
-        assertThat(TargetChecks.recordElement(document, "log")).isPresent();
+        assertThat(TargetChecks.recordElement(document, "item", 0.9)).isEmpty();
+        assertThat(TargetChecks.recordElement(document, "log", 0.9)).isPresent();
         // One record whose repeated children are fields is a record, not a container of them; one whose
         // repeated child has structure of its own is the container.
         final OutputRecords one = OutputRecords.parse(
                 "<records><record><data name=\"a\" value=\"1\"/><data name=\"b\" value=\"2\"/></record></records>")
                 .orElseThrow();
-        assertThat(TargetChecks.recordElement(one, "record")).isEmpty();
+        assertThat(TargetChecks.recordElement(one, "record", 0.9)).isEmpty();
         final OutputRecords nested = OutputRecords.parse(
                 "<log><entries><entry><who>a</who></entry><entry><who>b</who></entry></entries></log>").orElseThrow();
-        assertThat(TargetChecks.recordElement(nested, "entries")).isPresent();
+        assertThat(TargetChecks.recordElement(nested, "entries", 0.9)).isPresent();
         // Only an element's own children count: one Event holding repeated structured Data two levels down is
         // a record.
         final OutputRecords event = OutputRecords.parse("<Events><Event><System><Id>1</Id></System><EventData>"
                 + "<Data><Text>a</Text></Data><Data><Text>b</Text></Data></EventData></Event></Events>").orElseThrow();
-        assertThat(TargetChecks.recordElement(event, "Event")).isEmpty();
+        assertThat(TargetChecks.recordElement(event, "Event", 0.9)).isEmpty();
     }
 
     @Test

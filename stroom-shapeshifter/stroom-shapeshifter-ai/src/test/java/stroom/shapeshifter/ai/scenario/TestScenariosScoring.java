@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.learning.Question;
+import stroom.shapeshifter.ai.scoring.Judgement;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
 import stroom.shapeshifter.ai.stage.Decision.GivenUp;
 import stroom.shapeshifter.ai.stage.Decision.Parked;
@@ -25,12 +26,13 @@ import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -49,7 +51,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * points at the lines a splitter quietly dropped; schema conformance passes the degenerate transform of
  * design 01 §8.3 and extraction quality refuses it (A16); a business rule names itself; and a candidate
  * that never clears its threshold is abandoned at the candidate limit, while one that clears every
- * threshold but not the floor is given up too.
+ * threshold is abandoned at the candidate limit. Under the one model of checks (UM-2, D1) a check that is
+ * only advice refuses nothing, so a candidate that falls short of advice alone is promoted, and one that
+ * passes a gate on the sample but fails it over the whole stream is given up.
  */
 class TestScenariosScoring {
 
@@ -102,17 +106,21 @@ class TestScenariosScoring {
                 .flow(FlowExample.TARGET_FIRST)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, 0.9, false, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.GATE, 0.9, null),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false,
-                                new BusinessRulesParameters(List.of(NAMES_THE_USER), true))))
+                        new CheckSetting(Check.RULES, CheckState.GATE, 1.0,
+                                new BusinessRulesParameters(List.of(NAMES_THE_USER), true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 
@@ -146,7 +154,7 @@ class TestScenariosScoring {
         assertThat(run.decision()).isInstanceOf(Promoted.class);
         assertThat(script.scripted()).hasSize(4);
         // The second splitter consumed everything; the split's verdict says so and the whole stream scores full.
-        assertThat(run.verdicts().get(0).passed()).isTrue();
+        assertThat(run.verdicts().get(0).judgements().stream().allMatch(Judgement::metThreshold)).isTrue();
         assertThat(((Promoted) run.decision()).score()).isEqualTo(1.0);
     }
 
@@ -176,9 +184,9 @@ class TestScenariosScoring {
         assertThat(feedback(reAsk)).noneMatch(message -> message.startsWith("Record "));
         // The promoted transform scores full on every judge of meaning over the whole stream.
         assertThat(run.verdicts().get(1).judgements())
-                .extracting(judgement -> judgement.setting().getType())
-                .containsExactly(ScorerType.COMPILE, ScorerType.YIELD, ScorerType.SCHEMA_CONFORMANCE,
-                        ScorerType.EXTRACTION_QUALITY, ScorerType.BUSINESS_RULES);
+                .extracting(judgement -> judgement.setting().getCheck())
+                .containsExactly(Check.COMPILE, Check.YIELD, Check.CONFORMANCE,
+                        Check.QUALITY, Check.RULES);
         assertThat(run.verdicts().get(1).judgements())
                 .extracting(judgement -> judgement.score().value())
                 .containsOnly(1.0);
@@ -268,11 +276,10 @@ class TestScenariosScoring {
         final Scenarios scenarios = new Scenarios();
         // The catalogue's three candidates, pinned: the document's default is now five (design 02 §6.2).
         final ShapeshifterAiDoc doc = doc().copy()
-                .promotionFloor(0.95)
                 .maxAttempts(3)
-                .scorers(doc().getScorers().stream()
-                        .map(setting -> setting.getType() == ScorerType.YIELD
-                                ? new ScorerSetting(ScorerType.YIELD, 1.0, 0.75, false,
+                .checks(doc().getChecks().stream()
+                        .map(setting -> setting.getCheck() == Check.YIELD
+                                ? new CheckSetting(Check.YIELD, CheckState.GATE, 0.75,
                                         new YieldParameters(1.0, YieldBasis.RECORDS))
                                 : setting)
                         .toList())
@@ -325,11 +332,10 @@ class TestScenariosScoring {
     }
 
     @Test
-    void scenario7ACandidateThatClearsEveryThresholdButNotTheFloorIsGivenUp() {
-        // Yield at its default threshold of 0.5 lets a transform that drops every other record through the
-        // conversation; the floor of 0.95 over the whole stream does not.
+    void scenario7ACandidateThatFallsShortOnlyOfAdviceIsPromoted() {
+        // Yield is advice in this document: a transform that drops every other record falls short of it, and
+        // is still promoted, since advice never refuses a candidate (D1). Its score says what it fell short on.
         final Scenarios scenarios = new Scenarios();
-        final ShapeshifterAiDoc doc = doc().copy().promotionFloor(0.95).build();
         final String everyOther = CsvLines.replacing(XSLT, "  <xsl:template match=\"record\">",
                 "  <xsl:template match=\"record[number(substring(data[@name='who']/@value, 5)) mod 2 = 1]\"/>\n\n"
                 + "  <xsl:template match=\"record\">");
@@ -338,16 +344,44 @@ class TestScenariosScoring {
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(everyOther));
 
+        final StageRun run = scenarios.process(script, doc(), stream(1, CsvLines.lines(6))).learned();
+
+        script.verifyExhausted();
+        assertThat(run.decision()).isInstanceOf(Promoted.class);
+        assertThat(((Promoted) run.decision()).score()).isLessThan(1.0);
+    }
+
+    @Test
+    void scenario7ACandidateThatPassesAGateOnTheSampleButFailsItOverTheStreamIsGivenUp() {
+        // Yield is a gate at 0.9. The model learns from the first five records; the sixth is held out. A
+        // transform that drops only the sixth yields fully on the sample and five in six over the stream.
+        final Scenarios scenarios = new Scenarios();
+        final ShapeshifterAiDoc doc = doc().copy()
+                .checks(doc().getChecks().stream()
+                        .map(setting -> setting.getCheck() == Check.YIELD
+                                ? new CheckSetting(Check.YIELD, CheckState.GATE, 0.9,
+                                        new YieldParameters(1.0, YieldBasis.RECORDS))
+                                : setting)
+                        .toList())
+                .build();
+        final String dropsTheLast = CsvLines.replacing(XSLT, "  <xsl:template match=\"record\">",
+                "  <xsl:template match=\"record[data[@name='who']/@value = 'user5']\"/>\n\n"
+                + "  <xsl:template match=\"record\">");
+        final Script script = scenarios.script(FOUR_FIELDS, XSLT)
+                .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
+                .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS))
+                .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(dropsTheLast));
+
         final StageRun run = scenarios.process(script, doc, stream(1, CsvLines.lines(6))).learned();
 
         script.verifyExhausted();
         assertThat(script.scripted()).hasSize(3);
         assertThat(run.decision()).isInstanceOf(GivenUp.class);
-        assertThat(((GivenUp) run.decision()).reason()).isEqualTo("Below the promotion floor");
+        assertThat(((GivenUp) run.decision()).reason()).isEqualTo("A gate failed");
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER).orElseThrow())
-                .contains("against a floor of 0.95");
+                .contains("Candidate failed the gate Yield");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
-        assertThat(scenarios.stores.pipelines.list()).describedAs("nothing written below the floor").isEmpty();
+        assertThat(scenarios.stores.pipelines.list()).describedAs("nothing written").isEmpty();
         // The worker gave up on a stream it read back out of the store, so it errors nothing: the stream's
         // task is woken to error it, as for the flow's give-up.
         assertThat(scenarios.wake.pipelines()).containsExactly(Scenarios.LEARNER.pipelineUuid());

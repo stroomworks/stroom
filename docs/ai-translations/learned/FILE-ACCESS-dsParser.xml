@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSplitter xmlns="data-splitter:3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="data-splitter:3 file://data-splitter-v3.0.xsd" version="3.0">
+  <regex pattern="(\d{4}-\d{2}-\d{2}T[^,\r\n]*),([^,\r\n]*),([^,\r\n]*),([^,\r\n]*),([^,\r\n]*),&quot;?((?:(?&lt;=&quot;)(?:[^&quot;]|&quot;&quot;)*|[^&quot;\r\n]*))&quot;?(?:\r?\n|$)">
+    <data name="time" value="$1"/>
+    <data name="user" value="$2"/>
+    <data name="host" value="$3"/>
+    <data name="action" value="$4"/>
+    <data name="file" value="$5"/>
+    <data name="note" value="$6"/>
+  </regex>
+</dataSplitter>

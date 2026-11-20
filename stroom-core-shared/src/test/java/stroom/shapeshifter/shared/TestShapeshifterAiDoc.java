@@ -46,7 +46,7 @@ class TestShapeshifterAiDoc {
         final ShapeshifterAiDoc read = JsonUtil.readValue(json, ShapeshifterAiDoc.class);
 
         assertThat(read).isEqualTo(doc);
-        assertThat(read.getScorers()).containsExactlyElementsOf(doc.getScorers());
+        assertThat(read.getChecks()).containsExactlyElementsOf(doc.getChecks());
         assertThat(read.getFlow().getSteps()).extracting(FlowStep::format)
                 .containsExactly("CHAIN", "TARGET when text kinds 1", "CONFIGURE candidates 2");
     }
@@ -195,22 +195,23 @@ class TestShapeshifterAiDoc {
     }
 
     @Test
-    void aStepLineCarriesItsIdRoleChecksAndTransitions() {
-        final String line = "first: CONFIGURE transform candidates 2 checks conformance,fidelity "
+    void aStepLineCarriesItsIdRoleAndTransitions() {
+        final String line = "first: CONFIGURE transform candidates 2 "
                             + "on preservation-short goto parser on spent abandon";
         final FlowStep step = FlowStep.parse(line);
         assertThat(step.format()).isEqualTo(line);
         assertThat(step.getId()).isEqualTo("first");
         assertThat(step.getRole()).isEqualTo(ConfigureRole.TRANSFORM);
-        assertThat(step.getChecks()).containsExactly(Check.CONFORMANCE, Check.FIDELITY);
         assertThat(step.transitionOn(StepOutcome.PRESERVATION_SHORT).getGoTo()).isEqualTo("parser");
         assertThat(step.transitionOn(StepOutcome.REFUSED)).isNull();
         assertThat(step.transitionOnSpent().exits()).isTrue();
         assertThat(FlowStep.parse("CONFIGURE parser").effectiveId()).isEqualTo("parser");
         assertThat(FlowStep.parse("split").effectiveId()).isEqualTo("split");
         assertThatThrownBy(() -> FlowStep.parse("SPLIT parser")).hasMessageContaining("Only CONFIGURE takes a role");
-        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE checks bogus"))
-                .hasMessageContaining("'bogus' is not a check");
+        // 'checks' was a step's own list of checks; the one model of checks took it away, so the word is
+        // no longer part of the grammar
+        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE checks conformance"))
+                .hasMessageContaining("'checks' is not when, candidates, kinds, elements or on");
         assertThatThrownBy(() -> FlowStep.parse("CONFIGURE on flimsy goto parser"))
                 .hasMessageContaining("'on flimsy' is not an outcome");
         assertThatThrownBy(() -> FlowStep.parse("CONFIGURE on spent"))
@@ -221,7 +222,9 @@ class TestShapeshifterAiDoc {
         // The check's shortfall is its outcome, and the outcome reads back from its word.
         assertThat(Check.FIDELITY.shortfall()).isEqualTo(StepOutcome.FIDELITY_SHORT);
         assertThat(StepOutcome.parse("coverage-short")).isEqualTo(StepOutcome.COVERAGE_SHORT);
-        assertThat(Check.of(ScorerType.COMPILE)).isNull();
+        assertThat(Check.COMPILE.shortfall()).describedAs("compile's own outcome")
+                .isEqualTo(StepOutcome.COMPILE_FAILED);
+        assertThat(Check.REGRESSION.shortfall()).describedAs("judges promotion, not a step").isNull();
     }
 
     @Test
@@ -255,7 +258,7 @@ class TestShapeshifterAiDoc {
         // rather than only from the builder.
         final ShapeshifterAiDoc doc = new ShapeshifterAiDoc(
                 "uuid", "name", "1", null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null);
 
         assertThat(doc.getLearningMode()).isEqualTo(LearningMode.DISABLED);
         assertThat(doc.getTargetSchema()).describedAs("unset is the default target, event-logging v3.0.0")
@@ -270,12 +273,10 @@ class TestShapeshifterAiDoc {
         assertThat(doc.getTokenBudget()).isNull();
         assertThat(doc.getSampleSizeLimit()).isEqualTo(8_192);
         assertThat(doc.getPromotionMode()).describedAs("A9").isEqualTo(PromotionMode.AUTOMATIC);
-        assertThat(doc.getPromotionFloor()).isEqualTo(0.9);
         assertThat(doc.getHeldOutFraction()).isEqualTo(0.2);
         assertThat(doc.getMinRecordsToLearn()).isEqualTo(10);
         assertThat(doc.getRegressionCap()).isEqualTo(100);
         assertThat(doc.getRegressionRetentionDays()).isNull();
-        assertThat(doc.getScorers()).isEmpty();
     }
 
     @Test
@@ -286,7 +287,7 @@ class TestShapeshifterAiDoc {
         final ShapeshifterAiDoc created = new ShapeshifterAiDoc(
                 "uuid", "name", null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null);
+                null, null, null);
 
         assertThat(built).isEqualTo(created);
     }
@@ -315,20 +316,20 @@ class TestShapeshifterAiDoc {
     }
 
     @Test
-    void aScorerTakesItsTypesDefaultsWhenParametersAreAbsent() {
-        // A doc written before a scorer had parameters, or a hand-written one, reads back with them.
-        assertThat(new ScorerSetting(ScorerType.YIELD, null, null, null, null).getParameters())
+    void aCheckTakesItsOwnDefaultsWhenParametersAreAbsent() {
+        // A doc written before a check had parameters, or a hand-written one, reads back with them.
+        assertThat(new CheckSetting(Check.YIELD, CheckState.ADVICE, null, null).getParameters())
                 .isEqualTo(new YieldParameters(1.0, YieldBasis.RECORDS));
-        assertThat(new ScorerSetting(ScorerType.COMPILE, null, null, null, null).getParameters()).isNull();
+        assertThat(new CheckSetting(Check.COMPILE, CheckState.GATE, null, null).getParameters()).isNull();
     }
 
     @Test
-    void aScorerRefusesAnotherTypesParameters() {
-        assertThatThrownBy(() -> new ScorerSetting(ScorerType.YIELD, null, null, null,
+    void aCheckRefusesAnotherChecksParameters() {
+        assertThatThrownBy(() -> new CheckSetting(Check.YIELD, CheckState.ADVICE, null,
                 new SchemaConformanceParameters("EVENTS")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("SCHEMA_CONFORMANCE")
-                .hasMessageContaining("YIELD");
+                .hasMessageContaining("Schema conformance")
+                .hasMessageContaining("yield");
     }
 
     @Test
@@ -378,7 +379,7 @@ class TestShapeshifterAiDoc {
         final ScorerParameters read = JsonUtil.readValue(json, ScorerParameters.class);
 
         assertThat(read).isEqualTo(new SchemaConformanceParameters());
-        assertThat(read).isEqualTo(ScorerParameters.defaultsFor(ScorerType.SCHEMA_CONFORMANCE));
+        assertThat(read).isEqualTo(ScorerParameters.defaultsFor(Check.CONFORMANCE));
         assertThat(JsonUtil.writeValueAsString(read)).doesNotContain("schemaGroup");
     }
 
@@ -420,30 +421,30 @@ class TestShapeshifterAiDoc {
                 .tokenBudget(4_096L)
                 .sampleSizeLimit(1_024)
                 .promotionMode(PromotionMode.REVIEW)
-                .promotionFloor(0.95)
                 .heldOutFraction(0.25)
                 .minRecordsToLearn(20)
                 .regressionCap(50)
                 .regressionRetentionDays(30)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 1.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 2.0, 0.8, false, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.8, null),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(0.9, YieldBasis.LINES)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 0.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 2.0, 0.7, true,
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(true,
-                                        List.of("/Event/EventTime", "/Event/EventSource/User/Id"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false,
+                                                List.of("/Event/EventTime", "/Event/EventSource/User/Id"))),
+                        new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0,
                                 new BusinessRulesParameters(List.of(
                                         new XPathAssertion("interactive events name the user",
-                                                "not(EventDetail/Authenticate) or EventDetail/Authenticate/User/Id")),
+                                                "not(EventDetail/Authenticate) "
+                                                + "or EventDetail/Authenticate/User/Id")),
                                         false)),
-                        new ScorerSetting(ScorerType.ERROR_LOAD, 1.0, 0.9, false,
-                                new ErrorLoadParameters(Severity.WARNING)),
-                        new ScorerSetting(ScorerType.EVENT_CLASSIFICATION, 1.0, 0.8, false,
-                                new EventClassificationParameters(List.of("logon", "logoff")))))
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 }

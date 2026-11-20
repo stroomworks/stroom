@@ -22,9 +22,9 @@ import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.StopReport;
 import stroom.shapeshifter.shared.TurnScore;
@@ -306,7 +306,7 @@ public class AttemptsDao implements Attempts {
     @Override
     public void turn(final long attemptId, final Turn turn) {
         // The score of the check that decided it (design 06 A144), where one did.
-        final String scorer = NullSafe.get(turn.score(), TurnScore::getScorer, ScorerType::name);
+        final String check = NullSafe.get(turn.score(), TurnScore::getCheck, Check::name);
         final Double score = NullSafe.get(turn.score(), TurnScore::getScore);
         final Double threshold = NullSafe.get(turn.score(), TurnScore::getThreshold);
         JooqUtil.context(connProvider, context -> context
@@ -323,7 +323,7 @@ public class AttemptsDao implements Attempts {
                 .set(SHAPESHIFTER_TURN.OUTCOME, turn.outcome() == null
                         ? null
                         : turn.outcome().name())
-                .set(SHAPESHIFTER_TURN.SCORER, scorer)
+                .set(SHAPESHIFTER_TURN.SCORER, check)
                 .set(SHAPESHIFTER_TURN.SCORE, score)
                 .set(SHAPESHIFTER_TURN.SCORE_THRESHOLD, threshold)
                 // Which guidance this question carried (A46), so that a re-walk replays what was used
@@ -335,7 +335,7 @@ public class AttemptsDao implements Attempts {
                 .set(SHAPESHIFTER_TURN.OUTCOME, turn.outcome() == null
                         ? null
                         : turn.outcome().name())
-                .set(SHAPESHIFTER_TURN.SCORER, scorer)
+                .set(SHAPESHIFTER_TURN.SCORER, check)
                 .set(SHAPESHIFTER_TURN.SCORE, score)
                 .set(SHAPESHIFTER_TURN.SCORE_THRESHOLD, threshold)
                 // On the update as well as the insert: a question the attempt parked at is written
@@ -664,10 +664,13 @@ public class AttemptsDao implements Attempts {
 
     /// The score of the check that decided a turn, where one did (design 06 A144).
     private static TurnScore score(final Record record) {
-        final String scorer = record.get(SHAPESHIFTER_TURN.SCORER);
-        return scorer == null
+        // The column is still called 'scorer'; what it holds is a Check's name since the one model of
+        // checks. Renaming the column needs a jOOQ regeneration, so it goes with the rest of the table
+        // changes rather than here.
+        final String check = record.get(SHAPESHIFTER_TURN.SCORER);
+        return check == null
                 ? null
-                : new TurnScore(ScorerType.valueOf(scorer), record.get(SHAPESHIFTER_TURN.SCORE),
+                : new TurnScore(Check.valueOf(check), record.get(SHAPESHIFTER_TURN.SCORE),
                         record.get(SHAPESHIFTER_TURN.SCORE_THRESHOLD));
     }
 }

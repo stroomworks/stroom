@@ -53,8 +53,8 @@ public final class SchemaConformanceParameters extends ScorerParameters {
     }
 
     @Override
-    public ScorerType scorerType() {
-        return ScorerType.SCHEMA_CONFORMANCE;
+    public Check check() {
+        return Check.CONFORMANCE;
     }
 
     @Override

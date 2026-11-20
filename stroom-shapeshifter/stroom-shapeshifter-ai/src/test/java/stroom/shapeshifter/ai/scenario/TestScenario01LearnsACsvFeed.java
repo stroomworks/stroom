@@ -28,10 +28,11 @@ import stroom.shapeshifter.ai.stage.Produced;
 import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -68,12 +69,18 @@ class TestScenario01LearnsACsvFeed {
                 .minRecordsToLearn(5)
                 // The golden splitter reads the header line into a variable, which coverage counts as
                 // discarded — design 01 §9.1's finding — so the split scores 6/7 and the floor sits below it.
-                .promotionFloor(0.85)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, 0.8, false, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
-                                new YieldParameters(1.0, YieldBasis.RECORDS))))
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.8, null),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
+                                new YieldParameters(1.0, YieldBasis.RECORDS)),
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
+                        CheckSetting.of(Check.QUALITY, CheckState.OFF),
+                        CheckSetting.of(Check.RULES, CheckState.OFF),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 
@@ -129,15 +136,17 @@ class TestScenario01LearnsACsvFeed {
 
         // Scored over the whole stream: coverage and yield on the split, yield on the transform.
         assertThat(run.verdicts()).hasSize(2);
-        assertThat(run.verdicts().get(0).judgements()).extracting(j -> j.setting().getType())
-                .containsExactly(ScorerType.COMPILE, ScorerType.INPUT_COVERAGE);
-        assertThat(run.verdicts().get(1).judgements()).extracting(j -> j.setting().getType())
-                .containsExactly(ScorerType.COMPILE, ScorerType.YIELD);
-        assertThat(run.verdicts()).allMatch(verdict -> verdict.passed() && verdict.gatesPassed());
+        assertThat(run.verdicts().get(0).judgements()).extracting(j -> j.setting().getCheck())
+                .containsExactly(Check.COMPILE, Check.COVERAGE);
+        assertThat(run.verdicts().get(1).judgements()).extracting(j -> j.setting().getCheck())
+                .containsExactly(Check.COMPILE, Check.YIELD);
+        assertThat(run.verdicts()).allMatch(verdict -> verdict.judgements().stream().allMatch(Judgement::metThreshold));
         assertThat(run.verdicts().get(1).judgements()).extracting(Judgement::score)
                 .extracting(score -> score.value())
                 .containsExactly(1.0, 1.0);
-        assertThat(promoted.score()).isGreaterThanOrEqualTo(policy().getPromotionFloor());
+        // There is no floor to clear any more: a candidate is promoted when every gate passes, and the
+        // score is the average of the checks that ran (D2, D3)
+        assertThat(promoted.score()).isBetween(0.0, 1.0);
 
         // The document gained exactly the learned binding, the binding of the learner it was learned for: its feed
         // and type (A49).

@@ -54,8 +54,8 @@ public final class BusinessRulesParameters extends ScorerParameters {
     }
 
     @Override
-    public ScorerType scorerType() {
-        return ScorerType.BUSINESS_RULES;
+    public Check check() {
+        return Check.RULES;
     }
 
     public List<XPathAssertion> getAssertions() {

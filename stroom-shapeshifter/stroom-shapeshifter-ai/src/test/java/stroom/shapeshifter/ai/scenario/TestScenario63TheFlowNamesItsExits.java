@@ -25,10 +25,11 @@ import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -124,13 +125,13 @@ class TestScenario63TheFlowNamesItsExits {
     /// The demo document with its yield counted per line, the gate a parser that cuts a CSV as one record
     /// fails (scenario 60).
     private static ShapeshifterAiDoc.Builder perLine(final ShapeshifterAiDoc.Builder builder) {
-        final List<ScorerSetting> scorers = DemoDocument.scorers().stream()
-                .map(setting -> setting.getType() == ScorerType.YIELD
-                        ? new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+        final List<CheckSetting> checks = DemoDocument.checks().stream()
+                .map(setting -> setting.getCheck() == Check.YIELD
+                        ? new CheckSetting(Check.YIELD, CheckState.GATE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.LINES))
                         : setting)
                 .toList();
-        return builder.scorers(scorers);
+        return builder.checks(checks);
     }
 
     private static Input input(final long id) {

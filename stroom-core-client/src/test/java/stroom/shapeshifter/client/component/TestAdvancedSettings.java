@@ -16,12 +16,14 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckPreset;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.PromotionMode;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.Template;
 
@@ -47,8 +49,7 @@ class TestAdvancedSettings {
                 .instructions("Prefer Network/Open")
                 .attemptBudgetMs(120_000L)
                 .tokenBudget(50_000L)
-                .scorers(QualityPreset.STRICT.getSettings())
-                .promotionFloor(0.75)
+                .checks(CheckPreset.STRICT.settings())
                 .promotionMode(PromotionMode.REVIEW)
                 .relearnThreshold(0.6)
                 .build();
@@ -82,18 +83,19 @@ class TestAdvancedSettings {
 
     @Test
     void checksOfItsOwnOrLinesKeptBackOpenQualityChecks() {
-        final List<ScorerSetting> own = new ArrayList<>(QualityPreset.STANDARD.getSettings());
-        own.set(0, new ScorerSetting(ScorerType.COMPILE, 0.5, 1.0, true, null));
-        assertThat(AdvancedSettings.changed(doc().scorers(own).build()))
+        final List<CheckSetting> own = new ArrayList<>(CheckPreset.STANDARD.settings());
+        own.replaceAll(setting -> setting.getCheck() == Check.YIELD
+                ? setting.withState(CheckState.ADVICE)
+                : setting);
+        assertThat(AdvancedSettings.changed(doc().checks(own).build()))
                 .containsExactly(SetupSection.QUALITY);
         assertThat(AdvancedSettings.changed(doc().heldOutFraction(0.3).build()))
                 .containsExactly(SetupSection.QUALITY);
     }
 
     @Test
-    void noChecksAtAllLeavesQualityChecksFolded() {
-        // The readiness check offers the standard set, which is in sight
-        assertThat(AdvancedSettings.changed(doc().scorers(List.of()).build())).isEmpty();
+    void checksNotNamedAreTheDefaultsAndLeaveQualityChecksFolded() {
+        assertThat(AdvancedSettings.changed(doc().checks(List.of()).build())).isEmpty();
     }
 
     @Test

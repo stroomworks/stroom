@@ -21,11 +21,12 @@ import stroom.shapeshifter.ai.stage.Decision.Promoted;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -56,20 +57,25 @@ class TestScenario02HeaderNamesTheParser {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "JSONParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        CheckSetting.of(Check.COVERAGE, CheckState.OFF),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false,
+                        new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0,
                                 new BusinessRulesParameters(List.of(new XPathAssertion(
-                                        "logons name the user",
-                                        "not(EventDetail/Authenticate) "
-                                        + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
-                                        true))))
+                                                "logons name the user",
+                                                "not(EventDetail/Authenticate) "
+                                                + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
+                                                true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 

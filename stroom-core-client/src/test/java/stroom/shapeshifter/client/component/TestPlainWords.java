@@ -19,7 +19,6 @@ package stroom.shapeshifter.client.component;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepGuard;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.TurnScore;
@@ -59,19 +58,18 @@ class TestPlainWords {
     @Test
     void everyCheckAndScorerHasAName() {
         for (final Check check : Check.values()) {
-            assertThat(PlainWords.check(check)).isNotBlank();
+            assertThat(PlainWords.checkName(check)).isNotBlank();
         }
-        for (final ScorerType type : ScorerType.values()) {
-            assertThat(PlainWords.scorer(type)).isNotBlank();
-        }
-        assertThat(PlainWords.scorer(ScorerType.ERROR_LOAD)).endsWith("(not built)");
+        // Every check is built, so nothing is marked "(not built)"; the wording stays for a check
+        // declared before its code is
+        assertThat(Check.values()).allMatch(Check::isBuilt);
     }
 
     @Test
     void aScoreIsSaidAgainstWhatItNeeds() {
-        assertThat(PlainWords.score(new TurnScore(ScorerType.INPUT_COVERAGE, 0.42, 0.9)))
+        assertThat(PlainWords.score(new TurnScore(Check.COVERAGE, 0.42, 0.9)))
                 .isEqualTo("Reading the input scored 42%. It needs 90%.");
-        assertThat(PlainWords.score(new TurnScore(ScorerType.COMPILE, 1.0, 1.0)))
+        assertThat(PlainWords.score(new TurnScore(Check.COMPILE, 1.0, 1.0)))
                 .isEqualTo("Compiling scored 100%. It needed 100%.");
     }
 

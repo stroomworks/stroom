@@ -23,8 +23,10 @@ import stroom.shapeshifter.client.component.ApproachFlow.Addable;
 import stroom.shapeshifter.client.component.ApproachFlow.Condition;
 import stroom.shapeshifter.client.component.ApproachFlow.Destination;
 import stroom.shapeshifter.client.component.StepCard.CardAction;
+import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowProblem;
+import stroom.shapeshifter.shared.FlowProblem.Severity;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.QuestionKind;
@@ -102,6 +104,9 @@ public class ApproachSectionController extends Controller {
     private int defaultTries;
     /// What is wrong with each step, by index, and with the flow as a whole, as last checked.
     private Map<Integer, String> stepProblems = new HashMap<>();
+    /// The Learning Flow's checks, so that a rule firing on one that is off can be warned about; the Setup
+    /// tab keeps them up to date as its Quality checks are edited.
+    private List<CheckSetting> checks = new ArrayList<>();
     private String flowProblem;
     private Runnable onChange = () -> {
     };
@@ -152,6 +157,7 @@ public class ApproachSectionController extends Controller {
     public void read(final DocRef docRef, final ShapeshifterAiDoc doc) {
         fetchBuiltIns();
         defaultTries = doc.getMaxAttempts();
+        checks = new ArrayList<>(doc.getChecks());
         flow = doc.getFlow();
         final boolean sameSteps = steps.equals(flow.getSteps());
         steps = new ArrayList<>(flow.getSteps());
@@ -171,6 +177,15 @@ public class ApproachSectionController extends Controller {
         return doc.copy()
                 .flow(new LearningFlow(new ArrayList<>(steps), new HashMap<>(overrides), flow.getBuiltInVersion()))
                 .build();
+    }
+
+    /// The Learning Flow's checks, so that a step's card can warn that a rule fires on one that is off.
+    /// The Setup tab tells the approach whenever its Quality checks change, since both are edited together.
+    ///
+    /// @param checks The checks, as the Setup tab has them now.
+    public void setChecks(final List<CheckSetting> checks) {
+        this.checks = new ArrayList<>(checks);
+        refresh();
     }
 
     /// @param onChange Run after the user changes the approach, once the document is marked changed.
@@ -286,7 +301,7 @@ public class ApproachSectionController extends Controller {
             }
         }
         for (final FlowProblem problem : problems) {
-            if (problem.getStep() == null || problem.getStep() >= steps.size()) {
+            if (problem.isProblem() && (problem.getStep() == null || problem.getStep() >= steps.size())) {
                 whole.add(problem.getMessage());
             }
         }
@@ -296,6 +311,7 @@ public class ApproachSectionController extends Controller {
         if (card != null) {
             final FlowStep step = steps.get(selected);
             card.setProblem(stepProblems.get(selected));
+            card.setWarning(LearnFlow.problemsOf(problems, selected, Severity.WARNING));
             card.setUsual(ApproachFlow.usual(steps, selected));
             card.setTags(ApproachFlow.tuning(step));
             card.setElements(step.getKind() == QuestionKind.CHAIN, ApproachFlow.tickedElements(step),
@@ -312,7 +328,6 @@ public class ApproachSectionController extends Controller {
         card.setWhen(kind != QuestionKind.CHAIN, step.getWhen());
         card.setTries(true, LearnFlow.limitText(step.getCandidates()), defaultTries + " (default)");
         card.setKinds(kind == QuestionKind.TARGET, LearnFlow.limitText(step.getKinds()));
-        card.setChecks(kind != QuestionKind.CHAIN, PlainWords.usualChecks(kind), step.getChecks());
         card.setRulesShown(ApproachFlow.takesRules(step));
         card.setTuneOpen(tuned.contains(index));
         fillRules(card, index);
@@ -338,10 +353,6 @@ public class ApproachSectionController extends Controller {
         });
         card.setOnElements(ticked -> edit(index,
                 steps.get(index).withElements(ApproachFlow.elements(ticked))));
-        card.setOnChecks(own -> {
-            edit(index, ApproachFlow.withChecks(steps.get(index), own));
-            fillRules(card, index);
-        });
         card.setOnRuleCondition((rule, condition) -> {
             final Transition was = steps.get(index).getTransitions().get(rule);
             // The fallback may be gone to only on running out of tries
@@ -674,9 +685,10 @@ public class ApproachSectionController extends Controller {
 
     // ---- Helpers ----
 
-    /// The flow's own check, the one the store runs, asked of the steps alone.
+    /// The flow's own check, the one the store runs, asked of the steps, with the warnings the Learning
+    /// Flow's checks raise.
     private List<FlowProblem> check() {
-        return new LearningFlow(new ArrayList<>(steps), null, null).check();
+        return new LearningFlow(new ArrayList<>(steps), null, null).check(checks);
     }
 
     private boolean isFallback(final String id) {

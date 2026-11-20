@@ -74,9 +74,11 @@ import java.util.stream.Collectors;
  * transform to reproducing them.
  * <p>
  * This class holds the question kinds with their reply grammars and judges, and the outcomes judging can
- * end in; the flow says which questions are asked, in what order, judged by which checks, and where to go
- * on each outcome. A step re-asks itself with the feedback of what fell short until its candidates are
- * spent; a transition the step declares on an outcome leaves at once, and one on {@code spent} says where
+ * end in; the flow says which questions are asked, in what order, and where to go on each outcome. What
+ * judges a step is not the flow's to say: every check that can measure a step judges it, and whether a
+ * check is Off, Advice or Gate is the document's (the one model of checks). A step re-asks itself with the
+ * feedback of what fell short until its candidates are spent; a transition the step declares on an
+ * outcome leaves at once, and one on {@code spent} says where
  * to go when the candidates are gone, abandoning unless told. A pass goes to the next line unless the step
  * says {@code on passed goto}; {@code end} names the end of the flow. Each transition is taken at most once
  * per attempt, so every flow ends. The interpreter knows nothing of which flow it is walking.
@@ -504,7 +506,7 @@ public final class Conversation {
      */
     private Visit split(final FlowStep step, final Walk walk) {
         final StepRunner first = walk.first(runners);
-        final Set<Check> checks = checks(step, SPLIT_CHECKS);
+        final Set<Check> checks = SPLIT_CHECKS;
         // Nothing more to say about the step than its report does
         final String spent = null;
         if (walk.kind == InputKind.JSON) {
@@ -530,8 +532,9 @@ public final class Conversation {
                 if (records.isEmpty()) {
                     return Judged.refused("No element named " + reply + " occurs in the input");
                 }
-                if (checks.contains(Check.WHOLENESS)) {
-                    final Optional<StoredError> shortfall = TargetChecks.recordElement(document.get(), reply);
+                if (checks.contains(Check.WHOLENESS) && scorecard.decides(Check.WHOLENESS, step)) {
+                    final Optional<StoredError> shortfall = TargetChecks.recordElement(document.get(), reply,
+                            scorecard.threshold(Check.WHOLENESS));
                     if (shortfall.isPresent()) {
                         return new Judged(StepOutcome.WHOLENESS_SHORT, List.of(shortfall.get()), null);
                     }
@@ -555,22 +558,23 @@ public final class Conversation {
                 return Judged.failed(result, true);
             }
             final Verdict verdict = over.judge(Attempted.of(first, walk.sample.text(), result));
-            if (!verdict.passed()) {
-                return Judged.fellShort(verdict, verdict.feedback());
+            if (Scorecard.outcome(verdict, step) != StepOutcome.PASSED) {
+                return Judged.fellShort(verdict, step, verdict.feedback());
             }
             final List<String> records = recordTexts(result.output());
             if (records.isEmpty()) {
                 return Judged.refused("The split produced no records; each record should be emitted whole, as one "
                                       + "data value");
             }
-            if (checks.contains(Check.WHOLENESS)) {
-                final Optional<StoredError> partial = TargetChecks.wholeness(walk.sample.text(), records);
+            if (checks.contains(Check.WHOLENESS) && scorecard.decides(Check.WHOLENESS, step)) {
+                final Optional<StoredError> partial = TargetChecks.wholeness(walk.sample.text(), records,
+                        scorecard.threshold(Check.WHOLENESS));
                 if (partial.isPresent()) {
                     return new Judged(StepOutcome.WHOLENESS_SHORT, List.of(partial.get()), null);
                 }
             }
             walk.cut(Boundary.ofConfiguration(configuration.get()), records);
-            return Judged.passed(verdict);
+            return Judged.passed(verdict, step);
         }, spent));
     }
 
@@ -612,9 +616,9 @@ public final class Conversation {
                     return Judged.refused("No array with the key \"" + reply + "\" occurs in the input");
                 }
             }
-            if (checks.contains(Check.WHOLENESS)) {
+            if (checks.contains(Check.WHOLENESS) && scorecard.decides(Check.WHOLENESS, step)) {
                 final Optional<StoredError> partial = TargetChecks.wholeness(document.get().root().getStringValue(),
-                        records.stream().map(TargetChecks::textOf).toList());
+                        records.stream().map(TargetChecks::textOf).toList(), scorecard.threshold(Check.WHOLENESS));
                 if (partial.isPresent()) {
                     return new Judged(StepOutcome.WHOLENESS_SHORT, List.of(partial.get()), null);
                 }
@@ -641,9 +645,7 @@ public final class Conversation {
         final int kinds = step.getKinds() == null
                 ? FlowStep.DEFAULT_KINDS
                 : step.getKinds();
-        final Scorecard meaning = step.getChecks().isEmpty()
-                ? scorecard.meaning()
-                : scorecard.meaning().only(step.getChecks());
+        final Scorecard meaning = scorecard.meaning();
         final List<String> representatives = TargetChecks.representatives(over, kinds);
         final List<Target> proposed = new ArrayList<>();
         for (int i = 0; i < representatives.size(); i++) {
@@ -675,11 +677,11 @@ public final class Conversation {
                     return new Judged(StepOutcome.REFUSED, List.of(refusal.get()), null);
                 }
                 final Verdict verdict = TargetChecks.verdict(meaning, record, document);
-                if (!verdict.passed()) {
-                    return Judged.fellShort(verdict, verdict.feedback());
+                if (Scorecard.outcome(verdict, step) != StepOutcome.PASSED) {
+                    return Judged.fellShort(verdict, step, verdict.feedback());
                 }
                 proposed.add(Target.of(record, event.get()));
-                return Judged.passed(verdict);
+                return Judged.passed(verdict, step);
             }, "For record kind " + kind + ".");
             if (visit.kind() != Visit.Kind.NEXT) {
                 return visit;
@@ -696,7 +698,7 @@ public final class Conversation {
      * reproduce them. A role the chain does not have is skipped.
      */
     private Visit configure(final FlowStep step, final Walk walk, final boolean admitting) {
-        final Set<Check> checks = checks(step, EnumSet.allOf(Check.class));
+        final Set<Check> checks = EnumSet.allOf(Check.class);
         final Scorecard over = scorecard.only(checks);
         // The exhaustion step (design 04 §4) is the transform's configuration asked for once more, with
         // the admitted form in it: the transform alone, whatever the flow wrote for its role.
@@ -750,7 +752,7 @@ public final class Conversation {
                 final StepResult ran = oneAtATime
                         ? PerRecord.run(runner, fixed.get(), input, perRecord)
                         : runner.run(fixed.get(), input);
-                final Judged judged = judge(over, checks, runner, fixed.get(), input, ran, walk, last, admitting);
+                final Judged judged = judge(step, over, checks, runner, fixed.get(), input, ran, walk, last, admitting);
                 walk.learn(index, judged.learned());
                 visit = judged.outcome() == StepOutcome.PASSED
                         ? Visit.next()
@@ -763,7 +765,7 @@ public final class Conversation {
                 final StepResult ran = oneAtATime
                         ? PerRecord.run(runner, null, input, perRecord)
                         : runner.run(null, input);
-                final Judged judged = judge(over, checks, runner, null, input, ran, walk, last, admitting);
+                final Judged judged = judge(step, over, checks, runner, null, input, ran, walk, last, admitting);
                 walk.learn(index, judged.learned());
                 visit = judged.outcome() == StepOutcome.PASSED
                         ? Visit.next()
@@ -792,7 +794,7 @@ public final class Conversation {
                     final StepResult result = oneAtATime
                             ? PerRecord.run(runner, configuration.get(), input, perRecord)
                             : runner.run(configuration.get(), input);
-                    final Judged judged = judge(over, checks, runner, configuration.get(), input, result,
+                    final Judged judged = judge(step, over, checks, runner, configuration.get(), input, result,
                             walk, last, admitting);
                     walk.learn(index, judged.learned());
                     return judged;
@@ -821,7 +823,8 @@ public final class Conversation {
 
     /// A candidate run over each record the held stream fell short on, judged one at a time: the outcome
     /// of the first that falls short, with the record named in the feedback, or null where all clear.
-    private Judged heldTo(final Scorecard over,
+    private Judged heldTo(final FlowStep step,
+                          final Scorecard over,
                           final StepRunner runner,
                           final String configuration,
                           final RecordBoundary boundary,
@@ -839,13 +842,13 @@ public final class Conversation {
                     return refusedAdmission();
                 }
                 final Verdict verdict = over.judge(Attempted.of(runner, record, result, boundary));
-                if (!verdict.passed()) {
+                if (Scorecard.outcome(verdict, step) != StepOutcome.PASSED) {
                     final List<StoredError> feedback = new ArrayList<>();
                     feedback.add(new StoredError(Severity.ERROR, null, new ElementId(runner.elementId()),
                             "On a record of the held stream that fell short (" + (i + 1) + " of " + held.size()
                             + "), as the parser cut it:\n" + record));
                     feedback.addAll(verdict.feedback());
-                    return Judged.fellShort(verdict, feedback);
+                    return Judged.fellShort(verdict, step, feedback);
                 }
             }
         }
@@ -870,7 +873,8 @@ public final class Conversation {
      * transform that cannot reproduce a target because its input lacks the value is the parser's
      * shortfall, not its own, and is reported as such (§10.1 rule 6) for the flow to route.
      */
-    private Judged judge(final Scorecard over,
+    private Judged judge(final FlowStep step,
+                         final Scorecard over,
                          final Set<Check> checks,
                          final StepRunner runner,
                          final String configuration,
@@ -891,25 +895,25 @@ public final class Conversation {
             return refusedAdmission();
         }
         final Verdict verdict = over.judge(Attempted.of(runner, input, result, boundary));
-        if (!verdict.passed()) {
-            return Judged.fellShort(verdict, verdict.feedback());
+        if (Scorecard.outcome(verdict, step) != StepOutcome.PASSED) {
+            return Judged.fellShort(verdict, step, verdict.feedback());
         }
         // Held to the records of the held stream that fell short (design 04 §4): a candidate for the
         // chain's last element is run over each as the pipeline would give it, and judged on it alone, so
         // that a transform the sample does not exercise cannot pass by ignoring what the stream wants.
         if (last && !runner.parser() && configuration != null && !held.isEmpty()) {
-            final Judged short_ = heldTo(over, runner, configuration, boundary, admitting);
+            final Judged short_ = heldTo(step, over, runner, configuration, boundary, admitting);
             if (short_ != null) {
                 return short_;
             }
         }
         if (!walk.targets.isEmpty()) {
-            if (runner.parser() && checks.contains(Check.PRESERVATION)) {
+            if (runner.parser() && checks.contains(Check.PRESERVATION) && scorecard.decides(Check.PRESERVATION, step)) {
                 final List<StoredError> lacking = TargetChecks.preservation(result.output(), walk.targets);
                 if (!lacking.isEmpty()) {
                     return new Judged(StepOutcome.PRESERVATION_SHORT, lacking, null);
                 }
-            } else if (last && checks.contains(Check.FIDELITY)) {
+            } else if (last && checks.contains(Check.FIDELITY) && scorecard.decides(Check.FIDELITY, step)) {
                 final List<StoredError> unlike = TargetChecks.fidelity(result.output(), walk.targets);
                 if (!unlike.isEmpty()) {
                     final List<StoredError> lacking = walk.kind == InputKind.TEXT
@@ -922,7 +926,7 @@ public final class Conversation {
             }
         }
         return new Judged(StepOutcome.PASSED, List.of(), new LearnedStep(runner, configuration, result, verdict),
-                Scorecard.deciding(verdict).orElse(null));
+                Scorecard.deciding(verdict, step).orElse(null));
     }
 
     /**
@@ -952,15 +956,6 @@ public final class Conversation {
         return step.getCandidates() == null
                 ? policy.getMaxAttempts()
                 : step.getCandidates();
-    }
-
-    /**
-     * The checks that judge a step: those it names, or the kind's own.
-     */
-    private static Set<Check> checks(final FlowStep step, final Set<Check> defaults) {
-        return step.getChecks().isEmpty()
-                ? defaults
-                : EnumSet.copyOf(step.getChecks());
     }
 
     /**
@@ -1109,13 +1104,14 @@ public final class Conversation {
         }
 
         /// A shortfall the scorecard decided, with the check that decided it (A144).
-        static Judged fellShort(final Verdict verdict, final List<StoredError> feedback) {
-            return new Judged(Scorecard.outcome(verdict), feedback, null, Scorecard.deciding(verdict).orElse(null));
+        static Judged fellShort(final Verdict verdict, final FlowStep step, final List<StoredError> feedback) {
+            return new Judged(Scorecard.outcome(verdict, step), feedback, null,
+                    Scorecard.deciding(verdict, step).orElse(null));
         }
 
         /// A pass the scorecard decided, with the check that passed by the least.
-        static Judged passed(final Verdict verdict) {
-            return new Judged(StepOutcome.PASSED, List.of(), null, Scorecard.deciding(verdict).orElse(null));
+        static Judged passed(final Verdict verdict, final FlowStep step) {
+            return new Judged(StepOutcome.PASSED, List.of(), null, Scorecard.deciding(verdict, step).orElse(null));
         }
 
         static Judged refused(final String message) {

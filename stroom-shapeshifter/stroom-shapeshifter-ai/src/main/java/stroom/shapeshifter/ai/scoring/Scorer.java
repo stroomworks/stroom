@@ -16,20 +16,20 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 
 import java.util.Optional;
 
 /**
- * The scoring SPI of design §3 and §8.4: one implementation per {@link ScorerType}, measuring one signal
+ * The scoring SPI of design §3 and §8.4: one implementation per {@link Check}, measuring one signal
  * over one step's output. A scorer that has nothing to measure on a step — coverage on a transform,
  * yield per record on raw text — returns empty and is neither counted nor failed; the scorecard applies
  * a scorer only where its signal exists.
  */
 public interface Scorer {
 
-    ScorerType type();
+    Check type();
 
     /**
      * @param parameters The document's parameters for this scorer, of the class that belongs to

@@ -28,18 +28,18 @@ final class ShapeshifterAiFixtures {
 
     static final DocRef DOC_REF = new DocRef(ShapeshifterAiDoc.TYPE, "ss-1", "Firewall logs");
 
-    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, event-logging v3.0.0 as its target schema, two
-    /// checks (a compile gate, and business rules with one assertion), and a flow of two steps, the second
-    /// going back to the first when it doesn't read all the input.
+    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, event-logging v3.0.0 as its target schema,
+    /// checks of its own (the Standard ones, with business rules as advice, with one assertion), and a flow
+    /// of two steps, the second going back to the first when it doesn't read all the input.
     static final String DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "description": "# Firewall logs",
-              "promotionMode": "AUTOMATIC", "promotionFloor": 0.8, "heldOutFraction": 0.2,
+              "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
               "minRecordsToLearn": 20, "regressionCap": 50, "regressionRetentionDays": 30,
               "relearnThreshold": 0.6,
-              "scorers": [
-                {"type": "COMPILE", "weight": 1.0, "threshold": 1.0, "gate": true},
-                {"type": "BUSINESS_RULES", "weight": 2.0, "threshold": 0.9, "gate": false,
+              "checks": [
+                {"check": "COMPILE", "state": "GATE"},
+                {"check": "RULES", "state": "ADVICE", "threshold": 0.9,
                   "parameters": {"type": "businessRules", "includeTransformMessages": false,
                     "assertions": [{"name": "users are named",
                       "xpath": "EventDetail/Authenticate/User/Id != ''"}]}}],
@@ -57,12 +57,12 @@ final class ShapeshifterAiFixtures {
                     "transitions": [{"on": "COVERAGE_SHORT", "goTo": "chain"}]}]}}""";
 
     /// A document as it is made where no event-logging schema is installed: learning off, no model, no target
-    /// schema, no checks, the direct flow. It won't learn anything, and its Pipelines tab says so.
+    /// schema, the Standard checks, the direct flow. It won't learn anything, and its Pipelines tab says so.
     static final String NEW_DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
-              "promotionMode": "AUTOMATIC", "promotionFloor": 0.9, "heldOutFraction": 0.2,
+              "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
               "minRecordsToLearn": 10, "regressionCap": 100, "relearnThreshold": 0.8,
-              "scorers": [], "learningMode": "DISABLED", "maxAttempts": 5,
+              "learningMode": "DISABLED", "maxAttempts": 5,
               "attemptBudgetMs": 60000, "sampleSizeLimit": 8192, "maxDeferralAgeMs": 86400000,
               "flow": {"steps": [
                 {"kind": "CHAIN"},
@@ -70,20 +70,45 @@ final class ShapeshifterAiFixtures {
                 {"kind": "CONFIGURE", "role": "TRANSFORM", "transitions": [{"goTo": "admit"}]},
                 {"kind": "ADMIT"}]}}""";
 
+    /// A document whose checks are all off but compile, though it has a target schema: the Pipelines tab says
+    /// nearly any answer would pass, and offers the Standard checks.
+    static final String NO_GATES_DOC = """
+            {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
+              "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
+              "minRecordsToLearn": 10, "regressionCap": 100, "relearnThreshold": 0.8,
+              "learningMode": "AUTOMATIC",
+              "model": {"type": "OpenAIModel", "uuid": "model-1", "name": "GPT-4o"},
+              "targetSchema": {"type": "XMLSchema", "uuid": "4fe14042-770e-4297-8711-d92e607bc4d5",
+                "name": "event-logging v3.0.0"},
+              "checks": [{"check": "COMPILE", "state": "GATE"}, {"check": "COVERAGE", "state": "OFF"},
+                {"check": "WHOLENESS", "state": "OFF"}, {"check": "CONFORMANCE", "state": "OFF"},
+                {"check": "PRESERVATION", "state": "OFF"}, {"check": "FIDELITY", "state": "OFF"},
+                {"check": "REGRESSION", "state": "OFF"}],
+              "maxAttempts": 5, "attemptBudgetMs": 60000, "sampleSizeLimit": 8192, "maxDeferralAgeMs": 86400000,
+              "flow": {"steps": [
+                {"kind": "CHAIN"},
+                {"kind": "CONFIGURE", "role": "PARSER"},
+                {"kind": "CONFIGURE", "role": "TRANSFORM", "transitions": [{"goTo": "admit"}]},
+                {"kind": "ADMIT"}]}}""";
+
+    /// [#DOC] with the coverage check switched off, though its second step still has a rule that fires when
+    /// the records don't read all the input: the step's card warns that the rule never fires.
+    static final String RULE_ON_OFF_CHECK_DOC = DOC.replace(
+            "{\"check\": \"COMPILE\", \"state\": \"GATE\"},",
+            "{\"check\": \"COMPILE\", \"state\": \"GATE\"}, {\"check\": \"COVERAGE\", \"state\": \"OFF\"},");
+
     /// [#DOC] with its first step naming the element types to choose from itself, one of which, XMLParser,
     /// the AI can't learn.
     static final String DOC_UNLEARNABLE = DOC.replace("{\"kind\": \"CHAIN\", \"id\": \"chain\"}",
             "{\"kind\": \"CHAIN\", \"id\": \"chain\", \"elements\": [\"XMLParser\", \"XSLTFilter\"]}");
 
-    /// [#DOC] with event-logging v4.1.0 as its target schema (D1), and with a schema conformance check, which
+    /// [#DOC] with event-logging v4.1.0 as its target schema (D1), and with a schema conformance gate, which
     /// validates against it.
     static final String DOC_TARGETED = DOC.replace(
-            "{\"type\": \"COMPILE\", \"weight\": 1.0, \"threshold\": 1.0, \"gate\": true},",
-            "{\"type\": \"COMPILE\", \"weight\": 1.0, \"threshold\": 1.0, \"gate\": true}, "
-            + "{\"type\": \"SCHEMA_CONFORMANCE\", \"weight\": 1.0, \"threshold\": 1.0, \"gate\": true, "
-            + "\"parameters\": {\"type\": \"schemaConformance\"}},").replace(
-            "\"uuid\": \"4fe14042-770e-4297-8711-d92e607bc4d5\",\n    \"name\": \"event-logging v3.0.0\"",
-            "\"uuid\": \"befcc474-36e4-4db4-a610-bd1fe6825cb1\", \"name\": \"event-logging v4.1.0\"");
+            "{\"check\": \"COMPILE\", \"state\": \"GATE\"},",
+            "{\"check\": \"COMPILE\", \"state\": \"GATE\"}, {\"check\": \"CONFORMANCE\", \"state\": \"GATE\"},")
+            .replace("\"uuid\": \"4fe14042-770e-4297-8711-d92e607bc4d5\",\n    \"name\": \"event-logging v3.0.0\"",
+                    "\"uuid\": \"befcc474-36e4-4db4-a610-bd1fe6825cb1\", \"name\": \"event-logging v4.1.0\"");
 
     /// [#DOC] with no target schema (D1): learning on and a model, but nothing for the AI to write to, so it
     /// won't learn anything.

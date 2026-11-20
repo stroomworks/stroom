@@ -30,10 +30,10 @@ import stroom.shapeshifter.ai.stage.Replayable;
 import stroom.shapeshifter.ai.stage.Spend.Spent;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.RecordBoundary;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.StopCause;
 import stroom.shapeshifter.shared.StopReport;
@@ -354,7 +354,7 @@ class TestLearnerStatesAndAttemptsDao {
                 "DSParser -> XSLTFilter", "local-model", StepOutcome.PASSED));
         attempts.turn(id, new Turn(2, "configure", 2, QuestionKind.CONFIGURE, "CONFIGURE: DSParser",
                 "<dataSplitter/>", "local-model", StepOutcome.COVERAGE_SHORT,
-                new TurnScore(ScorerType.INPUT_COVERAGE, 0.41, 0.8), List.of()));
+                new TurnScore(Check.COVERAGE, 0.41, 0.8), List.of()));
 
         attempts.closed(id, AttemptStatus.PROMOTED, "Promoted 0.97", "rule-1", 0.97, 1_234L);
 
@@ -374,7 +374,7 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(read.turns().get(0).answeredBy()).isEqualTo("local-model");
         assertThat(read.turns().get(1).score())
                 .describedAs("the check that decided it, against its threshold (A144)")
-                .isEqualTo(new TurnScore(ScorerType.INPUT_COVERAGE, 0.41, 0.8));
+                .isEqualTo(new TurnScore(Check.COVERAGE, 0.41, 0.8));
         assertThat(read.turns().get(0).score()).describedAs("a turn no scorer decided").isNull();
 
         // The learner's next attempt, once this one has closed, with no stream behind it.
@@ -430,7 +430,7 @@ class TestLearnerStatesAndAttemptsDao {
                 "DSParser", "local-model", StepOutcome.PASSED));
         attempts.turn(id, new Turn(2, "configure", 1, QuestionKind.CONFIGURE, "Configure: DSParser",
                 "<dataSplitter/>", "local-model", StepOutcome.COVERAGE_SHORT,
-                new TurnScore(ScorerType.INPUT_COVERAGE, 0.41, 0.8), List.of()));
+                new TurnScore(Check.COVERAGE, 0.41, 0.8), List.of()));
         attempts.turn(id, new Turn(3, "configure", 2, QuestionKind.CONFIGURE, "Configure: DSParser",
                 "<dataSplitter/>", "local-model", StepOutcome.COVERAGE_SHORT));
         attempts.closed(id, AttemptStatus.ABANDONED, "No passing configuration", null, null, 10L);

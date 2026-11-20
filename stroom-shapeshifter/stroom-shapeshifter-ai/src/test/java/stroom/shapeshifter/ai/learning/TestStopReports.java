@@ -16,10 +16,10 @@
 
 package stroom.shapeshifter.ai.learning;
 
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowExit;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.QuestionKind;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.StopCause;
 import stroom.shapeshifter.shared.StopReport;
@@ -48,8 +48,8 @@ class TestStopReports {
     private static final FlowStep PARSER = FlowStep.parse("CONFIGURE parser");
     private static final FlowStep TRANSFORM = FlowStep.parse("CONFIGURE transform");
     private static final List<FlowStep> STEPS = List.of(CHAIN, SPLIT, PARSER, TRANSFORM);
-    private static final TurnScore WHOLE_41 = new TurnScore(ScorerType.YIELD, 0.41, 0.9);
-    private static final TurnScore WHOLE_20 = new TurnScore(ScorerType.YIELD, 0.2, 0.9);
+    private static final TurnScore WHOLE_41 = new TurnScore(Check.YIELD, 0.41, 0.9);
+    private static final TurnScore WHOLE_20 = new TurnScore(Check.YIELD, 0.2, 0.9);
 
     @Test
     void aStepOutOfTriesSaysHowEachAnswerFellShortAndQuotesARefusal() {
@@ -76,6 +76,29 @@ class TestStopReports {
                 SuggestionAction.LEAVE_NOTE, SuggestionAction.ANSWER, SuggestionAction.CHANGE_STEPS);
         assertThat(report.getSuggestions().get(0).getText())
                 .isEqualTo("Leave the AI a note saying what one record is.");
+    }
+
+    @Test
+    void aRefusedReplyBeforeTheLastAnswerIsStillQuoted() {
+        // The model explained what is wrong, then tried again: its explanation is the best diagnosis there is.
+        final List<Exchange> transcript = List.of(
+                answer(SPLIT, 1, StepOutcome.WHOLENESS_SHORT, WHOLE_20, "batch"),
+                answer(SPLIT, 2, StepOutcome.REFUSED, null,
+                        "No single element name fits. The records are the mixed children of batch."),
+                answer(SPLIT, 3, StepOutcome.WHOLENESS_SHORT, WHOLE_41, "authentication"));
+
+        final StopReport report = StopReports.ofStep(StopCause.STEP_SPENT, STEPS, 1, null,
+                List.of(error("Element authentication holds 41% of the document's text; 90% is needed")),
+                transcript, FlowExit.PARK);
+
+        assertThat(report.getDetails()).containsExactly(
+                "2 fell short because the records are cut into pieces.",
+                "1 fell short because the answer isn't in the reply format.",
+                "The closest scored 41%; 90% was needed.",
+                "The last answer fell short on: Element authentication holds 41% of the document's text; 90% is "
+                + "needed.",
+                "An earlier answer was refused, as not in the reply format: \"No single element name fits. The "
+                + "records are the mixed children of batch.\"");
     }
 
     @Test

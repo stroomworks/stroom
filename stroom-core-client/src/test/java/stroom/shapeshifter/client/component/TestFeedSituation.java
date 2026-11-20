@@ -49,7 +49,6 @@ class TestFeedSituation {
     private static final ShapeshifterAiDoc DOC = ShapeshifterAiDoc.builder()
             .uuid("ss-1")
             .name("Firewall logs")
-            .promotionFloor(0.85)
             .relearnThreshold(0.8)
             .maxAttempts(3)
             .flow(LearningFlow.of(FlowExample.DIRECT))
@@ -66,7 +65,7 @@ class TestFeedSituation {
         assertThat(situation.getChip()).isEqualTo("Approve");
         assertThat(situation.getTone()).isEqualTo(Tone.WARNING);
         assertThat(situation.getHeadline()).isEqualTo("A new translation is ready for you to check");
-        assertThat(situation.getDetail()).isEqualTo("It scored 94% (the pass mark is 85%). Approving it puts it to "
+        assertThat(situation.getDetail()).isEqualTo("It scored 94%. Approving it puts it to "
                                                     + "use and tries the 2 waiting streams again.");
         assertThat(situation.getPrimary()).containsExactly(FeedAction.APPROVE, FeedAction.REJECT);
         // Rejecting is the way to give up while a draft awaits review

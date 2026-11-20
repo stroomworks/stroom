@@ -16,11 +16,10 @@
 
 package stroom.shapeshifter.client.component;
 
-import stroom.shapeshifter.shared.ScorerSetting;
+import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import java.util.EnumSet;
-import java.util.List;
 import java.util.Set;
 
 /// Which of the Setup tab's sections ([SetupSection]) hold something under "Advanced options" that is not as
@@ -55,7 +54,7 @@ public final class AdvancedSettings {
             || ownSharedTexts(doc)) {
             changed.add(SetupSection.APPROACH);
         }
-        if (ownChecks(doc.getScorers())
+        if (CheckPreset.of(doc.getChecks()) == null
             || !samePercent(doc.getHeldOutFraction(), NEW.getHeldOutFraction())) {
             changed.add(SetupSection.QUALITY);
         }
@@ -68,12 +67,6 @@ public final class AdvancedSettings {
             changed.add(SetupSection.IN_SERVICE);
         }
         return changed;
-    }
-
-    // Checks that are no starting set. None at all is not: the readiness check offers the standard set, and
-    // the starting sets are always in sight
-    private static boolean ownChecks(final List<ScorerSetting> scorers) {
-        return scorers != null && !scorers.isEmpty() && QualityPreset.of(scorers) == null;
     }
 
     // Any of the question texts every step shares that the document has its own words for, rather than the

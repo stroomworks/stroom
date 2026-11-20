@@ -30,11 +30,12 @@ import stroom.shapeshifter.ai.scenario.Scenarios;
 import stroom.shapeshifter.ai.scoring.CompileScorer;
 import stroom.shapeshifter.ai.scoring.Scorecard;
 import stroom.shapeshifter.ai.transformation.XsltStep;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
@@ -79,7 +80,7 @@ class TestConversation {
         // These tests are about A21's mechanics — the chain, the re-ask, the refusal, the budgets — so they
         // run the direct shape; the split and target turns of A31 have their own tests.
         return new Conversation(advisor, List.of(new DataSplitterStep(FIXTURE.compiler()), new XsltStep()),
-                new Scorecard(List.of(new ScorerSetting(ScorerType.COMPILE, 1.0, 1.0, true, null)),
+                Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
                         List.of(new CompileScorer())), Clock.systemUTC());
     }
 
@@ -123,7 +124,7 @@ class TestConversation {
                 CannedAdvisor.fenced(XSLT));
         final Conversation conversation = new Conversation(model,
                 List.of(new DataSplitterStep(FIXTURE.compiler()), new XsltStep()),
-                new Scorecard(List.of(new ScorerSetting(ScorerType.COMPILE, 1.0, 1.0, true, null)),
+                Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
                         List.of(new CompileScorer())), ticking(60_000));
 
         final Outcome outcome = conversation.run(policy().copy().attemptBudgetMs(90_000).build(), SAMPLE);
@@ -342,7 +343,7 @@ class TestConversation {
         };
         final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
         final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
-                new Scorecard(List.of(), List.of()), Clock.systemUTC());
+                Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
         // A run-only element with no runner in a node, named so that the conversation offers it
         final ShapeshifterAiDoc doc = policy().copy().allowedElements(List.of("XMLParser", "XSLTFilter")).build();
@@ -393,7 +394,7 @@ class TestConversation {
                     FlowStep.parse("CONFIGURE parser " + transition),
                     FlowStep.parse("CONFIGURE transform")))).build();
             final Conversation conversation = new Conversation(model, List.of(failing, new XsltStep()),
-                    new Scorecard(List.of(), List.of()), Clock.systemUTC());
+                    Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
             final Outcome outcome = conversation.run(doc, SAMPLE);
 
@@ -409,7 +410,7 @@ class TestConversation {
                 FlowStep.parse("CONFIGURE parser on compile-failed goto end"),
                 FlowStep.parse("CONFIGURE transform")))).build();
         final Outcome outcome = new Conversation(model, List.of(failing, new XsltStep()),
-                new Scorecard(List.of(), List.of()), Clock.systemUTC()).run(doc, SAMPLE);
+                Scorecard.of(List.of(), List.of()), Clock.systemUTC()).run(doc, SAMPLE);
         assertThat(((Abandoned) outcome).reason()).describedAs("nothing was compiled, so compile-failed is not it")
                 .isEqualTo("Couldn't write the parser: XMLParser failed on its input.");
     }
@@ -451,7 +452,7 @@ class TestConversation {
                 FlowStep.parse("CONFIGURE parser"),
                 FlowStep.parse("CONFIGURE transform on refused goto parser")))).build();
         final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
-                new Scorecard(List.of(), List.of()), Clock.systemUTC());
+                Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
         final Outcome outcome = conversation.run(doc, SAMPLE);
 

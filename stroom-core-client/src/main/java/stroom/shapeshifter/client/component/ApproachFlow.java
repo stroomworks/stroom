@@ -179,7 +179,7 @@ public final class ApproachFlow {
     public static List<FlowStep> copy(final List<FlowStep> steps, final int index) {
         final FlowStep original = steps.get(index);
         final FlowStep copy = new FlowStep(null, original.getKind(), original.getRole(), original.getWhen(),
-                original.getCandidates(), original.getKinds(), original.getChecks(), original.getTransitions(),
+                original.getCandidates(), original.getKinds(), original.getTransitions(),
                 original.getElements());
         final List<FlowStep> changed = new ArrayList<>(steps);
         changed.add(index + 1, uniquelyNamed(steps, copy));
@@ -222,7 +222,7 @@ public final class ApproachFlow {
         raised.add(StepOutcome.REFUSED);
         raised.add(StepOutcome.COMPILE_FAILED);
         raised.add(StepOutcome.RUN_FAILED);
-        for (final Check check : judges(step)) {
+        for (final Check check : checksFor(step)) {
             raised.add(check.shortfall());
         }
         for (final Transition rule : step.getTransitions()) {
@@ -240,12 +240,13 @@ public final class ApproachFlow {
         return conditions;
     }
 
-    // The checks a step can be judged by: its own where it names them, else what its kind can raise.
-    // Checks with no scorer are offered only where named.
-    private static List<Check> judges(final FlowStep step) {
-        if (!step.getChecks().isEmpty()) {
-            return step.getChecks();
-        }
+    /// The checks that judge a step: those its kind can measure (the one model of checks). A check applies
+    /// to every step it can measure, so a step no longer names checks of its own; whether a check is Off,
+    /// Advice or Gate is the Learning Flow's, not the step's.
+    ///
+    /// @param step The step.
+    /// @return The checks, in the order a menu offers them; empty for a step no check measures.
+    public static List<Check> checksFor(final FlowStep step) {
         final List<Check> records = List.of(Check.COVERAGE, Check.YIELD, Check.WHOLENESS);
         final List<Check> events = List.of(Check.CONFORMANCE, Check.QUALITY, Check.RULES);
         final List<Check> judges = new ArrayList<>();
@@ -436,7 +437,7 @@ public final class ApproachFlow {
     /// @return The step asked then.
     public static FlowStep withWhen(final FlowStep step, final StepGuard when) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), when, step.getCandidates(),
-                step.getKinds(), step.getChecks(), step.getTransitions(), step.getElements());
+                step.getKinds(), step.getTransitions(), step.getElements());
     }
 
     /// @param step  A step.
@@ -444,7 +445,7 @@ public final class ApproachFlow {
     /// @return The step with those tries.
     public static FlowStep withTries(final FlowStep step, final Integer tries) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), tries,
-                step.getKinds(), step.getChecks(), step.getTransitions(), step.getElements());
+                step.getKinds(), step.getTransitions(), step.getElements());
     }
 
     /// @param step  A Target step.
@@ -452,15 +453,7 @@ public final class ApproachFlow {
     /// @return The step asking about that many.
     public static FlowStep withKinds(final FlowStep step, final Integer kinds) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), step.getCandidates(),
-                kinds, step.getChecks(), step.getTransitions(), step.getElements());
-    }
-
-    /// @param step   A step.
-    /// @param checks Its own checks, or empty for its kind's.
-    /// @return The step judged by them.
-    public static FlowStep withChecks(final FlowStep step, final List<Check> checks) {
-        return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), step.getCandidates(),
-                step.getKinds(), checks, step.getTransitions(), step.getElements());
+                kinds, step.getTransitions(), step.getElements());
     }
 
     /// @param step The step.
@@ -468,16 +461,16 @@ public final class ApproachFlow {
     /// @return The step with them.
     public static FlowStep withRules(final FlowStep step, final List<Transition> rules) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), step.getCandidates(),
-                step.getKinds(), step.getChecks(), rules, step.getElements());
+                step.getKinds(), rules, step.getElements());
     }
 
     /// What a step has of its own that its card's "Fine-tune this step" holds, as short tags its heading
-    /// shows, so that nothing set there is out of sight: when it is asked, its tries, its kinds of record, its
-    /// own checks and the element types it chooses from, each only where the step says other than the usual.
+    /// shows, so that nothing set there is out of sight: when it is asked, its tries, its kinds of record and
+    /// the element types it chooses from, each only where the step says other than the usual.
     ///
     /// @param step A step.
-    /// @return Its tags, e.g. "only for XML input", "5 tries", "own checks", "chooses from DSParser and
-    ///         XSLTFilter"; empty where it has none.
+    /// @return Its tags, e.g. "only for XML input", "5 tries", "chooses from DSParser and XSLTFilter"; empty
+    ///         where it has none.
     public static List<String> tuning(final FlowStep step) {
         final List<String> tags = new ArrayList<>();
         if (step.getWhen() != null && step.getWhen() != StepGuard.ALWAYS) {
@@ -492,9 +485,6 @@ public final class ApproachFlow {
             tags.add(step.getKinds() == 1
                     ? "1 kind of record"
                     : step.getKinds() + " kinds of record");
-        }
-        if (step.getChecks() != null && !step.getChecks().isEmpty()) {
-            tags.add("own checks");
         }
         if (step.getKind() == QuestionKind.CHAIN && !step.getElements().isEmpty()) {
             tags.add("chooses from " + PlainWords.list(step.getElements()));
@@ -595,7 +585,7 @@ public final class ApproachFlow {
             n++;
         }
         return new FlowStep(step.effectiveId() + "-" + n, step.getKind(), step.getRole(), step.getWhen(),
-                step.getCandidates(), step.getKinds(), step.getChecks(), step.getTransitions(), step.getElements());
+                step.getCandidates(), step.getKinds(), step.getTransitions(), step.getElements());
     }
 
 

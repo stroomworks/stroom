@@ -25,10 +25,11 @@ import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -60,15 +61,15 @@ class TestScenario60AParseThatCannotBeLearnedErrorsItsStreams {
         final Scenarios scenarios = new Scenarios();
         // The demo document with its yield counted per line, which is the gate a parser that cuts a CSV as
         // one record fails; the demo's own yield is per record, which says nothing of a parser over text.
-        final List<ScorerSetting> scorers = DemoDocument.scorers().stream()
-                .map(setting -> setting.getType() == ScorerType.YIELD
-                        ? new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+        final List<CheckSetting> checks = DemoDocument.checks().stream()
+                .map(setting -> setting.getCheck() == Check.YIELD
+                        ? new CheckSetting(Check.YIELD, CheckState.GATE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.LINES))
                         : setting)
                 .toList();
         final ShapeshifterAiDoc doc = DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
                 .heldOutFraction(0.0)
-                .scorers(scorers)
+                .checks(checks)
                 .flow(new LearningFlow(List.of(
                         FlowStep.parse("CHAIN"),
                         FlowStep.parse("CONFIGURE parser candidates 1"),

@@ -24,12 +24,13 @@ import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -85,32 +86,27 @@ class TestScenariosIncumbent {
                 .flow(FlowExample.TARGET_FIRST)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
-                // Below what the flawed candidates score, so that the comparison with the incumbent, not the
-                // floor, is what decides.
-                .promotionFloor(0.85)
                 .relearnThreshold(0.95)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, 0.9, false, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.9, null),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        // Weighed and not a gate: the flawed incumbent's flaw is a lower score, which the
-                        // comparison weighs (A15, A18), and not a record short of the bar (design 04 §3),
-                        // which would send the stream it was learned on straight back to be learned.
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, false,
+                        new CheckSetting(Check.QUALITY, CheckState.ADVICE, 0.7,
                                 new ExtractionQualityParameters(false,
-                                        List.of("EventSource/User/Id", "EventSource/Device/Name"))),
-                        // The gate a record is held to (design 04 §3, A66): an interactive event names its
-                        // user. The incumbent clears it on every record; a candidate that leaves the user
-                        // out falls short of it, on its own stream or on a record the binding was accepted on.
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 0.5, true,
+                                                List.of("EventSource/User/Id", "EventSource/Device/Name"))),
+                        new CheckSetting(Check.RULES, CheckState.GATE, 0.5,
                                 new BusinessRulesParameters(List.of(new XPathAssertion(
-                                        "interactive events name the user",
-                                        "not(EventDetail/Authenticate) "
-                                        + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
-                                        true))))
+                                                "interactive events name the user",
+                                                "not(EventDetail/Authenticate) "
+                                                + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
+                                                true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 
@@ -155,7 +151,7 @@ class TestScenariosIncumbent {
         script.verifyExhausted();
         assertThat(learned.decision()).isInstanceOf(Promoted.class);
         final double v1Score = ((Promoted) learned.decision()).score();
-        assertThat(v1Score).isBetween(0.9, 0.95);
+        assertThat(v1Score).describedAs("the flawed incumbent").isLessThan(1.0);
 
         final Script silent = Script.of();
         final StageRun served = scenarios.process(silent, learned.doc(), stream(2, CsvLines.lines(7, users,
@@ -177,8 +173,9 @@ class TestScenariosIncumbent {
         final Binding v1 = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
         // v2 names the user for everyone but user6 — the one record in the held-out fifth of a seven-line
-        // stream — and, like v1, has no device: it passes every threshold on the six records it is shown
-        // and scores below v1 over the seven.
+        // stream — and, like v1, has no device: it passes every threshold on the six records it is shown.
+        // It is not compared with v1's score (the one model of checks, D2); over the seven records it is
+        // held to the bar it would be served to, and user6's record falls short of it.
         final String v2 = userOnlyWhen(V1, "not(data[@name='who']/@value = 'user6')");
         final Script relearn = learning(scenarios, v2);
         final StageRun run = scenarios.process(relearn, marked.doc(), stream(3, CsvLines.lines(7, "user",
@@ -188,7 +185,7 @@ class TestScenariosIncumbent {
         assertThat(run.decision()).isInstanceOf(Kept.class);
         final Kept kept = (Kept) run.decision();
         assertThat(kept.incumbent()).isEqualTo(v1);
-        assertThat(kept.reason()).contains("against the incumbent's").contains("on this stream");
+        assertThat(kept.reason()).isEqualTo("Candidate failed the gates that judge records on 1 record of the stream");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).containsExactly(v1);
         assertThat(scenarios.stores.pipelines.list()).describedAs("v2's documents were not written").hasSize(1);
         assertThat(scenarios.stores.xslts.list()).hasSize(1);

@@ -17,8 +17,7 @@
 
 package stroom.shapeshifter.client.component;
 
-import stroom.cell.tickbox.client.TickBoxState;
-import stroom.shapeshifter.shared.ScorerSetting;
+import stroom.shapeshifter.shared.CheckSetting;
 import stroom.util.client.DataGridUtil;
 import stroom.widget.button.client.ToolbarButton;
 import stroom.widget.component.client.Component;
@@ -33,50 +32,32 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
 
-/// The scorer set of design §8.4 as a grid: one row per scorer the document applies, with its weight
-/// in the total, the score below which an attempt fails, whether it is a gate, and its own
-/// parameters; with Add, Edit and Remove. A double click edits a scorer. When read only, the buttons
-/// are disabled and a double click does nothing. [ScorerListController] does the work.
-public class ScorerList extends Component {
+/// A Learning Flow's checks as a grid (the one model of checks): one row for every check that is built,
+/// with whether it is Off, Advice or a Gate, its threshold where it has one, and its own settings; with
+/// Edit. A double click edits a check. When read only, Edit is disabled and a double click does nothing.
+/// [CheckListController] does the work.
+public class CheckList extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
 
     @UiField
-    ToolbarButton addButton;
-    @UiField
     ToolbarButton editButton;
     @UiField
-    ToolbarButton removeButton;
-    @UiField
-    DataGrid<ScorerSetting> dataGrid;
+    DataGrid<CheckSetting> dataGrid;
 
-    private final MultiSelectionModelImpl<ScorerSetting> selectionModel;
-    private Runnable onAdd = () -> {
-    };
+    private final MultiSelectionModelImpl<CheckSetting> selectionModel;
     private Runnable onEdit = () -> {
-    };
-    private Runnable onRemove = () -> {
     };
 
     /// Makes an empty list.
-    public ScorerList() {
+    public CheckList() {
         initWidget(BINDER.createAndBindUi(this));
         selectionModel = dataGrid.addDefaultSelectionModel(true);
         addColumns();
 
-        addButton.setOnClick(() -> {
-            if (!isReadOnly()) {
-                onAdd.run();
-            }
-        });
         editButton.setOnClick(() -> {
             if (!isReadOnly() && getSelected() != null) {
                 onEdit.run();
-            }
-        });
-        removeButton.setOnClick(() -> {
-            if (!isReadOnly() && getSelected() != null) {
-                onRemove.run();
             }
         });
         selectionModel.addSelectionHandler(event -> {
@@ -88,21 +69,21 @@ public class ScorerList extends Component {
         enableButtons();
     }
 
-    /// @param scorers The scorers, in the order to show them.
-    public void setData(final List<ScorerSetting> scorers) {
-        dataGrid.setRowData(0, scorers);
-        dataGrid.setRowCount(scorers.size());
+    /// @param checks The checks' settings, in the order to show them.
+    public void setData(final List<CheckSetting> checks) {
+        dataGrid.setRowData(0, checks);
+        dataGrid.setRowCount(checks.size());
         enableButtons();
     }
 
-    /// @return The scorer selected, or null if none is.
-    public ScorerSetting getSelected() {
+    /// @return The check selected, or null if none is.
+    public CheckSetting getSelected() {
         return selectionModel.getSelected();
     }
 
-    /// @param scorer The scorer to select.
-    public void setSelected(final ScorerSetting scorer) {
-        selectionModel.setSelected(scorer);
+    /// @param setting The check to select.
+    public void setSelected(final CheckSetting setting) {
+        selectionModel.setSelected(setting);
         enableButtons();
     }
 
@@ -112,19 +93,9 @@ public class ScorerList extends Component {
         enableButtons();
     }
 
-    /// @param onAdd Run when Add is pressed (not when read only).
-    public void setOnAdd(final Runnable onAdd) {
-        this.onAdd = onAdd;
-    }
-
-    /// @param onEdit Run when Edit is pressed, or a scorer is double clicked (not when read only).
+    /// @param onEdit Run when Edit is pressed, or a check is double clicked (not when read only).
     public void setOnEdit(final Runnable onEdit) {
         this.onEdit = onEdit;
-    }
-
-    /// @param onRemove Run when Remove is pressed (not when read only).
-    public void setOnRemove(final Runnable onRemove) {
-        this.onRemove = onRemove;
     }
 
     @Override
@@ -135,47 +106,39 @@ public class ScorerList extends Component {
     private void enableButtons() {
         final boolean editable = !isReadOnly();
         final boolean selected = getSelected() != null;
-        addButton.setEnabled(editable);
         editButton.setEnabled(editable && selected);
-        removeButton.setEnabled(editable && selected);
     }
 
     private void addColumns() {
         dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder((ScorerSetting row) -> PlainWords.scorer(row.getType()))
+                DataGridUtil.textColumnBuilder((CheckSetting row) -> PlainWords.checkName(row.getCheck()))
                         .build(),
                 DataGridUtil.headingBuilder("Check")
                         .withToolTip("What is asked of every answer and every record translated.")
                         .build(),
                 ColumnSizeConstants.BIG_COL);
-        dataGrid.addColumn(
-                DataGridUtil.readOnlyTickBoxColumnBuilder((ScorerSetting row) ->
-                        TickBoxState.fromBoolean(row.isGate())).build(),
-                DataGridUtil.headingBuilder("Must pass")
-                        .withToolTip("A check that must pass must reach its pass mark on its own, whatever the "
-                                     + "score overall.")
-                        .build(),
-                90);
         dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder((ScorerSetting row) -> PlainWords.percent(row.getThreshold()))
+                DataGridUtil.textColumnBuilder((CheckSetting row) -> row.getState().getDisplayValue())
+                        .build(),
+                DataGridUtil.headingBuilder("State")
+                        .withToolTip("Off: not run. Advice: shown and told to the AI, never refusing a "
+                                     + "translation. Gate: a translation that falls short is refused.")
+                        .build(),
+                ColumnSizeConstants.MEDIUM_COL);
+        dataGrid.addResizableColumn(
+                DataGridUtil.textColumnBuilder((CheckSetting row) -> row.getThreshold() == null
+                                ? ""
+                                : PlainWords.percent(row.getThreshold()))
                         .rightAligned()
                         .build(),
-                DataGridUtil.headingBuilder("Pass mark")
-                        .withToolTip("The score below which an answer fails this check.")
+                DataGridUtil.headingBuilder("Threshold")
+                        .withToolTip("The score below which an answer falls short of this check; none for a "
+                                     + "check that only passes or fails.")
                         .rightAligned()
                         .build(),
                 ColumnSizeConstants.MEDIUM_COL);
         dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder((ScorerSetting row) -> Double.toString(row.getWeight()))
-                        .rightAligned()
-                        .build(),
-                DataGridUtil.headingBuilder("Weight")
-                        .withToolTip("How much this check counts towards the score overall.")
-                        .rightAligned()
-                        .build(),
-                ColumnSizeConstants.MEDIUM_COL);
-        dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder((ScorerSetting row) -> row.getParameters() == null
+                DataGridUtil.textColumnBuilder((CheckSetting row) -> row.getParameters() == null
                                 ? ""
                                 : row.getParameters().toString())
                         .build(),
@@ -189,7 +152,7 @@ public class ScorerList extends Component {
     // --------------------------------------------------------------------------------
 
 
-    interface Binder extends UiBinder<Widget, ScorerList> {
+    interface Binder extends UiBinder<Widget, CheckList> {
 
     }
 }

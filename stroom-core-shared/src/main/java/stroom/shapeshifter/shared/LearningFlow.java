@@ -200,9 +200,45 @@ public class LearningFlow {
         return problems;
     }
 
-    /// The messages of [#check()], in order.
+    /// What is wrong with the flow, with the warnings a document's checks raise: a rule that fires on a
+    /// check falling short never fires where that check is Off (the one model of checks). The warnings are
+    /// about a step, so that its card can say so; they don't stop the flow being held.
+    ///
+    /// @param checks The document's checks; null or empty for none, when only [#check()]'s problems are
+    ///               returned.
+    /// @return The problems and warnings, in order.
+    public List<FlowProblem> check(final List<CheckSetting> checks) {
+        final List<FlowProblem> problems = check();
+        if (checks == null || checks.isEmpty()) {
+            return problems;
+        }
+        final Map<Check, CheckState> states = new EnumMap<>(Check.class);
+        for (final CheckSetting setting : checks) {
+            states.put(setting.getCheck(), setting.getState());
+        }
+        for (int i = 0; i < steps.size(); i++) {
+            final FlowStep step = steps.get(i);
+            for (final Transition transition : step.getTransitions()) {
+                final Check check = Check.ofShortfall(transition.getOn());
+                if (check != null && states.get(check) == CheckState.OFF) {
+                    problems.add(new FlowProblem(i, "The rule 'if " + FlowWords.condition(transition.getOn())
+                                                    + "' on " + FlowWords.step(steps, i) + " never fires: the "
+                                                    + check.getDisplayValue() + " check is off",
+                            FlowProblem.Severity.WARNING));
+                }
+            }
+        }
+        return problems;
+    }
+
+    /// The messages of [#check()] that stop the flow being held, in order: what the store refuses a save
+    /// with.
+    ///
+    /// [#check()] raises no warnings, so the filter changes nothing today; it is here so that the store
+    /// still refuses only problems if a warning ever reaches this path. The warnings a document's checks
+    /// raise come from [#check(List)], which only the Setup tab asks.
     public List<String> problems() {
-        return FlowProblem.messages(check());
+        return FlowProblem.messages(check(), FlowProblem.Severity.PROBLEM);
     }
 
     /// The element types the chain question chooses from (A21, A95): the Chain step's, or every learnable one
