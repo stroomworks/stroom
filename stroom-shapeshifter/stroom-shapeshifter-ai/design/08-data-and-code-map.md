@@ -26,11 +26,12 @@ both database modules.
 
 | Package | What it is |
 |---|---|
-| `doc` | The document type: store, serialiser, `ShapeshifterAiResourceImpl`, `SupervisorResourceImpl`, `ShapeshifterAiModule` |
-| `element` | Everything that needs a node: the parser element, `Supervision`, `StageFactory`, the jobs (`DeferredLearning`, `AttemptRetention`), the node's seam implementations (`StoredRegressionSet`, `TaskWake`, `PipelinePlaces`, `StoreDocuments`, `StreamInputs`), `ModelAdvisor`, `PipelineStepRunner`, `PipelineDeletions`, `StepDetails` |
+| `doc` | The document type: store, serialiser, `ShapeshifterAiResourceImpl`, `SupervisorResourceImpl`, `QualityResourceImpl`, `LearnerAccess` (who may read and change a learner, shared by both resources), `EventLoggingSchemas` and `StoreEventLoggingSchemas` (the event-logging versions installed, for a new document's target schema and an older one's), `ShapeshifterAiModule` |
+| `quality` | A Smart Pipeline's Quality Assurance tab: `QualityService` and its seams `Volumes` and `Assessments` |
+| `element` | Everything that needs a node: the parser element, `Supervision`, `StageFactory`, the jobs (`DeferredLearning`, `AttemptRetention`), the node's seam implementations (`StoredRegressionSet`, `TaskWake`, `PipelinePlaces`, `StoreDocuments`, `StoreTargetSchemas`, `StreamInputs`), `ModelAdvisor`, `PipelineStepRunner`, `PipelineDeletions`, `StepDetails` |
 | `stage` | The decisions and the seams: `Stage`, `Decision`, `DeferredWorker`, `Input`, `Corpus`, and one interface per kind of runtime state |
 | `learning` | The flow interpreter and the conversation: `Conversation`, questions, templates, reply grammars, `Advisor`, `RecordedAdvisor`, `StepRunner` |
-| `scoring` | The scorers and `Scorecard` |
+| `scoring` | The scorers, `Scorecard`, and `TargetSchema`, what a document's translations must conform to (D1) |
 | `fragment` | Running and writing fragments: `FragmentRunner` (`PipelineFragmentRunner`, `StandInFragmentRunner`), `RecordGate`, `FragmentWriter`, `ContentCreator` |
 | `extraction`, `transformation` | The module's own step runners: `DataSplitterStep`, `JsonStep`, `XmlFragmentStep`, `XsltStep` |
 | `state` | In-memory twins of every seam, and `InMemoryStateModule` |
@@ -52,12 +53,15 @@ the `state.InMemory*` twins (`InMemoryStateModule`). The same `Stage` runs over 
 | `Outputs` | `OutputsDao` | `InMemoryOutputs` |
 | `Snapshots` | `SnapshotsDao` | `InMemorySnapshots` |
 | `Guidance` | `GuidanceDao` | `InMemoryGuidance` |
+| `Volumes` (in `quality`) | `VolumesDao` (the output rows) | `InMemoryVolumes` (none) |
+| `Assessments` (in `quality`) | `AssessmentsDao` | `InMemoryAssessments` |
 | `Spend` | `SpendDao` | `InMemorySpend` |
 | `CorpusIndex` | `CorpusIndexDao` | `InMemoryCorpusIndex` |
 | `RegressionSet` | `StoredRegressionSet` (streams + `CorpusIndex`) | `InMemoryRegressionSet` |
 | `DeletedPipelines`, `KeptLearning` | `DeletedPipelinesDao` | `InMemoryDeletedPipelines`, `InMemoryKeptLearning` |
 | `Wake` | `TaskWake` (processor task service) | `InMemoryWake` |
 | `Places` | `PipelinePlaces` (reads the pipeline's element properties) | `InMemoryPlaces` |
+| `TargetSchemas` | `StoreTargetSchemas` (the XML schema store) | `TargetSchemas.DEFAULT` |
 | `Documents` | `StoreDocuments` | `InMemoryDocuments` |
 | `Inputs` | `StreamInputs` (the stream store) | `InMemoryInputs` |
 | `Advisors` | `ModelAdvisors` (`stroom-ai`) | a scripted advisor (`testFixtures`) |
@@ -72,7 +76,8 @@ correcting a fault the real pipeline does not have.
 ## 8.3 Tables
 
 All in one migration per module, numbered for Stroom 8.0 (A111): `V08_00_00_001__shapeshifter_ai.sql` and
-`V08_00_00_001__pipeline_factory.sql`. Each runtime table names the learner by `pipeline_uuid` and
+`V08_00_00_001__pipeline_factory.sql`. Later additions (the stop report, the record count and the assessments,
+2026-11) were folded into it rather than added as migrations of their own, as A111 asks until it is released. Each runtime table names the learner by `pipeline_uuid` and
 `element_id` (A114). The document is recorded beside it, for display and for permissions, but is not part
 of the key.
 
@@ -83,10 +88,11 @@ of the key.
 | `shapeshifter_attempt` | Session | Learner, document, held stream, feed and type, status, reason, binding, score, tokens, grant, the claim (`claimed` is 1 while open, so one open per learner), node and lease (A28, A45) | `AttemptsDao` |
 | `shapeshifter_turn` | Turn | Step, candidate, question kind and summary, answer, answered by, outcome, deciding check's score and threshold (A144), carried guidance | `AttemptsDao` |
 | `shapeshifter_deferral` | Waiting stream per learner | Stream, feed, type, stamp failed against, reason, records short, first deferred, tries | `DeferralsDao` |
-| `shapeshifter_output` | Stream per binding per pipeline | The binding, fragment, snapshot, score, provisional and record boundary that produced it; record spans where kept | `OutputsDao` |
+| `shapeshifter_output` | Stream per binding per pipeline | The binding, fragment, snapshot, score, provisional and record boundary that produced it; record spans where kept; how many records it held, where counted (the Quality Assurance tab's volume) | `OutputsDao`, `VolumesDao` |
 | `shapeshifter_snapshot` | Snapshot | The fragment's configuration text and its documents' versions (A61) | `SnapshotsDao` |
 | `shapeshifter_corpus` | Corpus entry | Binding, the stream and segment holding the entry, what it became, its score, the attempt (A18) | `CorpusIndexDao` |
 | `shapeshifter_guidance` | Message | Learner, document, message, author, when; withdrawing deletes the row (A46) | `GuidanceDao` |
+| `shapeshifter_assessment` | Assessment | Learner, document, the binding in use, verdict (looks right or an issue), comment, author and when; who resolved an issue and when | `AssessmentsDao` |
 | `shapeshifter_spend` | Document | Tokens and calls in the current window, and breaker columns nothing sets yet (A44) | `SpendDao` |
 | `shapeshifter_deleted_pipeline` | Pipeline | When its deletion was first heard (A120, A134) | `DeletedPipelinesDao` |
 | `pipeline_factory_combination` | Factory and combination | State, tries, pipeline, filter, message ([2.5](02-pipeline-factory.md#25-what-it-remembers)) | `CombinationsDao` |
@@ -109,10 +115,14 @@ migrations have not been released, so they are rewritten rather than added to (A
 |---|---|---|
 | `ShapeshifterAiResource` | `/shapeshifterAi/v1` | Fetch and update a document; the built-in template text and its version |
 | `SupervisorResource` | `/shapeshifterAiSupervisor/v1` | `learners` (the pipelines list), `learners/{doc}/waiting`, `relearn`, `giveUp`; `find` and `{id}` for sessions; `{id}/turns/{n}` (amend), `approve`, `reject`, `grant`, `exhaust`; `serving/{doc}/{binding}/improve`, `accept`, `retract`; `guidance/{doc}` (get, post, delete); `backlog` (only for the editor header's count, ISSUES item 11) |
+| `QualityResource` | `/shapeshifterAiQuality/v1` | `pipelines/{pipeline}/elements/{element}` (volume per day and what the kept records became), `…/samples` (kept records beside what they became), `…/assessments`; `assessments` (record one), `assessments/{id}/resolve` |
 | `PipelineFactoryResource` | `/pipelineFactory/v1` | Fetch and update a factory; `combinations`; `forget` |
 
-Each Supervisor request checks the person's permission on the document the learner runs under: View to
-read, Edit to act. The resource is `@AutoLogged`, so requests are audited through Stroom's REST event
+Each Supervisor and Quality request checks the person's permission on the learner's pipeline (`LearnerAccess`;
+for a deleted pipeline, View on the document it ran under, to read only): View to read, Edit to act. Recording
+an assessment needs only View, since it changes nothing about how the pipeline translates; resolving an issue
+needs Edit. Samples are data, so they also need Stroom's Data - View permission, and a corpus stream on a feed the
+person may not read is left out. The resource is `@AutoLogged`, so requests are audited through Stroom's REST event
 logging.
 
 ## 8.5 Changes to Stroom outside the feature's modules

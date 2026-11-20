@@ -39,7 +39,7 @@ through `stroom-ai`'s model documents as an OpenAI-compatible endpoint (A13).
 | **Shapeshifter AI document** | The settings learning runs under: the model, the learning flow, the scorers and thresholds, the promotion mode, the budgets. A person authors it; nothing learned is written to it (A41) | [4](04-learning.md), [5](05-learning-flow.md), [6](06-scoring.md) |
 | **`DEFERRED` task status** | An addition to `stroom-processor`: a task can end deferred, keeping its place to be processed again, and counts against its filter's task budget while it waits (A59, A109) | [3](03-processing.md) |
 | **The worker** | The job *Shapeshifter AI Deferred Learning*, every minute, which carries sessions waiting for the model to their end | [4](04-learning.md) |
-| **The Supervisor** | The screen a person watches and steers learning from: learning pipelines, their sessions and waiting streams, a session's flow and conversation | [7](07-ui.md) |
+| **The Supervisor** | The screen a person watches and steers learning from: learning pipelines, their sessions and waiting streams, a session's flow and conversation. A document's own feeds are also on its Feeds tab, which offers the same | [7](07-ui.md) |
 | **Runtime state** | Tables in `stroom-shapeshifter-ai-impl-db` — learners, bindings, snapshots, sessions and turns, deferrals, corpus, outputs, guidance, spend — behind seams with in-memory twins for tests | [8](08-data-and-code-map.md) |
 | **Attempt retention** | The job *Shapeshifter AI Attempt Retention*, at midnight, which ages out finished sessions and the learning of deleted pipelines | [4](04-learning.md) |
 
@@ -136,8 +136,8 @@ wait. (A person's *improve* is different: it starts from the serving binding's o
 
 ## 1.4 What a person does
 
-The system runs without anyone, but it is built to be watched and steered. From the
-[Supervisor](07-ui.md):
+The system runs without anyone, but it is built to be watched and steered. From a document's Feeds tab,
+or the [Supervisor](07-ui.md) across documents:
 
 - **Watch**: every learning pipeline with its state, what serves it and how well, how many streams wait
   and for how long; each session's path over the flow and its whole conversation, turn by turn.

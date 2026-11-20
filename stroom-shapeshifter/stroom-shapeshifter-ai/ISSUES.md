@@ -54,13 +54,17 @@ the commit or ruling that closed it, rather than deleting it.
    though the attempt carries the flag.~~ *Closed 2026-10-08 in design 06 phase L slice 3: the status says
    it was sent until the worker takes it there.* *Design 04, phase 6 third slice (A65).*
 
-7. **An unreadable step edit is lost on the Flow tab.** An edit the form cannot read as a step — an id
+7. ~~**An unreadable step edit is lost on the Flow tab.**~~ *Closed 2026-11-09 by the UI rework (design 07
+   §7.1, Approach): a step is edited in place on its card, ids are never typed, and a tries or kinds value
+   that isn't a number stays in its field, refused on save, until it is put right.* An edit the form cannot read as a step — an id
    that is not a word, a limit below one — is reported beside the form, and lost if another step is
    clicked before it is put right. *Design 05 §7, slice 3's audit.*
 
 8. **A kind's own checks are not named.** Where no check is ticked, the step's panel says it is judged by
    its kind's own checks but cannot say which: that table lives in the engine. Moving it into the shared
-   model would let the engine and the panel read one table. *Design 05 §10.*
+   model would let the engine and the panel read one table. *Design 05 §10.* Since 2026-11-09 the Approach
+   tab's cards name them, from a copy of the engine's table written out in the client
+   (`PlainWords.usualChecks`, `ApproachFlow`'s conditions); the shared table would remove the copy.
 
 9. ~~**A multi-part step's pass is highlighted early.**~~ *Closed 2026-10-08 in design 06 phase L slice 3:
    a unit's pass followed by the step's next unit takes no edge.* On the Supervisor's path over the flow,
@@ -136,6 +140,8 @@ the commit or ruling that closed it, rather than deleting it.
 
 16. **Phase H's exit:** a person composes the escalating example on the Flow tab from an empty flow
     without typing the grammar, and reads a parked session's path in the Supervisor. *Design 03, design 05.*
+    Since 2026-11-09 the flow is step cards (on the Setup tab since 2026-11-10), and a session's path is
+    the Feeds tab's progress strip; the walkthrough is the same with those.
 
 19. **Phase I's exit:** a person makes a Pipeline Factory over `Raw Events` with an ordinary template from
     the explorer, with a stream filter bounded to the test feeds or by a recent `Create Time` (a new

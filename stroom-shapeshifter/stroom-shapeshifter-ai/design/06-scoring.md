@@ -24,10 +24,20 @@ neither counted nor failed.
 | **Compile** (`CompileScorer`) | Every step | 1 if the step ran, 0 if it could not (the Data Splitter schema refused it, Saxon rejected it). Its diagnostics are the most useful feedback the model gets. Set as a gate | none |
 | **Input coverage** (`InputCoverageScorer`) | A parser | The share of the input's *characters* the split consumed (A11, A36). Missed lines are named, but a dropped header costs what it is worth and a dropped record costs its size | none |
 | **Yield** (`YieldScorer`) | A step that wrote XML | Output records per unit of input against the expected ratio: `min(actual, expected) / max(actual, expected)`, so too many lose marks as too few do | `expectedRatio`; `basis`: input records, lines or bytes |
-| **Schema conformance** (`SchemaConformanceScorer`) | A transform | The share of records valid against the document's schema group, each judged alone by Stroom's own `SchemaFilter`. The feedback adds what the schema says the failing element may contain (`ContentModels`), so the model can finish an element in one step instead of one missing child per turn | `schemaGroup`, e.g. `EVENTS` |
+| **Schema conformance** (`SchemaConformanceScorer`) | A transform | The share of records valid against the document's target schema (D1, `TargetSchema`): one schema, a single version, each record judged alone by Stroom's own `SchemaFilter` constrained to its group, namespace and system id. The feedback adds what that schema says the failing element may contain (`ContentModels`), so the model can finish an element in one step instead of one missing child per turn | none: the target is the document's (`targetSchema`). A `schemaGroup` other than `EVENTS`, saved before D1, is read as the target of a document that names none |
 | **Extraction quality** (`ExtractionQualityScorer`) | A transform | Anti-degeneracy (A16): the average of typed elements versus `Data`, records whose `EventDetail` is a real branch rather than `Unknown`, and required fields present. A skeleton event that validates but extracts nothing scores as nothing | `allowUnknownEventDetail`, `requiredFields` |
 | **Business rules** (`BusinessRulesScorer`) | A transform | The share of records satisfying every named XPath assertion, optionally counting the stylesheet's own `xsl:message` warnings against it | `assertions` (name, XPath), `includeTransformMessages` |
 | Error load, event classification | | **No scorer exists.** A document naming one is refused when scored, and the editor hides them (ISSUES item 20) | |
+
+The **target schema** (D1) is a setting of the document, not of the check: it is still defined when the check
+is off, and the questions and the check can't disagree. It is one version, never a group. A new document is given
+the latest event-logging version installed, saved on it, so moving up is a deliberate edit (`EventLoggingSchemas`,
+by the version each schema declares). A document saved before the setting existed reads as event-logging v3.0.0,
+which it was learned against. Empty, it is not ready: the readiness banner says so, and learning and judging are
+refused. A node reads it from the schema store (`StoreTargetSchemas`) as the processing user. The transformation rules name its root, namespace, system id and version (`${targetRoot}`,
+built-in text version 7), and a proposed target is wrapped in it before it is judged. A schema outside the
+`event-logging:3` namespace is refused before a model is asked: the questions describe event-logging until they
+are written from the schema itself (D2).
 
 A **marked Unknown** (A53, A62, `Admission`) is neither a real branch nor a bare Unknown: it clears the
 quality scorer, and its marker item is left out of the untyped-element count. A bare `Unknown` is refused

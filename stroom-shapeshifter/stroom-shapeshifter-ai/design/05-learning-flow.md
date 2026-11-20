@@ -66,7 +66,7 @@ A step is written as one line (`FlowStep.parse`), and the editor builds the same
 | `when` | `StepGuard`: ask always, or only where the input is raw text, XML or JSON. A step whose guard fails is skipped |
 | `candidates n` | How many answers the step may have before it is *spent*. Default: the document's `maxAttempts` (5) |
 | `kinds n` | `TARGET` only: how many kinds of record to propose a target for. Default 3 |
-| `elements` | `CHAIN` only: the element types to choose from (A95). Default `DSParser`, `JSONParser`, `XMLParser`, `XSLTFilter` (A10). With exactly one, the question is not asked |
+| `elements` | `CHAIN` only: the element types to choose from (A95). Default: every one the AI can learn, `FlowStep.LEARNABLE_ELEMENTS` — `DSParser`, `JSONParser`, `XMLFragmentParser`, `XSLTFilter` (A10), one per runner, which `TestStageFactory` checks. Not `XMLParser`: a stream that is already XML needs no parser, so its chain begins with the transform and the pipeline puts an `XMLParser` in front. A type named without a runner is passed over. With exactly one, the question is not asked |
 | `checks` | Replaces the kind's default checks |
 | `on <outcome> goto` | Leave at once, on the first candidate with that outcome |
 | `on spent goto` | Where to go when the candidates are gone |
@@ -241,7 +241,7 @@ stylesheet could reach outside its input; the real runner does not yet (ISSUES i
 | `sampleSizeLimit` | 8,192 | Most characters the sample may hold |
 | `heldOutFraction` | 0.2 | Share of a text stream's lines kept out of the sample |
 | `model` | none | The `stroom-ai` model document |
-| allowed elements | `DSParser`, `JSONParser`, `XMLParser`, `XSLTFilter` | The Chain step's `elements` |
+| allowed elements | `DSParser`, `JSONParser`, `XMLFragmentParser`, `XSLTFilter` | The Chain step's `elements` |
 
 Budgets are in [4.4](04-learning.md#44-budgets); scorers, thresholds and the promotion floor in
 [6](06-scoring.md).

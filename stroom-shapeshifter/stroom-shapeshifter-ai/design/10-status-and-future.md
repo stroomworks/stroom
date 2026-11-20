@@ -18,7 +18,7 @@ those documents say otherwise. In outline:
 | Learning | The worker, claim and heartbeat, resume from recorded turns, budgets and grants, settling, first learning and relearning, review mode, improve, guidance, give up, retention | Tier 1 scenarios for each path, Tier 2 against the database |
 | The learning flow | The five kinds, checks and outcomes, the step grammar, the three examples, editable templates | Flow and grammar unit tests, scenarios over each example |
 | Scoring | Six scorers, scorecards, the bar, the promotion gate, the corpus stored on the source feed | Scorer unit tests, corpus and gate scenarios |
-| The client | The editor's tabs, the Supervisor's three levels, the stage pane, the factory editor | Workbench stories with the leak check |
+| The client | The editor's tabs (Feeds, Settings, Quality, Approach; reworked 2026-11-09), the Supervisor's three levels, the stage pane, the factory editor | Workbench stories with the leak check; JUnit for what the tabs say (`PlainWords`, `FeedSituation`, `FeedProgress`, `Readiness`, `QualityPreset`, `ApproachFlow`) |
 | Schema | One migration, `V08_00_00_001__shapeshifter_ai.sql`, and the factory's own | DAO tests on MySQL |
 
 The scenario suites run against a scripted model. `TestLiveScenarios` runs the same formats against a real
@@ -124,8 +124,8 @@ In this order:
 4. **The walkthroughs** (ISSUES 15, 16, 19). Phase M (design 06) replaces ISSUES 15: a factory over
    `Raw Events` with the AI template takes three feeds from unseen to served from the UI, each paused,
    prioritised and put on a node group through its own filter, one reprocessed, and its learning watched
-   in the Supervisor from its first session. ISSUES 16 composes the escalating example on the Learn tab
-   without typing the grammar. ISSUES 19 makes, deletes and forgets a factory's pipelines.
+   on its document's Feeds tab (or the Supervisor) from its first session. ISSUES 16 composes the
+   escalating example on the Setup tab without typing the grammar. ISSUES 19 makes, deletes and forgets a factory's pipelines.
 5. **The full build and the Docker images** (ISSUES 12): `./gradlew clean build shadowJar
    buildDistribution` and `./buildDockerImages.sh`.
 6. **A changelog entry** (ISSUES 14) through `./log_change.sh`, once there is a GitHub issue number.

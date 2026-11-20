@@ -124,8 +124,8 @@ A146 and A147 were ruled while this set was written.
 | A83 | The exits are `end`, `park` and `give-up`; `abandon` takes the step's default | Stands | [5.3](05-learning-flow.md#53-a-step) |
 | A84 | Defaults are drawn dashed and labelled | Stands | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
 | A85 | Question text is per kind of question | Stands | [5.5](05-learning-flow.md#55-what-each-question-carries) |
-| A86 | The shared texts open from Start | Stands | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
-| A87 | The text form is two-way beneath the chart | Stands | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
+| A86 | The shared texts open from Start | Stands: since 2026-11-20 under Learning steps' Advanced options, not a toggle on each step | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
+| A87 | The text form is two-way beneath the chart | Decided against in the editor (2026-11-10): the flow is edited only as cards; it is stored and exported as JSON, and the grammar is a shorthand for the example flows and the tests | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
 | A88 | A session's path is drawn on the flow in the Supervisor | Stands | [7.2](07-ui.md#72-the-supervisor) |
 | A89 | A judgement diamond follows each step | Stands | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
 | A90 | The chart is inline SVG from a GWT widget, no library | Stands | |
