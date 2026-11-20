@@ -16,16 +16,16 @@
 
 package stroom.shapeshifter.ai.scoring;
 
-import stroom.shapeshifter.shared.ScorerSetting;
+import stroom.shapeshifter.shared.CheckSetting;
 
 /**
- * A score against the document's setting for it: whether it met the threshold, and if it is a gate,
- * whether the step can pass at all.
+ * A score against the Learning Flow's setting for its check: whether it met the threshold, and if the
+ * check is a gate, whether the candidate can pass at all.
  */
-public record Judgement(ScorerSetting setting, Score score) {
+public record Judgement(CheckSetting setting, Score score) {
 
     public boolean metThreshold() {
-        return score.value() >= setting.getThreshold();
+        return score.value() >= setting.getPassingValue();
     }
 
     public boolean failedGate() {

@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowProblem;
 import stroom.shapeshifter.shared.LearningMode;
@@ -58,14 +59,15 @@ public final class Readiness {
             items.add(new Item(true, "Model: " + Objects.requireNonNullElse(doc.getModel().getName(),
                     doc.getModel().getUuid()), null));
         }
-        final int checks = doc.getScorers() == null
-                ? 0
-                : doc.getScorers().size();
-        if (checks == 0) {
-            items.add(new Item(false, "There are no quality checks, so every answer would pass.",
+        // Compile is always a gate, and alone it lets through any answer that runs
+        final long gates = doc.getChecks().stream()
+                .filter(setting -> setting.isGate() && setting.getCheck() != Check.COMPILE)
+                .count();
+        if (gates == 0) {
+            items.add(new Item(false, "No quality check is a gate, so any answer that runs would pass.",
                     Fix.USE_STANDARD_CHECKS));
         } else {
-            items.add(new Item(true, PlainWords.count(checks, "quality check"), null));
+            items.add(new Item(true, PlainWords.count(gates, "quality gate"), null));
         }
         final List<FlowProblem> problems = doc.getFlow().check();
         if (!problems.isEmpty()) {

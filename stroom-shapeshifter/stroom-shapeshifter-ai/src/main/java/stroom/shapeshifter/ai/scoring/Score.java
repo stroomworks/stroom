@@ -16,7 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
-import stroom.shapeshifter.shared.ScorerType;
+import stroom.shapeshifter.shared.Check;
 import stroom.util.shared.StoredError;
 
 import java.util.List;
@@ -31,7 +31,7 @@ import java.util.Set;
  *                       has them. Empty for a scorer that measures the step as a whole, and where every
  *                       record passed.
  */
-public record Score(ScorerType type, double value, List<StoredError> diagnostics, Set<Integer> failingRecords) {
+public record Score(Check type, double value, List<StoredError> diagnostics, Set<Integer> failingRecords) {
 
     public Score {
         if (value < 0.0 || value > 1.0 || Double.isNaN(value)) {
@@ -42,7 +42,7 @@ public record Score(ScorerType type, double value, List<StoredError> diagnostics
     }
 
     /// A score with no record-level account: the scorer measures the step as a whole.
-    public Score(final ScorerType type, final double value, final List<StoredError> diagnostics) {
+    public Score(final Check type, final double value, final List<StoredError> diagnostics) {
         this(type, value, diagnostics, Set.of());
     }
 }

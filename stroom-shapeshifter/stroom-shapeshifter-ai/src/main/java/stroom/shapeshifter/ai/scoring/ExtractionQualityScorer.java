@@ -16,9 +16,9 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
@@ -52,8 +52,8 @@ public final class ExtractionQualityScorer implements Scorer {
     private static final String UNKNOWN_DETAIL = Admission.BARE_UNKNOWN;
 
     @Override
-    public ScorerType type() {
-        return ScorerType.EXTRACTION_QUALITY;
+    public Check type() {
+        return Check.QUALITY;
     }
 
     @Override

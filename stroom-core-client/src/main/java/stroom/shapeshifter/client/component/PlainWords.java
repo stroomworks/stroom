@@ -22,7 +22,6 @@ import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.FlowWords;
 import stroom.shapeshifter.shared.QuestionKind;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.StepGuard;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.TurnScore;
@@ -142,78 +141,37 @@ public final class PlainWords {
         return FlowWords.condition(outcome);
     }
 
-    /// What a check asks, as a step card lists its judges, e.g. "reads all the input".
+    /// A check's name as the list of checks shows it, e.g. "Reads all the input".
     ///
     /// @param check The check.
-    /// @return What it asks, in lower case.
-    public static String check(final Check check) {
-        switch (check) {
-            case COVERAGE:
-                return "reads all the input";
-            case YIELD:
-                return "right number of records";
-            case WHOLENESS:
-                return "records are whole";
-            case CONFORMANCE:
-                return "valid against the schema";
-            case QUALITY:
-                return "events carry real content";
-            case RULES:
-                return "meets the business rules";
-            case PRESERVATION:
-                return "keeps what the targets need";
-            case FIDELITY:
-                return "matches the agreed targets";
-            case ERRORS:
-                return "error load";
-            case CLASSIFICATION:
-                return "event classification";
-            default:
-                return check.getDisplayValue();
-        }
-    }
-
-    /// A scorer's name as the list of checks shows it, e.g. "Reads all the input".
-    ///
-    /// @param type The scorer's type.
     /// @return Its name.
-    public static String scorer(final ScorerType type) {
-        if (type == null) {
+    public static String checkName(final Check check) {
+        if (check == null) {
             return "";
         }
-        switch (type) {
+        switch (check) {
             case COMPILE:
                 return "Compiles";
-            case INPUT_COVERAGE:
+            case COVERAGE:
                 return "Reads all the input";
             case YIELD:
                 return "Gives the right number of records";
-            case SCHEMA_CONFORMANCE:
+            case CONFORMANCE:
                 return "Valid against the event schema";
-            case EXTRACTION_QUALITY:
+            case QUALITY:
                 return "Events carry real content";
-            case BUSINESS_RULES:
+            case RULES:
                 return "Meets the business rules";
+            case WHOLENESS:
+                return "Records are whole";
+            case PRESERVATION:
+                return "Keeps what the targets need";
+            case FIDELITY:
+                return "Matches the agreed targets";
+            case REGRESSION:
+                return "No worse on records it was accepted on";
             default:
-                return type.getDisplayValue() + " (not built)";
-        }
-    }
-
-    /// What the checks a step is judged by are, where it names none of its own: the engine's own choice
-    /// for its kind.
-    ///
-    /// @param kind The step's kind.
-    /// @return What judges it, in lower case.
-    public static String usualChecks(final QuestionKind kind) {
-        switch (kind) {
-            case CHAIN:
-                return "whether the reply names elements it may use";
-            case SPLIT:
-                return check(Check.COVERAGE) + ", " + check(Check.YIELD) + ", " + check(Check.WHOLENESS);
-            case TARGET:
-                return "the quality checks that judge events";
-            default:
-                return "every quality check, and the agreed targets where there are any";
+                return check.getDisplayValue() + " (not built)";
         }
     }
 
@@ -222,32 +180,40 @@ public final class PlainWords {
     /// @param score The score that decided a turn.
     /// @return The sentence.
     public static String score(final TurnScore score) {
-        final String name = scoreName(score.getScorer());
+        final String name = scoreName(score.getCheck());
         final String scored = name + " scored " + percent(score.getScore()) + ".";
         return score.isMet()
                 ? scored + " It needed " + percent(score.getThreshold()) + "."
                 : scored + " It needs " + percent(score.getThreshold()) + ".";
     }
 
-    private static String scoreName(final ScorerType type) {
-        if (type == null) {
+    private static String scoreName(final Check check) {
+        if (check == null) {
             return "The answer";
         }
-        switch (type) {
+        switch (check) {
             case COMPILE:
                 return "Compiling";
-            case INPUT_COVERAGE:
+            case COVERAGE:
                 return "Reading the input";
             case YIELD:
                 return "The record count";
-            case SCHEMA_CONFORMANCE:
+            case CONFORMANCE:
                 return "Schema validity";
-            case EXTRACTION_QUALITY:
+            case QUALITY:
                 return "Event content";
-            case BUSINESS_RULES:
+            case RULES:
                 return "The business rules";
+            case WHOLENESS:
+                return "Whole records";
+            case PRESERVATION:
+                return "Keeping what the targets need";
+            case FIDELITY:
+                return "Matching the agreed targets";
+            case REGRESSION:
+                return "The regression corpus";
             default:
-                return type.getDisplayValue();
+                return check.getDisplayValue();
         }
     }
 

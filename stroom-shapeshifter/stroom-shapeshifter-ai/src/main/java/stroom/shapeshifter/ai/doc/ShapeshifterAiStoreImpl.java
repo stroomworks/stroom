@@ -21,6 +21,7 @@ import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
 import stroom.security.api.SecurityContext;
 import stroom.shapeshifter.ai.learning.Templates;
+import stroom.shapeshifter.shared.CheckSettings;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import jakarta.inject.Inject;
@@ -48,7 +49,9 @@ public class ShapeshifterAiStoreImpl
 
     /**
      * What the editor cannot check is checked on save, with the fault named, rather than at run time by the
-     * supervisor: the flow must be one the stage can hold (A33).
+     * supervisor: the flow must be one the stage can hold (A33), and the checks must keep to their rules
+     * (the one model of checks: compile always a gate, nothing turned on that isn't built, thresholds from 0
+     * to 1).
      */
     @Override
     public ShapeshifterAiDoc writeDocument(final ShapeshifterAiDoc document) {
@@ -58,6 +61,10 @@ public class ShapeshifterAiStoreImpl
         problems.addAll(Templates.problems(document.getFlow()));
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException("The flow cannot be held: " + String.join("; ", problems));
+        }
+        final List<String> checkProblems = CheckSettings.problems(document.getChecks());
+        if (!checkProblems.isEmpty()) {
+            throw new IllegalArgumentException("The checks cannot be held: " + String.join(" ", checkProblems));
         }
         return super.writeDocument(document.copy()
                 .flow(document.getFlow().withBuiltInVersion(Templates.VERSION))

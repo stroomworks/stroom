@@ -22,6 +22,7 @@ import stroom.document.client.editor.DocumentEditor;
 import stroom.document.client.editor.LinkTabPanel;
 import stroom.security.client.component.DocumentUserPermissionsTabController;
 import stroom.shapeshifter.client.component.Readiness.Fix;
+import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.widget.component.client.Contexts;
@@ -136,7 +137,7 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
             case CHOOSE_MODEL -> Scheduler.get().scheduleDeferred(setup::focusModel);
             case USE_STANDARD_CHECKS -> {
                 if (editable) {
-                    setup.usePreset(QualityPreset.STANDARD);
+                    setup.usePreset(CheckPreset.STANDARD);
                 }
             }
             case OPEN_APPROACH -> {

@@ -28,18 +28,18 @@ final class ShapeshifterAiFixtures {
 
     static final DocRef DOC_REF = new DocRef(ShapeshifterAiDoc.TYPE, "ss-1", "Firewall logs");
 
-    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, two checks (a compile gate, and business
-    /// rules with one assertion), and a flow of two steps, the second going back to the first when it
-    /// doesn't read all the input.
+    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, checks of its own (the Standard ones, with
+    /// business rules as advice, with one assertion), and a flow of two steps, the second going back to the
+    /// first when it doesn't read all the input.
     static final String DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "description": "# Firewall logs",
-              "promotionMode": "AUTOMATIC", "promotionFloor": 0.8, "heldOutFraction": 0.2,
+              "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
               "minRecordsToLearn": 20, "regressionCap": 50, "regressionRetentionDays": 30,
               "relearnThreshold": 0.6,
-              "scorers": [
-                {"type": "COMPILE", "weight": 1.0, "threshold": 1.0, "gate": true},
-                {"type": "BUSINESS_RULES", "weight": 2.0, "threshold": 0.9, "gate": false,
+              "checks": [
+                {"check": "COMPILE", "state": "GATE"},
+                {"check": "RULES", "state": "ADVICE", "threshold": 0.9,
                   "parameters": {"type": "businessRules", "includeTransformMessages": false,
                     "assertions": [{"name": "users are named",
                       "xpath": "EventDetail/Authenticate/User/Id != ''"}]}}],
@@ -54,19 +54,44 @@ final class ShapeshifterAiFixtures {
                   {"kind": "CONFIGURE", "role": "PARSER", "id": "parse",
                     "transitions": [{"on": "COVERAGE_SHORT", "goTo": "chain"}]}]}}""";
 
-    /// A document as it is made: learning off, no model, no checks, the direct flow. It won't learn
-    /// anything, and its Pipelines tab says so.
+    /// A document as it is made: learning off, no model, the Standard checks, the direct flow. It won't
+    /// learn anything, and its Pipelines tab says so.
     static final String NEW_DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
-              "promotionMode": "AUTOMATIC", "promotionFloor": 0.9, "heldOutFraction": 0.2,
+              "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
               "minRecordsToLearn": 10, "regressionCap": 100, "relearnThreshold": 0.8,
-              "scorers": [], "learningMode": "DISABLED", "maxAttempts": 5,
+              "learningMode": "DISABLED", "maxAttempts": 5,
               "attemptBudgetMs": 60000, "sampleSizeLimit": 8192, "maxDeferralAgeMs": 86400000,
               "flow": {"steps": [
                 {"kind": "CHAIN"},
                 {"kind": "CONFIGURE", "role": "PARSER"},
                 {"kind": "CONFIGURE", "role": "TRANSFORM", "transitions": [{"goTo": "admit"}]},
                 {"kind": "ADMIT"}]}}""";
+
+    /// A document whose checks are all off but compile: the Pipelines tab says nearly any answer would pass,
+    /// and offers the Standard checks.
+    static final String NO_GATES_DOC = """
+            {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
+              "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
+              "minRecordsToLearn": 10, "regressionCap": 100, "relearnThreshold": 0.8,
+              "learningMode": "AUTOMATIC",
+              "model": {"type": "OpenAIModel", "uuid": "model-1", "name": "GPT-4o"},
+              "checks": [{"check": "COMPILE", "state": "GATE"}, {"check": "COVERAGE", "state": "OFF"},
+                {"check": "WHOLENESS", "state": "OFF"}, {"check": "CONFORMANCE", "state": "OFF"},
+                {"check": "PRESERVATION", "state": "OFF"}, {"check": "FIDELITY", "state": "OFF"},
+                {"check": "REGRESSION", "state": "OFF"}],
+              "maxAttempts": 5, "attemptBudgetMs": 60000, "sampleSizeLimit": 8192, "maxDeferralAgeMs": 86400000,
+              "flow": {"steps": [
+                {"kind": "CHAIN"},
+                {"kind": "CONFIGURE", "role": "PARSER"},
+                {"kind": "CONFIGURE", "role": "TRANSFORM", "transitions": [{"goTo": "admit"}]},
+                {"kind": "ADMIT"}]}}""";
+
+    /// [#DOC] with the coverage check switched off, though its second step still has a rule that fires when
+    /// the records don't read all the input: the step's card warns that the rule never fires.
+    static final String RULE_ON_OFF_CHECK_DOC = DOC.replace(
+            "{\"check\": \"COMPILE\", \"state\": \"GATE\"},",
+            "{\"check\": \"COMPILE\", \"state\": \"GATE\"}, {\"check\": \"COVERAGE\", \"state\": \"OFF\"},");
 
     /// [#DOC] with its first step naming the element types to choose from itself, one of which, XMLParser,
     /// the AI can't learn.

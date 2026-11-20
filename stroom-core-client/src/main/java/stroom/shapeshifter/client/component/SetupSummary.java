@@ -16,12 +16,13 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.CheckPreset;
+import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
-import stroom.shapeshifter.shared.ScorerSetting;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import java.util.EnumMap;
@@ -30,7 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /// What the Setup tab's route map says under each section ([SetupSection]): a line of what the section
-/// is set to, e.g. "Standard · 4 checks", and what is wrong in it, if anything. What is wrong is what the
+/// is set to, e.g. "Standard · 7 gates", and what is wrong in it, if anything. What is wrong is what the
 /// Feeds tab's readiness check says ([Readiness]), shown against the section its fix is made in.
 public final class SetupSummary {
 
@@ -50,11 +51,10 @@ public final class SetupSummary {
         final Map<SetupSection, String> summaries = new EnumMap<>(SetupSection.class);
         summaries.put(SetupSection.LEARNING, learning(doc));
         summaries.put(SetupSection.APPROACH, approach(doc.getFlow().getSteps()));
-        summaries.put(SetupSection.QUALITY, quality(doc.getScorers()));
-        summaries.put(SetupSection.GOING_LIVE, "Pass mark " + ScoreValues.toPercent(doc.getPromotionFloor()) + "% · "
-                                               + (doc.getPromotionMode() == PromotionMode.REVIEW
-                ? "approved first"
-                : "used once it passes"));
+        summaries.put(SetupSection.QUALITY, quality(doc.getChecks()));
+        summaries.put(SetupSection.GOING_LIVE, doc.getPromotionMode() == PromotionMode.REVIEW
+                ? "Approved first"
+                : "Used once it passes");
         summaries.put(SetupSection.IN_SERVICE, "Flagged below " + ScoreValues.toPercent(doc.getRelearnThreshold())
                                                + "%");
 
@@ -97,13 +97,21 @@ public final class SetupSummary {
                 : PlainWords.example(example)) + " · " + PlainWords.count(cards, "step");
     }
 
-    private static String quality(final List<ScorerSetting> scorers) {
-        if (scorers == null || scorers.isEmpty()) {
-            return "No checks";
+    private static String quality(final List<CheckSetting> checks) {
+        int gates = 0;
+        int advice = 0;
+        for (final CheckSetting setting : checks) {
+            if (setting.isGate()) {
+                gates++;
+            } else if (setting.isOn()) {
+                advice++;
+            }
         }
-        final QualityPreset preset = QualityPreset.of(scorers);
+        final CheckPreset preset = CheckPreset.of(checks);
         return (preset == null
                 ? "Own checks"
-                : preset.getDisplayValue()) + " · " + PlainWords.count(scorers.size(), "check");
+                : preset.getDisplayValue()) + " · " + PlainWords.count(gates, "gate") + (advice == 0
+                ? ""
+                : ", " + PlainWords.count(advice, "advice check"));
     }
 }

@@ -18,6 +18,10 @@ package stroom.shapeshifter.ai.doc;
 
 import stroom.docref.DocRef;
 import stroom.shapeshifter.ai.learning.Templates;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckSettings;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
@@ -54,7 +58,6 @@ class TestShapeshifterAiStoreImpl {
                 .describedAs("Shapeshifter AI is opt-in per document (§11), so a new document must not call the model")
                 .isEqualTo(LearningMode.DISABLED);
         assertThat(doc.getModel()).isNull();
-        assertThat(doc.getScorers()).isEmpty();
     }
 
     @Test
@@ -66,10 +69,10 @@ class TestShapeshifterAiStoreImpl {
         final ShapeshifterAiDoc read = store.readDocument(docRef);
 
         assertThat(read).isEqualTo(written);
-        assertThat(read.getScorers()).containsExactlyElementsOf(ShapeshifterAiFixture.SCORERS);
-        assertThat(read.getScorers().get(2).getParameters())
+        assertThat(read.getChecks()).containsExactlyElementsOf(ShapeshifterAiFixture.CHECKS);
+        assertThat(read.getChecks().get(6).getParameters())
                 .describedAs("polymorphic parameters survive the store")
-                .isEqualTo(ShapeshifterAiFixture.SCORERS.get(2).getParameters());
+                .isEqualTo(ShapeshifterAiFixture.CHECKS.get(6).getParameters());
     }
 
     @Test
@@ -115,6 +118,22 @@ class TestShapeshifterAiStoreImpl {
     }
 
     @Test
+    void saveRefusesChecksThatBreakTheirRules() {
+        final DocRef docRef = store.createDocument("syslog-ai");
+        assertThat(store.readDocument(docRef).getChecks())
+                .describedAs("a new document has the defaults")
+                .isEqualTo(CheckSettings.defaults());
+        assertThatThrownBy(() -> store.writeDocument(store.readDocument(docRef).copy()
+                .checks(List.of(CheckSetting.of(Check.COMPILE, CheckState.ADVICE)))
+                .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The checks cannot be held: The compile check is always a gate.");
+        // The "isn't built yet" refusal has no case to answer now that the error load and event
+        // classification checks are gone (D5) and every check that is left is built. The refusal stays in
+        // CheckSettings.problems for a check added before its scorer is written; TestCheckSettings covers it.
+    }
+
+    @Test
     void remapDependenciesRewritesTheStoredDoc() {
         // Proves the function is reached through StoreImpl.remapDependencies, which is what import calls,
         // and not only that it works when called directly.
@@ -129,6 +148,6 @@ class TestShapeshifterAiStoreImpl {
 
         final ShapeshifterAiDoc read = store.readDocument(docRef);
         assertThat(read.getModel()).isEqualTo(importedModel);
-        assertThat(read.getScorers()).isEqualTo(ShapeshifterAiFixture.SCORERS);
+        assertThat(read.getChecks()).isEqualTo(ShapeshifterAiFixture.CHECKS);
     }
 }

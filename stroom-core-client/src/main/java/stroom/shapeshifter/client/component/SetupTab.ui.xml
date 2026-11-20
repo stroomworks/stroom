@@ -108,7 +108,7 @@
                           text="Every answer the AI gives is run over the feed's own data and judged by these checks, and so is every record translated afterwards. One record short of them and its stream waits while the feed is learned again."/>
                 <form:FormGroup identity="shapeshifterAiQualityPreset"
                                 label="Start from"
-                                helpText="A starting set of checks. Choosing one replaces the checks below; changing any check afterwards makes the set this document's own.">
+                                helpText="A ready-made set of checks. Choosing one replaces the checks below; changing any check afterwards makes the set this Learning Flow's own.">
                     <form:RadioGroup ui:field="preset"/>
                 </form:FormGroup>
                 <tx:Label ui:field="presetDescription" styleName="setup-tab__note"/>
@@ -116,7 +116,7 @@
                     <g:FlowPanel styleName="setup-tab__advanced">
                         <tx:Label styleName="setup-tab__subheading" text="The checks"/>
                         <g:SimplePanel styleName="setup-tab__checks dock-container-vertical">
-                            <s:ScorerList ui:field="scorerList"/>
+                            <s:CheckList ui:field="checkList"/>
                         </g:SimplePanel>
                         <form:FormGroup identity="shapeshifterAiHeldOutFraction"
                                         label="Lines kept back to test against (%)"
@@ -132,18 +132,12 @@
                          ariaLabel="Approving new translations" tabIndex="-1">
                 <g:HTMLPanel styleName="setup-tab__head">
                     <h2 class="setup-tab__title">Approving new translations</h2>
-                    <span class="setup-tab__question">The score a new translation needs before it is used, who
-                        approves it, and what happens when one can't be finished</span>
+                    <span class="setup-tab__question">Who approves a new translation that passes every gate, and
+                        what happens when one can't be finished</span>
                 </g:HTMLPanel>
-                <form:FormGroup identity="shapeshifterAiPromotionFloor"
-                                label="Pass mark (%)"
-                                helpText="The score overall a new translation must reach on the stream it was learned from before it is used. It must also do no worse than the last translation on any record translated before.">
-                    <v:ValueSpinner ui:field="promotionFloor" addStyleNames="value-spinner--narrow"
-                                    minValue="0" maxValue="100"/>
-                </form:FormGroup>
                 <form:FormGroup identity="shapeshifterAiPromotionMode"
                                 label="New translations"
-                                helpText="Used as soon as they pass: a translation that reaches the pass mark is put to use, and the streams that waited for it are tried again. Approved first: it waits on its pipeline's Learning Status tab, and its streams with it, until someone approves or rejects it.">
+                                helpText="Used as soon as they pass: a translation that passes every gate is put to use, and the streams that waited for it are tried again. Approved first: it waits on its pipeline's Learning Status tab, and its streams with it, until someone approves or rejects it.">
                     <form:RadioGroup ui:field="promotionMode"/>
                 </form:FormGroup>
                 <s:Disclosure ui:field="goingLiveAdvanced" text="Advanced options">

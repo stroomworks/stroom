@@ -24,12 +24,13 @@ import stroom.shapeshifter.ai.stage.Decision.Promoted;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.XPathAssertion;
@@ -66,23 +67,25 @@ class TestScenario44Auditd {
                 .flow(FlowExample.TARGET_FIRST)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.INPUT_COVERAGE, 1.0, 0.9, false, null),
-                        // A record is about three lines: the expected yield per line says so, and a split
-                        // of one record per line scores a third of it.
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.6, false,
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        new CheckSetting(Check.COVERAGE, CheckState.GATE, 0.9, null),
+                        new CheckSetting(Check.YIELD, CheckState.GATE, 0.6,
                                 new YieldParameters(0.35, YieldBasis.LINES)),
-                        new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                                 new SchemaConformanceParameters("EVENTS")),
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false,
+                        new CheckSetting(Check.RULES, CheckState.GATE, 1.0,
                                 new BusinessRulesParameters(List.of(new XPathAssertion(
-                                        "logons name the user",
-                                        "not(EventDetail/Authenticate) "
-                                        + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
-                                        true))))
+                                                "logons name the user",
+                                                "not(EventDetail/Authenticate) "
+                                                + "or EventDetail/Authenticate/User/Id[normalize-space(.) != '']")),
+                                                true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 
@@ -122,7 +125,7 @@ class TestScenario44Auditd {
         // short, and on the pass the check that passed by the least — and a chain chosen carries none.
         assertThat(turns.get(0).score()).isNull();
         assertThat(turns.get(1).score()).satisfies(score -> {
-            assertThat(score.getScorer()).isEqualTo(ScorerType.YIELD);
+            assertThat(score.getCheck()).isEqualTo(Check.YIELD);
             assertThat(score.isMet()).isFalse();
         });
         assertThat(turns.get(2).score()).satisfies(score -> assertThat(score.isMet()).isTrue());

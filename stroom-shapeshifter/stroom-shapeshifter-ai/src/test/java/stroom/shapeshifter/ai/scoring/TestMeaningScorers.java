@@ -18,9 +18,10 @@ package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.XPathAssertion;
 
 import org.junit.jupiter.api.Test;
@@ -59,15 +60,15 @@ class TestMeaningScorers {
 
     @Test
     void aPathThatDoesNotCompileIsRefusedWhenTheScorecardIsBuilt() {
-        final ScorerSetting rule = new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 1.0, false,
+        final CheckSetting rule = new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0,
                 new BusinessRulesParameters(List.of(new XPathAssertion("broken", "EventDetail/[")), true));
-        final ScorerSetting field = new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 1.0, true,
+        final CheckSetting field = new CheckSetting(Check.QUALITY, CheckState.GATE, 1.0,
                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id]")));
 
-        assertThatThrownBy(() -> new Scorecard(List.of(rule), List.of(new BusinessRulesScorer())))
+        assertThatThrownBy(() -> Scorecard.of(List.of(rule), List.of(new BusinessRulesScorer())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EventDetail/[");
-        assertThatThrownBy(() -> new Scorecard(List.of(field), List.of(new ExtractionQualityScorer())))
+        assertThatThrownBy(() -> Scorecard.of(List.of(field), List.of(new ExtractionQualityScorer())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EventSource/User/Id]");
     }

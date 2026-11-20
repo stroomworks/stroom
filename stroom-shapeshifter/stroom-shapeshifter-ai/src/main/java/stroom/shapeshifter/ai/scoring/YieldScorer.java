@@ -17,8 +17,8 @@
 package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
 import stroom.util.shared.ElementId;
@@ -41,8 +41,8 @@ public final class YieldScorer implements Scorer {
     private static final ElementId YIELD = new ElementId("Yield");
 
     @Override
-    public ScorerType type() {
-        return ScorerType.YIELD;
+    public Check type() {
+        return Check.YIELD;
     }
 
     @Override

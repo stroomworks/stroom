@@ -21,8 +21,8 @@ import stroom.docref.DocRef;
 import stroom.explorer.client.component.DocSelectionController;
 import stroom.openai.shared.OpenAIModelDoc;
 import stroom.security.shared.DocumentPermission;
+import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.ScorerSetting;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
@@ -36,7 +36,7 @@ import java.util.Map;
 
 /// A Shapeshifter AI document's Setup tab ([SetupTab]): reads the document into its parts and writes it
 /// back. The model is chosen from the `stroom-ai` model documents the user may use; the checks are
-/// [ScorerListController]'s, and the approach, with the step chosen, [ApproachSectionController]'s. Choosing
+/// [CheckListController]'s, and the approach, with the step chosen, [ApproachSectionController]'s. Choosing
 /// a starting set of checks replaces the checks, and asks first where that would lose checks of the
 /// document's own. The fallback, chosen under Approving new translations, is a step of the approach's flow,
 /// so it is switched there.
@@ -54,7 +54,7 @@ public class SetupTabController extends Controller {
 
     private final SetupTab view;
     private final DocSelectionController modelSelection;
-    private final ScorerListController scorerList;
+    private final CheckListController checkList;
     private final ApproachSectionController approach;
     /// The document as last read, which what the tab shows is written over to sum it up.
     private ShapeshifterAiDoc doc;
@@ -71,13 +71,13 @@ public class SetupTabController extends Controller {
     /// @param eventBus             The application's event bus.
     /// @param view                 The tab.
     /// @param docSelectionProvider Makes the model's picker.
-    /// @param scorerList           The checks' list's controller.
+    /// @param checkList           The checks' list's controller.
     /// @param approach             The approach's controller.
     @Inject
     public SetupTabController(final EventBus eventBus,
                               final SetupTab view,
                               final Provider<DocSelectionController> docSelectionProvider,
-                              final ScorerListController scorerList,
+                              final CheckListController checkList,
                               final ApproachSectionController approach) {
         super(eventBus);
         this.view = view;
@@ -86,7 +86,7 @@ public class SetupTabController extends Controller {
         modelSelection.attach(view.getModelBox());
         modelSelection.setIncludedTypes(OpenAIModelDoc.TYPE);
         modelSelection.setRequiredPermissions(DocumentPermission.USE);
-        this.scorerList = own(scorerList).attach(view.getScorerList());
+        this.checkList = own(checkList).attach(view.getCheckList());
         this.approach = own(approach).attach(view.getApproach());
 
         own(modelSelection.addSelectionListener(docRef -> changed()));
@@ -109,8 +109,10 @@ public class SetupTabController extends Controller {
         view.setOnStepsToggle(this::toggleSteps);
         view.setOnAddStep(approach::addAfterSelected);
         view.setOnStop(this::go);
-        scorerList.setOnChange(() -> {
+        checkList.setOnChange(() -> {
             showPreset();
+            // A step's card warns where a rule fires on a check that is off, so the approach is told
+            approach.setChecks(checkList.write());
             changed();
         });
         // The approach marks the document changed itself; a change may choose another step
@@ -149,11 +151,11 @@ public class SetupTabController extends Controller {
         view.setSampleSizeLimit(doc.getSampleSizeLimit());
         approach.read(docRef, doc);
 
-        scorerList.read(doc.getScorers());
+        // approach.read(...) above takes the document's checks with it, so it isn't told them again here
+        checkList.read(doc.getChecks());
         showPreset();
         view.setHeldOutFraction(doc.getHeldOutFraction());
 
-        view.setPromotionFloor(doc.getPromotionFloor());
         view.setPromotionMode(doc.getPromotionMode());
         view.setMinRecordsToLearn(doc.getMinRecordsToLearn());
         view.setFallback(approach.hasFallback());
@@ -178,9 +180,8 @@ public class SetupTabController extends Controller {
                 .attemptBudgetMs(view.getAttemptBudgetMs())
                 .tokenBudget(view.getTokenBudget())
                 .sampleSizeLimit(view.getSampleSizeLimit())
-                .scorers(scorerList.write())
+                .checks(checkList.write())
                 .heldOutFraction(view.getHeldOutFraction())
-                .promotionFloor(view.getPromotionFloor())
                 .promotionMode(view.getPromotionMode())
                 .minRecordsToLearn(view.getMinRecordsToLearn())
                 .relearnThreshold(view.getRelearnThreshold())
@@ -220,31 +221,31 @@ public class SetupTabController extends Controller {
         view.focusModel();
     }
 
-    /// Puts a starting set of checks in place, as the Feeds tab's readiness check offers for a document with
-    /// none; the document is then changed, to be saved. Its owner shows the tab first, which reads the
-    /// document into it, and asks only where the document can be changed.
+    /// Puts a ready-made set of checks in place, as the readiness check offers for a Learning Flow whose
+    /// checks are all off; the document is then changed, to be saved. Its owner shows the tab first, which
+    /// reads the document into it, and asks only where the document can be changed.
     ///
     /// @param preset The set.
-    public void usePreset(final QualityPreset preset) {
-        scorerList.read(preset.getSettings());
+    public void usePreset(final CheckPreset preset) {
+        checkList.read(preset.settings());
+        approach.setChecks(preset.settings());
         showPreset();
         changed();
     }
 
-    // A set chosen: put in place at once where the document has no checks, or they are a set already;
-    // asked first where it would replace checks of the document's own
-    private void choosePreset(final QualityPreset preset) {
+    // A set chosen: put in place at once where the checks are a set already; asked first where it would
+    // replace checks of the Learning Flow's own
+    private void choosePreset(final CheckPreset preset) {
         if (readOnly || preset == null) {
             return;
         }
-        final List<ScorerSetting> current = scorerList.write();
-        if (current.isEmpty() || QualityPreset.of(current) != null) {
+        if (CheckPreset.of(checkList.write()) != null) {
             usePreset(preset);
             return;
         }
         ConfirmEvent.fire(this,
-                "Replace this document's " + PlainWords.count(current.size(), "check") + " with the "
-                + preset.getDisplayValue() + " set? Its own checks, and any business rules, are removed.",
+                "Replace this Learning Flow's own checks with the " + preset.getDisplayValue()
+                + " set? Their settings, and any business rules, are replaced.",
                 ok -> {
                     if (isDisposed()) {
                         return;
@@ -258,7 +259,7 @@ public class SetupTabController extends Controller {
     }
 
     private void showPreset() {
-        view.setPreset(QualityPreset.of(scorerList.write()));
+        view.setPreset(CheckPreset.of(checkList.write()));
     }
 
     private void changed() {

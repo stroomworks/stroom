@@ -18,6 +18,7 @@
 package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.shared.FlowProblem;
+import stroom.shapeshifter.shared.FlowProblem.Severity;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepGuard;
@@ -102,5 +103,19 @@ class TestLearnFlow {
                 new FlowProblem(null, "c"));
         assertThat(LearnFlow.problemsOf(problems, 1)).isEqualTo("a; b");
         assertThat(LearnFlow.problemsOf(problems, 0)).isNull();
+    }
+
+    @Test
+    void aStepsWarningsAreKeptApartFromItsProblems() {
+        final List<FlowProblem> problems = List.of(new FlowProblem(1, "a"),
+                new FlowProblem(1, "w", Severity.WARNING), new FlowProblem(1, "x", Severity.WARNING),
+                new FlowProblem(0, "y", Severity.WARNING));
+
+        // A card paints its problems and its warnings differently, so each is asked for on its own
+        assertThat(LearnFlow.problemsOf(problems, 1)).isEqualTo("a");
+        assertThat(LearnFlow.problemsOf(problems, 1, Severity.PROBLEM)).isEqualTo("a");
+        assertThat(LearnFlow.problemsOf(problems, 1, Severity.WARNING)).isEqualTo("w; x");
+        assertThat(LearnFlow.problemsOf(problems, 0, Severity.PROBLEM)).isNull();
+        assertThat(LearnFlow.problemsOf(problems, 0, Severity.WARNING)).isEqualTo("y");
     }
 }

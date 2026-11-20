@@ -37,10 +37,11 @@ import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.QuestionKind;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.ShapeshifterAiStepDetails;
 import stroom.shapeshifter.shared.StageScore;
@@ -98,9 +99,9 @@ class TestStepDetails {
         // Across the chain rather than per step, because which scorers apply depends on what a step was
         // given: the scorers of meaning apply to a step whose input was already records (design 01 §4).
         assertThat(details.getVerdicts()).flatExtracting(StageVerdict::getScores)
-                .describedAs("and every scorer that applied, with what it was measured against")
+                .describedAs("and every check that applied, with what it was measured against")
                 .isNotEmpty()
-                .allSatisfy(score -> assertThat(score.getScorer()).isNotNull());
+                .allSatisfy(score -> assertThat(score.getCheck()).isNotNull());
         assertThat(details.getVerdicts()).flatExtracting(StageVerdict::getScores)
                 .extracting(StageScore::isMet)
                 .describedAs("a promoted chain met what it was measured against").doesNotContain(false);
@@ -187,10 +188,18 @@ class TestStepDetails {
                 .minRecordsToLearn(1)
                 // Named, because a document with no scorers produces verdicts with nothing in them and
                 // this is about what the pane shows of them.
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
-                                new YieldParameters(1.0, YieldBasis.RECORDS))))
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        CheckSetting.of(Check.COVERAGE, CheckState.OFF),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
+                                new YieldParameters(1.0, YieldBasis.RECORDS)),
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
+                        CheckSetting.of(Check.QUALITY, CheckState.OFF),
+                        CheckSetting.of(Check.RULES, CheckState.OFF),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 

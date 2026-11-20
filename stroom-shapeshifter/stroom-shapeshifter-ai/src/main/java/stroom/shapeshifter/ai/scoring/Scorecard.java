@@ -17,8 +17,9 @@
 package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.shared.Check;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckSettings;
+import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.TurnScore;
 
@@ -34,61 +35,108 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * The document's scorer set applied to a step (design §8.4): every setting whose scorer has a signal on
- * the step is scored, judged against its threshold, and weighted into a total. A setting whose scorer is
- * not installed, or whose parameters its scorer refuses, is a configuration fault and is refused when
- * the scorecard is built, not silently skipped or failed stream by stream at scoring time.
+ * A Learning Flow's checks applied to a step (the one model of checks, UM-2 and UM-3): every check that
+ * isn't off and whose scorer has a signal on the step is scored and judged against its threshold. A check
+ * that is a gate refuses a candidate below its threshold; one that is advice does so only where the step
+ * has a rule for its shortfall (D1). A check whose scorer is not installed, or whose parameters its scorer
+ * refuses, is a configuration fault and is refused when the scorecard is built, not silently skipped or
+ * failed stream by stream at scoring time. The checks with no scorer (wholeness, preservation, fidelity,
+ * the regression corpus) are judged by the conversation and by promotion, which ask this scorecard whether
+ * each is on and whether it decides ([#decides]).
  */
 public final class Scorecard {
 
-    private static final Set<ScorerType> MEANING = EnumSet.of(
-            ScorerType.SCHEMA_CONFORMANCE, ScorerType.EXTRACTION_QUALITY, ScorerType.BUSINESS_RULES,
-            ScorerType.EVENT_CLASSIFICATION);
+    private static final Set<Check> MEANING = EnumSet.of(
+            Check.CONFORMANCE, Check.QUALITY, Check.RULES);
 
-    private final List<ScorerSetting> settings;
-    private final Map<ScorerType, Scorer> scorers;
+    private final List<CheckSetting> settings;
+    private final Map<Check, Scorer> scorers;
 
-    public Scorecard(final List<ScorerSetting> settings, final List<Scorer> scorers) {
-        this.settings = List.copyOf(settings);
+    private Scorecard(final List<CheckSetting> settings, final List<Scorer> scorers, final boolean validate) {
+        this.settings = settings.stream().filter(CheckSetting::isOn).toList();
         this.scorers = scorers.stream().collect(Collectors.toUnmodifiableMap(Scorer::type, Function.identity()));
-        for (final ScorerSetting setting : settings) {
-            if (!this.scorers.containsKey(setting.getType())) {
-                throw new IllegalArgumentException("No scorer is installed for " + setting.getType());
+        if (validate) {
+            for (final CheckSetting setting : this.settings) {
+                final Check check = setting.getCheck();
+                if (check.isScored()) {
+                    if (!this.scorers.containsKey(check)) {
+                        throw new IllegalArgumentException("No scorer is installed for " + check);
+                    }
+                    this.scorers.get(check).validate(setting.getParameters());
+                }
             }
-            this.scorers.get(setting.getType()).validate(setting.getParameters());
         }
+    }
+
+    /// @param settings A Learning Flow's checks; those that are off are not run.
+    /// @param scorers  The installed scorers.
+    /// @return The scorecard.
+    public static Scorecard of(final List<CheckSetting> settings, final List<Scorer> scorers) {
+        return new Scorecard(settings, scorers, true);
     }
 
     /**
-     * This scorecard with only the scorers of meaning — those that judge what the output says, not how
+     * This scorecard with only the checks of meaning — those that judge what the output says, not how
      * much of the input it took or how many records it made — for judging one event on its own.
      */
     public Scorecard meaning() {
-        return new Scorecard(settings.stream().filter(setting -> MEANING.contains(setting.getType())).toList(),
-                List.copyOf(scorers.values()));
+        return narrowed(settings.stream().filter(setting -> MEANING.contains(setting.getCheck())).toList());
     }
 
-    /// This scorecard with only the scorers a flow step names as its checks (A37), and the compile gate,
-    /// which is not a check but the floor every step stands on.
+    /// This scorecard with only the checks a flow step names (A37), and the compile gate, which every step
+    /// stands on.
     public Scorecard only(final Collection<Check> checks) {
-        return new Scorecard(settings.stream()
-                .filter(setting -> setting.getType() == ScorerType.COMPILE
-                                   || checks.contains(Check.of(setting.getType())))
-                .toList(), List.copyOf(scorers.values()));
+        return narrowed(settings.stream()
+                .filter(setting -> setting.getCheck() == Check.COMPILE || checks.contains(setting.getCheck()))
+                .toList());
     }
 
-    /// The outcome of a verdict (A37): passed, or the shortfall that decided it — a failed gate before any
-    /// other scorer that did not meet its threshold, in the document's order within each; the compile
-    /// gate's as {@code COMPILE_FAILED}.
+    private Scorecard narrowed(final List<CheckSetting> kept) {
+        return new Scorecard(kept, List.copyOf(scorers.values()), false);
+    }
+
+    /// @param check A check.
+    /// @return Its setting, where it is on.
+    public Optional<CheckSetting> setting(final Check check) {
+        return settings.stream().filter(setting -> setting.getCheck() == check).findFirst();
+    }
+
+    /// Whether a check that falls short on a step decides the step's outcome (D1): a gate always does; advice
+    /// does only where the step has a rule for its shortfall; a check that is off, or not in this scorecard,
+    /// never does.
+    ///
+    /// @param check A check.
+    /// @param step  The step, or null for none, which has no rules.
+    /// @return Whether its shortfall decides.
+    public boolean decides(final Check check, final FlowStep step) {
+        return setting(check).map(setting -> setting.isGate() || ruled(step, check)).orElse(false);
+    }
+
+    /// @param check A check with a threshold, e.g. wholeness.
+    /// @return Its threshold here, or its default where it is not on.
+    public double threshold(final Check check) {
+        return setting(check).map(CheckSetting::getPassingValue)
+                .orElse(check.getDefaultThreshold() == null
+                        ? 1.0
+                        : check.getDefaultThreshold());
+    }
+
+    /// The outcome of a verdict on a step that has no rules: passed, or the failed gate that decided it.
     public static StepOutcome outcome(final Verdict verdict) {
-        final Judgement decisive = shortfall(verdict).orElse(null);
-        if (decisive == null) {
-            return StepOutcome.PASSED;
-        }
-        final Check check = Check.of(decisive.setting().getType());
-        return check == null
-                ? StepOutcome.COMPILE_FAILED
-                : check.shortfall();
+        return outcome(verdict, null);
+    }
+
+    /// The outcome of a verdict on a step (A37, D1): passed, or the shortfall that decided it — a failed gate
+    /// before any advice that fell short and that the step has a rule for, in the order of the checks within
+    /// each; the compile gate's as `COMPILE_FAILED`.
+    ///
+    /// @param verdict The verdict.
+    /// @param step    The step judged, whose rules say which advice routes; null for one with no rules.
+    /// @return The outcome.
+    public static StepOutcome outcome(final Verdict verdict, final FlowStep step) {
+        return shortfall(verdict, step)
+                .map(judgement -> judgement.setting().getCheck().shortfall())
+                .orElse(StepOutcome.PASSED);
     }
 
     /// The score of the check that decided a verdict (design 06 A144): on a shortfall the one [#outcome]
@@ -97,52 +145,62 @@ public final class Scorecard {
     /// its score would, so it decides no score.
     ///
     /// @param verdict The verdict.
+    /// @param step    The step judged; null for one with no rules.
     /// @return The deciding check's score, or empty where no check decided it.
-    public static Optional<TurnScore> deciding(final Verdict verdict) {
-        final Optional<Judgement> shortfall = shortfall(verdict);
+    public static Optional<TurnScore> deciding(final Verdict verdict, final FlowStep step) {
+        final Optional<Judgement> shortfall = shortfall(verdict, step);
         final Optional<Judgement> decided;
         if (shortfall.isPresent()) {
             decided = shortfall.filter(Scorecard::isCheck);
         } else {
             final Comparator<Judgement> byMargin = Comparator.comparingDouble(
-                    judgement -> judgement.score().value() - judgement.setting().getThreshold());
+                    judgement -> judgement.score().value() - judgement.setting().getPassingValue());
             final List<Judgement> checks = verdict.judgements().stream().filter(Scorecard::isCheck).toList();
             decided = checks.stream()
                     .filter(judgement -> judgement.setting().isGate())
                     .min(byMargin)
                     .or(() -> checks.stream().min(byMargin));
         }
-        return decided.map(judgement -> new TurnScore(judgement.setting().getType(), judgement.score().value(),
-                judgement.setting().getThreshold()));
+        return decided.map(judgement -> new TurnScore(judgement.setting().getCheck(),
+                judgement.score().value(), judgement.setting().getPassingValue()));
     }
 
-    /// The judgement that decided a shortfall: a failed gate before any other scorer that did not meet its
-    /// threshold, in the document's order within each.
-    private static Optional<Judgement> shortfall(final Verdict verdict) {
+    /// @param check A check.
+    /// @return Its name as people read it.
+    static String name(final Check check) {
+        return check.getName();
+    }
+
+    // The judgement that decided a shortfall: a failed gate before any advice the step routes on
+    private static Optional<Judgement> shortfall(final Verdict verdict, final FlowStep step) {
         return verdict.judgements().stream()
                 .filter(Judgement::failedGate)
                 .findFirst()
-                .or(() -> verdict.judgements().stream().filter(judgement -> !judgement.metThreshold()).findFirst());
+                .or(() -> verdict.judgements().stream()
+                        .filter(judgement -> !judgement.metThreshold()
+                                             && ruled(step, judgement.setting().getCheck()))
+                        .findFirst());
+    }
+
+    // Whether the step has a rule for the check's shortfall
+    private static boolean ruled(final FlowStep step, final Check check) {
+        final StepOutcome shortfall = check.shortfall();
+        return step != null && shortfall != null && step.transitionOn(shortfall) != null;
     }
 
     private static boolean isCheck(final Judgement judgement) {
-        return Check.of(judgement.setting().getType()) != null;
+        return judgement.setting().getCheck() != Check.COMPILE;
     }
 
     public Verdict judge(final Attempted step) {
         final List<Judgement> judgements = new ArrayList<>();
-        double weightedSum = 0.0;
-        double weights = 0.0;
-        for (final ScorerSetting setting : settings) {
-            final Optional<Score> score = scorers.get(setting.getType()).score(setting.getParameters(), step);
-            if (score.isPresent()) {
-                judgements.add(new Judgement(setting, score.get()));
-                weightedSum += setting.getWeight() * score.get().value();
-                weights += setting.getWeight();
+        for (final CheckSetting setting : settings) {
+            final Check check = setting.getCheck();
+            if (check.isScored()) {
+                scorers.get(check).score(setting.getParameters(), step)
+                        .ifPresent(score -> judgements.add(new Judgement(setting, score)));
             }
         }
-        return new Verdict(List.copyOf(judgements), weights == 0.0
-                ? 1.0
-                : weightedSum / weights);
+        return Verdict.of(judgements);
     }
 }

@@ -16,12 +16,13 @@
 
 package stroom.shapeshifter.ai.pack;
 
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -74,19 +75,26 @@ public final class DemoDocument {
     private DemoDocument() {
     }
 
-    /// The scorers one document uses for every format it meets. Compile and schema conformance gate —
+    /// The checks one document uses for every format it meets. Compile and schema conformance gate —
     /// a candidate that does not compile, or whose output is not an event, is not a candidate — and
     /// extraction quality gates too, because the failure this feature exists to avoid is a transform
-    /// that validates while saying nothing (design 01 §8.3, A16).
-    public static List<ScorerSetting> scorers() {
+    /// that validates while saying nothing (design 01 §8.3, A16). The checks with no scorer gate, and
+    /// coverage and the business rules are off, as the scorers this list replaced had them.
+    public static List<CheckSetting> checks() {
         return List.of(
-                new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
+                new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                CheckSetting.of(Check.COVERAGE, CheckState.OFF),
+                new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                         new YieldParameters(1.0, YieldBasis.RECORDS)),
-                new ScorerSetting(ScorerType.SCHEMA_CONFORMANCE, 1.0, 1.0, true,
+                CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
                         new SchemaConformanceParameters("EVENTS")),
-                new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
-                        new ExtractionQualityParameters(false, List.of())));
+                new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
+                        new ExtractionQualityParameters(false, List.of())),
+                CheckSetting.of(Check.RULES, CheckState.OFF),
+                CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                CheckSetting.of(Check.REGRESSION, CheckState.GATE));
     }
 
     /// The settings themselves, applied to a builder the caller has already given a uuid and a name.
@@ -106,7 +114,6 @@ public final class DemoDocument {
                 .allowedElements(ALLOWED_ELEMENTS)
                 .instructions(INSTRUCTIONS)
                 .minRecordsToLearn(5)
-                .promotionFloor(0.85)
-                .scorers(scorers());
+                .checks(checks());
     }
 }

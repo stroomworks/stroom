@@ -131,11 +131,33 @@ class TestApproachFlow {
         assertThat(ApproachFlow.conditions(transform)).contains(StepOutcome.CONFORMANCE_SHORT,
                 StepOutcome.FIDELITY_SHORT).doesNotContain(StepOutcome.COVERAGE_SHORT);
 
-        // A step's own checks replace its kind's, and an outcome a rule names is always offered
-        final FlowStep own = ApproachFlow.withRules(ApproachFlow.withChecks(transform, List.of(Check.RULES)),
+        // A step no longer names checks of its own: its kind's are always offered, and an outcome a rule
+        // names is offered with them, so that nothing a flow says disappears from the menu
+        final FlowStep named = ApproachFlow.withRules(transform,
                 List.of(new Transition(StepOutcome.ERRORS_SHORT, "parser")));
-        assertThat(ApproachFlow.conditions(own)).contains(StepOutcome.RULES_SHORT, StepOutcome.ERRORS_SHORT)
-                .doesNotContain(StepOutcome.CONFORMANCE_SHORT);
+        assertThat(ApproachFlow.conditions(named)).contains(StepOutcome.CONFORMANCE_SHORT,
+                StepOutcome.FIDELITY_SHORT, StepOutcome.ERRORS_SHORT);
+    }
+
+    @Test
+    void aStepsChecksAreItsKindsWhateverTheStepSays() {
+        // A check applies to every step it can measure: a parser step is judged on its records, a transform
+        // step on the events it makes, and a Configure step that does both on either
+        assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.SPLIT)))
+                .containsExactly(Check.COVERAGE, Check.YIELD, Check.WHOLENESS);
+        assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.TARGET)))
+                .containsExactly(Check.CONFORMANCE, Check.QUALITY, Check.RULES);
+        assertThat(ApproachFlow.checksFor(DIRECT.get(2)))
+                .contains(Check.CONFORMANCE, Check.FIDELITY)
+                .doesNotContain(Check.COVERAGE);
+        // Choosing the elements isn't judged by a quality check
+        assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.CHAIN))).isEmpty();
+
+        // A step cannot name checks of its own at all now: its kind's are all there is
+        final FlowStep rules = new FlowStep(null, QuestionKind.SPLIT, null, null, null, null,
+                List.of(new Transition(StepOutcome.RULES_SHORT, Transition.END)));
+        assertThat(ApproachFlow.checksFor(rules))
+                .containsExactly(Check.COVERAGE, Check.YIELD, Check.WHOLENESS);
     }
 
     @Test
@@ -263,9 +285,8 @@ class TestApproachFlow {
         final FlowStep step = DIRECT.get(1);
         assertThat(ApproachFlow.tuning(step)).isEmpty();
         assertThat(ApproachFlow.tuning(ApproachFlow.withWhen(step, StepGuard.ALWAYS))).isEmpty();
-        assertThat(ApproachFlow.tuning(ApproachFlow.withChecks(ApproachFlow.withTries(
-                ApproachFlow.withWhen(step, StepGuard.XML), 5), List.of(Check.values()[0]))))
-                .containsExactly("only for XML input", "5 tries", "own checks");
+        assertThat(ApproachFlow.tuning(ApproachFlow.withTries(ApproachFlow.withWhen(step, StepGuard.XML), 5)))
+                .containsExactly("only for XML input", "5 tries");
         assertThat(ApproachFlow.tuning(ApproachFlow.withTries(step, 1))).containsExactly("1 try");
         assertThat(ApproachFlow.tuning(ApproachFlow.withKinds(FlowStep.of(QuestionKind.TARGET), 1)))
                 .containsExactly("1 kind of record");

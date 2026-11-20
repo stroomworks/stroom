@@ -22,6 +22,7 @@ import stroom.shapeshifter.ai.scoring.Scorecard;
 import stroom.shapeshifter.ai.scoring.Verdict;
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
 import stroom.shapeshifter.shared.RecordBoundary;
+import stroom.shapeshifter.shared.StepOutcome;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
@@ -126,7 +127,9 @@ public final class TargetChecks {
     /// That it occurs at all is the caller's to check first.
     ///
     /// @return The shortfall, empty where the element will do.
-    public static Optional<StoredError> recordElement(final OutputRecords document, final String name) {
+    public static Optional<StoredError> recordElement(final OutputRecords document,
+                                                     final String name,
+                                                     final double wholeness) {
         if (name.equals(document.root().getNodeName().getLocalName())) {
             return Optional.of(new StoredError(Severity.ERROR, null, TARGET, name + " is the root, which holds every "
                                                                              + "record; name the element that is one "
@@ -153,7 +156,7 @@ public final class TargetChecks {
         final long recordChars = found.stream()
                 .mapToLong(item -> item.getStringValue().chars().filter(c -> !Character.isWhitespace(c)).count())
                 .sum();
-        if (documentChars > 0 && (double) recordChars / documentChars < SPLIT_WHOLENESS) {
+        if (documentChars > 0 && (double) recordChars / documentChars < wholeness) {
             return Optional.of(new StoredError(Severity.ERROR, null, TARGET, "The " + found.size() + " element(s) "
                     + "named " + name + " hold " + recordChars + " of the document's " + documentChars
                     + " characters; the element that is one record holds nearly all of them between its "
@@ -184,25 +187,20 @@ public final class TargetChecks {
     }
 
     /**
-     * The share of the input's non-blank characters that a split must emit as record text: coverage of
-     * what was <i>kept</i>, since the Data Splitter counts a whole group as consumed once it takes it,
-     * however little of it a record carries.
-     */
-    public static final double SPLIT_WHOLENESS = 0.9;
-
-    /**
      * Whether a split emitted the input whole: the record texts, together, must carry nearly every
      * non-blank character of the input. A split that keeps the first line of each block passes coverage —
      * the block was consumed — and fails this.
      *
      * @return The shortfall, empty where the records carry the input.
      */
-    public static Optional<StoredError> wholeness(final String input, final List<String> recordTexts) {
+    public static Optional<StoredError> wholeness(final String input,
+                                                 final List<String> recordTexts,
+                                                 final double threshold) {
         final long inputChars = input.chars().filter(c -> !Character.isWhitespace(c)).count();
         final long recordChars = recordTexts.stream()
                 .mapToLong(text -> text.chars().filter(c -> !Character.isWhitespace(c)).count())
                 .sum();
-        if (inputChars == 0 || (double) recordChars / inputChars >= SPLIT_WHOLENESS) {
+        if (inputChars == 0 || (double) recordChars / inputChars >= threshold) {
             return Optional.empty();
         }
         return Optional.of(new StoredError(Severity.ERROR, null, TARGET, "The split emitted " + recordChars + " of "
@@ -242,7 +240,7 @@ public final class TargetChecks {
             return List.of(refusal.get());
         }
         final Verdict verdict = verdict(scorecard, record, document);
-        return verdict.passed()
+        return Scorecard.outcome(verdict) == StepOutcome.PASSED
                 ? List.of()
                 : verdict.feedback();
     }

@@ -47,6 +47,7 @@ import stroom.shapeshifter.ai.learning.StopReports;
 import stroom.shapeshifter.ai.learning.Target;
 import stroom.shapeshifter.ai.learning.TargetChecks;
 import stroom.shapeshifter.ai.scoring.Attempted;
+import stroom.shapeshifter.ai.scoring.Judgement;
 import stroom.shapeshifter.ai.scoring.OutputRecords;
 import stroom.shapeshifter.ai.scoring.Records;
 import stroom.shapeshifter.ai.scoring.Scorecard;
@@ -69,10 +70,10 @@ import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.RecordBoundary;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StopReport;
 import stroom.util.logging.LambdaLogger;
@@ -96,6 +97,7 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -161,9 +163,6 @@ public final class Stage {
     /// What a record of the chain's output is judged as when it is served: the element type the scorers
     /// of meaning read it as, which is any element that is not a parser.
     private static final String TRANSFORM = "XSLTFilter";
-    /// The scorers that judge a record (design 04 §6): the bar, record by record.
-    private static final Set<ScorerType> RECORD_SCORERS = Set.of(ScorerType.SCHEMA_CONFORMANCE,
-            ScorerType.EXTRACTION_QUALITY, ScorerType.BUSINESS_RULES);
     private final Clock clock;
     /// How long a claim on an attempt lasts from its last renewal (design 04 §4).
     private final Duration lease;
@@ -257,7 +256,7 @@ public final class Stage {
             record(() -> attempts.closed(attemptId, AttemptStatus.ABANDONED, stop.get(), null, null, 0L));
             return refused(doc, learner, stop.get());
         }
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers);
         final RecordedAdvisor replay = new RecordedAdvisor(recorded.turns(), answerer);
         // Who answered each turn the first time, by its number: a replayed turn is rewritten as it is
         // re-walked, and it must not come back saying the model answered what a person answered (A28).
@@ -490,7 +489,7 @@ public final class Stage {
         // No feed and no type: there is no stream here to read them off, and a learner does not know its
         // feed (A126), so the model is shown the corpus alone.
         final Input input = new Input(-1L, null, null, Map.of(), sample, null);
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers);
         // Asked where it was asked from, not by the worker. The worker exists because a model call
         // inside a *processing task* holds a task slot (A5); an improvement is not
         // a processing task, the incumbent is serving throughout, and nothing waits on it but the person
@@ -527,21 +526,26 @@ public final class Stage {
         }
         final Learned learned = (Learned) outcome;
         final Judged candidate = asLearned(rerun(learned.chain(), input.data(), boundary(learned)), scorecard);
-        if (!candidate.clearsFloor(doc)) {
-            return kept(doc, learner, incumbent, "Candidate scored " + candidate.score() + " against a floor of "
-                                               + doc.getPromotionFloor(), learned.transcript());
+        if (!candidate.clearsGates()) {
+            return kept(doc, learner, incumbent, "Candidate failed " + candidate.failedGates(),
+                    learned.transcript());
         }
         // Every accepted record, not one: an improvement asked for out of the blue has no stream to be
-        // better on, so the records the binding was accepted on are the whole of the evidence (A18).
-        for (int i = 0; i < accepted.size(); i++) {
-            final Accepted record = accepted.get(i);
+        // better on, so the records the binding was accepted on are the whole of the evidence (A18). Held
+        // to them only where the regression corpus is a gate, and to the same bar a served record is.
+        final List<Accepted> held = doc.getCheck(Check.REGRESSION).isGate()
+                ? accepted
+                : List.of();
+        final Scorecard bar = recordBar(doc);
+        for (int i = 0; i < held.size(); i++) {
+            final Accepted record = held.get(i);
             final List<LearnedStep> transforms = Corpus.transforms(learned.chain());
-            final Judged onRecord = asLearned(rerun(transforms, record.record(), boundary(learned)), scorecard);
+            final Judged onRecord = asLearned(rerun(transforms, record.record(), boundary(learned)), bar);
             final Optional<String> shortfall = Corpus.shortfall(record, onRecord.verdicts(),
                     Corpus.outputFor(transforms, record.record(), boundary(learned)));
             if (shortfall.isPresent()) {
                 return kept(doc, learner, incumbent, "Candidate " + shortfall.get() + " — "
-                                                   + Corpus.name(i + 1, accepted.size(), record),
+                                                   + Corpus.name(i + 1, held.size(), record),
                         learned.transcript());
             }
         }
@@ -752,7 +756,7 @@ public final class Stage {
                            final Learner learner,
                            final Input input,
                            final boolean asProcessed) {
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers);
 
         if (asProcessed) {
             final Optional<Produced> recorded = outputs.asProcessed(doc.getUuid(), input.id(), input.pipeline());
@@ -776,7 +780,7 @@ public final class Stage {
             // enough records and clears the floor is promoted. One that does not is served as it stands —
             // the floor no longer retracts it (A101) — and is shown as served below.
             if (binding.isProvisional()
-                && judged.records() >= doc.getMinRecordsToLearn() && judged.clearsFloor(doc)) {
+                && judged.records() >= doc.getMinRecordsToLearn() && judged.clearsGates()) {
                 return new StageRun(doc, new Would("Promote binding " + binding.getUuid() + ", which scored "
                                                    + judged.score() + " on the " + judged.records()
                                                    + " records this stream brings"),
@@ -836,7 +840,7 @@ public final class Stage {
         // What the learner keeps goes with it to the document it runs under now, so that this document's
         // Supervisor shows what serves its pipeline and no other document's editors can act on it.
         learners.runsUnder(learner, doc.getUuid());
-        final Scorecard scorecard = new Scorecard(doc.getScorers(), scorers);
+        final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers);
         final Optional<Binding> matched = bindingFor(learner);
 
         if (matched.isPresent()) {
@@ -964,15 +968,16 @@ public final class Stage {
                                           .findFirst()
                                           .orElse("a gate failed");
             final StageRun deferred = session(doc, learner, binding, input,
-                    new Scorecard(doc.getScorers(), scorers), Judged.shortOf(served, short_), reason, stamp(binding),
+                    Scorecard.of(doc.getChecks(), scorers), Judged.shortOf(served, short_), reason, stamp(binding),
                             1);
             throw new DeferTaskException(((Deferred) deferred.decision()).reason());
         }
         deferrals.released(learner, input.id());
         if (binding.isProvisional()) {
-            // Promoted the first time the learner brings enough records and they clear the floor (A14,
-            // design 01 §6): what [#promote] does, less the output, which the downstream has.
-            if (served.records() >= doc.getMinRecordsToLearn() && served.meanTotal() >= doc.getPromotionFloor()) {
+            // Promoted the first time the learner brings enough records (A14, design 01 §6): every one of them
+            // cleared the gates that judge records, or the stream would have fallen short above. What
+            // [#promote] does, less the output, which the downstream has.
+            if (served.records() >= doc.getMinRecordsToLearn()) {
                 learnerBindings.replace(learner, doc.getUuid(), binding.copy()
                         .provisional(false)
                         .promotedTimeMs(clock.millis())
@@ -991,12 +996,13 @@ public final class Stage {
         return served;
     }
 
-    /// The bar a record is held to (A55): the document's gates that judge a record. The scorers that
-    /// measure a stream — compile, coverage, yield — judged the candidate when it was promoted and have
-    /// nothing to say about one record.
+    /// The bar a record is held to (A55): the Learning Flow's checks that judge records one at a time. Those
+    /// that are gates hold a record back; those that are advice only count towards the rolling score. The
+    /// checks that measure a stream — compile, coverage, yield — judged the candidate when it was promoted
+    /// and have nothing to say about one record.
     private Scorecard recordBar(final ShapeshifterAiDoc doc) {
-        return new Scorecard(doc.getScorers().stream()
-                .filter(setting -> RECORD_SCORERS.contains(setting.getType()))
+        return Scorecard.of(doc.getChecks().stream()
+                .filter(setting -> setting.getCheck().judgesRecords())
                 .toList(), scorers);
     }
 
@@ -1250,10 +1256,10 @@ public final class Stage {
         return switch (attempt.status()) {
             case PARKED -> "Waiting for " + run + ", which is paused for a person" + why(attempt.decision())
                            + ". This stream carries on once it is answered, given more, or stopped, on the "
-                           + "document's Feeds tab.";
+                           + "pipeline's Learning Status tab.";
             case AWAITING_MODEL -> "Waiting for " + run + ", which is waiting for the model to answer.";
             case AWAITING_REVIEW -> "Waiting for a new translation, learned by " + run + ", to be approved or "
-                                    + "rejected on the document's Feeds tab.";
+                                    + "rejected on the pipeline's Learning Status tab.";
             default -> "Waiting for " + run + ", which is learning" + (attempt.attempt().node() == null
                     ? ""
                     : " on node " + attempt.attempt().node()) + "; this stream takes what it learns.";
@@ -1495,11 +1501,11 @@ public final class Stage {
         // The candidate over the whole stream: the held-out judgement of A14/A15 where there are enough
         // records for one, and the floor a provisional binding must clear where there are not.
         final Judged judged = asLearned(rerun(learned.chain(), input.data(), boundary(learned)), scorecard);
-        if (!judged.clearsFloor(doc)) {
+        if (!judged.clearsGates()) {
             // Woken, as for the flow's give-up: the streams waiting on the learner error with the reason
             // now, rather than after the retry delay.
-            final StageRun givenUp = givenUp(doc, learner, "Below the promotion floor",
-                    "Candidate scored " + judged.score() + " against a floor of " + doc.getPromotionFloor(),
+            final StageRun givenUp = givenUp(doc, learner, "A gate failed",
+                    "Candidate failed " + judged.failedGates(),
                     judged.verdicts().stream().flatMap(verdict -> verdict.feedback().stream()).toList(),
                     judged.verdicts(), learned.transcript());
             wake(learner);
@@ -1550,25 +1556,25 @@ public final class Stage {
         }
         final Learned learned = (Learned) outcome;
         final Judged candidate = asLearned(rerun(learned.chain(), input.data(), boundary(learned)), scorecard);
-        if (!candidate.clearsFloor(doc)) {
-            return emit(doc, new Kept(incumbent, "Candidate scored " + candidate.score() + " against a floor of "
-                                                 + doc.getPromotionFloor()), learner, input, incumbent, served,
-                    learned.transcript());
+        if (!candidate.clearsGates()) {
+            return emit(doc, new Kept(incumbent, "Candidate failed " + candidate.failedGates()), learner, input,
+                    incumbent, served, learned.transcript());
         }
-        if (candidate.score() < served.score()) {
-            return emit(doc, new Kept(incumbent, "Candidate scored " + candidate.score() + " against the incumbent's "
-                                                 + served.score() + " on this stream"), learner, input, incumbent,
-                    served, learned.transcript());
-        }
+        // No comparison with the incumbent's score (the one model of checks, D2): the regression corpus
+        // below, a gate, is what holds a relearn to no worse than what it replaces.
         // Held to the corpus, to no worse (A66): every record the binding was accepted on, run through the
         // candidate's transform, must clear the bar, and none that translated may become an Unknown.
         // Output may otherwise change — the output each was accepted with is kept so that a person can
-        // see what changed, not so that the gate can refuse it.
-        final List<Accepted> corpus = regressionSet.accepted(incumbent.getUuid());
+        // see what changed, not so that the gate can refuse it. Held to it only where the regression corpus
+        // is a gate, and to the same bar a served record is.
+        final List<Accepted> corpus = doc.getCheck(Check.REGRESSION).isGate()
+                ? regressionSet.accepted(incumbent.getUuid())
+                : List.of();
+        final Scorecard bar = recordBar(doc);
         for (int i = 0; i < corpus.size(); i++) {
             final Accepted accepted = corpus.get(i);
             final List<LearnedStep> transforms = Corpus.transforms(learned.chain());
-            final Judged onRecord = asLearned(rerun(transforms, accepted.record(), boundary(learned)), scorecard);
+            final Judged onRecord = asLearned(rerun(transforms, accepted.record(), boundary(learned)), bar);
             final Optional<String> shortfall = Corpus.shortfall(accepted, onRecord.verdicts(),
                     Corpus.outputFor(transforms, accepted.record(), boundary(learned)));
             if (shortfall.isPresent()) {
@@ -2474,19 +2480,22 @@ public final class Stage {
     }
 
     /**
-     * The candidate's score is the product of its steps' weighted totals: a record must survive every
-     * step, and what one step discards no later step can recover. A step that did not run scores nothing.
+     * The candidate's score as people see it (the one model of checks, D3): the average of the checks that
+     * ran on it, gates and advice alike, each counted once at its lowest value over the chain's steps. It
+     * decides nothing: whether the candidate is promoted is its gates' to say. A candidate with no step
+     * scores nothing.
      */
     private static double candidateScore(final List<Verdict> verdicts) {
-        double score = 1.0;
-        for (final Verdict verdict : verdicts) {
-            score *= verdict.gatesPassed()
-                    ? verdict.weightedTotal()
-                    : 0.0;
+        if (verdicts.isEmpty()) {
+            return 0.0;
         }
-        return verdicts.isEmpty()
-                ? 0.0
-                : score;
+        final Map<Check, Double> lowest = new EnumMap<>(Check.class);
+        for (final Verdict verdict : verdicts) {
+            for (final Judgement judgement : verdict.judgements()) {
+                lowest.merge(judgement.setting().getCheck(), judgement.score().value(), Math::min);
+            }
+        }
+        return lowest.values().stream().mapToDouble(Double::doubleValue).average().orElse(1.0);
     }
 
     private Judged judge(final Scorecard scorecard,
@@ -2602,10 +2611,36 @@ public final class Stage {
                     .toList();
         }
 
-        boolean clearsFloor(final ShapeshifterAiDoc doc) {
+        /// @return Whether every gate passed on every step of the chain, and every record of the stream
+        ///         cleared the gates that judge records, which is the bar it will be served to (the one model
+        ///         of checks: serving uses the same gates). There is no total to reach, so a check that is
+        ///         advice never refuses a candidate.
+        boolean clearsGates() {
             return !verdicts.isEmpty()
-                   && score >= doc.getPromotionFloor()
-                   && verdicts.stream().allMatch(Verdict::gatesPassed);
+                   && verdicts.stream().allMatch(Verdict::gatesPassed)
+                   && failingRecords().isEmpty();
+        }
+
+        /// @return The gates that failed, named for a person, e.g. "the Schema conformance gate (0.4 of 1.0)".
+        String failedGates() {
+            final List<String> failed = verdicts.stream()
+                    .flatMap(verdict -> verdict.judgements().stream())
+                    .filter(Judgement::failedGate)
+                    .map(judgement -> judgement.setting().getCheck().getName() + " ("
+                                      + judgement.score().value() + " of " + judgement.setting().getPassingValue()
+                                      + ")")
+                    .toList();
+            if (failed.isEmpty()) {
+                final int records = failingRecords().size();
+                return records == 0
+                        ? "with nothing to judge"
+                        : "the gates that judge records on " + records + " record" + (records == 1
+                                ? ""
+                                : "s") + " of the stream";
+            }
+            return "the gate" + (failed.size() == 1
+                            ? " "
+                            : "s ") + String.join(", ", failed);
         }
 
         /// The records of the chain's output that fell short of the bar (design 04 §3, A55): the last

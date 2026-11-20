@@ -105,11 +105,7 @@ public final class FeedSituation {
         if (status == AttemptStatus.AWAITING_REVIEW) {
             final StringBuilder said = new StringBuilder();
             if (run.getScore() != null) {
-                said.append("It scored ").append(PlainWords.percent(run.getScore()));
-                if (doc != null) {
-                    said.append(" (the pass mark is ").append(PlainWords.percent(doc.getPromotionFloor())).append(')');
-                }
-                said.append(". ");
+                said.append("It scored ").append(PlainWords.percent(run.getScore())).append(". ");
             }
             said.append("Approving it puts it to use");
             if (learner.getWaiting() > 0) {

@@ -18,14 +18,16 @@ package stroom.shapeshifter.client.component;
 
 import stroom.docref.DocRef;
 import stroom.shapeshifter.client.component.Readiness.Fix;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckPreset;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import org.junit.jupiter.api.Test;
@@ -43,9 +45,8 @@ class TestSetupSummary {
                 .name("Firewall logs")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
-                .scorers(QualityPreset.STANDARD.getSettings())
+                .checks(CheckPreset.STANDARD.settings())
                 .flow(LearningFlow.of(FlowExample.DIRECT))
-                .promotionFloor(0.8)
                 .promotionMode(PromotionMode.REVIEW)
                 .relearnThreshold(0.6)
                 .build());
@@ -53,8 +54,8 @@ class TestSetupSummary {
         assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o");
         // The fallback is a step of the flow, but not a card
         assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Straight to it · 3 steps");
-        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 4 checks");
-        assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Pass mark 80% · approved first");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 7 gates");
+        assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Approved first");
         assertThat(summary.summary(SetupSection.IN_SERVICE)).isEqualTo("Flagged below 60%");
         for (final SetupSection section : SetupSection.values()) {
             assertThat(summary.problem(section)).as(section.name()).isNull();
@@ -70,9 +71,9 @@ class TestSetupSummary {
         // Learning off and no model are both fixed under Learning: the first is shown
         assertThat(summary.problem(SetupSection.LEARNING))
                 .isEqualTo("Learning is switched off, so streams of new feeds wait.");
-        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("No checks");
-        assertThat(summary.problem(SetupSection.QUALITY))
-                .isEqualTo("There are no quality checks, so every answer would pass.");
+        // A new Learning Flow has the Standard checks, so nothing is wrong with them
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 7 gates");
+        assertThat(summary.problem(SetupSection.QUALITY)).isNull();
         assertThat(summary.problem(SetupSection.APPROACH)).isNull();
         assertThat(summary.problem(SetupSection.GOING_LIVE)).isNull();
         assertThat(summary.problem(SetupSection.IN_SERVICE)).isNull();
@@ -83,15 +84,15 @@ class TestSetupSummary {
         final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder()
                 .uuid("ss-1")
                 .name("Own")
-                .scorers(List.of(new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null)))
+                .checks(List.of(CheckSetting.of(Check.YIELD, CheckState.ADVICE)))
                 .flow(new LearningFlow(List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.CONFIGURE)),
                         null, null))
                 .promotionMode(PromotionMode.AUTOMATIC)
                 .build());
 
         assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Its own approach · 2 steps");
-        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Own checks · 1 check");
-        assertThat(summary.summary(SetupSection.GOING_LIVE)).endsWith("· used once it passes");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Own checks · 7 gates, 1 advice check");
+        assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Used once it passes");
     }
 
     @Test

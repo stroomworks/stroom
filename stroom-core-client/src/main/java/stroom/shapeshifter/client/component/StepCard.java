@@ -18,7 +18,6 @@ package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.client.component.ApproachFlow.Condition;
 import stroom.shapeshifter.client.component.ApproachFlow.Destination;
-import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.StepGuard;
 import stroom.widget.button.client.LinkButton;
@@ -41,7 +40,6 @@ import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Widget;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,8 +50,9 @@ import java.util.function.Consumer;
 /// number and name, a heading, tags for what it sets of its own, and its tools (move, copy, delete); what is wrong with
 /// it; and its rules ([RuleRow]), with what it does where they say nothing in grey beneath them. Beneath
 /// those, folded away under "Advanced options", is what only this step changes: when it is asked, its
-/// tries and kinds, the parsers and filters it chooses from, and what judges it. Only the fields its kind
-/// uses are shown.
+/// tries and kinds, and the parsers and filters it chooses from. Only the fields its kind uses are shown.
+/// What judges a step is no longer its own: a check applies to every step it can measure, and whether it is
+/// Off, Advice or Gate is set once on the Setup tab's Quality checks.
 /// [ApproachSectionController] fills it from [ApproachFlow].
 public class StepCard extends Component {
 
@@ -97,13 +96,7 @@ public class StepCard extends Component {
     @UiField
     LinkButton removeUnlearnable;
     @UiField
-    FlowPanel judgedBy;
-    @UiField
-    TickBox ownChecks;
-    @UiField
-    Label usualChecks;
-    @UiField
-    FlowPanel checks;
+    Label warning;
     @UiField
     FlowPanel rulesSection;
     @UiField
@@ -117,7 +110,6 @@ public class StepCard extends Component {
     @UiField
     FlowPanel tune;
 
-    private final Map<Check, TickBox> checkBoxes = new EnumMap<>(Check.class);
     private final Map<String, TickBox> elementBoxes = new LinkedHashMap<>();
     private final List<RuleRow> ruleRows = new ArrayList<>();
     private Consumer<CardAction> onAction = action -> {
@@ -129,8 +121,6 @@ public class StepCard extends Component {
     private Consumer<String> onKinds = text -> {
     };
     private Consumer<Boolean> onTune = open -> {
-    };
-    private Consumer<List<Check>> onChecks = own -> {
     };
     private Consumer<List<String>> onElements = ticked -> {
     };
@@ -159,14 +149,6 @@ public class StepCard extends Component {
             elementBoxes.put(element, box);
             elements.add(box);
         }
-        for (final Check check : Check.values()) {
-            final TickBox box = new TickBox();
-            box.setLabel(PlainWords.check(check));
-            box.setOnChange(value -> onChecks.accept(ownChecks()));
-            checkBoxes.put(check, box);
-            checks.add(box);
-        }
-
         moveUp.setOnClick(() -> action(CardAction.MOVE_UP));
         moveDown.setOnClick(() -> action(CardAction.MOVE_DOWN));
         copy.setOnClick(() -> action(CardAction.COPY));
@@ -186,14 +168,6 @@ public class StepCard extends Component {
             if (open || (tries.getInvalidReason() == null && kinds.getInvalidReason() == null)) {
                 setTuneOpen(open);
                 onTune.accept(open);
-            }
-        });
-        ownChecks.setOnChange(own -> {
-            checks.setVisible(Boolean.TRUE.equals(own));
-            usualChecks.setVisible(!Boolean.TRUE.equals(own));
-            if (!Boolean.TRUE.equals(own)) {
-                checkBoxes.values().forEach(box -> box.setValue(false));
-                onChecks.accept(List.of());
             }
         });
     }
@@ -269,23 +243,16 @@ public class StepCard extends Component {
         kinds.setValue(text);
     }
 
-    /// What judges the step: its kind's usual checks, said in words, or its own, ticked. A check whose scorer
-    /// isn't built is offered only where the step already names it, so that it is seen and kept.
+    /// What is worth saying about the step though the flow can still be held, shown beneath its problem
+    /// and in the warning colour, not the problem's.
     ///
-    /// @param shown  Whether the step is judged by checks.
-    /// @param usualText What judges it where it names none.
-    /// @param own    Its own checks, or empty for the usual ones.
-    public void setChecks(final boolean shown, final String usualText, final List<Check> own) {
-        judgedBy.setVisible(shown);
-        usualChecks.setText("Judged by its usual checks: " + usualText + ".");
-        final boolean hasOwn = !own.isEmpty();
-        ownChecks.setValue(hasOwn);
-        checks.setVisible(hasOwn);
-        usualChecks.setVisible(!hasOwn);
-        checkBoxes.forEach((check, box) -> {
-            box.setValue(own.contains(check));
-            box.setVisible(check.getScorer() == null || check.getScorer().isBuilt() || own.contains(check));
-        });
+    /// @param text The warning, e.g. that a rule fires on a check the Learning Flow has switched off, or
+    ///             null for nothing.
+    public void setWarning(final String text) {
+        warning.setText(text == null
+                ? ""
+                : text);
+        warning.setVisible(text != null);
     }
 
     /// The parsers and filters the AI may choose from, a tick box each of [FlowStep#LEARNABLE_ELEMENTS]; only
@@ -396,11 +363,6 @@ public class StepCard extends Component {
         this.onTune = onTune;
     }
 
-    /// @param onChecks Told the step's own checks, or empty for its usual ones.
-    public void setOnChecks(final Consumer<List<Check>> onChecks) {
-        this.onChecks = onChecks;
-    }
-
     /// @param onElements Told the parsers and filters ticked, after a box is ticked or unticked or those the AI
     ///                   can't learn are removed; never none.
     public void setOnElements(final Consumer<List<String>> onElements) {
@@ -427,8 +389,6 @@ public class StepCard extends Component {
         when.setReadOnly(readOnly);
         tries.setReadOnly(readOnly);
         kinds.setReadOnly(readOnly);
-        ownChecks.setReadOnly(readOnly);
-        checkBoxes.values().forEach(box -> box.setReadOnly(readOnly));
         elementBoxes.values().forEach(box -> box.setReadOnly(readOnly));
         removeUnlearnable.setVisible(!readOnly);
         ruleRows.forEach(row -> row.setReadOnly(readOnly));
@@ -474,16 +434,6 @@ public class StepCard extends Component {
             }
         });
         return ticked;
-    }
-
-    private List<Check> ownChecks() {
-        final List<Check> own = new ArrayList<>();
-        checkBoxes.forEach((check, box) -> {
-            if (Boolean.TRUE.equals(box.getValue())) {
-                own.add(check);
-            }
-        });
-        return own;
     }
 
 

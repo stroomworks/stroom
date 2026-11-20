@@ -97,6 +97,12 @@
     margin-top: 12px;
 }
 
+/* Worth saying, but the step can still be held: a rule firing on a check the Learning Flow switched off */
+.step-card__warning {
+    color: var(--warn);
+    margin-top: 12px;
+}
+
 .step-card__fields {
     display: flex;
     flex-wrap: wrap;
@@ -123,10 +129,6 @@
     gap: 4px 14px;
 }
 
-.step-card__judged {
-    margin-top: 12px;
-}
-
 /* The parsers and filters a Choose the elements step may choose from, under its tries */
 .step-card__elements {
     margin-top: 12px;
@@ -145,12 +147,6 @@
 /* As the step's problem, whose colour is legible on the card in either theme */
 .step-card__unlearnable-text {
     color: var(--invalid);
-}
-
-.step-card__note {
-    color: var(--text-color--low-emphasis);
-    font-size: 12px;
-    margin: 4px 0;
 }
 
 .step-card__rules {

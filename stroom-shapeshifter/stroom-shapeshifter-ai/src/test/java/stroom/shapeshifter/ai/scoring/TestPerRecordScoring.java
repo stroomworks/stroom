@@ -19,10 +19,11 @@ package stroom.shapeshifter.ai.scoring;
 import stroom.shapeshifter.ai.extraction.NodeFixture;
 import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Severity;
@@ -100,20 +101,20 @@ class TestPerRecordScoring {
     /// falling short of the bar, which is a document choosing where its bar is.
     @Test
     void aVerdictsFailingRecordsAreTheUnionOverItsGates() {
-        final Score gateA = new Score(ScorerType.SCHEMA_CONFORMANCE, 0.5, List.of(), Set.of(1));
-        final Score gateB = new Score(ScorerType.EXTRACTION_QUALITY, 0.5, List.of(), Set.of(3));
-        final Score ungated = new Score(ScorerType.BUSINESS_RULES, 0.5, List.of(), Set.of(0));
-        final Verdict verdict = new Verdict(List.of(
-                new Judgement(setting(ScorerType.SCHEMA_CONFORMANCE, true), gateA),
-                new Judgement(setting(ScorerType.EXTRACTION_QUALITY, true), gateB),
-                new Judgement(setting(ScorerType.BUSINESS_RULES, false), ungated)), 0.5);
+        final Score gateA = new Score(Check.CONFORMANCE, 0.5, List.of(), Set.of(1));
+        final Score gateB = new Score(Check.QUALITY, 0.5, List.of(), Set.of(3));
+        final Score ungated = new Score(Check.RULES, 0.5, List.of(), Set.of(0));
+        final Verdict verdict = Verdict.of(List.of(
+                new Judgement(setting(Check.CONFORMANCE, true), gateA),
+                new Judgement(setting(Check.QUALITY, true), gateB),
+                new Judgement(setting(Check.RULES, false), ungated)));
 
         assertThat(verdict.failingRecords()).containsExactly(1, 3);
     }
 
     @Test
     void aScoreWithNoRecordLevelAccountNamesNoRecord() {
-        assertThat(new Score(ScorerType.COMPILE, 1.0, List.of()).failingRecords()).isEmpty();
+        assertThat(new Score(Check.COMPILE, 1.0, List.of()).failingRecords()).isEmpty();
     }
 
     /// The validator judges one top-level element at a time, counting from one; the records it names are
@@ -146,7 +147,9 @@ class TestPerRecordScoring {
         assertThat(score.failingRecords()).containsExactlyInAnyOrder(1, 3);
     }
 
-    private static ScorerSetting setting(final ScorerType type, final boolean gate) {
-        return new ScorerSetting(type, 1.0, 1.0, gate, null);
+    private static CheckSetting setting(final Check check, final boolean gate) {
+        return new CheckSetting(check, gate
+                ? CheckState.GATE
+                : CheckState.ADVICE, 1.0, null);
     }
 }

@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-
 package stroom.shapeshifter.client.component;
 
-import stroom.shapeshifter.shared.ScorerType;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.YieldBasis;
-import stroom.util.shared.Severity;
 import stroom.widget.component.client.Component;
+import stroom.widget.form.client.FormGroup;
 import stroom.widget.form.client.InputChecks;
 import stroom.widget.form.client.TextArea;
 import stroom.widget.form.client.TextBox;
@@ -34,25 +34,22 @@ import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
-import java.util.function.Consumer;
 
-/// The content of the dialog that adds or edits one scorer setting (§8.4): its type, weight, threshold
-/// and gate, and beneath them the panel of parameters that belongs to the type, or none for a scorer
-/// that takes none. A weight, threshold or expected ratio that isn't a number it can be is refused:
-/// the field says why, and the dialog's OK refuses while it is shown. [ScorerSettingEditorController]
-/// shows it and reads and writes the parameters.
-public class ScorerSettingEditor extends Component {
+/// The content of the dialog that edits one check (the one model of checks): whether it is Off, Advice
+/// or a Gate, its threshold where it has one, and beneath them the panel of settings that belongs to the
+/// check, or none for a check that takes none. A threshold or expected ratio that isn't a number it can
+/// be is refused: the field says why, and the dialog's OK refuses while it is shown.
+/// [CheckEditorController] shows it and reads and writes the settings.
+public class CheckEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
 
     @UiField
-    SelectionBox<ScorerType> type;
+    SelectionBox<CheckState> state;
     @UiField
-    TextBox weight;
+    FormGroup thresholdGroup;
     @UiField
     TextBox threshold;
-    @UiField
-    TickBox gate;
     @UiField
     FlowPanel yieldParameters;
     @UiField
@@ -75,82 +72,44 @@ public class ScorerSettingEditor extends Component {
     XPathAssertionList assertions;
     @UiField
     TickBox includeTransformMessages;
-    @UiField
-    FlowPanel errorLoadParameters;
-    @UiField
-    SelectionBox<Severity> minimumSeverity;
-    @UiField
-    FlowPanel eventClassificationParameters;
-    @UiField
-    TextArea recognisedTypes;
 
-    private Consumer<ScorerType> onTypeChange = scorerType -> {
-    };
-
-    /// Makes an empty editor, showing no parameters.
-    public ScorerSettingEditor() {
+    /// Makes an empty editor, showing no settings.
+    public CheckEditor() {
         initWidget(BINDER.createAndBindUi(this));
-        for (final ScorerType scorerType : ScorerType.values()) {
-            if (scorerType.isBuilt()) {
-                type.addItem(scorerType);
-            }
-        }
+        state.addItems(CheckState.values());
         basis.addItems(YieldBasis.values());
-        minimumSeverity.addItems(List.of(Severity.WARNING, Severity.ERROR, Severity.FATAL_ERROR));
-        weight.setInvalidReason(ScoreValues.zeroOrMore());
         threshold.setInvalidReason(InputChecks.numberFrom(0, 1));
         // Checked only while the yield's panel is shown, as hidden fields are passed over
         expectedRatio.setInvalidReason(ScoreValues.aboveZero());
-        type.setOnChange(value -> onTypeChange.accept(value));
-        showParameters(null);
+        showCheck(null);
     }
 
-    /// @param onTypeChange Told the type the user chooses.
-    public void setOnTypeChange(final Consumer<ScorerType> onTypeChange) {
-        this.onTypeChange = onTypeChange;
-    }
-
-    /// @return The list of a business rules scorer's assertions, for its controller to attach to.
+    /// @return The list of a business rules check's assertions, for its controller to attach to.
     public XPathAssertionList getAssertions() {
         return assertions;
     }
 
-    /// Shows the parameter panel of a type, and hides the others; none for a type that takes none.
+    /// Shows what belongs to a check: its threshold, where it has one, and the panel of its own settings,
+    /// hiding the others. The compile check is always a gate, so its state can't be chosen.
     ///
-    /// @param scorerType The type, or null for none.
-    public void showParameters(final ScorerType scorerType) {
-        yieldParameters.setVisible(scorerType == ScorerType.YIELD);
-        schemaConformanceParameters.setVisible(scorerType == ScorerType.SCHEMA_CONFORMANCE);
-        extractionQualityParameters.setVisible(scorerType == ScorerType.EXTRACTION_QUALITY);
-        businessRulesParameters.setVisible(scorerType == ScorerType.BUSINESS_RULES);
-        errorLoadParameters.setVisible(scorerType == ScorerType.ERROR_LOAD);
-        eventClassificationParameters.setVisible(scorerType == ScorerType.EVENT_CLASSIFICATION);
+    /// @param check The check, or null for none.
+    public void showCheck(final Check check) {
+        thresholdGroup.setVisible(check != null && check.hasThreshold());
+        yieldParameters.setVisible(check == Check.YIELD);
+        schemaConformanceParameters.setVisible(check == Check.CONFORMANCE);
+        extractionQualityParameters.setVisible(check == Check.QUALITY);
+        businessRulesParameters.setVisible(check == Check.RULES);
+        state.setEnabled(check != Check.COMPILE);
     }
 
-    /// @return The type chosen.
-    public ScorerType getType() {
-        return type.getValue();
+    /// @return The state chosen.
+    public CheckState getState() {
+        return state.getValue();
     }
 
-    /// Shows a type, offering it as well where it is one with no scorer that a document already
-    /// names, so that the setting it is can still be read and changed to one that scores.
-    ///
-    /// @param scorerType The type.
-    public void setType(final ScorerType scorerType) {
-        if (scorerType != null && !type.getItems().contains(scorerType)) {
-            type.addItem(scorerType);
-        }
-        type.setValue(scorerType);
-    }
-
-    /// @return The weight entered, or null when the box doesn't hold a number.
-    public Double getWeight() {
-        return InputChecks.parseNumber(weight.getValue());
-    }
-
-    /// @param value The weight.
-    public void setWeight(final double value) {
-        weight.setValue(ScoreValues.format(value));
+    /// @param value The state.
+    public void setState(final CheckState value) {
+        state.setValue(value);
     }
 
     /// @return The threshold entered, or null when the box doesn't hold a number.
@@ -158,19 +117,11 @@ public class ScorerSettingEditor extends Component {
         return InputChecks.parseNumber(threshold.getValue());
     }
 
-    /// @param value The threshold.
-    public void setThreshold(final double value) {
-        threshold.setValue(ScoreValues.format(value));
-    }
-
-    /// @return Whether the scorer is a gate.
-    public boolean isGate() {
-        return gate.getValue();
-    }
-
-    /// @param value Whether the scorer is a gate.
-    public void setGate(final boolean value) {
-        gate.setValue(value);
+    /// @param value The threshold, or null for a check that has none.
+    public void setThreshold(final Double value) {
+        threshold.setValue(value == null
+                ? ""
+                : ScoreValues.format(value));
     }
 
     /// @return The yield's expected ratio entered, or null when the box doesn't hold a number.
@@ -233,53 +184,29 @@ public class ScorerSettingEditor extends Component {
         includeTransformMessages.setValue(value);
     }
 
-    /// @return The least severity of diagnostic that counts against a record.
-    public Severity getMinimumSeverity() {
-        return minimumSeverity.getValue();
-    }
-
-    /// @param value The least severity of diagnostic that counts against a record.
-    public void setMinimumSeverity(final Severity value) {
-        minimumSeverity.setValue(value);
-    }
-
-    /// @return The recognised type ids, one per line in the box; never null, blank lines dropped.
-    public List<String> getRecognisedTypes() {
-        return ScoreValues.fromLines(recognisedTypes.getValue());
-    }
-
-    /// @param values The recognised type ids, shown one per line.
-    public void setRecognisedTypes(final List<String> values) {
-        recognisedTypes.setValue(ScoreValues.toLines(values));
-    }
-
-    /// Puts the focus on its first field, the type.
+    /// Puts the focus on its first field, the state.
     public void focus() {
-        type.focus();
+        state.focus();
     }
 
     // The assertions' list follows read only itself, through its controller
     @Override
     protected void onReadOnlyChange(final boolean readOnly) {
-        type.setReadOnly(readOnly);
-        weight.setReadOnly(readOnly);
+        state.setReadOnly(readOnly);
         threshold.setReadOnly(readOnly);
-        gate.setReadOnly(readOnly);
         expectedRatio.setReadOnly(readOnly);
         basis.setReadOnly(readOnly);
         schemaGroup.setReadOnly(readOnly);
         allowUnknownEventDetail.setReadOnly(readOnly);
         requiredFields.setReadOnly(readOnly);
         includeTransformMessages.setReadOnly(readOnly);
-        minimumSeverity.setReadOnly(readOnly);
-        recognisedTypes.setReadOnly(readOnly);
     }
 
 
     // --------------------------------------------------------------------------------
 
 
-    interface Binder extends UiBinder<Widget, ScorerSettingEditor> {
+    interface Binder extends UiBinder<Widget, CheckEditor> {
 
     }
 }

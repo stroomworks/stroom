@@ -49,7 +49,7 @@ import java.util.Objects;
  */
 @Description(
         "Configures one Shapeshifter AI stage: what it learns, the model and instructions it may use, its " +
-        "candidate and budget limits, the scorers that judge each candidate, and the promotion gate.")
+        "candidate and budget limits, the checks that judge each candidate, and the promotion gate.")
 @JsonPropertyOrder({
         "type",
         "uuid",
@@ -71,12 +71,11 @@ import java.util.Objects;
         "maxDeferralAgeMs",
         "sampleSizeLimit",
         "promotionMode",
-        "promotionFloor",
         "heldOutFraction",
         "minRecordsToLearn",
         "regressionCap",
         "regressionRetentionDays",
-        "scorers",
+        "checks",
 })
 @JsonInclude(Include.NON_NULL)
 public class ShapeshifterAiDoc extends AbstractDoc {
@@ -103,7 +102,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
     static final long DEFAULT_ATTEMPT_BUDGET_MS = 60_000L;
     static final long DEFAULT_MAX_DEFERRAL_AGE_MS = 24L * 60 * 60 * 1000;
     static final int DEFAULT_SAMPLE_SIZE_LIMIT = 8_192;
-    static final double DEFAULT_PROMOTION_FLOOR = 0.9;
     static final double DEFAULT_HELD_OUT_FRACTION = 0.2;
     static final int DEFAULT_MIN_RECORDS_TO_LEARN = 10;
     static final int DEFAULT_REGRESSION_CAP = 100;
@@ -173,12 +171,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
     @JsonProperty
     private final PromotionMode promotionMode;
     /**
-     * Absolute weighted score a candidate must reach on the held-out sample before it can be promoted.
-     * Ruling A15's floor; the no-regression half of A15 is measured against the incumbent at run time.
-     */
-    @JsonProperty
-    private final double promotionFloor;
-    /**
      * Fraction of a learner's records withheld from the model and used only to judge promotion. Ruling A14.
      */
     @JsonProperty
@@ -200,11 +192,10 @@ public class ShapeshifterAiDoc extends AbstractDoc {
      */
     @JsonProperty
     private final Integer regressionRetentionDays;
-    /**
-     * The scorers applied to every attempt, with weights and thresholds. §8.4.
-     */
+    /// Every check, each Off, Advice or Gate (the one model of checks), with any check not named at its
+    /// default; a new document has the defaults.
     @JsonProperty
-    private final List<ScorerSetting> scorers;
+    private final List<CheckSetting> checks;
 
     @JsonCreator
     public ShapeshifterAiDoc(
@@ -227,12 +218,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             @JsonProperty("maxDeferralAgeMs") final Long maxDeferralAgeMs,
             @JsonProperty("sampleSizeLimit") final Integer sampleSizeLimit,
             @JsonProperty("promotionMode") final PromotionMode promotionMode,
-            @JsonProperty("promotionFloor") final Double promotionFloor,
             @JsonProperty("heldOutFraction") final Double heldOutFraction,
             @JsonProperty("minRecordsToLearn") final Integer minRecordsToLearn,
             @JsonProperty("regressionCap") final Integer regressionCap,
             @JsonProperty("regressionRetentionDays") final Integer regressionRetentionDays,
-            @JsonProperty("scorers") final List<ScorerSetting> scorers) {
+            @JsonProperty("checks") final List<CheckSetting> checks) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.learningMode = Objects.requireNonNullElse(learningMode, DEFAULT_LEARNING_MODE);
@@ -248,12 +238,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         this.maxDeferralAgeMs = Objects.requireNonNullElse(maxDeferralAgeMs, DEFAULT_MAX_DEFERRAL_AGE_MS);
         this.sampleSizeLimit = Objects.requireNonNullElse(sampleSizeLimit, DEFAULT_SAMPLE_SIZE_LIMIT);
         this.promotionMode = Objects.requireNonNullElse(promotionMode, DEFAULT_PROMOTION_MODE);
-        this.promotionFloor = Objects.requireNonNullElse(promotionFloor, DEFAULT_PROMOTION_FLOOR);
         this.heldOutFraction = Objects.requireNonNullElse(heldOutFraction, DEFAULT_HELD_OUT_FRACTION);
         this.minRecordsToLearn = Objects.requireNonNullElse(minRecordsToLearn, DEFAULT_MIN_RECORDS_TO_LEARN);
         this.regressionCap = Objects.requireNonNullElse(regressionCap, DEFAULT_REGRESSION_CAP);
         this.regressionRetentionDays = regressionRetentionDays;
-        this.scorers = copyOrEmpty(scorers);
+        this.checks = CheckSettings.complete(checks);
     }
 
     /**
@@ -330,10 +319,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         return promotionMode;
     }
 
-    public double getPromotionFloor() {
-        return promotionFloor;
-    }
-
     public double getHeldOutFraction() {
         return heldOutFraction;
     }
@@ -350,8 +335,15 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         return regressionRetentionDays;
     }
 
-    public List<ScorerSetting> getScorers() {
-        return scorers;
+    /// @return One setting for every check, in the order of [Check].
+    public List<CheckSetting> getChecks() {
+        return checks;
+    }
+
+    /// @param check A check.
+    /// @return Its setting.
+    public CheckSetting getCheck(final Check check) {
+        return CheckSettings.of(checks, check);
     }
 
     @Override
@@ -370,7 +362,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                attemptBudgetMs == that.attemptBudgetMs &&
                sampleSizeLimit == that.sampleSizeLimit &&
                Double.compare(relearnThreshold, that.relearnThreshold) == 0 &&
-               Double.compare(promotionFloor, that.promotionFloor) == 0 &&
                Double.compare(heldOutFraction, that.heldOutFraction) == 0 &&
                minRecordsToLearn == that.minRecordsToLearn &&
                regressionCap == that.regressionCap &&
@@ -383,7 +374,7 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                Objects.equals(tokenBudget, that.tokenBudget) &&
                maxDeferralAgeMs == that.maxDeferralAgeMs &&
                Objects.equals(regressionRetentionDays, that.regressionRetentionDays) &&
-               Objects.equals(scorers, that.scorers);
+               Objects.equals(checks, that.checks);
     }
 
     @Override
@@ -401,12 +392,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                 maxDeferralAgeMs,
                 sampleSizeLimit,
                 promotionMode,
-                promotionFloor,
                 heldOutFraction,
                 minRecordsToLearn,
                 regressionCap,
                 regressionRetentionDays,
-                scorers);
+                checks);
     }
 
     @Override
@@ -422,12 +412,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                ", tokenBudget=" + tokenBudget +
                ", sampleSizeLimit=" + sampleSizeLimit +
                ", promotionMode=" + promotionMode +
-               ", promotionFloor=" + promotionFloor +
                ", heldOutFraction=" + heldOutFraction +
                ", minRecordsToLearn=" + minRecordsToLearn +
                ", regressionCap=" + regressionCap +
                ", regressionRetentionDays=" + regressionRetentionDays +
-               ", scorers=" + scorers +
+               ", checks=" + checks +
                '}';
     }
 
@@ -457,12 +446,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         private long maxDeferralAgeMs = DEFAULT_MAX_DEFERRAL_AGE_MS;
         private int sampleSizeLimit = DEFAULT_SAMPLE_SIZE_LIMIT;
         private PromotionMode promotionMode = DEFAULT_PROMOTION_MODE;
-        private double promotionFloor = DEFAULT_PROMOTION_FLOOR;
         private double heldOutFraction = DEFAULT_HELD_OUT_FRACTION;
         private int minRecordsToLearn = DEFAULT_MIN_RECORDS_TO_LEARN;
         private int regressionCap = DEFAULT_REGRESSION_CAP;
         private Integer regressionRetentionDays;
-        private List<ScorerSetting> scorers = Collections.emptyList();
+        private List<CheckSetting> checks;
 
         private Builder() {
         }
@@ -481,12 +469,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             this.maxDeferralAgeMs = doc.maxDeferralAgeMs;
             this.sampleSizeLimit = doc.sampleSizeLimit;
             this.promotionMode = doc.promotionMode;
-            this.promotionFloor = doc.promotionFloor;
             this.heldOutFraction = doc.heldOutFraction;
             this.minRecordsToLearn = doc.minRecordsToLearn;
             this.regressionCap = doc.regressionCap;
             this.regressionRetentionDays = doc.regressionRetentionDays;
-            this.scorers = doc.scorers;
+            this.checks = doc.checks;
         }
 
         public Builder description(final String description) {
@@ -565,11 +552,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder promotionFloor(final double promotionFloor) {
-            this.promotionFloor = promotionFloor;
-            return self();
-        }
-
         public Builder heldOutFraction(final double heldOutFraction) {
             this.heldOutFraction = heldOutFraction;
             return self();
@@ -590,8 +572,10 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder scorers(final List<ScorerSetting> scorers) {
-            this.scorers = scorers;
+        /// @param checks The document's checks; any not named have their defaults.
+        /// @return This builder.
+        public Builder checks(final List<CheckSetting> checks) {
+            this.checks = checks;
             return self();
         }
 
@@ -621,12 +605,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                     maxDeferralAgeMs,
                     sampleSizeLimit,
                     promotionMode,
-                    promotionFloor,
                     heldOutFraction,
                     minRecordsToLearn,
                     regressionCap,
                     regressionRetentionDays,
-                    scorers);
+                    checks);
         }
     }
 }

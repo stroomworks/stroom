@@ -31,16 +31,17 @@ import java.util.List;
 import java.util.Objects;
 
 /// One step of a learning flow (A33, A37; design 01 §10.2): a question kind with what governs its asking —
-/// an id for `goto`, a role for `CONFIGURE`, a guard, its limits, the checks that judge it and where it goes
-/// on each outcome. Written and read as one line:
+/// an id for `goto`, a role for `CONFIGURE`, a guard, its limits and where it goes on each outcome. What
+/// judges a step is not its own: every check that can measure a step judges it, and whether a check is Off,
+/// Advice or Gate is set once on the Learning Flow (the one model of checks). Written and read as one line:
 ///
 /// ```
 /// [id:] KIND [parser|transform] [when always|text|xml|json] [candidates n] [kinds n] [elements a,b,…]
-///       [checks a,b,…] [on <outcome> goto <id> | abandon]… [on spent goto <id> | abandon]
+///       [on <outcome> goto <id> | abandon]… [on spent goto <id> | abandon]
 ///
 /// A `goto` may name the reserved step `end`, the end of the flow.
 /// ```
-@JsonPropertyOrder({"id", "kind", "role", "when", "candidates", "kinds", "elements", "checks", "transitions"})
+@JsonPropertyOrder({"id", "kind", "role", "when", "candidates", "kinds", "elements", "transitions"})
 @JsonInclude(Include.NON_NULL)
 public class FlowStep {
 
@@ -58,7 +59,6 @@ public class FlowStep {
     private static final String ELEMENTS = "elements";
     private static final String CANDIDATES = "candidates";
     private static final String KINDS = "kinds";
-    private static final String CHECKS = "checks";
 
     /// The step's name for `goto`; null where the step goes by its default name, [#effectiveId()].
     @JsonProperty
@@ -74,9 +74,6 @@ public class FlowStep {
     private final Integer candidates;
     @JsonProperty
     private final Integer kinds;
-    /// The checks that judge this step; empty for the kind's own.
-    @JsonProperty
-    private final List<Check> checks;
     @JsonProperty
     private final List<Transition> transitions;
     /// The element types the chain question chooses from (A21, A95): the Chain step's alone, and empty
@@ -90,9 +87,8 @@ public class FlowStep {
                     final StepGuard when,
                     final Integer candidates,
                     final Integer kinds,
-                    final List<Check> checks,
                     final List<Transition> transitions) {
-        this(id, kind, role, when, candidates, kinds, checks, transitions, null);
+        this(id, kind, role, when, candidates, kinds, transitions, null);
     }
 
     @JsonCreator
@@ -102,7 +98,6 @@ public class FlowStep {
                     @JsonProperty("when") final StepGuard when,
                     @JsonProperty("candidates") final Integer candidates,
                     @JsonProperty("kinds") final Integer kinds,
-                    @JsonProperty("checks") final List<Check> checks,
                     @JsonProperty("transitions") final List<Transition> transitions,
                     @JsonProperty("elements") final List<String> elements) {
         this.kind = Objects.requireNonNull(kind, "A step needs a question kind");
@@ -118,7 +113,7 @@ public class FlowStep {
         if (kinds != null && kinds < 1) {
             throw new IllegalArgumentException("'kinds' must be at least 1, in step " + kind.name());
         }
-        // Names are matched without regard to case, as kinds, roles, checks and outcomes are read.
+        // Names are matched without regard to case, as kinds, roles and outcomes are read.
         this.id = id == null || id.trim().isEmpty()
                 ? null
                 : id.trim().toLowerCase();
@@ -132,9 +127,6 @@ public class FlowStep {
                 : when;
         this.candidates = candidates;
         this.kinds = kinds;
-        this.checks = checks == null
-                ? List.of()
-                : Collections.unmodifiableList(new ArrayList<>(checks));
         this.transitions = transitions == null
                 ? List.of()
                 : Collections.unmodifiableList(new ArrayList<>(transitions));
@@ -153,10 +145,10 @@ public class FlowStep {
     /// kind is not a step and the real constructor says so.
     @SerialisationTestConstructor
     private FlowStep() {
-        this(null, QuestionKind.CHAIN, null, null, null, null, null, null, null);
+        this(null, QuestionKind.CHAIN, null, null, null, null, null, null);
     }
 
-    /// A step with no id, role, checks or transitions: the form the A34 list had.
+    /// A step with no id, role or transitions: the form the A34 list had.
     public FlowStep(final QuestionKind kind,
                     final StepGuard when,
                     final Integer candidates,
@@ -204,11 +196,6 @@ public class FlowStep {
         return kinds;
     }
 
-    /// @return The checks that judge this step, empty for the kind's own.
-    public List<Check> getChecks() {
-        return checks;
-    }
-
     /// @return Where the step goes on each outcome, in the order written.
     public List<Transition> getTransitions() {
         return transitions;
@@ -228,7 +215,7 @@ public class FlowStep {
 
     /// This step with other elements named; only a Chain step takes any.
     public FlowStep withElements(final List<String> elements) {
-        return new FlowStep(id, kind, role, when, candidates, kinds, checks, transitions, elements);
+        return new FlowStep(id, kind, role, when, candidates, kinds, transitions, elements);
     }
 
     /// The name `goto` reaches this step by: its id, or the role's word for a `CONFIGURE` with a role, or the
@@ -284,14 +271,6 @@ public class FlowStep {
         if (!elements.isEmpty()) {
             text.append(' ').append(ELEMENTS).append(' ').append(String.join(",", elements));
         }
-        if (!checks.isEmpty()) {
-            text.append(' ').append(CHECKS).append(' ');
-            for (int i = 0; i < checks.size(); i++) {
-                text.append(i == 0
-                        ? ""
-                        : ",").append(checks.get(i).getDisplayValue());
-            }
-        }
         for (final Transition transition : transitions) {
             text.append(' ').append(transition.format());
         }
@@ -331,7 +310,6 @@ public class FlowStep {
         StepGuard when = StepGuard.ALWAYS;
         Integer candidates = null;
         Integer kinds = null;
-        final List<Check> checks = new ArrayList<>();
         final List<Transition> transitions = new ArrayList<>();
         final List<String> elements = new ArrayList<>();
         while (i < words.length) {
@@ -361,23 +339,12 @@ public class FlowStep {
                         }
                     }
                 }
-                case CHECKS -> {
-                    for (final String word : value.split(",")) {
-                        final Check check = Check.parse(word);
-                        if (check == null) {
-                            throw new IllegalArgumentException("'" + word + "' is not a check; the checks are "
-                                                               + words(Check.values()) + ", in step '" + trimmed
-                                                               + "'");
-                        }
-                        checks.add(check);
-                    }
-                }
                 default -> throw new IllegalArgumentException("'" + words[i] + "' is not when, candidates, kinds, "
-                                                              + "elements, checks or on, in step '" + trimmed + "'");
+                                                              + "elements or on, in step '" + trimmed + "'");
             }
             i += 2;
         }
-        return new FlowStep(id, kind, role, when, candidates, kinds, checks, transitions, elements);
+        return new FlowStep(id, kind, role, when, candidates, kinds, transitions, elements);
     }
 
     /// Reads `on <outcome|spent> goto <id>` or `on <outcome|spent> abandon` from `words[at]`.
@@ -457,13 +424,13 @@ public class FlowStep {
         final FlowStep that = (FlowStep) o;
         return Objects.equals(id, that.id) && kind == that.kind && role == that.role && when == that.when
                && Objects.equals(candidates, that.candidates) && Objects.equals(kinds, that.kinds)
-               && checks.equals(that.checks) && transitions.equals(that.transitions)
+               && transitions.equals(that.transitions)
                && elements.equals(that.elements);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, kind, role, when, candidates, kinds, checks, transitions, elements);
+        return Objects.hash(id, kind, role, when, candidates, kinds, transitions, elements);
     }
 
     @Override

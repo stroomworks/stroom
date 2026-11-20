@@ -16,8 +16,8 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerType;
 
 import java.util.Optional;
 
@@ -29,8 +29,8 @@ import java.util.Optional;
 public final class CompileScorer implements Scorer {
 
     @Override
-    public ScorerType type() {
-        return ScorerType.COMPILE;
+    public Check type() {
+        return Check.COMPILE;
     }
 
     @Override

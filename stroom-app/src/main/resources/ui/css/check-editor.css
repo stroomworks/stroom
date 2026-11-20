@@ -14,25 +14,25 @@
  * limitations under the License.
  */
 
-/* The dialog that adds or edits one scorer (ScorerSettingEditor). */
+/* The dialog that adds or edits one scorer (CheckEditor). */
 
 /* A number: a weight, a threshold or an expected ratio */
-.scorer-setting-editor__number {
+.check-editor__number {
     width: 120px;
 }
 
 /* A short name, e.g. a schema group */
-.scorer-setting-editor__text {
+.check-editor__text {
     width: 300px;
 }
 
 /* A list typed one item per line: required fields' XPaths, recognised type ids */
-.scorer-setting-editor__lines {
+.check-editor__lines {
     width: 500px;
     height: 100px;
 }
 
 /* The business rules' list of assertions, framed as a control in the form */
-.scorer-setting-editor__assertions {
+.check-editor__assertions {
     height: 200px;
 }

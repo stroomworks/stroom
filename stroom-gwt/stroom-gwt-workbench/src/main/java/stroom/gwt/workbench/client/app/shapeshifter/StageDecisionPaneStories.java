@@ -26,7 +26,7 @@ import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
 import stroom.shapeshifter.client.component.StageDecisionPaneController;
-import stroom.shapeshifter.shared.ScorerType;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ShapeshifterAiStepDetails;
 import stroom.shapeshifter.shared.StageScore;
 import stroom.shapeshifter.shared.StageVerdict;
@@ -62,7 +62,13 @@ public final class StageDecisionPaneStories {
                 .withPlay(play -> {
                     play.expect(play.findByText("Served by the binding")).toBeInTheDocument();
                     play.expect(play.getByText("Firewall logs")).toBeInTheDocument();
-                    play.expect(play.getByText("Step 1 — 0.95 (passed)")).toBeInTheDocument();
+                    // No total decides a step: every gate passing does, and each check says its own value
+                    // and whether it was a gate or only advice
+                    play.expect(play.getByText("Step 1 — 95%, every gate passed")).toBeInTheDocument();
+                    play.expect(play.getByText("Compiles")).toBeInTheDocument();
+                    play.expect(play.getByText("100% (met 100%, a gate)")).toBeInTheDocument();
+                    play.expect(play.getByText("Reads all the input")).toBeInTheDocument();
+                    play.expect(play.getByText("90% (met 80%, advice)")).toBeInTheDocument();
                     play.click(play.getByRole("button", "Firewall parser fragment"));
                     play.expect(play.spy(OPEN_DOC)).toHaveBeenCalledWith("f-1");
                     expectNoProblems(play);
@@ -113,8 +119,8 @@ public final class StageDecisionPaneStories {
                 0.95,
                 "Event",
                 List.of(new StageVerdict(1, 0.95, true, List.of(
-                        new StageScore(ScorerType.COMPILE, 1.0, 1.0, true, true),
-                        new StageScore(ScorerType.INPUT_COVERAGE, 0.9, 0.8, false, true)))),
+                        new StageScore(Check.COMPILE, 1.0, 1.0, true, true),
+                        new StageScore(Check.COVERAGE, 0.9, 0.8, false, true)))),
                 List.of(),
                 List.of());
     }

@@ -14,18 +14,16 @@
  * limitations under the License.
  */
 
-
 package stroom.shapeshifter.client.component;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
-import stroom.shapeshifter.shared.ErrorLoadParameters;
-import stroom.shapeshifter.shared.EventClassificationParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.YieldParameters;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
@@ -39,68 +37,54 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
-import java.util.function.Function;
 
-/// Adds or edits one scorer setting in a dialog ([ScorerSettingEditor]): type, weight, threshold, gate,
-/// and the panel of parameters that belongs to the type (§8.4). Choosing a type shows its panel with
-/// that type's defaults, or nothing for a scorer that takes none. A business rules scorer's assertions
-/// are a list of their own ([XPathAssertionListController]).
-///
-/// The dialog isn't modal (an editor of an item in a list): its opener checks what it gives back
-/// against the set as it is when OK is pressed.
-public class ScorerSettingEditorController extends Controller {
+/// Edits one check of a Learning Flow in a dialog ([CheckEditor]): whether it is Off, Advice or a
+/// Gate, its threshold where it has one, and the panel of settings that belongs to the check (the one
+/// model of checks). Every check has a setting, so the check itself isn't chosen; it names the dialog. A
+/// business rules check's assertions are a list of their own ([XPathAssertionListController]).
+public class CheckEditorController extends Controller {
 
-    private final ScorerSettingEditor view;
+    private final CheckEditor view;
     private final XPathAssertionListController assertionList;
+    private Check check;
 
     /// Made by GIN, with its content.
     ///
     /// @param eventBus              The application's event bus.
     /// @param view                  The dialog's content.
-    /// @param assertionListProvider Makes the controller of a business rules scorer's assertions.
+    /// @param assertionListProvider Makes the controller of a business rules check's assertions.
     @Inject
-    public ScorerSettingEditorController(final EventBus eventBus,
-                                         final ScorerSettingEditor view,
+    public CheckEditorController(final EventBus eventBus,
+                                         final CheckEditor view,
                                          final Provider<XPathAssertionListController> assertionListProvider) {
         super(eventBus);
         this.view = view;
         initWidget(view);
         assertionList = make(assertionListProvider).attach(view.getAssertions());
-        view.setOnTypeChange(type -> {
-            view.showParameters(type);
-            readParameters(ScorerParameters.defaultsFor(type));
-        });
         watch(Contexts.READ_ONLY, view::setReadOnly);
     }
 
     /// Shows the editor as a dialog, owned by `opener` until it is closed. OK refuses while a number
-    /// typed can't be kept (the field says why), or while there is a problem with the scorer (said in
-    /// an alert, after which the dialog stays open); otherwise it gives the scorer to `onOk`.
+    /// typed can't be kept (the field says why); otherwise it gives the setting to `onOk`.
     ///
-    /// @param opener   What shows it.
-    /// @param setting  The scorer to edit, or a new one.
-    /// @param problem  Gives why a scorer can't be accepted as it stands (e.g. another of its type is
-    ///                 in the set), or null if it can.
-    /// @param onOk     What to do with the scorer when OK is pressed.
+    /// @param opener  What shows it.
+    /// @param setting The check's setting.
+    /// @param onOk    What to do with the setting when OK is pressed.
     public void edit(final HasControllerNode opener,
-                     final ScorerSetting setting,
-                     final Function<ScorerSetting, String> problem,
-                     final Consumer<ScorerSetting> onOk) {
+                     final CheckSetting setting,
+                     final Consumer<CheckSetting> onOk) {
         read(setting);
         ControllerDialog.showOnce(opener, this)
                 .popupType(PopupType.OK_CANCEL_DIALOG)
                 .popupSize(PopupSize.resizable(600, 640))
-                .caption("Scorer")
+                .caption(PlainWords.checkName(setting.getCheck()))
                 .onShow(e -> view.focus())
                 .onHideRequest(e -> {
                     if (!e.isOk()) {
                         e.hide();
                         return;
                     }
-                    final String invalid = validate();
-                    final String reason = invalid != null
-                            ? invalid
-                            : problem.apply(write());
+                    final String reason = validate();
                     if (reason != null) {
                         AlertEvent.fireError(this, reason, e::reset);
                     } else {
@@ -111,12 +95,11 @@ public class ScorerSettingEditorController extends Controller {
                 .fire();
     }
 
-    private void read(final ScorerSetting setting) {
-        view.setType(setting.getType());
-        view.setWeight(setting.getWeight());
+    private void read(final CheckSetting setting) {
+        check = setting.getCheck();
+        view.showCheck(check);
+        view.setState(setting.getState());
         view.setThreshold(setting.getThreshold());
-        view.setGate(setting.isGate());
-        view.showParameters(setting.getType());
         readParameters(setting.getParameters());
     }
 
@@ -133,43 +116,33 @@ public class ScorerSettingEditorController extends Controller {
         } else if (parameters instanceof final BusinessRulesParameters rules) {
             assertionList.read(rules.getAssertions());
             view.setIncludeTransformMessages(rules.isIncludeTransformMessages());
-        } else if (parameters instanceof final ErrorLoadParameters errors) {
-            view.setMinimumSeverity(errors.getMinimumSeverity());
-        } else if (parameters instanceof final EventClassificationParameters classes) {
-            view.setRecognisedTypes(classes.getRecognisedTypes());
         }
     }
 
-    private ScorerParameters writeParameters(final ScorerType type) {
-        return switch (type) {
-            case COMPILE, INPUT_COVERAGE -> null;
+    private ScorerParameters writeParameters() {
+        return switch (check) {
             case YIELD -> new YieldParameters(view.getExpectedRatio(), view.getBasis());
-            case SCHEMA_CONFORMANCE -> new SchemaConformanceParameters(view.getSchemaGroup());
-            case EXTRACTION_QUALITY -> new ExtractionQualityParameters(
+            case CONFORMANCE -> new SchemaConformanceParameters(view.getSchemaGroup());
+            case QUALITY -> new ExtractionQualityParameters(
                     view.isAllowUnknownEventDetail(), view.getRequiredFields());
-            case BUSINESS_RULES -> new BusinessRulesParameters(
-                    assertionList.write(), view.isIncludeTransformMessages());
-            case ERROR_LOAD -> new ErrorLoadParameters(view.getMinimumSeverity());
-            case EVENT_CLASSIFICATION -> new EventClassificationParameters(view.getRecognisedTypes());
+            case RULES -> new BusinessRulesParameters(assertionList.write(), view.isIncludeTransformMessages());
+            default -> null;
         };
     }
 
     // Why the dialog can't be accepted as it stands, or null if it can. The numbers' own checks have
     // refused already (their fields say why), so these hold only if one slipped past
     private String validate() {
-        final ScorerType type = view.getType();
-        if (type == null) {
-            return "Choose a scorer.";
+        if (view.getState() == null) {
+            return "Choose whether the check is off, advice or a gate.";
         }
-        final Double weight = view.getWeight();
-        if (weight == null || weight < 0) {
-            return "The weight must be a number of zero or more.";
+        if (check.hasThreshold()) {
+            final Double threshold = view.getThreshold();
+            if (threshold == null || threshold < 0 || threshold > 1) {
+                return "The threshold must be a number from 0 to 1.";
+            }
         }
-        final Double threshold = view.getThreshold();
-        if (threshold == null || threshold < 0 || threshold > 1) {
-            return "The threshold must be a number from 0 to 1.";
-        }
-        if (type == ScorerType.YIELD) {
+        if (check == Check.YIELD) {
             final Double ratio = view.getExpectedRatio();
             if (ratio == null || ratio <= 0) {
                 return "The expected ratio must be a number above zero.";
@@ -178,13 +151,13 @@ public class ScorerSettingEditorController extends Controller {
         return null;
     }
 
-    private ScorerSetting write() {
-        final ScorerType type = view.getType();
-        return new ScorerSetting(
-                type,
-                view.getWeight(),
+    private CheckSetting write() {
+        return new CheckSetting(
+                check,
+                check == Check.COMPILE
+                        ? CheckState.GATE
+                        : view.getState(),
                 view.getThreshold(),
-                view.isGate(),
-                writeParameters(type));
+                writeParameters());
     }
 }

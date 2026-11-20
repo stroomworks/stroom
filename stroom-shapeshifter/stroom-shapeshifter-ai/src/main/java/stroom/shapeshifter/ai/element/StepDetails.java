@@ -178,16 +178,16 @@ public final class StepDetails {
             final List<StageScore> scores = verdict.judgements().stream()
                     .map(StepDetails::score)
                     .toList();
-            mapped.add(new StageVerdict(step + 1, verdict.weightedTotal(), verdict.passed(), scores));
+            mapped.add(new StageVerdict(step + 1, verdict.score(), verdict.gatesPassed(), scores));
         }
         return mapped;
     }
 
     private static StageScore score(final Judgement judgement) {
         return new StageScore(
-                judgement.setting().getType(),
+                judgement.setting().getCheck(),
                 judgement.score().value(),
-                judgement.setting().getThreshold(),
+                judgement.setting().getPassingValue(),
                 judgement.setting().isGate(),
                 judgement.metThreshold());
     }

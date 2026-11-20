@@ -60,7 +60,7 @@ public final class QualityFigures {
             return new QualityFigures(figures, NOTHING_IN_USE);
         }
         figures.add(lately(learner, doc));
-        figures.add(whenLearned(learner, doc));
+        figures.add(whenLearned(learner));
         figures.add(trust(learner, doc));
         figures.add(waiting(learner));
         return new QualityFigures(figures, null);
@@ -160,15 +160,12 @@ public final class QualityFigures {
                 : new Figure("Score lately", PlainWords.percent(learner.getRollingScore()), over + flag, Tone.GOOD);
     }
 
-    private static Figure whenLearned(final SupervisorLearner learner, final ShapeshifterAiDoc doc) {
-        final String passMark = doc == null
-                ? ""
-                : " The pass mark is " + PlainWords.percent(doc.getPromotionFloor()) + ".";
+    private static Figure whenLearned(final SupervisorLearner learner) {
         return learner.getPromotedScore() == null
-                ? new Figure("Score when it went live", "Not known", "It went live without a score." + passMark,
+                ? new Figure("Score when it went live", "Not known", "It went live without a score.",
                 Tone.IDLE)
                 : new Figure("Score when it went live", PlainWords.percent(learner.getPromotedScore()),
-                        "On the stream it was learned from." + passMark, Tone.IDLE);
+                        "On the stream it was learned from.", Tone.IDLE);
     }
 
     private static Figure trust(final SupervisorLearner learner, final ShapeshifterAiDoc doc) {

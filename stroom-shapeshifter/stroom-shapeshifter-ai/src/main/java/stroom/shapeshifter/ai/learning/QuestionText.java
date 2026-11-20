@@ -22,10 +22,10 @@ import stroom.shapeshifter.ai.learning.Question.Records;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.learning.Question.TargetFor;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.LearnedUnknown;
 import stroom.shapeshifter.shared.LearningFlow;
-import stroom.shapeshifter.shared.ScorerSetting;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.Template;
 import stroom.util.shared.StoredError;
@@ -86,7 +86,10 @@ public final class QuestionText {
     public static QuestionText of(final ShapeshifterAiDoc doc) {
         final Templates templates = Templates.of(doc.getFlow());
         final StringBuilder demands = new StringBuilder();
-        for (final ScorerSetting setting : doc.getScorers()) {
+        for (final CheckSetting setting : doc.getChecks()) {
+            if (!setting.isOn()) {
+                continue;
+            }
             if (setting.getParameters() instanceof final ExtractionQualityParameters quality
                 && !quality.getRequiredFields().isEmpty()) {
                 // Scored as the share of events that carry each, so said as a place, not a bar: a kind of

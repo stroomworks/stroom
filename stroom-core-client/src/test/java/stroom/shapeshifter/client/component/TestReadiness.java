@@ -19,6 +19,10 @@ package stroom.shapeshifter.client.component;
 import stroom.docref.DocRef;
 import stroom.shapeshifter.client.component.Readiness.Fix;
 import stroom.shapeshifter.client.component.Readiness.Item;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckPreset;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
@@ -40,7 +44,7 @@ class TestReadiness {
         final Readiness readiness = Readiness.of(ShapeshifterAiDoc.builder().uuid("new").name("New").build());
         assertThat(readiness.isReady()).isFalse();
         assertThat(readiness.getItems()).extracting(Item::getFix)
-                .containsExactly(Fix.SWITCH_ON, Fix.CHOOSE_MODEL, Fix.USE_STANDARD_CHECKS, null);
+                .containsExactly(Fix.SWITCH_ON, Fix.CHOOSE_MODEL, null, null);
         assertThat(readiness.getItems().get(3).getText()).isEqualTo("Approach: Straight to it");
     }
 
@@ -51,12 +55,29 @@ class TestReadiness {
                 .name("Firewall logs")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
-                .scorers(QualityPreset.STANDARD.getSettings())
+                .checks(CheckPreset.STANDARD.settings())
                 .flow(LearningFlow.of(FlowExample.ESCALATING))
                 .build());
         assertThat(readiness.isReady()).isTrue();
         assertThat(readiness.getItems()).extracting(Item::getText).containsExactly("Learning is on",
-                "Model: GPT-4o", "4 quality checks", "Approach: Quick, then careful");
+                "Model: GPT-4o", "6 quality gates", "Approach: Quick, then careful");
+    }
+
+    @Test
+    void checksThatAreNoGateApartFromCompileSendAPersonToTheStandardSet() {
+        final List<CheckSetting> noGates = CheckPreset.STANDARD.settings().stream()
+                .map(setting -> setting.getCheck() == Check.COMPILE
+                        ? setting
+                        : setting.withState(CheckState.ADVICE))
+                .toList();
+        final Item checks = Readiness.of(ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .name("No gates")
+                .checks(noGates)
+                .build()).getItems().get(2);
+        assertThat(checks.isOk()).isFalse();
+        assertThat(checks.getFix()).isEqualTo(Fix.USE_STANDARD_CHECKS);
+        assertThat(checks.getText()).isEqualTo("No quality check is a gate, so any answer that runs would pass.");
     }
 
     @Test

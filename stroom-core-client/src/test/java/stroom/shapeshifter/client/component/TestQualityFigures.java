@@ -41,7 +41,6 @@ class TestQualityFigures {
     private static final DocRef FRAGMENT = new DocRef("Pipeline", "f-1", "Firewall pipeline learned");
     private static final ShapeshifterAiDoc DOC = ShapeshifterAiDoc.builder()
             .uuid("ss-1")
-            .promotionFloor(0.9)
             .relearnThreshold(0.8)
             .minRecordsToLearn(20)
             .build();
@@ -59,7 +58,7 @@ class TestQualityFigures {
                 .isEqualTo("Over the last 1,204 records translated. Its Learning Flow flags a translation in use "
                            + "below 80%.");
         assertThat(figures.getFigures().get(0).getTone()).isEqualTo(Tone.GOOD);
-        assertThat(figures.getFigures().get(1).getNote()).endsWith("The pass mark is 90%.");
+        assertThat(figures.getFigures().get(1).getNote()).isEqualTo("On the stream it was learned from.");
     }
 
     @Test

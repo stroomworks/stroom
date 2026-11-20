@@ -23,9 +23,10 @@ import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -116,10 +117,18 @@ class TestALearnerGivenUpByAPerson {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.COMPILE, 0.0, 1.0, true, null),
-                        new ScorerSetting(ScorerType.YIELD, 1.0, 0.5, false,
-                                new YieldParameters(1.0, YieldBasis.RECORDS))))
+                .checks(List.of(
+                        new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
+                        CheckSetting.of(Check.COVERAGE, CheckState.OFF),
+                        new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
+                                new YieldParameters(1.0, YieldBasis.RECORDS)),
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
+                        CheckSetting.of(Check.QUALITY, CheckState.OFF),
+                        CheckSetting.of(Check.RULES, CheckState.OFF),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
     }
 

@@ -139,6 +139,13 @@ The UI merge added stop reports (`StopReports`, stored in `shapeshifter_attempt.
 The progress strip (`FeedProgress`) shows each step's tries and where the run went back, and the conversation shows each answer and how it was judged.
 Check that the reports cover the cases below, which are what made GATEWAY-AUDIT hard to read; any that don't are what is left of this item.
 
+**Checked, 19 November 2026 (Track 1 task 6):**
+
+- *Every candidate failing the same way*: covered. The details count each way the answers fell short and give the closest score, and the first suggestion says "Every answer fell short the same way, so more tries may not help" (`StopReports.spent`).
+- *The model's refused reply*: was covered only when the **last** answer was refused. Fixed: the latest refused reply is now quoted even when the model tried again after it (`TestStopReports.aRefusedReplyBeforeTheLastAnswerIsStillQuoted`).
+- *A truncated sample*: **not covered**. Nothing tells the stop report that the sample was cut. Left for Track 1 task 9, which changes how the sample is cut (N2 option F: one setting in bytes, the 6,000-character prompt cap removed), so the note is written once, against the new cut.
+- *Marking the stopped step and each candidate's outcome in the progress strip*: not checked here; it is client work.
+
 `No record boundary after 5 candidates` says *that* it stopped, not *why*.
 The reasons are already stored, as the feedback carried into each re-ask.
 Show them:
@@ -169,8 +176,10 @@ Each message should name the translation, give counts, and say what happens next
 
 ### 5. Correct the waiting reason
 
-**Status: done, to be checked.**
-`Stage.why(...)` now words the reason by what the claim holder is doing, and "Another node is learning…" is gone.
+**Status: done and checked, 19 November 2026 (Track 1 task 6).**
+`Stage.waitingFor(...)` words the reason by what the claim holder is doing, and "Another node is learning…" is gone.
+All states are covered by `TestStage` (paused for a person, waiting for the model, in progress on a node, awaiting review, and a claim released before it was read).
+The paused and awaiting-review reasons sent people to "the document's Feeds tab", which no longer exists; they now name the pipeline's Learning Status tab.
 The waiting streams list on the Learning Status tab has a *Tries* column.
 Check all three states (waiting for the model, in progress, parked); a warning when a stream keeps being retried against a paused run is still open.
 

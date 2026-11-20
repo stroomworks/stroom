@@ -58,8 +58,8 @@ public final class ExtractionQualityParameters extends ScorerParameters {
     }
 
     @Override
-    public ScorerType scorerType() {
-        return ScorerType.EXTRACTION_QUALITY;
+    public Check check() {
+        return Check.QUALITY;
     }
 
     public boolean isAllowUnknownEventDetail() {

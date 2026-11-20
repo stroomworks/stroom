@@ -114,6 +114,10 @@ public final class StopReports {
             details.add("The AI's last answer: \"" + quote(last.reply()) + "\"");
         } else {
             firstMessage(feedback).ifPresent(message -> details.add("The last answer fell short on: " + message));
+            // A reply refused for its form often says in words what is wrong ("no single element name fits"),
+            // so the latest one is quoted even when the model tried again after it.
+            lastRefusal(answers).ifPresent(reply -> details.add(
+                    "An earlier answer was refused, as not in the reply format: \"" + quote(reply) + "\""));
         }
 
         final boolean sameWay = answers.size() > 1 && tally.size() == 1;
@@ -396,6 +400,17 @@ public final class StopReports {
     }
 
     /// What a step does, to follow "Couldn't", e.g. "find what one record is".
+    // The reply of the latest answer refused for its form that says something; empty where there is none
+    private static Optional<String> lastRefusal(final List<Exchange> answers) {
+        for (int i = answers.size() - 1; i >= 0; i--) {
+            final Exchange answer = answers.get(i);
+            if (answer.outcome() == StepOutcome.REFUSED && !blank(answer.reply())) {
+                return Optional.of(answer.reply());
+            }
+        }
+        return Optional.empty();
+    }
+
     private static String doing(final FlowStep step, final String name) {
         return step.getKind() == QuestionKind.ADMIT
                 ? "translate what's left as marked Unknowns"

@@ -23,11 +23,12 @@ import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.scoring.Records;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningFlow;
-import stroom.shapeshifter.shared.ScorerSetting;
-import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.Template;
 import stroom.shapeshifter.shared.XPathAssertion;
@@ -200,15 +201,23 @@ class TestQuestionText {
                 .uuid("doc-1")
                 .name("door-access")
                 .instructions("Badge readers.")
-                .scorers(List.of(
-                        new ScorerSetting(ScorerType.EXTRACTION_QUALITY, 1.0, 0.7, true,
+                .checks(List.of(
+                        CheckSetting.of(Check.COMPILE, CheckState.GATE),
+                        CheckSetting.of(Check.COVERAGE, CheckState.OFF),
+                        CheckSetting.of(Check.YIELD, CheckState.OFF),
+                        CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
+                        CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
+                        new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false,
-                                        List.of("EventSource/User/Id", "EventSource/Device/Name"))),
-                        new ScorerSetting(ScorerType.BUSINESS_RULES, 1.0, 0.5, false,
+                                                List.of("EventSource/User/Id", "EventSource/Device/Name"))),
+                        new CheckSetting(Check.RULES, CheckState.ADVICE, 0.5,
                                 new BusinessRulesParameters(List.of(new XPathAssertion(
-                                        "interactive events name the user",
-                                        "not(EventDetail/Authenticate) or EventDetail/Authenticate/User/Id")),
-                                        true))))
+                                                "interactive events name the user",
+                                                "not(EventDetail/Authenticate) or EventDetail/Authenticate/User/Id")),
+                                                true)),
+                        CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
+                        CheckSetting.of(Check.FIDELITY, CheckState.GATE),
+                        CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
         assertThat(QuestionText.of(doc).system())
                 .startsWith(QuestionText.builtIn("Badge readers.").system())
