@@ -143,8 +143,6 @@ dependencies {
     implementation project(':stroom-node:stroom-node-impl-db')
     implementation project(':stroom-pathways:stroom-pathways-impl')
     implementation project(':stroom-pipeline')
-    implementation project(':stroom-pipeline-factory:stroom-pipeline-factory-impl')
-    implementation project(':stroom-pipeline-factory:stroom-pipeline-factory-impl-db')
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-sqlstore:stroom-sqlstore-impl')
     implementation project(':stroom-sqlstore:stroom-sqlstore-impl-db')

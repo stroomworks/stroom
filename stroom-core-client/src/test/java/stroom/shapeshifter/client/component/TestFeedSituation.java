@@ -51,7 +51,7 @@ class TestFeedSituation {
             .name("Firewall logs")
             .relearnThreshold(0.8)
             .maxAttempts(3)
-            .flow(LearningFlow.of(FlowExample.DIRECT))
+            .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null))
             .build();
     private static final List<SupervisorTurn> STOPPED_AT_PARSER = List.of(
             turn(1, "chain", QuestionKind.CHAIN, 1, "DSParser", StepOutcome.PASSED),
@@ -60,7 +60,7 @@ class TestFeedSituation {
 
     @Test
     void aDraftAsksForApproval() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2),
                 run(AttemptStatus.AWAITING_REVIEW, List.of()), DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Approve");
         assertThat(situation.getTone()).isEqualTo(Tone.WARNING);
@@ -74,7 +74,7 @@ class TestFeedSituation {
 
     @Test
     void aPausedRunOffersMoreTheFallbackAndAnAnswer() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2),
                 run(AttemptStatus.PARKED, STOPPED_AT_PARSER), DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Paused");
         assertThat(situation.getHeadline()).isEqualTo("Paused: out of time");
@@ -87,7 +87,7 @@ class TestFeedSituation {
     @Test
     void aPausedRunWithNoQuestionOpenOffersNoAnswer() {
         final List<SupervisorTurn> answered = List.of(STOPPED_AT_PARSER.get(0), STOPPED_AT_PARSER.get(1));
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 0, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 0),
                 run(AttemptStatus.PARKED, answered), DOC, NOW);
         assertThat(situation.getPrimary()).containsExactly(FeedAction.GRANT, FeedAction.EXHAUST);
         assertThat(situation.getDetail()).endsWith("No streams are waiting.");
@@ -95,7 +95,7 @@ class TestFeedSituation {
 
     @Test
     void aLearningRunSaysWhereItIs() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING, null, 1, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING, null, 1),
                 run(AttemptStatus.AWAITING_MODEL, STOPPED_AT_PARSER), DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Learning");
         assertThat(situation.getHeadline()).isEqualTo("Learning: writing the parser, try 2 of 3");
@@ -106,7 +106,7 @@ class TestFeedSituation {
     @Test
     void aStoppedFeedOffersLearningAgain() {
         final SupervisorLearner learner = new SupervisorLearner(new LearnerRef("p-1", "shapeshifterAi"), null,
-                DOC_REF, LearnerState.GIVEN_UP, "Rejected by admin", null, null, false, null, null, 0, 0, null,
+                DOC_REF, LearnerState.GIVEN_UP, "Rejected by admin", null, null, null, null, 0, 0, null,
                 false, null, 0, false, false);
         final FeedSituation situation = FeedSituation.of(learner, null, DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Stopped");
@@ -118,7 +118,7 @@ class TestFeedSituation {
 
     @Test
     void aTranslationInUseSaysWhatItScores() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0),
                 run(AttemptStatus.PROMOTED, List.of()), DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Translating");
         assertThat(situation.getDetail()).isEqualTo("It scores 98% lately, over 1,204 records. It scored 95% when "
@@ -131,7 +131,7 @@ class TestFeedSituation {
     /// says is the same, and nothing is left under More (its translation has its own link).
     @Test
     void readOnlyOffersOnlyWhatOpensSomethingToRead() {
-        final FeedSituation serving = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0, false),
+        final FeedSituation serving = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0),
                 run(AttemptStatus.PROMOTED, List.of()), DOC, NOW);
         final FeedSituation read = serving.readOnly();
 
@@ -140,24 +140,15 @@ class TestFeedSituation {
         assertThat(read.getPrimary()).isEmpty();
         assertThat(read.getMore()).isEmpty();
 
-        final FeedSituation paused = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2, false),
+        final FeedSituation paused = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2),
                 run(AttemptStatus.PARKED, STOPPED_AT_PARSER), DOC, NOW).readOnly();
         assertThat(paused.getPrimary()).isEmpty();
         assertThat(paused.getMore()).isEmpty();
     }
 
     @Test
-    void aTranslationOnTrialOffersAcceptance() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0, true),
-                null, DOC, NOW);
-        assertThat(situation.getChip()).isEqualTo("On trial");
-        assertThat(situation.getPrimary()).containsExactly(FeedAction.ACCEPT);
-        assertThat(FeedSituation.listChip(learner(LearnerState.SERVING, "b-1", 0, true))).isEqualTo("On trial");
-    }
-
-    @Test
     void learningOffSendsAPersonToSettings() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING_OFF, null, 3, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING_OFF, null, 3),
                 null, DOC, NOW);
         assertThat(situation.getChip()).isEqualTo("Off");
         assertThat(situation.getPrimary()).containsExactly(FeedAction.OPEN_SETTINGS);
@@ -166,7 +157,7 @@ class TestFeedSituation {
     @Test
     void aDeletedPipelineOffersNothingThatWouldChangeIt() {
         final SupervisorLearner learner = new SupervisorLearner(new LearnerRef("p-2", "shapeshifterAi"), null,
-                DOC_REF, LearnerState.GIVEN_UP, null, null, FRAGMENT, false, null, null, 0, 0, null, false, null, 0,
+                DOC_REF, LearnerState.GIVEN_UP, null, null, FRAGMENT, null, null, 0, 0, null, false, null, 0,
                 true, false);
         final SupervisorAttempt parked = new SupervisorAttempt(8, DOC_REF, learner.getLearner(), "FIREWALL",
                 "Raw Events", 101L, "node1a", PromotionMode.AUTOMATIC, AttemptStatus.PARKED, "Out of time", null,
@@ -180,13 +171,28 @@ class TestFeedSituation {
 
     @Test
     void theListSaysWhatEachRowNeeds() {
-        final SupervisorLearner serving = learner(LearnerState.SERVING, "b-1", 4, false);
+        final SupervisorLearner serving = learner(LearnerState.SERVING, "b-1", 4);
         assertThat(FeedSituation.listChip(serving)).isEqualTo("Translating");
         assertThat(FeedSituation.listTone(serving)).isEqualTo(Tone.GOOD);
         assertThat(FeedSituation.listSummary(serving)).isEqualTo("Scores 98% · 4 waiting");
-        final SupervisorLearner waiting = learner(LearnerState.AWAITING_PERSON, null, 2, false);
+        final SupervisorLearner waiting = learner(LearnerState.AWAITING_PERSON, null, 2);
         assertThat(FeedSituation.listChip(waiting)).isEqualTo("Needs you");
         assertThat(FeedSituation.listTone(waiting)).isEqualTo(Tone.WARNING);
+    }
+
+    @Test
+    void theListSaysHowManyRecordsTheTranslationDeclaredItSkipped() {
+        // Nothing caps how many records a translation may declare it skipped (ruling A148), so a person
+        // reading the list must be able to see it without opening the feed
+        final SupervisorLearner skipping = learner(LearnerState.SERVING, "b-1", 0, 96);
+
+        assertThat(FeedSituation.listSummary(skipping)).isEqualTo("Scores 98% · 96 of 1,204 skipped");
+    }
+
+    @Test
+    void aTranslationThatSkippedNothingSaysNothingAboutSkips() {
+        assertThat(FeedSituation.listSummary(learner(LearnerState.SERVING, "b-1", 0, 0)))
+                .isEqualTo("Scores 98%");
     }
 
     @Test
@@ -206,7 +212,7 @@ class TestFeedSituation {
                                 SuggestionAction.CHANGE_LIMITS),
                         new Suggestion("Open the model's document.", SuggestionAction.OPEN_MODEL)));
 
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.AWAITING_PERSON, null, 2),
                 run(AttemptStatus.PARKED, STOPPED_AT_PARSER, report), DOC, NOW);
 
         assertThat(situation.getHeadline()).isEqualTo("Paused: ran out of time at \"Write the parser\" (question 3).");
@@ -225,7 +231,7 @@ class TestFeedSituation {
                 List.of(new Suggestion("Raise the timeout.", SuggestionAction.OPEN_MODEL)));
         final ShapeshifterAiDoc withModel = DOC.copy().model(new DocRef("OpenAIModel", "m-1", "GPT-4o")).build();
 
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING, null, 0, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING, null, 0),
                 run(AttemptStatus.ERROR, List.of(), report), withModel, NOW);
 
         assertThat(situation.getChip()).isEqualTo("Failed");
@@ -238,7 +244,7 @@ class TestFeedSituation {
 
     @Test
     void aFailedRunWithNoReportStillSaysWhatItSaid() {
-        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING, null, 0, false),
+        final FeedSituation situation = FeedSituation.of(learner(LearnerState.LEARNING, null, 0),
                 run(AttemptStatus.ERROR, List.of()), DOC, NOW);
 
         assertThat(situation.getHeadline()).isEqualTo("Failed: out of time");
@@ -255,7 +261,7 @@ class TestFeedSituation {
 
     @Test
     void historyIsWantedWhileARunIsGoingOrWaitsForSomeone() {
-        final SupervisorLearner learning = learner(LearnerState.LEARNING, null, 0, false);
+        final SupervisorLearner learning = learner(LearnerState.LEARNING, null, 0);
         assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.IN_PROGRESS, List.of()))).isTrue();
         assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.AWAITING_MODEL, List.of()))).isTrue();
         assertThat(FeedSituation.needsHistory(learning, run(AttemptStatus.PARKED, STOPPED_AT_PARSER))).isTrue();
@@ -264,45 +270,56 @@ class TestFeedSituation {
 
     @Test
     void historyIsFoldedWhileItIsJustTranslating() {
-        final SupervisorLearner serving = learner(LearnerState.SERVING, "b-1", 0, false);
+        final SupervisorLearner serving = learner(LearnerState.SERVING, "b-1", 0);
         assertThat(FeedSituation.needsHistory(serving, run(AttemptStatus.PROMOTED, List.of()))).isFalse();
         assertThat(FeedSituation.needsHistory(serving, null)).isFalse();
     }
 
     @Test
     void historyIsWantedWhereStreamsWait() {
-        final SupervisorLearner waiting = learner(LearnerState.SERVING, "b-1", 2, false);
+        final SupervisorLearner waiting = learner(LearnerState.SERVING, "b-1", 2);
         assertThat(FeedSituation.needsHistory(waiting, run(AttemptStatus.PROMOTED, List.of()))).isTrue();
     }
 
     @Test
     void historyIsFoldedForAStoppedRunWhoseReportIsInSight() {
-        final SupervisorLearner stopped = learner(LearnerState.GIVEN_UP, null, 0, false);
+        final SupervisorLearner stopped = learner(LearnerState.GIVEN_UP, null, 0);
         assertThat(FeedSituation.needsHistory(stopped, run(AttemptStatus.ABANDONED, STOPPED_AT_PARSER))).isFalse();
     }
 
     @Test
     void historyIsNeverWantedForADeletedPipeline() {
         final SupervisorLearner deleted = new SupervisorLearner(new LearnerRef("p-2", "shapeshifterAi"), null,
-                DOC_REF, LearnerState.LEARNING, null, null, null, false, null, null, 0, 3, null, false, null, 0,
+                DOC_REF, LearnerState.LEARNING, null, null, null, null, null, 0, 3, null, false, null, 0,
                 true, false);
         assertThat(FeedSituation.needsHistory(deleted, run(AttemptStatus.PARKED, STOPPED_AT_PARSER))).isFalse();
     }
 
     private static SupervisorLearner learner(final LearnerState state,
                                              final String binding,
+                                             final int waiting) {
+        return learner(state, binding, waiting, 0);
+    }
+
+    /// @param state   Where it stands.
+    /// @param binding What serves it, or null.
+    /// @param waiting How many streams wait on it.
+    /// @param skips   How many of its records the translation declared it skipped.
+    /// @return The row.
+    private static SupervisorLearner learner(final LearnerState state,
+                                             final String binding,
                                              final int waiting,
-                                             final boolean provisional) {
+                                             final int skips) {
         return new SupervisorLearner(new LearnerRef("p-1", "shapeshifterAi"),
                 new DocRef("Pipeline", "p-1", "Firewall pipeline"), DOC_REF, state, null, binding,
                 binding == null
                         ? null
                         : FRAGMENT,
-                provisional, binding == null
+                binding == null
                         ? null
                         : 0.95, binding == null
                         ? null
-                        : 0.98, 1204, waiting,
+                        : 0.98, 1204, skips, waiting,
                 waiting == 0
                         ? null
                         : NOW - 3 * 3_600_000L,

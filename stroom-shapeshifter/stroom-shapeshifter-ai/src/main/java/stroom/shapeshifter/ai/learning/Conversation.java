@@ -30,6 +30,8 @@ import stroom.shapeshifter.ai.scoring.OutputRecords;
 import stroom.shapeshifter.ai.scoring.Scorecard;
 import stroom.shapeshifter.ai.scoring.Verdict;
 import stroom.shapeshifter.ai.stage.Guidance.Given;
+import stroom.shapeshifter.ai.stage.Input;
+import stroom.shapeshifter.ai.stage.RecordSkeleton;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowExit;
@@ -49,6 +51,8 @@ import stroom.shapeshifter.shared.TurnScore;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
+
+import net.sf.saxon.s9api.XdmNode;
 
 import java.time.Clock;
 import java.util.ArrayList;
@@ -293,12 +297,16 @@ public final class Conversation {
                     final FlowExit exit = visit.exit() == null
                             ? FlowExit.PARK
                             : visit.exit();
-                    final StopReport report = StopReports.ofStep(visit.cause(), steps, at, visit.reason(),
-                            visit.feedback(), walk.transcript, exit);
+                    final StopReport report = visit.report() != null
+                            ? visit.report()
+                            : StopReports.ofStep(visit.cause(), steps, at, visit.reason(),
+                                    visit.feedback(), walk.transcript, exit, walk.sample);
                     return new Abandoned(report, List.copyOf(visit.feedback()), List.copyOf(walk.transcript), exit);
                 }
                 case GOTO -> {
-                    final String edge = step.effectiveId() + " " + visit.transition().format();
+                    // Which transition of which step was taken, so that taking it twice is a loop.
+                    final String edge = step.effectiveId() + " " + visit.transition().getOn()
+                                        + " " + visit.transition().getGoTo();
                     if (!walk.taken.add(edge)) {
                         return new Abandoned(StopReports.loop(FlowWords.rule(steps, at, visit.transition()),
                                 FlowWords.step(steps, at)), List.copyOf(visit.feedback()),
@@ -504,6 +512,37 @@ public final class Conversation {
      * is asked which element is one record (A35), judged by whether those elements exist, are not the
      * root, and together hold the document whole.
      */
+    /// A split settled as the children of a container: every child element of the named one is a record,
+    /// whatever it is called (`docs/shapeshifter-ai-mixed-record-elements.md`).
+    ///
+    /// @param step     The step.
+    /// @param walk     The walk, which the boundary is cut into.
+    /// @param document The sample, parsed.
+    /// @param parent   The container's local name, or [RecordBoundary#ROOT] for the document's own root.
+    /// @param checks   The checks the step may apply.
+    /// @return What the candidate came to.
+    private Judged childrenSplit(final FlowStep step,
+                                 final Walk walk,
+                                 final OutputRecords document,
+                                 final String parent,
+                                 final Set<Check> checks) {
+        if (checks.contains(Check.WHOLENESS) && scorecard.decides(Check.WHOLENESS, step)) {
+            final Optional<StoredError> shortfall = TargetChecks.recordChildren(document, parent,
+                    scorecard.threshold(Check.WHOLENESS));
+            if (shortfall.isPresent()) {
+                return new Judged(StepOutcome.WHOLENESS_SHORT, List.of(shortfall.get()), null);
+            }
+        }
+        final RecordBoundary boundary = RecordBoundary.ofChildrenOf(parent);
+        final List<XdmNode> found = document.recordsBy(boundary);
+        if (found.isEmpty()) {
+            return Judged.refused("No element named " + parent + " holds any element children here");
+        }
+        walk.cut(Boundary.ofChildrenOf(parent, depthOf(document, boundary)),
+                found.stream().map(XdmNode::toString).toList());
+        return Judged.passed();
+    }
+
     private Visit split(final FlowStep step, final Walk walk) {
         final StepRunner first = walk.first(runners);
         final Set<Check> checks = SPLIT_CHECKS;
@@ -518,6 +557,18 @@ public final class Conversation {
             // (§12 item 26), and the elements to choose between are in the wrapped document.
             final Optional<OutputRecords> document = OutputRecords.parse(markup(first, walk));
             if (document.isEmpty()) {
+                // One document larger than the prefix read as text (N2 option E): a part of a document is
+                // not a document, so there is nothing to settle a boundary over. Said, rather than passed
+                // over in silence with no boundary and everything after it judged on nothing.
+                //
+                // Only where the sample **looks** like markup. A chain whose first element is a transform
+                // reads anything as this branch — a CSV stream of a million lines reaches here too, and
+                // its prefix is a perfectly good sample. Refusing that would refuse the feeds this
+                // feature is for.
+                if (walk.sample.beyondPrefix() && RecordSkeleton.isMarkup(walk.sample.text())) {
+                    return Visit.abandonWith(StopReports.oneDocumentTooLarge("XML", Input.PREFIX_BYTES),
+                            FlowExit.PARK);
+                }
                 walk.cut(null, List.of(walk.sample.text()));
                 return passed(step, Visit.next());
             }
@@ -525,8 +576,19 @@ public final class Conversation {
                 final String reply = ask(walk, step, candidate,
                         new Split(walk.sample, first.elementType(), null, InputKind.XML, feedback))
                         .strip().replaceAll("^<|>$", "");
+                // `batch/*`, or `*` for the root's own children: every child of that element is one
+                // record, whatever it is called. For a feed that interleaves several record types as
+                // siblings under one container, where no single name describes a record
+                // (`docs/shapeshifter-ai-mixed-record-elements.md`).
+                if (reply.equals("*") || reply.matches("[A-Za-z_][\\w.-]*/\\*")) {
+                    final String parent = reply.equals("*")
+                            ? RecordBoundary.ROOT
+                            : reply.substring(0, reply.length() - 2);
+                    return childrenSplit(step, walk, document.get(), parent, checks);
+                }
                 if (!reply.matches("[A-Za-z_][\\w.-]*")) {
-                    return Judged.refused("The reply was not an element name");
+                    return Judged.refused("The reply was not an element name, nor a container's children "
+                                          + "as name/*");
                 }
                 final List<String> records = TargetChecks.elementsNamed(document.get(), reply);
                 if (records.isEmpty()) {
@@ -593,6 +655,10 @@ public final class Conversation {
                 ? OutputRecords.parse(parsed.output())
                 : Optional.empty();
         if (document.isEmpty()) {
+            if (walk.sample.beyondPrefix()) {
+                return Visit.abandonWith(StopReports.oneDocumentTooLarge("JSON", Input.PREFIX_BYTES),
+                        FlowExit.PARK);
+            }
             return runOnly(step, Judged.failed(parsed, false),
                     first.elementType() + " cannot read the sample as JSON");
         }
@@ -671,7 +737,8 @@ public final class Conversation {
                 if (event.isEmpty()) {
                     return Judged.refused("The reply was not a single event document, nor the word none");
                 }
-                final String document = TargetChecks.asDocument(event.get());
+                // Task 7: wrapped in the root of the schema this document's translations must write
+                final String document = TargetChecks.asDocument(event.get(), scorecard.target());
                 final Optional<StoredError> refusal = TargetChecks.refusal(document);
                 if (refusal.isPresent()) {
                     return new Judged(StepOutcome.REFUSED, List.of(refusal.get()), null);
@@ -894,7 +961,8 @@ public final class Conversation {
         if (!admitting && !runner.parser() && admitted(result.output())) {
             return refusedAdmission();
         }
-        final Verdict verdict = over.judge(Attempted.of(runner, input, result, boundary));
+        final Verdict verdict = over.judge(
+                Attempted.of(runner, input, result, boundary, configuration, walk.sample.facts()));
         if (Scorecard.outcome(verdict, step) != StepOutcome.PASSED) {
             return Judged.fellShort(verdict, step, verdict.feedback());
         }
@@ -1137,18 +1205,22 @@ public final class Conversation {
     /// @param exit Where an abandonment leaves to (A83), or null where the step's default is still to apply.
     /// @param cause Why an abandonment stopped the run, for its report ([StopReports#ofStep]); null for any
     ///              other visit.
+    /// @param report The abandonment's report where the step wrote one itself, rather than leaving it to
+    ///               be derived from the cause; null otherwise. For a stop whose reason is about the
+    ///               stream rather than about the step's answers, and so has its own words and
+    ///               suggestions.
     private record Visit(Kind kind, Transition transition, String reason, List<StoredError> feedback,
-                         FlowExit exit, StopCause cause) {
+                         FlowExit exit, StopCause cause, StopReport report) {
 
         Visit(final Kind kind, final Transition transition, final String reason, final List<StoredError> feedback) {
-            this(kind, transition, reason, feedback, null, null);
+            this(kind, transition, reason, feedback, null, null, null);
         }
 
         /// This abandonment with the step's default exit, where the flow named none; any other visit as
         /// it is.
         Visit withDefaultExit(final FlowExit fallback) {
             return kind == Kind.ABANDON && exit == null
-                    ? new Visit(kind, transition, reason, feedback, fallback, cause)
+                    ? new Visit(kind, transition, reason, feedback, fallback, cause, report)
                     : this;
         }
 
@@ -1161,14 +1233,25 @@ public final class Conversation {
         }
 
         static Visit abandon(final StopCause cause, final String reason, final List<StoredError> feedback) {
-            return new Visit(Kind.ABANDON, null, reason, feedback, null, cause);
+            return new Visit(Kind.ABANDON, null, reason, feedback, null, cause, null);
         }
 
         static Visit abandon(final StopCause cause,
                              final String reason,
                              final List<StoredError> feedback,
                              final FlowExit exit) {
-            return new Visit(Kind.ABANDON, null, reason, feedback, exit, cause);
+            return new Visit(Kind.ABANDON, null, reason, feedback, exit, cause, null);
+        }
+
+        /// An abandonment whose report the step wrote itself: a stop about the stream rather than about
+        /// the step's answers, which has its own words and its own suggestions.
+        ///
+        /// @param report The report.
+        /// @param exit   Where the run leaves to.
+        /// @return The visit.
+        static Visit abandonWith(final StopReport report, final FlowExit exit) {
+            return new Visit(Kind.ABANDON, null, report.getError(), List.of(), exit, StopCause.STEP_FAILED,
+                    report);
         }
 
         enum Kind {
@@ -1282,7 +1365,10 @@ public final class Conversation {
                 throw new BudgetExhausted(StopReports.outOfTime(step, question, allowedMs, elapsed));
             }
             final long tokens = tokensNow - tokensAtStart;
-            if (policy.getTokenBudget() != null) {
+            // Zero is unlimited, as the client has always read it and as a person setting the field
+            // means it (audit finding S11). Read as a budget of nothing, a document written by import,
+            // REST or MCP with `tokenBudget: 0` parked at its first answer.
+            if (policy.getTokenBudget() != null && policy.getTokenBudget() > 0L) {
                 final long allowed = policy.getTokenBudget() + grantedTokens;
                 if (tokens > allowed) {
                     throw new BudgetExhausted(StopReports.outOfTokens(step, question, allowed, tokens));

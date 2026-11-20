@@ -22,9 +22,11 @@ import stroom.docstore.shared.DocDataType;
 import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.pipeline.shared.PipelineDoc;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningFlow;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.Template;
 import stroom.util.json.JsonUtil;
@@ -45,7 +47,7 @@ class TestShapeshifterAiSerialiser {
 
     @Test
     void aDocumentSavedWhenTheFlowWasTheConversationReadsAsItWasWritten() throws IOException {
-        final LearningFlow flow = LearningFlow.of(FlowExample.TARGET_FIRST)
+        final LearningFlow flow = FlowExamples.flow(FlowExample.TARGET_FIRST)
                 .withTemplates(Map.of(Template.CHAIN, "Pick: ${elements}\n${sample}"));
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").name("door").flow(flow).build();
         final ImportExportDocument written = serialiser.write(doc);
@@ -64,7 +66,7 @@ class TestShapeshifterAiSerialiser {
     @Test
     void aDocumentSavedWhenTheFlowWasThePlanReadsAsItWasWritten() throws IOException {
         // A81: "plan" is a name in stored data, read as the flow and never written again.
-        final LearningFlow flow = LearningFlow.of(FlowExample.ESCALATING);
+        final LearningFlow flow = FlowExamples.flow(FlowExample.ESCALATING);
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").name("door").flow(flow).build();
         final ImportExportDocument written = serialiser.write(doc);
         final String json = new String(written.getExtAssetData("meta"), StandardCharsets.UTF_8);
@@ -81,7 +83,13 @@ class TestShapeshifterAiSerialiser {
     @Test
     void aDocumentSavedWithItsOwnAllowedElementsPutsThemOnItsChainStep() throws IOException {
         // A95: the field is read onto the Chain step, and the written document carries it there alone.
-        final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").name("door").build();
+        // With a flow of its own, since a document built here has no steps now (Track 2 step 1c) and
+        // the elements go onto its Chain step.
+        final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder()
+                .uuid("d")
+                .name("door")
+                .flow(FlowExamples.flow(FlowExample.DIRECT))
+                .build();
         final ImportExportDocument written = serialiser.write(doc);
         final String json = new String(written.getExtAssetData("meta"), StandardCharsets.UTF_8);
         assertThat(json).doesNotContain("\"allowedElements\"");
@@ -92,7 +100,8 @@ class TestShapeshifterAiSerialiser {
 
         final ShapeshifterAiDoc read = serialiser.read(written);
         assertThat(read.getAllowedElements()).containsExactly("XMLParser", "XSLTFilter");
-        assertThat(read.getFlow().getSteps().get(0).format()).isEqualTo("CHAIN elements XMLParser,XSLTFilter");
+        assertThat(read.getFlow().getSteps().get(0).getKind()).isEqualTo(QuestionKind.CHAIN);
+        assertThat(read.getFlow().getSteps().get(0).getElements()).containsExactly("XMLParser", "XSLTFilter");
     }
 
     @Test
@@ -118,7 +127,7 @@ class TestShapeshifterAiSerialiser {
                 JsonUtil.getMapper().writeValueAsBytes(json)));
 
         final LearningFlow read = serialiser.read(written).getFlow();
-        assertThat(read.getSteps()).isEqualTo(FlowExample.TARGET_FIRST.steps());
+        assertThat(read.getSteps()).isEqualTo(FlowExamples.steps(FlowExample.TARGET_FIRST));
         assertThat(read.getTemplates()).containsEntry(Template.CHAIN, "Pick");
     }
 
@@ -161,6 +170,6 @@ class TestShapeshifterAiSerialiser {
 
         final ShapeshifterAiDoc read = serialiser.read(written);
 
-        assertThat(read.getFlow().getSteps()).isEqualTo(FlowExample.DIRECT.steps());
+        assertThat(read.getFlow().getSteps()).isEqualTo(FlowExamples.steps(FlowExample.DIRECT));
     }
 }

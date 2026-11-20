@@ -67,7 +67,6 @@ import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
 import stroom.pipeline.refdata.ReferenceDataLmdbConfig;
-import stroom.pipelinefactory.impl.PipelineFactoryConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
 import stroom.receive.common.ReceiveDataConfig;
@@ -1112,7 +1111,6 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_NODE) final NodeConfig nodeConfig,
                 @JsonProperty(PROP_NAME_NODE_URI) final NodeUriConfig nodeUri,
                 @JsonProperty(PROP_NAME_PIPELINE) final PipelineConfig pipelineConfig,
-                @JsonProperty(PROP_NAME_PIPELINE_FACTORY) final PipelineFactoryConfig pipelineFactoryConfig,
                 @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                 @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                 @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
@@ -1185,7 +1183,6 @@ class TestConfigMapper {
                     nodeConfig,
                     nodeUri,
                     pipelineConfig,
-                    pipelineFactoryConfig,
                     processorConfig,
                     propertyServiceConfig,
                     publicUri,

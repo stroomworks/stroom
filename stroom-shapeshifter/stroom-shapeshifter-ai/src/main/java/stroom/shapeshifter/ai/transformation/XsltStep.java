@@ -29,6 +29,7 @@ import stroom.util.shared.StoredError;
 import net.sf.saxon.Configuration;
 import net.sf.saxon.TransformerFactoryImpl;
 import net.sf.saxon.jaxp.TransformerImpl;
+import net.sf.saxon.lib.ExtensionFunctionDefinition;
 import net.sf.saxon.lib.FeatureKeys;
 import net.sf.saxon.s9api.XdmNode;
 import net.sf.saxon.s9api.XdmNodeKind;
@@ -56,18 +57,34 @@ import javax.xml.transform.stream.StreamResult;
  * element it stands in for.
  * <p>
  * The stylesheet is untrusted (§11): it is refused every way out of the process — {@code document()},
- * {@code unparsed-text()}, {@code xsl:include}, {@code xsl:import}, external entities and extension
- * functions — and a candidate that tries any of them fails with a diagnostic saying so.
+ * {@code unparsed-text()}, {@code collection()}, {@code xsl:include}, {@code xsl:import} and external
+ * entities — and a candidate that tries any of them fails with a diagnostic saying so. Those are refused
+ * here as well as by the static check, so that the harness does not depend on the check having run.
  */
 public final class XsltStep implements StepRunner {
 
     public static final String ELEMENT_TYPE = "XSLTFilter";
+    /// The stream being translated, which is all the stand-in `stroom:` functions may read.
+    private final StreamFacts facts;
     private static final Configured CONFIGURED = new Configured(XsltDoc.TYPE, "xslt");
     private static final ElementId ELEMENT_ID = new ElementId("xsltFilter");
     private static final String REFUSED = "A candidate stylesheet may not read external resources: ";
     private static final URIResolver REFUSING_URI_RESOLVER = (href, base) -> {
         throw new TransformerException(REFUSED + href);
     };
+
+    /// A step that knows nothing of the stream: a stylesheet calling a `stroom:` function that needs it
+    /// fails, saying so.
+    public XsltStep() {
+        this(StreamFacts.none());
+    }
+
+    /// @param facts The stream being translated, for the stand-in `stroom:` functions.
+    public XsltStep(final StreamFacts facts) {
+        this.facts = facts == null
+                ? StreamFacts.none()
+                : facts;
+    }
 
     @Override
     public String elementType() {
@@ -101,6 +118,9 @@ public final class XsltStep implements StepRunner {
         final TransformerFactoryImpl factory = new TransformerFactoryImpl();
         factory.setErrorListener(compiling);
         confine(factory);
+        for (final ExtensionFunctionDefinition standIn : StroomStandIns.definitions(facts)) {
+            factory.getConfiguration().registerExtensionFunction(standIn);
+        }
         final Templates templates;
         try {
             templates = factory.newTemplates(ConfinedXml.source(configuration));
@@ -153,7 +173,11 @@ public final class XsltStep implements StepRunner {
         configuration.setCollectionFinder((context, uri) -> {
             throw new XPathException(REFUSED + uri);
         });
-        configuration.setConfigurationProperty(FeatureKeys.ALLOW_EXTERNAL_FUNCTIONS, false);
+        // Registered functions need this on. It does not open the door to anything else: Saxon-HE has no
+        // reflexive extension functions, so the only `stroom:` functions a stylesheet can reach are the
+        // stand-ins registered above, which are the ones the allow-list permits. A call to any other is an
+        // unknown function, which is what the list says of it.
+        configuration.setConfigurationProperty(FeatureKeys.ALLOW_EXTERNAL_FUNCTIONS, true);
         configuration.setRecoveryPolicy(Configuration.DO_NOT_RECOVER);
     }
 

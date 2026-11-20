@@ -133,9 +133,15 @@ A deferred task comes back to `CREATED` in two ways:
 - **A wake** (§3.6), which returns every deferred task of every filter on one pipeline at once
   (`ProcessorTaskDao.wakeDeferredTasks`).
 
-**Nodes must claim their own tasks.** A wake writes rows the worker reads, which a master-fed task queue
-would not see. So `stroom.processor.claimTasksOnWorker` must be on, and while it is off the processor
-refuses to make a filter over a pipeline that may defer (`SupervisedPipelines`).
+**Either way of getting tasks to workers serves a deferred stream** (simplification option H, built 20
+November 2026). Deferring, waking and the retry sweep are plain database updates, the same in both modes,
+and the master's queue re-reads `CREATED` tasks from the database every time it fills — a woken task is
+exactly what that query finds. The requirement that `stroom.processor.claimTasksOnWorker` be on, and the
+`SupervisedPipelines` check that enforced it, are gone.
+
+With the master queue a wake can wait up to `stroom.processor.skipEmptyFilterFetchDuration` (the
+empty-filter backoff, 10 seconds by default) before its tasks are queued, because a wake does not reset
+that backoff. Accepted: a deferred stream has already waited minutes for a session.
 
 A stream whose session is still learning just defers again on each retry, cheaply: its row says it
 already failed against the same binding, so nothing is run (§3.3).

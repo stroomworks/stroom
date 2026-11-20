@@ -36,14 +36,12 @@ import java.util.Map;
  *                    boundary produces other events, and the binding's boundary today is not necessarily
  *                    the one that produced this output. Null where the binding had none, which is every
  *                    chain over raw text, since there the parser's configuration cuts the records.
- * @param provisional Whether the binding was provisional when it produced this output (§6).
  * @param score       The fragment's score over this stream.
  */
 public record Produced(String docUuid,
                        String bindingUuid,
                        DocRef fragment,
                        RecordBoundary boundary,
-                       boolean provisional,
                        double score,
                        String snapshotId) {
 
@@ -52,17 +50,28 @@ public record Produced(String docUuid,
                     final String bindingUuid,
                     final DocRef fragment,
                     final RecordBoundary boundary,
-                    final boolean provisional,
                     final double score) {
-        this(docUuid, bindingUuid, fragment, boundary, provisional, score, null);
+        this(docUuid, bindingUuid, fragment, boundary, score, null);
+    }
+
+    /// The same, scored on the run that has just happened rather than on the binding's promotion (audit
+    /// finding W4-6): what the stream's attributes carry, so that a stream the translation did badly on
+    /// does not record the score the translation had on the day it was promoted.
+    ///
+    /// @param runScore What this run scored.
+    /// @return A copy with that score.
+    public Produced scoring(final double runScore) {
+        return new Produced(docUuid, bindingUuid, fragment, boundary, runScore, snapshotId);
     }
 
     public static final String DOC_ATTRIBUTE = "ShapeshifterAiDoc";
     public static final String BINDING_ATTRIBUTE = "ShapeshifterAiBinding";
     public static final String FRAGMENT_ATTRIBUTE = "ShapeshifterAiFragment";
-    public static final String PROVISIONAL_ATTRIBUTE = "ShapeshifterAiProvisional";
     public static final String SCORE_ATTRIBUTE = "ShapeshifterAiScore";
     public static final String RECORD_ATTRIBUTE = "ShapeshifterAiRecord";
+    /// How many records the translation declared it deliberately skipped, written only where it skipped
+    /// any. Not part of [#asAttributes], because the count is only known once the stream has been served.
+    public static final String SKIPPED_ATTRIBUTE = "ShapeshifterAiSkipped";
     public static final String SNAPSHOT_ATTRIBUTE = "ShapeshifterAiSnapshot";
 
     /**
@@ -90,7 +99,6 @@ public record Produced(String docUuid,
         attributes.put(DOC_ATTRIBUTE + suffix, docUuid);
         attributes.put(BINDING_ATTRIBUTE + suffix, bindingUuid);
         attributes.put(FRAGMENT_ATTRIBUTE + suffix, fragment.getUuid());
-        attributes.put(PROVISIONAL_ATTRIBUTE + suffix, Boolean.toString(provisional));
         attributes.put(SCORE_ATTRIBUTE + suffix, Double.toString(score));
         if (snapshotId != null) {
             // Which configuration of the fragment produced it (A61): the fragment moves in place under a

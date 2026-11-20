@@ -11872,6 +11872,884 @@
         "tags" : [ "Session Info" ]
       }
     },
+    "/shapeshifterAi/v1/flowExamples" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiFlowExamples",
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/BuiltInFlow"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The built-in default setups and their steps",
+        "tags" : [ "Shapeshifter AI" ]
+      }
+    },
+    "/shapeshifterAi/v1/templates" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiTemplates",
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BuiltInTemplates"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The built-in text of the flow's templates and its version",
+        "tags" : [ "Shapeshifter AI" ]
+      }
+    },
+    "/shapeshifterAi/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAi",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShapeshifterAiDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a Shapeshifter AI document by its UUID",
+        "tags" : [ "Shapeshifter AI" ]
+      },
+      "put" : {
+        "operationId" : "updateShapeshifterAi",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ShapeshifterAiDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShapeshifterAiDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update a Shapeshifter AI document",
+        "tags" : [ "Shapeshifter AI" ]
+      }
+    },
+    "/shapeshifterAiQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiQuality",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/QualityReport"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The volume a Smart Pipeline translated lately, and the cardinality of its translation",
+        "tags" : [ "Shapeshifter AI Quality" ]
+      }
+    },
+    "/shapeshifterAiQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}/samples" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiQualitySamples",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/QualitySample"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Samples of a Smart Pipeline's source records beside its translated output",
+        "tags" : [ "Shapeshifter AI Quality" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/backlog" : {
+      "post" : {
+        "operationId" : "findShapeshifterAiBacklog",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "docUuid",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PageRequest"
+              }
+            }
+          },
+          "description" : "page",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageBacklogStream"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "What is waiting on a session, a row per stream, the raised ones first",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/find" : {
+      "post" : {
+        "operationId" : "findShapeshifterAiAttempts",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AttemptCriteria"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageSupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find attempts across every Shapeshifter AI document",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/guidance/{docUuid}" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiGuidance",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pipelineUuid",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "elementId",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorGuidance"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "What a supervisor has told a learner",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      },
+      "post" : {
+        "operationId" : "addShapeshifterAiGuidance",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GuidanceRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorGuidance"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Tell a learner something, without asking for anything to be run",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/guidance/{docUuid}/{id}" : {
+      "delete" : {
+        "operationId" : "withdrawShapeshifterAiGuidance",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pipelineUuid",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "elementId",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorGuidance"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Take back something said to a learner, so that it stops being carried",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/learners" : {
+      "post" : {
+        "operationId" : "findShapeshifterAiLearners",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearnerCriteria"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageSupervisorLearner"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The learning pipelines: each pipeline's Shapeshifter AI element that has learned or is learning, where it stands, what serves it and what waits on it",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/learners/{docUuid}/giveUp" : {
+      "post" : {
+        "operationId" : "giveUpShapeshifterAiLearner",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearnerRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "boolean"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Give a learner up: it learns no more, and its streams nothing serves error",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/learners/{docUuid}/relearn" : {
+      "post" : {
+        "operationId" : "relearnShapeshifterAiLearner",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearnerRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "boolean"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Send a learner back to learn afresh from its next stream",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/learners/{docUuid}/settings" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiLearnerSettings",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pipelineUuid",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "elementId",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShapeshifterAiDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The settings of the Shapeshifter AI document a learner runs under, for its pipeline's editor",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/learners/{docUuid}/waiting" : {
+      "post" : {
+        "operationId" : "findShapeshifterAiLearnerWaiting",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pipelineUuid",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "elementId",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PageRequest"
+              }
+            }
+          },
+          "description" : "page",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageBacklogStream"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The streams waiting on one learner, oldest first",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/pipelines/{pipelineUuid}/learners" : {
+      "get" : {
+        "operationId" : "findShapeshifterAiPipelineLearners",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorLearner"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The learners of one pipeline: each of its Shapeshifter AI elements that has learned or is learning, where it stands, what serves it and what waits on it",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/improve" : {
+      "post" : {
+        "operationId" : "improveShapeshifterAiBinding",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "bindingUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ImproveRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ImproveOutcome"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Ask for a binding that is already serving to be made better",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/retract" : {
+      "post" : {
+        "operationId" : "retractShapeshifterAiBinding",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "docUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "bindingUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "integer",
+                  "format" : "int32"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Take back a binding that is serving, and say how many streams it produced output for",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Read one attempt with its turns",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}/approve" : {
+      "post" : {
+        "operationId" : "approveShapeshifterAiAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Approve what an attempt drafted",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}/exhaust" : {
+      "post" : {
+        "operationId" : "exhaustShapeshifterAiAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Send a parked attempt to the exhaustion step, and carry it on",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}/grant" : {
+      "post" : {
+        "operationId" : "grantShapeshifterAiAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GrantRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Give a parked attempt more to spend, and carry it on",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}/reject" : {
+      "post" : {
+        "operationId" : "rejectShapeshifterAiAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Reject what an attempt drafted, and give its learner up",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}/turns/{number}" : {
+      "post" : {
+        "operationId" : "amendShapeshifterAiTurn",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "path",
+          "name" : "number",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AmendTurnRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Answer a turn instead, or edit one and run the attempt again from there",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
     "/signingKey/v1/list" : {
       "get" : {
         "operationId" : "listSigningKeys",
@@ -15080,7 +15958,7 @@
         "properties" : {
           "permission" : {
             "type" : "string",
-            "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+            "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
           },
           "type" : {
             "type" : "string"
@@ -15753,6 +16631,14 @@
           }
         }
       },
+      "AmendTurnRequest" : {
+        "type" : "object",
+        "properties" : {
+          "answer" : {
+            "type" : "string"
+          }
+        }
+      },
       "AnalyticDataShard" : {
         "type" : "object",
         "properties" : {
@@ -16171,7 +17057,7 @@
               "type" : "array",
               "items" : {
                 "type" : "string",
-                "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+                "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
               },
               "uniqueItems" : true
             },
@@ -16189,7 +17075,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             },
             "uniqueItems" : true
           },
@@ -16197,7 +17083,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             },
             "uniqueItems" : true
           },
@@ -16213,7 +17099,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             },
             "uniqueItems" : true
           },
@@ -16392,6 +17278,47 @@
           },
           "sourceTaskId" : {
             "$ref" : "#/components/schemas/TaskId"
+          }
+        }
+      },
+      "AttemptCriteria" : {
+        "type" : "object",
+        "properties" : {
+          "docUuid" : {
+            "type" : "string"
+          },
+          "feed" : {
+            "type" : "string"
+          },
+          "learner" : {
+            "$ref" : "#/components/schemas/LearnerRef"
+          },
+          "pageRequest" : {
+            "$ref" : "#/components/schemas/PageRequest"
+          },
+          "promotionMode" : {
+            "type" : "string",
+            "enum" : [ "AUTOMATIC", "REVIEW" ]
+          },
+          "showDeletedPipelines" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "type" : "string",
+            "writeOnly" : true
+          },
+          "sortList" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CriteriaFieldSort"
+            }
+          },
+          "statuses" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "In progress", "Awaiting model", "Awaiting review", "Parked", "Promoted", "Rejected", "Retracted", "Abandoned", "Error" ]
+            }
           }
         }
       },
@@ -16705,6 +17632,45 @@
           }
         } ]
       },
+      "BacklogStream" : {
+        "type" : "object",
+        "properties" : {
+          "doc" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "failedAgainst" : {
+            "type" : "string"
+          },
+          "failingRecords" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "feed" : {
+            "type" : "string"
+          },
+          "firstDeferredMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "inputId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "raised" : {
+            "type" : "boolean"
+          },
+          "reason" : {
+            "type" : "string"
+          },
+          "tries" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
       "BatchScheduleRequest" : {
         "type" : "object",
         "properties" : {
@@ -16754,6 +17720,39 @@
           }
         }
       },
+      "BuiltInFlow" : {
+        "type" : "object",
+        "properties" : {
+          "displayValue" : {
+            "type" : "string"
+          },
+          "example" : {
+            "type" : "string",
+            "enum" : [ "DIRECT", "TARGET_FIRST", "ESCALATING" ]
+          },
+          "steps" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/FlowStep"
+            }
+          }
+        }
+      },
+      "BuiltInTemplates" : {
+        "type" : "object",
+        "properties" : {
+          "templates" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
       "BulkActionResult" : {
         "type" : "object",
         "properties" : {
@@ -16793,6 +17792,25 @@
             "$ref" : "#/components/schemas/UserRef"
           }
         }
+      },
+      "BusinessRulesParameters" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ScorerParameters"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "assertions" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/XPathAssertion"
+              }
+            },
+            "includeTransformMessages" : {
+              "type" : "boolean"
+            }
+          }
+        } ]
       },
       "CacheIdentity" : {
         "type" : "object",
@@ -17011,6 +18029,26 @@
           "permission" : {
             "type" : "string",
             "enum" : [ "OWNER", "DELETE", "EDIT", "VIEW", "USE" ]
+          }
+        }
+      },
+      "CheckSetting" : {
+        "type" : "object",
+        "properties" : {
+          "check" : {
+            "type" : "string",
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+          },
+          "parameters" : {
+            "$ref" : "#/components/schemas/ScorerParameters"
+          },
+          "state" : {
+            "type" : "string",
+            "enum" : [ "OFF", "ADVICE", "GATE" ]
+          },
+          "threshold" : {
+            "type" : "number",
+            "format" : "double"
           }
         }
       },
@@ -19481,6 +20519,18 @@
           }
         }
       },
+      "ElementStepDetails" : {
+        "type" : "object",
+        "discriminator" : {
+          "propertyName" : "type"
+        },
+        "properties" : {
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "type" ]
+      },
       "EmbeddedQueryComponentSettings" : {
         "type" : "object",
         "allOf" : [ {
@@ -20203,6 +21253,25 @@
             "$ref" : "#/components/schemas/UiConfig"
           }
         }
+      },
+      "ExtractionQualityParameters" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ScorerParameters"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "allowUnknownEventDetail" : {
+              "type" : "boolean"
+            },
+            "requiredFields" : {
+              "type" : "array",
+              "items" : {
+                "type" : "string"
+              }
+            }
+          }
+        } ]
       },
       "FeedDependencies" : {
         "type" : "object",
@@ -21694,6 +22763,46 @@
           }
         }
       },
+      "FlowStep" : {
+        "type" : "object",
+        "properties" : {
+          "candidates" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "elements" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "kind" : {
+            "type" : "string",
+            "enum" : [ "CHAIN", "SPLIT", "TARGET", "CONFIGURE", "ADMIT" ]
+          },
+          "kinds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "role" : {
+            "type" : "string",
+            "enum" : [ "PARSER", "TRANSFORM" ]
+          },
+          "transitions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Transition"
+            }
+          },
+          "when" : {
+            "type" : "string",
+            "enum" : [ "ALWAYS", "TEXT", "XML", "JSON" ]
+          }
+        }
+      },
       "Format" : {
         "type" : "object",
         "description" : "Describes the formatting that will be applied to values in a field",
@@ -22229,6 +23338,19 @@
           }
         }
       },
+      "GrantRequest" : {
+        "type" : "object",
+        "properties" : {
+          "ms" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "tokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
       "GroupSelection" : {
         "type" : "object",
         "description" : "Contains a set of group keys of parent rows we want to show (or not show) children for",
@@ -22250,6 +23372,17 @@
               "type" : "string"
             },
             "uniqueItems" : true
+          }
+        }
+      },
+      "GuidanceRequest" : {
+        "type" : "object",
+        "properties" : {
+          "learner" : {
+            "$ref" : "#/components/schemas/LearnerRef"
+          },
+          "message" : {
+            "type" : "string"
           }
         }
       },
@@ -22658,6 +23791,22 @@
             "items" : {
               "type" : "string"
             }
+          }
+        }
+      },
+      "ImproveOutcome" : {
+        "type" : "object",
+        "properties" : {
+          "said" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ImproveRequest" : {
+        "type" : "object",
+        "properties" : {
+          "message" : {
+            "type" : "string"
           }
         }
       },
@@ -23290,6 +24439,80 @@
           }
         }
       },
+      "LearnerCriteria" : {
+        "type" : "object",
+        "properties" : {
+          "docUuid" : {
+            "type" : "string"
+          },
+          "pageRequest" : {
+            "$ref" : "#/components/schemas/PageRequest"
+          },
+          "showDeletedPipelines" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "type" : "string",
+            "writeOnly" : true
+          },
+          "sortList" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CriteriaFieldSort"
+            }
+          },
+          "states" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "Given up", "Learning off", "Waiting for a person", "Learning", "Serving" ]
+            }
+          }
+        }
+      },
+      "LearnerRef" : {
+        "type" : "object",
+        "properties" : {
+          "elementId" : {
+            "type" : "string"
+          },
+          "pipelineUuid" : {
+            "type" : "string"
+          }
+        }
+      },
+      "LearnerRequest" : {
+        "type" : "object",
+        "properties" : {
+          "learner" : {
+            "$ref" : "#/components/schemas/LearnerRef"
+          },
+          "reason" : {
+            "type" : "string"
+          }
+        }
+      },
+      "LearningFlow" : {
+        "type" : "object",
+        "properties" : {
+          "builtInVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "steps" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/FlowStep"
+            }
+          },
+          "templates" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
       "LifespanInfo" : {
         "type" : "object",
         "properties" : {
@@ -23893,6 +25116,38 @@
             }
           }
         } ]
+      },
+      "NestedElementData" : {
+        "type" : "object",
+        "properties" : {
+          "formatInput" : {
+            "type" : "boolean"
+          },
+          "formatOutput" : {
+            "type" : "boolean"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "input" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "output" : {
+            "type" : "string"
+          },
+          "truncated" : {
+            "type" : "boolean"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "wholeStream" : {
+            "type" : "boolean"
+          }
+        }
       },
       "Node" : {
         "type" : "object",
@@ -25445,7 +26700,7 @@
           },
           "status" : {
             "type" : "string",
-            "enum" : [ "CREATED", "QUEUED", "ASSIGNED", "PROCESSING", "COMPLETE", "FAILED", "DELETED" ]
+            "enum" : [ "CREATED", "QUEUED", "ASSIGNED", "PROCESSING", "DEFERRED", "COMPLETE", "FAILED", "DELETED" ]
           },
           "statusTimeMs" : {
             "type" : "integer",
@@ -25490,7 +26745,7 @@
           },
           "status" : {
             "type" : "string",
-            "enum" : [ "CREATED", "QUEUED", "ASSIGNED", "PROCESSING", "COMPLETE", "FAILED", "DELETED" ]
+            "enum" : [ "CREATED", "QUEUED", "ASSIGNED", "PROCESSING", "DEFERRED", "COMPLETE", "FAILED", "DELETED" ]
           }
         }
       },
@@ -25605,6 +26860,65 @@
           },
           "visualisation" : {
             "$ref" : "#/components/schemas/DocRef"
+          }
+        }
+      },
+      "QualityReport" : {
+        "type" : "object",
+        "properties" : {
+          "bindingUuid" : {
+            "type" : "string"
+          },
+          "days" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/VolumeDay"
+            }
+          },
+          "kinds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "none" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "translated" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "unknown" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "QualitySample" : {
+        "type" : "object",
+        "properties" : {
+          "acceptedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "kind" : {
+            "type" : "string",
+            "enum" : [ "TRANSLATION", "UNKNOWN", "NONE" ]
+          },
+          "output" : {
+            "type" : "string"
+          },
+          "record" : {
+            "type" : "string"
+          },
+          "score" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "target" : {
+            "type" : "string"
+          },
+          "text" : {
+            "type" : "string"
           }
         }
       },
@@ -26403,6 +27717,14 @@
           }
         } ]
       },
+      "RejectRequest" : {
+        "type" : "object",
+        "properties" : {
+          "reason" : {
+            "type" : "string"
+          }
+        }
+      },
       "RemoveAllDocumentUserCreatePermissions" : {
         "type" : "object",
         "allOf" : [ {
@@ -26822,6 +28144,24 @@
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/AppUserPermissions"
+            }
+          }
+        }
+      },
+      "ResultPageBacklogStream" : {
+        "type" : "object",
+        "description" : "A page of results.",
+        "properties" : {
+          "filterError" : {
+            "$ref" : "#/components/schemas/TokenError"
+          },
+          "pageResponse" : {
+            "$ref" : "#/components/schemas/PageResponse"
+          },
+          "values" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/BacklogStream"
             }
           }
         }
@@ -27384,6 +28724,42 @@
           }
         }
       },
+      "ResultPageSupervisorAttempt" : {
+        "type" : "object",
+        "description" : "A page of results.",
+        "properties" : {
+          "filterError" : {
+            "$ref" : "#/components/schemas/TokenError"
+          },
+          "pageResponse" : {
+            "$ref" : "#/components/schemas/PageResponse"
+          },
+          "values" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SupervisorAttempt"
+            }
+          }
+        }
+      },
+      "ResultPageSupervisorLearner" : {
+        "type" : "object",
+        "description" : "A page of results.",
+        "properties" : {
+          "filterError" : {
+            "$ref" : "#/components/schemas/TokenError"
+          },
+          "pageResponse" : {
+            "$ref" : "#/components/schemas/PageResponse"
+          },
+          "values" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SupervisorLearner"
+            }
+          }
+        }
+      },
       "ResultPageTemporalEntry" : {
         "type" : "object",
         "description" : "A page of results.",
@@ -27906,6 +29282,31 @@
             "$ref" : "#/components/schemas/Schedule"
           }
         }
+      },
+      "SchemaConformanceParameters" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ScorerParameters"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "schemaGroup" : {
+              "type" : "string"
+            }
+          }
+        } ]
+      },
+      "ScorerParameters" : {
+        "type" : "object",
+        "discriminator" : {
+          "propertyName" : "type"
+        },
+        "properties" : {
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "type" ]
       },
       "ScriptDoc" : {
         "type" : "object",
@@ -28467,9 +29868,172 @@
           }
         } ]
       },
+      "ShapeshifterAiDoc" : {
+        "type" : "object",
+        "properties" : {
+          "attemptBudgetMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "checks" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CheckSetting"
+            }
+          },
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "flow" : {
+            "$ref" : "#/components/schemas/LearningFlow"
+          },
+          "heldOutFraction" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "instructions" : {
+            "type" : "string"
+          },
+          "learningMode" : {
+            "type" : "string",
+            "enum" : [ "AUTOMATIC", "DISABLED" ]
+          },
+          "maxAttempts" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "maxDeferralAgeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "minRecordsToLearn" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "model" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "promotionMode" : {
+            "type" : "string",
+            "enum" : [ "AUTOMATIC", "REVIEW" ]
+          },
+          "regressionCap" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "relearnThreshold" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "sampleSizeLimit" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "spendCallsPerHour" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "spendTokensPerHour" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "tokenBudget" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ShapeshifterAiStepDetails" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ElementStepDetails"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "bindingUuid" : {
+              "type" : "string"
+            },
+            "decision" : {
+              "type" : "string"
+            },
+            "document" : {
+              "$ref" : "#/components/schemas/DocRef"
+            },
+            "dryRun" : {
+              "type" : "boolean"
+            },
+            "fragment" : {
+              "$ref" : "#/components/schemas/DocRef"
+            },
+            "nested" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/NestedElementData"
+              }
+            },
+            "reason" : {
+              "type" : "string"
+            },
+            "recordBoundary" : {
+              "type" : "string"
+            },
+            "score" : {
+              "type" : "number",
+              "format" : "double"
+            },
+            "stream" : {
+              "type" : "object",
+              "additionalProperties" : {
+                "type" : "string"
+              }
+            },
+            "transcript" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/SupervisorTurn"
+              }
+            },
+            "verdicts" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/StageVerdict"
+              }
+            }
+          }
+        } ]
+      },
       "SharedElementData" : {
         "type" : "object",
         "properties" : {
+          "details" : {
+            "$ref" : "#/components/schemas/ElementStepDetails"
+          },
           "formatInput" : {
             "type" : "boolean"
           },
@@ -28588,7 +30152,7 @@
           "properties" : {
             "appPermission" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             }
           }
         } ]
@@ -29213,6 +30777,51 @@
           }
         } ]
       },
+      "StageScore" : {
+        "type" : "object",
+        "properties" : {
+          "check" : {
+            "type" : "string",
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+          },
+          "gate" : {
+            "type" : "boolean"
+          },
+          "met" : {
+            "type" : "boolean"
+          },
+          "threshold" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "value" : {
+            "type" : "number",
+            "format" : "double"
+          }
+        }
+      },
+      "StageVerdict" : {
+        "type" : "object",
+        "properties" : {
+          "passed" : {
+            "type" : "boolean"
+          },
+          "score" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "scores" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/StageScore"
+            }
+          },
+          "step" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
       "State" : {
         "type" : "object",
         "allOf" : [ {
@@ -29433,6 +31042,33 @@
             "type" : "object",
             "additionalProperties" : {
               "$ref" : "#/components/schemas/SteppingFilterSettings"
+            }
+          }
+        }
+      },
+      "StopReport" : {
+        "type" : "object",
+        "properties" : {
+          "cause" : {
+            "type" : "string",
+            "enum" : [ "STEP_SPENT", "STEP_RULE", "STEP_FAILED", "FALLBACK_MISSING", "TIME_BUDGET", "TOKEN_BUDGET", "MODEL_TIMEOUT", "MODEL_UNREACHABLE", "MODEL_REFUSED", "NO_MODEL", "SETUP", "OTHER" ]
+          },
+          "details" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "error" : {
+            "type" : "string"
+          },
+          "step" : {
+            "type" : "string"
+          },
+          "suggestions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Suggestion"
             }
           }
         }
@@ -29665,6 +31301,18 @@
           }
         }
       },
+      "Suggestion" : {
+        "type" : "object",
+        "properties" : {
+          "action" : {
+            "type" : "string",
+            "enum" : [ "GIVE_MORE", "ANSWER", "LEAVE_NOTE", "FINISH_WITH_UNKNOWNS", "LEARN_AGAIN", "CHANGE_LIMITS", "CHANGE_STEPS", "CHANGE_MODEL", "OPEN_MODEL" ]
+          },
+          "text" : {
+            "type" : "string"
+          }
+        }
+      },
       "Suggestions" : {
         "type" : "object",
         "properties" : {
@@ -29699,6 +31347,210 @@
             }
           }
         } ]
+      },
+      "SupervisorAttempt" : {
+        "type" : "object",
+        "properties" : {
+          "bindingUuid" : {
+            "type" : "string"
+          },
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "decision" : {
+            "type" : "string"
+          },
+          "doc" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "exhaustNext" : {
+            "type" : "boolean"
+          },
+          "feed" : {
+            "type" : "string"
+          },
+          "grantedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "grantedTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "inputId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "learner" : {
+            "$ref" : "#/components/schemas/LearnerRef"
+          },
+          "node" : {
+            "type" : "string"
+          },
+          "pipelineDeleted" : {
+            "type" : "boolean"
+          },
+          "promotionMode" : {
+            "type" : "string",
+            "enum" : [ "AUTOMATIC", "REVIEW" ]
+          },
+          "report" : {
+            "$ref" : "#/components/schemas/StopReport"
+          },
+          "score" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "status" : {
+            "type" : "string",
+            "enum" : [ "In progress", "Awaiting model", "Awaiting review", "Parked", "Promoted", "Rejected", "Retracted", "Abandoned", "Error" ]
+          },
+          "tokensSpent" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "turns" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SupervisorTurn"
+            }
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "SupervisorGuidance" : {
+        "type" : "object",
+        "properties" : {
+          "author" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "timeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "SupervisorLearner" : {
+        "type" : "object",
+        "properties" : {
+          "belowThreshold" : {
+            "type" : "boolean"
+          },
+          "bindingUuid" : {
+            "type" : "string"
+          },
+          "doc" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "fragment" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "givenUpReason" : {
+            "type" : "string"
+          },
+          "guidance" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lastSessionMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "learner" : {
+            "$ref" : "#/components/schemas/LearnerRef"
+          },
+          "oldestWaitMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pipeline" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "pipelineDeleted" : {
+            "type" : "boolean"
+          },
+          "promotedScore" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "raised" : {
+            "type" : "boolean"
+          },
+          "records" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "rollingScore" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "skips" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "state" : {
+            "type" : "string",
+            "enum" : [ "Given up", "Learning off", "Waiting for a person", "Learning", "Serving" ]
+          },
+          "waiting" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "SupervisorTurn" : {
+        "type" : "object",
+        "properties" : {
+          "answer" : {
+            "type" : "string"
+          },
+          "answeredBy" : {
+            "type" : "string"
+          },
+          "candidate" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "kind" : {
+            "type" : "string",
+            "enum" : [ "CHAIN", "SPLIT", "TARGET", "CONFIGURE", "ADMIT" ]
+          },
+          "number" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "outcome" : {
+            "type" : "string",
+            "enum" : [ "PASSED", "REFUSED", "COMPILE_FAILED", "RUN_FAILED", "COVERAGE_SHORT", "COMPLETENESS_SHORT", "YIELD_SHORT", "WHOLENESS_SHORT", "CONFORMANCE_SHORT", "QUALITY_SHORT", "RULES_SHORT", "TIMES_SHORT", "LITERALS_SHORT", "PERMITTED_SHORT", "PRESERVATION_SHORT", "FIDELITY_SHORT" ]
+          },
+          "question" : {
+            "type" : "string"
+          },
+          "score" : {
+            "$ref" : "#/components/schemas/TurnScore"
+          },
+          "stepId" : {
+            "type" : "string"
+          }
+        }
       },
       "SystemInfoResult" : {
         "type" : "object",
@@ -30645,6 +32497,24 @@
           }
         }
       },
+      "TimesParameters" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ScorerParameters"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "afterDays" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "beforeDays" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          }
+        } ]
+      },
       "TokenError" : {
         "type" : "object",
         "properties" : {
@@ -30923,6 +32793,35 @@
             "items" : {
               "$ref" : "#/components/schemas/TraceRoot"
             }
+          }
+        }
+      },
+      "Transition" : {
+        "type" : "object",
+        "properties" : {
+          "goTo" : {
+            "type" : "string"
+          },
+          "on" : {
+            "type" : "string",
+            "enum" : [ "PASSED", "REFUSED", "COMPILE_FAILED", "RUN_FAILED", "COVERAGE_SHORT", "COMPLETENESS_SHORT", "YIELD_SHORT", "WHOLENESS_SHORT", "CONFORMANCE_SHORT", "QUALITY_SHORT", "RULES_SHORT", "TIMES_SHORT", "LITERALS_SHORT", "PERMITTED_SHORT", "PRESERVATION_SHORT", "FIDELITY_SHORT" ]
+          }
+        }
+      },
+      "TurnScore" : {
+        "type" : "object",
+        "properties" : {
+          "check" : {
+            "type" : "string",
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+          },
+          "score" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "threshold" : {
+            "type" : "number",
+            "format" : "double"
           }
         }
       },
@@ -31853,6 +33752,27 @@
           }
         }
       },
+      "VolumeDay" : {
+        "type" : "object",
+        "properties" : {
+          "dayMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "records" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "skips" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "streams" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
       "Welcome" : {
         "type" : "object",
         "properties" : {
@@ -31907,6 +33827,17 @@
             "items" : {
               "$ref" : "#/components/schemas/Word"
             }
+          }
+        }
+      },
+      "XPathAssertion" : {
+        "type" : "object",
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          },
+          "xpath" : {
+            "type" : "string"
           }
         }
       },
@@ -32037,6 +33968,24 @@
             "type" : "string"
           }
         }
+      },
+      "YieldParameters" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ScorerParameters"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "basis" : {
+              "type" : "string",
+              "enum" : [ "RECORDS", "LINES", "BYTES" ]
+            },
+            "expectedRatio" : {
+              "type" : "number",
+              "format" : "double"
+            }
+          }
+        } ]
       }
     },
     "securitySchemes" : {

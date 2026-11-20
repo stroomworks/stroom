@@ -29,13 +29,9 @@ import stroom.shapeshifter.ai.stage.LearningPipelines;
 import stroom.shapeshifter.ai.stage.RegressionSet;
 import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
 import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
-import stroom.shapeshifter.ai.state.InMemoryAssessments;
 import stroom.shapeshifter.ai.state.InMemoryDeletedPipelines;
-import stroom.shapeshifter.shared.AssessmentRequest;
-import stroom.shapeshifter.shared.AssessmentVerdict;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.LearnerRef;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.QualitySample;
 import stroom.shapeshifter.shared.RecordKind;
@@ -67,7 +63,6 @@ class TestQualityService {
     private final LearnerBindings bindings = Mockito.mock(LearnerBindings.class);
     private final Volumes volumes = Mockito.mock(Volumes.class);
     private final RegressionSet regressionSet = Mockito.mock(RegressionSet.class);
-    private final InMemoryAssessments assessments = new InMemoryAssessments();
     private final InMemoryDeletedPipelines deletedPipelines = new InMemoryDeletedPipelines();
 
     TestQualityService() {
@@ -127,7 +122,7 @@ class TestQualityService {
     void someoneWhoMayNotViewThePipelineReadsNothing() {
         final QualityService service = service(context(Set.of(), Set.of(), true));
         assertThatThrownBy(() -> service.report("p-1", "shapeshifterAi")).isInstanceOf(PermissionException.class);
-        assertThatThrownBy(() -> service.assessments("p-1", "shapeshifterAi"))
+        assertThatThrownBy(() -> service.samples("p-1", "shapeshifterAi"))
                 .isInstanceOf(PermissionException.class);
     }
 
@@ -163,85 +158,18 @@ class TestQualityService {
     }
 
     @Test
-    void anyoneWhoMayViewThePipelineRecordsAnAssessmentAgainstTheTranslationInUse() {
-        final List<QualityAssessment> said = service(viewer()).assess(new AssessmentRequest(
-                new LearnerRef("p-1", "shapeshifterAi"), AssessmentVerdict.ISSUE, "  Ports are swapped  "));
-
-        assertThat(said).singleElement().satisfies(assessment -> {
-            assertThat(assessment.getVerdict()).isEqualTo(AssessmentVerdict.ISSUE);
-            assertThat(assessment.getComment()).isEqualTo("Ports are swapped");
-            assertThat(assessment.getAuthor()).isEqualTo("qa");
-            assertThat(assessment.getBindingUuid()).isEqualTo("b-1");
-            assertThat(assessment.getCreateTimeMs()).isEqualTo(NOW);
-            assertThat(assessment.getResolvedBy()).isNull();
-        });
-    }
-
-    @Test
-    void anIssueMustSayWhatItIsButLooksRightNeedNot() {
-        final QualityService service = service(viewer());
-        final LearnerRef ref = new LearnerRef("p-1", "shapeshifterAi");
-        assertThatThrownBy(() -> service.assess(new AssessmentRequest(ref, AssessmentVerdict.ISSUE, " ")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("what the issue is");
-        assertThat(service.assess(new AssessmentRequest(ref, AssessmentVerdict.LOOKS_RIGHT, null)))
-                .singleElement()
-                .satisfies(assessment -> assertThat(assessment.getComment()).isNull());
-        assertThatThrownBy(() -> service.assess(new AssessmentRequest(ref, null, "x")))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void anIssueIsResolvedBySomeoneWhoMayEditThePipeline() {
-        service(viewer()).assess(new AssessmentRequest(new LearnerRef("p-1", "shapeshifterAi"),
-                AssessmentVerdict.ISSUE, "Ports are swapped"));
-        final long id = assessments.forLearner(FIREWALL).get(0).getId();
-
-        assertThatThrownBy(() -> service(viewer()).resolve(id))
-                .describedAs("a viewer may say it, not resolve it")
-                .isInstanceOf(PermissionException.class);
-
-        final List<QualityAssessment> after = service(context(Set.of(DocumentPermission.VIEW,
-                DocumentPermission.EDIT), Set.of(), true)).resolve(id);
-        assertThat(after).singleElement().satisfies(assessment -> {
-            assertThat(assessment.getResolvedBy()).isEqualTo("qa");
-            assertThat(assessment.getResolveTimeMs()).isEqualTo(NOW);
-        });
-    }
-
-    @Test
-    void onlyAnIssueIsResolvedAndOneNotSeenIsNotSaidToExist() {
-        final QualityService editor = service(context(Set.of(DocumentPermission.VIEW, DocumentPermission.EDIT),
-                Set.of(), true));
-        editor.assess(new AssessmentRequest(new LearnerRef("p-1", "shapeshifterAi"), AssessmentVerdict.LOOKS_RIGHT,
-                null));
-        final long id = assessments.forLearner(FIREWALL).get(0).getId();
-
-        assertThatThrownBy(() -> editor.resolve(id)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> editor.resolve(999))
-                .isInstanceOf(PermissionException.class)
-                .hasMessageContaining("999");
-        assertThatThrownBy(() -> service(context(Set.of(), Set.of(), true)).resolve(id))
-                .isInstanceOf(PermissionException.class);
-    }
-
-    @Test
-    void aDeletedPipelinesQualityIsReadByItsLearningFlowsViewersAndNothingIsRecorded() {
+    void aDeletedPipelinesQualityIsReadByItsLearningFlowsViewers() {
         deletedPipelines.deleted("p-2", NOW);
         Mockito.when(bindings.forLearner(GONE)).thenReturn(List.of());
         final QualityService flowViewer = service(context(Set.of(), Set.of(DocumentPermission.VIEW), true));
 
         assertThat(flowViewer.report("p-2", "shapeshifterAi").getDays()).hasSize(QualityService.DAYS);
-        assertThatThrownBy(() -> flowViewer.assess(new AssessmentRequest(new LearnerRef("p-2", "shapeshifterAi"),
-                AssessmentVerdict.LOOKS_RIGHT, null)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("deleted");
     }
 
     private QualityService service(final SecurityContext context) {
         return new QualityService(new LearnerAccess(() -> context, () -> deletedPipelines), () -> context,
                 () -> documents, () -> pipelines, () -> bindings, () -> volumes, () -> regressionSet,
-                () -> assessments, () -> NOW);
+                () -> NOW);
     }
 
     // Someone who may view the pipelines and data, and nothing more

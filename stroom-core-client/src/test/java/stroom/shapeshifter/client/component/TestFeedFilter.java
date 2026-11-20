@@ -77,7 +77,7 @@ class TestFeedFilter {
 
     private static SupervisorLearner learner(final LearnerState state) {
         return new SupervisorLearner(new LearnerRef("p-1", "shapeshifterAi"),
-                new DocRef("Pipeline", "p-1", "Firewall pipeline"), null, state, null, null, null, false, null,
+                new DocRef("Pipeline", "p-1", "Firewall pipeline"), null, state, null, null, null, null,
                 null, 0, 0, null, false, null, 0, false, false);
     }
 }

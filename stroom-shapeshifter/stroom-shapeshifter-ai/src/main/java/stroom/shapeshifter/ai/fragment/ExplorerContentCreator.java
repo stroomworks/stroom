@@ -61,6 +61,12 @@ public class ExplorerContentCreator implements ContentCreator {
     }
 
     @Override
+    public void delete(final DocRef docRef) {
+        explorerNodeService.getNode(docRef)
+                .ifPresent(node -> explorerService.delete(List.of(node)));
+    }
+
+    @Override
     public void ensure(final DocPath folder) {
         if (!ensured.contains(folder)) {
             folder(folder);

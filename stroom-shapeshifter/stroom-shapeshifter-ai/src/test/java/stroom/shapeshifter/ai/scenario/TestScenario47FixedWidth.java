@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.learning.Exchange;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.learning.Question.TargetFor;
@@ -64,7 +65,7 @@ class TestScenario47FixedWidth {
                 .uuid("doc-1")
                 .name("mainframe-sign-on")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.ESCALATING)
+                .flow(FlowExamples.flow(FlowExample.ESCALATING))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(

@@ -26,9 +26,9 @@ import java.util.List;
 /// plausibility as advice once they are built, and the heuristic checks off.
 public enum CheckPreset implements HasDisplayValue {
     LENIENT("Lenient",
-            "The events must compile, be valid against the event schema, keep what the agreed targets need and do "
-            + "no worse on records accepted before. Reading all the input and matching the targets are only "
-            + "advice."),
+            "The events must compile, be valid against the event schema, account for every record read, keep what "
+            + "the agreed targets need and do no worse on records accepted before. Reading all the input and "
+            + "matching the targets are only advice."),
     STANDARD("Standard",
             "As Lenient, and the parser must read nearly all the input and the events must match the agreed "
             + "targets. Record counts, content and business rules aren't checked."),
@@ -77,7 +77,11 @@ public enum CheckPreset implements HasDisplayValue {
 
     private CheckSetting setting(final Check check) {
         return switch (check) {
-            case COMPILE, CONFORMANCE, PRESERVATION, REGRESSION -> CheckSetting.of(check, CheckState.GATE);
+            // Completeness is a gate from the start, in every preset (UM-2, option C taken for literals
+            // only): a record that never became an event is the fault the whole of task 2 is about, and a
+            // translation that legitimately makes fewer events says so with a declared skip
+            case COMPILE, PERMITTED, CONFORMANCE, COMPLETENESS, PRESERVATION, REGRESSION -> CheckSetting.of(
+                    check, CheckState.GATE);
             case COVERAGE -> new CheckSetting(check, this == LENIENT
                     ? CheckState.ADVICE
                     : CheckState.GATE, threshold(0.8, 0.9, 0.95), null);
@@ -94,6 +98,18 @@ public enum CheckPreset implements HasDisplayValue {
             case RULES -> CheckSetting.of(check, this == STRICT
                     ? CheckState.GATE
                     : CheckState.OFF);
+            // Advice by default, whatever the preset (stage 0b group 4): it shows beside a draft and goes
+            // back to the model, but does not refuse a candidate until it has run on real feeds without
+            // crying wolf. Strict gates it.
+            case TIMES -> CheckSetting.of(check, this == STRICT
+                    ? CheckState.GATE
+                    : CheckState.ADVICE);
+            // Advice first, then a gate once it has run on the demo feeds without false failures
+            // (stage 0b group 4, option C for literals): a translation that writes this stream's year or
+            // environment into itself is wrong for the next stream, but the check is new
+            case LITERALS -> CheckSetting.of(check, this == STRICT
+                    ? CheckState.GATE
+                    : CheckState.ADVICE);
         };
     }
 

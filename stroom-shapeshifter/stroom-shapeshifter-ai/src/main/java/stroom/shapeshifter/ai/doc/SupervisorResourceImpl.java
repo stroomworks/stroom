@@ -23,12 +23,12 @@ import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.shapeshifter.ai.element.LearnerDocuments;
 import stroom.shapeshifter.ai.element.StageFactory;
-import stroom.shapeshifter.ai.element.StepDetails;
 import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.Attempts.Page;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
 import stroom.shapeshifter.ai.stage.Decision;
+import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Deferrals;
 import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.DeletedPipelines;
@@ -391,12 +391,13 @@ public class SupervisorResourceImpl implements SupervisorResource {
     /// Held to EDIT on the binding's pipeline, as approving a draft is: it spends a model's tokens and may
     /// rebind the learner.
     ///
-    /// It runs while the request is open, which is the one thing here that is not yet what A46 asks for:
-    /// the ruling says an improvement is taken by the deferred worker. The stage says why in
-    /// `Stage.improve` — the worker would need the attempt to remember that it is an improvement and to
-    /// find its sample in the regression set rather than in the stream store. Nothing waits on it
-    /// meanwhile: the incumbent serves every stream throughout, and a candidate takes over only through
-    /// the ordinary gate.
+    /// The request opens the attempt and parks it; the worker asks the model (A46). A model conversation
+    /// is minutes long, and holding an HTTP thread for it would not survive the node restarting or the
+    /// browser giving up. Nothing waits on it: the incumbent serves every stream throughout, and a
+    /// candidate takes over only through the ordinary gate.
+    ///
+    /// So what comes back says the improvement was asked for, not what it came to. What it comes to
+    /// appears on the Learning Status tab, as every other run's does.
     @Override
     public ImproveOutcome improve(final String docUuid, final String bindingUuid, final ImproveRequest request) {
         changeableBinding(docUuid, bindingUuid);
@@ -407,25 +408,12 @@ public class SupervisorResourceImpl implements SupervisorResource {
         final ShapeshifterAiDoc doc = document(docUuid);
         final Decision decision = pipelineScopeProvider.get().scopeResult(() ->
                 stageFactoryProvider.get().create().improve(doc, bindingUuid, message, by).decision());
-        // Described from the one switch that describes every decision: the stage pane, the error stream
-        // and this button say the same thing because they say it from the same place.
-        return new ImproveOutcome(StepDetails.describe(decision));
-    }
-
-    /// Accept a provisional binding now (design 01 §6, §11.6), rather than waiting for the records
-    /// that would promote it.
-    ///
-    /// Held to EDIT on the binding's pipeline, as the other acts that change what serves a learner are.
-    /// Not a way round the gate: the binding cleared the promotion floor when it was bound, and what is
-    /// skipped is the wait for more records to judge it on.
-    @Override
-    public Boolean accept(final String docUuid, final String bindingUuid) {
-        changeableBinding(docUuid, bindingUuid);
-        final String by = securityContextProvider.get().getUserIdentityForAudit();
-        final ShapeshifterAiDoc doc = document(docUuid);
-        pipelineScopeProvider.get().scopeRunnable(() ->
-                stageFactoryProvider.get().create().accept(doc, bindingUuid, by));
-        return Boolean.TRUE;
+        // A refusal is the one thing that is decided here and now — the binding is a draft, the records
+        // have gone, learning is off — and it is said rather than left to show up as an abandoned run.
+        if (decision instanceof final Sentinel refused) {
+            return new ImproveOutcome(refused.reason());
+        }
+        return new ImproveOutcome("Asked. The AI is working on it; what it comes to will show here.");
     }
 
     /// Take back a binding that is serving (A28, design 01 §11.6).

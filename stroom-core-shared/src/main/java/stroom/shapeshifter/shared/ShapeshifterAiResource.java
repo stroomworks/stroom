@@ -32,6 +32,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
+import java.util.List;
+
 @Tag(name = "Shapeshifter AI")
 @Path("/shapeshifterAi" + ResourcePaths.V1)
 @Produces(MediaType.APPLICATION_JSON)
@@ -52,6 +54,19 @@ public interface ShapeshifterAiResource
             summary = "The built-in text of the flow's templates and its version",
             operationId = "fetchShapeshifterAiTemplates")
     BuiltInTemplates templates();
+
+    /// The built-in default setups with their steps (Track 2 step 1c). They are defined as JSON on the
+    /// server, since the client has neither classpath resources nor Jackson; a document the client opens
+    /// carries its own steps, so these are what it needs to name which setup a document matches and to
+    /// start a new one from.
+    ///
+    /// @return Every built-in setup, in the order [FlowExample] declares them.
+    @GET
+    @Path("/flowExamples")
+    @Operation(
+            summary = "The built-in default setups and their steps",
+            operationId = "fetchShapeshifterAiFlowExamples")
+    List<BuiltInFlow> flowExamples();
 
     @PUT
     @Path("/{uuid}")

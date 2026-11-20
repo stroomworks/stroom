@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
@@ -64,7 +65,9 @@ public final class ExtractionQualityScorer implements Scorer {
     }
 
     @Override
-    public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         final Optional<OutputRecords> parsed = OutputRecords.ofTransformed(step);
         if (parsed.isEmpty() || parsed.get().records().isEmpty()) {
             return Optional.empty();

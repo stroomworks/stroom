@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.pipeline.PipelineStore;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.TextConverterDoc;
+import stroom.pipeline.shared.TextConverterDoc.TextConverterType;
 import stroom.pipeline.shared.XsltDoc;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineDataBuilder;
@@ -35,6 +36,7 @@ import stroom.util.shared.DocPath;
 
 import jakarta.inject.Inject;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,86 +86,101 @@ public final class FragmentWriter {
         creator.ensure(folder);
     }
 
-    /// Rewrite a fragment in place (A58): the same pipeline document, and the same configuration
-    /// documents where the chain still has an element of the same id and type to run them — their text
-    /// overwritten — with a new document only for an element the fragment did not have. One fragment and
-    /// one stylesheet per learner, growing as the session learns; what ran before is a snapshot's to keep.
+    /// Copy a draft fragment into the fragment that serves, and delete the draft's documents (A58,
+    /// simplification option A).
     ///
-    /// @param fragment The fragment to rewrite.
-    /// @param folder   Where a new configuration document goes, where one is needed.
-    /// @param name     The name a new configuration document is prefixed with.
-    /// @param chain    The chain as learned.
-    /// @param boundary What one record is, where settled.
-    /// @return The same fragment.
-    public DocRef rewrite(final DocRef fragment,
-                          final DocPath folder,
-                          final String name,
-                          final List<LearnedStep> chain,
-                          final RecordBoundary boundary) {
-        chain.stream()
-                .map(step -> step.runner().configured())
-                .flatMap(Optional::stream)
-                .map(Configured::documentType)
-                .filter(type -> !WRITABLE.contains(type))
-                .findFirst()
-                .ifPresent(type -> {
-                    throw new IllegalArgumentException("No store to write a " + type + " document");
-                });
-        final PipelineDoc existing = pipelineStore.readDocument(fragment);
+    /// Every result is written as a draft fragment of its own, whatever the Learning Flow's mode, so that
+    /// what serves goes on serving until the draft is approved. Approving it must not leave the learner
+    /// with two fragments: the serving pipeline keeps its own `DocRef` — so every output ever recorded
+    /// against the binding still names the pipeline that serves it — and takes the draft's shape, with
+    /// the draft's text copied into its own configuration documents. A document for an element the
+    /// serving fragment did not have is written in the folder; one it had and the draft does not is left,
+    /// since the pipeline no longer references it and a person may want to read it.
+    ///
+    /// @param serving The fragment that serves, which keeps its identity.
+    /// @param draft   The draft fragment, whose documents are deleted once copied.
+    /// @param folder  Where a new configuration document goes, where one is needed.
+    /// @param name    The name a new configuration document is prefixed with.
+    /// @return The serving fragment, unchanged as a `DocRef`.
+    public DocRef copyInto(final DocRef serving,
+                           final DocRef draft,
+                           final DocPath folder,
+                           final String name) {
+        final PipelineDoc from = pipelineStore.readDocument(draft);
+        final PipelineDoc into = pipelineStore.readDocument(serving);
+        // What the serving fragment already has for each element, so that the copy overwrites a document
+        // rather than making another beside it.
+        final Map<String, DocRef> existing = referenced(into.getPipelineData());
+        final PipelineDataBuilder builder = new PipelineDataBuilder();
+        builder.addElements(from.getPipelineData().getAddedElements());
+        builder.addLinks(from.getPipelineData().getAddedLinks());
+        final List<DocRef> copied = new ArrayList<>();
+        for (final PipelineProperty property : from.getPipelineData().getAddedProperties()) {
+            final DocRef source = property.getValue() == null
+                    ? null
+                    : property.getValue().getEntity();
+            if (source == null || !WRITABLE.contains(source.getType())) {
+                builder.addProperty(property);
+                continue;
+            }
+            copied.add(source);
+            final DocRef was = existing.get(property.getElement() + "/" + property.getName());
+            final DocRef target = was != null && source.getType().equals(was.getType())
+                    ? overwrite(was, read(source))
+                    : copy(folder, name + "-" + property.getElement(), source);
+            builder.addProperty(new PipelineProperty(property.getElement(), property.getName(),
+                    new PipelinePropertyValue(target)));
+        }
+        pipelineStore.writeDocument(into.copy().pipelineData(builder.build()).build());
+        // The draft is spent: its documents go, so that the learner is left with one fragment (A58).
+        copied.forEach(creator::delete);
+        creator.delete(draft);
+        return serving;
+    }
+
+    /// What a fragment's elements reference, by element id and property name.
+    private static Map<String, DocRef> referenced(final PipelineData pipelineData) {
         final Map<String, DocRef> referenced = new HashMap<>();
-        for (final PipelineProperty property : existing.getPipelineData().getAddedProperties()) {
+        for (final PipelineProperty property : pipelineData.getAddedProperties()) {
             if (property.getValue() != null && property.getValue().getEntity() != null) {
                 referenced.put(property.getElement() + "/" + property.getName(), property.getValue().getEntity());
             }
         }
-        final PipelineDataBuilder builder = new PipelineDataBuilder()
-                .addElement(new PipelineElement(SOURCE, SOURCE));
-        String previous = SOURCE;
-        final OptionalInt depth = boundary == null
-                ? OptionalInt.empty()
-                : boundary.splitDepth();
-        boolean split = false;
-        final Map<String, Integer> idsUsed = new HashMap<>();
-        for (final LearnedStep step : chain) {
-            if (!split && !step.runner().parser() && depth.isPresent()) {
-                builder.addElement(new PipelineElement(SPLIT, SPLIT_FILTER));
-                builder.addLink(previous, SPLIT);
-                builder.addProperty(new PipelineProperty(SPLIT, SPLIT_DEPTH,
-                        new PipelinePropertyValue(depth.getAsInt())));
-                builder.addProperty(new PipelineProperty(SPLIT, SPLIT_COUNT, new PipelinePropertyValue(1)));
-                previous = SPLIT;
-                split = true;
-            }
-            final String elementId = uniqueId(step.runner().elementId(), idsUsed);
-            builder.addElement(new PipelineElement(elementId, step.elementType()));
-            builder.addLink(previous, elementId);
-            step.runner().configured().ifPresent(configured -> {
-                final DocRef was = referenced.get(elementId + "/" + configured.propertyName());
-                final DocRef configuration = was != null && configured.documentType().equals(was.getType())
-                        ? overwrite(was, configured, step.configuration())
-                        : writeConfiguration(folder, name + "-" + elementId, configured, step.configuration());
-                builder.addProperty(new PipelineProperty(
-                        elementId, configured.propertyName(), new PipelinePropertyValue(configuration)));
-            });
-            previous = elementId;
-        }
-        pipelineStore.writeDocument(existing.copy().pipelineData(builder.build()).build());
-        return fragment;
+        return referenced;
     }
 
-    /// A configuration document's text replaced with what was learned, in place.
-    private DocRef overwrite(final DocRef docRef, final Configured configured, final String data) {
+    /// A configuration document copied into the folder under its own name, for an element the serving
+    /// fragment did not have.
+    private DocRef copy(final DocPath folder, final String name, final DocRef source) {
+        return overwrite(creator.create(folder, source.getType(), creator.unused(folder, name)), read(source));
+    }
+
+    /// What a configuration document holds.
+    private Content read(final DocRef docRef) {
+        return switch (docRef.getType()) {
+            case TextConverterDoc.TYPE -> {
+                final TextConverterDoc doc = textConverterStore.readDocument(docRef);
+                yield new Content(doc.getData(), doc.getConverterType());
+            }
+            case XsltDoc.TYPE -> new Content(xsltStore.readDocument(docRef).getData(), null);
+            default -> throw new IllegalArgumentException(
+                    "No store for configuration documents of type " + docRef.getType());
+        };
+    }
+
+    /// A configuration document's text replaced with what another holds.
+    private DocRef overwrite(final DocRef docRef, final Content content) {
         switch (docRef.getType()) {
             case TextConverterDoc.TYPE -> textConverterStore.writeDocument(textConverterStore.readDocument(docRef)
                     .copy()
-                    .converterType(configured.converterType() == null
+                    .converterType(content.converterType() == null
                             ? textConverterStore.readDocument(docRef).getConverterType()
-                            : configured.converterType())
-                    .data(data)
+                            : content.converterType())
+                    .data(content.data())
                     .build());
             case XsltDoc.TYPE -> xsltStore.writeDocument(xsltStore.readDocument(docRef)
                     .copy()
-                    .data(data)
+                    .data(content.data())
                     .build());
             default -> throw new IllegalArgumentException("No store for configuration documents of type "
                                                           + docRef.getType());
@@ -291,5 +308,18 @@ public final class FragmentWriter {
             default -> throw new IllegalArgumentException(
                     "No store for configuration documents of type " + configured.documentType());
         };
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    /// What a configuration document holds: its text, and for a text converter the kind it is, since the
+    /// element that reads one refuses a converter of the wrong kind.
+    ///
+    /// @param data          The document's text.
+    /// @param converterType The kind of text converter, or null for a document that is not one.
+    private record Content(String data, TextConverterType converterType) {
+
     }
 }

@@ -264,7 +264,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
             // parser, the combined parser, anything a person put there by hand — and one mistaken for a
             // filter has its output judged against the target schema by the scorers of meaning, which
             // fails every stream of a chain that is working.
-            steps.add(new Attempted(element.getType(), parses(element), current, result, boundary));
+            steps.add(new Attempted(element.getType(), parses(element), current, result, boundary, null));
             if (output == null) {
                 break;
             }
@@ -299,7 +299,11 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         // shown to a session as the parser had it. Only where the fragment has a parser: a fragment fed
         // records has nothing of its own to tap.
         final boolean parsed = parses(elements.get(next.get(SOURCE)));
-        final RecordTap tap = new RecordTap();
+        // Cut where the split cuts, so that what the tap counts is what the transform was asked to turn
+        // into events — the two ends of the completeness sum (Track 1 task 2, fix 1)
+        final RecordTap tap = new RecordTap(boundary == null
+                ? 1
+                : boundary.splitDepth().orElse(1));
         final RecordGate gate = new RecordGate(judge, downstream, parsed
                 ? index -> tap.current()
                 : index -> Optional.empty());
@@ -320,13 +324,15 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         injectedCode.set(Map.of());
         RecordShortfall shortfall = null;
         String failure = null;
+        // What the run read, so that a stream the parser made nothing of can be told from an empty one
+        final ContentCountInputStream counted = new ContentCountInputStream(input);
         try {
             final Pipeline pipeline = pipelineFactoryProvider.get()
                     .create(tapped(runnable(fragment, merged, elements, next), next.get(SOURCE), parsed),
                             taskContextFactory.current());
             // A byte order mark is not content, and the whole-text path has always taken it off before the
             // fragment saw the stream; a fragment given the bytes as they are is given them without it.
-            pipeline.process(new BOMRemovalInputStream(input, StandardCharsets.UTF_8.name()),
+            pipeline.process(new BOMRemovalInputStream(counted, StandardCharsets.UTF_8.name()),
                     StandardCharsets.UTF_8.name());
             gate.finish();
         } catch (final SAXException e) {
@@ -362,8 +368,40 @@ public final class PipelineFragmentRunner implements FragmentRunner {
             diagnostics.add(new StoredError(Severity.FATAL_ERROR, null, new ElementId(next.get(SOURCE)), failure));
         }
         return new ServedStream(gate.records(), gate.meanTotal(), PerRecord.told(diagnostics),
-                Optional.ofNullable(shortfall));
+                Optional.ofNullable(shortfall), gate.skips(), gate.skipReasons(),
+                read(parsed, tap, logging, next.get(SOURCE), counted.content()));
     }
+
+    /// What the parser made of the input.
+    ///
+    /// The parser's errors are counted from its own indicators rather than from the diagnostics, because
+    /// those are de-duplicated and capped at twenty before anyone outside sees them (audit finding
+    /// W4-2): a stream with a hundred unmatched lines would otherwise report twenty.
+    ///
+    /// @param parsed  Whether the fragment has a parser of its own.
+    /// @param tap     The tap on the parser's fork, which counted the records it cut.
+    /// @param logging What the run's elements said.
+    /// @param parser  The parser's element id.
+    /// @param bytes   How many bytes the run read.
+    /// @return What went in, or [InputRead#UNKNOWN] for a fragment handed records somebody else cut.
+    private static InputRead read(final boolean parsed,
+                                  final RecordTap tap,
+                                  final LoggingErrorReceiver logging,
+                                  final String parser,
+                                  final long bytes) {
+        if (!parsed) {
+            return InputRead.UNKNOWN;
+        }
+        final Indicators said = logging.getIndicators(new ElementId(parser));
+        final int errors = said == null
+                ? 0
+                : said.getCount(Severity.ERROR) + said.getCount(Severity.FATAL_ERROR);
+        return new InputRead(tap.records(), errors, bytes);
+    }
+
+
+    // --------------------------------------------------------------------------------
+
 
     /// Handed over and let go of: see [FragmentRunner#takeRecords]. A decision that runs no fragment
     /// must not be given the chain of the one before it.

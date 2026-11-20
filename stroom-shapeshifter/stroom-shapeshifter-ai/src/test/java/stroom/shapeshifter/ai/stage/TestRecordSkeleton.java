@@ -172,8 +172,19 @@ class TestRecordSkeleton {
         }
         document.append("  ]\n}\n");
         final String whole = document.toString();
-        assertThat(Stage.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(10_000).build()))
-                .describedAs("within the limit, whole").isEqualTo(whole);
+        assertThat(Stage.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d")
+                .sampleSizeLimit(10_000).heldOutFraction(0.0).build()))
+                .describedAs("within the limit and nothing held out, whole").isEqualTo(whole);
+
+        // Audit finding S5: a document within the limit used to be shown whole whatever the Learning
+        // Flow's held-out fraction said, so for every JSON feed that fitted, promotion was judged on
+        // exactly what the model had been shown and A14 did not hold.
+        final String held = Stage.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d")
+                .sampleSizeLimit(10_000).heldOutFraction(0.2).build());
+
+        assertThat(held).describedAs("a fifth of the items held back").doesNotContain("user32");
+        assertThat(held).contains("user31");
+        assertThat(Stage.isJsonDocument(held)).describedAs("and still one value the parser can read").isTrue();
 
         final String cut = Stage.learningPrefix(whole,
                 ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(500).build());

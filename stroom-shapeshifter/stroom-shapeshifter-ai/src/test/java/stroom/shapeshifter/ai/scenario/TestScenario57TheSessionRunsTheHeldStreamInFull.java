@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.pack.DemoDocument;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
@@ -124,7 +125,7 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
     void aSessionOutOfCandidatesParksForAPersonAndHoldsItsLearner() {
         final Scenarios scenarios = new Scenarios();
         // The direct flow with one candidate a step: the session has one try at the transform.
-        final ShapeshifterAiDoc doc = doc().copy().flow(FlowExample.DIRECT).maxAttempts(1).build();
+        final ShapeshifterAiDoc doc = doc().copy().flow(FlowExamples.flow(FlowExample.DIRECT)).maxAttempts(1).build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(input(1L, STREAM));
         final Script silent = Script.of();

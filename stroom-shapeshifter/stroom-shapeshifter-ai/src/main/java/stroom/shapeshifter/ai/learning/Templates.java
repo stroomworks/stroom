@@ -42,7 +42,7 @@ public final class Templates {
     /**
      * Raised when the built-in text changes in a way a stored run should be told apart from.
      */
-    public static final int VERSION = 6;
+    public static final int VERSION = 10;
 
     private static final Map<Template, String> BUILT_IN = new EnumMap<>(Template.class);
 
@@ -85,16 +85,23 @@ public final class Templates {
         BUILT_IN.put(Template.SPLIT_XML, """
                 Before anything is extracted, settle what one record is in this stream.
 
-                ${headers}The input is already XML. Name the element that is one record: the element that occurs \
-                once per record, whose elements together hold nearly the whole document, and which the \
-                transform will turn into one event each. Not the root, which holds every record; not a field \
-                within a record.
+                ${headers}The input is already XML. Settle what one record is, in one of two ways.
+
+                Where every record is the same element, name it: the element that occurs once per record, \
+                whose elements together hold nearly the whole document, and which the transform will turn \
+                into one event each. Not the root, which holds every record; not a field within a record. \
+                Reply with its local name alone — no prefix, no angle brackets.
+
+                Where records of several kinds sit side by side under one container — an audit export \
+                whose children are authentication, transfer, policyChange and so on, each a different \
+                element — name the container and its children: reply container/* , for example batch/* . \
+                Reply * where the records are the root's own children. Each child is then one record, \
+                whatever it is called.
 
                 A sample of the stream:
                 ${sample}
                 ${feedback}
-                Reply with the element's name alone — its local name, no prefix, no angle brackets — and nothing \
-                else.""");
+                Reply with one of those two forms and nothing else.""");
         BUILT_IN.put(Template.SPLIT_JSON, """
                 Before anything is extracted, settle what one record is in this stream.
 
@@ -238,20 +245,34 @@ public final class Templates {
               </split>
             </dataSplitter>
             ```""");
-        BUILT_IN.put(Template.TRANSFORMATION_RULES, """
-            The stylesheet reads records:2 (use xpath-default-namespace="records:2") and writes event-logging:3 \
-            events: <Events xmlns="event-logging:3" xsi:schemaLocation="event-logging:3 \
-            file://event-logging-v3.0.0.xsd" Version="3.0.0"> holding one <Event> per record. Every Event needs \
+        BUILT_IN.put(Template.TARGET_STRUCTURE, """
+            holding one <Event> per record. Every Event needs \
             EventTime/TimeCreated, EventSource and EventDetail, in that order. EventSource needs System (Name, \
             Environment), Generator and one of Device, Client, Server or Door, and should name the User where the \
             input has one. EventDetail needs TypeId and then exactly one branch describing what happened, from \
             this list and no other: Authenticate, Authorise, Search, Copy, Move, Create, View, Import, Export, \
             Update, Delete, Process, Print, Install, Uninstall, Network, AntiMalware, Alert, Send, Receive. \
             Authenticate holds Action first (Logon, Logoff, ...), then User with its Id; other branches hold \
-            their own typed elements — a Description is a child of the branch's element, never the branch. \
-            Element order is enforced everywhere; datetimes are ISO 8601 with milliseconds and a trailing Z. \
+            their own typed elements — a Description is a child of the branch's element, never the branch.""");
+        BUILT_IN.put(Template.TRANSFORMATION_RULES, """
+            The stylesheet reads records:2 (use xpath-default-namespace="records:2") and writes \
+            ${targetNamespace} events: <${targetRoot} xmlns="${targetNamespace}" \
+            xsi:schemaLocation="${targetSchemaLocation}" Version="${targetVersion}"> ${targetStructure} \
+            Element order is enforced everywhere. Write every datetime as an ISO 8601 instant in UTC with \
+            milliseconds, e.g. 2026-11-11T09:18:19.000Z. Where the input's timestamp leaves out the year, the \
+            date or the time zone, do not guess and never write a year as a literal: parse it with \
+            stroom:format-date(value, pattern), or stroom:format-date(value, pattern, timeZone) where you know \
+            the zone it was written in, declaring xmlns:stroom="stroom" on the stylesheet. That takes whatever \
+            the timestamp leaves out from the time this stream was received, so the same translation is right \
+            for a stream received next year. Never read a local time as if it were UTC. \
             Every field the input carries should land in a typed element. Do not put fields into Data elements \
-            or use the Unknown branch: output that validates but says nothing scores as nothing.""");
+            or use the Unknown branch: output that validates but says nothing scores as nothing. \
+            Every record must be accounted for: produce an Event for each one. Where a record is \
+            deliberately not an event - a header line, a column banner, a heartbeat, a comment - write \
+            <Skipped xmlns="shapeshifter:skips" reason="..."/> in its place, saying briefly why. The marker \
+            is counted, shown to the reviewer and removed before anything is written, so it is never a way \
+            to make an awkward record go away: a record you cannot read is a record to ask about, not to \
+            skip.""");
     }
 
     private final Map<Template, String> overrides;
@@ -271,12 +292,37 @@ public final class Templates {
         return new Templates(Map.of());
     }
 
+    /// The templates a run was asked with, read back from what was recorded against its attempt
+    /// (decision N9). Every template is already resolved there — the Learning Flow's own where it
+    /// overrode one, the built-in otherwise — so the recorded text wins over today's built-in, which is
+    /// the whole point: a parked run resumes in the words it began in, and a rebuilt prompt is the one
+    /// that was sent.
+    ///
+    /// A template the recording does not name falls back to the built-in, which is what happens when a
+    /// template is added to the code after a run was opened.
+    ///
+    /// @param recorded The template set as the run used it.
+    /// @return Templates that render in those words.
+    public static Templates ofRecorded(final Map<Template, String> recorded) {
+        return new Templates(recorded == null
+                ? Map.of()
+                : Map.copyOf(recorded));
+    }
+
     public static String builtIn(final Template template) {
         return BUILT_IN.get(template);
     }
 
     public static Map<Template, String> builtIns() {
         return Map.copyOf(BUILT_IN);
+    }
+
+    /// Whether this document says what a template should say, rather than following the built-in.
+    ///
+    /// @param template The template.
+    /// @return Whether it is overridden.
+    public boolean overrides(final Template template) {
+        return overrides.containsKey(template);
     }
 
     /**

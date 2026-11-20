@@ -30,6 +30,7 @@ import stroom.pipeline.shared.data.PipelineDataBuilder;
 import stroom.pipeline.shared.data.PipelineDataUtil;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.xml.converter.ds3.DS3ParserFactory;
+import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorResult;
 import stroom.processor.shared.CreateProcessFilterRequest;
@@ -42,6 +43,7 @@ import stroom.shapeshifter.ai.element.ShapeshifterAiParser;
 import stroom.shapeshifter.ai.extraction.DataSplitterCompiler;
 import stroom.shapeshifter.ai.extraction.DataSplitterStep;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.scenario.AdvisorHolder;
 import stroom.shapeshifter.ai.scenario.QuestionMatcher;
 import stroom.shapeshifter.ai.scenario.Scenarios;
@@ -58,6 +60,7 @@ import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
+import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -111,6 +114,8 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
     private LearnerBindings learnerBindings;
     @Inject
     private PipelineStore pipelineStore;
+    @Inject
+    private XmlSchemaStore xmlSchemaStore;
     @Inject
     private MockMetaService metaService;
     @Inject
@@ -185,8 +190,14 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
         final DocRef docRef = shapeshifterAiStore.createDocument("door-access");
         shapeshifterAiStore.writeDocument(shapeshifterAiStore.readDocument(docRef)
                 .copy()
+                // Task 7: a new document starts on the latest event-logging installed, and this
+                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
+                // about who approves what it learns.
+                .promotionMode(PromotionMode.AUTOMATIC)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(

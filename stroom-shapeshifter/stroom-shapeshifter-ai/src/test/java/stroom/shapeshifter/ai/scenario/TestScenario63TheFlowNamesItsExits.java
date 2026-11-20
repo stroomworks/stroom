@@ -28,8 +28,10 @@ import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -61,9 +63,13 @@ class TestScenario63TheFlowNamesItsExits {
         final ShapeshifterAiDoc doc = perLine(DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
                 .heldOutFraction(0.0)
                 .flow(new LearningFlow(List.of(
-                        FlowStep.parse("CHAIN"),
-                        FlowStep.parse("CONFIGURE parser candidates 1 on spent goto park"),
-                        FlowStep.parse("CONFIGURE transform")), null, null)))
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.PARSER)
+                                .candidates(1)
+                                .whenSpentGoTo("park")
+                                .build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()), null, null)))
                 .build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(input(1L));
@@ -91,9 +97,13 @@ class TestScenario63TheFlowNamesItsExits {
         final ShapeshifterAiDoc doc = DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
                 .heldOutFraction(0.0)
                 .flow(new LearningFlow(List.of(
-                        FlowStep.parse("CHAIN"),
-                        FlowStep.parse("CONFIGURE parser"),
-                        FlowStep.parse("CONFIGURE transform candidates 1 on spent goto give-up")), null, null))
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.TRANSFORM)
+                                .candidates(1)
+                                .whenSpentGoTo("give-up")
+                                .build()), null, null))
                 .build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(input(1L));

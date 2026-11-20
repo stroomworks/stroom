@@ -42,7 +42,6 @@ import stroom.shapeshifter.ai.stage.Decision;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
-import stroom.shapeshifter.ai.stage.Decision.Provisional;
 import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.Learner;
@@ -94,6 +93,7 @@ public class Supervision {
     private final ShapeshifterAiStore store;
     private final ElementRegistryFactory elementRegistryFactory;
     private final FeedHolder feedHolder;
+    private String timeZone;
     private final MetaHolder metaHolder;
     private final MetaDataHolder metaDataHolder;
     private final MetaData metaData;
@@ -105,6 +105,9 @@ public class Supervision {
     /// What each supervisor in this pipeline has recorded for this stream, by element id. Pipeline-
     /// scoped state, like the attributes it guards.
     private final Map<String, String> recordedBy = new HashMap<>();
+    /// The suffix each element's stream attributes took, so that a count learned after the bindings were
+    /// written is named the same way they were.
+    private final Map<String, String> attributeSuffix = new HashMap<>();
 
     /// What each supervisor last decided, by element id, for the stage pane to show (A30). Replaced
     /// each time the element runs, because the capture asks for the record it has just processed.
@@ -128,6 +131,10 @@ public class Supervision {
     /// enough that carrying it against every record of a long stream stays within what the step store
     /// will hold. See [#carried].
     private static final int WHOLE_STREAM_EXCERPT = 16 * 1024;
+
+    /// How many distinct reasons for a declared skip one line names. Enough to say what kind of record
+    /// was skipped without turning the error stream into a list of them.
+    private static final int SKIP_REASONS_SHOWN = 3;
 
     @Inject
     public Supervision(final ShapeshifterAiStore store,
@@ -212,8 +219,8 @@ public class Supervision {
                           final InputSource source,
                           final ContentHandler downstream) throws SAXException {
         final Input input = pipelineContext.isStepping() || asProcessed
-                ? input(read(source))
-                : streamed(source);
+                ? input(read(source), elementId)
+                : streamed(source, elementId);
         supervise(doc, elementId, asProcessed, input, downstream);
     }
 
@@ -339,9 +346,12 @@ public class Supervision {
         if (produced == null) {
             return;
         }
-        record(produced, elementId);
         final Binding binding = bindingOf(run.decision());
         final ServedStream served = stage.stream(doc, learner, binding, input, downstream);
+        // After the stream is served, not before (audit finding W4-6): the score on the stream's
+        // attributes is this run's, and a run that deferred the stream writes no attributes at all,
+        // because `stream` throws out of here before this line is reached.
+        record(produced.scoring(served.meanTotal()), elementId);
         served.diagnostics().forEach(error -> errorReceiverProxy.log(error.getSeverity(),
                 error.getLocation(), error.getElementId(), error.getMessage(), null));
         if (served.records() == 0) {
@@ -349,6 +359,31 @@ public class Supervision {
                     "Bound to fragment " + produced.fragment().getName()
                     + ", which produced nothing for this stream", null);
         }
+        skipped(elementId, served);
+    }
+
+    /// What the translation declared it deliberately skipped, said where a person reading the stream will
+    /// find it (the declared-skips design): on the stream's own attributes, and as a line of its own
+    /// beside the event count.
+    ///
+    /// There is no cap on how much of a stream may be skipped — by decision, the count is shown instead —
+    /// so this is the whole of what stops a translation quietly skipping its awkward records.
+    ///
+    /// @param elementId The stage's element.
+    /// @param served    What the run came to.
+    private void skipped(final ElementId elementId, final ServedStream served) {
+        if (served.skipped() == 0) {
+            return;
+        }
+        metaData.put(Produced.SKIPPED_ATTRIBUTE + attributeSuffix.getOrDefault(elementId.getId(), ""),
+                Integer.toString(served.skipped()));
+        final List<String> reasons = served.skipReasons().stream().distinct().limit(SKIP_REASONS_SHOWN).toList();
+        errorReceiverProxy.log(Severity.INFO, null, elementId,
+                served.records() + " event(s), " + served.skipped()
+                + " record(s) declared skipped by the translation"
+                + (reasons.isEmpty()
+                        ? ""
+                        : ": " + String.join("; ", reasons)), null);
     }
 
     /// The binding a decision that binds a stream names.
@@ -356,7 +391,6 @@ public class Supervision {
         return switch (decision) {
             case Bound bound -> bound.binding();
             case Promoted promoted -> promoted.binding();
-            case Provisional provisional -> provisional.binding();
             case Rebound rebound -> rebound.binding();
             default -> throw new IllegalStateException("A decision that binds names a binding: " + decision);
         };
@@ -366,22 +400,26 @@ public class Supervision {
     /// stream that is all prefix is read whole; a stream of characters rather than bytes, or in an
     /// encoding other than UTF-8, is read whole as well, since the fragment is given bytes it must be able
     /// to read as the text was.
-    private Input streamed(final InputSource source) {
+    private Input streamed(final InputSource source, final ElementId elementId) {
         final InputStream bytes = source.getByteStream();
         final boolean utf8 = source.getEncoding() == null
                              || StandardCharsets.UTF_8.name().equalsIgnoreCase(source.getEncoding());
         if (bytes == null || !utf8) {
-            return input(read(source));
+            return input(read(source), elementId);
         }
         try {
             final byte[] prefix = bytes.readNBytes(Input.PREFIX_BYTES);
             if (prefix.length < Input.PREFIX_BYTES) {
-                return input(RecordSkeleton.withoutBom(new String(prefix, StandardCharsets.UTF_8)));
+                return input(RecordSkeleton.withoutBom(new String(prefix, StandardCharsets.UTF_8)),
+                        elementId);
             }
-            final Input whole = input(RecordSkeleton.withoutBom(new String(prefix, StandardCharsets.UTF_8)));
+            final Input whole = input(
+                    RecordSkeleton.withoutBom(new String(prefix, StandardCharsets.UTF_8)), elementId);
             return Input.streamed(whole.id(), whole.feed(), whole.type(), whole.attributes(), whole.data(),
                     whole.pipeline(),
-                    () -> new SequenceInputStream(new ByteArrayInputStream(prefix), bytes));
+                    () -> new SequenceInputStream(new ByteArrayInputStream(prefix), bytes))
+                    // Rebuilt from its parts, so the received time is carried over rather than lost
+                    .receivedAt(whole.receivedMs());
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -508,14 +546,35 @@ public class Supervision {
         return was != null && carried != null && carried.length() < was.length();
     }
 
+    /// The time zone of timestamps that carry no offset, from the element's property (decision N6). A
+    /// stream's own `TimeZone` header beats it.
+    ///
+    /// @param timeZone A zone id, or null where the pipeline sets none.
+    public void setTimeZone(final String timeZone) {
+        this.timeZone = timeZone;
+    }
+
     /// The stream as the [Stage] sees it: its meta id, feed, type, attributes and content.
-    private Input input(final String data) {
+    ///
+    /// The stream's zone is resolved here and put into the metadata as `ResolvedTimeZone`, so that the
+    /// learned stylesheet serving this stream reads the same zone it read while it was judged
+    /// (decision N6).
+    private Input input(final String data, final ElementId elementId) {
         final Meta meta = metaHolder.getMeta();
         final AttributeMap attributeMap = metaDataHolder.getMetaData();
         final Map<String, String> attributes = new HashMap<>();
         if (attributeMap != null) {
             attributeMap.forEach(attributes::put);
         }
+        final ResolvedZone zone = ResolvedZone.of(attributes.get(ResolvedZone.HEADER), timeZone);
+        if (zone.problem() != null) {
+            // A zone that cannot be read is said rather than quietly treated as UTC (decision N6): a feed
+            // whose zone is misspelt would otherwise be hours out for as long as nobody noticed
+            errorReceiverProxy.log(Severity.WARNING, null, elementId, zone.problem(), null);
+        }
+        attributes.put(ResolvedZone.KEY, zone.id());
+        metaDataHolder.setMetaDataProvider(
+                ZonedMetaData.wrapping(metaDataHolder.getMetaDataProvider(), zone));
         return new Input(
                 meta == null
                         ? -1L
@@ -530,7 +589,12 @@ public class Supervision {
                 // produced can be counted by where it was produced (§6).
                 pipelineHolder.getPipeline() == null
                         ? null
-                        : pipelineHolder.getPipeline().getUuid());
+                        : pipelineHolder.getPipeline().getUuid())
+                // When it was received, which a timestamp with no year takes its year from and the times
+                // check measures an event against
+                .receivedAt(meta == null
+                        ? null
+                        : meta.getCreateMs());
     }
 
     /// The output stream's attributes are one set for the whole stream, and a stream of several parts is
@@ -547,9 +611,13 @@ public class Supervision {
         if (recorded == null) {
             final boolean first = recordedBy.isEmpty();
             recordedBy.put(elementId.getId(), produced.bindingUuid());
-            produced.asAttributes(first
+            final String named = first
                     ? null
-                    : elementId.getId()).forEach(metaData::put);
+                    : elementId.getId();
+            attributeSuffix.put(elementId.getId(), named == null
+                    ? ""
+                    : "." + named);
+            produced.asAttributes(named).forEach(metaData::put);
         } else if (!recorded.equals(produced.bindingUuid())) {
             errorReceiverProxy.log(Severity.WARNING, null, elementId,
                     "Part " + metaHolder.getPartIndex() + " was bound by binding " + produced.bindingUuid()

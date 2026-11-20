@@ -19,7 +19,9 @@ package stroom.shapeshifter.ai.scoring;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowStep;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.TurnScore;
 
@@ -34,8 +36,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// falls short decides it only where the step has a rule for it.
 class TestScorecard {
 
-    private static final FlowStep NO_RULES = FlowStep.parse("CONFIGURE transform");
-    private static final FlowStep ROUTES_ON_YIELD = FlowStep.parse("CONFIGURE transform on yield-short goto split");
+    private static final FlowStep NO_RULES = FlowStep.builder(QuestionKind.CONFIGURE)
+            .role(ConfigureRole.TRANSFORM)
+            .build();
+    private static final FlowStep ROUTES_ON_YIELD = FlowStep.builder(QuestionKind.CONFIGURE)
+            .role(ConfigureRole.TRANSFORM)
+            .goTo(StepOutcome.YIELD_SHORT, "split")
+            .build();
 
     private static Judgement judgement(final Check check, final CheckState state, final double value) {
         return new Judgement(new CheckSetting(check, state, 0.5, null),
@@ -90,7 +97,10 @@ class TestScorecard {
                 CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
                 CheckSetting.of(Check.PRESERVATION, CheckState.ADVICE),
                 CheckSetting.of(Check.FIDELITY, CheckState.OFF)), List.of());
-        final FlowStep routesOnPreservation = FlowStep.parse("CONFIGURE parser on preservation-short goto split");
+        final FlowStep routesOnPreservation = FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.PARSER)
+                .goTo(StepOutcome.PRESERVATION_SHORT, "split")
+                .build();
         assertThat(scorecard.decides(Check.WHOLENESS, NO_RULES)).isTrue();
         assertThat(scorecard.decides(Check.PRESERVATION, NO_RULES)).isFalse();
         assertThat(scorecard.decides(Check.PRESERVATION, routesOnPreservation)).isTrue();

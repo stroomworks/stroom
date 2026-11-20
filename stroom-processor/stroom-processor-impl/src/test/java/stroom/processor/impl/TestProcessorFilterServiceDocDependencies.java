@@ -30,7 +30,6 @@ import stroom.security.user.api.UserRefLookup;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
-import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -66,9 +65,7 @@ class TestProcessorFilterServiceDocDependencies {
             new MockSecurityContext(),
             mock(DocFinder.class),
             mock(UserRefLookup.class),
-            () -> docDependencyService,
-            ProcessorConfig::new,
-            Set.of());
+            () -> docDependencyService);
 
     private ProcessorFilter filterWithProcessor() {
         return ProcessorFilter.builder()

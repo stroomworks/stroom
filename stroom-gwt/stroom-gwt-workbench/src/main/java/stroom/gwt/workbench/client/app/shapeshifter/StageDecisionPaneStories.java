@@ -115,7 +115,6 @@ public final class StageDecisionPaneStories {
                 "Served by the binding",
                 "b-1",
                 FRAGMENT,
-                false,
                 0.95,
                 "Event",
                 List.of(new StageVerdict(1, 0.95, true, List.of(

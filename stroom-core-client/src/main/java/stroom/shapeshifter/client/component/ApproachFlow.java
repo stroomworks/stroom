@@ -17,6 +17,7 @@
 package stroom.shapeshifter.client.component;
 
 import stroom.docref.HasDisplayValue;
+import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowExample;
@@ -50,15 +51,36 @@ public final class ApproachFlow {
         // Static utility
     }
 
-    /// @param steps A flow's steps.
-    /// @return The example flow they are exactly, or null where they are the document's own.
-    public static FlowExample example(final List<FlowStep> steps) {
-        for (final FlowExample example : FlowExample.values()) {
-            if (example.steps().equals(steps)) {
-                return example;
+    /// Which default setup a flow's steps are exactly.
+    ///
+    /// The setups are fetched from the server (Track 2 step 1c), so they are passed in rather than read
+    /// from [FlowExample]: before they are in hand the list is empty and a document reads as having its
+    /// own approach, which is why a screen that shows the setup's name fetches before it draws.
+    ///
+    /// @param examples The built-in setups, as fetched.
+    /// @param steps    A flow's steps.
+    /// @return The setup they are exactly, or null where they are the document's own.
+    public static FlowExample example(final List<BuiltInFlow> examples, final List<FlowStep> steps) {
+        for (final BuiltInFlow example : examples) {
+            if (example.getSteps().equals(steps)) {
+                return example.getExample();
             }
         }
         return null;
+    }
+
+    /// The steps of one default setup.
+    ///
+    /// @param examples The built-in setups, as fetched.
+    /// @param example  The setup wanted.
+    /// @return Its steps, or empty where the setups are not in hand.
+    public static List<FlowStep> steps(final List<BuiltInFlow> examples, final FlowExample example) {
+        for (final BuiltInFlow flow : examples) {
+            if (flow.getExample() == example) {
+                return flow.getSteps();
+            }
+        }
+        return List.of();
     }
 
     /// @param steps A flow's steps.
@@ -248,7 +270,8 @@ public final class ApproachFlow {
     /// @return The checks, in the order a menu offers them; empty for a step no check measures.
     public static List<Check> checksFor(final FlowStep step) {
         final List<Check> records = List.of(Check.COVERAGE, Check.YIELD, Check.WHOLENESS);
-        final List<Check> events = List.of(Check.CONFORMANCE, Check.QUALITY, Check.RULES);
+        final List<Check> events = List.of(Check.CONFORMANCE, Check.QUALITY, Check.RULES,
+                Check.PERMITTED);
         final List<Check> judges = new ArrayList<>();
         switch (step.getKind()) {
             case SPLIT:

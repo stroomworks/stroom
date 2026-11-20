@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowProblem;
@@ -44,9 +45,11 @@ public final class Readiness {
 
     /// Checks a document.
     ///
-    /// @param doc The document, as its tabs have it now.
+    /// @param doc      The document, as its tabs have it now.
+    /// @param examples The built-in setups, as fetched (Track 2 step 1c): what the approach is named
+    ///                 against. Empty where they are not in hand, which reads as the document's own.
     /// @return What is right and what is wrong with it, in the order the Feeds tab lists them.
-    public static Readiness of(final ShapeshifterAiDoc doc) {
+    public static Readiness of(final ShapeshifterAiDoc doc, final List<BuiltInFlow> examples) {
         final List<Item> items = new ArrayList<>();
         if (doc.getLearningMode() == LearningMode.DISABLED) {
             items.add(new Item(false, "Learning is switched off, so streams of new feeds wait.", Fix.SWITCH_ON));
@@ -59,9 +62,12 @@ public final class Readiness {
             items.add(new Item(true, "Model: " + Objects.requireNonNullElse(doc.getModel().getName(),
                     doc.getModel().getUuid()), null));
         }
-        // Compile is always a gate, and alone it lets through any answer that runs
+        // Compile and permitted are always gates, and neither says anything about the quality of what
+        // was learned: compile only says the answer runs, and permitted only that it uses what it may
         final long gates = doc.getChecks().stream()
-                .filter(setting -> setting.isGate() && setting.getCheck() != Check.COMPILE)
+                .filter(setting -> setting.isGate()
+                                   && setting.getCheck() != Check.COMPILE
+                                   && setting.getCheck() != Check.PERMITTED)
                 .count();
         if (gates == 0) {
             items.add(new Item(false, "No quality check is a gate, so any answer that runs would pass.",
@@ -74,7 +80,7 @@ public final class Readiness {
             items.add(new Item(false, "The approach has a problem: " + problems.get(0).getMessage() + ".",
                     Fix.OPEN_APPROACH));
         } else {
-            final FlowExample example = ApproachFlow.example(doc.getFlow().getSteps());
+            final FlowExample example = ApproachFlow.example(examples, doc.getFlow().getSteps());
             items.add(new Item(true, "Approach: " + (example == null
                     ? "your own"
                     : PlainWords.example(example)), null));

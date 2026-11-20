@@ -17,6 +17,8 @@
 package stroom.shapeshifter.ai.learning;
 
 import stroom.meta.shared.MetaFields;
+import stroom.shapeshifter.ai.stage.Input;
+import stroom.shapeshifter.ai.transformation.StreamFacts;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -27,15 +29,25 @@ import java.util.Map;
  * What an attempt is about: the input to learn from and the stream's feed and type (A29, A126).
  * <p>
  * The model sees the feed and the type and nothing else of the stream's attributes, so the attribute
- * map's sender-set entries — hostnames, paths, tokens — never travel. Both text and
- * values are subject to the redaction of A17 before they reach a model; that redaction is not yet built,
- * so today they travel as they arrive — and the document says nothing about it, since a setting that
- * promised redaction while none happened was worse than no setting (design 02 §6.1).
+ * map's sender-set entries — hostnames, paths, tokens — never travel. The text and the values travel as
+ * they arrive: **samples are never redacted** (A146, which supersedes A17 and A38). Redaction good enough
+ * to protect data would itself need a model, and a model asked to translate redacted data loses the
+ * context it translates by, so a feed is pointed at a model only where its data may go to that model.
  *
  * @param text    The input sample, as the first element of the chain will receive it.
  * @param headers The feed and type the stream carries, in that order.
+ * @param facts   The stream it came from.
+ * @param cutFrom How many bytes of the stream the sample was taken from, where it is less than all of
+ *                them; zero where the sample is the whole of what was read. A person reading "couldn't
+ *                write the parser" is owed the fact that the model saw eight kilobytes of a two-megabyte
+ *                stream (supervisor visibility item 3, audit finding S4).
+ * @param beyondPrefix Whether the stream is longer than the prefix that was read as text at all
+ *                ({@code Input#PREFIX_BYTES}). A prefix of a single XML or JSON document is not a
+ *                document, so a stream like that cannot be sampled: it has to be refused with a reason
+ *                rather than passed over in silence (N2 option E).
  */
-public record Sample(String text, Map<String, String> headers) {
+public record Sample(String text, Map<String, String> headers, StreamFacts facts, int cutFrom,
+                     boolean beyondPrefix) {
 
     /**
      * What the model is shown of a stream's attributes: its feed and its type.
@@ -45,6 +57,58 @@ public record Sample(String text, Map<String, String> headers) {
     public Sample {
         // Order is kept: a prompt lists the values in order, strongest signal first.
         headers = Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        facts = facts == null
+                ? StreamFacts.none()
+                : facts;
+    }
+
+    /// @param text    The sample.
+    /// @param headers What the model is shown of the stream's attributes.
+    /// @param facts   The stream it came from.
+    public Sample(final String text, final Map<String, String> headers, final StreamFacts facts) {
+        this(text, headers, facts, 0, false);
+    }
+
+    /// @param text    The sample.
+    /// @param headers What the model is shown of the stream's attributes.
+    /// @param facts   The stream it came from.
+    /// @param cutFrom How many bytes the sample was taken from.
+    public Sample(final String text, final Map<String, String> headers, final StreamFacts facts,
+                  final int cutFrom) {
+        this(text, headers, facts, cutFrom, false);
+    }
+
+    /// @param beyondPrefix Whether the stream runs past what was read as text.
+    /// @return The same sample, knowing that.
+    public Sample beyondPrefix(final boolean beyondPrefix) {
+        return new Sample(text, headers, facts, cutFrom, beyondPrefix);
+    }
+
+    /// @param wholeBytes How many bytes the sample was taken from.
+    /// @return The same sample, knowing how much of its stream it is.
+    public Sample cutFrom(final int wholeBytes) {
+        return new Sample(text, headers, facts, Math.max(0, wholeBytes - Input.bytes(text)) == 0
+                ? 0
+                : wholeBytes, beyondPrefix);
+    }
+
+    /// How many bytes of the stream the model was not shown; zero where it saw all that was read.
+    public int notShown() {
+        return cutFrom == 0
+                ? 0
+                : Math.max(0, cutFrom - Input.bytes(text));
+    }
+
+    /// @param text    The sample.
+    /// @param headers What the model is shown of the stream's attributes.
+    public Sample(final String text, final Map<String, String> headers) {
+        this(text, headers, StreamFacts.none());
+    }
+
+    /// @param facts The stream this came from.
+    /// @return The same sample, knowing its stream.
+    public Sample from(final StreamFacts facts) {
+        return new Sample(text, headers, facts, cutFrom, beyondPrefix);
     }
 
     public static Sample of(final String text) {

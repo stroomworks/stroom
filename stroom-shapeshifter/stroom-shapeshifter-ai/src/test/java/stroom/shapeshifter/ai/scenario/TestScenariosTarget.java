@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Split;
@@ -36,9 +37,11 @@ import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.LearningMode;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.StepGuard;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -98,7 +101,7 @@ class TestScenariosTarget {
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -192,9 +195,11 @@ class TestScenariosTarget {
         final Scenarios scenarios = new Scenarios();
         // With one candidate: the questioning of the first none is not a candidate spent.
         final ShapeshifterAiDoc doc = doc().copy()
-                .flow(LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
-                        FlowStep.parse("CHAIN"), FlowStep.parse("SPLIT when text"),
-                        FlowStep.parse("TARGET candidates 1"), FlowStep.parse("CONFIGURE"))))
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
+                        FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.SPLIT, StepGuard.TEXT),
+                        FlowStep.builder(QuestionKind.TARGET)
+                                .candidates(1)
+                                .build(), FlowStep.of(QuestionKind.CONFIGURE))))
                 .build();
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -220,9 +225,9 @@ class TestScenariosTarget {
         // A target from the raw sample, no split: the target's record is a line of the sample, and the split
         // question is never asked. One kind, so one target.
         final ShapeshifterAiDoc doc = doc().copy()
-                .flow(LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
-                        FlowStep.parse("CHAIN"), FlowStep.parse("TARGET kinds 1"),
-                        FlowStep.parse("CONFIGURE"))))
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
+                        FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.TARGET).kinds(1).build(),
+                        FlowStep.of(QuestionKind.CONFIGURE))))
                 .build();
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -245,8 +250,8 @@ class TestScenariosTarget {
         final Scenarios scenarios = new Scenarios();
         // The store refuses this on save; a document that reaches the stage with it anyway asks nothing.
         final ShapeshifterAiDoc doc = doc().copy()
-                .flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                        FlowStep.parse("CONFIGURE"), FlowStep.parse("CHAIN"))))
+                .flow(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
+                        FlowStep.of(QuestionKind.CONFIGURE), FlowStep.of(QuestionKind.CHAIN))))
                 .build();
         final Script script = Script.of();
 

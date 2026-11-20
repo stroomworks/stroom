@@ -115,14 +115,6 @@ public interface SupervisorResource extends RestResource, DirectRestService {
                            ImproveRequest request);
 
     @POST
-    @Path("/serving/{docUuid}/{bindingUuid}/accept")
-    @Operation(
-            summary = "Accept a provisional binding now, rather than waiting for the records that would "
-                      + "promote it",
-            operationId = "acceptShapeshifterAiBinding")
-    Boolean accept(@PathParam("docUuid") String docUuid, @PathParam("bindingUuid") String bindingUuid);
-
-    @POST
     @Path("/serving/{docUuid}/{bindingUuid}/retract")
     @Operation(
             summary = "Take back a binding that is serving, and say how many streams it "

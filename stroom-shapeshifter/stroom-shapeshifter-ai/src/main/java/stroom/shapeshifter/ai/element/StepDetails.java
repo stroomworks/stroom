@@ -30,7 +30,6 @@ import stroom.shapeshifter.ai.stage.Decision.GivenUp;
 import stroom.shapeshifter.ai.stage.Decision.Kept;
 import stroom.shapeshifter.ai.stage.Decision.Parked;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
-import stroom.shapeshifter.ai.stage.Decision.Provisional;
 import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Decision.Would;
@@ -77,7 +76,6 @@ public final class StepDetails {
                         ? null
                         : produced.bindingUuid(),
                 fragment,
-                produced != null && produced.provisional(),
                 produced == null
                         ? null
                         : produced.score(),
@@ -123,9 +121,6 @@ public final class StepDetails {
                     : "Served by " + named(bound.binding());
             case Promoted promoted -> "Learned " + named(promoted.binding()) + " from this stream and served it, "
                                       + "scoring " + percent(promoted.score());
-            case Provisional provisional -> "Bound provisionally, scoring " + provisional.score() + " on "
-                                            + provisional.records() + " records of the "
-                                            + provisional.required() + " a held-out judgement needs";
             case Rebound rebound -> "Relearned: binding " + rebound.binding().getUuid() + " rebound, scoring "
                                     + rebound.score();
             case Kept kept -> "Relearned and the incumbent kept: " + kept.reason();

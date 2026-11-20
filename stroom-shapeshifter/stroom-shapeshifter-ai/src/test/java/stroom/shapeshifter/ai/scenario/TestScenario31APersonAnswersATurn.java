@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scenario;
 
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.stage.Attempts.Attempt;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
@@ -341,7 +342,7 @@ class TestScenario31APersonAnswersATurn {
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .maxAttempts(1)

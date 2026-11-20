@@ -41,39 +41,57 @@ class TestShapeshifterAiDoc {
 
         assertThat(read).isEqualTo(doc);
         assertThat(read.getChecks()).containsExactlyElementsOf(doc.getChecks());
-        assertThat(read.getFlow().getSteps()).extracting(FlowStep::format)
-                .containsExactly("CHAIN", "TARGET when text kinds 1", "CONFIGURE candidates 2");
+        assertThat(read.getFlow().getSteps()).isEqualTo(doc.getFlow().getSteps());
+        assertThat(read.getFlow().getSteps()).extracting(FlowStep::getKind)
+                .containsExactly(QuestionKind.CHAIN, QuestionKind.TARGET, QuestionKind.CONFIGURE);
+        assertThat(read.getTargetSchema())
+                .describedAs("task 7: the one schema this document's translations must write")
+                .isEqualTo(doc.getTargetSchema());
     }
 
     @Test
     void aLearningFlowKnowsWhatIsWrongWithItsSteps() {
-        assertThat(LearningFlow.of(FlowExample.TARGET_FIRST).problems()).isEmpty();
-        assertThat(new LearningFlow(null, null, null).getSteps()).isEqualTo(FlowExample.DIRECT.steps());
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
+        assertThat(flowOf(FlowFixtures.targetFirst()).problems()).isEmpty();
+        assertThat(new LearningFlow(null, null, null).getSteps())
+                .describedAs("no steps is no steps (Track 2 step 1c): a flow given none says so, and "
+                             + "[#problems] reports it, rather than quietly becoming Direct")
+                .isEmpty();
+        assertThat(new LearningFlow(null, null, null).problems())
+                .containsExactly("The flow has no steps");
+        assertThat(flowOf(List.of(
                 FlowStep.of(QuestionKind.CONFIGURE), FlowStep.of(QuestionKind.CHAIN))).problems())
                 .containsExactly("The first step must be 'Choose the elements'",
                         "The last step must write the translation, or be the fallback");
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
+        assertThat(flowOf(List.of(
                 FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.SPLIT),
                 FlowStep.of(QuestionKind.SPLIT), FlowStep.of(QuestionKind.CONFIGURE))).problems())
                 .containsExactly("The flow has 2 'Find what one record is' steps; it may have only one");
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of()).problems())
+        assertThat(flowOf(List.of()).problems())
                 .containsExactly("The flow has no steps");
         // A transition out of CHAIN would leave the flow with no chain to run: refused at the door, not at a
         // null chain in the interpreter.
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN on refused goto end"), FlowStep.of(QuestionKind.CONFIGURE))).problems())
+        assertThat(flowOf(List.of(
+                FlowStep.builder(QuestionKind.CHAIN)
+                        .goTo(StepOutcome.REFUSED, "end")
+                        .build(), FlowStep.of(QuestionKind.CONFIGURE))).problems())
                 .containsExactly("'Choose the elements' can't have rules: nothing else can run until the elements "
                                  + "are chosen");
         // Two transitions on one outcome, or two on spent, contradict each other: refused rather than the
         // first silently winning.
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE on spent goto end on spent abandon"))).problems())
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .whenSpentGoTo("end")
+                        .abandonWhenSpent()
+                        .build())).problems())
                 .containsExactly("Step 2 (Write every element) has two rules for when it runs out of tries; only "
                                  + "the first would be followed");
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"),
-                FlowStep.parse("CONFIGURE on refused goto end on refused abandon on spent abandon"))).problems())
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .goTo(StepOutcome.REFUSED, "end")
+                        .abandonOn(StepOutcome.REFUSED)
+                        .abandonWhenSpent()
+                        .build())).problems())
                 .containsExactly("Step 2 (Write every element) has two rules for when the answer isn't in the "
                                  + "reply format; only the first would be followed");
     }
@@ -82,51 +100,78 @@ class TestShapeshifterAiDoc {
     void aFlowNamesItsExitsByTheirEffect() {
         // A83: park and give-up beside end; abandon is the step's own default and names no exit itself;
         // none of the three may name a step.
-        final FlowStep parks = FlowStep.parse("CONFIGURE parser candidates 1 on spent goto park");
-        assertThat(parks.format()).isEqualTo("CONFIGURE parser candidates 1 on spent goto park");
+        final FlowStep parks = FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.PARSER)
+                .candidates(1)
+                .whenSpentGoTo("park")
+                .build();
         assertThat(parks.transitionOnSpent().exits()).isTrue();
         assertThat(parks.transitionOnSpent().namedExit()).isEqualTo(FlowExit.PARK);
-        final FlowStep givesUp = FlowStep.parse("CONFIGURE transform on run-failed goto give-up");
+        final FlowStep givesUp = FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.TRANSFORM)
+                .goTo(StepOutcome.RUN_FAILED, "give-up")
+                .build();
         assertThat(givesUp.transitionOn(StepOutcome.RUN_FAILED).namedExit()).isEqualTo(FlowExit.GIVE_UP);
-        final FlowStep abandons = FlowStep.parse("CONFIGURE transform on spent abandon");
+        final FlowStep abandons = FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.TRANSFORM)
+                .abandonWhenSpent()
+                .build();
         assertThat(abandons.transitionOnSpent().exits()).isTrue();
         assertThat(abandons.transitionOnSpent().namedExit()).isNull();
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser on spent goto park"),
-                FlowStep.parse("CONFIGURE transform on spent goto give-up"))).problems()).isEmpty();
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("park: CONFIGURE"))).problems())
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.PARSER)
+                        .whenSpentGoTo("park")
+                        .build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.TRANSFORM)
+                        .whenSpentGoTo("give-up")
+                        .build())).problems()).isEmpty();
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .id("park")
+                        .build())).problems())
                 .containsExactly("Step 2 (Write every element) has the id 'park', which the flow keeps for "
                                  + "itself; delete the step and add it again");
     }
 
     @Test
     void theChainStepNamesTheElementsTheChainQuestionChoosesFrom() {
-        // A95: elements are the Chain step's, written as a word of its line; the document derives what it
-        // allows from them, every learnable one where the step names none; no other step may name any.
-        final FlowStep chain = FlowStep.parse("CHAIN elements DSParser,XSLTFilter candidates 2");
+        // A95: elements are the Chain step's own; the document derives what it allows from them, every
+        // learnable one where the step names none; no other step may name any.
+        final FlowStep chain = FlowStep.builder(QuestionKind.CHAIN)
+                .candidates(2)
+                .elements("DSParser", "XSLTFilter")
+                .build();
         assertThat(chain.getElements()).containsExactly("DSParser", "XSLTFilter");
-        assertThat(chain.format()).isEqualTo("CHAIN candidates 2 elements DSParser,XSLTFilter");
-        assertThat(FlowStep.parse("CHAIN").getElements()).isEmpty();
-        assertThat(FlowStep.parse("CHAIN").effectiveElements()).isEqualTo(FlowStep.LEARNABLE_ELEMENTS);
-        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE parser elements DSParser"))
+        assertThat(FlowStep.of(QuestionKind.CHAIN).getElements()).isEmpty();
+        assertThat(FlowStep.of(QuestionKind.CHAIN).effectiveElements()).isEqualTo(FlowStep.LEARNABLE_ELEMENTS);
+        assertThatThrownBy(() -> FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.PARSER)
+                .elements("DSParser")
+                .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Only CHAIN names elements");
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").name("n")
-                .flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(chain, FlowStep.parse("CONFIGURE"))))
+                .flow(flowOf(List.of(chain, FlowStep.of(QuestionKind.CONFIGURE))))
                 .build();
         assertThat(doc.getAllowedElements()).containsExactly("DSParser", "XSLTFilter");
         assertThat(ShapeshifterAiDoc.builder().uuid("d").name("n").build().getAllowedElements())
                 .isEqualTo(FlowStep.LEARNABLE_ELEMENTS);
-        assertThat(ShapeshifterAiDoc.builder().uuid("d").name("n").allowedElements(List.of("XMLParser")).build()
+        assertThat(ShapeshifterAiDoc.builder().uuid("d").name("n")
+                // With steps, since a document built here has none of its own now (Track 2 step 1c) and
+                // the allowed elements go onto its Chain step.
+                .flow(flowOf(FlowFixtures.direct()))
+                .allowedElements(List.of("XMLParser")).build()
                 .getFlow().getSteps().get(0).getElements()).containsExactly("XMLParser");
     }
 
     @Test
     void aProblemNamesTheStepItIsAbout() {
         // A88: the check says which step, where it is about one, so an editor can paint it.
-        final List<FlowProblem> problems = LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CONFIGURE on refused goto nowhere"), FlowStep.parse("SPLIT"))).check();
+        final List<FlowProblem> problems = flowOf(List.of(
+                FlowStep.builder(QuestionKind.CONFIGURE).goTo(StepOutcome.REFUSED, "nowhere").build(),
+                FlowStep.of(QuestionKind.SPLIT))).check();
         assertThat(problems).extracting(FlowProblem::getStep, FlowProblem::getMessage).containsExactly(
                 tuple(0, "The first step must be 'Choose the elements'"),
                 tuple(1, "The last step must write the translation, or be the fallback"),
@@ -148,100 +193,133 @@ class TestShapeshifterAiDoc {
 
     @Test
     void aFlowIsAGraphOverTypedOutcomes() {
-        // A37: every example holds; ids default to the kind or the role; a goto must name a step, once.
-        for (final FlowExample example : FlowExample.values()) {
-            assertThat(LearningFlow.of(example).problems()).describedAs(example.name()).isEmpty();
-        }
-        assertThat(LearningFlow.of(FlowExample.ESCALATING).getSteps()).extracting(FlowStep::effectiveId)
+        // A37: ids default to the kind or the role; a goto must name a step, once. What the built-in
+        // setups hold is no longer asserted here — they are JSON on the server now (Track 2 step 1c) and
+        // `TestFlowExamples` holds them to their shape, including that each is a flow the stage can hold.
+        final LearningFlow escalating = flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN),
+                FlowStep.of(QuestionKind.SPLIT),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.PARSER)
+                        .goTo(StepOutcome.YIELD_SHORT, "split")
+                        .build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .id("first")
+                        .role(ConfigureRole.TRANSFORM)
+                        .candidates(2)
+                        .goTo(StepOutcome.PASSED, "end")
+                        .whenSpentGoTo("target")
+                        .build(),
+                FlowStep.builder(QuestionKind.TARGET).kinds(3).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).id("again").role(ConfigureRole.PARSER).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.TRANSFORM)
+                        .goTo(StepOutcome.PRESERVATION_SHORT, "again")
+                        .whenSpentGoTo("admit")
+                        .build(),
+                FlowStep.of(QuestionKind.ADMIT)));
+        assertThat(escalating.problems()).isEmpty();
+        assertThat(escalating.getSteps()).extracting(FlowStep::effectiveId)
                 .containsExactly("chain", "split", "parser", "first", "target", "again", "transform", "admit");
-        assertThat(LearningFlow.of(FlowExample.ESCALATING).step("split").getWhen()).isEqualTo(StepGuard.ALWAYS);
-        assertThat(LearningFlow.of(FlowExample.ESCALATING).step("parser").getTransitions())
-                .extracting(Transition::format).containsExactly("on yield-short goto split");
-        assertThat(LearningFlow.of(FlowExample.ESCALATING).step("first").getTransitions())
-                .extracting(Transition::format).containsExactly("on passed goto end", "on spent goto target");
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("end: CONFIGURE"))).problems())
+        assertThat(escalating.step("split").getWhen()).isEqualTo(StepGuard.ALWAYS);
+        assertThat(escalating.step("parser").getTransitions())
+                .containsExactly(new Transition(StepOutcome.YIELD_SHORT, "split"));
+        assertThat(escalating.step("first").getTransitions())
+                .containsExactly(new Transition(StepOutcome.PASSED, Transition.END),
+                        new Transition(null, "target"));
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .id("end")
+                        .build())).problems())
                 .containsExactly("Step 2 (Write every element) has the id 'end', which the flow keeps for "
                                  + "itself; delete the step and add it again");
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser"), FlowStep.parse("CONFIGURE parser")))
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.PARSER)
+                        .build(), FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build()))
                 .problems())
                 .containsExactly("Step 3 (Write the parser again) has the same id as an earlier step, 'parser'; "
                                  + "delete it and add it again");
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE on refused goto nowhere on spent abandon")))
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .goTo(StepOutcome.REFUSED, "nowhere")
+                        .abandonWhenSpent()
+                        .build()))
                 .problems())
                 .containsExactly("The rule 'if the answer isn't in the reply format' on step 2 (Write every "
                                  + "element) goes to 'nowhere', which isn't a step");
-        // A step's name is matched without regard to case, as everything else on the line is.
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"),
-                FlowStep.parse("First: CONFIGURE parser on spent goto Target on passed goto END"),
-                FlowStep.parse("TARGET"), FlowStep.parse("CONFIGURE transform"))).problems()).isEmpty();
-        assertThat(FlowStep.parse("First: CONFIGURE parser on spent goto Target").format())
-                .isEqualTo("first: CONFIGURE parser on spent goto target");
+        // A step's name is matched without regard to case, as the id and the names it is reached by are kept.
+        final FlowStep named = FlowStep.builder(QuestionKind.CONFIGURE)
+                .id("First")
+                .role(ConfigureRole.PARSER)
+                .whenSpentGoTo("Target")
+                .goTo(StepOutcome.PASSED, "END")
+                .build();
+        assertThat(flowOf(List.of(FlowStep.of(QuestionKind.CHAIN), named, FlowStep.of(QuestionKind.TARGET),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()))
+                .problems()).isEmpty();
+        assertThat(named.getId()).isEqualTo("first");
+        assertThat(named.transitionOnSpent().getGoTo()).isEqualTo("target");
         // An id given on purpose that shadows another step's default name is a collision too.
-        assertThat(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("target: CONFIGURE parser"), FlowStep.parse("TARGET"),
-                FlowStep.parse("CONFIGURE transform"))).problems())
+        assertThat(flowOf(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .id("target")
+                        .role(ConfigureRole.PARSER)
+                        .build(), FlowStep.of(QuestionKind.TARGET),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build())).problems())
                 .containsExactly("Step 3 (Agree the target events) has the same id as an earlier step, 'target'; "
                                  + "delete it and add it again");
     }
 
     @Test
-    void aStepLineCarriesItsIdRoleAndTransitions() {
-        final String line = "first: CONFIGURE transform candidates 2 "
-                            + "on preservation-short goto parser on spent abandon";
-        final FlowStep step = FlowStep.parse(line);
-        assertThat(step.format()).isEqualTo(line);
+    void aStepCarriesItsIdRoleAndTransitions() {
+        final FlowStep step = FlowStep.builder(QuestionKind.CONFIGURE)
+                .id("first")
+                .role(ConfigureRole.TRANSFORM)
+                .candidates(2)
+                .goTo(StepOutcome.PRESERVATION_SHORT, "parser")
+                .abandonWhenSpent()
+                .build();
+
         assertThat(step.getId()).isEqualTo("first");
         assertThat(step.getRole()).isEqualTo(ConfigureRole.TRANSFORM);
+        assertThat(step.getCandidates()).isEqualTo(2);
         assertThat(step.transitionOn(StepOutcome.PRESERVATION_SHORT).getGoTo()).isEqualTo("parser");
         assertThat(step.transitionOn(StepOutcome.REFUSED)).isNull();
         assertThat(step.transitionOnSpent().exits()).isTrue();
-        assertThat(FlowStep.parse("CONFIGURE parser").effectiveId()).isEqualTo("parser");
-        assertThat(FlowStep.parse("split").effectiveId()).isEqualTo("split");
-        assertThatThrownBy(() -> FlowStep.parse("SPLIT parser")).hasMessageContaining("Only CONFIGURE takes a role");
-        // 'checks' was a step's own list of checks; the one model of checks took it away, so the word is
-        // no longer part of the grammar
-        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE checks conformance"))
-                .hasMessageContaining("'checks' is not when, candidates, kinds, elements or on");
-        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE on flimsy goto parser"))
-                .hasMessageContaining("'on flimsy' is not an outcome");
-        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE on spent"))
-                .hasMessageContaining("'on' needs an outcome");
-        assertThatThrownBy(() -> FlowStep.parse("CONFIGURE on spent goto"))
-                .hasMessageContaining("must be followed by 'goto <step>' or 'abandon'");
-        assertThatThrownBy(() -> FlowStep.parse("1st: CHAIN")).hasMessageContaining("is not a step id");
-        // The check's shortfall is its outcome, and the outcome reads back from its word.
+        assertThat(FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build().effectiveId())
+                .isEqualTo("parser");
+        assertThat(FlowStep.of(QuestionKind.SPLIT).effectiveId()).isEqualTo("split");
+        // The check's shortfall is its outcome.
         assertThat(Check.FIDELITY.shortfall()).isEqualTo(StepOutcome.FIDELITY_SHORT);
-        assertThat(StepOutcome.parse("coverage-short")).isEqualTo(StepOutcome.COVERAGE_SHORT);
         assertThat(Check.COMPILE.shortfall()).describedAs("compile's own outcome")
                 .isEqualTo(StepOutcome.COMPILE_FAILED);
         assertThat(Check.REGRESSION.shortfall()).describedAs("judges promotion, not a step").isNull();
     }
 
     @Test
-    void aStepReadsBackFromItsLine() {
-        assertThat(FlowStep.parse("target when xml candidates 4 kinds 2").format())
-                .isEqualTo("TARGET when xml candidates 4 kinds 2");
-        assertThat(FlowStep.parse("  CHAIN ").format()).isEqualTo("CHAIN");
-        assertThat(FlowStep.parse("SPLIT when json").getWhen()).isEqualTo(StepGuard.JSON);
-        assertThatThrownBy(() -> FlowStep.parse("SPLIT when sometimes"))
-                .hasMessageContaining("'when sometimes' is not one of always, text, xml or json");
-        assertThatThrownBy(() -> FlowStep.parse("SPLIT candidates"))
-                .hasMessageContaining("'candidates' needs a value");
-        assertThatThrownBy(() -> FlowStep.parse("SPLIT kinds 0"))
-                .hasMessageContaining("'kinds' must be at least 1");
-        assertThatThrownBy(() -> FlowStep.parse("ASK")).hasMessageContaining("'ASK' is not a question kind");
-        // The limits hold however the step is made, not only from its line.
+    void aStepsLimitsHoldHoweverItIsMade() {
+        // The flow language that checked these as it read a line is gone (Track 2 step 1c), so the step
+        // itself holds them: one built in code and one read from JSON go through the same constructor.
+        assertThatThrownBy(() -> FlowStep.builder(QuestionKind.SPLIT).role(ConfigureRole.PARSER).build())
+                .hasMessageContaining("Only CONFIGURE takes a role");
+        assertThatThrownBy(() -> FlowStep.builder(QuestionKind.CHAIN).id("1st").build())
+                .hasMessageContaining("is not a step id");
+        assertThatThrownBy(() -> FlowStep.builder(QuestionKind.SPLIT).elements("DSParser").build())
+                .hasMessageContaining("Only CHAIN names elements");
         assertThatThrownBy(() -> new FlowStep(QuestionKind.TARGET, null, null, 0))
                 .hasMessageContaining("'kinds' must be at least 1");
+        assertThatThrownBy(() -> new FlowStep(QuestionKind.TARGET, null, 0, null))
+                .hasMessageContaining("'candidates' must be at least 1");
+        // A builder and the constructor the JSON is read through make the same step.
+        assertThat(FlowStep.of(QuestionKind.SPLIT, StepGuard.JSON).getWhen()).isEqualTo(StepGuard.JSON);
+        assertThat(FlowStep.builder(QuestionKind.TARGET).when(StepGuard.XML).candidates(4).kinds(2).build())
+                .isEqualTo(new FlowStep(QuestionKind.TARGET, StepGuard.XML, 4, 2));
     }
 
     @Test
     void aBlankTemplateOverrideIsNoOverride() {
-        final LearningFlow flow = LearningFlow.of(FlowExample.DIRECT)
+        final LearningFlow flow = flowOf(List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.CONFIGURE)))
                 .withTemplates(Map.of(Template.CHAIN, "  \n", Template.SPLIT, "Cut it: ${sample}"));
         assertThat(flow.getTemplates()).containsOnlyKeys(Template.SPLIT);
     }
@@ -252,23 +330,31 @@ class TestShapeshifterAiDoc {
         // rather than only from the builder.
         final ShapeshifterAiDoc doc = new ShapeshifterAiDoc(
                 "uuid", "name", "1", null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThat(doc.getLearningMode()).isEqualTo(LearningMode.DISABLED);
         assertThat(doc.getRelearnThreshold()).isEqualTo(0.8);
         assertThat(doc.getAllowedElements())
                 .describedAs("every learnable element (A10) until a document narrows it")
                 .containsExactly("DSParser", "JSONParser", "XMLFragmentParser", "XSLTFilter");
-        assertThat(doc.getFlow()).isEqualTo(LearningFlow.of(FlowExample.DIRECT));
+        assertThat(doc.getFlow().getSteps())
+                .describedAs("no steps, not Direct's (Track 2 step 1c): the built-in setups are the "
+                             + "server's, and the store fills a new document's steps when it creates it")
+                .isEmpty();
         assertThat(doc.getMaxAttempts()).describedAs("five since the first live run, design 02 §6.2").isEqualTo(5);
         assertThat(doc.getAttemptBudgetMs()).isEqualTo(60_000L);
         assertThat(doc.getTokenBudget()).isNull();
         assertThat(doc.getSampleSizeLimit()).isEqualTo(8_192);
-        assertThat(doc.getPromotionMode()).describedAs("A9").isEqualTo(PromotionMode.AUTOMATIC);
+        assertThat(doc.getPromotionMode())
+                .describedAs("review by default (SIM-1), not A9's automatic: a Learning Flow nobody has "
+                             + "calibrated does not change production content unwatched")
+                .isEqualTo(PromotionMode.REVIEW);
         assertThat(doc.getHeldOutFraction()).isEqualTo(0.2);
         assertThat(doc.getMinRecordsToLearn()).isEqualTo(10);
         assertThat(doc.getRegressionCap()).isEqualTo(100);
-        assertThat(doc.getRegressionRetentionDays()).isNull();
+        assertThat(doc.getSpendTokensPerHour())
+                .describedAs("no ceiling of its own: the cluster's applies (A24)").isNull();
+        assertThat(doc.getSpendCallsPerHour()).isNull();
     }
 
     @Test
@@ -279,7 +365,7 @@ class TestShapeshifterAiDoc {
         final ShapeshifterAiDoc created = new ShapeshifterAiDoc(
                 "uuid", "name", null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null);
+                null, null, null, null);
 
         assertThat(built).isEqualTo(created);
     }
@@ -327,12 +413,11 @@ class TestShapeshifterAiDoc {
     @Test
     void aBindingDefaultsToActiveWithNoUuid() {
         // The store assigns the uuid on save and the supervisor on creation; the client never does, so a
-        // binding built without one is not yet identified and is neither a draft nor provisional.
+        // binding built without one is not yet identified, and is not a draft.
         final Binding binding = Binding.builder().build();
 
         assertThat(binding.getUuid()).isNull();
         assertThat(binding.isDraft()).isFalse();
-        assertThat(binding.isProvisional()).isFalse();
     }
 
     static ShapeshifterAiDoc populated() {
@@ -348,12 +433,16 @@ class TestShapeshifterAiDoc {
                 .description("A document")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(model)
+                .targetSchema(new DocRef("XMLSchema", "schema-uuid", "event-logging v4.1.0"))
                 .relearnThreshold(0.75)
                 .allowedElements(List.of("XSLTFilter"))
                 .instructions("Prefer named fields.")
                 .flow(new LearningFlow(
-                        List.of(FlowStep.parse("CHAIN"), FlowStep.parse("TARGET when text kinds 1"),
-                                FlowStep.parse("CONFIGURE candidates 2")),
+                        List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.TARGET)
+                                .when(StepGuard.TEXT)
+                                .kinds(1)
+                                .build(),
+                                FlowStep.builder(QuestionKind.CONFIGURE).candidates(2).build()),
                         Map.of(Template.CHAIN, "Pick: ${elements}\n${sample}"), 3))
                 .maxAttempts(5)
                 .attemptBudgetMs(120_000L)
@@ -363,7 +452,6 @@ class TestShapeshifterAiDoc {
                 .heldOutFraction(0.25)
                 .minRecordsToLearn(20)
                 .regressionCap(50)
-                .regressionRetentionDays(30)
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.8, null),
@@ -385,5 +473,15 @@ class TestShapeshifterAiDoc {
                         CheckSetting.of(Check.FIDELITY, CheckState.GATE),
                         CheckSetting.of(Check.REGRESSION, CheckState.GATE)))
                 .build();
+    }
+
+    /// A flow of the given steps, with no template overrides: what a test that is about the steps wants.
+    /// The built-in setups are the server's now (Track 2 step 1c), so a shared test builds the flow it
+    /// means rather than starting from one of them.
+    ///
+    /// @param steps Its steps.
+    /// @return The flow.
+    private static LearningFlow flowOf(final List<FlowStep> steps) {
+        return new LearningFlow(steps, null, null);
     }
 }

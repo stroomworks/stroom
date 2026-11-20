@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.learning;
 
 import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowExit;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.QuestionKind;
@@ -45,8 +46,10 @@ class TestStopReports {
 
     private static final FlowStep CHAIN = FlowStep.of(QuestionKind.CHAIN);
     private static final FlowStep SPLIT = FlowStep.of(QuestionKind.SPLIT);
-    private static final FlowStep PARSER = FlowStep.parse("CONFIGURE parser");
-    private static final FlowStep TRANSFORM = FlowStep.parse("CONFIGURE transform");
+    private static final FlowStep PARSER = FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build();
+    private static final FlowStep TRANSFORM = FlowStep.builder(QuestionKind.CONFIGURE)
+            .role(ConfigureRole.TRANSFORM)
+            .build();
     private static final List<FlowStep> STEPS = List.of(CHAIN, SPLIT, PARSER, TRANSFORM);
     private static final TurnScore WHOLE_41 = new TurnScore(Check.YIELD, 0.41, 0.9);
     private static final TurnScore WHOLE_20 = new TurnScore(Check.YIELD, 0.2, 0.9);
@@ -252,6 +255,22 @@ class TestStopReports {
         assertThat(StopReports.duration(60_000L)).isEqualTo("1 minute");
         assertThat(StopReports.duration(121_000L)).isEqualTo("2 minutes 1 second");
         assertThat(StopReports.number(1_234_567L)).isEqualTo("1,234,567");
+    }
+
+    @Test
+    void aTranslationRefusedByTheListSaysWhatItUsedAndWhatToDo() {
+        // The promotion-time half of decision N1: a pipeline edited by hand since it was learned, or one
+        // promoted by a route that judged no stylesheet, is still refused — and the person reading the
+        // Learning Status tab is told which element and which function
+        final StopReport report = StopReports.refusedByTheList(List.of(
+                "xsltFilter: A learned stylesheet may not call 'stroom:lookup': it reads reference data "
+                + "beyond this stream."));
+
+        assertThat(report.getError()).contains("may not").contains("wasn't put in use");
+        assertThat(report.getDetails()).first().asString()
+                .contains("xsltFilter")
+                .contains("stroom:lookup");
+        assertThat(report.getSuggestions()).isNotEmpty();
     }
 
     private static Exchange answer(final FlowStep step,

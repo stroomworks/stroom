@@ -1,0 +1,22 @@
+[ {
+  "kind" : "CHAIN"
+}, {
+  "kind" : "SPLIT"
+}, {
+  "kind" : "TARGET",
+  "kinds" : 3
+}, {
+  "kind" : "CONFIGURE",
+  "role" : "PARSER"
+}, {
+  "kind" : "CONFIGURE",
+  "role" : "TRANSFORM",
+  "transitions" : [ {
+    "on" : "PRESERVATION_SHORT",
+    "goTo" : "parser"
+  }, {
+    "goTo" : "admit"
+  } ]
+}, {
+  "kind" : "ADMIT"
+} ]

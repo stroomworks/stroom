@@ -59,7 +59,7 @@ class TestPerRecordScoring {
         final ExtractionQualityParameters quality = new ExtractionQualityParameters(false,
                 List.of("EventDetail/Authenticate/User/Id"));
 
-        final Score score = new ExtractionQualityScorer().score(quality, TRANSFORM).orElseThrow();
+        final Score score = new ExtractionQualityScorer().score(quality, TRANSFORM, null).orElseThrow();
 
         assertThat(score.failingRecords()).containsExactlyInAnyOrder(1, 3);
     }
@@ -68,7 +68,7 @@ class TestPerRecordScoring {
     void extractionQualityLaysNothingAtARecordWhereUnknownIsAllowedAndNothingIsRequired() {
         final ExtractionQualityParameters quality = new ExtractionQualityParameters(true, List.of());
 
-        final Score score = new ExtractionQualityScorer().score(quality, TRANSFORM).orElseThrow();
+        final Score score = new ExtractionQualityScorer().score(quality, TRANSFORM, null).orElseThrow();
 
         assertThat(score.failingRecords()).isEmpty();
     }
@@ -79,7 +79,7 @@ class TestPerRecordScoring {
                 new XPathAssertion("a user", "EventDetail/Authenticate/User/Id"),
                 new XPathAssertion("a type", "EventDetail/TypeId")), false);
 
-        final Score score = new BusinessRulesScorer().score(rules, TRANSFORM).orElseThrow();
+        final Score score = new BusinessRulesScorer().score(rules, TRANSFORM, null).orElseThrow();
 
         assertThat(score.failingRecords()).containsExactlyInAnyOrder(1, 3);
         assertThat(score.value()).isEqualTo(0.5);
@@ -91,7 +91,7 @@ class TestPerRecordScoring {
                 new StoredError(Severity.WARNING, null, null, "no such field", ErrorType.CODE))));
         final BusinessRulesParameters rules = new BusinessRulesParameters(List.of(), true);
 
-        final Score score = new BusinessRulesScorer().score(rules, noisy).orElseThrow();
+        final Score score = new BusinessRulesScorer().score(rules, noisy, null).orElseThrow();
 
         assertThat(score.value()).isEqualTo(0.75);
         assertThat(score.failingRecords()).isEmpty();
@@ -140,7 +140,7 @@ class TestPerRecordScoring {
         final Attempted transform = new Attempted("XSLTFilter", false, "<a/>", new StepResult(events, List.of()));
 
         final Score score = new NodeFixture().schemaConformanceScorer()
-                .score(new SchemaConformanceParameters(NodeFixture.EVENTS_SCHEMA_GROUP), transform)
+                .score(new SchemaConformanceParameters(NodeFixture.EVENTS_SCHEMA_GROUP), transform, null)
                 .orElseThrow();
 
         assertThat(score.value()).isEqualTo(0.5);

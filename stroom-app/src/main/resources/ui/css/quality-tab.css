@@ -168,8 +168,7 @@
 }
 
 /* Samples: a record beside what it became */
-.quality-tab__samples,
-.quality-tab__assessments {
+.quality-tab__samples {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -216,53 +215,4 @@
     font-size: 12px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-}
-
-/* Assessments: what was said, by whom, and Mark resolved on an open issue */
-.quality-tab__actions {
-    display: flex;
-    gap: 8px;
-}
-
-.quality-tab__assessment {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    padding: 10px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-}
-
-.quality-tab__verdict {
-    padding: 1px 8px;
-    border-radius: 10px;
-    font-size: 12px;
-    border: 1px solid var(--border-color);
-}
-
-.quality-tab__verdict--good {
-    background-color: rgba(var(--status__color--success-rgb), .15);
-}
-
-.quality-tab__verdict--warning {
-    background-color: rgba(var(--status__color--warning-rgb), .2);
-}
-
-.quality-tab__verdict--idle {
-    background-color: transparent;
-}
-
-.quality-tab__assessment-comment {
-    max-width: 760px;
-    white-space: pre-wrap;
-}
-
-.quality-tab__assessment-meta {
-    color: var(--text-color--low-emphasis);
-    font-size: 12px;
-}
-
-.quality-tab__resolve {
-    margin-top: 4px;
 }

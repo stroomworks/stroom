@@ -160,10 +160,10 @@ public class LearningPipelinesDao implements LearningPipelines {
                         serving.field(SHAPESHIFTER_BINDING.FRAGMENT_TYPE).as("fragment_type"),
                         serving.field(SHAPESHIFTER_BINDING.FRAGMENT_UUID).as("fragment_uuid"),
                         serving.field(SHAPESHIFTER_BINDING.FRAGMENT_NAME).as("fragment_name"),
-                        serving.field(SHAPESHIFTER_BINDING.PROVISIONAL).as("provisional"),
                         serving.field(SHAPESHIFTER_BINDING.SCORE).as("promoted_score"),
                         SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE.as("rolling_score"),
                         DSL.coalesce(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS, 0).as("records"),
+                        DSL.coalesce(SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS, 0).as("skips"),
                         DSL.coalesce(waits.field("n", Integer.class), 0).as("waiting"),
                         waits.field("oldest", Long.class).as("oldest"),
                         sessions.field("last", Long.class).as("last"),
@@ -270,13 +270,13 @@ public class LearningPipelinesDao implements LearningPipelines {
                         ? null
                         : new DocRef(row.get("fragment_type", String.class), fragmentUuid,
                                 row.get("fragment_name", String.class)),
-                Boolean.TRUE.equals(row.get("provisional", Boolean.class)),
                 row.get("promoted_score", Double.class),
                 // No rolling score until it has served something: shown as nothing rather than as zero.
                 records == 0
                         ? null
                         : row.get("rolling_score", Double.class),
                 records,
+                row.get("skips", Integer.class),
                 row.get("waiting", Integer.class),
                 row.get("oldest", Long.class),
                 false,

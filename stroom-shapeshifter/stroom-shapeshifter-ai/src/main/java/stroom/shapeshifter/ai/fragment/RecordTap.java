@@ -47,6 +47,10 @@ import javax.xml.transform.stream.StreamResult;
 /// closed, which at the record's last event is the whole record.
 public final class RecordTap implements ContentHandler {
 
+    /// The SAX depth a record sits at: one deeper than the number of elements above it, which is what a
+    /// `SplitFilter` is set to split at. A root's child is depth 2.
+    private final int recordDepth;
+    private int records;
     private final SimpleEventListBuilder opening = new SimpleEventListBuilder();
     private SimpleEventListBuilder record;
     private List<Event> last;
@@ -57,6 +61,24 @@ public final class RecordTap implements ContentHandler {
     private String rootQName;
     /// The elements open within the record being built, innermost last, for closing a record read mid-way.
     private final Deque<String[]> open = new ArrayDeque<>();
+
+    /// A tap over a parser whose records are the root's children, which is every parser with a stand-in.
+    public RecordTap() {
+        this(1);
+    }
+
+    /// @param splitDepth How deep a record sits, as `RecordBoundary#splitDepth` counts it: the number of
+    ///                   elements above it. One for the children of a root; three for the items of an
+    ///                   array under a key.
+    public RecordTap(final int splitDepth) {
+        this.recordDepth = splitDepth + 1;
+    }
+
+    /// How many records the parser cut, which is what a served stream is held to account for: every one
+    /// of them must become an event or a declared skip (Track 1 task 2, fix 1).
+    public int records() {
+        return records;
+    }
 
     /// The record being cut, or where none is open the record most recently cut, as a document of its
     /// own; empty where there has been none.
@@ -136,8 +158,8 @@ public final class RecordTap implements ContentHandler {
                 opening.startElement(uri, localName, qName, atts);
                 seenRoot = true;
             }
-        } else {
-            if (depth == 2) {
+        } else if (depth >= recordDepth) {
+            if (depth == recordDepth) {
                 record = new SimpleEventListBuilder();
             }
             record.startElement(uri, localName, qName, atts);
@@ -147,12 +169,13 @@ public final class RecordTap implements ContentHandler {
 
     @Override
     public void endElement(final String uri, final String localName, final String qName) throws SAXException {
-        if (depth >= 2) {
+        if (depth >= recordDepth) {
             record.endElement(uri, localName, qName);
             open.pop();
-            if (depth == 2) {
+            if (depth == recordDepth) {
                 last = ((SimpleEventList) record.getEventList()).getEvents();
                 record = null;
+                records++;
             }
         }
         depth--;

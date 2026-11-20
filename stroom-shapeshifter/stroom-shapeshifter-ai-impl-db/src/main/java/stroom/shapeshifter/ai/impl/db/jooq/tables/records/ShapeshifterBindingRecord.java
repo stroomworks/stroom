@@ -187,58 +187,58 @@ public class ShapeshifterBindingRecord extends UpdatableRecordImpl<ShapeshifterB
     }
 
     /**
-     * Setter for <code>stroom.shapeshifter_binding.provisional</code>.
-     */
-    public void setProvisional(Boolean value) {
-        set(12, value);
-    }
-
-    /**
-     * Getter for <code>stroom.shapeshifter_binding.provisional</code>.
-     */
-    public Boolean getProvisional() {
-        return (Boolean) get(12);
-    }
-
-    /**
      * Setter for <code>stroom.shapeshifter_binding.promoted_time_ms</code>.
      */
     public void setPromotedTimeMs(Long value) {
-        set(13, value);
+        set(12, value);
     }
 
     /**
      * Getter for <code>stroom.shapeshifter_binding.promoted_time_ms</code>.
      */
     public Long getPromotedTimeMs() {
-        return (Long) get(13);
+        return (Long) get(12);
     }
 
     /**
      * Setter for <code>stroom.shapeshifter_binding.score</code>.
      */
     public void setScore(Double value) {
-        set(14, value);
+        set(13, value);
     }
 
     /**
      * Getter for <code>stroom.shapeshifter_binding.score</code>.
      */
     public Double getScore() {
-        return (Double) get(14);
+        return (Double) get(13);
     }
 
     /**
      * Setter for <code>stroom.shapeshifter_binding.boundary_element</code>.
      */
     public void setBoundaryElement(String value) {
-        set(15, value);
+        set(14, value);
     }
 
     /**
      * Getter for <code>stroom.shapeshifter_binding.boundary_element</code>.
      */
     public String getBoundaryElement() {
+        return (String) get(14);
+    }
+
+    /**
+     * Setter for <code>stroom.shapeshifter_binding.boundary_children</code>.
+     */
+    public void setBoundaryChildren(String value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_binding.boundary_children</code>.
+     */
+    public String getBoundaryChildren() {
         return (String) get(15);
     }
 
@@ -284,6 +284,20 @@ public class ShapeshifterBindingRecord extends UpdatableRecordImpl<ShapeshifterB
         return (String) get(18);
     }
 
+    /**
+     * Setter for <code>stroom.shapeshifter_binding.live_learner</code>.
+     */
+    public void setLiveLearner(String value) {
+        set(19, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_binding.live_learner</code>.
+     */
+    public String getLiveLearner() {
+        return (String) get(19);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -307,7 +321,7 @@ public class ShapeshifterBindingRecord extends UpdatableRecordImpl<ShapeshifterB
     /**
      * Create a detached, initialised ShapeshifterBindingRecord
      */
-    public ShapeshifterBindingRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String bindingUuid, String fragmentType, String fragmentUuid, String fragmentName, Boolean draft, Boolean provisional, Long promotedTimeMs, Double score, String boundaryElement, String boundaryArray, Integer boundaryDepth, String snapshotId) {
+    public ShapeshifterBindingRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String bindingUuid, String fragmentType, String fragmentUuid, String fragmentName, Boolean draft, Long promotedTimeMs, Double score, String boundaryElement, String boundaryChildren, String boundaryArray, Integer boundaryDepth, String snapshotId, String liveLearner) {
         super(ShapeshifterBinding.SHAPESHIFTER_BINDING);
 
         setId(id);
@@ -322,13 +336,14 @@ public class ShapeshifterBindingRecord extends UpdatableRecordImpl<ShapeshifterB
         setFragmentUuid(fragmentUuid);
         setFragmentName(fragmentName);
         setDraft(draft);
-        setProvisional(provisional);
         setPromotedTimeMs(promotedTimeMs);
         setScore(score);
         setBoundaryElement(boundaryElement);
+        setBoundaryChildren(boundaryChildren);
         setBoundaryArray(boundaryArray);
         setBoundaryDepth(boundaryDepth);
         setSnapshotId(snapshotId);
+        setLiveLearner(liveLearner);
         resetTouchedOnNotNull();
     }
 }

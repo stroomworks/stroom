@@ -85,9 +85,10 @@ the commit or ruling that closed it, rather than deleting it.
     a Data Splitter configuration that sets it. Fix: refuse it as `compile-failed` in the same static check
     as item 21. *design/09-rulings.md A19, design/10-status-and-future.md §10.4.*
 
-24. **`regressionRetentionDays` is read by nothing,** though the Score tab's help text says it sets how long
-    regression records are kept. The corpus follows the source feed's retention (A18). Recommended: remove
-    the field. *design/06-scoring.md §6.8, design/10-status-and-future.md §10.4.*
+24. ~~**`regressionRetentionDays` is read by nothing.**~~ *Closed 2026-11-20: the field is removed
+    (simplification option F, Track 2 step 1), with the record spans an output kept, which were written for
+    every learned stream and read by nothing but their own test.* The corpus follows the source feed's
+    retention (A18). *design/06-scoring.md §6.8, design/10-status-and-future.md §10.4.*
 
 25. ~~**Stale texts.**~~ *Closed 2026-11-02: each rewritten, and `Decision.Retracted` removed.* The Retract button's tooltip says what it produced is asked to be processed again,
     which A129 ended; the Deferred Learning job's description speaks of a deferred execution mode; the
@@ -113,6 +114,16 @@ the commit or ruling that closed it, rather than deleting it.
     entity; the same check is made again at promotion. `XsltStep`, the Tier 1 stand-in, already refuses
     all of these by configuring Saxon; the check is to do the same to the text, so that it holds whichever
     runner judges the candidate. A stylesheet a person edits by hand afterwards is theirs, like any other.
+
+    **Built, 20 November 2026 (Track 2 step 2), with A147 amended by decision N1.** Not a list of banned
+    names but an allow-list over every function and instruction (`AiXsltAllowList`), applied by
+    `LearnedStylesheetCheck` as the `permitted` check when a candidate is judged, and again at promotion so
+    that a fragment edited by hand cannot reach a node with something the list refuses. The allowed
+    `stroom:` functions are those that compute from their arguments or the stream being translated, which
+    is what lets Track 1 task 3 use `format-date`. `XsltStep` now stands in for those functions rather than
+    refusing them all, so the harness and a node agree. Still open: there is no run-time enforcement until
+    Track 2 step 6, and the harness has no stand-in for 25 of the allowed `stroom:` functions
+    (`StroomStandIns.missing`), which therefore pass the check and fail in the harness.
 
 ## Before a pull request
 

@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
@@ -54,11 +55,11 @@ class TestScenario30DeferredWorker {
     private static final String DOC = "doc-1";
 
     private static ShapeshifterAiDoc deferred() {
-        return ShapeshifterAiDoc.builder()
+        return Scenarios.document()
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -128,8 +129,12 @@ class TestScenario30DeferredWorker {
                 assertThat(turn.answer()).describedAs("and every one answered now").isNotNull());
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
 
-        // And the promotion wakes what waited on the learner.
-        assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).containsExactly(1L, 2L);
+        // And the promotion wakes what waited on the learner. Twice over, because the same pass then
+        // sweeps for streams a wake could not reach (A130, W7-4) and these rows are still here — a
+        // deferral goes when its stream is served, not when it is woken. Waking a task that is already
+        // `CREATED` costs an update of no rows.
+        assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
+                .containsExactly(1L, 2L, 1L, 2L);
 
         // Nothing is left awaiting, so a second pass has nothing to do.
         assertThat(scenarios.worker(Script.of()).advance(10)).isZero();
@@ -279,6 +284,7 @@ class TestScenario30DeferredWorker {
         assertThat(scenarios.attempts.byId(first.id()).orElseThrow().status())
                 .isEqualTo(AttemptStatus.ABANDONED);
         assertThat(scenarios.learnerBindings.forLearner(second)).hasSize(1);
-        assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).containsExactly(2L);
+        // Twice: the promotion's wake, and the same pass's sweep for streams it could not reach (W7-4)
+        assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).containsExactly(2L, 2L);
     }
 }

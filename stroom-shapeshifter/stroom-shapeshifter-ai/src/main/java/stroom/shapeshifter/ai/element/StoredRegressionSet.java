@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.element;
 
+import stroom.data.shared.StreamTypeNames;
 import stroom.data.store.api.InputStreamProvider;
 import stroom.data.store.api.SegmentOutputStream;
 import stroom.data.store.api.Source;
@@ -60,7 +61,7 @@ public class StoredRegressionSet implements RegressionSet {
 
     /// The stream type the corpus is written as, so that it can be told from the feed's own data and
     /// from what the pipeline produced.
-    public static final String CORPUS_TYPE = "Shapeshifter Corpus";
+    public static final String CORPUS_TYPE = StreamTypeNames.SHAPESHIFTER_CORPUS;
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(StoredRegressionSet.class);
 

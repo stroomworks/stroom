@@ -27,46 +27,20 @@ import java.util.List;
 /// and holds every configuration to those events (A31), a value the records lack sending the parser back.
 /// `ESCALATING` settles the split, then goes direct and asks for a target only when the transform stays
 /// short (A39, A40).
+///
+/// **The steps themselves are not here.** They are JSON on the server, read by `FlowExamples` (Track 2
+/// step 1c), because this enum is compiled to JavaScript and the browser has neither classpath
+/// resources nor Jackson. This is the identity and the name; the client is given the steps by
+/// `ShapeshifterAiResource.flowExamples()`.
 public enum FlowExample implements HasDisplayValue {
-    DIRECT("Direct", List.of(
-            FlowStep.parse("CHAIN"),
-            FlowStep.parse("CONFIGURE parser"),
-            FlowStep.parse("CONFIGURE transform on spent goto admit"),
-            // The exhaustion step (design 04 §4): reached only when the transform's candidates are spent
-            // with records of the held stream still short, and the one step that may ask for the admitted
-            // form (A53).
-            FlowStep.parse("ADMIT"))),
-    TARGET_FIRST("Target first", List.of(
-            FlowStep.parse("CHAIN"),
-            FlowStep.parse("SPLIT"),
-            FlowStep.parse("TARGET kinds 3"),
-            FlowStep.parse("CONFIGURE parser"),
-            FlowStep.parse("CONFIGURE transform on preservation-short goto parser on spent goto admit"),
-            FlowStep.parse("ADMIT"))),
-    ESCALATING("Escalating", List.of(
-            FlowStep.parse("CHAIN"),
-            // The split is asked of every input (A39): what one record is costs one question and is what
-            // the count, the target and yield rest on; a parser refused on yield — a multi-line record it
-            // cut per line — goes back to it rather than trying again blind (A40).
-            FlowStep.parse("SPLIT"),
-            FlowStep.parse("CONFIGURE parser on yield-short goto split"),
-            FlowStep.parse("first: CONFIGURE transform candidates 2 on passed goto end on spent goto target"),
-            FlowStep.parse("TARGET kinds 3"),
-            FlowStep.parse("again: CONFIGURE parser"),
-            FlowStep.parse("CONFIGURE transform on preservation-short goto again on spent goto admit"),
-            FlowStep.parse("ADMIT")));
+    DIRECT("Direct"),
+    TARGET_FIRST("Target first"),
+    ESCALATING("Escalating");
 
     private final String displayValue;
-    private final List<FlowStep> steps;
 
-    FlowExample(final String displayValue, final List<FlowStep> steps) {
+    FlowExample(final String displayValue) {
         this.displayValue = displayValue;
-        this.steps = steps;
-    }
-
-    /// The example's steps, in order: what a document loading it gets as its own.
-    public List<FlowStep> steps() {
-        return steps;
     }
 
     @Override

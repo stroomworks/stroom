@@ -48,7 +48,7 @@ A146 and A147 were ruled while this set was written.
 | A21 | Learning is a conversation: the chain first, then each element's configuration with the real output before it | Stands, generalised by A31, A33, A37 | [5.1](05-learning-flow.md#51-the-idea) |
 | A22 | Routing by selector over stream metadata, ordered rules | Superseded by A104, A117: a pipeline's filter is its route | |
 | A23 | An asynchronous AI review scorer, advisory only | Deferred | [10](10-status-and-future.md) |
-| A24 | A spend breaker opening an error mode per document and feed | Deferred: the counter is built (A44); error mode became raised (A57) | [4.4](04-learning.md#44-budgets) |
+| A24 | A spend breaker opening an error mode per document and feed | **Built, 20 November 2026** (`SpendBreaker`, Track 2 step 3): four ceilings over A44's hour window — tokens and questions, per Learning Flow and cluster-wide. Error mode became raised (A57); what the breaker does instead is defer, which loses nothing and clears itself | [4.4](04-learning.md#44-budgets) |
 | A25 | Promotion mode per document: automatic or review; a draft awaits approval | Stands | [4.5](04-learning.md#45-how-a-session-ends) |
 | A26 | Runtime state is tables in `stroom-shapeshifter-ai-impl-db` | Stands, reshaped by A111, A117, A124, A131 | [8.3](08-data-and-code-map.md#83-tables) |
 | A27 | A filter creates no tasks while its feed is in error or under review | Superseded by A48, A109: deferred tasks fill the filter's budget | [3.5](03-processing.md#35-deferring-a-stream) |
@@ -121,7 +121,7 @@ A146 and A147 were ruled while this set was written.
 |---|---|---|---|
 | A81 | It is called the *learning flow*: `LearningFlow`, `FlowStep`, `flow` | Stands | [5](05-learning-flow.md) |
 | A82 | The flow has a tab of its own | Superseded by A91, then A110: it is the Learn tab | |
-| A83 | The exits are `end`, `park` and `give-up`; `abandon` takes the step's default | Stands | [5.3](05-learning-flow.md#53-a-step) |
+| A83 | The exits are `end`, `park` and `give-up`; a transition that names none takes the step's default | Stands | [5.3](05-learning-flow.md#53-a-step) |
 | A84 | Defaults are drawn dashed and labelled | Stands | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
 | A85 | Question text is per kind of question | Stands | [5.5](05-learning-flow.md#55-what-each-question-carries) |
 | A86 | The shared texts open from Start | Stands | [7.1](07-ui.md#71-the-shapeshifter-ai-editor) |
@@ -194,8 +194,47 @@ model only where its data may go to that model. Supersedes A17 and A38, except A
 Not a blocker for production.
 
 **A147.** *A stylesheet the model writes is checked statically, instead of running under a restricted
-function library.* Every candidate is refused, as `compile-failed` with the reason, if it calls any
-extension function or reaches outside its input (`document()`, `unparsed-text()`, `collection()`,
-`xsl:include`, `xsl:import`, `xsl:result-document`, external entities), and the check is repeated at
-promotion. A stylesheet a person later edits by hand is theirs, like any other. Not built yet: ISSUES item
-21.
+function library.* **Amended by decision N1 (18 November 2026), and built in Track 2 step 2.**
+
+As first ruled, every candidate calling *any* extension function was refused. That could not ship beside
+Track 1 task 3, which needs the model to use `stroom:format-date` to take a missing year from the stream;
+and it never covered the standard XSLT and XPath routes off the node, which reach the host's files with no
+extension function involved.
+
+As amended: **a learned stylesheet may use only what is on the Smart Pipelines list, checked when it is
+judged and again when it is promoted.** The list covers standard XSLT and XPath as well as `stroom:`
+functions, and refuses `function-lookup()` and function references by name and arity, which call a function
+without the call appearing. What is refused is fed back to the model as the reason, like any other check,
+through the `permitted` check of the one model of checks — a gate a Learning Flow cannot turn down, since
+on an automatic one nobody reads the stylesheet before it runs.
+
+A stylesheet a person later edits by hand is theirs, like any other — but a fragment that reaches promotion
+is checked again whoever wrote it, so a hand edit that adds a refused function stops the promotion rather
+than reaching a node.
+
+Track 2 step 6 adds **"and enforced when it runs"**: the list moves onto the egress branch's Egress Policy
+screen, where an administrator maintains it, and the serving pipeline applies it too. Until then the static
+check is the only guard, so it must be an allow-list over every function and instruction, never a list of
+banned names (assumption AS21).
+
+**A148.** *A translation declares a record it deliberately did not turn into an event by writing a marker
+in the output, and there is no cap on how many it may declare.* **Ruled 20 November 2026** (the design item
+left open by stage 0b group 4, UM-2; see `docs/shapeshifter-ai-declared-skips-design.md`), and built in
+Track 1 task 2.
+
+In place of an event, the translation writes `<Skipped xmlns="shapeshifter:skips" reason="..."/>`. The
+module counts it beside the events, the Schema-valid check ignores it, and the record gate drops it before
+anything downstream could see it. Completeness is then `records in = events out + declared skips`, a gate
+in every preset.
+
+A marker rather than `xsl:message`, because in Stroom a message whose text is not wrapped in a severity
+element is logged as an `ERROR`, and an `ERROR` drops records from the output — the very fault the check
+exists to catch. A marker is data: written wrongly, it fails to count, and nothing is lost. `xsl:message`
+therefore stays off the Smart Pipelines list (A147).
+
+**A declared skip is a hole in the completeness check that the model controls**, and the ruling accepts
+that hole: a skip-rate threshold was considered and declined in favour of showing the count — in the
+conversation, on the Learning Status tab and beside the event count on the stream's output row — so that a
+person approving a translation reads "312 events, 4 skipped" and judges for themselves. If the hole is
+gamed in practice, the threshold is the first thing to add, and declaring the skips on the Learning Flow,
+where the model cannot reach them, is the fallback.

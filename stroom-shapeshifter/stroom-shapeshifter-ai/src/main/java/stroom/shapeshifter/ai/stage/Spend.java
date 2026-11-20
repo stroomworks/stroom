@@ -36,6 +36,19 @@ public interface Spend {
     /// What the document has spent in the window it is in, without adding to it.
     Spent spent(String docUuid, long windowMs);
 
+    /// What **every** document has spent lately, added together: what a system-wide ceiling is read
+    /// against (A24). A per-document ceiling cannot bound a cluster — a hundred documents each inside
+    /// their own ceiling are a hundred times it — so the breaker needs both.
+    ///
+    /// Windows are per document and do not line up, so this is the sum of each document's own current
+    /// window rather than a single window across the cluster. That over-counts a little at a window's
+    /// edge, which is the right direction for a safety limit to be wrong in.
+    ///
+    /// @param windowMs How long a window lasts.
+    /// @return The totals; `windowStartMs` is the earliest window still counting, or now where nothing
+    ///         has been spent.
+    Spent spentAll(long windowMs);
+
 
     // --------------------------------------------------------------------------------
 

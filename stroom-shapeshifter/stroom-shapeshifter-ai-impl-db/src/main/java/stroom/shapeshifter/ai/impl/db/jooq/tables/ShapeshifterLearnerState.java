@@ -118,6 +118,11 @@ public class ShapeshifterLearnerState extends TableImpl<ShapeshifterLearnerState
      */
     public final TableField<ShapeshifterLearnerStateRecord, Integer> ROLLING_RECORDS = createField(DSL.name("rolling_records"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.inline("0", SQLDataType.INTEGER)), this, "");
 
+    /**
+     * The column <code>stroom.shapeshifter_learner_state.rolling_skips</code>.
+     */
+    public final TableField<ShapeshifterLearnerStateRecord, Integer> ROLLING_SKIPS = createField(DSL.name("rolling_skips"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.inline("0", SQLDataType.INTEGER)), this, "");
+
     private ShapeshifterLearnerState(Name alias, Table<ShapeshifterLearnerStateRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

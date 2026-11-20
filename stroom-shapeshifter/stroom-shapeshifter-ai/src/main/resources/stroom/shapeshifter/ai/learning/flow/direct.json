@@ -1,0 +1,14 @@
+[ {
+  "kind" : "CHAIN"
+}, {
+  "kind" : "CONFIGURE",
+  "role" : "PARSER"
+}, {
+  "kind" : "CONFIGURE",
+  "role" : "TRANSFORM",
+  "transitions" : [ {
+    "goTo" : "admit"
+  } ]
+}, {
+  "kind" : "ADMIT"
+} ]

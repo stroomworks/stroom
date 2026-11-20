@@ -26,8 +26,8 @@ class TestFlowWords {
 
     private static final List<FlowStep> STEPS = List.of(
             FlowStep.of(QuestionKind.CHAIN),
-            FlowStep.parse("CONFIGURE parser"),
-            FlowStep.parse("CONFIGURE transform"),
+            FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+            FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build(),
             FlowStep.of(QuestionKind.ADMIT));
 
     @Test
@@ -37,8 +37,8 @@ class TestFlowWords {
         assertThat(FlowWords.stepName(null, null)).isEqualTo("Step");
         assertThat(FlowWords.step(STEPS, 1)).isEqualTo("step 2 (Write the parser)");
         assertThat(FlowWords.stepName(List.of(FlowStep.of(QuestionKind.CHAIN),
-                FlowStep.parse("CONFIGURE parser"),
-                FlowStep.parse("CONFIGURE parser")), 2))
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build()), 2))
                 .isEqualTo("Write the parser again");
     }
 

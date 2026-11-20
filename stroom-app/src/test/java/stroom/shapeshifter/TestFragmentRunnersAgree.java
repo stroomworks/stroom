@@ -36,6 +36,7 @@ import stroom.shapeshifter.ai.fragment.FragmentOutput;
 import stroom.shapeshifter.ai.fragment.FragmentRunner;
 import stroom.shapeshifter.ai.fragment.FragmentTap;
 import stroom.shapeshifter.ai.fragment.FragmentWriter;
+import stroom.shapeshifter.ai.fragment.InputRead;
 import stroom.shapeshifter.ai.fragment.PipelineFragmentRunner;
 import stroom.shapeshifter.ai.fragment.StandInFragmentRunner;
 import stroom.shapeshifter.ai.learning.LearnedStep;
@@ -55,6 +56,8 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
@@ -75,6 +78,19 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
     private static final DocPath FOLDER = DocPath.fromParts("Shapeshifter", "AGREEMENT");
     private static final String DOCUMENT = Scenarios.resource("records.json");
     private static final String XSLT = Scenarios.resource("records.xsl");
+
+    /// A headerless CSV of exactly four fields; any other line is unmatched content.
+    private static final String FIELDS = Scenarios.resource("csv-fields.ds3.xml");
+
+    /// Six lines, of which the last two are in a shape the splitter no longer matches.
+    private static final String PART_DRIFTED = """
+            2020-06-17T08:00:00.000Z,user0,office,logon
+            2020-06-17T08:01:00.000Z,user1,office,logon
+            2020-06-17T08:02:00.000Z,user2,office,logon
+            2020-06-17T08:03:00.000Z,user3,office,logon
+            2020-06-17T08:04:00.000Z|user4|office|logon
+            2020-06-17T08:05:00.000Z|user5|office|logon
+            """;
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     /// Counts what it is given, so that a run over the whole document and a run over one record at a
     /// time cannot produce the same answer.
@@ -245,6 +261,49 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
         assertThat(transform.result().diagnostics())
                 .describedAs("and the next candidate is told why")
                 .isNotEmpty();
+    }
+
+    /// Audit finding W4-7: a serving run now reports what the **parser** made of the input, and a unit
+    /// test on the stand-in proves nothing about production unless the real pipeline counts the same
+    /// thing. A stream of six records of which two are in a shape the learned splitter no longer
+    /// matches: both runners must see four records read, two the parser could not, and content in the
+    /// stream.
+    @Test
+    void bothRunnersCountWhatTheParserMadeOfTheInputTheSameWay() {
+        final List<InputRead> read = new ArrayList<>();
+        pipelineScopeRunnable.scopeRunnable(() -> {
+            final List<LearnedStep> chain = List.of(
+                    new LearnedStep(new DataSplitterStep(dataSplitterCompilerProvider.get()), FIELDS,
+                            new StepResult("<records/>", List.of()), UNSCORED),
+                    new LearnedStep(new XsltStep(), COUNTS, new StepResult("<counted/>", List.of()), UNSCORED));
+            final DocRef fragment = fragmentWriter.write(FOLDER, "input-read-" + System.nanoTime(), chain, null);
+            final FragmentRunner standIn = new StandInFragmentRunner(pipelineStore, pipelineStackLoader,
+                    textConverterStore, xsltStore,
+                    List.of(new DataSplitterStep(dataSplitterCompilerProvider.get()), new XsltStep()));
+            final FragmentRunner pipeline = new PipelineFragmentRunner(pipelineStore, pipelineDataCache,
+                    elementRegistryFactory, pipelineFactoryProvider, headlessCaptureProvider, errorReceiverProvider,
+                    fragmentOutputProvider, fragmentTapProvider, injectedCodeProvider, taskContextFactory);
+            read.add(served(standIn, fragment));
+            read.add(served(pipeline, fragment));
+        });
+
+        assertThat(read.get(1).records())
+                .describedAs("the records the parser cut: the pipeline's tap and the stand-in's split agree")
+                .isEqualTo(read.get(0).records())
+                .isEqualTo(4);
+        assertThat(read.get(1).errors())
+                .describedAs("and the records it reported it could not read")
+                .isEqualTo(read.get(0).errors())
+                .isEqualTo(2);
+        assertThat(read.get(1).empty()).isEqualTo(read.get(0).empty()).isFalse();
+    }
+
+    /// @param runner   The runner.
+    /// @param fragment The fragment.
+    /// @return What it made of [#PART_DRIFTED].
+    private static InputRead served(final FragmentRunner runner, final DocRef fragment) {
+        return runner.serve(fragment, new ByteArrayInputStream(PART_DRIFTED.getBytes(StandardCharsets.UTF_8)),
+                null, (index, record, parsed) -> UNSCORED, null).input();
     }
 
     private void run(final Supplier<List<LearnedStep>> chain,

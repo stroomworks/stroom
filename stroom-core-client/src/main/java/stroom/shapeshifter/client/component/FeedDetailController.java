@@ -214,52 +214,18 @@ public class FeedDetailController extends Controller {
         historyWanted = false;
         view.setHistoryOpen(false);
         waitingList.setLearner(learner);
-        view.setIssues(List.of());
         show(true);
         readRuns(true);
-        readIssues();
     }
 
     /// Reads the feed's runs and the run shown again, keeping what is chosen and open.
     public void refresh() {
         if (learner != null) {
             readRuns(false);
-            readIssues();
             if (view.isWaitingShown()) {
                 waitingList.refresh();
             }
         }
-    }
-
-    /// @param onOpenQuality Run when the person asks to see the issues QA flagged, on the Quality Assurance tab.
-    public void setOnOpenQuality(final Runnable onOpenQuality) {
-        view.setOnOpenQuality(onOpenQuality);
-    }
-
-    // ---- Reading ----
-
-    // The issues QA people have flagged and nobody has resolved, shown to the Data Provider here; a pipeline
-    // whose issues can't be read shows none
-    private void readIssues() {
-        final SupervisorLearner whose = learner;
-        if (whose == null || whose.isPipelineDeleted()) {
-            view.setIssues(List.of());
-            return;
-        }
-        restFactory
-                .create(QUALITY_RESOURCE)
-                .method(resource -> resource.assessments(whose.getLearner().getPipelineUuid(),
-                        whose.getLearner().getElementId()))
-                .onSuccess(said -> {
-                    if (whose == learner || (learner != null && whose.getLearner().equals(learner.getLearner()))) {
-                        view.setIssues(NullSafe.list(said).stream().filter(QualityFigures::isOpenIssue).toList());
-                    }
-                })
-                .onFailure(error -> {
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
     }
 
     private void readRuns(final boolean fresh) {
@@ -447,7 +413,6 @@ public class FeedDetailController extends Controller {
                     answer(open.getNumber());
                 }
             }
-            case ACCEPT -> accept();
             case IMPROVE -> improve();
             case RELEARN -> relearn();
             case GIVE_UP -> giveUp();
@@ -535,26 +500,6 @@ public class FeedDetailController extends Controller {
                         .exec());
     }
 
-    /// Accepts a translation on trial now (§6): it cleared the pass mark; what is skipped is the wait.
-    private void accept() {
-        final SupervisorLearner trial = learner;
-        ConfirmEvent.fire(this,
-                "Accept this translation now? It scored " + NullSafe.getOrElse(trial.getPromotedScore(),
-                        PlainWords::percent, "enough") + " when it was learned, which cleared the pass mark, but from "
-                + "fewer records than its Learning Flow asks for. Accepting it skips the wait for more.",
-                ok -> {
-                    if (ok) {
-                        restFactory
-                                .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.accept(trial.getDoc().getUuid(), trial.getBindingUuid()))
-                                .onSuccess(done -> acted())
-                                .owner(this)
-                                .taskMonitorFactory(taskMonitor())
-                                .exec();
-                    }
-                });
-    }
-
     /// Asks for the translation in use to be made better (A46). What is typed is kept as a note for the
     /// feed, carried into every question after it; nothing typed asks again from what it already does.
     private void improve() {
@@ -568,12 +513,11 @@ public class FeedDetailController extends Controller {
                         .method(resource -> resource.improve(serving.getDoc().getUuid(), serving.getBindingUuid(),
                                 new ImproveRequest(message)))
                         .onSuccess(outcome -> AlertEvent.fireInfo(this, outcome.getSaid(), this::acted))
-                        // The run goes on while the request is open, so one that times out may yet finish
+                        // The request only asks: the AI is asked by the worker, and what it comes to shows
+                        // on this tab (A46). So a failure here is a failure to ask, and nothing is running.
                         .onFailure(error -> AlertEvent.fireError(this,
-                                "The improvement didn't come back: " + error.getMessage(),
-                                "It may still be running, or may have finished after the request gave up. Look "
-                                + "at the feed's learning runs before asking again: asking twice spends a second "
-                                + "run.",
+                                "The improvement couldn't be asked for: " + error.getMessage(),
+                                "Nothing has been asked of the AI, so nothing has been spent. Try again.",
                                 this::acted))
                         .owner(this)
                         .taskMonitorFactory(taskMonitor())

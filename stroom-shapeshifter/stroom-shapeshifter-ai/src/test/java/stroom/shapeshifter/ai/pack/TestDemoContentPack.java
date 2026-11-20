@@ -110,7 +110,7 @@ class TestDemoContentPack {
                     assertThat(model.getModelId()).isNotBlank();
                 });
         assertThat(readAll(PipelineDoc.TYPE, PipelineDoc.class))
-                .describedAs("a pipeline per feed, as the Pipeline Factory makes them (A126)")
+                .describedAs("a pipeline per feed, as a Content Template makes them (A126)")
                 .extracting(PipelineDoc::getUuid, PipelineDoc::getName)
                 .containsExactlyInAnyOrderElementsOf(DemoContentPack.FEEDS.stream()
                         .map(DemoContentPack::pipelineRef)

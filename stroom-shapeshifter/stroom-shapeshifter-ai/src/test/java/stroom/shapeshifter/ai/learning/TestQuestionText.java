@@ -231,7 +231,7 @@ class TestQuestionText {
     @Test
     void aTemplateOverrideIsRenderedWithItsBlocksAndTheRestFollowsTheBuiltIn() {
         // Scenario 40: the chain question in the document's own words; every other question as built in.
-        final LearningFlow flow = LearningFlow.of(FlowExample.TARGET_FIRST)
+        final LearningFlow flow = FlowExamples.flow(FlowExample.TARGET_FIRST)
                 .withTemplates(Map.of(Template.CHAIN, "Pick from:\n${elements}\nGiven:\n${sample}${feedback}"));
         final QuestionText words = QuestionText.of(flow);
         final Chain chain = new Chain(SAMPLE, List.of("DSParser", "XSLTFilter"), List.of());
@@ -246,14 +246,14 @@ class TestQuestionText {
 
     @Test
     void aTemplateNamingAVariableItDoesNotHaveIsRefused() {
-        final LearningFlow flow = LearningFlow.of(FlowExample.DIRECT)
+        final LearningFlow flow = FlowExamples.flow(FlowExample.DIRECT)
                 .withTemplates(Map.of(Template.CHAIN, "${sample} then ${targets}",
                         Template.EXTRACTION_RULES, "LearnerBindings ${nothing}"));
         assertThat(Templates.problems(flow)).containsExactlyInAnyOrder(
                 "The chain question template names ${targets}, which it does not have; it may use ${elements}, "
                 + "${feedback}, ${headers}, ${sample}",
                 "The extraction rules template names ${nothing}, which it does not have; it may use no variables");
-        assertThat(Templates.problems(LearningFlow.of(FlowExample.DIRECT))).isEmpty();
+        assertThat(Templates.problems(FlowExamples.flow(FlowExample.DIRECT))).isEmpty();
     }
 
     @Test

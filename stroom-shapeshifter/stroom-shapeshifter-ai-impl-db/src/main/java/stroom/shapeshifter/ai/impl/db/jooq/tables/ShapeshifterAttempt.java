@@ -170,6 +170,32 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
      */
     public final TableField<ShapeshifterAttemptRecord, String> REPORT = createField(DSL.name("report"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column <code>stroom.shapeshifter_attempt.templates</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> TEMPLATES = createField(DSL.name("templates"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_attempt.built_in_version</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, Integer> BUILT_IN_VERSION = createField(DSL.name("built_in_version"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_attempt.instructions</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> INSTRUCTIONS = createField(DSL.name("instructions"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_attempt.build_version</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> BUILD_VERSION = createField(DSL.name("build_version"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column
+     * <code>stroom.shapeshifter_attempt.improving_binding_uuid</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> IMPROVING_BINDING_UUID = createField(DSL.name("improving_binding_uuid"), SQLDataType.VARCHAR(255), this, "");
+
     private ShapeshifterAttempt(Name alias, Table<ShapeshifterAttemptRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

@@ -47,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Four feeds, four formats, four pipelines, four bindings, each serving its own traffic: delimited text
 /// with a header, JSON lines, syslog in two forms, and fixed-width columns with nothing to split on.
-/// Each feed has its pipeline, as the Pipeline Factory makes them, and so its learner (A114, A127); one
+/// Each feed has its pipeline, as a Content Template makes them, and so its learner (A114, A127); one
 /// document, one flow, one set of scorers.
 ///
 /// **What a scripted model can and cannot prove.** The replies here are canned, so the *choice* of
@@ -139,9 +139,6 @@ class TestScenario51AnyFormatFromAnyFeed {
                 .isEmpty();
         assertThat(table).allSatisfy(binding -> {
             assertThat(binding.isDraft()).isFalse();
-            assertThat(binding.isProvisional())
-                    .describedAs("each brought enough records to be judged on, so none is provisional")
-                    .isFalse();
             assertThat(binding.getScore())
                     .describedAs("and each was promoted on a score, not on hope")
                     .isNotNull();

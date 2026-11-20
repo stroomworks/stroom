@@ -74,6 +74,12 @@ public final class CheckSettings {
             if (check == Check.COMPILE && !setting.isGate()) {
                 problems.add("The compile check is always a gate.");
             }
+            // What a learned stylesheet may use is a safety check, not a quality one (decision N1): a
+            // Learning Flow cannot turn it down or off, because on an automatic one nobody reads the
+            // stylesheet before it runs
+            if (check == Check.PERMITTED && !setting.isGate()) {
+                problems.add("The permitted check is always a gate.");
+            }
             if (!check.isBuilt() && setting.isOn()) {
                 problems.add("The " + name + " check isn't built yet, so it can only be off.");
             }

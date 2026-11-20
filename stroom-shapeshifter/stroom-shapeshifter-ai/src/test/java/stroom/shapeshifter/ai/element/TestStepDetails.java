@@ -29,7 +29,6 @@ import stroom.shapeshifter.ai.stage.Decision.GivenUp;
 import stroom.shapeshifter.ai.stage.Decision.Kept;
 import stroom.shapeshifter.ai.stage.Decision.Parked;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
-import stroom.shapeshifter.ai.stage.Decision.Provisional;
 import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Decision.Would;
@@ -89,7 +88,6 @@ class TestStepDetails {
         assertThat(details.getFragment())
                 .describedAs("carried as a reference so the pane can offer it as a link")
                 .isEqualTo(run.produced().fragment());
-        assertThat(details.isProvisional()).isFalse();
         assertThat(details.getScore()).isEqualTo(run.produced().score());
 
         assertThat(details.getVerdicts())
@@ -153,7 +151,6 @@ class TestStepDetails {
                 new Bound(binding),
                 new Bound(null),
                 new Promoted(binding, 0.9),
-                new Provisional(binding, 0.9, 3, 5),
                 new Rebound(binding, binding, 0.95),
                 new Kept(binding, "the candidate was worse"),
                 new Drafted(binding, 0.9),

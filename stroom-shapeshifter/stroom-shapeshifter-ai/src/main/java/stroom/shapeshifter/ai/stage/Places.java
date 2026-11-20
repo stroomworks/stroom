@@ -19,7 +19,7 @@ package stroom.shapeshifter.ai.stage;
 import stroom.util.shared.DocPath;
 
 /// Where what a learner learns goes, and what it is called (design 06 A113). The Shapeshifter AI element
-/// has a folder and a name property for it, which a Pipeline Factory sets from its patterns; unset, what
+/// has a folder and a name property for it, which a person may set; unset, what
 /// the learner learns goes beside its pipeline under the pipeline's name with ` learned` after it (A133).
 /// Read from the pipeline rather than handed over by the element, because the worker that carries a
 /// session on runs no pipeline.

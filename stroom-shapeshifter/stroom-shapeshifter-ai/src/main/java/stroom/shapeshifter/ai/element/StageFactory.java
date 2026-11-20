@@ -36,12 +36,17 @@ import stroom.shapeshifter.ai.fragment.FragmentWriter;
 import stroom.shapeshifter.ai.fragment.PipelineFragmentRunner;
 import stroom.shapeshifter.ai.learning.Advisors;
 import stroom.shapeshifter.ai.learning.StepRunner;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.ai.scoring.BusinessRulesScorer;
 import stroom.shapeshifter.ai.scoring.CompileScorer;
+import stroom.shapeshifter.ai.scoring.CompletenessScorer;
 import stroom.shapeshifter.ai.scoring.ExtractionQualityScorer;
 import stroom.shapeshifter.ai.scoring.InputCoverageScorer;
+import stroom.shapeshifter.ai.scoring.LiteralsScorer;
+import stroom.shapeshifter.ai.scoring.PermittedScorer;
 import stroom.shapeshifter.ai.scoring.SchemaConformanceScorer;
 import stroom.shapeshifter.ai.scoring.Scorer;
+import stroom.shapeshifter.ai.scoring.TimesScorer;
 import stroom.shapeshifter.ai.scoring.YieldScorer;
 import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.Deferrals;
@@ -54,11 +59,14 @@ import stroom.shapeshifter.ai.stage.Places;
 import stroom.shapeshifter.ai.stage.RegressionSet;
 import stroom.shapeshifter.ai.stage.Snapshots;
 import stroom.shapeshifter.ai.stage.Spend;
+import stroom.shapeshifter.ai.stage.SpendBreaker;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.Wake;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.task.api.TaskContextFactory;
+import stroom.util.shared.BuildInfo;
+import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -95,6 +103,7 @@ public class StageFactory {
     private final Provider<FragmentTap> fragmentTapProvider;
     private final TaskContextFactory taskContextFactory;
     private final NodeInfo nodeInfo;
+    private final Provider<BuildInfo> buildInfoProvider;
     private final Attempts attempts;
     private final LearnerBindings learnerBindings;
     private final LearnerStates states;
@@ -106,6 +115,7 @@ public class StageFactory {
     private final Learners learners;
     private final Wake wake;
     private final Places places;
+    private final TargetSchemas targetSchemas;
     private final Snapshots snapshots;
     private final FragmentCodes codes;
     private final Provider<ShapeshifterAiConfig> configProvider;
@@ -126,6 +136,7 @@ public class StageFactory {
                         final Provider<FragmentTap> fragmentTapProvider,
                         final TaskContextFactory taskContextFactory,
                         final NodeInfo nodeInfo,
+                        final Provider<BuildInfo> buildInfoProvider,
                         final Attempts attempts,
                         final LearnerBindings learnerBindings,
                         final LearnerStates states,
@@ -137,6 +148,7 @@ public class StageFactory {
                         final Learners learners,
                         final Wake wake,
                         final Places places,
+                        final TargetSchemas targetSchemas,
                         final Snapshots snapshots,
                         final FragmentCodes codes,
                         final Provider<ShapeshifterAiConfig> configProvider) {
@@ -155,6 +167,7 @@ public class StageFactory {
         this.fragmentTapProvider = fragmentTapProvider;
         this.taskContextFactory = taskContextFactory;
         this.nodeInfo = nodeInfo;
+        this.buildInfoProvider = buildInfoProvider;
         this.attempts = attempts;
         this.learnerBindings = learnerBindings;
         this.states = states;
@@ -166,6 +179,7 @@ public class StageFactory {
         this.learners = learners;
         this.wake = wake;
         this.places = places;
+        this.targetSchemas = targetSchemas;
         this.snapshots = snapshots;
         this.codes = codes;
         this.configProvider = configProvider;
@@ -182,12 +196,16 @@ public class StageFactory {
         final List<StepRunner> runners = runners(dataSplitterCompiler, pipelineFactoryProvider,
                 headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider, taskContextFactory);
         final List<Scorer> scorers = List.of(
-                new CompileScorer(), new InputCoverageScorer(), new YieldScorer(), schemaConformanceScorer,
+                new CompileScorer(), new PermittedScorer(), new InputCoverageScorer(),
+                new CompletenessScorer(), new YieldScorer(),
+                new TimesScorer(), new LiteralsScorer(),
+                schemaConformanceScorer,
                 new ExtractionQualityScorer(), new BusinessRulesScorer());
         return new Stage(
                 advisors,
                 runners,
                 scorers,
+                targetSchemas,
                 fragmentWriter,
                 // A node judges and serves through the real pipeline (§12 item 2): the stand-in the Tier 1
                 // scenarios run on is for a harness with no node under it.
@@ -199,6 +217,10 @@ public class StageFactory {
                 learnerBindings,
                 states,
                 spend,
+                // The policy over A44's counter (A24): the cluster's ceilings come from the node's
+                // configuration, a Learning Flow's from the document
+                new SpendBreaker(spend, configProvider.get().getSpendTokensPerHour(),
+                        configProvider.get().getSpendCallsPerHour()),
                 guidance,
                 outputs,
                 regressionSet,
@@ -211,7 +233,10 @@ public class StageFactory {
                 Clock.systemUTC(),
                 configProvider.get().getSessionLease().getDuration(),
                 ThreadLocalRandom.current().nextLong(),
-                nodeInfo.getThisNodeName());
+                nodeInfo.getThisNodeName(),
+                // Recorded against each attempt's words (N9), so a prompt rebuilt after an upgrade can
+                // say the checks' wording may have moved under it.
+                NullSafe.get(buildInfoProvider.get(), BuildInfo::getBuildVersion));
     }
 
     /// The runners a stage learns elements with, one for each of [FlowStep#LEARNABLE_ELEMENTS] and in its

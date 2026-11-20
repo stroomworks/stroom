@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question;
 import stroom.shapeshifter.ai.learning.Question.Chain;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
@@ -64,7 +65,7 @@ class TestScenario01LearnsACsvFeed {
                 .uuid("policy-1")
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 // The golden splitter reads the header line into a variable, which coverage counts as
@@ -131,19 +132,19 @@ class TestScenario01LearnsACsvFeed {
         assertThat(run.produced())
                 .describedAs("design 01 §7.3 rule 3: the output records what produced it")
                 .isEqualTo(new Produced(run.doc().getUuid(), promoted.binding().getUuid(),
-                        promoted.binding().getPipeline(), promoted.binding().getRecordBoundary(), false,
+                        promoted.binding().getPipeline(), promoted.binding().getRecordBoundary(),
                         promoted.score(), promoted.binding().getSnapshot()));
 
-        // Scored over the whole stream: coverage and yield on the split, yield on the transform.
+        // Scored over the whole stream: coverage on the split, completeness and yield on the transform.
         assertThat(run.verdicts()).hasSize(2);
         assertThat(run.verdicts().get(0).judgements()).extracting(j -> j.setting().getCheck())
                 .containsExactly(Check.COMPILE, Check.COVERAGE);
         assertThat(run.verdicts().get(1).judgements()).extracting(j -> j.setting().getCheck())
-                .containsExactly(Check.COMPILE, Check.YIELD);
+                .containsExactly(Check.COMPILE, Check.COMPLETENESS, Check.YIELD);
         assertThat(run.verdicts()).allMatch(verdict -> verdict.judgements().stream().allMatch(Judgement::metThreshold));
         assertThat(run.verdicts().get(1).judgements()).extracting(Judgement::score)
                 .extracting(score -> score.value())
-                .containsExactly(1.0, 1.0);
+                .containsExactly(1.0, 1.0, 1.0);
         // There is no floor to clear any more: a candidate is promoted when every gate passes, and the
         // score is the average of the checks that ran (D2, D3)
         assertThat(promoted.score()).isBetween(0.0, 1.0);

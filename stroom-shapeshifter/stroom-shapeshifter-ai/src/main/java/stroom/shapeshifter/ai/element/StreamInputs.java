@@ -20,6 +20,7 @@ import stroom.data.store.api.AttributeMapFactory;
 import stroom.data.store.api.InputStreamProvider;
 import stroom.data.store.api.Source;
 import stroom.data.store.api.Store;
+import stroom.feed.api.FeedProperties;
 import stroom.meta.api.MetaService;
 import stroom.meta.shared.Meta;
 import stroom.shapeshifter.ai.stage.Input;
@@ -36,6 +37,8 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
@@ -54,14 +57,17 @@ public class StreamInputs implements Inputs {
     private final Store store;
     private final MetaService metaService;
     private final AttributeMapFactory attributeMapFactory;
+    private final FeedProperties feedProperties;
 
     @Inject
     public StreamInputs(final Store store,
                         final MetaService metaService,
-                        final AttributeMapFactory attributeMapFactory) {
+                        final AttributeMapFactory attributeMapFactory,
+                        final FeedProperties feedProperties) {
         this.store = store;
         this.metaService = metaService;
         this.attributeMapFactory = attributeMapFactory;
+        this.feedProperties = feedProperties;
     }
 
     @Override
@@ -75,14 +81,18 @@ public class StreamInputs implements Inputs {
             // Read as far as the prefix (design 04 §3): what a session samples from is bounded by the
             // document far below this, and the whole of a stream of any size is read only by a fragment
             // running over it, through the opener, which opens the stream again.
-            final Prefix prefix = prefix(source);
-            return Optional.of(prefix.complete()
+            final Prefix prefix = prefix(source, encodingOf(meta));
+            // When the stream was received, which is what a timestamp with no year takes its year from
+            // and what the times check measures an event against (Track 1 task 3)
+            final Long receivedMs = meta.getCreateMs();
+            return Optional.of((prefix.complete()
                     ? new Input(metaId, meta.getFeedName(), meta.getTypeName(), attributes == null
                             ? Map.of()
                             : attributes, prefix.text())
                     : Input.streamed(metaId, meta.getFeedName(), meta.getTypeName(), attributes == null
                             ? Map.of()
-                            : attributes, prefix.text(), null, () -> open(metaId)));
+                            : attributes, prefix.text(), null, () -> open(metaId)))
+                    .receivedAt(receivedMs));
         } catch (final Exception e) {
             // Deleted, on a volume this node cannot reach, or unreadable — and the close of the source
             // throws a checked exception besides. The attempt that was learning from it is abandoned by
@@ -95,15 +105,45 @@ public class StreamInputs implements Inputs {
     /// The first [Input#PREFIX_BYTES] of the stream as text, and whether that was all of it. A prefix that
     /// is not the whole stream ends at the last line break within it: a line cut in the middle is not a
     /// record of the stream, and judged as one it would fail a candidate that every whole record clears.
-    private static Prefix prefix(final Source source) throws IOException {
+    ///
+    /// @param source   The stream.
+    /// @param encoding What the feed says its data is written in.
+    private static Prefix prefix(final Source source, final Charset encoding) throws IOException {
         try (final InputStreamProvider provider = source.get(0)) {
             final InputStream in = provider.get();
             final byte[] bytes = in.readNBytes(Input.PREFIX_BYTES);
             final boolean complete = bytes.length < Input.PREFIX_BYTES || in.read() < 0;
-            final String text = RecordSkeleton.withoutBom(new String(bytes, StandardCharsets.UTF_8));
+            final String text = RecordSkeleton.withoutBom(new String(bytes, encoding));
             return new Prefix(complete
                     ? text
                     : wholeLines(text), complete);
+        }
+    }
+
+    /// What the feed says its data is written in (audit finding S3).
+    ///
+    /// Learning happens in the worker (A60), which read every stream as UTF-8 whatever the feed said,
+    /// while the task path has always honoured the feed's encoding
+    /// (`Supervision` through `InputSource.getEncoding()`). So a feed in UTF-16 or windows-1252 was
+    /// learned from wrongly decoded text and then served correctly decoded — the parser learned against
+    /// characters the stream does not contain.
+    ///
+    /// An encoding the node cannot name is a reason to go on in UTF-8 rather than to abandon the stream:
+    /// the same thing the pipeline does with an unreadable encoding, and most feeds are UTF-8 anyway.
+    ///
+    /// @param meta The stream's meta.
+    /// @return The charset.
+    private Charset encodingOf(final Meta meta) {
+        try {
+            final String named = feedProperties.getEncoding(meta.getFeedName(), meta.getTypeName(), null);
+            return named == null
+                    ? StandardCharsets.UTF_8
+                    : Charset.forName(named);
+        } catch (final UnsupportedEncodingException | RuntimeException e) {
+            LOGGER.warn(() -> LogUtil.message("Feed {} names an encoding this node cannot use ({}); "
+                                              + "stream {} is read as UTF-8 to learn from",
+                    meta.getFeedName(), e.getMessage(), meta.getId()));
+            return StandardCharsets.UTF_8;
         }
     }
 

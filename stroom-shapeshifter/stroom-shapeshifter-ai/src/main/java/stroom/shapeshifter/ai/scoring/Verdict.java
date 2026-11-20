@@ -66,6 +66,29 @@ public record Verdict(List<Judgement> judgements, double score) {
         return failing;
     }
 
+    /// What the checks that **passed** still have to say: their `INFO` diagnostics, which [#feedback] does
+    /// not carry because it is only about what fell short.
+    ///
+    /// A check that passes is usually silent, but not always. Completeness passes when the records that
+    /// became events and the records the translation declared it skipped add up — and how many were
+    /// skipped is exactly what a person approving the translation needs to read, since by decision there
+    /// is no cap on it (`docs/shapeshifter-ai-declared-skips-design.md`).
+    ///
+    /// @return The notices, in the order of the checks; empty where every check that passed was silent.
+    public List<StoredError> notices() {
+        final List<StoredError> notices = new ArrayList<>();
+        for (final Judgement judgement : judgements) {
+            if (judgement.metThreshold()) {
+                for (final StoredError diagnostic : judgement.score().diagnostics()) {
+                    if (Severity.INFO.equals(diagnostic.getSeverity())) {
+                        notices.add(diagnostic);
+                    }
+                }
+            }
+        }
+        return notices;
+    }
+
     public List<StoredError> feedback() {
         final List<StoredError> feedback = new ArrayList<>();
         for (final Judgement judgement : judgements) {

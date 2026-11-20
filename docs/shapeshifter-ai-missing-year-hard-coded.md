@@ -154,6 +154,42 @@ Without it the right answer can't be known, and the rule in fix 1 should then as
 - Unit tests for the time plausibility check: inside the window, a year early, in the future, and a missing or unparseable `TimeCreated`.
 - A test that a fragment run gives `stroom:format-date` the stream's creation time, not *now*: a stream with an old create time and a year-less timestamp gets the old year.
 
+## What was built, and what it means for bindings already in use (20 November 2026)
+
+Fixes 1, 3 and 4 are built, with the metadata work assumption AS6 called for. See the delivery plan's
+[Task 3 as built](shapeshifter-ai-delivery-plan.md#task-3-as-built-so-far-20-november-2026) for the parts
+and what is left.
+
+### Bindings learned before this: the rollout
+
+**Nothing breaks, and nothing is relearned on its own.** A binding learned before this keeps serving
+exactly as it did. That is deliberate — a translation in use is not changed under a site without their
+knowing — but it does mean a binding that hard-codes a year goes on doing so.
+
+What changes for an existing binding:
+
+- **The times check runs against it while it serves**, and is *advice*, so it reports rather than refuses.
+  A binding dating its events a year out shows as advice on the pipeline's Learning Status tab rather
+  than being withdrawn.
+- **The literals check does not look at it** unless it is judged again: it reads the stylesheet when a
+  candidate is judged, and an existing binding is not a candidate.
+- **A relearn or an Improve picks up all of it** — the new prompt, both checks and the resolved zone —
+  because those go through the conversation.
+
+What a site should do, in order of effort:
+
+1. **Look at the advice** on the feeds that carry timestamps without a year — syslog above all. The
+   check names the record, what it wrote and how far out it is.
+2. **Set the feed's zone** on the pipeline's AI Translator element, or have senders send a `TimeZone`
+   header, where times are not UTC. This takes effect without relearning, which is why the zone is
+   resolved rather than learned.
+3. **Relearn the bindings the advice names.** A relearn gets the prompt that explains partial dates, so
+   the model has what it needs to use `stroom:format-date` rather than guess.
+
+**There is no migration, and there should not be.** A stylesheet is a document a person can read and
+edit; rewriting people's translations automatically to take a year out would be a change to content a
+site owns. The checks make the fault visible, and relearning is the fix.
+
 ## Related
 
 - `docs/shapeshifter-ai-parser-drift-not-detected.md`: serve-time judging that a time check would rely on to trigger relearning.

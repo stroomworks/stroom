@@ -39,7 +39,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// Design 06 A113: where a learner's content goes in a node. What the element says, read from its pipeline
-/// as merged — a value a Pipeline Factory wrote from its patterns — and beside the pipeline under its name
+/// as merged — a value a person set on the pipeline — and beside the pipeline under its name
 /// where the element says nothing.
 class TestPipelinePlaces {
 

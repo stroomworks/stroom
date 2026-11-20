@@ -49,6 +49,7 @@ public final class DeferredWorker {
     private final Attempts attempts;
     private final Documents documents;
     private final Inputs inputs;
+    private final StreamHeld streamHeld;
     private final DeletedPipelines deletedPipelines;
     private final Advisors advisors;
     private final Clock clock;
@@ -60,10 +61,24 @@ public final class DeferredWorker {
                           final DeletedPipelines deletedPipelines,
                           final Advisors advisors,
                           final Clock clock) {
+        this(stage, attempts, documents, inputs, StreamHeld.NONE, deletedPipelines, advisors, clock);
+    }
+
+    /// @param streamHeld Puts each attempt's stream into the pipeline's state before it is carried on, so
+    ///                   that a judged run reads the stream it is judging (assumption AS6).
+    public DeferredWorker(final Stage stage,
+                          final Attempts attempts,
+                          final Documents documents,
+                          final Inputs inputs,
+                          final StreamHeld streamHeld,
+                          final DeletedPipelines deletedPipelines,
+                          final Advisors advisors,
+                          final Clock clock) {
         this.stage = stage;
         this.attempts = attempts;
         this.documents = documents;
         this.inputs = inputs;
+        this.streamHeld = streamHeld;
         this.deletedPipelines = deletedPipelines;
         this.advisors = advisors;
         this.clock = clock;
@@ -124,19 +139,32 @@ public final class DeferredWorker {
             return abandon(attempt, "The Learning Flow has been deleted");
         }
         final Long inputId = attempt.attempt().inputId();
-        final Optional<Input> input = inputId == null
-                ? Optional.empty()
-                : inputs.byId(inputId);
+        // An improvement a person asked for has no stream behind it (A46): its sample is the records its
+        // binding was accepted on, put back together, which the stage reads from the regression set.
+        final Optional<Input> input = attempt.attempt().isImprovement()
+                ? stage.improvementInput(attempt.attempt())
+                : Optional.ofNullable(inputId).flatMap(inputs::byId);
         if (input.isEmpty()) {
             // The conversation is re-walked over the sample, and the sample is the stream (A45): without it
             // there is nothing to carry on from, and waiting longer will not bring it back.
-            return abandon(attempt, "The stream this attempt was learning from is no longer held");
+            return abandon(attempt, attempt.attempt().isImprovement()
+                    ? "The records the binding this was improving was accepted on are no longer held"
+                    : "The stream this attempt was learning from is no longer held");
         }
         try {
+            // Every attempt, not once per pass: the batch runs in one pipeline scope, and an attempt that
+            // left the previous one's meta in place would take the previous stream's year without saying
+            // so (assumption AS6)
+            if (!attempt.attempt().isImprovement()) {
+                streamHeld.hold(inputId, attempt.attempt().learner());
+            }
             // A sentinel means the attempt was not this pass's to carry: another node had taken it, or
             // a draft awaits review, the learner gave up, or learning was turned off while it waited. The stage has
             // said so against the attempt; this pass simply did not advance it.
-            final StageRun run = stage.resume(doc.get(), attempt.id(), input.get(), advisors.of(doc.get()));
+            // In the words the run was asked with (N9), not the Learning Flow's words today: a session is
+            // a conversation, and the model is shown its own history as it resumes.
+            final StageRun run = stage.resume(doc.get(), attempt.id(), input.get(),
+                    advisors.of(doc.get(), attempt.attempt().askedWith()));
             return !(run.decision() instanceof Sentinel);
         } catch (final RuntimeException e) {
             // The stage has already recorded what this came to against the attempt; the pass goes on.

@@ -152,7 +152,7 @@ class TestDeletedPipelinesDao {
         attempts.turn(attemptId, new Turn(1, "chain", 1, QuestionKind.CHAIN, "Which chain?", "DSParser",
                 "model", null, List.of()));
         attempts.closed(attemptId, AttemptStatus.PROMOTED, "Promoted.", bindingUuid, 0.95, 10L);
-        outputs.emitted(7L, learner.pipelineUuid(), new Produced(DOC, bindingUuid, fragment, null, false, 0.95));
+        outputs.emitted(7L, learner.pipelineUuid(), new Produced(DOC, bindingUuid, fragment, null, 0.95));
         corpus.add(List.of(new CorpusIndex.Row(DOC, bindingUuid, 7L, 0, Kind.TRANSLATION, 0.95, attemptId,
                 1_000L)));
         snapshots.keep(new Snapshot("snapshot-" + bindingUuid, DOC, bindingUuid, fragment.getUuid(), "{}",

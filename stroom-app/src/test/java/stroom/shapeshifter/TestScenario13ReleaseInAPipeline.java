@@ -46,6 +46,7 @@ import stroom.shapeshifter.ai.element.ShapeshifterAiParser;
 import stroom.shapeshifter.ai.extraction.DataSplitterCompiler;
 import stroom.shapeshifter.ai.extraction.DataSplitterStep;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.scenario.AdvisorHolder;
 import stroom.shapeshifter.ai.scenario.QuestionMatcher;
 import stroom.shapeshifter.ai.scenario.Scenarios;
@@ -61,6 +62,7 @@ import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
+import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
 import stroom.test.AbstractCoreIntegrationTest;
@@ -128,8 +130,6 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
 
     @Test
     void scenario13ThePromotionReleasesTheStreamThatWaitedAndItIsProcessed() {
-        // A filter over a supervised pipeline needs the node to claim its own tasks (design 04 §7).
-        processorConfigProvider.get().setClaimTasksOnWorker(true);
         final DocRef feed = storeCreationTool.getOrCreateFeedDoc(FEED);
         final DocRef doc = document();
         final DocRef pipeline = pipeline(feed, doc);
@@ -223,7 +223,7 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
         shapeshifterAiStore.writeDocument(shapeshifterAiStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.DISABLED)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -246,6 +246,9 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
         shapeshifterAiStore.writeDocument(shapeshifterAiStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
+                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
+                // about who approves what it learns.
+                .promotionMode(PromotionMode.AUTOMATIC)
                 .build());
     }
 

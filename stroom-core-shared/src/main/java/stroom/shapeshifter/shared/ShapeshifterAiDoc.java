@@ -62,19 +62,21 @@ import java.util.Objects;
         "description",
         "learningMode",
         "model",
+        "targetSchema",
         "relearnThreshold",
         "instructions",
         "flow",
         "maxAttempts",
         "attemptBudgetMs",
         "tokenBudget",
+        "spendTokensPerHour",
+        "spendCallsPerHour",
         "maxDeferralAgeMs",
         "sampleSizeLimit",
         "promotionMode",
         "heldOutFraction",
         "minRecordsToLearn",
         "regressionCap",
-        "regressionRetentionDays",
         "checks",
 })
 @JsonInclude(Include.NON_NULL)
@@ -88,17 +90,26 @@ public class ShapeshifterAiDoc extends AbstractDoc {
      * Below the promotion floor, so that a binding promoted at the floor is not relearned at once.
      */
     static final double DEFAULT_RELEARN_THRESHOLD = 0.8;
-    static final PromotionMode DEFAULT_PROMOTION_MODE = PromotionMode.AUTOMATIC;
+    /**
+     * Review, not automatic (SIM-1 and UM-6, decided 18 November 2026): a new Learning Flow waits for
+     * someone to approve what it learns, and using translations as soon as they pass is a deliberate act
+     * behind {@code APPROVE_SMART_PIPELINES_AUTOMATICALLY}.
+     * <p>
+     * A model nobody has calibrated should not change production content unwatched. NETFILTER was
+     * promoted automatically at a score of 1.0 although it had lost a line and hard-coded a year.
+     */
+    static final PromotionMode DEFAULT_PROMOTION_MODE = PromotionMode.REVIEW;
     /**
      * Five, not three: the first live run (design 02 §6.2) found three right for a simple feed and one short
      * for a transform that needs a rarer schema branch; the attempt budget is the real bound (A5).
      */
     static final int DEFAULT_MAX_ATTEMPTS = 5;
     /**
-     * The direct example's steps and the built-in text: on the feeds measured so far the direct flow reached
-     * the same scores at half the tokens (design 02 §6.3).
+     * No steps, and the built-in text. The built-in setups are the server's now (Track 2 step 1c), so a
+     * document built here cannot carry one: the store fills a new document's steps when it creates it,
+     * and until something does the flow says it has none rather than quietly being {@code Direct}.
      */
-    static final LearningFlow DEFAULT_FLOW = LearningFlow.of(FlowExample.DIRECT);
+    static final LearningFlow DEFAULT_FLOW = new LearningFlow(List.of(), null, null);
     static final long DEFAULT_ATTEMPT_BUDGET_MS = 60_000L;
     static final long DEFAULT_MAX_DEFERRAL_AGE_MS = 24L * 60 * 60 * 1000;
     static final int DEFAULT_SAMPLE_SIZE_LIMIT = 8_192;
@@ -119,6 +130,13 @@ public class ShapeshifterAiDoc extends AbstractDoc {
      */
     @JsonProperty
     private final DocRef model;
+    /// The one schema version a translation this document learns must write (decision D1 option A): the
+    /// `XMLSchema` document, not its group, since a group such as `EVENTS` holds seven event-logging
+    /// versions. The prompts, the target checks and the conformance check all read it, so there is one
+    /// place a target is set. A new document is given the latest event-logging version installed, saved
+    /// here so that installing a newer one later does not change what this document writes.
+    @JsonProperty
+    private final DocRef targetSchema;
     /**
      * The rolling per-record score below which a bound learner is marked for relearning (A29, §5), so that a
      * new kind of record reaching a bound learner — which its binding goes on serving — is still learned.
@@ -153,6 +171,19 @@ public class ShapeshifterAiDoc extends AbstractDoc {
     @JsonProperty
     private final Long tokenBudget;
     /**
+     * The most tokens this Learning Flow may spend in an hour, across every session of every feed it
+     * serves (ruling A24); null or zero leaves it to the cluster's ceiling alone. A per-attempt budget
+     * bounds one attempt; this bounds a feed that keeps opening them.
+     */
+    @JsonProperty
+    private final Long spendTokensPerHour;
+    /**
+     * The most questions this Learning Flow may put to a model in an hour, across every session of every
+     * feed it serves; null or zero leaves it to the cluster's ceiling alone.
+     */
+    @JsonProperty
+    private final Integer spendCallsPerHour;
+    /**
      * How long a stream may wait on a session before it is raised (design 04 §8 scenario 8, A57, A78): past
      * this it is flagged and counted in the Supervisor's backlog, and goes on waiting (A79).
      */
@@ -177,7 +208,9 @@ public class ShapeshifterAiDoc extends AbstractDoc {
     private final double heldOutFraction;
     /**
      * Records a learner must have accumulated before promotion is judged at all; below this a candidate
-     * that clears the floor is bound provisionally and waits for more. Ruling A14, A5.
+     * that clears the floor is written as a draft for a person to approve, even on an automatic Learning
+     * Flow, since the system only approves on its own where it has the evidence to (SIM-3 option E).
+     * Ruling A14, A5.
      */
     @JsonProperty
     private final int minRecordsToLearn;
@@ -186,12 +219,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
      */
     @JsonProperty
     private final int regressionCap;
-    /**
-     * Days regression records are retained, capped by the source feed's own retention; null is the feed's.
-     * Ruling A18.
-     */
-    @JsonProperty
-    private final Integer regressionRetentionDays;
     /// Every check, each Off, Advice or Gate (the one model of checks), with any check not named at its
     /// default; a new document has the defaults.
     @JsonProperty
@@ -209,24 +236,27 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             @JsonProperty("description") final String description,
             @JsonProperty("learningMode") final LearningMode learningMode,
             @JsonProperty("model") final DocRef model,
+            @JsonProperty("targetSchema") final DocRef targetSchema,
             @JsonProperty("relearnThreshold") final Double relearnThreshold,
             @JsonProperty("instructions") final String instructions,
             @JsonProperty("flow") final LearningFlow flow,
             @JsonProperty("maxAttempts") final Integer maxAttempts,
             @JsonProperty("attemptBudgetMs") final Long attemptBudgetMs,
             @JsonProperty("tokenBudget") final Long tokenBudget,
+            @JsonProperty("spendTokensPerHour") final Long spendTokensPerHour,
+            @JsonProperty("spendCallsPerHour") final Integer spendCallsPerHour,
             @JsonProperty("maxDeferralAgeMs") final Long maxDeferralAgeMs,
             @JsonProperty("sampleSizeLimit") final Integer sampleSizeLimit,
             @JsonProperty("promotionMode") final PromotionMode promotionMode,
             @JsonProperty("heldOutFraction") final Double heldOutFraction,
             @JsonProperty("minRecordsToLearn") final Integer minRecordsToLearn,
             @JsonProperty("regressionCap") final Integer regressionCap,
-            @JsonProperty("regressionRetentionDays") final Integer regressionRetentionDays,
             @JsonProperty("checks") final List<CheckSetting> checks) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.learningMode = Objects.requireNonNullElse(learningMode, DEFAULT_LEARNING_MODE);
         this.model = model;
+        this.targetSchema = targetSchema;
         this.relearnThreshold = Objects.requireNonNullElse(relearnThreshold, DEFAULT_RELEARN_THRESHOLD);
         this.instructions = instructions;
         // A document written before the flow was named so carried it as "plan" (A81): the store's
@@ -235,13 +265,14 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         this.maxAttempts = Objects.requireNonNullElse(maxAttempts, DEFAULT_MAX_ATTEMPTS);
         this.attemptBudgetMs = Objects.requireNonNullElse(attemptBudgetMs, DEFAULT_ATTEMPT_BUDGET_MS);
         this.tokenBudget = tokenBudget;
+        this.spendTokensPerHour = spendTokensPerHour;
+        this.spendCallsPerHour = spendCallsPerHour;
         this.maxDeferralAgeMs = Objects.requireNonNullElse(maxDeferralAgeMs, DEFAULT_MAX_DEFERRAL_AGE_MS);
         this.sampleSizeLimit = Objects.requireNonNullElse(sampleSizeLimit, DEFAULT_SAMPLE_SIZE_LIMIT);
         this.promotionMode = Objects.requireNonNullElse(promotionMode, DEFAULT_PROMOTION_MODE);
         this.heldOutFraction = Objects.requireNonNullElse(heldOutFraction, DEFAULT_HELD_OUT_FRACTION);
         this.minRecordsToLearn = Objects.requireNonNullElse(minRecordsToLearn, DEFAULT_MIN_RECORDS_TO_LEARN);
         this.regressionCap = Objects.requireNonNullElse(regressionCap, DEFAULT_REGRESSION_CAP);
-        this.regressionRetentionDays = regressionRetentionDays;
         this.checks = CheckSettings.complete(checks);
     }
 
@@ -272,6 +303,11 @@ public class ShapeshifterAiDoc extends AbstractDoc {
 
     public DocRef getModel() {
         return model;
+    }
+
+    /// @return The one schema version this document's translations must write, or null where none is set.
+    public DocRef getTargetSchema() {
+        return targetSchema;
     }
 
     public double getRelearnThreshold() {
@@ -306,6 +342,18 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         return tokenBudget;
     }
 
+    /// @return The most tokens this Learning Flow may spend in an hour across every session of every feed
+    ///         it serves (A24); null or zero leaves it to the cluster's ceiling alone.
+    public Long getSpendTokensPerHour() {
+        return spendTokensPerHour;
+    }
+
+    /// @return The most questions this Learning Flow may put to a model in an hour; null or zero leaves
+    ///         it to the cluster's ceiling alone.
+    public Integer getSpendCallsPerHour() {
+        return spendCallsPerHour;
+    }
+
     /// @return How long a stream may wait on a session before it is raised (A78).
     public long getMaxDeferralAgeMs() {
         return maxDeferralAgeMs;
@@ -329,10 +377,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
 
     public int getRegressionCap() {
         return regressionCap;
-    }
-
-    public Integer getRegressionRetentionDays() {
-        return regressionRetentionDays;
     }
 
     /// @return One setting for every check, in the order of [Check].
@@ -372,8 +416,9 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                Objects.equals(model, that.model) &&
                Objects.equals(instructions, that.instructions) &&
                Objects.equals(tokenBudget, that.tokenBudget) &&
+               Objects.equals(spendTokensPerHour, that.spendTokensPerHour) &&
+               Objects.equals(spendCallsPerHour, that.spendCallsPerHour) &&
                maxDeferralAgeMs == that.maxDeferralAgeMs &&
-               Objects.equals(regressionRetentionDays, that.regressionRetentionDays) &&
                Objects.equals(checks, that.checks);
     }
 
@@ -389,13 +434,14 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                 maxAttempts,
                 attemptBudgetMs,
                 tokenBudget,
+                spendTokensPerHour,
+                spendCallsPerHour,
                 maxDeferralAgeMs,
                 sampleSizeLimit,
                 promotionMode,
                 heldOutFraction,
                 minRecordsToLearn,
                 regressionCap,
-                regressionRetentionDays,
                 checks);
     }
 
@@ -410,12 +456,13 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                ", maxAttempts=" + maxAttempts +
                ", attemptBudgetMs=" + attemptBudgetMs +
                ", tokenBudget=" + tokenBudget +
+               ", spendTokensPerHour=" + spendTokensPerHour +
+               ", spendCallsPerHour=" + spendCallsPerHour +
                ", sampleSizeLimit=" + sampleSizeLimit +
                ", promotionMode=" + promotionMode +
                ", heldOutFraction=" + heldOutFraction +
                ", minRecordsToLearn=" + minRecordsToLearn +
                ", regressionCap=" + regressionCap +
-               ", regressionRetentionDays=" + regressionRetentionDays +
                ", checks=" + checks +
                '}';
     }
@@ -437,19 +484,21 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         private String description;
         private LearningMode learningMode = DEFAULT_LEARNING_MODE;
         private DocRef model;
+        private DocRef targetSchema;
         private double relearnThreshold = DEFAULT_RELEARN_THRESHOLD;
         private String instructions;
         private LearningFlow flow = DEFAULT_FLOW;
         private int maxAttempts = DEFAULT_MAX_ATTEMPTS;
         private long attemptBudgetMs = DEFAULT_ATTEMPT_BUDGET_MS;
         private Long tokenBudget;
+        private Long spendTokensPerHour;
+        private Integer spendCallsPerHour;
         private long maxDeferralAgeMs = DEFAULT_MAX_DEFERRAL_AGE_MS;
         private int sampleSizeLimit = DEFAULT_SAMPLE_SIZE_LIMIT;
         private PromotionMode promotionMode = DEFAULT_PROMOTION_MODE;
         private double heldOutFraction = DEFAULT_HELD_OUT_FRACTION;
         private int minRecordsToLearn = DEFAULT_MIN_RECORDS_TO_LEARN;
         private int regressionCap = DEFAULT_REGRESSION_CAP;
-        private Integer regressionRetentionDays;
         private List<CheckSetting> checks;
 
         private Builder() {
@@ -460,19 +509,21 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             this.description = doc.description;
             this.learningMode = doc.learningMode;
             this.model = doc.model;
+            this.targetSchema = doc.targetSchema;
             this.relearnThreshold = doc.relearnThreshold;
             this.instructions = doc.instructions;
             this.flow = doc.flow;
             this.maxAttempts = doc.maxAttempts;
             this.attemptBudgetMs = doc.attemptBudgetMs;
             this.tokenBudget = doc.tokenBudget;
+            this.spendTokensPerHour = doc.spendTokensPerHour;
+            this.spendCallsPerHour = doc.spendCallsPerHour;
             this.maxDeferralAgeMs = doc.maxDeferralAgeMs;
             this.sampleSizeLimit = doc.sampleSizeLimit;
             this.promotionMode = doc.promotionMode;
             this.heldOutFraction = doc.heldOutFraction;
             this.minRecordsToLearn = doc.minRecordsToLearn;
             this.regressionCap = doc.regressionCap;
-            this.regressionRetentionDays = doc.regressionRetentionDays;
             this.checks = doc.checks;
         }
 
@@ -488,6 +539,13 @@ public class ShapeshifterAiDoc extends AbstractDoc {
 
         public Builder model(final DocRef model) {
             this.model = model;
+            return self();
+        }
+
+        /// @param targetSchema The `XMLSchema` document a translation must write, or null for none.
+        /// @return This builder.
+        public Builder targetSchema(final DocRef targetSchema) {
+            this.targetSchema = targetSchema;
             return self();
         }
 
@@ -514,14 +572,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             return self();
         }
 
-        /**
-         * An example's steps as the document's own, with the built-in text.
-         */
-        public Builder flow(final FlowExample example) {
-            this.flow = LearningFlow.of(example);
-            return self();
-        }
-
         public Builder maxAttempts(final int maxAttempts) {
             this.maxAttempts = maxAttempts;
             return self();
@@ -530,6 +580,24 @@ public class ShapeshifterAiDoc extends AbstractDoc {
         public Builder attemptBudgetMs(final long attemptBudgetMs) {
             this.attemptBudgetMs = attemptBudgetMs;
             return self();
+        }
+
+        /// The most tokens this Learning Flow may spend in an hour (A24).
+        ///
+        /// @param spendTokensPerHour The ceiling, or null for none of its own.
+        /// @return This builder.
+        public Builder spendTokensPerHour(final Long spendTokensPerHour) {
+            this.spendTokensPerHour = spendTokensPerHour;
+            return this;
+        }
+
+        /// The most questions this Learning Flow may put to a model in an hour (A24).
+        ///
+        /// @param spendCallsPerHour The ceiling, or null for none of its own.
+        /// @return This builder.
+        public Builder spendCallsPerHour(final Integer spendCallsPerHour) {
+            this.spendCallsPerHour = spendCallsPerHour;
+            return this;
         }
 
         public Builder tokenBudget(final Long tokenBudget) {
@@ -567,11 +635,6 @@ public class ShapeshifterAiDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder regressionRetentionDays(final Integer regressionRetentionDays) {
-            this.regressionRetentionDays = regressionRetentionDays;
-            return self();
-        }
-
         /// @param checks The document's checks; any not named have their defaults.
         /// @return This builder.
         public Builder checks(final List<CheckSetting> checks) {
@@ -596,19 +659,21 @@ public class ShapeshifterAiDoc extends AbstractDoc {
                     description,
                     learningMode,
                     model,
-                        relearnThreshold,
+                    targetSchema,
+                    relearnThreshold,
                     instructions,
                     flow,
                     maxAttempts,
                     attemptBudgetMs,
                     tokenBudget,
+                    spendTokensPerHour,
+                    spendCallsPerHour,
                     maxDeferralAgeMs,
                     sampleSizeLimit,
                     promotionMode,
                     heldOutFraction,
                     minRecordsToLearn,
                     regressionCap,
-                    regressionRetentionDays,
                     checks);
         }
     }

@@ -35,14 +35,4 @@ public enum ConfigureRole implements HasDisplayValue {
     public String getDisplayValue() {
         return displayValue;
     }
-
-    /// @return The role written as `parser` or `transform`, or null for anything else.
-    public static ConfigureRole parse(final String word) {
-        for (final ConfigureRole role : values()) {
-            if (role.displayValue.equalsIgnoreCase(word)) {
-                return role;
-            }
-        }
-        return null;
-    }
 }

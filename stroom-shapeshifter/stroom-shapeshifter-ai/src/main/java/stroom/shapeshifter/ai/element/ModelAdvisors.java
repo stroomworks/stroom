@@ -22,7 +22,9 @@ import stroom.event.logging.api.DocumentEventLog;
 import stroom.openai.shared.OpenAIModelDoc;
 import stroom.shapeshifter.ai.learning.Advisor;
 import stroom.shapeshifter.ai.learning.Advisors;
+import stroom.shapeshifter.ai.learning.AskedWith;
 import stroom.shapeshifter.ai.learning.QuestionText;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import jakarta.inject.Inject;
@@ -36,15 +38,24 @@ public class ModelAdvisors implements Advisors {
 
     private final AiService aiService;
     private final DocumentEventLog eventLog;
+    private final TargetSchemas targetSchemas;
 
     @Inject
-    public ModelAdvisors(final AiService aiService, final DocumentEventLog eventLog) {
+    public ModelAdvisors(final AiService aiService,
+                         final DocumentEventLog eventLog,
+                         final TargetSchemas targetSchemas) {
         this.aiService = aiService;
         this.eventLog = eventLog;
+        this.targetSchemas = targetSchemas;
     }
 
     @Override
     public Advisor of(final ShapeshifterAiDoc doc) {
+        return of(doc, AskedWith.UNKNOWN);
+    }
+
+    @Override
+    public Advisor of(final ShapeshifterAiDoc doc, final AskedWith askedWith) {
         if (doc.getModel() == null) {
             return new NoModelAdvisor();
         }
@@ -54,6 +65,7 @@ public class ModelAdvisors implements Advisors {
                                             + doc.getModel() + ", which cannot be read");
         }
         return new ModelAdvisor(aiService.getChatModel(modelDoc), modelDoc.getName(), DocRefUtil.create(doc),
-                QuestionText.of(doc), eventLog);
+                // Task 7: the questions name the schema this document's translations must write
+                QuestionText.of(doc, askedWith, targetSchemas.of(doc).orElse(null)), eventLog);
     }
 }

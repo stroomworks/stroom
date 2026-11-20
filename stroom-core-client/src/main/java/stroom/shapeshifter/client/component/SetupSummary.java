@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.client.component;
 
+import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.FlowExample;
@@ -45,12 +46,13 @@ public final class SetupSummary {
 
     /// Sums up a document's setup, section by section.
     ///
-    /// @param doc The document, as the Setup tab has it now.
+    /// @param doc      The document, as the Setup tab has it now.
+    /// @param examples The built-in setups, as fetched (Track 2 step 1c).
     /// @return What each section says.
-    public static SetupSummary of(final ShapeshifterAiDoc doc) {
+    public static SetupSummary of(final ShapeshifterAiDoc doc, final List<BuiltInFlow> examples) {
         final Map<SetupSection, String> summaries = new EnumMap<>(SetupSection.class);
         summaries.put(SetupSection.LEARNING, learning(doc));
-        summaries.put(SetupSection.APPROACH, approach(doc.getFlow().getSteps()));
+        summaries.put(SetupSection.APPROACH, approach(examples, doc.getFlow().getSteps()));
         summaries.put(SetupSection.QUALITY, quality(doc.getChecks()));
         summaries.put(SetupSection.GOING_LIVE, doc.getPromotionMode() == PromotionMode.REVIEW
                 ? "Approved first"
@@ -59,7 +61,7 @@ public final class SetupSummary {
                                                + "%");
 
         final Map<SetupSection, String> problems = new EnumMap<>(SetupSection.class);
-        for (final Readiness.Item item : Readiness.of(doc).getItems()) {
+        for (final Readiness.Item item : Readiness.of(doc, examples).getItems()) {
             if (!item.isOk() && item.getFix() != null) {
                 problems.putIfAbsent(item.getFix().getSection(), item.getText());
             }
@@ -89,8 +91,8 @@ public final class SetupSummary {
         return mode + " · " + model;
     }
 
-    private static String approach(final List<FlowStep> steps) {
-        final FlowExample example = ApproachFlow.example(steps);
+    private static String approach(final List<BuiltInFlow> examples, final List<FlowStep> steps) {
+        final FlowExample example = ApproachFlow.example(examples, steps);
         final long cards = steps.stream().filter(step -> step.getKind() != QuestionKind.ADMIT).count();
         return (example == null
                 ? "Its own approach"

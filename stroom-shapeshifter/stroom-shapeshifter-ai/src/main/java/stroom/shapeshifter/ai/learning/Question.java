@@ -55,9 +55,13 @@ public sealed interface Question {
     /// resumed attempt compares its re-walk against (A45) — everything in it is re-derived by walking the
     /// same flow over the same sample, so two walks that have reached the same place write the same line.
     ///
-    /// Not the rendered prompt: that carries the stream's own text, which may not be stored until it is
-    /// redacted (A17, A38), and which the raw exchange is audited with by `stroom-ai` in any case. The
-    /// rendered prompt joins the record when redaction is built.
+    /// Not the rendered prompt: that carries the stream's own text, which would be a second copy of
+    /// real data under the attempt's retention rather than the stream's. What was asked is rebuilt
+    /// instead, from the recorded templates, for someone with *View Data* (N9).
+    ///
+    /// It used to say the raw exchange was audited by `stroom-ai`, and that the prompt would join the
+    /// record "when redaction is built". Neither holds: no code audits the raw exchange, and A146
+    /// settled that samples are never redacted.
     default String summary() {
         return identity()
                + (feedback().isEmpty()

@@ -38,17 +38,4 @@ public enum StepGuard implements HasDisplayValue {
     public String getDisplayValue() {
         return displayValue;
     }
-
-    /**
-     * @return The guard written as {@code always}, {@code text}, {@code xml} or {@code json}, or null for anything
-     * else.
-     */
-    public static StepGuard parse(final String word) {
-        for (final StepGuard guard : values()) {
-            if (guard.displayValue.equalsIgnoreCase(word)) {
-                return guard;
-            }
-        }
-        return null;
-    }
 }

@@ -35,7 +35,7 @@ final class ShapeshifterAiFixtures {
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "description": "# Firewall logs",
               "promotionMode": "AUTOMATIC", "heldOutFraction": 0.2,
-              "minRecordsToLearn": 20, "regressionCap": 50, "regressionRetentionDays": 30,
+              "minRecordsToLearn": 20, "regressionCap": 50,
               "relearnThreshold": 0.6,
               "checks": [
                 {"check": "COMPILE", "state": "GATE"},
@@ -77,6 +77,7 @@ final class ShapeshifterAiFixtures {
               "learningMode": "AUTOMATIC",
               "model": {"type": "OpenAIModel", "uuid": "model-1", "name": "GPT-4o"},
               "checks": [{"check": "COMPILE", "state": "GATE"}, {"check": "COVERAGE", "state": "OFF"},
+                {"check": "COMPLETENESS", "state": "OFF"},
                 {"check": "WHOLENESS", "state": "OFF"}, {"check": "CONFORMANCE", "state": "OFF"},
                 {"check": "PRESERVATION", "state": "OFF"}, {"check": "FIDELITY", "state": "OFF"},
                 {"check": "REGRESSION", "state": "OFF"}],
@@ -105,6 +106,38 @@ final class ShapeshifterAiFixtures {
               "CHAIN": "Choose the elements of the chain.",
               "CONFIGURATION": "Configure the parser."}}""";
 
+    /// `GET /shapeshifterAi/v1/flowExamples`: the built-in default setups (Track 2 step 1c). The client
+    /// names a document's approach against these and loads one from them, so a story that shows the Setup
+    /// tab needs them stubbed; `Direct` is spelled out because `NEW_DOC` is it.
+    static final String FLOW_EXAMPLES = """
+            [{"example": "DIRECT", "displayValue": "Direct", "steps": [
+                {"kind": "CHAIN", "when": "ALWAYS"},
+                {"kind": "CONFIGURE", "role": "PARSER", "when": "ALWAYS"},
+                {"kind": "CONFIGURE", "role": "TRANSFORM", "when": "ALWAYS",
+                  "transitions": [{"goTo": "admit"}]},
+                {"kind": "ADMIT", "when": "ALWAYS"}]},
+             {"example": "TARGET_FIRST", "displayValue": "Target first", "steps": [
+                {"kind": "CHAIN", "when": "ALWAYS"},
+                {"kind": "SPLIT", "when": "ALWAYS"},
+                {"kind": "TARGET", "when": "ALWAYS", "kinds": 3},
+                {"kind": "CONFIGURE", "role": "PARSER", "when": "ALWAYS"},
+                {"kind": "CONFIGURE", "role": "TRANSFORM", "when": "ALWAYS",
+                  "transitions": [{"on": "PRESERVATION_SHORT", "goTo": "parser"}, {"goTo": "admit"}]},
+                {"kind": "ADMIT", "when": "ALWAYS"}]},
+             {"example": "ESCALATING", "displayValue": "Escalating", "steps": [
+                {"kind": "CHAIN", "when": "ALWAYS"},
+                {"kind": "SPLIT", "when": "ALWAYS"},
+                {"kind": "CONFIGURE", "role": "PARSER", "when": "ALWAYS",
+                  "transitions": [{"on": "YIELD_SHORT", "goTo": "split"}]},
+                {"id": "first", "kind": "CONFIGURE", "role": "TRANSFORM", "when": "ALWAYS",
+                  "candidates": 2,
+                  "transitions": [{"on": "PASSED", "goTo": "end"}, {"goTo": "target"}]},
+                {"kind": "TARGET", "when": "ALWAYS", "kinds": 3},
+                {"id": "again", "kind": "CONFIGURE", "role": "PARSER", "when": "ALWAYS"},
+                {"kind": "CONFIGURE", "role": "TRANSFORM", "when": "ALWAYS",
+                  "transitions": [{"on": "PRESERVATION_SHORT", "goTo": "again"}, {"goTo": "admit"}]},
+                {"kind": "ADMIT", "when": "ALWAYS"}]}]""";
+
     private static final String DOC_JSON = "{\"type\": \"ShapeshifterAi\", \"uuid\": \"ss-1\", "
                                            + "\"name\": \"Firewall logs\"}";
 
@@ -114,7 +147,7 @@ final class ShapeshifterAiFixtures {
             {"learner": {"pipelineUuid": "p-1", "elementId": "shapeshifterAi"}, "doc": DOC,
               "pipeline": {"type": "Pipeline", "uuid": "p-1", "name": "Firewall pipeline"},
               "state": "Waiting for a person", "waiting": 2, "records": 0, "guidance": 1, "raised": false,
-              "belowThreshold": false, "provisional": false, "pipelineDeleted": false,
+              "belowThreshold": false, "pipelineDeleted": false,
               "lastSessionMs": 1761800600000, "oldestWaitMs": 1761700000000}""".replace("DOC", DOC_JSON);
 
     /// The firewall's learner translating with what it learned: its pipeline's learned translation, as the
@@ -130,7 +163,7 @@ final class ShapeshifterAiFixtures {
               "state": "Serving", "bindingUuid": "b-1",
               "fragment": {"type": "Pipeline", "uuid": "f-1", "name": "Proxy translation"},
               "promotedScore": 0.95, "rollingScore": 0.98, "records": 1204,
-              "waiting": 0, "guidance": 0, "raised": false, "belowThreshold": false, "provisional": false,
+              "waiting": 0, "guidance": 0, "raised": false, "belowThreshold": false,
               "pipelineDeleted": false, "lastSessionMs": 1761600000000}""".replace("DOC", DOC_JSON);
 
     /// `POST /shapeshifterAiSupervisor/v1/learners` for the document: the firewall's pipeline and the
@@ -164,7 +197,7 @@ final class ShapeshifterAiFixtures {
                "question": "Configure: dsParser TextConverter",
                "answer": "PARSER",
                "outcome": "COVERAGE_SHORT", "answeredBy": "model",
-               "score": {"scorer": "INPUT_COVERAGE", "score": 0.42, "threshold": 0.9}},
+               "score": {"check": "COVERAGE", "score": 0.42, "threshold": 0.9}},
              {"number": 3, "stepId": "chain", "kind": "CHAIN", "candidate": 1,
                "question": "Chain: choose from [dsParser, xmlFragmentParser, xslt], after 1 shortfall(s)",
                "answer": "dsParser\\nxslt", "outcome": "PASSED", "answeredBy": "model"},
@@ -315,6 +348,7 @@ final class ShapeshifterAiFixtures {
                                              final String learners) {
         return builder
                 .get("/shapeshifterAi/v1/templates", RestReply.json(TEMPLATES))
+                .get("/shapeshifterAi/v1/flowExamples", RestReply.json(FLOW_EXAMPLES))
                 .get("/shapeshifterAi/v1/ss-1", RestReply.json(doc))
                 .put("/shapeshifterAi/v1/ss-1", request -> RestReply.json(request.getBody()))
                 .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(learners))

@@ -31,14 +31,16 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = YieldParameters.class, name = "yield"),
         @JsonSubTypes.Type(value = SchemaConformanceParameters.class, name = "schemaConformance"),
         @JsonSubTypes.Type(value = ExtractionQualityParameters.class, name = "extractionQuality"),
-        @JsonSubTypes.Type(value = BusinessRulesParameters.class, name = "businessRules")
+        @JsonSubTypes.Type(value = BusinessRulesParameters.class, name = "businessRules"),
+        @JsonSubTypes.Type(value = TimesParameters.class, name = "times")
 })
 @JsonInclude(Include.NON_NULL)
 public abstract sealed class ScorerParameters
         permits YieldParameters,
         SchemaConformanceParameters,
         ExtractionQualityParameters,
-        BusinessRulesParameters {
+        BusinessRulesParameters,
+        TimesParameters {
 
     public abstract Check check();
 
@@ -53,6 +55,7 @@ public abstract sealed class ScorerParameters
             case CONFORMANCE -> new SchemaConformanceParameters(null);
             case QUALITY -> new ExtractionQualityParameters(null, null);
             case RULES -> new BusinessRulesParameters(null, null);
+            case TIMES -> new TimesParameters(null, null);
             default -> null;
         };
     }

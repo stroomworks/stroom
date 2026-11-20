@@ -32,7 +32,7 @@ class TestFlowPath {
         // A88: the target-first flow, walked as scenario 57 does: round one passes down the spine, the
         // transform's preservation shortfall takes the declared edge back to the parser, the parser passes
         // again, the transform re-asks on a shortfall it has no transition for, and passes.
-        final List<FlowStep> steps = FlowExample.TARGET_FIRST.steps();
+        final List<FlowStep> steps = FlowFixtures.targetFirst();
         final List<SupervisorTurn> turns = List.of(
                 turn(1, "chain", StepOutcome.PASSED),
                 turn(2, "split", StepOutcome.PASSED),
@@ -59,7 +59,7 @@ class TestFlowPath {
 
     @Test
     void aShortfallWithNoTransitionAndNoNextCandidateLeavesBySpent() {
-        final List<FlowStep> steps = FlowExample.DIRECT.steps();
+        final List<FlowStep> steps = FlowFixtures.direct();
         final List<SupervisorTurn> turns = List.of(
                 turn(1, "chain", StepOutcome.PASSED),
                 turn(2, "parser", StepOutcome.PASSED),
@@ -73,7 +73,7 @@ class TestFlowPath {
     /// the step's pass; a unit that falls short re-asks the step as any candidate does.
     @Test
     void aStepOfSeveralUnitsPassesAtItsLastUnit() {
-        final List<FlowStep> steps = FlowExample.TARGET_FIRST.steps();
+        final List<FlowStep> steps = FlowFixtures.targetFirst();
         final List<SupervisorTurn> turns = List.of(
                 turn(1, "chain", StepOutcome.PASSED),
                 turn(2, "split", StepOutcome.PASSED),
@@ -97,8 +97,13 @@ class TestFlowPath {
     @Test
     void aPassSentBackToItsOwnStepTakesThatEdge() {
         final List<FlowStep> steps = List.of(
-                FlowStep.parse("CHAIN"),
-                FlowStep.parse("again: CONFIGURE transform candidates 2 on passed goto again"));
+                FlowStep.of(QuestionKind.CHAIN),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .id("again")
+                        .role(ConfigureRole.TRANSFORM)
+                        .candidates(2)
+                        .goTo(StepOutcome.PASSED, "again")
+                        .build());
         final List<SupervisorTurn> turns = List.of(
                 turn(1, "chain", StepOutcome.PASSED),
                 turn(2, "again", StepOutcome.PASSED),
@@ -109,7 +114,7 @@ class TestFlowPath {
 
     @Test
     void aTurnIsAtTheStepItNames() {
-        final List<FlowStep> steps = FlowExample.TARGET_FIRST.steps();
+        final List<FlowStep> steps = FlowFixtures.targetFirst();
 
         assertThat(FlowPath.stepOf(steps, turn(1, "Parser", null))).isEqualTo(3);
         assertThat(FlowPath.stepOf(steps, turn(1, "nowhere", null))).isNull();

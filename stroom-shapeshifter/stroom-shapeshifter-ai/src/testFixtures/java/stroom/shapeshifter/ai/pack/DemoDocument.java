@@ -20,9 +20,11 @@ import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
+import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -92,6 +94,9 @@ public final class DemoDocument {
                 new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                         new ExtractionQualityParameters(false, List.of())),
                 CheckSetting.of(Check.RULES, CheckState.OFF),
+                CheckSetting.of(Check.TIMES, CheckState.ADVICE),
+                CheckSetting.of(Check.LITERALS, CheckState.ADVICE),
+                CheckSetting.of(Check.PERMITTED, CheckState.GATE),
                 CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
                 CheckSetting.of(Check.FIDELITY, CheckState.GATE),
                 CheckSetting.of(Check.REGRESSION, CheckState.GATE));
@@ -102,15 +107,21 @@ public final class DemoDocument {
     /// The flow is the escalating one (A37): direct for a feed that gives its meaning up easily, and a
     /// target only where the transform falls short — which is what makes a single flow reasonable for
     /// formats nobody has seen yet. `minRecordsToLearn` is five rather than the default ten so that
-    /// the small demo files are judged rather than bound provisionally, and the floor is 0.85 rather
-    /// than 0.9 so that a good first attempt on an awkward format is promoted rather than retried.
+    /// the small demo files are judged rather than left as a draft for a person (SIM-3 option E), and
+    /// the floor is 0.85 rather than 0.9 so that a good first attempt on an awkward format is promoted
+    /// rather than retried.
     ///
     /// @param builder A builder to apply the demo's settings to.
     /// @return The same builder, for chaining.
     public static ShapeshifterAiDoc.Builder configure(final ShapeshifterAiDoc.Builder builder) {
         return builder
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.ESCALATING)
+                // Deliberately automatic, where a new Learning Flow is review (SIM-1): the demo is meant
+                // to learn a feed end to end while somebody watches it do so, and stopping at a draft
+                // would make that a two-step exercise. Importing it needs
+                // `APPROVE_SMART_PIPELINES_AUTOMATICALLY`, which an administrator has.
+                .promotionMode(PromotionMode.AUTOMATIC)
+                .flow(FlowExamples.flow(FlowExample.ESCALATING))
                 .allowedElements(ALLOWED_ELEMENTS)
                 .instructions(INSTRUCTIONS)
                 .minRecordsToLearn(5)

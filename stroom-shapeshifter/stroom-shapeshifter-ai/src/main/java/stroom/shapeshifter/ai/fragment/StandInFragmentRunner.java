@@ -38,6 +38,7 @@ import stroom.shapeshifter.ai.learning.StepRunner;
 import stroom.shapeshifter.ai.scoring.Attempted;
 import stroom.shapeshifter.ai.scoring.ConfinedXml;
 import stroom.shapeshifter.shared.RecordBoundary;
+import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
 
 import org.xml.sax.ContentHandler;
@@ -206,16 +207,21 @@ public final class StandInFragmentRunner implements FragmentRunner {
         final String output = steps.isEmpty()
                 ? null
                 : steps.get(steps.size() - 1).result().output();
-        if (output == null || output.isBlank()) {
-            return new ServedStream(0, 0.0, diagnostics, Optional.empty());
-        }
         // The parser's records, by index, for a judge that wants the record whose output fell short: the
-        // one-to-one premise of design 04 §3, which is what the pipeline's tap gives too.
-        final List<String> parsedRecords = steps.get(0).parser()
+        // one-to-one premise of design 04 §3, which is what the pipeline's tap gives too. Counted as the
+        // pipeline's tap counts them, so that the two runners agree on what went in (W4-7).
+        final List<String> parsedRecords = !steps.isEmpty() && steps.get(0).parser()
                 ? RecordSplit.split(steps.get(0).result().output(), boundary == null
                         ? 1
                         : boundary.splitDepth().orElse(1))
                 : List.of();
+        final InputRead read = !steps.isEmpty() && steps.get(0).parser()
+                ? new InputRead(parsedRecords.size(), errors(steps.get(0)),
+                        text.replaceAll("\\s", "").length())
+                : InputRead.UNKNOWN;
+        if (output == null || output.isBlank()) {
+            return new ServedStream(0, 0.0, diagnostics, Optional.empty(), 0, List.of(), read);
+        }
         final RecordGate gate = new RecordGate(judge, downstream, index -> index < parsedRecords.size()
                 ? Optional.of(parsedRecords.get(index))
                 : Optional.empty());
@@ -225,11 +231,25 @@ public final class StandInFragmentRunner implements FragmentRunner {
             reader.parse(new InputSource(new StringReader(output)));
             gate.finish();
         } catch (final RecordShortfall shortfall) {
-            return new ServedStream(gate.records(), gate.meanTotal(), diagnostics, Optional.of(shortfall));
+            return new ServedStream(gate.records(), gate.meanTotal(), diagnostics, Optional.of(shortfall),
+                    gate.skips(), gate.skipReasons(), read);
         } catch (final SAXException | IOException e) {
             throw new IllegalStateException("The chain's output could not be read: " + e.getMessage(), e);
         }
-        return new ServedStream(gate.records(), gate.meanTotal(), diagnostics, Optional.empty());
+        return new ServedStream(gate.records(), gate.meanTotal(), diagnostics, Optional.empty(),
+                gate.skips(), gate.skipReasons(), read);
+    }
+
+    /// How many errors the parser logged, counted as the real runner counts them: every error, not the
+    /// de-duplicated handful a caller is shown (W4-2).
+    ///
+    /// @param parser The parser's step.
+    /// @return How many.
+    private static int errors(final Attempted parser) {
+        return (int) parser.result().diagnostics().stream()
+                .filter(error -> Severity.ERROR.equals(error.getSeverity())
+                                 || Severity.FATAL_ERROR.equals(error.getSeverity()))
+                .count();
     }
 
     private PipelineDataMerger merge(final DocRef fragment) {

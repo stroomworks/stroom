@@ -137,3 +137,40 @@ A total failure should not wait for an average to fall.
 - **Old schema version.** The learned translation writes `event-logging:3` v3.0.0, though v4.1.0 is installed.
   This isn't a model error: `TRANSFORMATION_RULES` in `Templates.java` tells it to.
 - **GATEWAY-AUDIT has a separate bug** (`docs/shapeshifter-ai-mixed-record-elements.md`).
+
+
+## What was built (20 November 2026)
+
+**Half of fix 1, and the half that was blocked on a decision.**
+
+**Completeness is now a check** (`Check.COMPLETENESS`, `CompletenessScorer`), a **gate in every preset**:
+`records in = events out + declared skips`. A record that the translation produced nothing for now fails
+the candidate and goes back to the model with what is missing and how to say it was deliberate — which is
+the gap this document is about, since every other check judges what came out and none of them asks whether
+anything went missing on the way.
+
+**How a translation declares a skip** was the design this waited on, settled the same day as ruling A148
+and written up in [the declared-skips design](shapeshifter-ai-declared-skips-design.md): the translation
+writes `<Skipped xmlns="shapeshifter:skips" reason="..."/>` in place of the event. It is counted beside the
+events, ignored by the Schema-valid check, and dropped before the writer. There is **no cap** on how many
+a translation may declare; the count is shown instead.
+
+**Fix 1 is now built as well.** A serving run says what the parser made of the **input**: the records it
+cut, counted by a filter on the parser's own fork; the errors it reported, counted before they are
+de-duplicated and capped; and whether the stream held any content at all. `Stage.stream`, the worker's
+full pass and `settle` all judge it, so a relearned stream is not woken into the same deferral it came
+from.
+
+- A stream the parser read **nothing** of is deferred whatever the Learning Flow's checks say. That is not
+  a quality threshold; it is the translation not working here, and it is stream 2134's fault exactly.
+- Records that were read but became neither an event nor a declared skip defer where **completeness** is
+  a gate.
+- A parser reporting records it could not read defers where **input coverage** is a gate, measured in
+  records rather than characters (decision of 20 November 2026, audit finding W4-3).
+- The output row and the `ShapeshifterAiScore` attribute now carry **this run's** score, written after the
+  stream is served, so an empty run no longer appears in the history at 1.0 (W4-6).
+- A stream may open three relearning sessions against the same translation; after that it waits for a
+  person instead of paying for a new one every five minutes (W4-5).
+
+Held by `TestScenario64TheStreamTheTranslationStoppedReading` and, for the two runners agreeing,
+`TestFragmentRunnersAgree.bothRunnersCountWhatTheParserMadeOfTheInputTheSameWay`.

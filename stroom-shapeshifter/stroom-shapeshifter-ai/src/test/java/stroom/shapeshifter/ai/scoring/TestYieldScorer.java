@@ -33,7 +33,7 @@ class TestYieldScorer {
 
     private static double scored(final YieldBasis basis, final double expected, final String input) {
         return new YieldScorer().score(new YieldParameters(expected, basis),
-                        new Attempted("DSParser", true, input, new StepResult(TWO_RECORDS, List.of())))
+                        new Attempted("DSParser", true, input, new StepResult(TWO_RECORDS, List.of())), null)
                 .orElseThrow().value();
     }
 
@@ -62,16 +62,16 @@ class TestYieldScorer {
         final YieldScorer scorer = new YieldScorer();
         final YieldParameters records = new YieldParameters(1.0, YieldBasis.RECORDS);
         assertThat(scorer.score(records, new Attempted("XSLTFilter", false, document,
-                new StepResult(three, List.of()), RecordBoundary.ofArray("events"))).orElseThrow().value())
+                new StepResult(three, List.of()), RecordBoundary.ofArray("events"), null), null).orElseThrow().value())
                 .isEqualTo(1.0);
         assertThat(scorer.score(records, new Attempted("XSLTFilter", false, document,
-                new StepResult(three, List.of()))).orElseThrow().value())
+                new StepResult(three, List.of())), null).orElseThrow().value())
                 .describedAs("with no boundary the root's two children are the count").isEqualTo(2.0 / 3);
         // An element boundary over nested XML: two entries under one container.
         final String nested = "<log><entries><entry/><entry/></entries></log>";
         final String two = "<Events xmlns=\"event-logging:3\"><Event/><Event/></Events>";
         assertThat(scorer.score(records, new Attempted("XSLTFilter", false, nested,
-                new StepResult(two, List.of()), RecordBoundary.ofElement("entry"))).orElseThrow().value())
+                new StepResult(two, List.of()), RecordBoundary.ofElement("entry"), null), null).orElseThrow().value())
                 .isEqualTo(1.0);
         // The output is counted by the boundary too, or the two ends disagree: a parser's XML of one map
         // holding three items is three records to the stage and would be one here. Three JSON lines in,
@@ -79,10 +79,10 @@ class TestYieldScorer {
         final String parsed = "<map xmlns=\"http://www.w3.org/2013/XSL/json\"><array key=\"events\">"
                               + "<map/><map/><map/></array></map>";
         final Attempted json = new Attempted("JSONParser", true, "{\"a\":1}\n{\"a\":2}\n{\"a\":3}\n",
-                new StepResult(parsed, List.of()), RecordBoundary.ofArray("events"));
+                new StepResult(parsed, List.of()), RecordBoundary.ofArray("events"), null);
         final YieldParameters perLine = new YieldParameters(1.0, YieldBasis.LINES);
-        assertThat(scorer.score(perLine, json).orElseThrow().value()).isEqualTo(1.0);
-        assertThat(scorer.score(perLine, new Attempted(json.elementType(), true, json.input(), json.result()))
+        assertThat(scorer.score(perLine, json, null).orElseThrow().value()).isEqualTo(1.0);
+        assertThat(scorer.score(perLine, new Attempted(json.elementType(), true, json.input(), json.result()), null)
                 .orElseThrow().value())
                 .describedAs("with no boundary the root's one child is all the output it sees")
                 .isEqualTo(1.0 / 3);

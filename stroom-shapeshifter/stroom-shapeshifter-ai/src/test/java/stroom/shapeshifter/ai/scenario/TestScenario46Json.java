@@ -19,6 +19,7 @@ package stroom.shapeshifter.ai.scenario;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.shapeshifter.ai.learning.Exchange;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.InputKind;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Split;
@@ -68,7 +69,7 @@ class TestScenario46Json {
                 .uuid("doc-1")
                 .name("api-gateway")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("JSONParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -164,7 +165,7 @@ class TestScenario46Json {
                 .reply(Scenarios.fenced(XSLT));
 
         final StageRun run = scenarios.process(script,
-                doc().copy().flow(LearningFlow.of(FlowExample.ESCALATING)).build(), stream(1, DOCUMENT)).learned();
+                doc().copy().flow(FlowExamples.flow(FlowExample.ESCALATING)).build(), stream(1, DOCUMENT)).learned();
 
         script.verifyExhausted();
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);

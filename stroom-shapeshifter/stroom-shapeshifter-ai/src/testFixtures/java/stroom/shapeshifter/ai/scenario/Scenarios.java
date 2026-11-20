@@ -18,8 +18,8 @@ package stroom.shapeshifter.ai.scenario;
 
 import stroom.processor.api.DeferTaskException;
 import stroom.shapeshifter.ai.extraction.DataSplitterStep;
-import stroom.shapeshifter.ai.extraction.ExtractionCorpus;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.extraction.ExtractionCorpus;
 import stroom.shapeshifter.ai.extraction.JsonStep;
 import stroom.shapeshifter.ai.extraction.NodeFixture;
 import stroom.shapeshifter.ai.extraction.XmlFragmentStep;
@@ -28,12 +28,18 @@ import stroom.shapeshifter.ai.fragment.FragmentRunner;
 import stroom.shapeshifter.ai.fragment.StandInFragmentRunner;
 import stroom.shapeshifter.ai.learning.Advisor;
 import stroom.shapeshifter.ai.learning.Advisors;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.StepRunner;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.ai.scoring.BusinessRulesScorer;
 import stroom.shapeshifter.ai.scoring.CompileScorer;
+import stroom.shapeshifter.ai.scoring.CompletenessScorer;
 import stroom.shapeshifter.ai.scoring.ExtractionQualityScorer;
 import stroom.shapeshifter.ai.scoring.InputCoverageScorer;
+import stroom.shapeshifter.ai.scoring.LiteralsScorer;
+import stroom.shapeshifter.ai.scoring.PermittedScorer;
 import stroom.shapeshifter.ai.scoring.Scorer;
+import stroom.shapeshifter.ai.scoring.TimesScorer;
 import stroom.shapeshifter.ai.scoring.YieldScorer;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
@@ -42,6 +48,7 @@ import stroom.shapeshifter.ai.stage.DeferredWorker;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.ai.stage.LearnerBindings;
+import stroom.shapeshifter.ai.stage.SpendBreaker;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.ai.state.InMemoryAttempts;
@@ -63,6 +70,8 @@ import stroom.shapeshifter.ai.state.InMemoryWake;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.FlowExample;
+import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 
 import java.io.IOException;
@@ -102,10 +111,17 @@ public final class Scenarios {
     private static final NodeFixture NODE = new NodeFixture();
 
     public final ContentStores stores = new ContentStores();
+    /// Target schemas over the node fixture's store (task 7). A scenario's document names no target, so
+    /// the conformance check falls back to its group, exactly as it did before the setting existed; a
+    /// scenario about the target sets `targetSchema` to [NodeFixture#eventLoggingSchemaRef()].
+    public final TargetSchemas targetSchemas = NODE.targetSchemas();
     public final InMemoryDeletedPipelines deletedPipelines = new InMemoryDeletedPipelines();
     public final InMemoryAttempts attempts = new InMemoryAttempts(deletedPipelines);
     public final InMemoryLearnerBindings learnerBindings = new InMemoryLearnerBindings();
     public final InMemorySpend spend = new InMemorySpend();
+    /// The spend breaker (A24), off by default: a scenario that wants it sets its ceilings through the
+    /// document, or replaces this.
+    public SpendBreaker breaker = new SpendBreaker(spend, 0L, 0);
     public final InMemoryLearnerStates states = new InMemoryLearnerStates();
     public final InMemoryGuidance guidance = new InMemoryGuidance();
     public final InMemoryOutputs outputs = new InMemoryOutputs();
@@ -128,8 +144,23 @@ public final class Scenarios {
     /// document's own default is deferred (A5), which is right for a node — an LLM call in a processing
     /// task holds a task slot — and wrong for a scenario about what learning does rather than about when
     /// it happens. Scenario 30, which *is* about when, says deferred for itself.
+    /// A document for a scenario.
+    ///
+    /// **Automatic, where the product's default is review** (SIM-1). A scenario is about the learning
+    /// machinery — what is asked, what is judged, what is bound — and under review every one of them
+    /// would stop at a draft waiting for a person, which is scenario 22's subject and nobody else's. A
+    /// scenario that is about review sets it.
+    ///
+    /// **With `Direct`'s steps, where a document built in shared code now has none** (Track 2 step 1c).
+    /// The built-in setups are JSON on the server, and it is the store that gives a new document its
+    /// steps; a scenario does not go through the store, so the harness gives it the same flow the store
+    /// would. A scenario about another setup says which.
+    ///
+    /// @return The builder.
     public static ShapeshifterAiDoc.Builder document() {
-        return ShapeshifterAiDoc.builder();
+        return ShapeshifterAiDoc.builder()
+                .promotionMode(PromotionMode.AUTOMATIC)
+                .flow(FlowExamples.flow(FlowExample.DIRECT));
     }
 
     public List<StepRunner> runners() {
@@ -138,8 +169,10 @@ public final class Scenarios {
     }
 
     public List<Scorer> scorers() {
-        return List.of(new CompileScorer(), new InputCoverageScorer(), new YieldScorer(),
-                NODE.schemaConformanceScorer(), new ExtractionQualityScorer(), new BusinessRulesScorer());
+        return List.of(new CompileScorer(), new PermittedScorer(), new InputCoverageScorer(),
+                new CompletenessScorer(),
+                new YieldScorer(), NODE.schemaConformanceScorer(), new ExtractionQualityScorer(),
+                new BusinessRulesScorer(), new TimesScorer(), new LiteralsScorer());
     }
 
 
@@ -194,6 +227,7 @@ public final class Scenarios {
                 advisors,
                 runners,
                 scorers(),
+                targetSchemas,
                 stores.writer(),
                 fragmentRunner != null
                         ? fragmentRunner
@@ -203,6 +237,9 @@ public final class Scenarios {
                 learnerBindings,
                 states,
                 spend,
+                // No ceilings in the harness unless a scenario sets them: a scenario that asks the model
+                // a hundred times is a scenario, not a runaway
+                breaker,
                 guidance,
                 outputs,
                 regressionSet,
@@ -225,6 +262,34 @@ public final class Scenarios {
         return new DeferredWorker(stage(answerer), attempts, documents, inputs, deletedPipelines,
                 document -> answerer,
                 Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    /// A person's *Improve* (A46), asked and then carried on as the worker carries it.
+    ///
+    /// The ask opens an attempt and parks it at its first question — a model conversation is minutes
+    /// long and does not belong in a web request — and the worker is what puts the questions. This does
+    /// both, through the same route the worker takes: the attempt says which binding it is improving,
+    /// and its sample is that binding's accepted records put back together rather than a stream.
+    ///
+    /// @param advisors    Who answers.
+    /// @param doc         The document.
+    /// @param bindingUuid The binding to improve.
+    /// @param message     What the person wants better, or null.
+    /// @param by          Who asked.
+    /// @return What carrying the improvement on came to.
+    public StageRun improved(final Advisors advisors,
+                             final ShapeshifterAiDoc doc,
+                             final String bindingUuid,
+                             final String message,
+                             final String by) {
+        stage(advisors, learnerBindings).improve(doc, bindingUuid, message, by);
+        final Recorded attempt = attempts.open(LEARNER, NOW.toEpochMilli())
+                .orElseThrow(() -> new IllegalStateException("Improve opened no attempt"));
+        final Stage carrying = stage(advisors, learnerBindings);
+        return carrying.resume(doc, attempt.id(),
+                carrying.improvementInput(attempt.attempt())
+                        .orElseThrow(() -> new IllegalStateException("The improvement has no sample")),
+                advisors.of(doc, attempt.attempt().askedWith()));
     }
 
     /// What production does with a stream (design 04 §3; A60, A99): the task decides — serve, defer or

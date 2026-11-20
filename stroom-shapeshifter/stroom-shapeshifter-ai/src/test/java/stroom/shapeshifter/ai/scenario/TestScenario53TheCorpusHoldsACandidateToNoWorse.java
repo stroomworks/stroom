@@ -159,8 +159,9 @@ class TestScenario53TheCorpusHoldsACandidateToNoWorse {
                                     final Binding binding,
                                     final String xslt) {
         final Script script = script(scenarios, xslt);
-        final Stage improver = scenarios.stage(document -> script, scenarios.learnerBindings);
-        final StageRun improved = improver.improve(doc, binding.getUuid(), null, "jo");
+        // Asked, then carried on as the worker carries it (A46): an improvement is not run in the web
+        // request that asks for it.
+        final StageRun improved = scenarios.improved(document -> script, doc, binding.getUuid(), null, "jo");
         script.verifyExhausted();
         return improved;
     }

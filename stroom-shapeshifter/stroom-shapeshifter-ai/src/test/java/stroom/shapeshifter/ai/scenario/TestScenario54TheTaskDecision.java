@@ -110,7 +110,11 @@ class TestScenario54TheTaskDecision {
         script.verifyExhausted();
         assertThat(scenarios.attempts.byId(attempts.get(0).id()).orElseThrow().status())
                 .isEqualTo(AttemptStatus.PROMOTED);
-        assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).containsExactly(1L, 2L);
+        // Twice over: the promotion's wake, and the same pass's sweep for streams it could not reach
+        // (A130, W7-4). A deferral goes when its stream is served, not when it is woken, so a row the
+        // wake did reach is swept again — an update of no rows.
+        assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
+                .containsExactly(1L, 2L, 1L, 2L);
 
         // Tried again, each is bound and served as it is read, and its row goes.
         for (final long id : List.of(1L, 2L)) {

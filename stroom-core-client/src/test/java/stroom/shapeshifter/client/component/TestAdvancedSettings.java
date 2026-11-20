@@ -91,7 +91,7 @@ class TestAdvancedSettings {
         assertThat(AdvancedSettings.changed(doc().minRecordsToLearn(50).build()))
                 .containsExactly(SetupSection.GOING_LIVE);
         final LearningFlow withoutFallback = new LearningFlow(
-                ApproachFlow.withFallback(FlowExample.DIRECT.steps(), false), null, null);
+                ApproachFlow.withFallback(FlowExampleFixtures.steps(FlowExample.DIRECT), false), null, null);
         assertThat(AdvancedSettings.changed(doc().flow(withoutFallback).build()))
                 .containsExactly(SetupSection.GOING_LIVE);
     }
@@ -119,7 +119,13 @@ class TestAdvancedSettings {
     }
 
     // A Learning Flow as new, to change one thing of
+    /// A document as a new one is: with `Direct`'s steps, which the store gives it (Track 2 step 1c).
+    /// One built here would otherwise have none, and every check that reads the approach would say so.
+    ///
+    /// @return The builder.
     private static ShapeshifterAiDoc.Builder doc() {
-        return ShapeshifterAiDoc.builder().uuid("ss-1");
+        return ShapeshifterAiDoc.builder()
+                .uuid("ss-1")
+                .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null));
     }
 }

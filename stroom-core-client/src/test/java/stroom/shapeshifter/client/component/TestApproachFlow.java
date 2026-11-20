@@ -19,6 +19,7 @@ package stroom.shapeshifter.client.component;
 import stroom.shapeshifter.client.component.ApproachFlow.AddOption;
 import stroom.shapeshifter.client.component.ApproachFlow.Addable;
 import stroom.shapeshifter.client.component.ApproachFlow.Destination;
+import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
@@ -37,16 +38,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TestApproachFlow {
 
-    private static final List<FlowStep> DIRECT = FlowExample.DIRECT.steps();
-    private static final List<FlowStep> ESCALATING = FlowExample.ESCALATING.steps();
+    private static final List<BuiltInFlow> EXAMPLES = FlowExampleFixtures.all();
+    private static final List<FlowStep> DIRECT = FlowExampleFixtures.steps(FlowExample.DIRECT);
+    private static final List<FlowStep> ESCALATING = FlowExampleFixtures.steps(FlowExample.ESCALATING);
 
     @Test
     void theExamplesAreRecognisedAndAnEditIsNot() {
-        assertThat(ApproachFlow.example(DIRECT)).isEqualTo(FlowExample.DIRECT);
-        assertThat(ApproachFlow.example(ESCALATING)).isEqualTo(FlowExample.ESCALATING);
+        assertThat(ApproachFlow.example(EXAMPLES, DIRECT)).isEqualTo(FlowExample.DIRECT);
+        assertThat(ApproachFlow.example(EXAMPLES, ESCALATING)).isEqualTo(FlowExample.ESCALATING);
         final List<FlowStep> edited = ApproachFlow.replace(DIRECT, 1,
                 ApproachFlow.withTries(DIRECT.get(1), 2));
-        assertThat(ApproachFlow.example(edited)).isNull();
+        assertThat(ApproachFlow.example(EXAMPLES, edited)).isNull();
+        assertThat(ApproachFlow.example(List.of(), DIRECT))
+                .describedAs("before the setups are fetched nothing matches, so a document reads as "
+                             + "having its own approach rather than a wrong name")
+                .isNull();
     }
 
     @Test
@@ -123,7 +129,8 @@ class TestApproachFlow {
         final List<StepOutcome> parserConditions = ApproachFlow.conditions(parser);
         assertThat(parserConditions).contains(StepOutcome.COVERAGE_SHORT, StepOutcome.YIELD_SHORT,
                 StepOutcome.PRESERVATION_SHORT, null);
-        assertThat(parserConditions).doesNotContain(StepOutcome.CONFORMANCE_SHORT, StepOutcome.ERRORS_SHORT);
+        assertThat(parserConditions).doesNotContain(StepOutcome.CONFORMANCE_SHORT,
+                StepOutcome.PERMITTED_SHORT);
         // Running out of tries is last
         assertThat(parserConditions.get(parserConditions.size() - 1)).isNull();
 
@@ -134,9 +141,9 @@ class TestApproachFlow {
         // A step no longer names checks of its own: its kind's are always offered, and an outcome a rule
         // names is offered with them, so that nothing a flow says disappears from the menu
         final FlowStep named = ApproachFlow.withRules(transform,
-                List.of(new Transition(StepOutcome.ERRORS_SHORT, "parser")));
+                List.of(new Transition(StepOutcome.RUN_FAILED, "parser")));
         assertThat(ApproachFlow.conditions(named)).contains(StepOutcome.CONFORMANCE_SHORT,
-                StepOutcome.FIDELITY_SHORT, StepOutcome.ERRORS_SHORT);
+                StepOutcome.FIDELITY_SHORT, StepOutcome.RUN_FAILED);
     }
 
     @Test
@@ -146,7 +153,7 @@ class TestApproachFlow {
         assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.SPLIT)))
                 .containsExactly(Check.COVERAGE, Check.YIELD, Check.WHOLENESS);
         assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.TARGET)))
-                .containsExactly(Check.CONFORMANCE, Check.QUALITY, Check.RULES);
+                .containsExactly(Check.CONFORMANCE, Check.QUALITY, Check.RULES, Check.PERMITTED);
         assertThat(ApproachFlow.checksFor(DIRECT.get(2)))
                 .contains(Check.CONFORMANCE, Check.FIDELITY)
                 .doesNotContain(Check.COVERAGE);

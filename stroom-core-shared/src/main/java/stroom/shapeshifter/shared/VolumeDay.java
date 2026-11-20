@@ -32,14 +32,27 @@ public class VolumeDay {
     private final long streams;
     @JsonProperty
     private final long records;
+    @JsonProperty
+    private final long skips;
 
     @JsonCreator
     public VolumeDay(@JsonProperty("dayMs") final Long dayMs,
                      @JsonProperty("streams") final Long streams,
-                     @JsonProperty("records") final Long records) {
+                     @JsonProperty("records") final Long records,
+                     @JsonProperty("skips") final Long skips) {
         this.dayMs = Objects.requireNonNullElse(dayMs, 0L);
         this.streams = Objects.requireNonNullElse(streams, 0L);
         this.records = Objects.requireNonNullElse(records, 0L);
+        this.skips = Objects.requireNonNullElse(skips, 0L);
+    }
+
+    /// A day recorded before declared skips were counted.
+    ///
+    /// @param dayMs   The start of the day.
+    /// @param streams How many streams it translated.
+    /// @param records How many records those streams held.
+    public VolumeDay(final Long dayMs, final Long streams, final Long records) {
+        this(dayMs, streams, records, 0L);
     }
 
     /// @return The start of the day, in milliseconds since the epoch, UTC.
@@ -56,5 +69,12 @@ public class VolumeDay {
     ///         were kept counts as none.
     public long getRecords() {
         return records;
+    }
+
+    /// @return How many of those records the translation declared it deliberately skipped rather than
+    ///         translated (ruling A148). There is no cap on the skip rate, so this is what a person is
+    ///         given to judge it by.
+    public long getSkips() {
+        return skips;
     }
 }

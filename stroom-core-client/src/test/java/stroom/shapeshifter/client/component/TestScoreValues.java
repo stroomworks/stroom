@@ -38,14 +38,6 @@ class TestScoreValues {
     }
 
     @Test
-    void testDays() {
-        assertThat(ScoreValues.toDays(null)).isZero();
-        assertThat(ScoreValues.toDays(30)).isEqualTo(30);
-        assertThat(ScoreValues.fromDays(0)).isNull();
-        assertThat(ScoreValues.fromDays(30)).isEqualTo(30);
-    }
-
-    @Test
     void testLines() {
         assertThat(ScoreValues.toLines(null)).isEmpty();
         assertThat(ScoreValues.toLines(List.of("a", "b"))).isEqualTo("a\nb");

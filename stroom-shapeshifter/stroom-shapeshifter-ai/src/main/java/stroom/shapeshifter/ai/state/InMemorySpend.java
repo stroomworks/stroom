@@ -49,4 +49,20 @@ public final class InMemorySpend implements Spend {
                 ? new Spent(now, 0L, 0)
                 : current;
     }
+
+    @Override
+    public synchronized Spent spentAll(final long windowMs) {
+        final long now = System.currentTimeMillis();
+        long windowStartMs = now;
+        long tokens = 0L;
+        int calls = 0;
+        for (final Spent spent : byDocument.values()) {
+            if (now - spent.windowStartMs() < windowMs) {
+                windowStartMs = Math.min(windowStartMs, spent.windowStartMs());
+                tokens += spent.tokens();
+                calls += spent.calls();
+            }
+        }
+        return new Spent(windowStartMs, tokens, calls);
+    }
 }

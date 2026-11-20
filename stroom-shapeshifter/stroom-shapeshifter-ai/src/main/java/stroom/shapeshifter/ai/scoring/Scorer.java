@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
 
@@ -31,11 +32,17 @@ public interface Scorer {
 
     Check type();
 
-    /**
-     * @param parameters The document's parameters for this scorer, of the class that belongs to
-     *                   {@link #type()}; null for a scorer that takes none.
-     */
-    Optional<Score> score(ScorerParameters parameters, Attempted step);
+    /// Measures this check's signal on one step.
+    ///
+    /// @param parameters The document's parameters for this scorer, of the class that belongs to
+    ///                   [#type()]; null for a scorer that takes none.
+    /// @param step       The step to measure.
+    /// @param target     The one schema the document's translations must write (task 7), or null where
+    ///                   it names none — in which case a scorer that needs one falls back to what it
+    ///                   did before the setting existed, so that a document written before it behaves
+    ///                   exactly as it did.
+    /// @return The score, or empty where this check has nothing to measure on this step.
+    Optional<Score> score(ScorerParameters parameters, Attempted step, TargetSchema target);
 
     /**
      * Refuse parameters this scorer cannot work with — a path that does not compile — when the

@@ -190,40 +190,6 @@ class TestRetractingABindingByHand {
                         .contains("feed has been fixed"));
     }
 
-    /// A provisional binding may be accepted rather than waited out (design 01 §6, §11.6).
-    ///
-    /// It cleared the promotion floor — that is what made it bindable — and what it has not had is
-    /// enough records for a held-out judgement. Accepting skips the wait, not the floor.
-    @Test
-    void aProvisionalBindingCanBeAcceptedRatherThanWaitedOut() {
-        final Scenarios scenarios = new Scenarios();
-        final Stage stage = scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings);
-        final ShapeshifterAiDoc doc = doc();
-        scenarios.learnerBindings.append(Scenarios.LEARNER, "doc-1", Binding.builder()
-                .uuid("provisional")
-                .pipeline(stroom.docref.DocRef.builder()
-                        .type("Pipeline").uuid("fragment-1").name("door-v1").build())
-                .provisional(true)
-                .score(0.91)
-                .build());
-
-        stage.accept(doc, "provisional", "jo");
-
-        final Binding accepted = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
-        assertThat(accepted.isProvisional())
-                .describedAs("it serves on the score it was bound at, no longer marked as waiting")
-                .isFalse();
-        assertThat(accepted.getPromotedTimeMs()).describedAs("and says when it took over").isNotNull();
-        assertThat(accepted.getScore())
-                .describedAs("on the score it cleared the floor with, which is not being re-judged")
-                .isEqualTo(0.91);
-
-        assertThatThrownBy(() -> stage.accept(doc, "provisional", "jo"))
-                .describedAs("a binding already serving on a judgement has nothing to accept")
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("not a provisional binding");
-    }
-
     private Script learn(final Scenarios scenarios) {
         return scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")

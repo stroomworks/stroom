@@ -46,15 +46,15 @@ class TestSetupSummary {
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
                 .checks(CheckPreset.STANDARD.settings())
-                .flow(LearningFlow.of(FlowExample.DIRECT))
+                .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null))
                 .promotionMode(PromotionMode.REVIEW)
                 .relearnThreshold(0.6)
-                .build());
+                .build(), FlowExampleFixtures.all());
 
         assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o");
         // The fallback is a step of the flow, but not a card
         assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Straight to it · 3 steps");
-        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 7 gates");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 9 gates, 2 advice checks");
         assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Approved first");
         assertThat(summary.summary(SetupSection.IN_SERVICE)).isEqualTo("Flagged below 60%");
         for (final SetupSection section : SetupSection.values()) {
@@ -65,14 +65,19 @@ class TestSetupSummary {
     @Test
     void aNewDocumentsProblemsAreShownAgainstTheSectionsTheyAreFixedIn() {
         // Learning off, no model, no checks, the direct flow
-        final SetupSummary summary = SetupSummary.of(ShapeshifterAiDoc.builder().uuid("new").name("New").build());
+        final SetupSummary summary = SetupSummary.of(
+                ShapeshifterAiDoc.builder().uuid("new").name("New")
+                        // The steps the store gives a new document (Track 2 step 1c).
+                        .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null))
+                        .build(),
+                FlowExampleFixtures.all());
 
         assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("Off · no model");
         // Learning off and no model are both fixed under Learning: the first is shown
         assertThat(summary.problem(SetupSection.LEARNING))
                 .isEqualTo("Learning is switched off, so streams of new feeds wait.");
         // A new Learning Flow has the Standard checks, so nothing is wrong with them
-        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 7 gates");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 9 gates, 2 advice checks");
         assertThat(summary.problem(SetupSection.QUALITY)).isNull();
         assertThat(summary.problem(SetupSection.APPROACH)).isNull();
         assertThat(summary.problem(SetupSection.GOING_LIVE)).isNull();
@@ -88,10 +93,10 @@ class TestSetupSummary {
                 .flow(new LearningFlow(List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.CONFIGURE)),
                         null, null))
                 .promotionMode(PromotionMode.AUTOMATIC)
-                .build());
+                .build(), FlowExampleFixtures.all());
 
         assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Its own approach · 2 steps");
-        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Own checks · 7 gates, 1 advice check");
+        assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Own checks · 9 gates, 3 advice checks");
         assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Used once it passes");
     }
 
@@ -101,7 +106,7 @@ class TestSetupSummary {
                 .uuid("ss-1")
                 .name("Broken")
                 .flow(new LearningFlow(List.of(FlowStep.of(QuestionKind.SPLIT)), null, null))
-                .build());
+                .build(), FlowExampleFixtures.all());
 
         assertThat(summary.problem(SetupSection.APPROACH)).startsWith("The approach has a problem: ");
     }
@@ -113,7 +118,7 @@ class TestSetupSummary {
                 .name("Unnamed model")
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", null))
-                .build());
+                .build(), FlowExampleFixtures.all());
 
         assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · a model");
         assertThat(summary.problem(SetupSection.LEARNING)).isNull();

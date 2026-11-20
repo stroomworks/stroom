@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
 import stroom.shapeshifter.ai.learning.Question.Chain;
+import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Decision.Kept;
 import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Input;
@@ -25,6 +26,7 @@ import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
 import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
 import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
+import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
@@ -78,9 +80,7 @@ class TestImproveABindingThatIsServing {
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        final Stage improver = scenarios.stage(document -> improving, scenarios.learnerBindings);
-
-        final StageRun improved = improver.improve(doc, bound.getUuid(),
+        final StageRun improved = scenarios.improved(document -> improving, doc, bound.getUuid(),
                 "The fourth column is a terminal id, not a user.", "jo");
 
         assertThat(improved.decision())
@@ -117,8 +117,8 @@ class TestImproveABindingThatIsServing {
                 "<records xmlns=\"records:2\"/>", lines[1], lines[0] + "\n", "\n", "<Events><Event/></Events>",
                 Kind.TRANSLATION, 1.0, 7L, 0L, null)), doc.getRegressionCap());
 
-        final Stage improver = scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings);
-        final StageRun improved = improver.improve(doc, bound.getUuid(), null, "jo");
+        final Script improving = learn(scenarios);
+        final StageRun improved = scenarios.improved(document -> improving, doc, bound.getUuid(), null, "jo");
 
         assertThat(improved.decision())
                 .describedAs("worse on a record the binding was accepted on is not an improvement, whatever "
@@ -178,12 +178,85 @@ class TestImproveABindingThatIsServing {
                 .hasMessageContaining("already awaiting review");
         scenarios.states.reset(Scenarios.LEARNER);
 
-        // And a learner marked for relearning has learned again by hand: the mark is spent.
+        // And a learner marked for relearning has learned again by hand once the improvement promotes:
+        // the mark is spent then, not when it is asked for. A failed improvement must leave the mark
+        // standing, since the thing it was marked for has not been dealt with.
         scenarios.states.markForRelearning(Scenarios.LEARNER, "doc-1", "drifting");
-        stage.improve(doc, bound.getUuid(), null, "jo");
+        final Script improving = learn(scenarios);
+        scenarios.stage(document -> improving, scenarios.learnerBindings)
+                .improve(doc, bound.getUuid(), null, "jo");
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER))
-                .describedAs("or the next stream would relearn the binding somebody has only now improved")
+                .describedAs("asking only opens the attempt: the model has not been asked yet, so nothing "
+                             + "has been learned and the mark still stands")
+                .contains("drifting");
+
+        scenarios.worker(improving).advance(10);
+        assertThat(scenarios.states.relearnReason(Scenarios.LEARNER))
+                .describedAs("and once it has promoted the mark is spent, or the next stream would "
+                             + "relearn the binding somebody has only now improved")
                 .isEmpty();
+    }
+
+    /// A46: the ask opens an attempt and parks it, and the worker puts the questions. A model
+    /// conversation is minutes long; run inside the web request that asks for it, it holds an HTTP
+    /// thread for all of them, cannot survive the node restarting, and is lost when the browser gives up.
+    @Test
+    void askingOpensAnAttemptForTheWorkerAndAsksTheModelNothing() {
+        final Scenarios scenarios = new Scenarios();
+        final ShapeshifterAiDoc doc = doc();
+        scenarios.process(learn(scenarios), doc, stream()).learned();
+        final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
+
+        final Script improving = learn(scenarios);
+        scenarios.stage(document -> improving, scenarios.learnerBindings)
+                .improve(doc, bound.getUuid(), null, "jo");
+
+        assertThat(improving.asked())
+                .describedAs("nothing was put to the model while the request was open")
+                .isEmpty();
+        final Recorded opened = scenarios.attempts.open(Scenarios.LEARNER, Scenarios.NOW.toEpochMilli())
+                .orElseThrow();
+        assertThat(opened.status())
+                .describedAs("parked at its first question, for the worker to find")
+                .isEqualTo(AttemptStatus.AWAITING_MODEL);
+        assertThat(opened.attempt().isImprovement())
+                .describedAs("and the attempt says it is an improvement, which is the one thing the "
+                             + "bindings cannot tell the worker")
+                .isTrue();
+        assertThat(opened.attempt().improving()).isEqualTo(bound.getUuid());
+        assertThat(opened.attempt().inputId())
+                .describedAs("there is no stream behind it: its sample is the corpus")
+                .isNull();
+
+        // And the worker carries it on, finding that sample in the regression set.
+        assertThat(scenarios.worker(improving).advance(10)).isEqualTo(1);
+        improving.verifyExhausted();
+        assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
+                .describedAs("the same binding, rebound by the improvement the worker carried")
+                .hasSize(1)
+                .first()
+                .satisfies(binding -> assertThat(binding.getUuid()).isEqualTo(bound.getUuid()));
+    }
+
+    /// An improvement whose binding or records have gone while it waited is closed rather than asked
+    /// about nothing: a candidate judged on nothing would be a promotion in disguise.
+    @Test
+    void anImprovementWhoseRecordsHaveGoneIsClosedRatherThanAsked() {
+        final Scenarios scenarios = new Scenarios();
+        final ShapeshifterAiDoc doc = doc();
+        scenarios.process(learn(scenarios), doc, stream()).learned();
+        final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
+        final Script improving = learn(scenarios);
+        scenarios.stage(document -> improving, scenarios.learnerBindings)
+                .improve(doc, bound.getUuid(), null, "jo");
+
+        // Retracted, relearned or pruned while it waited.
+        scenarios.regressionSet.discard(bound.getUuid());
+
+        assertThat(scenarios.worker(improving).advance(10))
+                .describedAs("nothing was carried on")
+                .isZero();
+        assertThat(improving.asked()).describedAs("and the model was not asked").isEmpty();
     }
 
     /// An improvement is asked about the corpus alone. There is no stream to read a feed and type off,
@@ -198,8 +271,7 @@ class TestImproveABindingThatIsServing {
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
         final Script asking = learn(scenarios);
-        final StageRun improved = scenarios.stage(document -> asking, scenarios.learnerBindings)
-                .improve(doc, bound.getUuid(), null, "jo");
+        final StageRun improved = scenarios.improved(document -> asking, doc, bound.getUuid(), null, "jo");
 
         assertThat(improved.transcript()).isNotEmpty();
         assertThat(asking.asked()).first()

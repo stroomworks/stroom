@@ -34,12 +34,10 @@ import java.util.List;
 
 /// What a QA person needs to judge one Smart Pipeline's translated output on its Quality Assurance tab: its
 /// volume and cardinality, samples of the records its translation was learned and checked on beside what they
-/// became, and the assessments recorded of it, with issues flagged to the Data Provider.
+/// became.
 ///
-/// Held to the pipeline's permissions, as its Learning Status is: anyone who may view the pipeline reads these
-/// and records an assessment, which changes nothing about how it translates; resolving an issue is for someone
-/// who may edit the pipeline, who fixes it there. A deleted pipeline's are read by its Learning Flow's viewers,
-/// and nothing is recorded of it.
+/// Held to the pipeline's permissions, as its Learning Status is: anyone who may view the pipeline reads
+/// these. A deleted pipeline's are read by its Learning Flow's viewers.
 @Tag(name = "Shapeshifter AI Quality")
 @Path("/shapeshifterAiQuality" + ResourcePaths.V1)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -69,33 +67,4 @@ public interface QualityResource extends RestResource, DirectRestService {
     List<QualitySample> samples(@PathParam("pipelineUuid") String pipelineUuid,
                                 @PathParam("elementId") String elementId);
 
-    /// @param pipelineUuid The pipeline.
-    /// @param elementId    Its AI Translator element.
-    /// @return The assessments recorded of it, newest first.
-    @GET
-    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/assessments")
-    @Operation(
-            summary = "The assessments recorded of a Smart Pipeline's translated output",
-            operationId = "fetchShapeshifterAiAssessments")
-    List<QualityAssessment> assessments(@PathParam("pipelineUuid") String pipelineUuid,
-                                        @PathParam("elementId") String elementId);
-
-    /// @param request What is said, and of which pipeline's element.
-    /// @return The assessments recorded of it, newest first, the new one among them.
-    @POST
-    @Path("/assessments")
-    @Operation(
-            summary = "Record an assessment of a Smart Pipeline's translated output, flagging any issue to the "
-                      + "Data Provider",
-            operationId = "addShapeshifterAiAssessment")
-    List<QualityAssessment> assess(AssessmentRequest request);
-
-    /// @param id The assessment, an issue.
-    /// @return The assessments recorded of its pipeline's element, newest first, it resolved among them.
-    @POST
-    @Path("/assessments/{id}/resolve")
-    @Operation(
-            summary = "Resolve an issue recorded of a Smart Pipeline's translated output, once it is fixed",
-            operationId = "resolveShapeshifterAiAssessment")
-    List<QualityAssessment> resolve(@PathParam("id") long id);
 }

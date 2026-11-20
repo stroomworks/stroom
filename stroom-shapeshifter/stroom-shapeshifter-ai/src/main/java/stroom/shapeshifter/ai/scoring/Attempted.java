@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.ai.learning.StepRunner;
+import stroom.shapeshifter.ai.transformation.StreamFacts;
 import stroom.shapeshifter.shared.RecordBoundary;
 
 /**
@@ -25,18 +26,39 @@ import stroom.shapeshifter.shared.RecordBoundary;
  * whether that element is a parser — whose records are the input's shape, not the target's, so the
  * scorers that judge meaning leave them alone (design 01 §4).
  *
- * @param boundary What one record is where the input is markup (A35) — the element, or the JSON array's
- *                 items — so that yield counts the records the split settled and not the root's children;
- *                 null where none was settled, and the root's children are the records.
+ * @param boundary      What one record is where the input is markup (A35) — the element, or the JSON
+ *                      array's items — so that yield counts the records the split settled and not the
+ *                      root's children; null where none was settled, and the root's children are the
+ *                      records.
+ * @param configuration What the model wrote for this element — the stylesheet, or the parser's
+ *                      configuration — which the permitted check reads to see what it uses (decision N1).
+ *                      Null where the step has none, such as a chain being chosen.
  */
 public record Attempted(String elementType,
                         boolean parser,
                         String input,
                         StepResult result,
-                        RecordBoundary boundary) {
+                        RecordBoundary boundary,
+                        String configuration,
+                        StreamFacts facts) {
+
+    public Attempted {
+        facts = facts == null
+                ? StreamFacts.none()
+                : facts;
+    }
+
+    public Attempted(final String elementType,
+                     final boolean parser,
+                     final String input,
+                     final StepResult result,
+                     final RecordBoundary boundary,
+                     final String configuration) {
+        this(elementType, parser, input, result, boundary, configuration, StreamFacts.none());
+    }
 
     public Attempted(final String elementType, final boolean parser, final String input, final StepResult result) {
-        this(elementType, parser, input, result, null);
+        this(elementType, parser, input, result, null, null);
     }
 
     public static Attempted of(final StepRunner runner, final String input, final StepResult result) {
@@ -47,6 +69,24 @@ public record Attempted(String elementType,
                                final String input,
                                final StepResult result,
                                final RecordBoundary boundary) {
-        return new Attempted(runner.elementType(), runner.parser(), input, result, boundary);
+        return of(runner, input, result, boundary, null);
+    }
+
+    public static Attempted of(final StepRunner runner,
+                               final String input,
+                               final StepResult result,
+                               final RecordBoundary boundary,
+                               final String configuration) {
+        return of(runner, input, result, boundary, configuration, StreamFacts.none());
+    }
+
+    public static Attempted of(final StepRunner runner,
+                               final String input,
+                               final StepResult result,
+                               final RecordBoundary boundary,
+                               final String configuration,
+                               final StreamFacts facts) {
+        return new Attempted(runner.elementType(), runner.parser(), input, result, boundary, configuration,
+                facts);
     }
 }

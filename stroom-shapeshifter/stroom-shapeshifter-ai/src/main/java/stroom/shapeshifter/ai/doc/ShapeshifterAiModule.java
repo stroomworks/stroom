@@ -17,9 +17,7 @@
 package stroom.shapeshifter.ai.doc;
 
 import stroom.docstore.api.DocumentStoreBinder;
-import stroom.processor.api.SupervisedPipelines;
 import stroom.shapeshifter.ai.element.ShapeshifterAiElementModule;
-import stroom.shapeshifter.ai.element.SupervisedPipelineCheck;
 import stroom.shapeshifter.ai.fragment.ContentCreator;
 import stroom.shapeshifter.ai.fragment.ExplorerContentCreator;
 import stroom.shapeshifter.ai.fragment.FragmentCheck;
@@ -36,9 +34,6 @@ public class ShapeshifterAiModule extends AbstractModule {
     protected void configure() {
         install(new ShapeshifterAiElementModule());
         bind(FragmentCheck.class).to(FragmentCheckImpl.class);
-        // Where a filter is made, the processor asks whether the pipeline is supervised (design 04 §7).
-        GuiceUtil.buildMultiBinder(binder(), SupervisedPipelines.class)
-                .addBinding(SupervisedPipelineCheck.class);
         bind(ContentCreator.class).to(ExplorerContentCreator.class);
 
         DocumentStoreBinder.create(binder())

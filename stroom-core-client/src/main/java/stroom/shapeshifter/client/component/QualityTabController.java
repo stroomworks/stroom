@@ -19,7 +19,6 @@ package stroom.shapeshifter.client.component;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.preferences.client.DateTimeFormatter;
-import stroom.shapeshifter.shared.AssessmentRequest;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.QualityResource;
@@ -53,9 +52,7 @@ import java.util.function.Consumer;
 ///
 /// Beside the figures, through the quality resource ([QualityResource]): the volume day by day and what the
 /// records of the translation in use became, samples of those records beside what they became (for someone who
-/// may also view data; for anyone else, a sentence says why there are none), and the assessments recorded of it.
-/// Anyone who may view the pipeline records an assessment ([AssessmentEditorController]); someone who may edit it
-/// marks an issue resolved, once it is fixed.
+/// may also view data; for anyone else, a sentence says why there are none).
 ///
 /// Read when it is shown, and when another element is chosen: quality changes over hours, not seconds, so it
 /// isn't read again on a timer.
@@ -70,7 +67,6 @@ public class QualityTabController extends Controller {
 
     private final QualityTab view;
     private final RestFactory restFactory;
-    private final Provider<AssessmentEditorController> assessmentEditorProvider;
     /// The settings of each Learning Flow an element learns under, by its uuid, read once while the tab is open.
     private final Map<String, ShapeshifterAiDoc> settings = new HashMap<>();
     private DocRef pipeline;
@@ -88,22 +84,17 @@ public class QualityTabController extends Controller {
     /// @param view              The tab.
     /// @param restFactory       Makes REST requests.
     /// @param dateTimeFormatter        Says when each learning run started, as the user likes dates.
-    /// @param assessmentEditorProvider Makes the dialog an assessment is recorded in.
     @Inject
     public QualityTabController(final EventBus eventBus,
                                 final QualityTab view,
                                 final RestFactory restFactory,
-                                final DateTimeFormatter dateTimeFormatter,
-                                final Provider<AssessmentEditorController> assessmentEditorProvider) {
+                                final DateTimeFormatter dateTimeFormatter) {
         super(eventBus);
         this.view = view;
         this.restFactory = restFactory;
-        this.assessmentEditorProvider = assessmentEditorProvider;
         initWidget(view);
         view.setDateFormat(dateTimeFormatter::format);
         view.setDayFormat(QualityTabController::day);
-        view.setOnAssess(this::assess);
-        view.setOnResolve(this::resolve);
         watch(Contexts.READ_ONLY, value -> {
             readOnly = value;
             if (showing) {
@@ -217,7 +208,7 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-    // The volume and cardinality, the samples, and the assessments, each shown as it comes
+    // The volume and cardinality, and the samples, each shown as it comes
     private void readQuality(final int request, final SupervisorLearner row) {
         final String pipelineUuid = row.getLearner().getPipelineUuid();
         final String elementId = row.getLearner().getElementId();
@@ -249,64 +240,8 @@ public class QualityTabController extends Controller {
                 .owner(this)
                 .taskMonitorFactory(taskMonitor())
                 .exec();
-        readAssessments(request, pipelineUuid, elementId);
     }
 
-    private void readAssessments(final int request, final String pipelineUuid, final String elementId) {
-        restFactory
-                .create(QUALITY_RESOURCE)
-                .method(resource -> resource.assessments(pipelineUuid, elementId))
-                .onSuccess(said -> {
-                    if (request == asked) {
-                        view.showAssessments(NullSafe.list(said), !readOnly);
-                    }
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
-    }
-
-    // Records an assessment of the element shown, from the dialog
-    private void assess() {
-        final PipelineAiElement element = chosen;
-        if (pipeline == null || element == null) {
-            return;
-        }
-        assessmentEditorProvider.get().assess(this, (verdict, comment) -> {
-            final int request = asked;
-            restFactory
-                    .create(QUALITY_RESOURCE)
-                    .method(resource -> resource.assess(new AssessmentRequest(
-                            new LearnerRef(pipeline.getUuid(), element.getId()), verdict, comment)))
-                    .onSuccess(said -> {
-                        if (request == asked) {
-                            view.showAssessments(NullSafe.list(said), !readOnly);
-                        }
-                    })
-                    .owner(this)
-                    .taskMonitorFactory(taskMonitor())
-                    .exec();
-        });
-    }
-
-    // Marks an open issue resolved, for someone who may edit the pipeline
-    private void resolve(final long id) {
-        if (readOnly) {
-            return;
-        }
-        final int request = asked;
-        restFactory
-                .create(QUALITY_RESOURCE)
-                .method(resource -> resource.resolve(id))
-                .onSuccess(said -> {
-                    if (request == asked) {
-                        view.showAssessments(NullSafe.list(said), !readOnly);
-                    }
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
-    }
 
     // A day (UTC) as the volume's table and chart name it, e.g. "17 Nov"
     private static String day(final long dayMs) {

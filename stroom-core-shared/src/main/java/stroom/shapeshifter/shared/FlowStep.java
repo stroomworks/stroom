@@ -16,7 +16,6 @@
 
 package stroom.shapeshifter.shared;
 
-import stroom.docref.HasDisplayValue;
 import stroom.util.shared.SerialisationTestConstructor;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -31,16 +30,13 @@ import java.util.List;
 import java.util.Objects;
 
 /// One step of a learning flow (A33, A37; design 01 §10.2): a question kind with what governs its asking —
-/// an id for `goto`, a role for `CONFIGURE`, a guard, its limits and where it goes on each outcome. What
-/// judges a step is not its own: every check that can measure a step judges it, and whether a check is Off,
-/// Advice or Gate is set once on the Learning Flow (the one model of checks). Written and read as one line:
+/// an id for a transition to name, a role for `CONFIGURE`, a guard, its limits and where it goes on each
+/// outcome. What judges a step is not its own: every check that can measure a step judges it, and whether a
+/// check is Off, Advice or Gate is set once on the Learning Flow (the one model of checks).
 ///
-/// ```
-/// [id:] KIND [parser|transform] [when always|text|xml|json] [candidates n] [kinds n] [elements a,b,…]
-///       [on <outcome> goto <id> | abandon]… [on spent goto <id> | abandon]
-///
-/// A `goto` may name the reserved step `end`, the end of the flow.
-/// ```
+/// A step is read and written as JSON, with Stroom's usual Jackson conversion, and built in code with
+/// [#builder(QuestionKind)]. The one-line flow language it used to be written in is gone (Track 2 step 1c):
+/// where a person reads a step or a rule, the words come from [FlowWords].
 @JsonPropertyOrder({"id", "kind", "role", "when", "candidates", "kinds", "elements", "transitions"})
 @JsonInclude(Include.NON_NULL)
 public class FlowStep {
@@ -55,10 +51,6 @@ public class FlowStep {
     /// the pipeline puts an `XMLParser` in front of it.
     public static final List<String> LEARNABLE_ELEMENTS = List.of(
             "DSParser", "JSONParser", "XMLFragmentParser", "XSLTFilter");
-    private static final String WHEN = "when";
-    private static final String ELEMENTS = "elements";
-    private static final String CANDIDATES = "candidates";
-    private static final String KINDS = "kinds";
 
     /// The step's name for `goto`; null where the step goes by its default name, [#effectiveId()].
     @JsonProperty
@@ -166,7 +158,15 @@ public class FlowStep {
         return new FlowStep(kind, when, null, null);
     }
 
-    /// @return The id as written, or null where the step goes by [#effectiveId()].
+    /// A step built field by field: how code writes a step now that the flow language is gone.
+    ///
+    /// @param kind The question the step asks.
+    /// @return A builder for a step of that kind.
+    public static Builder builder(final QuestionKind kind) {
+        return new Builder(kind);
+    }
+
+    /// @return The id it was given, or null where the step goes by [#effectiveId()].
     public String getId() {
         return id;
     }
@@ -196,7 +196,7 @@ public class FlowStep {
         return kinds;
     }
 
-    /// @return Where the step goes on each outcome, in the order written.
+    /// @return Where the step goes on each outcome, in the order they are declared.
     public List<Transition> getTransitions() {
         return transitions;
     }
@@ -249,170 +249,6 @@ public class FlowStep {
         return null;
     }
 
-    /// The step as one line: the shorthand the example flows and the tests write steps in.
-    public String format() {
-        final StringBuilder text = new StringBuilder();
-        if (id != null) {
-            text.append(id).append(": ");
-        }
-        text.append(kind.name());
-        if (role != null) {
-            text.append(' ').append(role.getDisplayValue());
-        }
-        if (when != StepGuard.ALWAYS) {
-            text.append(' ').append(WHEN).append(' ').append(when.getDisplayValue());
-        }
-        if (candidates != null) {
-            text.append(' ').append(CANDIDATES).append(' ').append(candidates);
-        }
-        if (kinds != null) {
-            text.append(' ').append(KINDS).append(' ').append(kinds);
-        }
-        if (!elements.isEmpty()) {
-            text.append(' ').append(ELEMENTS).append(' ').append(String.join(",", elements));
-        }
-        for (final Transition transition : transitions) {
-            text.append(' ').append(transition.format());
-        }
-        return text.toString();
-    }
-
-    /// One line back into a step.
-    ///
-    /// @throws IllegalArgumentException Naming what is wrong with the line.
-    public static FlowStep parse(final String line) {
-        final String trimmed = line.trim();
-        final String[] words = trimmed.split("\\s+");
-        if (words.length == 0 || words[0].isEmpty()) {
-            throw new IllegalArgumentException("A step needs a question kind");
-        }
-        int i = 0;
-        String id = null;
-        if (words[0].endsWith(":")) {
-            id = words[0].substring(0, words[0].length() - 1);
-            if (id.isEmpty() || !id.matches(ID)) {
-                throw new IllegalArgumentException("'" + words[0] + "' is not a step id; an id is a word, then a "
-                                                   + "colon, in step '" + trimmed + "'");
-            }
-            i = 1;
-        }
-        if (i >= words.length) {
-            throw new IllegalArgumentException("A step needs a question kind, in step '" + trimmed + "'");
-        }
-        final QuestionKind kind = kind(words[i++]);
-        ConfigureRole role = null;
-        if (i < words.length && ConfigureRole.parse(words[i]) != null) {
-            if (kind != QuestionKind.CONFIGURE) {
-                throw new IllegalArgumentException("Only CONFIGURE takes a role, in step '" + trimmed + "'");
-            }
-            role = ConfigureRole.parse(words[i++]);
-        }
-        StepGuard when = StepGuard.ALWAYS;
-        Integer candidates = null;
-        Integer kinds = null;
-        final List<Transition> transitions = new ArrayList<>();
-        final List<String> elements = new ArrayList<>();
-        while (i < words.length) {
-            final String key = words[i].toLowerCase();
-            if (Transition.ON.equals(key)) {
-                i = transition(words, i, trimmed, transitions);
-                continue;
-            }
-            if (i + 1 >= words.length) {
-                throw new IllegalArgumentException("'" + words[i] + "' needs a value, in step '" + trimmed + "'");
-            }
-            final String value = words[i + 1];
-            switch (key) {
-                case WHEN -> {
-                    when = StepGuard.parse(value);
-                    if (when == null) {
-                        throw new IllegalArgumentException("'when " + value + "' is not one of always, text, xml or "
-                                                           + "json, in step '" + trimmed + "'");
-                    }
-                }
-                case CANDIDATES -> candidates = positive(key, value, trimmed);
-                case KINDS -> kinds = positive(key, value, trimmed);
-                case ELEMENTS -> {
-                    for (final String word : value.split(",")) {
-                        if (!word.trim().isEmpty()) {
-                            elements.add(word.trim());
-                        }
-                    }
-                }
-                default -> throw new IllegalArgumentException("'" + words[i] + "' is not when, candidates, kinds, "
-                                                              + "elements or on, in step '" + trimmed + "'");
-            }
-            i += 2;
-        }
-        return new FlowStep(id, kind, role, when, candidates, kinds, transitions, elements);
-    }
-
-    /// Reads `on <outcome|spent> goto <id>` or `on <outcome|spent> abandon` from `words[at]`.
-    ///
-    /// @return The index after the transition.
-    private static int transition(final String[] words,
-                                  final int at,
-                                  final String line,
-                                  final List<Transition> transitions) {
-        if (at + 2 >= words.length) {
-            throw new IllegalArgumentException("'on' needs an outcome and then 'goto <step>' or 'abandon', in step '"
-                                               + line + "'");
-        }
-        final String word = words[at + 1];
-        StepOutcome outcome = null;
-        if (!Transition.SPENT.equalsIgnoreCase(word)) {
-            outcome = StepOutcome.parse(word);
-            if (outcome == null) {
-                throw new IllegalArgumentException("'on " + word + "' is not an outcome; the outcomes are spent, "
-                                                   + words(StepOutcome.values()) + ", in step '" + line + "'");
-            }
-        }
-        final String action = words[at + 2].toLowerCase();
-        if (Transition.ABANDON.equals(action)) {
-            transitions.add(new Transition(outcome, null));
-            return at + 3;
-        }
-        if (Transition.GOTO.equals(action) && at + 3 < words.length) {
-            transitions.add(new Transition(outcome, words[at + 3]));
-            return at + 4;
-        }
-        throw new IllegalArgumentException("'on " + word + "' must be followed by 'goto <step>' or 'abandon', in step '"
-                                           + line + "'");
-    }
-
-    private static String words(final HasDisplayValue... values) {
-        final StringBuilder text = new StringBuilder();
-        for (final HasDisplayValue value : values) {
-            text.append(text.length() == 0
-                    ? ""
-                    : ", ").append(value.getDisplayValue());
-        }
-        return text.toString();
-    }
-
-    private static QuestionKind kind(final String word) {
-        for (final QuestionKind kind : QuestionKind.values()) {
-            if (kind.name().equalsIgnoreCase(word)) {
-                return kind;
-            }
-        }
-        throw new IllegalArgumentException("'" + word + "' is not a question kind; the kinds are CHAIN, SPLIT, "
-                                           + "TARGET, CONFIGURE and ADMIT");
-    }
-
-    private static int positive(final String key, final String value, final String line) {
-        final int number;
-        try {
-            number = Integer.parseInt(value);
-        } catch (final NumberFormatException e) {
-            throw new IllegalArgumentException("'" + key + " " + value + "' is not a number, in step '" + line + "'");
-        }
-        if (number < 1) {
-            throw new IllegalArgumentException("'" + key + "' must be at least 1, in step '" + line + "'");
-        }
-        return number;
-    }
-
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -435,6 +271,114 @@ public class FlowStep {
 
     @Override
     public String toString() {
-        return format();
+        return "FlowStep{id=" + id + ", kind=" + kind + ", role=" + role + ", when=" + when
+               + ", candidates=" + candidates + ", kinds=" + kinds + ", elements=" + elements
+               + ", transitions=" + transitions + '}';
+    }
+
+    // --------------------------------------------------------------------------------
+
+
+    /// A step built field by field, from [FlowStep#builder(QuestionKind)]. Everything but the kind is
+    /// optional, and a step with nothing else set is asked always, with the document's limits, and goes
+    /// on to the next step.
+    public static final class Builder {
+
+        private final QuestionKind kind;
+        private final List<Transition> transitions = new ArrayList<>();
+        private String id;
+        private ConfigureRole role;
+        private StepGuard when;
+        private Integer candidates;
+        private Integer kinds;
+        private List<String> elements;
+
+        private Builder(final QuestionKind kind) {
+            this.kind = kind;
+        }
+
+        /// @param id The name a transition reaches this step by, in place of [FlowStep#effectiveId()].
+        /// @return This builder.
+        public Builder id(final String id) {
+            this.id = id;
+            return this;
+        }
+
+        /// @param role Which elements a `CONFIGURE` step configures.
+        /// @return This builder.
+        public Builder role(final ConfigureRole role) {
+            this.role = role;
+            return this;
+        }
+
+        /// @param when The input the step is asked for.
+        /// @return This builder.
+        public Builder when(final StepGuard when) {
+            this.when = when;
+            return this;
+        }
+
+        /// @param candidates The candidates the step may spend, in place of the document's maximum.
+        /// @return This builder.
+        public Builder candidates(final int candidates) {
+            this.candidates = candidates;
+            return this;
+        }
+
+        /// @param kinds How many kinds of record a target step asks about.
+        /// @return This builder.
+        public Builder kinds(final int kinds) {
+            this.kinds = kinds;
+            return this;
+        }
+
+        /// @param elements The element types a Chain step chooses from.
+        /// @return This builder.
+        public Builder elements(final String... elements) {
+            this.elements = List.of(elements);
+            return this;
+        }
+
+        /// Go to another step, [Transition#END] or an exit as soon as an outcome happens.
+        ///
+        /// @param on The outcome.
+        /// @param goTo The step, `end` or exit to go to.
+        /// @return This builder.
+        public Builder goTo(final StepOutcome on, final String goTo) {
+            transitions.add(new Transition(Objects.requireNonNull(on, "An outcome is needed"), goTo));
+            return this;
+        }
+
+        /// Leave the flow, by the step's own exit, as soon as an outcome happens.
+        ///
+        /// @param on The outcome.
+        /// @return This builder.
+        public Builder abandonOn(final StepOutcome on) {
+            transitions.add(new Transition(Objects.requireNonNull(on, "An outcome is needed"), null));
+            return this;
+        }
+
+        /// Go to another step, [Transition#END] or an exit once the step's candidates are spent.
+        ///
+        /// @param goTo The step, `end` or exit to go to.
+        /// @return This builder.
+        public Builder whenSpentGoTo(final String goTo) {
+            transitions.add(new Transition(null, goTo));
+            return this;
+        }
+
+        /// Leave the flow, by the step's own exit, once the step's candidates are spent. This is what a
+        /// step does anyway; it is said out loud where a flow means to say it.
+        ///
+        /// @return This builder.
+        public Builder abandonWhenSpent() {
+            transitions.add(new Transition(null, null));
+            return this;
+        }
+
+        /// @return The step.
+        public FlowStep build() {
+            return new FlowStep(id, kind, role, when, candidates, kinds, transitions, elements);
+        }
     }
 }

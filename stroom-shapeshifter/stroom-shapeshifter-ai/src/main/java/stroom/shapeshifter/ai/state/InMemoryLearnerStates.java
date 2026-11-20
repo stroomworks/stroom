@@ -51,12 +51,19 @@ public final class InMemoryLearnerStates implements LearnerStates {
                                               final String docUuid,
                                               final double score,
                                               final int records,
+                                              final int skipped,
                                               final int memory) {
         final Row row = row(learner, docUuid);
         final int remembered = Math.min(row.records, memory);
         if (remembered + records > 0) {
             row.score = (row.score * remembered + score * records) / (remembered + records);
         }
+        // The skips go with the records they belong to: where the memory has dropped older records,
+        // their skips go with them, or a learner that skipped badly once would look as though it still
+        // were
+        row.skips = (row.records == 0
+                ? 0
+                : (int) Math.round((double) row.skips * remembered / row.records)) + skipped;
         row.records = remembered + records;
         return row.records >= memory
                 ? OptionalDouble.of(row.score)
@@ -94,6 +101,7 @@ public final class InMemoryLearnerStates implements LearnerStates {
         row.draft = null;
         row.score = 0.0;
         row.records = 0;
+        row.skips = 0;
     }
 
     /// Whatever the row holds, scored or not: the list of A46 shows a learner that has brought three
@@ -103,7 +111,7 @@ public final class InMemoryLearnerStates implements LearnerStates {
         final Row row = rows.get(learner);
         return row == null || row.records == 0
                 ? Optional.empty()
-                : Optional.of(new Rolling(row.score, row.records));
+                : Optional.of(new Rolling(row.score, row.records, row.skips));
     }
 
     /// @param learner The learner.
@@ -168,5 +176,6 @@ public final class InMemoryLearnerStates implements LearnerStates {
         private String draft;
         private double score;
         private int records;
+        private int skips;
     }
 }

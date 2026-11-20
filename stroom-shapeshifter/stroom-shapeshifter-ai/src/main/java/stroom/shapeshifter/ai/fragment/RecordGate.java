@@ -19,6 +19,7 @@ package stroom.shapeshifter.ai.fragment;
 import stroom.pipeline.xml.event.Event;
 import stroom.pipeline.xml.event.simple.SimpleEventList;
 import stroom.pipeline.xml.event.simple.SimpleEventListBuilder;
+import stroom.shapeshifter.ai.scoring.DeclaredSkips;
 import stroom.shapeshifter.ai.scoring.Verdict;
 import stroom.util.xml.XMLUtil;
 
@@ -58,6 +59,10 @@ public final class RecordGate implements ContentHandler {
     private boolean seenRoot;
     private boolean opened;
     private int records;
+    private int skips;
+    private final List<String> skipReasons = new ArrayList<>();
+    /// How deep inside a declared skip the run is, or zero where it is not in one.
+    private int skipping;
     private double totals;
     private String rootUri;
     private String rootLocalName;
@@ -79,6 +84,19 @@ public final class RecordGate implements ContentHandler {
     /// How many records were judged, the short one included.
     public int records() {
         return records;
+    }
+
+    /// How many records the translation declared it deliberately skipped ([DeclaredSkips]). A skip is not
+    /// an event and is not judged; it is counted so that completeness can add it to the events, and shown
+    /// so that a person can see how much of a stream was skipped rather than translated.
+    public int skips() {
+        return skips;
+    }
+
+    /// Why the translation said it skipped each record it skipped, leaving out the markers that gave no
+    /// reason.
+    public List<String> skipReasons() {
+        return List.copyOf(skipReasons);
     }
 
     /// The mean of the judged records' weighted totals, or zero where none was.
@@ -119,6 +137,10 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void startPrefixMapping(final String prefix, final String uri) throws SAXException {
+        if (skipping > 0 || DeclaredSkips.NAMESPACE.equals(uri)) {
+            // The marker's own namespace is never declared on the output the downstream gets
+            return;
+        }
         if (record != null) {
             record.startPrefixMapping(prefix, uri);
         } else if (depth == 0 && !seenRoot) {
@@ -129,7 +151,7 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void endPrefixMapping(final String prefix) throws SAXException {
-        if (record != null) {
+        if (record != null && skipping == 0) {
             record.endPrefixMapping(prefix);
         }
         // The root's own mappings end with the root, at the end of the document.
@@ -147,6 +169,16 @@ public final class RecordGate implements ContentHandler {
                 opening.startElement(uri, localName, qName, atts);
                 seenRoot = true;
             }
+        } else if (skipping > 0) {
+            // Inside a declared skip: nothing of it is kept, judged or handed on
+            skipping++;
+        } else if (depth == 2 && DeclaredSkips.isMarker(uri, localName)) {
+            skipping = 1;
+            skips++;
+            final String reason = DeclaredSkips.reason(atts);
+            if (reason != null) {
+                skipReasons.add(reason);
+            }
         } else {
             if (depth == 2) {
                 record = new SimpleEventListBuilder();
@@ -157,7 +189,9 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void endElement(final String uri, final String localName, final String qName) throws SAXException {
-        if (depth >= 2) {
+        if (skipping > 0) {
+            skipping--;
+        } else if (depth >= 2) {
             record.endElement(uri, localName, qName);
             if (depth == 2) {
                 final List<Event> events = ((SimpleEventList) record.getEventList()).getEvents();
@@ -170,7 +204,7 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void characters(final char[] ch, final int start, final int length) throws SAXException {
-        if (record != null) {
+        if (record != null && skipping == 0) {
             record.characters(ch, start, length);
         }
         // Text between records — the whitespace of an indented document — is nobody's.
@@ -178,7 +212,7 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void ignorableWhitespace(final char[] ch, final int start, final int length) throws SAXException {
-        if (record != null) {
+        if (record != null && skipping == 0) {
             record.ignorableWhitespace(ch, start, length);
         }
     }

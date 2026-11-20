@@ -36,8 +36,6 @@ public enum AttemptStatus implements HasDisplayValue {
     /// holding its learner with a lease that does not lapse, and left alone by the worker until somebody
     /// answers it, gives it more to spend, or sends it to the exhaustion step.
     PARKED("Parked"),
-    /// Bound on too few records to judge it on (A14); it promotes or retracts when enough arrive.
-    PROVISIONAL("Provisional"),
     /// Bound, and judged on enough records to mean it.
     PROMOTED("Promoted"),
     /// A person refused what it wrote (A25).

@@ -56,8 +56,6 @@ public class ShapeshifterAiStepDetails extends ElementStepDetails {
     @JsonProperty
     private final DocRef fragment;
     @JsonProperty
-    private final boolean provisional;
-    @JsonProperty
     private final Double score;
     @JsonProperty
     private final String recordBoundary;
@@ -76,7 +74,6 @@ public class ShapeshifterAiStepDetails extends ElementStepDetails {
                                      @JsonProperty("reason") final String reason,
                                      @JsonProperty("bindingUuid") final String bindingUuid,
                                      @JsonProperty("fragment") final DocRef fragment,
-                                     @JsonProperty("provisional") final boolean provisional,
                                      @JsonProperty("score") final Double score,
                                      @JsonProperty("recordBoundary") final String recordBoundary,
                                      @JsonProperty("verdicts") final List<StageVerdict> verdicts,
@@ -89,7 +86,6 @@ public class ShapeshifterAiStepDetails extends ElementStepDetails {
         this.reason = reason;
         this.bindingUuid = bindingUuid;
         this.fragment = fragment;
-        this.provisional = provisional;
         this.score = score;
         this.recordBoundary = recordBoundary;
         this.verdicts = verdicts;
@@ -118,7 +114,7 @@ public class ShapeshifterAiStepDetails extends ElementStepDetails {
      */
     public ShapeshifterAiStepDetails withNested(final List<NestedElementData> elements) {
         return new ShapeshifterAiStepDetails(dryRun, document, stream, decision, reason, bindingUuid,
-                fragment, provisional, score, recordBoundary, verdicts, transcript, elements);
+                fragment, score, recordBoundary, verdicts, transcript, elements);
     }
 
     /**
@@ -142,7 +138,7 @@ public class ShapeshifterAiStepDetails extends ElementStepDetails {
 
     /**
      * What was decided, named as design 02 §4 names it: bound, promoted, drafted, sentinelled, given up,
-     * retracted, kept, rebound, provisional — or <em>would</em>, where this was a step.
+     * retracted, kept or rebound — or <em>would</em>, where this was a step.
      */
     public String getDecision() {
         return decision;
@@ -162,10 +158,6 @@ public class ShapeshifterAiStepDetails extends ElementStepDetails {
      */
     public DocRef getFragment() {
         return fragment;
-    }
-
-    public boolean isProvisional() {
-        return provisional;
     }
 
     public Double getScore() {

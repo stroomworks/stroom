@@ -133,9 +133,6 @@ class TestSupervisorResourceImpl {
         assertThatThrownBy(() -> resource.improve("doc-1", "rule-gone", new ImproveRequest(null)))
                 .describedAs("its binding not improved")
                 .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> resource.accept("doc-1", "rule-gone"))
-                .describedAs("accepted")
-                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> resource.retract("doc-1", "rule-gone", new RejectRequest("Gone.")))
                 .describedAs("or retracted")
                 .isInstanceOf(IllegalStateException.class);
@@ -245,9 +242,6 @@ class TestSupervisorResourceImpl {
         assertThatThrownBy(() -> viewer.giveUp("doc-1", new LearnerRequest(OURS, "Retired.")))
                 .describedAs("not given up")
                 .isInstanceOf(PermissionException.class);
-        assertThatThrownBy(() -> viewer.accept("doc-1", "rule-1"))
-                .describedAs("its translation not accepted")
-                .isInstanceOf(PermissionException.class);
         assertThatThrownBy(() -> viewer.retract("doc-1", "rule-1", new RejectRequest("Wrong.")))
                 .describedAs("or taken back")
                 .isInstanceOf(PermissionException.class);
@@ -263,9 +257,9 @@ class TestSupervisorResourceImpl {
                 .pipeline(new DocRef("Pipeline", "fragment-1", "FIREWALL learned"))
                 .build());
 
-        assertThatThrownBy(() -> resource.accept("doc-2", "rule-1"))
+        assertThatThrownBy(() -> resource.improve("doc-2", "rule-1", new ImproveRequest(null)))
                 .isInstanceOf(PermissionException.class);
-        assertThatThrownBy(() -> resource.accept("doc-1", "no-such-binding"))
+        assertThatThrownBy(() -> resource.improve("doc-1", "no-such-binding", new ImproveRequest(null)))
                 .isInstanceOf(PermissionException.class);
     }
 

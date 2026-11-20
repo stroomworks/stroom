@@ -17,8 +17,6 @@
 package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
-import stroom.shapeshifter.shared.AssessmentVerdict;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorLearner;
@@ -61,35 +59,39 @@ public final class QualityFigures {
         }
         figures.add(lately(learner, doc));
         figures.add(whenLearned(learner));
-        figures.add(trust(learner, doc));
         figures.add(waiting(learner));
         return new QualityFigures(figures, null);
     }
 
-    /// @param assessment An assessment.
-    /// @return Whether it is an issue nobody has resolved, which is flagged to the Data Provider.
-    public static boolean isOpenIssue(final QualityAssessment assessment) {
-        return assessment.getVerdict() == AssessmentVerdict.ISSUE && assessment.getResolvedBy() == null;
-    }
 
     /// The volume over the window, in a sentence.
     ///
     /// @param days The days, oldest first.
-    /// @return E.g. "1,204 records in 37 streams over the last 14 days."
+    /// @return E.g. "1,204 records in 37 streams over the last 14 days. 18 of those records were declared
+    ///         skipped by the translation."
     public static String volume(final List<VolumeDay> days) {
         long streams = 0;
         long records = 0;
+        long skips = 0;
         for (final VolumeDay day : days) {
             streams += day.getStreams();
             records += day.getRecords();
+            skips += day.getSkips();
         }
         final String over = " over the last " + PlainWords.count(days.size(), "day") + ".";
         if (streams == 0) {
             return "Nothing translated" + over;
         }
-        return records == 0
-                ? PlainWords.count(streams, "stream") + " translated" + over + " Their records weren't counted."
-                : PlainWords.count(records, "record") + " in " + PlainWords.count(streams, "stream") + over;
+        if (records == 0) {
+            return PlainWords.count(streams, "stream") + " translated" + over + " Their records weren't counted.";
+        }
+        // A declared skip is a record the translation said was deliberately not an event, and nothing
+        // caps how many it may declare (ruling A148): this sentence is what a person judges that by
+        return PlainWords.count(records, "record") + " in " + PlainWords.count(streams, "stream") + over
+               + (skips == 0
+                ? ""
+                : " " + PlainWords.number(skips) + " of those records were declared skipped by the "
+                  + "translation.");
     }
 
     /// The cardinality of the translation in use: of the records it was learned and checked on, what they
@@ -166,18 +168,6 @@ public final class QualityFigures {
                 Tone.IDLE)
                 : new Figure("Score when it went live", PlainWords.percent(learner.getPromotedScore()),
                         "On the stream it was learned from.", Tone.IDLE);
-    }
-
-    private static Figure trust(final SupervisorLearner learner, final ShapeshifterAiDoc doc) {
-        if (learner.isProvisional()) {
-            final String enough = doc == null
-                    ? "enough clean records have"
-                    : PlainWords.count(doc.getMinRecordsToLearn(), "clean record") + " have";
-            return new Figure("Trust", "On trial",
-                    "It was learned from fewer records than its Learning Flow asks for. It is trusted once "
-                    + enough + " passed through it, or someone accepts it on its Learning Status.", Tone.INFO);
-        }
-        return new Figure("Trust", "Trusted", "It was learned from enough records, or accepted.", Tone.GOOD);
     }
 
     private static Figure waiting(final SupervisorLearner learner) {

@@ -116,11 +116,6 @@ public class ShapeshifterBinding extends TableImpl<ShapeshifterBindingRecord> {
     public final TableField<ShapeshifterBindingRecord, Boolean> DRAFT = createField(DSL.name("draft"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.inline("0", SQLDataType.BOOLEAN)), this, "");
 
     /**
-     * The column <code>stroom.shapeshifter_binding.provisional</code>.
-     */
-    public final TableField<ShapeshifterBindingRecord, Boolean> PROVISIONAL = createField(DSL.name("provisional"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.inline("0", SQLDataType.BOOLEAN)), this, "");
-
-    /**
      * The column <code>stroom.shapeshifter_binding.promoted_time_ms</code>.
      */
     public final TableField<ShapeshifterBindingRecord, Long> PROMOTED_TIME_MS = createField(DSL.name("promoted_time_ms"), SQLDataType.BIGINT, this, "");
@@ -136,6 +131,11 @@ public class ShapeshifterBinding extends TableImpl<ShapeshifterBindingRecord> {
     public final TableField<ShapeshifterBindingRecord, String> BOUNDARY_ELEMENT = createField(DSL.name("boundary_element"), SQLDataType.VARCHAR(255), this, "");
 
     /**
+     * The column <code>stroom.shapeshifter_binding.boundary_children</code>.
+     */
+    public final TableField<ShapeshifterBindingRecord, String> BOUNDARY_CHILDREN = createField(DSL.name("boundary_children"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
      * The column <code>stroom.shapeshifter_binding.boundary_array</code>.
      */
     public final TableField<ShapeshifterBindingRecord, String> BOUNDARY_ARRAY = createField(DSL.name("boundary_array"), SQLDataType.VARCHAR(255), this, "");
@@ -149,6 +149,11 @@ public class ShapeshifterBinding extends TableImpl<ShapeshifterBindingRecord> {
      * The column <code>stroom.shapeshifter_binding.snapshot_id</code>.
      */
     public final TableField<ShapeshifterBindingRecord, String> SNAPSHOT_ID = createField(DSL.name("snapshot_id"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_binding.live_learner</code>.
+     */
+    public final TableField<ShapeshifterBindingRecord, String> LIVE_LEARNER = createField(DSL.name("live_learner"), SQLDataType.VARCHAR(511), this, "");
 
     private ShapeshifterBinding(Name alias, Table<ShapeshifterBindingRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -203,7 +208,7 @@ public class ShapeshifterBinding extends TableImpl<ShapeshifterBindingRecord> {
 
     @Override
     public List<UniqueKey<ShapeshifterBindingRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.KEY_SHAPESHIFTER_BINDING_SHAPESHIFTER_BINDING_BINDING_UUID);
+        return Arrays.asList(Keys.KEY_SHAPESHIFTER_BINDING_SHAPESHIFTER_BINDING_BINDING_UUID, Keys.KEY_SHAPESHIFTER_BINDING_SHAPESHIFTER_BINDING_LIVE);
     }
 
     @Override

@@ -279,8 +279,6 @@
       stroom.node.impl.db.jooq.tables.Node.*,
       stroom.node.impl.db.jooq.tables.NodeGroup.*,
       stroom.node.impl.db.jooq.tables.NodeGroupLink.*,
-      stroom.pipelinefactory.impl.db.jooq.tables.PipelineFactoryCombination.*,
-      stroom.pipelinefactory.impl.db.jooq.tables.PipelineFactoryScan.*,
       stroom.processor.impl.db.jooq.tables.Processor.*,
       stroom.processor.impl.db.jooq.tables.ProcessorFeed.*,
       stroom.processor.impl.db.jooq.tables.ProcessorFilter.*,

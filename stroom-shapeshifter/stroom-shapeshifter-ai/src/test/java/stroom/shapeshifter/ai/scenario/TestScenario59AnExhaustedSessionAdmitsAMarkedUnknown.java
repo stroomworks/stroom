@@ -30,6 +30,7 @@ import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearnedUnknown;
 import stroom.shapeshifter.shared.LearningFlow;
@@ -170,10 +171,14 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
                 .heldOutFraction(0.0)
                 .sampleSizeLimit(200)
                 .flow(new LearningFlow(List.of(
-                        FlowStep.parse("CHAIN"),
-                        FlowStep.parse("CONFIGURE parser"),
-                        FlowStep.parse("CONFIGURE transform candidates 1 on spent goto admit"),
-                        FlowStep.parse("ADMIT candidates 1")), null, null))
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.TRANSFORM)
+                                .candidates(1)
+                                .whenSpentGoTo("admit")
+                                .build(),
+                        FlowStep.builder(QuestionKind.ADMIT).candidates(1).build()), null, null))
                 .build();
     }
 

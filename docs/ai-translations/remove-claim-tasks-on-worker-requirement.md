@@ -1,6 +1,10 @@
 # Task: remove Shapeshifter AI's requirement for `claimTasksOnWorker`
 
-*Server-side task · branch `ai_translations` · written 12 November 2026*
+*Server-side task · branch `ai_translations` · written 12 November 2026 ·* **done 20 November 2026**
+
+> **Built.** The check, `SupervisedPipelines`, `SupervisedPipelineCheck` and the requirement are gone;
+> the tests are as sections 4 and 5 describe, with two exceptions noted there; the cluster trial of 7.2
+> is replaced by an inspection, because no cluster is available.
 
 Shapeshifter AI refuses to let a processor filter be created over a pipeline holding its element unless `stroom.processor.claimTasksOnWorker` is on. This task removes that requirement, so AI pipelines run with either way of getting tasks to workers. It is option H in [simplification-options.md](simplification-options.md#h-drop-the-worker-claiming-requirement), which gives the full reasoning. This document is the work needed to carry it out.
 
@@ -87,7 +91,17 @@ Before deleting `SupervisedPipelineCheck`, check whether anything else uses its 
 | `stroom-app/src/test/java/stroom/pipelinefactory/TestPipelineFactoryMakesPipelines.java:176-192` | Change `aPipelineWhoseFilterIsRefusedIsDeletedAgain`, as described below. |
 | The 8 Shapeshifter tests that set the flag (list below) | Remove `setClaimTasksOnWorker(true)` and its comment, except where 5.2 parameterises the test. Keep `setSkipEmptyFilterFetchDuration(StroomDuration.ZERO)`. |
 
-`aPipelineWhoseFilterIsRefusedIsDeletedAgain` currently relies on the AI refusal. What it actually tests is still worth keeping: when the processor refuses a filter, the pipeline just made is deleted again, so the combination isn't made twice. Make the filter be refused another way. This is harder than it looks: `PipelineMaker.make` runs as the factory's run-as user, so `checkRunAs` and the pipeline `VIEW` check both pass. That is the security problem described in option G. If no natural refusal can be arranged, bind a test-only `ProcessorFilterService` that refuses a named pipeline, in a Guice override for this test class. Assert on that refusal instead of `claimTasksOnWorker`. Then remove the `claiming` save and restore in `setUp`/`tearDown` (`:82-90`) if nothing else in the class needs it.
+**As built (20 November 2026):** no natural refusal of a *filter* could be arranged — `PipelineMaker`
+runs as the factory's run-as user, and nothing in `ProcessorFilterServiceImpl.create` validates the
+settings a factory supplies — so rather than assert against a stub, the test was rewritten around the
+failure that *is* natural and reachable: a factory property whose **value** names a variable the key does
+not hold. `checkTemplate` validates property names before the pipeline is made; a property's value is
+only substituted in `writePipeline`, which is inside the try, so the pipeline is made and then deleted
+again. The test is now `aPipelineThatCannotBeFinishedIsDeletedAgain`, and `aiTemplate()` is kept for a
+new test that a factory makes an AI pipeline in **either** mode — the case option H is really about,
+since a Content Template fires for a feed name the sender chooses.
+
+*The original note follows.* `aPipelineWhoseFilterIsRefusedIsDeletedAgain` currently relies on the AI refusal. What it actually tests is still worth keeping: when the processor refuses a filter, the pipeline just made is deleted again, so the combination isn't made twice. Make the filter be refused another way. This is harder than it looks: `PipelineMaker.make` runs as the factory's run-as user, so `checkRunAs` and the pipeline `VIEW` check both pass. That is the security problem described in option G. If no natural refusal can be arranged, bind a test-only `ProcessorFilterService` that refuses a named pipeline, in a Guice override for this test class. Assert on that refusal instead of `claimTasksOnWorker`. Then remove the `claiming` save and restore in `setUp`/`tearDown` (`:82-90`) if nothing else in the class needs it.
 
 If option G is adopted first, this whole test class goes with the Pipeline Factory and this change isn't needed.
 
@@ -197,14 +211,61 @@ Also confirm that nothing refers to the removed types:
 grep -rn "SupervisedPipeline\|requireWorkerClaimingForSupervised" --include='*.java' . | grep -v /build/
 ```
 
-### 7.2 Trial on a test cluster
+### 7.2 Inspection in place of a trial on a test cluster
 
-The integration tests run on one node. Before AI feeds run with the master queue in earnest, try these on a cluster of at least three nodes, with the setting off:
+**No test cluster is available** (the product owner, 20 November 2026), so the four questions the trial
+would have answered are answered by reading the code instead. **An inspection can show what the code
+intends; it cannot show what two nodes do.** What that leaves unproven is in 7.3.
 
-1. **A wake issued from a worker node.** Learning runs on whichever node holds the session, so the wake usually comes from a node that isn't the master. Check that the woken tasks are queued within about `skipEmptyFilterFetchDuration` plus one fill cycle.
-2. **Master failover while tasks are deferred.** Stop the master while an AI feed has deferred tasks. Check that the new master queues them once they are woken or swept, and that tasks the old master left in `QUEUED` are released as for any other filter (*Processor Task Manager Release Old Queued Tasks*).
-3. **Filters limited by processing profiles.** Put the AI filter in a profile limited to some nodes. Check that the woken tasks go only to those nodes.
-4. **A large wake.** Defer a few thousand streams on one pipeline and promote a result. Check how many of the master queue's places (`queueSize`) the woken tasks take, and whether other filters are held back while they drain.
+Everything below was read on 20 November 2026.
+
+**1. A wake issued from a worker node.** Learning runs on whichever node holds the session, so the wake
+usually comes from a node that is not the master.
+
+`ProcessorTaskDaoImpl.wakeDeferredTasks` (`:485`) selects the filter ids for the pipeline and then does
+one `changeStatus(context, null, CREATED, now, status = DEFERRED AND filter IN (…))`. **The node argument
+is `null`** — the update carries no node identity at all, and neither did the deferral:
+`DataProcessorTaskHandler:231` sets `DEFERRED` with `changeTaskStatus(task, null, DEFERRED, null, null)`.
+So a wake is the same database row change whichever node issues it, and whichever mode the cluster is in.
+
+The master then finds it. `ProcessorTaskQueueManagerImpl.queueCreatedTasks` (`:920`) sets
+**`long lastTaskId = 0` on every call** and asks `findExistingCreatedTasks(lastTaskId, filterId,
+batchSize)` (`:1635`), whose `WHERE` is `id > 0 AND status = CREATED AND filter = …` ordered by id. A
+woken task is an old id with a new status, and that query starts from the beginning every time, so it is
+found on the next fill. Nothing in the query mentions a node.
+
+**Delay:** up to `skipEmptyFilterFetchDuration` — the empty-filter backoff a fill that found nothing sets
+— plus one fill cycle. A wake does not reset that backoff. Section 8 accepts this, and 5.3 pins it with a
+test.
+
+**2. Master failover while tasks are deferred.** A `DEFERRED` row holds no node and no times (above), so
+there is nothing on it for a dying master to have owned. A new master runs the same fill query against
+the same rows. Tasks the old master left `QUEUED` are released by *Processor Task Manager Release Old
+Queued Tasks*, which is not Shapeshifter's and treats an AI filter as any other: nothing in the module
+writes `QUEUED`.
+
+**3. Filters limited by processing profiles.** A wake changes `status` and nothing else — not the filter,
+not its profile. Assignment by profile happens in the queue manager, after the fill, from the filter's
+own settings. There is no Shapeshifter-specific path through it.
+
+**4. A large wake.** `wakeDeferredTasks` wakes *every* deferred task of *every* filter on the pipeline in
+one statement, so a few thousand streams become `CREATED` together. How many are then queued is the
+master's business as for any filter: `queueCreatedTasks` adds at most
+`profileQueueState.getRequiredTaskCount() - initialQueueSize` per pass, in batches. **This is the one of
+the four where reading the code is least satisfying** — it says other filters are not starved by
+construction, because each filter is filled to its own required count, but it says nothing about what a
+few thousand rows do to fill latency in practice.
+
+### 7.3 What the inspection does not show
+
+- **Timing and contention on a real cluster**: fill latency after a large wake, and whether the backoff
+  plus fill cycle is noticeable when a wake comes from a non-master node under load.
+- **That a deployment's node sets and profiles behave as the code implies.**
+- **Anything about the cut-over itself**, which is out of scope and unchanged.
+
+Assumption **AS5** in the delivery plan is weakened accordingly: it now rests on this reading and on
+single-node integration tests, and it is the assumption most likely to be found wrong in production
+rather than in test. If a cluster becomes available, 7.2's four questions are still the ones to ask.
 
 ## 8. Known effects and risks
 

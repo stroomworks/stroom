@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.shapeshifter.ai.element.PipelineDeletions;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.LearningPipelines;
@@ -161,11 +162,11 @@ class TestADeletedPipelinesLearning {
     }
 
     private static ShapeshifterAiDoc deferred() {
-        return ShapeshifterAiDoc.builder()
+        return Scenarios.document()
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(

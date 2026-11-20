@@ -11,7 +11,6 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
 import org.jooq.impl.QOM.ForeignKeyRule;
 
-import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAssessment;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAttempt;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterBinding;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterCorpus;
@@ -23,7 +22,6 @@ import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterOutput;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterSnapshot;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterSpend;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterTurn;
-import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterAssessmentRecord;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterAttemptRecord;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterBindingRecord;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.records.ShapeshifterCorpusRecord;
@@ -48,11 +46,11 @@ public class Keys {
     // UNIQUE and PRIMARY KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final UniqueKey<ShapeshifterAssessmentRecord> KEY_SHAPESHIFTER_ASSESSMENT_PRIMARY = Internal.createUniqueKey(ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT, DSL.name("KEY_shapeshifter_assessment_PRIMARY"), new TableField[] { ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT.ID }, true);
     public static final UniqueKey<ShapeshifterAttemptRecord> KEY_SHAPESHIFTER_ATTEMPT_PRIMARY = Internal.createUniqueKey(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, DSL.name("KEY_shapeshifter_attempt_PRIMARY"), new TableField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.ID }, true);
     public static final UniqueKey<ShapeshifterAttemptRecord> KEY_SHAPESHIFTER_ATTEMPT_SHAPESHIFTER_ATTEMPT_CLAIM = Internal.createUniqueKey(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT, DSL.name("KEY_shapeshifter_attempt_shapeshifter_attempt_claim"), new TableField[] { ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.PIPELINE_UUID, ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.ELEMENT_ID, ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT.CLAIMED }, true);
     public static final UniqueKey<ShapeshifterBindingRecord> KEY_SHAPESHIFTER_BINDING_PRIMARY = Internal.createUniqueKey(ShapeshifterBinding.SHAPESHIFTER_BINDING, DSL.name("KEY_shapeshifter_binding_PRIMARY"), new TableField[] { ShapeshifterBinding.SHAPESHIFTER_BINDING.ID }, true);
     public static final UniqueKey<ShapeshifterBindingRecord> KEY_SHAPESHIFTER_BINDING_SHAPESHIFTER_BINDING_BINDING_UUID = Internal.createUniqueKey(ShapeshifterBinding.SHAPESHIFTER_BINDING, DSL.name("KEY_shapeshifter_binding_shapeshifter_binding_binding_uuid"), new TableField[] { ShapeshifterBinding.SHAPESHIFTER_BINDING.BINDING_UUID }, true);
+    public static final UniqueKey<ShapeshifterBindingRecord> KEY_SHAPESHIFTER_BINDING_SHAPESHIFTER_BINDING_LIVE = Internal.createUniqueKey(ShapeshifterBinding.SHAPESHIFTER_BINDING, DSL.name("KEY_shapeshifter_binding_shapeshifter_binding_live"), new TableField[] { ShapeshifterBinding.SHAPESHIFTER_BINDING.LIVE_LEARNER }, true);
     public static final UniqueKey<ShapeshifterCorpusRecord> KEY_SHAPESHIFTER_CORPUS_PRIMARY = Internal.createUniqueKey(ShapeshifterCorpus.SHAPESHIFTER_CORPUS, DSL.name("KEY_shapeshifter_corpus_PRIMARY"), new TableField[] { ShapeshifterCorpus.SHAPESHIFTER_CORPUS.ID }, true);
     public static final UniqueKey<ShapeshifterDeferralRecord> KEY_SHAPESHIFTER_DEFERRAL_PRIMARY = Internal.createUniqueKey(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL, DSL.name("KEY_shapeshifter_deferral_PRIMARY"), new TableField[] { ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.ID }, true);
     public static final UniqueKey<ShapeshifterDeferralRecord> KEY_SHAPESHIFTER_DEFERRAL_SHAPESHIFTER_DEFERRAL_LEARNER_META = Internal.createUniqueKey(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL, DSL.name("KEY_shapeshifter_deferral_shapeshifter_deferral_learner_meta"), new TableField[] { ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.PIPELINE_UUID, ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.ELEMENT_ID, ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.META_ID }, true);

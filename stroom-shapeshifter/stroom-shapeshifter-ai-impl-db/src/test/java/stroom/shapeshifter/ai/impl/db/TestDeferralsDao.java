@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /// The deferral rows of design 04 §6: one per stream and document, brought up to date rather than
 /// duplicated when the stream is put back again, and gone when it is released.
@@ -115,14 +116,35 @@ class TestDeferralsDao {
         deferrals.deferred(LEARNER, DOC, 9L, "LIFT", "Raw Events", null, "no binding", 0);
         deferrals.deferred(OTHER_LEARNER, OTHER_DOC, 7L, "DOOR-ACCESS", "Raw Events", "frag:9", "short", 1);
 
+        // Including the row with no stamp (audit finding W7-4): a stream waiting for a *first* learning
+        // fell short of nothing, and leaving it out of this sweep left it to the five-minute retry even
+        // after a translation existed to serve it.
         assertThat(deferrals.stampsWaiting())
                 .filteredOn(stamp -> stamp.learner().equals(LEARNER) || stamp.learner().equals(OTHER_LEARNER))
-                .containsExactlyInAnyOrder(new Stamp(LEARNER, "frag:1"), new Stamp(OTHER_LEARNER, "frag:9"));
+                .extracting(Stamp::learner, Stamp::failedAgainst)
+                .containsExactlyInAnyOrder(
+                        tuple(LEARNER, "frag:1"),
+                        tuple(LEARNER, null),
+                        tuple(OTHER_LEARNER, "frag:9"));
 
         deferrals.released(OTHER_LEARNER, 7L);
 
         assertThat(deferrals.stampsWaiting())
                 .filteredOn(stamp -> stamp.learner().equals(LEARNER) || stamp.learner().equals(OTHER_LEARNER))
-                .containsExactly(new Stamp(LEARNER, "frag:1"));
+                .extracting(Stamp::learner, Stamp::failedAgainst)
+                .containsExactlyInAnyOrder(tuple(LEARNER, "frag:1"), tuple(LEARNER, null));
+    }
+
+    @Test
+    void eachStampCarriesWhenTheLatestOfItsStreamsFirstWaited() {
+        // Only read for a row with no stamp, where it is what tells a stream deferred after a promotion
+        // from one the promotion's own wake already reached
+        deferrals.deferred(LEARNER, DOC, 11L, "LIFT", "Raw Events", null, "no binding", 0);
+        deferrals.deferred(LEARNER, DOC, 12L, "LIFT", "Raw Events", null, "no binding", 0);
+
+        assertThat(deferrals.stampsWaiting())
+                .filteredOn(stamp -> stamp.learner().equals(LEARNER) && stamp.failedAgainst() == null)
+                .singleElement()
+                .satisfies(stamp -> assertThat(stamp.latestMs()).isPositive());
     }
 }

@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scoring;
 
 import stroom.shapeshifter.ai.extraction.InputCoverage;
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
 import stroom.util.shared.ElementId;
@@ -47,7 +48,9 @@ public final class InputCoverageScorer implements Scorer {
     }
 
     @Override
-    public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         if (step.result().output() == null || step.result().recordRanges().isEmpty()) {
             return Optional.empty();
         }

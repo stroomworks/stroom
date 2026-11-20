@@ -20,6 +20,7 @@ import stroom.shapeshifter.ai.stage.RecordSkeleton;
 import stroom.shapeshifter.shared.RecordBoundary;
 
 import net.sf.saxon.s9api.Processor;
+import net.sf.saxon.s9api.QName;
 import net.sf.saxon.s9api.SaxonApiException;
 import net.sf.saxon.s9api.XPathCompiler;
 import net.sf.saxon.s9api.XPathSelector;
@@ -46,11 +47,13 @@ public final class OutputRecords {
 
     private final XdmNode root;
     private final List<XdmNode> records;
+    private final List<XdmNode> skips;
     private final XPathCompiler compiler;
 
-    private OutputRecords(final XdmNode root, final List<XdmNode> records) {
+    private OutputRecords(final XdmNode root, final List<XdmNode> records, final List<XdmNode> skips) {
         this.root = root;
         this.records = records;
+        this.skips = skips;
         this.compiler = PROCESSOR.newXPathCompiler();
         final String namespace = root.getNodeName().getNamespaceURI();
         if (!namespace.isEmpty()) {
@@ -103,12 +106,20 @@ public final class OutputRecords {
                 return Optional.empty();
             }
             final List<XdmNode> records = new ArrayList<>();
+            final List<XdmNode> skips = new ArrayList<>();
             for (final XdmNode child : root.children()) {
                 if (child.getNodeKind() == XdmNodeKind.ELEMENT) {
-                    records.add(child);
+                    // A declared skip stands where an event would have been and is not one: it is no part
+                    // of what the scorers of meaning judge
+                    if (DeclaredSkips.isMarker(child.getNodeName().getNamespaceURI(),
+                            child.getNodeName().getLocalName())) {
+                        skips.add(child);
+                    } else {
+                        records.add(child);
+                    }
                 }
             }
-            return Optional.of(new OutputRecords(root, records));
+            return Optional.of(new OutputRecords(root, records, skips));
         } catch (final SaxonApiException e) {
             return Optional.empty();
         }
@@ -116,6 +127,27 @@ public final class OutputRecords {
 
     public List<XdmNode> records() {
         return records;
+    }
+
+    /// The records the translation declared it deliberately skipped ([DeclaredSkips]).
+    ///
+    /// @return The markers, in the order they appear.
+    public List<XdmNode> skips() {
+        return skips;
+    }
+
+    /// Why the translation said it skipped each record it skipped.
+    ///
+    /// @return The reasons given, in order, leaving out the markers that gave none.
+    public List<String> skipReasons() {
+        final List<String> reasons = new ArrayList<>();
+        for (final XdmNode skip : skips) {
+            final String reason = skip.getAttributeValue(new QName(DeclaredSkips.REASON));
+            if (reason != null && !reason.isBlank()) {
+                reasons.add(reason.strip());
+            }
+        }
+        return reasons;
     }
 
     /**
@@ -126,6 +158,9 @@ public final class OutputRecords {
      * nothing here.
      */
     public List<XdmNode> recordsBy(final RecordBoundary boundary) {
+        if (boundary.isChildren()) {
+            return childrenOf(boundary.getChildren());
+        }
         final String named = boundary.isArray()
                 ? boundary.getArray()
                 : boundary.getElement();
@@ -150,6 +185,27 @@ public final class OutputRecords {
         }
         return nodes(root, "descendant::*[local-name() = '" + named + "']"
                            + "[not(ancestor::*[local-name() = '" + named + "'])]");
+    }
+
+    /// The element children of every occurrence of a named element: the records of a feed that
+    /// interleaves several kinds as siblings under one container
+    /// (`docs/shapeshifter-ai-mixed-record-elements.md`).
+    ///
+    /// @param parent The container's local name, or [RecordBoundary#ROOT] for the document's own root.
+    /// @return The records, in document order; empty where the parent names nothing here.
+    private List<XdmNode> childrenOf(final String parent) {
+        if (RecordBoundary.ROOT.equalsIgnoreCase(parent)) {
+            return records;
+        }
+        if (parent == null || !parent.matches("[\\w.:-]+")) {
+            // A boundary is a name; one that is not cannot go in a predicate safely
+            return List.of();
+        }
+        // Every occurrence of the container, not only the first: a stream is a sequence of batches, and
+        // the records of the second batch are records too. Nested containers of the same name are left
+        // to the outermost, as a named-element boundary does.
+        return nodes(root, "descendant-or-self::*[local-name() = '" + parent + "']"
+                           + "[not(ancestor::*[local-name() = '" + parent + "'])]/*");
     }
 
     /// How deep in this document one record sits: the number of elements above it, which is what a

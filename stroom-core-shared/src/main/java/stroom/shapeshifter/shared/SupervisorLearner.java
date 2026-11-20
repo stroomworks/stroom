@@ -46,8 +46,6 @@ public class SupervisorLearner {
     private final String bindingUuid;
     @JsonProperty
     private final DocRef fragment;
-    @JsonProperty
-    private final boolean provisional;
     /// What the binding scored when it was promoted.
     @JsonProperty
     private final Double promotedScore;
@@ -56,6 +54,11 @@ public class SupervisorLearner {
     private final Double rollingScore;
     @JsonProperty
     private final int records;
+    /// How many of those records the translation declared it deliberately skipped rather than translated
+    /// (ruling A148). There is no cap on the skip rate by decision, so showing the count is the whole of
+    /// what stops a translation quietly skipping its awkward records.
+    @JsonProperty
+    private final int skips;
     /// How many streams wait on the learner.
     @JsonProperty
     private final int waiting;
@@ -86,10 +89,10 @@ public class SupervisorLearner {
                              @JsonProperty("givenUpReason") final String givenUpReason,
                              @JsonProperty("bindingUuid") final String bindingUuid,
                              @JsonProperty("fragment") final DocRef fragment,
-                             @JsonProperty("provisional") final boolean provisional,
                              @JsonProperty("promotedScore") final Double promotedScore,
                              @JsonProperty("rollingScore") final Double rollingScore,
                              @JsonProperty("records") final int records,
+                             @JsonProperty("skips") final int skips,
                              @JsonProperty("waiting") final int waiting,
                              @JsonProperty("oldestWaitMs") final Long oldestWaitMs,
                              @JsonProperty("raised") final boolean raised,
@@ -104,10 +107,10 @@ public class SupervisorLearner {
         this.givenUpReason = givenUpReason;
         this.bindingUuid = bindingUuid;
         this.fragment = fragment;
-        this.provisional = provisional;
         this.promotedScore = promotedScore;
         this.rollingScore = rollingScore;
         this.records = records;
+        this.skips = skips;
         this.waiting = waiting;
         this.oldestWaitMs = oldestWaitMs;
         this.raised = raised;
@@ -115,6 +118,47 @@ public class SupervisorLearner {
         this.guidance = guidance;
         this.pipelineDeleted = pipelineDeleted;
         this.belowThreshold = belowThreshold;
+    }
+
+    /// A row from before declared skips were counted, or one a test builds without them.
+    ///
+    /// @param learner         The learner.
+    /// @param pipeline        Its pipeline.
+    /// @param doc             The document it runs under.
+    /// @param state           Where it stands.
+    /// @param givenUpReason   Why it gave up, where it has.
+    /// @param bindingUuid     What serves it, or null.
+    /// @param fragment        The fragment that binding names.
+    /// @param promotedScore   What it scored when it was promoted.
+    /// @param rollingScore    What it has been scoring lately.
+    /// @param records         How many records that rests on.
+    /// @param waiting         How many streams wait on it.
+    /// @param oldestWaitMs    When the longest waiting of them first waited.
+    /// @param raised          Whether that wait is overdue.
+    /// @param lastSessionMs   When its most recent session opened.
+    /// @param guidance        How much a supervisor has said to it.
+    /// @param pipelineDeleted Whether its pipeline has been deleted.
+    /// @param belowThreshold  Whether it scores below its document's relearn threshold.
+    public SupervisorLearner(final LearnerRef learner,
+                             final DocRef pipeline,
+                             final DocRef doc,
+                             final LearnerState state,
+                             final String givenUpReason,
+                             final String bindingUuid,
+                             final DocRef fragment,
+                             final Double promotedScore,
+                             final Double rollingScore,
+                             final int records,
+                             final int waiting,
+                             final Long oldestWaitMs,
+                             final boolean raised,
+                             final Long lastSessionMs,
+                             final int guidance,
+                             final boolean pipelineDeleted,
+                             final boolean belowThreshold) {
+        this(learner, pipeline, doc, state, givenUpReason, bindingUuid, fragment, promotedScore,
+                rollingScore, records, 0, waiting, oldestWaitMs, raised, lastSessionMs, guidance,
+                pipelineDeleted, belowThreshold);
     }
 
     /// The same row with its pipeline and document named, its wait judged against its document's maximum
@@ -125,8 +169,8 @@ public class SupervisorLearner {
                                    final boolean raised,
                                    final boolean belowThreshold) {
         return new SupervisorLearner(learner, pipeline, doc, state, givenUpReason, bindingUuid, fragment,
-                provisional, promotedScore, rollingScore, records, waiting, oldestWaitMs, raised, lastSessionMs,
-                guidance, pipelineDeleted, belowThreshold);
+                promotedScore, rollingScore, records, skips, waiting, oldestWaitMs, raised,
+                lastSessionMs, guidance, pipelineDeleted, belowThreshold);
     }
 
     public LearnerRef getLearner() {
@@ -157,10 +201,6 @@ public class SupervisorLearner {
         return fragment;
     }
 
-    public boolean isProvisional() {
-        return provisional;
-    }
-
     public Double getPromotedScore() {
         return promotedScore;
     }
@@ -171,6 +211,11 @@ public class SupervisorLearner {
 
     public int getRecords() {
         return records;
+    }
+
+    /// @return How many of those records the translation declared it deliberately skipped (A148).
+    public int getSkips() {
+        return skips;
     }
 
     public int getWaiting() {

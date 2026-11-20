@@ -21,7 +21,7 @@ import java.util.List;
 /// The words a person reads for a learning flow's steps and rules, e.g. "Write the parser" and "if the
 /// records don't read all the input, go back to step 1 (Choose the elements)". Shared, so that what is
 /// wrong with a flow ([LearningFlow#check()]) and why a learning run stopped are said in the words the
-/// Setup tab uses, never in the flow's grammar ([FlowStep#format()]) or its kinds' names.
+/// Setup tab uses, never in a step's own field names or its kinds' names.
 public final class FlowWords {
 
     private FlowWords() {
@@ -103,6 +103,8 @@ public final class FlowWords {
                 return "the answer errors when run on the data";
             case COVERAGE_SHORT:
                 return "the records don't read all the input";
+            case COMPLETENESS_SHORT:
+                return "some records became neither an event nor a declared skip";
             case YIELD_SHORT:
                 return "it finds too few or too many records";
             case WHOLENESS_SHORT:
@@ -113,10 +115,12 @@ public final class FlowWords {
                 return "the events are empty or meaningless";
             case RULES_SHORT:
                 return "the events break a business rule";
-            case ERRORS_SHORT:
-                return "it raises too many errors";
-            case CLASSIFICATION_SHORT:
-                return "the events are wrongly classified";
+            case PERMITTED_SHORT:
+                return "the translation uses something it may not";
+            case TIMES_SHORT:
+                return "the events are dated far from the stream";
+            case LITERALS_SHORT:
+                return "this stream's own values are written into the translation";
             case PRESERVATION_SHORT:
                 return "the records lose what the targets need";
             case FIDELITY_SHORT:

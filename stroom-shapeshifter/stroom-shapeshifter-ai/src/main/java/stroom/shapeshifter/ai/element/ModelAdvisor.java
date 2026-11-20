@@ -42,8 +42,9 @@ import java.util.stream.Collectors;
  * {@link QuestionText} — the words the live smoke measured — after the system text and the attempt's
  * transcript so far, so the model sees the whole conversation. Every invocation is audited against the
  * Shapeshifter AI document with the model, the kind of question, the tokens charged and the outcome,
- * as A9 requires of a change nobody watches; the sample itself is not written to the audit, since A17's
- * redaction is not built and the audit is not the place to leak what it would redact. Transport retries
+ * as A9 requires of a change nobody watches; the sample itself is not written to the audit, because the
+ * audit is not the place to keep a second copy of a feed's data (A146: samples are never redacted, so
+ * what would be written is the data itself). Transport retries
  * are the chat model's own (the client retries a dropped connection before this sees it), so a 503 is not
  * a failed candidate; the attempt's budgets are the conversation's, fed by {@link #tokensUsed()}.
  * <p>

@@ -87,7 +87,6 @@ public final class FeedProgress {
         }
 
         final boolean finished = run.getStatus() == AttemptStatus.PROMOTED
-                                 || run.getStatus() == AttemptStatus.PROVISIONAL
                                  || run.getStatus() == AttemptStatus.AWAITING_REVIEW;
         final List<Item> items = new ArrayList<>();
         for (int i = 0; i < stops.size(); i++) {

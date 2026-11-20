@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS shapeshifter_learner_state (
     awaiting_binding_uuid varchar(255) DEFAULT NULL,
     rolling_score         double DEFAULT NULL,
     rolling_records       int NOT NULL DEFAULT 0,
+    -- How many of those records the translation declared it deliberately skipped rather than translated
+    -- (shapeshifter:skips). There is no cap on the skip rate by decision (A148), so the count being
+    -- visible is the whole of what stops a translation quietly skipping its awkward records.
+    rolling_skips         int NOT NULL DEFAULT 0,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_learner_state_learner (pipeline_uuid, element_id),
     KEY                   shapeshifter_learner_state_doc_uuid (doc_uuid)
@@ -72,15 +76,29 @@ CREATE TABLE IF NOT EXISTS shapeshifter_binding (
     fragment_uuid         varchar(255) DEFAULT NULL,
     fragment_name         varchar(255) DEFAULT NULL,
     draft                 tinyint NOT NULL DEFAULT 0,
-    provisional           tinyint NOT NULL DEFAULT 0,
     promoted_time_ms      bigint DEFAULT NULL,
     score                 double DEFAULT NULL,
     boundary_element      varchar(255) DEFAULT NULL,
+    -- The element whose children are each one record, 'root' for the document's own root: a feed that
+    -- interleaves several record types as siblings under one container, where no single element name
+    -- describes a record. One of boundary_element, boundary_children and boundary_array is set.
+    boundary_children     varchar(255) DEFAULT NULL,
     boundary_array        varchar(255) DEFAULT NULL,
     boundary_depth        int DEFAULT NULL,
     snapshot_id           varchar(255) DEFAULT NULL,
+    -- The learner, but only while the binding is not a draft: a learner has at most one binding that
+    -- serves it, and a draft waiting for review sits beside that one. Null for a draft, and nulls do not
+    -- collide, so the unique key below says "one live binding per learner" and nothing about drafts.
+    --
+    -- A key rather than a check in code because the thing it prevents is two *nodes* each appending one
+    -- (audit finding W7-2): a node whose cache has not yet seen a promotion would otherwise write a
+    -- second live binding, after which the first by id wins and the second is orphaned, serving nothing
+    -- and visible to nobody.
+    live_learner          varchar(511) GENERATED ALWAYS AS (
+                              IF(draft = 0, CONCAT(pipeline_uuid, '|', element_id), NULL)) STORED,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_binding_binding_uuid (binding_uuid),
+    UNIQUE KEY            shapeshifter_binding_live (live_learner),
     KEY                   shapeshifter_binding_learner (pipeline_uuid, element_id),
     KEY                   shapeshifter_binding_doc_uuid (doc_uuid)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -137,6 +155,23 @@ CREATE TABLE IF NOT EXISTS shapeshifter_attempt (
     -- (StopReport, as JSON). The decision beside it keeps the error line, for the places that show one line.
     -- Null for a run that did not stop short.
     report                longtext DEFAULT NULL,
+    -- The words this run was asked with (decision N9): every question template with the text the run
+    -- used, as JSON, the Learning Flow's own where it overrode one and the built-in otherwise. The text
+    -- rather than only the version, so a prompt can be rebuilt after an upgrade without the old
+    -- templates still being in the code. Null for a run opened before they were kept.
+    templates             longtext DEFAULT NULL,
+    -- The built-in template version it was asked against, so a rebuild can say the checks' wording may
+    -- have moved under it.
+    built_in_version      int DEFAULT NULL,
+    -- The Learning Flow's Instructions to the AI, as the run had them. Not the supervisor's notes: those
+    -- are read afresh before every question, so what a turn carried is read from their own rows.
+    instructions          longtext DEFAULT NULL,
+    -- The build of Stroom that ran it.
+    build_version         varchar(255) DEFAULT NULL,
+    -- The binding this run is improving (A46), where a person asked for one rather than a stream raising
+    -- it. An improvement has no stream behind it: its sample is the records the binding was accepted on,
+    -- put back together, so the worker reads it from the regression set and not from the stream store.
+    improving_binding_uuid varchar(255) DEFAULT NULL,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_attempt_claim (pipeline_uuid, element_id, claimed),
     KEY                   shapeshifter_attempt_doc_uuid (doc_uuid),
@@ -184,17 +219,22 @@ CREATE TABLE IF NOT EXISTS shapeshifter_output (
     input_meta_id         bigint NOT NULL,
     pipeline_uuid         varchar(255) NOT NULL DEFAULT '',
     fragment_uuid         varchar(255) NOT NULL,
-    provisional           tinyint(1) NOT NULL DEFAULT 0,
     score                 double DEFAULT NULL,
     boundary_element      varchar(255) DEFAULT NULL,
+    -- The element whose children are each one record, 'root' for the document's own root: a feed that
+    -- interleaves several record types as siblings under one container, where no single element name
+    -- describes a record. One of boundary_element, boundary_children and boundary_array is set.
+    boundary_children     varchar(255) DEFAULT NULL,
     boundary_array        varchar(255) DEFAULT NULL,
     boundary_depth        int DEFAULT NULL,
     produce_time_ms       bigint NOT NULL DEFAULT 0,
-    record_spans          mediumtext DEFAULT NULL,
     snapshot_id           varchar(255) DEFAULT NULL,
-    -- How many records the stream held, for the volume a Smart Pipeline's Quality Assurance tab shows: the
-    -- spans beside it are capped, so can't be counted. Null where nobody counted them.
+    -- How many records the stream held, for the volume a Smart Pipeline's Quality Assurance tab shows.
+    -- Null where nobody counted them.
     record_count          int DEFAULT NULL,
+    -- How many of the stream's records the translation declared it deliberately skipped (A148), shown
+    -- beside the volume so that a skip rate is visible rather than only arithmetically consistent.
+    skip_count            int DEFAULT NULL,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_output_binding_input_pipeline (binding_uuid, input_meta_id, pipeline_uuid),
     KEY                   shapeshifter_output_doc_uuid (doc_uuid)
@@ -295,32 +335,6 @@ CREATE TABLE IF NOT EXISTS shapeshifter_deleted_pipeline (
     deleted_time_ms       bigint NOT NULL,
     PRIMARY KEY           (pipeline_uuid),
     KEY                   shapeshifter_deleted_pipeline_deleted_time_ms (deleted_time_ms)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-
---
--- What a QA person said about a Smart Pipeline's translated output (its Quality Assurance tab): that it looks
--- right, or an issue for the Data Provider to fix at the pipeline. One row per assessment per learner (the
--- pipeline and the element); an issue stays open until someone who may edit the pipeline resolves it. The
--- binding is the translation that was in use when it was said, so an assessment is read against what it was
--- about after the pipeline has learned again.
---
-CREATE TABLE IF NOT EXISTS shapeshifter_assessment (
-    id                    bigint NOT NULL AUTO_INCREMENT,
-    create_time_ms        bigint NOT NULL,
-    pipeline_uuid         varchar(255) NOT NULL,
-    element_id            varchar(255) NOT NULL,
-    doc_uuid              varchar(255) NOT NULL,
-    binding_uuid          varchar(255) DEFAULT NULL,
-    -- LOOKS_RIGHT or ISSUE
-    verdict               varchar(20) NOT NULL,
-    comment               longtext DEFAULT NULL,
-    -- Who said it, and who resolved it and when; the resolver null while an issue is open
-    author                varchar(255) NOT NULL,
-    resolved_by           varchar(255) DEFAULT NULL,
-    resolve_time_ms       bigint DEFAULT NULL,
-    PRIMARY KEY           (id),
-    KEY                   shapeshifter_assessment_learner (pipeline_uuid, element_id, id),
-    KEY                   shapeshifter_assessment_doc_uuid (doc_uuid)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 SET SQL_NOTES=@OLD_SQL_NOTES;

@@ -87,6 +87,26 @@ public final class FragmentCodes {
         return new Codes(JsonUtil.writeValueAsString(data, false), code, versions);
     }
 
+    /// The stylesheets a fragment's elements run, for the check of what a learned translation may use
+    /// (decision N1). [#read] loses which code is a stylesheet and which a text converter, and only a
+    /// stylesheet has a function library to reach anything with.
+    ///
+    /// @param fragment The fragment.
+    /// @return Element id to the stylesheet it runs; empty where it runs none.
+    public Map<String, String> stylesheets(final DocRef fragment) {
+        final PipelineDoc pipeline = pipelineStore.readDocument(fragment);
+        final Map<String, String> stylesheets = new LinkedHashMap<>();
+        for (final PipelineProperty property : pipeline.getPipelineData().getAddedProperties()) {
+            final DocRef referenced = property.getValue() == null
+                    ? null
+                    : property.getValue().getEntity();
+            if (referenced != null && XsltDoc.TYPE.equals(referenced.getType())) {
+                stylesheets.put(property.getElement(), xsltStore.readDocument(referenced).getData());
+            }
+        }
+        return stylesheets;
+    }
+
     /// The versions alone, for asking whether a fragment has moved since a snapshot was taken.
     ///
     /// @param fragment The fragment.

@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scenario;
 
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.Kept;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
@@ -83,7 +84,7 @@ class TestScenariosIncumbent {
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .relearnThreshold(0.95)

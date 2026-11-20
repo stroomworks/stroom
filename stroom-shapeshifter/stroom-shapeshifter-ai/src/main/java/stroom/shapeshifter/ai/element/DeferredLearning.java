@@ -54,6 +54,7 @@ public class DeferredLearning {
     private final Provider<StageFactory> stageFactory;
     private final PipelineScopeRunnable pipelineScope;
     private final Attempts attempts;
+    private final Provider<PipelineStreamHeld> streamHeld;
     private final Documents documents;
     private final Inputs inputs;
     private final DeletedPipelines deletedPipelines;
@@ -65,6 +66,7 @@ public class DeferredLearning {
     public DeferredLearning(final Provider<StageFactory> stageFactory,
                             final PipelineScopeRunnable pipelineScope,
                             final Attempts attempts,
+                            final Provider<PipelineStreamHeld> streamHeld,
                             final Documents documents,
                             final Inputs inputs,
                             final DeletedPipelines deletedPipelines,
@@ -74,6 +76,7 @@ public class DeferredLearning {
         this.stageFactory = stageFactory;
         this.pipelineScope = pipelineScope;
         this.attempts = attempts;
+        this.streamHeld = streamHeld;
         this.documents = documents;
         this.inputs = inputs;
         this.deletedPipelines = deletedPipelines;
@@ -88,7 +91,7 @@ public class DeferredLearning {
             // compiler, the schema scorer — reports through the scoped error receiver, and a candidate
             // configuration is compiled and run here exactly as it is in a task.
             final DeferredWorker worker = new DeferredWorker(stageFactory.get().create(), attempts, documents,
-                    inputs, deletedPipelines, advisors, Clock.systemUTC());
+                    inputs, streamHeld.get(), deletedPipelines, advisors, Clock.systemUTC());
             final int carried = worker.advance(configProvider.get().getDeferredLearningBatchSize());
             if (carried > 0) {
                 LOGGER.info(() -> LogUtil.message("Carried on {} attempt(s) awaiting the model", carried));

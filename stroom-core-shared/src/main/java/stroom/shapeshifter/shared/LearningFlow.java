@@ -54,8 +54,12 @@ public class LearningFlow {
     public LearningFlow(@JsonProperty("steps") final List<FlowStep> steps,
                         @JsonProperty("templates") final Map<Template, String> templates,
                         @JsonProperty("builtInVersion") final Integer builtInVersion) {
+        // No steps is no steps (Track 2 step 1c): the built-in setups are the server's now, and a flow
+        // that quietly became `Direct` would be a Learning Flow behaving in a way nobody chose. An empty
+        // flow already has a meaning — [#check] opens with "The flow has no steps" — which the Setup
+        // tab, the readiness banner and the store's A33 refusal all say.
         this.steps = Collections.unmodifiableList(new ArrayList<>(steps == null
-                ? FlowExample.DIRECT.steps()
+                ? List.of()
                 : steps));
         final Map<Template, String> overrides = new EnumMap<>(Template.class);
         if (templates != null) {
@@ -71,10 +75,6 @@ public class LearningFlow {
     }
 
     /// A flow with an example's steps as its own and the built-in text.
-    public static LearningFlow of(final FlowExample example) {
-        return new LearningFlow(example.steps(), null, null);
-    }
-
     /// @return The steps in the order they are first entered.
     public List<FlowStep> getSteps() {
         return steps;

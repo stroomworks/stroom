@@ -96,8 +96,6 @@ class TestADeletedPipelinesLearningInANode extends AbstractCoreIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // A filter over a supervised pipeline needs the node to claim its own tasks (design 04 §7).
-        processorConfigProvider.get().setClaimTasksOnWorker(true);
     }
 
     @Test

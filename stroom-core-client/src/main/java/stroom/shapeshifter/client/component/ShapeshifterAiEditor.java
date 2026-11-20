@@ -21,6 +21,7 @@ import stroom.document.client.component.DocumentationTabController;
 import stroom.document.client.editor.DocumentEditor;
 import stroom.document.client.editor.LinkTabPanel;
 import stroom.security.client.component.DocumentUserPermissionsTabController;
+import stroom.shapeshifter.client.FlowExamplesCache;
 import stroom.shapeshifter.client.component.Readiness.Fix;
 import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
@@ -51,6 +52,8 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
 
     private final FeedsTabController feeds;
     private final SetupTabController setup;
+    /// The built-in default setups, which the readiness check names the approach against (Track 2 step 1c).
+    private final FlowExamplesCache flowExamples;
     /// Whether the document's own tab is the one shown in Stroom.
     private boolean contentVisible = true;
 
@@ -68,8 +71,10 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
                                 final Provider<FeedsTabController> feedsProvider,
                                 final Provider<SetupTabController> setupProvider,
                                 final Provider<DocumentationTabController> documentationTabProvider,
-                                final Provider<DocumentUserPermissionsTabController> permissionsProvider) {
+                                final Provider<DocumentUserPermissionsTabController> permissionsProvider,
+                                final FlowExamplesCache flowExamples) {
         super(eventBus, view);
+        this.flowExamples = flowExamples;
         feeds = make(feedsProvider);
         setup = make(setupProvider);
 
@@ -94,7 +99,15 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
 
     @Override
     protected void onRead(final DocRef docRef, final ShapeshifterAiDoc doc) {
-        feeds.setReadiness(Readiness.of(doc), false);
+        // The default setups are the server's now (Track 2 step 1c), and the readiness check names which
+        // one the approach is, so they are fetched before it is drawn. Where they are already in hand
+        // this answers at once; where the fetch fails the approach reads as the document's own, which is
+        // what it says rather than a wrong name.
+        flowExamples.get(examples -> {
+            if (!isDisposed()) {
+                feeds.setReadiness(Readiness.of(doc, examples), false);
+            }
+        }, taskMonitor());
     }
 
     /// Whether the document will learn anything is worked out again each time the Feeds tab is shown, from
@@ -117,7 +130,11 @@ public class ShapeshifterAiEditor extends DocumentEditor<ShapeshifterAiDoc> {
     private void showReadiness() {
         final ShapeshifterAiDoc written = write();
         if (written != null) {
-            feeds.setReadiness(Readiness.of(written), isDirty());
+            flowExamples.get(examples -> {
+                if (!isDisposed()) {
+                    feeds.setReadiness(Readiness.of(written, examples), isDirty());
+                }
+            }, taskMonitor());
         }
     }
 

@@ -121,7 +121,6 @@ import stroom.gwt.workbench.client.app.pipeline.PipelineEditorStories;
 import stroom.gwt.workbench.client.app.pipeline.PipelineTreeStories;
 import stroom.gwt.workbench.client.app.pipeline.StepFilterDialogStories;
 import stroom.gwt.workbench.client.app.pipeline.SteppingScreenStories;
-import stroom.gwt.workbench.client.app.pipelinefactory.PipelineFactoryEditorStories;
 import stroom.gwt.workbench.client.app.processing.ExecutionSchedulesScreenStories;
 import stroom.gwt.workbench.client.app.processing.ProcessorFilterEditDialogStories;
 import stroom.gwt.workbench.client.app.processing.ProcessorFilterListStories;
@@ -362,8 +361,6 @@ public final class AppStories {
         OpenAiModelEditorStories.addTo(registry);
         // App/Editors/PathwaysEditor
         PathwaysEditorStories.addTo(registry);
-        // App/Editors/PipelineFactoryEditor
-        PipelineFactoryEditorStories.addTo(registry);
         // App/Editors/PlanBEditor
         PlanBEditorStories.addTo(registry);
         // App/Editors/QueryEditor

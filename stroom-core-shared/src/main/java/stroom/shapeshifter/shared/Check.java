@@ -27,11 +27,15 @@ import stroom.docref.HasDisplayValue;
 public enum Check implements HasDisplayValue {
     COMPILE("compile", "Compile", true, true, 1.0, false),
     COVERAGE("coverage", "Input coverage", true, true, 0.9, false),
+    COMPLETENESS("completeness", "Completeness", true, true, null, false),
     YIELD("yield", "Yield", true, true, 0.5, false),
     WHOLENESS("wholeness", "Whole records", false, true, 0.9, false),
     CONFORMANCE("conformance", "Schema conformance", true, true, 1.0, true),
     QUALITY("quality", "Extraction quality", true, true, 0.7, true),
     RULES("rules", "Business rules", true, true, 1.0, true),
+    TIMES("times", "Event times are plausible", true, true, 1.0, true),
+    LITERALS("literals", "No data written into the translation", true, true, 1.0, true),
+    PERMITTED("permitted", "Uses only what it may", true, true, null, false),
     PRESERVATION("preservation", "Preservation", false, true, null, false),
     FIDELITY("fidelity", "Fidelity", false, true, null, false),
     REGRESSION("regression", "Regression corpus", false, true, null, false);

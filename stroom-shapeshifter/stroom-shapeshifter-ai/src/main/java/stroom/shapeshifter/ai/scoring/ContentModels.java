@@ -115,6 +115,38 @@ public final class ContentModels {
         return described;
     }
 
+    /// The elements a named element may contain, in the order the schema declares them, with the
+    /// alternatives of a choice flattened into the list: enough to walk a schema from its root, which is
+    /// what the generated structural summary does (task 7, decision D2 option G).
+    ///
+    /// Only the children themselves, not what they in turn hold: those are found by asking about each
+    /// child in its turn.
+    ///
+    /// @param elementName The element's local name.
+    /// @return Its children's names, distinct, in order; empty where the schema declares no such element
+    ///         or it holds no elements.
+    public List<String> childrenOf(final String elementName) {
+        final List<String> names = new ArrayList<>();
+        for (final Element declaration : elements.getOrDefault(elementName, List.of())) {
+            names(particles(declaration), names);
+        }
+        return names;
+    }
+
+    private static void names(final List<Particle> particles, final List<String> into) {
+        for (final Particle particle : particles) {
+            if (particle.name() != null && !into.contains(particle.name())) {
+                into.add(particle.name());
+            }
+            if (particle.options() != null) {
+                names(particle.options(), into);
+            }
+            if (particle.run() != null) {
+                names(particle.run(), into);
+            }
+        }
+    }
+
     /**
      * How the notation reads, said once alongside the first hint.
      */

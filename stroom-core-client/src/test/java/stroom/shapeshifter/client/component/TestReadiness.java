@@ -41,7 +41,12 @@ class TestReadiness {
     @Test
     void aNewDocumentIsNotReadyAndSaysHowToFixIt() {
         // What a new document has: learning off, no model, no checks, the direct flow
-        final Readiness readiness = Readiness.of(ShapeshifterAiDoc.builder().uuid("new").name("New").build());
+        final Readiness readiness = Readiness.of(
+                ShapeshifterAiDoc.builder().uuid("new").name("New")
+                        // The steps the store gives a new document (Track 2 step 1c).
+                        .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null))
+                        .build(),
+                FlowExampleFixtures.all());
         assertThat(readiness.isReady()).isFalse();
         assertThat(readiness.getItems()).extracting(Item::getFix)
                 .containsExactly(Fix.SWITCH_ON, Fix.CHOOSE_MODEL, null, null);
@@ -56,11 +61,11 @@ class TestReadiness {
                 .learningMode(LearningMode.AUTOMATIC)
                 .model(new DocRef("OpenAIModel", "m-1", "GPT-4o"))
                 .checks(CheckPreset.STANDARD.settings())
-                .flow(LearningFlow.of(FlowExample.ESCALATING))
-                .build());
+                .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.ESCALATING), null, null))
+                .build(), FlowExampleFixtures.all());
         assertThat(readiness.isReady()).isTrue();
         assertThat(readiness.getItems()).extracting(Item::getText).containsExactly("Learning is on",
-                "Model: GPT-4o", "6 quality gates", "Approach: Quick, then careful");
+                "Model: GPT-4o", "7 quality gates", "Approach: Quick, then careful");
     }
 
     @Test
@@ -74,7 +79,7 @@ class TestReadiness {
                 .uuid("ss-1")
                 .name("No gates")
                 .checks(noGates)
-                .build()).getItems().get(2);
+                .build(), FlowExampleFixtures.all()).getItems().get(2);
         assertThat(checks.isOk()).isFalse();
         assertThat(checks.getFix()).isEqualTo(Fix.USE_STANDARD_CHECKS);
         assertThat(checks.getText()).isEqualTo("No quality check is a gate, so any answer that runs would pass.");
@@ -86,7 +91,7 @@ class TestReadiness {
                 .uuid("ss-1")
                 .name("Broken")
                 .flow(new LearningFlow(List.of(FlowStep.of(QuestionKind.SPLIT)), null, null))
-                .build());
+                .build(), FlowExampleFixtures.all());
         final Item approach = readiness.getItems().get(3);
         assertThat(approach.isOk()).isFalse();
         assertThat(approach.getFix()).isEqualTo(Fix.OPEN_APPROACH);

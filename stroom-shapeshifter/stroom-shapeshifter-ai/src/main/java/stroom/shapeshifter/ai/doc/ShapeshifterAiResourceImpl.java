@@ -18,7 +18,9 @@ package stroom.shapeshifter.ai.doc;
 
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Templates;
+import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.BuiltInTemplates;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.ShapeshifterAiResource;
@@ -26,6 +28,8 @@ import stroom.util.shared.EntityServiceException;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
+
+import java.util.List;
 
 /// The document's own resource: reading and writing it, and the built-in templates its Setup tab starts
 /// from. What a learner has learned under it is the learner's (design 06 phase J slice 2b), and a person
@@ -53,6 +57,11 @@ public class ShapeshifterAiResourceImpl implements ShapeshifterAiResource {
     @Override
     public BuiltInTemplates templates() {
         return new BuiltInTemplates(Templates.VERSION, Templates.builtIns());
+    }
+
+    @Override
+    public List<BuiltInFlow> flowExamples() {
+        return FlowExamples.all();
     }
 
     @Override

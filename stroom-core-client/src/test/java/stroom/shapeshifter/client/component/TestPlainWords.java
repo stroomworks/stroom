@@ -33,7 +33,7 @@ class TestPlainWords {
 
     @Test
     void stepsAreNamedForWhatTheyDoAndARepeatSaysAgain() {
-        final List<FlowStep> steps = FlowExample.ESCALATING.steps();
+        final List<FlowStep> steps = FlowExampleFixtures.steps(FlowExample.ESCALATING);
         assertThat(PlainWords.stepName(steps, 0)).isEqualTo("Choose the elements");
         assertThat(PlainWords.stepName(steps, 1)).isEqualTo("Find what one record is");
         assertThat(PlainWords.stepName(steps, 2)).isEqualTo("Write the parser");

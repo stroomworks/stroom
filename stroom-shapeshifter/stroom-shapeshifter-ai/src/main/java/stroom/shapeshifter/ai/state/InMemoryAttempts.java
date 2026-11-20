@@ -44,7 +44,7 @@ public final class InMemoryAttempts implements Attempts {
     /// The states in which an attempt's binding is one that was, or was about to be, serving: the ones a
     /// retraction is about.
     private static final Set<AttemptStatus> BOUND = Set.of(AttemptStatus.PROMOTED,
-            AttemptStatus.PROVISIONAL, AttemptStatus.AWAITING_REVIEW);
+            AttemptStatus.AWAITING_REVIEW);
 
     /// The states in which an attempt is still learning, and so still holds its learner's claim (A45). A
     /// draft awaiting review is not one of them: it has written its binding, and the binding is what the
@@ -129,7 +129,8 @@ public final class InMemoryAttempts implements Attempts {
         final Attempt current = was.attempt();
         final Attempt taken = new Attempt(current.learner(), current.docUuid(), current.feed(),
                 current.type(),
-                current.inputId(), node, current.promotionMode(), expiryMs);
+                current.inputId(), node, current.promotionMode(), expiryMs, current.askedWith(),
+                current.improving());
         attempts.put(attemptId, new Recorded(was.id(), taken, AttemptStatus.IN_PROGRESS, was.decision(),
                 was.bindingUuid(), was.score(), was.tokensSpent(), was.createTimeMs(),
                 System.currentTimeMillis(), List.of()));
@@ -208,7 +209,7 @@ public final class InMemoryAttempts implements Attempts {
                         0L));
     }
 
-    /// The attempts that bound this binding, whatever state they ended in — promoted, provisional, or
+    /// The attempts that bound this binding, whatever state they ended in — promoted, or
     /// awaiting a review that will now never happen.
     @Override
     public synchronized void settled(final String docUuid, final String bindingUuid,
@@ -374,7 +375,8 @@ public final class InMemoryAttempts implements Attempts {
     private static Attempt claim(final Recorded was, final long expiryMs) {
         final Attempt attempt = was.attempt();
         return new Attempt(attempt.learner(), attempt.docUuid(), attempt.feed(), attempt.type(),
-                attempt.inputId(), attempt.node(), attempt.promotionMode(), expiryMs);
+                attempt.inputId(), attempt.node(), attempt.promotionMode(), expiryMs, attempt.askedWith(),
+                attempt.improving());
     }
 
     private Recorded withTurns(final Recorded attempt) {

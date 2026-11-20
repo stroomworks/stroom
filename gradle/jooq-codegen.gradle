@@ -64,7 +64,8 @@ def buildJooqConfig = { String jdbcUrlVal, String inputSchemaVal ->
 // ---------------------------------------------------------------------------
 // generateJooq — creates a fresh temp DB, runs Flyway, then codegen
 // ---------------------------------------------------------------------------
-// Requires a running MySQL instance on localhost:3307 with root/my-secret-pw
+// Requires a running MySQL instance on localhost:3307 with root/my-secret-pw, or another given with
+// -PjooqDbHost=<host:port> (with -PjooqDbRootUser and -PjooqDbRootPassword where they differ).
 // (same as the test infrastructure).
 
 tasks.register('generateJooq') {
@@ -92,14 +93,15 @@ tasks.register('generateJooq') {
             return mysqlDriver.connect(url, props)
         }
 
-        def rootJdbcUrl = 'jdbc:mysql://localhost:3307?useUnicode=yes&characterEncoding=UTF-8'
+        def dbHost = 'localhost:3307'
         def rootUser = 'root'
         def rootPassword = 'my-secret-pw'
         def dbName = "jooq_regen_${project.name.replace('-', '_')}_${System.currentTimeMillis()}"
 
         if (project.hasProperty('jooqDbHost')) {
-            rootJdbcUrl = "jdbc:mysql://${project.jooqDbHost}?useUnicode=yes&characterEncoding=UTF-8"
+            dbHost = project.jooqDbHost
         }
+        def rootJdbcUrl = "jdbc:mysql://${dbHost}?useUnicode=yes&characterEncoding=UTF-8"
         if (project.hasProperty('jooqDbRootUser')) {
             rootUser = project.jooqDbRootUser
         }
@@ -120,7 +122,9 @@ tasks.register('generateJooq') {
             conn.close()
         }
 
-        def tempJdbcUrl = "jdbc:mysql://localhost:3307/${dbName}?useUnicode=yes&characterEncoding=UTF-8"
+        // The same host the temporary database was just created on: jooqDbHost used to move only the root
+        // connection, so giving it pointed the migration and the generator at a database that wasn't there.
+        def tempJdbcUrl = "jdbc:mysql://${dbHost}/${dbName}?useUnicode=yes&characterEncoding=UTF-8"
 
         try {
             // Run Flyway migrations

@@ -27,6 +27,8 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import javax.xml.parsers.ParserConfigurationException;
 
@@ -42,6 +44,30 @@ public final class Records {
 
     public static int count(final String xml) {
         return Math.max(0, parsed(xml));
+    }
+
+    /// The records a translation declared it deliberately skipped: the markers among the root's children
+    /// ([DeclaredSkips]). They are not events, so they are not counted as records; they are what makes
+    /// the completeness sum add up for a feed whose header lines are not events.
+    ///
+    /// @param xml The output.
+    /// @return How many skips it declares; none where it is not a document.
+    public static int skips(final String xml) {
+        final Counter counter = counted(xml);
+        return counter == null
+                ? 0
+                : counter.skips;
+    }
+
+    /// Why the translation said it skipped each record it skipped.
+    ///
+    /// @param xml The output.
+    /// @return The reasons given, in order, leaving out the markers that gave none.
+    public static List<String> skipReasons(final String xml) {
+        final Counter counter = counted(xml);
+        return counter == null
+                ? List.of()
+                : List.copyOf(counter.reasons);
     }
 
     /**
@@ -68,21 +94,32 @@ public final class Records {
      * @return The records the document holds, or -1 where it is not a document.
      */
     public static int parsed(final String xml) {
+        final Counter counter = counted(xml);
+        return counter == null
+                ? -1
+                : counter.records;
+    }
+
+    /// @param xml The output.
+    /// @return What the document holds, or null where it is not a document.
+    private static Counter counted(final String xml) {
         final Counter counter = new Counter();
         try {
             final XMLReader reader = SAXParserFactoryFactory.newInstance().newSAXParser().getXMLReader();
             reader.setContentHandler(counter);
             reader.parse(new InputSource(new StringReader(xml)));
         } catch (final SAXException | IOException | ParserConfigurationException e) {
-            return -1;
+            return null;
         }
-        return counter.records;
+        return counter;
     }
 
     private static final class Counter extends DefaultHandler {
 
+        private final List<String> reasons = new ArrayList<>();
         private int depth;
         private int records;
+        private int skips;
 
         @Override
         public void startElement(final String uri,
@@ -91,7 +128,17 @@ public final class Records {
                                  final Attributes attributes) {
             depth++;
             if (depth == 2) {
-                records++;
+                // A declared skip stands in place of an event and is not one: counted apart, so that the
+                // completeness sum can add the two together and the reviewer can see both
+                if (DeclaredSkips.isMarker(uri, localName)) {
+                    skips++;
+                    final String reason = DeclaredSkips.reason(attributes);
+                    if (reason != null) {
+                        reasons.add(reason);
+                    }
+                } else {
+                    records++;
+                }
             }
         }
 

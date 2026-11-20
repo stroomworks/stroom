@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scenario;
 
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question;
 import stroom.shapeshifter.ai.scoring.Judgement;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
@@ -60,6 +61,12 @@ class TestScenariosScoring {
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
     private static final String EVEN_USERS_ONLY = Scenarios.resource("csv-fields-even-users.ds3.xml");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
+
+    /// What a translation writes in place of an event for a record that is deliberately not one
+    /// (`docs/shapeshifter-ai-declared-skips-design.md`). A transform that filters has to say so, or
+    /// completeness counts the records it dropped as lost.
+    private static final String SKIP =
+            "    <Skipped xmlns=\"shapeshifter:skips\" reason=\"not an event\"/>\n";
     private static final String DEGENERATE = Scenarios.resource("csv-degenerate.xsl");
     private static final String DOC = "doc-1";
     private static final String AUTHENTICATE_USER_ID = String.join("\n",
@@ -103,7 +110,7 @@ class TestScenariosScoring {
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -185,7 +192,7 @@ class TestScenariosScoring {
         // The promoted transform scores full on every judge of meaning over the whole stream.
         assertThat(run.verdicts().get(1).judgements())
                 .extracting(judgement -> judgement.setting().getCheck())
-                .containsExactly(Check.COMPILE, Check.YIELD, Check.CONFORMANCE,
+                .containsExactly(Check.COMPILE, Check.COMPLETENESS, Check.YIELD, Check.CONFORMANCE,
                         Check.QUALITY, Check.RULES);
         assertThat(run.verdicts().get(1).judgements())
                 .extracting(judgement -> judgement.score().value())
@@ -336,8 +343,11 @@ class TestScenariosScoring {
         // Yield is advice in this document: a transform that drops every other record falls short of it, and
         // is still promoted, since advice never refuses a candidate (D1). Its score says what it fell short on.
         final Scenarios scenarios = new Scenarios();
+        // The records it drops are declared skipped, so completeness is satisfied and yield is the one
+        // check left with anything to say (the declared-skips design)
         final String everyOther = CsvLines.replacing(XSLT, "  <xsl:template match=\"record\">",
-                "  <xsl:template match=\"record[number(substring(data[@name='who']/@value, 5)) mod 2 = 1]\"/>\n\n"
+                "  <xsl:template match=\"record[number(substring(data[@name='who']/@value, 5)) mod 2 = 1]\">\n"
+                + SKIP + "  </xsl:template>\n\n"
                 + "  <xsl:template match=\"record\">");
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -364,8 +374,10 @@ class TestScenariosScoring {
                                 : setting)
                         .toList())
                 .build();
+        // Declared skipped rather than dropped, so that what fails is yield and only yield
         final String dropsTheLast = CsvLines.replacing(XSLT, "  <xsl:template match=\"record\">",
-                "  <xsl:template match=\"record[data[@name='who']/@value = 'user5']\"/>\n\n"
+                "  <xsl:template match=\"record[data[@name='who']/@value = 'user5']\">\n"
+                + SKIP + "  </xsl:template>\n\n"
                 + "  <xsl:template match=\"record\">");
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")

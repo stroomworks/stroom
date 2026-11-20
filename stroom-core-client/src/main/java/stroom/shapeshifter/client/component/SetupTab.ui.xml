@@ -144,7 +144,7 @@
                     <g:FlowPanel styleName="setup-tab__advanced">
                         <form:FormGroup identity="shapeshifterAiMinRecordsToLearn"
                                         label="Records before a translation is trusted"
-                                        helpText="How many records a stream must bring before a translation learned from it is trusted. One learned from fewer is used on trial, and is accepted once enough clean records have passed through it.">
+                                        helpText="How many records a stream must bring before a translation learned from it can go live without anyone checking it. One learned from fewer always waits for approval, however this Learning Flow approves new translations.">
                             <v:ValueSpinner ui:field="minRecordsToLearn" addStyleNames="value-spinner--narrow"
                                             minValue="1" maxValue="2147483647"/>
                         </form:FormGroup>

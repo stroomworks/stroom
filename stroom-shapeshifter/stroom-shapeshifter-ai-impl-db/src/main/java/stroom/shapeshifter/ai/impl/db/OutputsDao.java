@@ -51,12 +51,6 @@ public class OutputsDao implements Outputs {
     /// table, and the job runs again.
     private static final int PRUNE_BATCH = 1000;
 
-    /// How many records' spans one output keeps. A judgement is made on a sample and a fault is found
-    /// in a record, but a stream is a stream: past this, a record has no span rather than a wrong one.
-    private static final int MOST_SPANS = 100_000;
-
-    private static final Pattern SPAN = Pattern.compile("(\\d+):(\\d+)-(\\d+):(\\d+)");
-
     private final ShapeshifterAiDbConnProvider connProvider;
 
     @Inject
@@ -65,40 +59,18 @@ public class OutputsDao implements Outputs {
     }
 
     @Override
-    public Optional<TextRange> span(final String docUuid,
-                                    final long inputId,
-                                    final String pipeline,
-                                    final int recordIndex) {
-        if (recordIndex < 0) {
-            return Optional.empty();
-        }
-        return JooqUtil.contextResult(connProvider, context -> context
-                        .select(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS)
-                        .from(ShapeshifterOutput.SHAPESHIFTER_OUTPUT)
-                        .where(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.INPUT_META_ID.eq(inputId))
-                        .and(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.DOC_UUID.eq(docUuid))
-                        .and(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PIPELINE_UUID.eq(ofPipeline(pipeline)))
-                        .orderBy(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PRODUCE_TIME_MS.desc(),
-                                ShapeshifterOutput.SHAPESHIFTER_OUTPUT.ID.desc())
-                        .limit(1)
-                        .fetchOptional(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS))
-                .flatMap(spans -> spanAt(spans, recordIndex));
+    public void emitted(final long inputId,
+                        final String pipeline,
+                        final Produced produced) {
+        emitted(inputId, pipeline, produced, null, null);
     }
 
     @Override
     public void emitted(final long inputId,
                         final String pipeline,
                         final Produced produced,
-                        final List<TextRange> spans) {
-        emitted(inputId, pipeline, produced, spans, null);
-    }
-
-    @Override
-    public void emitted(final long inputId,
-                        final String pipeline,
-                        final Produced produced,
-                        final List<TextRange> spans,
-                        final Integer records) {
+                        final Integer records,
+                        final Integer skipped) {
         final long now = System.currentTimeMillis();
         final RecordBoundary boundary = produced.boundary();
         JooqUtil.context(connProvider, context -> context
@@ -114,14 +86,15 @@ public class OutputsDao implements Outputs {
                         produced.fragment().getUuid())
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ELEMENT, NullSafe.get(boundary,
                         RecordBoundary::getElement))
+                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_CHILDREN, NullSafe.get(boundary,
+                        RecordBoundary::getChildren))
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ARRAY, NullSafe.get(boundary,
                         RecordBoundary::getArray))
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_DEPTH, NullSafe.get(boundary,
                         RecordBoundary::getDepth))
-                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PROVISIONAL, produced.provisional())
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SCORE, produced.score())
-                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS, written(spans))
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_COUNT, records)
+                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SKIP_COUNT, skipped)
                 // A stream processed twice by one pipeline under one binding is one thing to replay; the
                 // later run is what its output is, so the row says the later one — including when it
                 // was produced, since the row keeps the id it was inserted with and the id cannot then
@@ -133,57 +106,21 @@ public class OutputsDao implements Outputs {
                         produced.fragment().getUuid())
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ELEMENT, NullSafe.get(boundary,
                         RecordBoundary::getElement))
+                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_CHILDREN, NullSafe.get(boundary,
+                        RecordBoundary::getChildren))
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ARRAY, NullSafe.get(boundary,
                         RecordBoundary::getArray))
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_DEPTH, NullSafe.get(boundary,
                         RecordBoundary::getDepth))
-                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PROVISIONAL, produced.provisional())
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SCORE, produced.score())
-                // The spans are left as they are where this run has none to offer: a run with no parser
-                // to ask — an as-processed reprocess, a chain that was given records — knows nothing
-                // about where the records began, and knowing nothing must not erase what was known. The
-                // stream being reprocessed is the one somebody is investigating.
-                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS, written(spans) == null
-                        ? ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_SPANS
-                        : DSL.val(written(spans)))
-                // Likewise the count: a replay that can't count its records keeps what was counted
+                // A replay that can't count its records keeps what was counted
                 .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_COUNT, records == null
                         ? ShapeshifterOutput.SHAPESHIFTER_OUTPUT.RECORD_COUNT
                         : DSL.val(records))
+                .set(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SKIP_COUNT, skipped == null
+                        ? ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SKIP_COUNT
+                        : DSL.val(skipped))
                 .execute());
-    }
-
-    /// The spans as one column holds them: `line:column-line:column`, a record apiece, in the order the
-    /// parser cut them. Capped, because a stream of a million records is a million spans and what a node
-    /// keeps has to be bounded by something — past the cap a record has no span, which reads as "not
-    /// recorded" and never as a wrong one.
-    private static String written(final List<TextRange> spans) {
-        if (NullSafe.isEmptyCollection(spans)) {
-            return null;
-        }
-        return spans.stream()
-                .limit(MOST_SPANS)
-                .map(span -> span.getFrom().getLineNo() + ":" + span.getFrom().getColNo() + "-"
-                             + span.getTo().getLineNo() + ":" + span.getTo().getColNo())
-                .collect(Collectors.joining(","));
-    }
-
-    /// One record's span, read back out of the column.
-    private static Optional<TextRange> spanAt(final String spans, final int recordIndex) {
-        if (spans == null || spans.isEmpty()) {
-            return Optional.empty();
-        }
-        final String[] written = spans.split(",");
-        if (recordIndex >= written.length) {
-            return Optional.empty();
-        }
-        final Matcher matcher = SPAN.matcher(written[recordIndex]);
-        if (!matcher.matches()) {
-            return Optional.empty();
-        }
-        return Optional.of(new TextRange(
-                DefaultLocation.of(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2))),
-                DefaultLocation.of(Integer.parseInt(matcher.group(3)), Integer.parseInt(matcher.group(4)))));
     }
 
     /// An output of no pipeline is of no pipeline rather than of any: the empty string says so, and a
@@ -219,9 +156,9 @@ public class OutputsDao implements Outputs {
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BINDING_UUID,
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.FRAGMENT_UUID,
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ELEMENT,
+                                ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_CHILDREN,
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ARRAY,
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_DEPTH,
-                                ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PROVISIONAL,
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SCORE,
                                 ShapeshifterOutput.SHAPESHIFTER_OUTPUT.SNAPSHOT_ID)
                         .from(ShapeshifterOutput.SHAPESHIFTER_OUTPUT)
@@ -244,9 +181,9 @@ public class OutputsDao implements Outputs {
                                 .uuid(row.get(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.FRAGMENT_UUID))
                                 .build(),
                         boundary(row.get(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ELEMENT),
+                                row.get(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_CHILDREN),
                                 row.get(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_ARRAY),
                                 row.get(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.BOUNDARY_DEPTH)),
-                        row.get(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PROVISIONAL),
                         // A row written before the score was recorded scores nothing rather than
                         // failing the reprocess it was read for.
                         Objects.requireNonNullElse(
@@ -262,11 +199,14 @@ public class OutputsDao implements Outputs {
     }
 
     /// The boundary a row remembers, or null where the binding had none.
-    private static RecordBoundary boundary(final String element, final String array, final Integer depth) {
-        if (element == null && array == null) {
+    private static RecordBoundary boundary(final String element,
+                                           final String children,
+                                           final String array,
+                                           final Integer depth) {
+        if (element == null && children == null && array == null) {
             return null;
         }
-        return new RecordBoundary(element, array, depth);
+        return new RecordBoundary(element, children, array, depth);
     }
 
     /// In batches, like the attempts': a delete of every old row at once would hold locks across the
@@ -280,7 +220,7 @@ public class OutputsDao implements Outputs {
                     // By when the row was last *produced*, not when it was first inserted. A stream
                     // served again updates the row in place, which is why migration 009 added the
                     // column: pruning on the insert time would delete a stream processed sixty days ago
-                    // and reprocessed this morning, and with it the record spans and bindings that make
+                    // and reprocessed this morning, and with it the bindings that make
                     // it reprocessable at all.
                     .where(ShapeshifterOutput.SHAPESHIFTER_OUTPUT.PRODUCE_TIME_MS.lt(producedBeforeMs))
                     .limit(PRUNE_BATCH)

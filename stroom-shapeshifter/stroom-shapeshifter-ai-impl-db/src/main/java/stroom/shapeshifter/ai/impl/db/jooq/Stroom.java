@@ -12,7 +12,6 @@ import org.jooq.Table;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SchemaImpl;
 
-import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAssessment;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAttempt;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterBinding;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterCorpus;
@@ -38,11 +37,6 @@ public class Stroom extends SchemaImpl {
      * The reference instance of <code>stroom</code>
      */
     public static final Stroom STROOM = new Stroom();
-
-    /**
-     * The table <code>stroom.shapeshifter_assessment</code>.
-     */
-    public final ShapeshifterAssessment SHAPESHIFTER_ASSESSMENT = ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT;
 
     /**
      * The table <code>stroom.shapeshifter_attempt</code>.
@@ -115,7 +109,6 @@ public class Stroom extends SchemaImpl {
     @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
-            ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT,
             ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT,
             ShapeshifterBinding.SHAPESHIFTER_BINDING,
             ShapeshifterCorpus.SHAPESHIFTER_CORPUS,

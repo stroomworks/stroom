@@ -24,7 +24,9 @@ import stroom.shapeshifter.ai.stage.Learner;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jooq.Condition;
+import org.jooq.Field;
 import org.jooq.Record;
+import org.jooq.impl.DSL;
 
 import java.util.List;
 import java.util.Optional;
@@ -124,16 +126,28 @@ public class DeferralsDao implements Deferrals {
 
     @Override
     public List<Stamp> stampsWaiting() {
+        final Field<Long> latest = DSL.max(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.FIRST_DEFERRED_MS);
         return JooqUtil.contextResult(connProvider, context -> context
-                .selectDistinct(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.PIPELINE_UUID,
+                .select(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.PIPELINE_UUID,
+                        ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.ELEMENT_ID,
+                        ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.FAILED_AGAINST,
+                        latest)
+                .from(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL)
+                // Rows with no stamp are included (audit finding W7-4). A stream deferred for a *first*
+                // learning has nothing to have failed against, and used to be left out of this sweep
+                // entirely — so a deferral written just after the promotion's wake waited the full
+                // five-minute retry for a translation that already existed. The latest time one of them
+                // first waited is what tells those from the ones that wake already reached.
+                .groupBy(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.PIPELINE_UUID,
                         ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.ELEMENT_ID,
                         ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.FAILED_AGAINST)
-                .from(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL)
-                .where(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.FAILED_AGAINST.isNotNull())
                 .fetch(row -> new Stamp(
                         new Learner(row.get(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.PIPELINE_UUID),
                                 row.get(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.ELEMENT_ID)),
-                        row.get(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.FAILED_AGAINST))));
+                        row.get(ShapeshifterDeferral.SHAPESHIFTER_DEFERRAL.FAILED_AGAINST),
+                        row.get(latest) == null
+                                ? 0L
+                                : row.get(latest))));
     }
 
     @Override

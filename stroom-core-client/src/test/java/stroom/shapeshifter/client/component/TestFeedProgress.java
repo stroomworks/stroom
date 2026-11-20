@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TestFeedProgress {
 
-    private static final List<FlowStep> DIRECT = FlowExample.DIRECT.steps();
+    private static final List<FlowStep> DIRECT = FlowExampleFixtures.steps(FlowExample.DIRECT);
 
     @Test
     void aRunThatWentBackSaysWhyAndWhereItIsNow() {

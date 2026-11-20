@@ -80,7 +80,7 @@ class TestLearningFlow {
 
     @Test
     void realProblemsAreStillProblems() {
-        final LearningFlow broken = LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
+        final LearningFlow broken = flowOf(List.of(
                 FlowStep.of(QuestionKind.CONFIGURE), FlowStep.of(QuestionKind.CHAIN)));
 
         final List<FlowProblem> problems = broken.check(List.of(
@@ -105,9 +105,19 @@ class TestLearningFlow {
 
     // A flow whose second step has a rule firing on the conformance check falling short
     private static LearningFlow ruleOnConformanceShort() {
-        return LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
+        return flowOf(List.of(
                 FlowStep.of(QuestionKind.CHAIN),
                 new FlowStep(null, QuestionKind.CONFIGURE, null, null, null, null,
                         List.of(new Transition(StepOutcome.CONFORMANCE_SHORT, Transition.END)))));
+    }
+
+    /// A flow of the given steps, with no template overrides: what a test that is about the steps wants.
+    /// The built-in setups are the server's now (Track 2 step 1c), so a shared test builds the flow it
+    /// means rather than starting from one of them.
+    ///
+    /// @param steps Its steps.
+    /// @return The flow.
+    private static LearningFlow flowOf(final List<FlowStep> steps) {
+        return new LearningFlow(steps, null, null);
     }
 }

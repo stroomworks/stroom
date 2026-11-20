@@ -22,6 +22,7 @@ import stroom.shapeshifter.ai.fragment.FragmentRunner;
 import stroom.shapeshifter.ai.fragment.RecordJudge;
 import stroom.shapeshifter.ai.fragment.ServedStream;
 import stroom.shapeshifter.ai.fragment.StandInFragmentRunner;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.LearnedStep;
 import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.ai.scoring.Attempted;
@@ -174,7 +175,7 @@ class TestReprocessingAsProcessed {
         final ShapeshifterAiDoc doc = doc().copy()
                 .allowedElements(List.of("JSONParser", "XSLTFilter"))
                 // The split question is what settles the boundary, and target-first asks it of every input.
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .build();
         final Input json = new Input(1, "API-GATEWAY", "Raw Events", Map.of("Format", "JSON"),
                 Scenarios.resource("records.json"), "pipeline-1");

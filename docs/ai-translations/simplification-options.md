@@ -165,7 +165,7 @@ Because autonomous mode must remain available, the serving path (②, ⑥, ⑦) 
 
 ### A. One promotion path, review by default
 
-`medium saving` · `product decision`
+`medium saving` · `product decision` · **Adopted and built, 20 November 2026** (Track 2 step 1)
 
 **Today**
 
@@ -210,7 +210,7 @@ Either way, the learner ends up with one set of documents and a new snapshot.
 
 #### What we lose
 
-- Little. Automatic mode writes one extra short-lived draft per promotion, and the draft must be tidied away once approved. Design ruling A58 (one fragment per learner) still holds, because approve copies the draft into the learner's single set of documents.
+- Little. Automatic mode writes one extra short-lived draft per promotion, and the draft is tidied away once approved. Design ruling A58 (one fragment per learner) still holds, because approve copies the draft into the learner's single set of documents and deletes the draft's own — which is what `FragmentWriter.copyInto` does, and is the one place where what was built goes beyond this wording.
 
 #### Also needed: control over switching to automatic
 
@@ -274,7 +274,7 @@ On a feed that runs automatically, nobody reads the session before its result go
 
 ### C. No provisional bindings
 
-`small to medium saving` · `product decision`
+`small to medium saving` · `product decision` · **Adopted and built, 20 November 2026** (Track 2 step 1)
 
 **Today**
 
@@ -334,7 +334,7 @@ The Supervisor has 18 actions. With review as the default, it becomes the main w
 
 ### F. Remove the unfinished and unused parts
 
-`no-regret` · Almost all of these are already listed in the module's own `ISSUES.md` and `design/10-status-and-future.md`.
+**Adopted and built, 20 November 2026** (Track 2 step 1). `no-regret` · Almost all of these are already listed in the module's own `ISSUES.md` and `design/10-status-and-future.md`.
 
 | Item | State today | Proposal |
 |---|---|---|
@@ -346,7 +346,7 @@ The Supervisor has 18 actions. With review as the default, it becomes the main w
 
 ### G. Drop the Pipeline Factory
 
-`medium saving, server and client` · `product decision` · `removes three security problems`
+`medium saving, server and client` · `product decision` · `removes three security problems` · **Adopted and built, 20 November 2026** (Track 2 step 1)
 
 **Today**
 
@@ -421,13 +421,16 @@ So "covering existing feeds" really means attaching a second pipeline to them. F
 
 Content Templates bring a risk of their own: they fire for a feed name the sender chooses. If a template makes an AI pipeline, anyone who can send data can, without any person approving it, send data to the model, run up model costs with many feed names, and steer the stylesheet the model writes through the data it reads. This comes from the AI, not from either feature, so it needs the controls in [section 5](#5-what-must-exist-before-any-feed-runs-automatically) whichever way we go. In particular, a pipeline made automatically must start with learning switched off until a person approves the feed.
 
-This option also needs [option H](#h-drop-the-worker-claiming-requirement), or `stroom.processor.claimTasksOnWorker` switched on across the cluster. Otherwise a Content Template that makes an AI pipeline fails at receipt, because the processor refuses its filter.
+~~This option also needs [option H](#h-drop-the-worker-claiming-requirement)~~ — option H is done (20 November 2026), so a Content Template that makes an AI pipeline no longer fails at receipt whichever way tasks reach workers.
 
 If automatic coverage of existing feeds turns out to matter later, the way to add it is a scan trigger on Content Templates, off by default, with first-match order and a minimum creation time for AI templates. Keeping a second feature isn't the answer. The companion paper `content-templates-and-pipeline-factory.html` sets this out as its option A.
 
 > **Recommendation: adopt.** Remove the Pipeline Factory and make each feed's AI pipeline with a Content Template of type `INHERIT_PIPELINE`, with `learnedFolder` and `learnedName` left unset on the template. Put AI on existing feeds by hand, after their data has been approved for the model. Update design document `02-pipeline-factory.md`, the first step of `01-overview.md` and rulings A122 and A123 to match.
 
 ### H. Drop the worker-claiming requirement
+
+**Done, 20 November 2026** (Track 1 task 5). The `SupervisedPipelines` check and the requirement it
+enforced are gone; AI pipelines run with either way of getting tasks to workers.
 
 `small saving` · `engineering decision` · `removes a deployment requirement`
 
@@ -619,7 +622,7 @@ On top of that, a large part of the client's flow editor goes, the 15,000-line d
 
 > ⚠️ **A static safety check on every generated stylesheet** (needed for review mode too). Generated XSLT runs in Stroom's real XSLT engine with all of Stroom's extension functions. A stylesheet could call `stroom:http-call`, `fetch-json` or `ask-ai`, or read files with `document()`. It must be rejected before it runs if it does any of that. The module's design (A147) already says this, and it isn't built yet.
 >
-> **A cost ceiling across sessions.** Per-session budgets exist. A per-document and system-wide spend breaker and a request-rate limit don't, even though spend is already recorded. Unattended learning without them has no upper bound on cost.
+> ~~**A cost ceiling across sessions.**~~ **Done, 20 November 2026** (Track 2 step 3): `SpendBreaker`, four ceilings over the hour window A44's counter already kept — tokens and questions, per Learning Flow and cluster-wide. Past one, no new session opens and the streams wait, saying so, until the hour rolls.
 >
 > **Action on streams that wait too long.** Today a stream deferred past its document's maximum age is only flagged in the Supervisor. With nobody watching, it needs an alert or an error.
 >

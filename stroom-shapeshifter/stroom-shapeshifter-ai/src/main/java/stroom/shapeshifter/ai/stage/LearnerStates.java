@@ -49,7 +49,27 @@ public interface LearnerStates {
     /// @param memory  How many records the rolling score remembers.
     /// @return The rolling score, once the learner has brought at least `memory` records since its state
     /// was last reset; empty before that, when it would rest on too little to act on.
-    OptionalDouble scored(Learner learner, String docUuid, double score, int records, int memory);
+    default OptionalDouble scored(final Learner learner,
+                                  final String docUuid,
+                                  final double score,
+                                  final int records,
+                                  final int memory) {
+        return scored(learner, docUuid, score, records, 0, memory);
+    }
+
+    /// The same, with how many of the stream's records the translation declared it deliberately skipped
+    /// (`DeclaredSkips`, ruling A148). There is no cap on the skip rate by decision, so the count being
+    /// visible is the whole of what stops a translation quietly skipping its awkward records: it is kept
+    /// beside the rolling score and shown where that is shown.
+    ///
+    /// @param learner The learner.
+    /// @param docUuid The document it runs under.
+    /// @param score   The stream's mean per-record score.
+    /// @param records How many records the stream brought.
+    /// @param skipped How many of them the translation declared it skipped.
+    /// @param memory  How many records the rolling score remembers.
+    /// @return The rolling score, as above.
+    OptionalDouble scored(Learner learner, String docUuid, double score, int records, int skipped, int memory);
 
     /// @param learner The learner.
     /// @return Why it is marked to learn again, if it is.
@@ -94,7 +114,12 @@ public interface LearnerStates {
     ///
     /// @param score   The mean per-record score over the rolling memory (design 01 §5).
     /// @param records How many records that mean rests on, capped at the memory.
-    record Rolling(double score, int records) {
+    /// @param skips   How many of those records the translation declared it deliberately skipped (A148).
+    record Rolling(double score, int records, int skips) {
 
+        /// A learner scored before skips were counted.
+        public Rolling(final double score, final int records) {
+            this(score, records, 0);
+        }
     }
 }

@@ -36,7 +36,14 @@ public enum Template implements HasDisplayValue {
             "targets", "previous", "feedback", "marker", "admitted"),
     SPLIT_RULES("Split rules"),
     EXTRACTION_RULES("Extraction rules"),
-    TRANSFORMATION_RULES("Transformation rules");
+    /// Task 7: the schema a translation must write is a setting on the Learning Flow, so the namespace,
+    /// the `xsi:schemaLocation`, the version and the root element are variables here rather than words.
+    TRANSFORMATION_RULES("Transformation rules",
+            "targetNamespace", "targetSchemaLocation", "targetVersion", "targetRoot", "targetStructure"),
+    /// What the target schema says a document of it holds (task 7, decision D2 option G). Its built-in
+    /// text is event-logging's, written by hand; for any other schema it is generated from the XSD. A
+    /// Learning Flow that overrides it says what it wants for its own schema, whichever that is.
+    TARGET_STRUCTURE("Target structure");
 
     private final String displayValue;
     private final String[] variables;

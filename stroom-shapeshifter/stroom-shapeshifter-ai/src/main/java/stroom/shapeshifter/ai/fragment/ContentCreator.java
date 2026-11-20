@@ -36,6 +36,13 @@ public interface ContentCreator {
      */
     DocRef create(DocPath folder, String type, String name);
 
+    /// Delete a learned document, node and all: what a draft fragment's documents get once the draft has
+    /// been copied into the fragment that serves (A58). Deleting through the store alone would leave the
+    /// explorer node behind.
+    ///
+    /// @param docRef The document to delete.
+    void delete(DocRef docRef);
+
     /// Make a folder, or find it where it is.
     ///
     /// @param folder The folder.

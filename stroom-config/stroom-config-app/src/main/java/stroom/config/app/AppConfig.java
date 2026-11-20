@@ -52,7 +52,6 @@ import stroom.lifecycle.impl.LifecycleConfig;
 import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
-import stroom.pipelinefactory.impl.PipelineFactoryConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
 import stroom.receive.common.ReceiveDataConfig;
@@ -127,7 +126,6 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_NODE_URI = "nodeUri";
     public static final String PROP_NAME_PATH = "path";
     public static final String PROP_NAME_PIPELINE = "pipeline";
-    public static final String PROP_NAME_PIPELINE_FACTORY = "pipelineFactory";
     public static final String PROP_NAME_PROCESSOR = "processor";
     public static final String PROP_NAME_PROPERTIES = "properties";
     public static final String PROP_NAME_QUERY_DATASOURCE = "queryDataSource";
@@ -197,7 +195,6 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final NodeConfig nodeConfig;
     private final NodeUriConfig nodeUri;
     private final PipelineConfig pipelineConfig;
-    private final PipelineFactoryConfig pipelineFactoryConfig;
     private final ProcessorConfig processorConfig;
     private final PropertyServiceConfig propertyServiceConfig;
     private final PublicUriConfig publicUri;
@@ -259,7 +256,6 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new NodeConfig(),
                 new NodeUriConfig(),
                 new PipelineConfig(),
-                new PipelineFactoryConfig(),
                 new ProcessorConfig(),
                 new PropertyServiceConfig(),
                 new PublicUriConfig(),
@@ -320,7 +316,6 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_NODE) final NodeConfig nodeConfig,
                      @JsonProperty(PROP_NAME_NODE_URI) final NodeUriConfig nodeUri,
                      @JsonProperty(PROP_NAME_PIPELINE) final PipelineConfig pipelineConfig,
-                     @JsonProperty(PROP_NAME_PIPELINE_FACTORY) final PipelineFactoryConfig pipelineFactoryConfig,
                      @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                      @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                      @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
@@ -380,7 +375,6 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.nodeConfig = nodeConfig;
         this.nodeUri = nodeUri;
         this.pipelineConfig = pipelineConfig;
-        this.pipelineFactoryConfig = pipelineFactoryConfig;
         this.processorConfig = processorConfig;
         this.propertyServiceConfig = propertyServiceConfig;
         this.publicUri = publicUri;
@@ -587,14 +581,6 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     @JsonProperty(PROP_NAME_PIPELINE)
     public PipelineConfig getPipelineConfig() {
         return pipelineConfig;
-    }
-
-    @JsonProperty(PROP_NAME_PIPELINE_FACTORY)
-    @JsonPropertyDescription("Configuration for Pipeline Factories, which make a pipeline and processor "
-                             + "filter for each new combination of feed and type they find among the "
-                             + "streams.")
-    public PipelineFactoryConfig getPipelineFactoryConfig() {
-        return pipelineFactoryConfig;
     }
 
     @JsonProperty(PROP_NAME_PROCESSOR)

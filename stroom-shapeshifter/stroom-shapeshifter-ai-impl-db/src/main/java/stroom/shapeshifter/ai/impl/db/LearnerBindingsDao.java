@@ -74,23 +74,54 @@ public class LearnerBindingsDao implements LearnerBindings {
                         binding(record))));
     }
 
+    /// A learner has at most one binding that serves it (audit finding W7-2). Where one already does,
+    /// appending another that would serve it as well returns the one that is there instead of writing a
+    /// second: a node whose cache has not yet seen another node's promotion must not add a rival to it.
+    ///
+    /// The table says the same thing — `shapeshifter_binding_live` is unique over the learner while the
+    /// binding is not a draft — so two nodes racing here lose the race in the database rather than
+    /// between these lines. This is what keeps the loser's work out, with the row it lost to in hand.
     @Override
     public Binding append(final Learner learner, final String docUuid, final Binding binding) {
-        return JooqUtil.contextResult(connProvider, context -> write(context, learner, docUuid, binding));
+        return JooqUtil.transactionResult(connProvider, context -> {
+            if (!binding.isDraft()) {
+                final Optional<Binding> live = context.selectFrom(SHAPESHIFTER_BINDING)
+                        .where(SHAPESHIFTER_BINDING.PIPELINE_UUID.eq(learner.pipelineUuid()))
+                        .and(SHAPESHIFTER_BINDING.ELEMENT_ID.eq(learner.elementId()))
+                        .and(SHAPESHIFTER_BINDING.DRAFT.isFalse())
+                        .forUpdate()
+                        .fetchOptional()
+                        .map(LearnerBindingsDao::binding);
+                if (live.isPresent() && !live.get().getUuid().equals(binding.getUuid())) {
+                    return live.get();
+                }
+            }
+            return write(context, learner, docUuid, binding);
+        });
     }
 
     /// A binding the learner does not have is appended rather than lost: a promotion must not be dropped
-    /// because its row was pruned between the run and the write. Two writers of one binding — a provisional
-    /// binding promoted while a person accepts it — are serialised on the row, the second seeing what the first
-    /// wrote rather than both succeeding blind.
+    /// because its row was pruned between the run and the write.
+    ///
+    /// **Checked against the version the binding was read at** (audit finding W7-3). Two writers of one
+    /// binding are serialised on the row, but the lock alone did not stop the second writing every field
+    /// back from a copy taken before the first: a node writing a binding from its cache
+    /// reverted a rebind another node had made to the pipeline and the snapshot. The version in the
+    /// `WHERE` is what makes the second writer see what the first wrote instead of writing over it.
     @Override
-    public void replace(final Learner learner, final String docUuid, final Binding binding) {
-        JooqUtil.transaction(connProvider, context -> {
-            context.select(SHAPESHIFTER_BINDING.ID)
+    public boolean replace(final Learner learner, final String docUuid, final Binding binding) {
+        return JooqUtil.transactionResult(connProvider, context -> {
+            final Optional<Integer> current = context.select(SHAPESHIFTER_BINDING.VERSION)
                     .from(SHAPESHIFTER_BINDING)
                     .where(SHAPESHIFTER_BINDING.BINDING_UUID.eq(binding.getUuid()))
                     .forUpdate()
-                    .fetchOptional();
+                    .fetchOptional(SHAPESHIFTER_BINDING.VERSION);
+            if (current.isPresent() && binding.getVersion() != null
+                && !binding.getVersion().equals(current.get())) {
+                // The row has moved since this copy was read: what is there now is somebody else's more
+                // recent work, and a stale copy must not be forced over it.
+                return false;
+            }
             final int updated = context.update(SHAPESHIFTER_BINDING)
                     .set(SHAPESHIFTER_BINDING.VERSION, SHAPESHIFTER_BINDING.VERSION.plus(1))
                     .set(SHAPESHIFTER_BINDING.UPDATE_TIME_MS, System.currentTimeMillis())
@@ -99,10 +130,10 @@ public class LearnerBindingsDao implements LearnerBindings {
                     .set(SHAPESHIFTER_BINDING.FRAGMENT_UUID, uuid(binding))
                     .set(SHAPESHIFTER_BINDING.FRAGMENT_NAME, name(binding))
                     .set(SHAPESHIFTER_BINDING.DRAFT, binding.isDraft())
-                    .set(SHAPESHIFTER_BINDING.PROVISIONAL, binding.isProvisional())
                     .set(SHAPESHIFTER_BINDING.PROMOTED_TIME_MS, binding.getPromotedTimeMs())
                     .set(SHAPESHIFTER_BINDING.SCORE, binding.getScore())
                     .set(SHAPESHIFTER_BINDING.BOUNDARY_ELEMENT, element(binding))
+                    .set(SHAPESHIFTER_BINDING.BOUNDARY_CHILDREN, children(binding))
                     .set(SHAPESHIFTER_BINDING.BOUNDARY_ARRAY, array(binding))
                     .set(SHAPESHIFTER_BINDING.BOUNDARY_DEPTH, depth(binding))
                     .set(SHAPESHIFTER_BINDING.SNAPSHOT_ID, binding.getSnapshot())
@@ -113,6 +144,7 @@ public class LearnerBindingsDao implements LearnerBindings {
             if (updated == 0) {
                 write(context, learner, docUuid, binding);
             }
+            return true;
         });
     }
 
@@ -146,10 +178,10 @@ public class LearnerBindingsDao implements LearnerBindings {
                 .set(SHAPESHIFTER_BINDING.FRAGMENT_UUID, uuid(stored))
                 .set(SHAPESHIFTER_BINDING.FRAGMENT_NAME, name(stored))
                 .set(SHAPESHIFTER_BINDING.DRAFT, stored.isDraft())
-                .set(SHAPESHIFTER_BINDING.PROVISIONAL, stored.isProvisional())
                 .set(SHAPESHIFTER_BINDING.PROMOTED_TIME_MS, stored.getPromotedTimeMs())
                 .set(SHAPESHIFTER_BINDING.SCORE, stored.getScore())
                 .set(SHAPESHIFTER_BINDING.BOUNDARY_ELEMENT, element(stored))
+                .set(SHAPESHIFTER_BINDING.BOUNDARY_CHILDREN, children(stored))
                 .set(SHAPESHIFTER_BINDING.BOUNDARY_ARRAY, array(stored))
                 .set(SHAPESHIFTER_BINDING.BOUNDARY_DEPTH, depth(stored))
                 .set(SHAPESHIFTER_BINDING.SNAPSHOT_ID, stored.getSnapshot())
@@ -160,6 +192,7 @@ public class LearnerBindingsDao implements LearnerBindings {
     private static Binding binding(final Record record) {
         final String fragmentUuid = record.get(SHAPESHIFTER_BINDING.FRAGMENT_UUID);
         final String boundaryElement = record.get(SHAPESHIFTER_BINDING.BOUNDARY_ELEMENT);
+        final String boundaryChildren = record.get(SHAPESHIFTER_BINDING.BOUNDARY_CHILDREN);
         final String boundaryArray = record.get(SHAPESHIFTER_BINDING.BOUNDARY_ARRAY);
         final Integer boundaryDepth = record.get(SHAPESHIFTER_BINDING.BOUNDARY_DEPTH);
         return Binding.builder()
@@ -169,15 +202,13 @@ public class LearnerBindingsDao implements LearnerBindings {
                         : new DocRef(record.get(SHAPESHIFTER_BINDING.FRAGMENT_TYPE), fragmentUuid,
                                 record.get(SHAPESHIFTER_BINDING.FRAGMENT_NAME)))
                 .draft(record.get(SHAPESHIFTER_BINDING.DRAFT))
-                .provisional(record.get(SHAPESHIFTER_BINDING.PROVISIONAL))
                 .promotedTimeMs(record.get(SHAPESHIFTER_BINDING.PROMOTED_TIME_MS))
                 .score(record.get(SHAPESHIFTER_BINDING.SCORE))
-                .recordBoundary(boundaryElement != null
-                        ? RecordBoundary.ofElement(boundaryElement).atDepth(boundaryDepth)
-                        : boundaryArray != null
-                                ? RecordBoundary.ofArray(boundaryArray).atDepth(boundaryDepth)
-                                : null)
+                .recordBoundary(recordBoundary(boundaryElement, boundaryChildren, boundaryArray,
+                        boundaryDepth))
                 .snapshot(record.get(SHAPESHIFTER_BINDING.SNAPSHOT_ID))
+                // What a later replace checks it against (W7-3)
+                .version(record.get(SHAPESHIFTER_BINDING.VERSION))
                 .build();
     }
 
@@ -197,6 +228,37 @@ public class LearnerBindingsDao implements LearnerBindings {
         return binding.getPipeline() == null
                 ? null
                 : binding.getPipeline().getName();
+    }
+
+    /// The boundary a row holds, in whichever of its three shapes it was written
+    /// (`docs/shapeshifter-ai-mixed-record-elements.md`).
+    ///
+    /// @param element  The element that is one record, or null.
+    /// @param children The element whose children are records, or null.
+    /// @param array    The array whose items are records, or null.
+    /// @param depth    How deep a record sits, or null.
+    /// @return The boundary, or null where the row holds none.
+    private static RecordBoundary recordBoundary(final String element,
+                                                 final String children,
+                                                 final String array,
+                                                 final Integer depth) {
+        if (element != null) {
+            return RecordBoundary.ofElement(element).atDepth(depth);
+        }
+        if (children != null) {
+            return RecordBoundary.ofChildrenOf(children).atDepth(depth);
+        }
+        return array == null
+                ? null
+                : RecordBoundary.ofArray(array).atDepth(depth);
+    }
+
+    /// @param binding A binding.
+    /// @return The element whose children are its records, or null.
+    private static String children(final Binding binding) {
+        return binding.getRecordBoundary() == null
+                ? null
+                : binding.getRecordBoundary().getChildren();
     }
 
     private static String element(final Binding binding) {

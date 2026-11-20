@@ -31,8 +31,6 @@ public enum FeedAction {
     EXHAUST("Finish with Unknowns"),
     /// Answers the question the run stopped at, in place of the AI (A28).
     ANSWER("Answer it myself"),
-    /// Accepts a translation on trial now (§6).
-    ACCEPT("Accept now"),
     /// Asks for the translation in use to be made better (A46).
     IMPROVE("Improve…"),
     /// Learns afresh from the next stream (A28, A29).

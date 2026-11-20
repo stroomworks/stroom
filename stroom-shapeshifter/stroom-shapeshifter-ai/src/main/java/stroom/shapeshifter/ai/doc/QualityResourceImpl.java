@@ -18,8 +18,6 @@ package stroom.shapeshifter.ai.doc;
 
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.shapeshifter.ai.quality.QualityService;
-import stroom.shapeshifter.shared.AssessmentRequest;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.QualityResource;
 import stroom.shapeshifter.shared.QualitySample;
@@ -51,18 +49,4 @@ public class QualityResourceImpl implements QualityResource {
         return qualityServiceProvider.get().samples(pipelineUuid, elementId);
     }
 
-    @Override
-    public List<QualityAssessment> assessments(final String pipelineUuid, final String elementId) {
-        return qualityServiceProvider.get().assessments(pipelineUuid, elementId);
-    }
-
-    @Override
-    public List<QualityAssessment> assess(final AssessmentRequest request) {
-        return qualityServiceProvider.get().assess(request);
-    }
-
-    @Override
-    public List<QualityAssessment> resolve(final long id) {
-        return qualityServiceProvider.get().resolve(id);
-    }
 }

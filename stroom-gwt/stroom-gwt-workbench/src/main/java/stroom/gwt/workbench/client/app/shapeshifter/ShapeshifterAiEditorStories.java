@@ -164,7 +164,7 @@ public final class ShapeshifterAiEditorStories {
                 .withPlay(play -> {
                     play.expect(play.findByText("This document won't learn anything yet")).toBeInTheDocument();
                     // A new Learning Flow has the Standard checks, so they are not what stops it
-                    play.expect(play.getByText("6 quality gates")).toBeInTheDocument();
+                    play.expect(play.getByText("7 quality gates")).toBeInTheDocument();
                     play.click(play.getByRole("button", StroomDom.button("Switch on")));
                     play.expect(play.findByRole("radio", "On: learn new feeds automatically")).toBeChecked();
                     openTab(play, "Pipelines");
@@ -238,7 +238,7 @@ public final class ShapeshifterAiEditorStories {
                             .toBeInTheDocument();
                     play.expect(map.getByRole("button", "Step 1: Choose the elements")).toBeInTheDocument();
                     play.expect(map.getByRole("button", "Step 2: Write the parser")).toBeInTheDocument();
-                    play.expect(map.getByRole("button", "Quality checks: Own checks · 7 gates, 1 advice check"))
+                    play.expect(map.getByRole("button", "Quality checks: Own checks · 9 gates, 3 advice checks"))
                             .toBeInTheDocument();
                     play.expect(map.getByRole("button",
                             "Approving new translations: Used once it passes")).toBeInTheDocument();

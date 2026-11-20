@@ -116,8 +116,8 @@ public class CachedLearnerStates implements LearnerStates, Clearable, EntityEven
     /// of, and which changes none of what is cached.
     @Override
     public OptionalDouble scored(final Learner learner, final String docUuid, final double score,
-                                 final int records, final int memory) {
-        return rows.scored(learner, docUuid, score, records, memory);
+                                 final int records, final int skipped, final int memory) {
+        return rows.scored(learner, docUuid, score, records, skipped, memory);
     }
 
     /// Straight to the rows, for the same reason [#scored] is: a count every served stream adds to.

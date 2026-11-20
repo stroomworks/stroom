@@ -42,6 +42,7 @@ import stroom.shapeshifter.ai.element.ShapeshifterAiParser;
 import stroom.shapeshifter.ai.extraction.DataSplitterCompiler;
 import stroom.shapeshifter.ai.extraction.DataSplitterStep;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.scenario.AdvisorHolder;
 import stroom.shapeshifter.ai.scenario.QuestionMatcher;
 import stroom.shapeshifter.ai.scenario.Scenarios;
@@ -57,6 +58,7 @@ import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
+import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -166,7 +168,6 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
                 .describedAs("the document the operator authored is untouched by learning")
                 .isEqualTo(shapeshifterAiStore.readDocument(doc));
         assertThat(binding.isDraft()).isFalse();
-        assertThat(binding.isProvisional()).isFalse();
         final PipelineDoc fragment = pipelineStore.readDocument(binding.getPipeline());
         assertThat(fragment).describedAs("the fragment is a real pipeline document").isNotNull();
         assertThat(fragment.getName())
@@ -183,8 +184,7 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
                 .describedAs("design 01 §7.3 rule 3: the output carries what produced it")
                 .containsEntry(Produced.DOC_ATTRIBUTE, doc.getUuid())
                 .containsEntry(Produced.BINDING_ATTRIBUTE, binding.getUuid())
-                .containsEntry(Produced.FRAGMENT_ATTRIBUTE, binding.getPipeline().getUuid())
-                .containsEntry(Produced.PROVISIONAL_ATTRIBUTE, "false");
+                .containsEntry(Produced.FRAGMENT_ATTRIBUTE, binding.getPipeline().getUuid());
 
         // The second stream of the learner: bound by the binding, the model not consulted.
         final Script silent = Script.of();
@@ -217,7 +217,10 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
         shapeshifterAiStore.writeDocument(shapeshifterAiStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
+                // about who approves what it learns.
+                .promotionMode(PromotionMode.AUTOMATIC)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(

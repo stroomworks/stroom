@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.impl.db;
 
 import stroom.docref.DocRef;
 import stroom.pipeline.shared.PipelineDoc;
+import stroom.shapeshifter.ai.learning.AskedWith;
 import stroom.shapeshifter.ai.stage.Attempts.Attempt;
 import stroom.shapeshifter.ai.stage.Attempts.Grant;
 import stroom.shapeshifter.ai.stage.Attempts.Page;
@@ -25,6 +26,7 @@ import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
 import stroom.shapeshifter.ai.stage.Guidance.Given;
 import stroom.shapeshifter.ai.stage.Learner;
+import stroom.shapeshifter.ai.stage.LearnerStates.Rolling;
 import stroom.shapeshifter.ai.stage.Produced;
 import stroom.shapeshifter.ai.stage.Replayable;
 import stroom.shapeshifter.ai.stage.Spend.Spent;
@@ -39,6 +41,7 @@ import stroom.shapeshifter.shared.StopCause;
 import stroom.shapeshifter.shared.StopReport;
 import stroom.shapeshifter.shared.Suggestion;
 import stroom.shapeshifter.shared.SuggestionAction;
+import stroom.shapeshifter.shared.Template;
 import stroom.shapeshifter.shared.TurnScore;
 import stroom.util.shared.DefaultLocation;
 import stroom.util.shared.PageRequest;
@@ -51,6 +54,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -126,6 +130,45 @@ class TestLearnerStatesAndAttemptsDao {
         // Reset starts it afresh, as a promotion or a retraction does.
         states.reset(LEARNER);
         assertThat(states.scored(LEARNER, DOC, 1.0, 1, 1)).hasValue(1.0);
+    }
+
+    @Test
+    void theSkipsAreKeptBesideTheRecordsTheyBelongTo() {
+        // Nothing caps how many records a translation may declare it skipped (ruling A148), so the count
+        // has to be kept and shown. It is kept with the rolling score, over the same memory.
+        states.scored(LEARNER, DOC, 1.0, 10, 2, 100);
+        states.scored(LEARNER, DOC, 1.0, 10, 3, 100);
+
+        assertThat(states.rolling(LEARNER)).get()
+                .extracting(Rolling::records, Rolling::skips)
+                .containsExactly(20, 5);
+    }
+
+    @Test
+    void skipsGoWithTheRecordsTheMemoryForgets() {
+        // Or a translation that skipped badly once would look as though it still were, for as long as
+        // the learner lived
+        states.scored(LEARNER, DOC, 1.0, 10, 10, 10);
+        states.scored(LEARNER, DOC, 1.0, 10, 0, 10);
+
+        assertThat(states.rolling(LEARNER)).get()
+                .describedAs("ten skipped records remembered, then ten clean ones over a memory of ten")
+                .extracting(Rolling::records, Rolling::skips)
+                .containsExactly(20, 10);
+
+        states.scored(LEARNER, DOC, 1.0, 10, 0, 10);
+        assertThat(states.rolling(LEARNER).orElseThrow().skips())
+                .describedAs("and the skipped ones keep falling out of memory")
+                .isEqualTo(5);
+    }
+
+    @Test
+    void aResetForgetsTheSkipsAsWellAsTheScore() {
+        states.scored(LEARNER, DOC, 1.0, 10, 4, 10);
+        states.reset(LEARNER);
+        states.scored(LEARNER, DOC, 1.0, 10, 0, 10);
+
+        assertThat(states.rolling(LEARNER).orElseThrow().skips()).isZero();
     }
 
     /// The first streams of a new learner are often served at once, and each finds no row and makes it.
@@ -345,6 +388,51 @@ class TestLearnerStatesAndAttemptsDao {
     }
 
     @Test
+    void theWordsARunWasAskedWithAreRowsToo() {
+        // N9 option D extended: a parked run has to resume in the words it began in, and the node that
+        // resumes it is rarely the node that opened it, so the words are rows and not memory.
+        final AskedWith asked = new AskedWith(9,
+                Map.of(Template.CHAIN, "Pick one:${elements}", Template.SPLIT, "Cut it:${sample}"),
+                "Badge readers.", "7.13-beta.3");
+        final Learner learner = learner("asked-with");
+        final long id = attempts.opened(new Attempt(learner, DOC, "DOOR-ACCESS", "Raw Events", 42L, "node-1",
+                PromotionMode.AUTOMATIC, now() + 60_000L, asked), now()).orElseThrow();
+
+        final AskedWith read = attempts.byId(id).orElseThrow().attempt().askedWith();
+
+        assertThat(read.known()).isTrue();
+        assertThat(read.builtInVersion()).isEqualTo(9);
+        assertThat(read.instructions()).isEqualTo("Badge readers.");
+        assertThat(read.build()).isEqualTo("7.13-beta.3");
+        assertThat(read.templates()).isEqualTo(asked.templates());
+
+        // Parked for the worker, which is the whole point: the node that resumes it is rarely the node
+        // that opened it, and it must find the words there.
+        attempts.parked(id, AttemptStatus.AWAITING_MODEL, now() + 60_000L, 10L);
+        assertThat(attempts.awaiting(100))
+                .filteredOn(recorded -> recorded.id() == id)
+                .singleElement()
+                .extracting(recorded -> recorded.attempt().askedWith())
+                .isEqualTo(asked);
+        attempts.closed(id, AttemptStatus.ABANDONED, "done", null, null, 0L);
+    }
+
+    @Test
+    void anAttemptOpenedBeforeItsWordsWereKeptSaysSoRatherThanGuessing() {
+        // Every attempt on an instance upgraded into N9. Offering today's words as though they were the
+        // ones used would be worse than saying nothing.
+        final Learner learner = learner("asked-with-unknown");
+        final long id = attempts.opened(new Attempt(learner, DOC, "DOOR-ACCESS", "Raw Events", 42L, "node-1",
+                PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
+
+        final AskedWith read = attempts.byId(id).orElseThrow().attempt().askedWith();
+
+        assertThat(read).isEqualTo(AskedWith.UNKNOWN);
+        assertThat(read.known()).isFalse();
+        attempts.closed(id, AttemptStatus.ABANDONED, "done", null, null, 0L);
+    }
+
+    @Test
     void anAttemptAndItsTurnsAreRowsThatOutliveTheNode() {
         // A28: what was asked and answered survives the node that asked it, and the turns are readable in
         // the order they were put.
@@ -535,9 +623,9 @@ class TestLearnerStatesAndAttemptsDao {
         // a field stroom can query.
         final DocRef fragment = PipelineDoc.buildDocRef().uuid("fragment-1").name("door-v1").build();
         outputs.emitted(1L, "pipeline-1", new Produced(DOC, "rule-1", fragment,
-                RecordBoundary.ofElement("Event").atDepth(1), false, 0.97));
-        outputs.emitted(2L, "pipeline-2", new Produced(DOC, "rule-1", fragment, null, false, 0.98));
-        outputs.emitted(3L, null, new Produced(DOC, "rule-2", fragment, null, true, 0.5));
+                RecordBoundary.ofElement("Event").atDepth(1), 0.97));
+        outputs.emitted(2L, "pipeline-2", new Produced(DOC, "rule-1", fragment, null, 0.98));
+        outputs.emitted(3L, null, new Produced(DOC, "rule-2", fragment, null, 0.5));
 
         assertThat(outputs.boundBy("rule-1", "fragment-1"))
                 .extracting(Replayable::inputId, Replayable::pipeline)
@@ -550,7 +638,7 @@ class TestLearnerStatesAndAttemptsDao {
         // A binding keeps its uuid when it is rebound (§7.3 rule 3), so what an earlier generation produced
         // is not what a retraction of this one asks for.
         final DocRef rebound = PipelineDoc.buildDocRef().uuid("fragment-2").name("door-v2").build();
-        outputs.emitted(4L, "pipeline-1", new Produced(DOC, "rule-1", rebound, null, false, 0.99));
+        outputs.emitted(4L, "pipeline-1", new Produced(DOC, "rule-1", rebound, null, 0.99));
         assertThat(outputs.boundBy("rule-1", "fragment-2")).extracting(Replayable::inputId)
                 .describedAs("only what this binding produced").containsExactly(4L);
         assertThat(outputs.boundBy("rule-1", "fragment-1")).extracting(Replayable::inputId)
@@ -558,12 +646,12 @@ class TestLearnerStatesAndAttemptsDao {
 
         // A stream processed twice by one pipeline under one binding is one thing to replay; by two
         // pipelines it is two outputs, and a retraction asks for both, because both are still there.
-        outputs.emitted(1L, "pipeline-3", new Produced(DOC, "rule-1", fragment, null, false, 0.99));
+        outputs.emitted(1L, "pipeline-3", new Produced(DOC, "rule-1", fragment, null, 0.99));
         assertThat(outputs.boundBy("rule-1", "fragment-1"))
                 .extracting(Replayable::inputId, Replayable::pipeline)
                 .containsExactly(tuple(1L, "pipeline-1"), tuple(2L, "pipeline-2"), tuple(1L, "pipeline-3"));
         outputs.emitted(1L, "pipeline-1", new Produced(DOC, "rule-1", fragment,
-                RecordBoundary.ofElement("Event").atDepth(1), false, 0.95));
+                RecordBoundary.ofElement("Event").atDepth(1), 0.95));
         assertThat(outputs.boundBy("rule-1", "fragment-1"))
                 .describedAs("and the same pipeline again is the same output, said again")
                 .hasSize(3);
@@ -571,8 +659,8 @@ class TestLearnerStatesAndAttemptsDao {
         // What an as-processed reprocess asks (design 01 §7.3): what was bound when this input was last
         // processed by this pipeline, so that the fragment which produced the output produces it again.
         assertThat(outputs.asProcessed(DOC, 2L, "pipeline-2")).get()
-                .extracting(Produced::bindingUuid, bindings -> bindings.fragment().getUuid(), Produced::provisional)
-                .containsExactly("rule-1", "fragment-1", false);
+                .extracting(Produced::bindingUuid, bindings -> bindings.fragment().getUuid())
+                .containsExactly("rule-1", "fragment-1");
         assertThat(outputs.asProcessed(DOC, 1L, "pipeline-1")).get()
                 .describedAs("under the boundary that produced it, not the binding's boundary today")
                 .extracting(bindings -> bindings.boundary().getElement(),
@@ -595,36 +683,12 @@ class TestLearnerStatesAndAttemptsDao {
         // without it the extraction stage would be answered with the transformation stage's fragment,
         // which would then be run over raw bytes.
         final DocRef transform = PipelineDoc.buildDocRef().uuid("fragment-t").name("transform").build();
-        outputs.emitted(2L, "pipeline-2", new Produced("doc-2", "rule-t", transform, null, false, 0.97));
+        outputs.emitted(2L, "pipeline-2", new Produced("doc-2", "rule-t", transform, null, 0.97));
         assertThat(outputs.asProcessed(DOC, 2L, "pipeline-2")).get()
                 .describedAs("the stage that asked, not the one that recorded last")
                 .extracting(bindings -> bindings.fragment().getUuid()).isEqualTo("fragment-1");
         assertThat(outputs.asProcessed("doc-2", 2L, "pipeline-2")).get()
                 .extracting(bindings -> bindings.fragment().getUuid()).isEqualTo("fragment-t");
-
-        // Where each record began and ended in the stream it was cut from (§12 item 21), so that a
-        // fault found at an event is put to the model with the record that made it.
-        outputs.emitted(5L, "pipeline-1", new Produced(DOC, "rule-1", fragment, null, false, 0.9),
-                List.of(new TextRange(DefaultLocation.of(2, 1), DefaultLocation.of(2, 40)),
-                        new TextRange(DefaultLocation.of(3, 1), DefaultLocation.of(4, 12))));
-        assertThat(outputs.span(DOC, 5L, "pipeline-1", 0)).get()
-                .extracting(span -> span.getFrom().getLineNo(), span -> span.getTo().getColNo())
-                .containsExactly(2, 40);
-        assertThat(outputs.span(DOC, 5L, "pipeline-1", 1)).get()
-                .describedAs("a record that spans two lines says both")
-                .extracting(span -> span.getFrom().getLineNo(), span -> span.getTo().getLineNo())
-                .containsExactly(3, 4);
-        assertThat(outputs.span(DOC, 5L, "pipeline-1", 2))
-                .describedAs("a record past what was cut has no span").isEmpty();
-        assertThat(outputs.span(DOC, 5L, "pipeline-9", 0))
-                .describedAs("and another pipeline's run is another output").isEmpty();
-        assertThat(outputs.span(DOC, 1L, "pipeline-1", 0))
-                .describedAs("an output recorded with no spans has none to give").isEmpty();
-        // And a later run with nothing to say about the records — an as-processed reprocess, which has
-        // no parser to ask — leaves what was recorded where it is.
-        outputs.emitted(5L, "pipeline-1", new Produced(DOC, "rule-1", fragment, null, false, 0.9));
-        assertThat(outputs.span(DOC, 5L, "pipeline-1", 0))
-                .describedAs("knowing nothing does not erase what was known").isPresent();
 
         // Kept for as long as a node is told to keep them, and no longer: a row per output stream is a
         // row per stream (design 01 §12 item 8).

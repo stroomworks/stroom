@@ -52,7 +52,7 @@ Samples are not redacted, and that is decided (A146), not owed: see [1.6](01-ove
 
 | What | Ruling | State | Why deferred |
 |---|---|---|---|
-| **The spend breaker and rate limit** | A24, A44 | The per-document spend counter (`shapeshifter_spend`, one-hour window) is written by every model call; nothing reads it | Budgets per session bound each session; across sessions, nothing does. A67 says a learner that keeps failing needs no new limit because the spend limit and the deferral age bound it, so until the breaker exists only the deferral age does. Build before anything runs unattended at volume |
+| ~~**The spend breaker and rate limit**~~ | A24, A44 | **Built, 20 November 2026** (`SpendBreaker`). The counter now has a policy over it: tokens and questions, per Learning Flow and cluster-wide, over the hour window it already kept. Past a ceiling no new session opens and the streams wait, saying which ceiling and that it clears when the hour rolls; a session already running finishes, being inside its own budgets. The cluster's ceilings are `shapeshifter.spendTokensPerHour` and `spendCallsPerHour`, on by default | — |
 | **Error mode per feed** | A24 | Became *raised* (A57): a stream waiting past the maximum deferral age is shown as raised in the Supervisor | Raised is shown, not acted on |
 | **A processor gate** | A27 | Superseded by A48 and A109: deferred tasks fill the filter's budget, so a feed that cannot be served stops creating tasks by itself | Nothing more is needed unless the trial shows otherwise |
 | **An AI review scorer** | A23 | Not built | Advisory only; worth having once the deterministic scorers are proven on real formats |

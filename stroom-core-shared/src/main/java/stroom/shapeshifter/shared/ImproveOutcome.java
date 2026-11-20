@@ -40,7 +40,9 @@ public class ImproveOutcome {
     }
 
     /**
-     * One sentence: what was decided, as {@code Decision.said()} puts it.
+     * One sentence for the person who asked. An improvement is carried on by the worker (A46), so this
+     * says that it was asked for and where its progress shows, not what it came to: what it comes to
+     * appears on the Learning Status tab as any other run's does.
      */
     public String getSaid() {
         return said;

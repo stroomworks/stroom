@@ -109,6 +109,8 @@ public final class PlainWords {
                 return "Errors on the data";
             case COVERAGE_SHORT:
                 return "Didn't read all the input";
+            case COMPLETENESS_SHORT:
+                return "Records that became nothing";
             case YIELD_SHORT:
                 return "Too few or too many records";
             case WHOLENESS_SHORT:
@@ -119,10 +121,12 @@ public final class PlainWords {
                 return "Events empty or meaningless";
             case RULES_SHORT:
                 return "Breaks a business rule";
-            case ERRORS_SHORT:
-                return "Too many errors";
-            case CLASSIFICATION_SHORT:
-                return "Events wrongly classified";
+            case PERMITTED_SHORT:
+                return "Uses something it may not";
+            case TIMES_SHORT:
+                return "Events dated far from the stream";
+            case LITERALS_SHORT:
+                return "Data written into the translation";
             case PRESERVATION_SHORT:
                 return "Lost what the targets need";
             case FIDELITY_SHORT:
@@ -154,6 +158,8 @@ public final class PlainWords {
                 return "Compiles";
             case COVERAGE:
                 return "Reads all the input";
+            case COMPLETENESS:
+                return "Every record becomes an event or a declared skip";
             case YIELD:
                 return "Gives the right number of records";
             case CONFORMANCE:
@@ -162,6 +168,10 @@ public final class PlainWords {
                 return "Events carry real content";
             case RULES:
                 return "Meets the business rules";
+            case TIMES:
+                return "Event times are plausible";
+            case LITERALS:
+                return "No data written into the translation";
             case WHOLENESS:
                 return "Records are whole";
             case PRESERVATION:
@@ -196,6 +206,8 @@ public final class PlainWords {
                 return "Compiling";
             case COVERAGE:
                 return "Reading the input";
+            case COMPLETENESS:
+                return "Completeness";
             case YIELD:
                 return "The record count";
             case CONFORMANCE:

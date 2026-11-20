@@ -29,13 +29,15 @@ public enum StepOutcome implements HasDisplayValue {
     COMPILE_FAILED("compile-failed"),
     RUN_FAILED("run-failed"),
     COVERAGE_SHORT("coverage-short"),
+    COMPLETENESS_SHORT("completeness-short"),
     YIELD_SHORT("yield-short"),
     WHOLENESS_SHORT("wholeness-short"),
     CONFORMANCE_SHORT("conformance-short"),
     QUALITY_SHORT("quality-short"),
     RULES_SHORT("rules-short"),
-    ERRORS_SHORT("errors-short"),
-    CLASSIFICATION_SHORT("classification-short"),
+    TIMES_SHORT("times-short"),
+    LITERALS_SHORT("literals-short"),
+    PERMITTED_SHORT("permitted-short"),
     PRESERVATION_SHORT("preservation-short"),
     FIDELITY_SHORT("fidelity-short");
 
@@ -48,15 +50,5 @@ public enum StepOutcome implements HasDisplayValue {
     @Override
     public String getDisplayValue() {
         return displayValue;
-    }
-
-    /// @return The outcome written as its word, e.g. `coverage-short`, or null for anything else.
-    public static StepOutcome parse(final String word) {
-        for (final StepOutcome outcome : values()) {
-            if (outcome.displayValue.equalsIgnoreCase(word)) {
-                return outcome;
-            }
-        }
-        return null;
     }
 }

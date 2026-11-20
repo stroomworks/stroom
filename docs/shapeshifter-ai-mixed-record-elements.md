@@ -183,3 +183,53 @@ The rejection message could also say that the sample was truncated, so that neit
   That the sample held one `batch` comes from the default `sampleSizeLimit`, the file's byte offsets and the model's own reply.
 - Stream 2117 has been retried 34 times while it waits on the parked session, and its waiting reason misleadingly says *"Another node is learning for this pipeline"* (this wording has since been replaced: `Stage.why` now words the reason by what holds the claim).
   See `docs/shapeshifter-ai-supervisor-visibility.md`, item 5.
+
+
+## What was built (20 November 2026)
+
+**Fix 1, as recommended.** A record boundary can now be *the children of an element*.
+
+| Part | Where |
+|---|---|
+| The boundary, as a **real field** rather than `batch/*` stuffed into the element field | `RecordBoundary.children`, `ofChildrenOf`, `isChildren`; `equals` tells it from `ofElement(parent)` |
+| The records it names | `OutputRecords.recordsBy` — the element children of **every** occurrence of the container, so a stream of batches is a stream of records |
+| The check | `TargetChecks.recordChildren`: at least two children, and they hold the document between them |
+| The reply grammar | `container/*`, or `*` for the root's own children (`Conversation.childrenSplit`) |
+| The prompt | `SPLIT_XML` explains both forms; `Templates.VERSION` 8 → 9 |
+| What the transform is told | `QuestionText.split` describes it, including that the context it needs is on the enclosing container's attributes |
+| Carried through learning | `Boundary.ofChildrenOf`, `Boundary.shared()` |
+
+**The container occurring once is no longer refused.** That was half of why this feed could not be
+learned: the split is judged on a sample, the first `</batch>` is at byte 11,318 and the default sample
+is 8,192, so `batch` "occurs once" there and the old check read a container that repeats in the stream as
+a container of records. `recordChildren` allows it; what it refuses instead is a container with a *single*
+child, and it says to look one level deeper or one level up rather than simply refusing.
+
+**Every consumer of the boundary handles it explicitly.** In code there is exactly one —
+`OutputRecords.recordsBy` — plus `RecordBoundary.toString` for what a person reads.
+
+**And it is persisted.** A binding's boundary is stored in columns, not in JSON, so `boundary_children`
+was added to the unreleased migration on both `shapeshifter_binding` and `shapeshifter_output` (N5
+option A), with jOOQ regenerated and both DAOs reading and writing it. Missing that would have lost a
+children boundary silently on a node: written as all-nulls and read back as no boundary at all, so the
+fragment would split in the wrong place and the stage would count the root's children as records.
+`TestLearnerBindingsDao.aBoundaryOfAContainersChildrenSurvivesTheRoundTrip` holds it.
+
+### Also built: the sample-size refusal (N2 option E)
+
+A stream that is **one XML or JSON document larger than the prefix** read as text is now refused, with a
+stop report that says why — *a part of a document is not a document* — that a larger limit is not the
+answer, and that the feed should be sent as a stream of records or split before it reaches the stage.
+Before, the split step passed with no boundary at all and everything after it was judged on nothing.
+
+It fires only where the sample **looks like** markup. A chain whose first element is a transform reads
+anything down the same branch, so a CSV stream of a million lines reaches it too — and its prefix is a
+perfectly good sample. Refusing that would refuse the feeds this feature is for; a test holds it.
+
+### Tests
+
+`TestMixedRecordElements` (8, over the real fixtures and all three drift files),
+`TestScenario65MixedRecordElements` (3, end to end through the conversation),
+`TestOneDocumentLargerThanThePrefix` (2), and `gateway-audit.xsl` as a fixture.
+
+**Not done:** the dev-instance re-run of `GATEWAY-AUDIT` (stream 2117), which needs the MCP server.

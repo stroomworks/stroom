@@ -21,6 +21,7 @@ import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
 import stroom.shapeshifter.ai.learning.Advisor;
 import stroom.shapeshifter.ai.learning.Advisors;
 import stroom.shapeshifter.ai.learning.Exchange;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question;
 import stroom.shapeshifter.ai.learning.RecordedAdvisor;
 import stroom.shapeshifter.ai.stage.Attempts.Attempt;
@@ -28,8 +29,8 @@ import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
+import stroom.shapeshifter.ai.stage.Decision.Drafted;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
-import stroom.shapeshifter.ai.stage.Decision.Provisional;
 import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.Input;
@@ -71,7 +72,6 @@ class TestScenariosBindingBeforeLearning {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
-    private static final String EXPECTED_EVENTS = Scenarios.resource("csv-logon.events.xml");
 
     /// The document every scenario here runs: learning automatically, keyed as every document now is on
     /// feed and type (design 06 phase J slice 2a).
@@ -80,7 +80,7 @@ class TestScenariosBindingBeforeLearning {
                 .uuid("doc-1")
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -129,6 +129,12 @@ class TestScenariosBindingBeforeLearning {
     // one pipeline, so there is no neighbouring learner for an existing binding to fit, and no binding to
     // reserve one.
 
+    // Scenario 38 (read a record back by the span the parser recorded) is retired with the record spans
+    // themselves (simplification option F, Track 2 step 1): the column was written for every learned
+    // stream and read by nothing but its own test. What the scenario was for — putting a fault back to
+    // the model with the record that made it — is the regression corpus's job, and it keeps the record's
+    // own text (A56).
+
     @Test
     void scenario29DisabledLearnsNothingAndTheStreamWaits() {
         final Scenarios scenarios = new Scenarios();
@@ -145,60 +151,51 @@ class TestScenariosBindingBeforeLearning {
     }
 
     @Test
-    void scenario14TooFewRecordsBindsProvisionallyThenPromotesWhenEnoughArrive() {
+    void scenario14TooFewRecordsDraftsForAPersonEvenOnAnAutomaticFlow() {
+        // SIM-3 option E: a first result learned from too few records for a held-out judgement (A14) is
+        // never approved by the system. There is no provisional state any more; even on an automatic
+        // Learning Flow the result is a draft, and a person approves it or a later session learns from
+        // more data. "When in doubt, it is a draft."
         final Scenarios scenarios = new Scenarios();
         final ShapeshifterAiDoc doc = doorAccess().copy().minRecordsToLearn(10).build();
+        assertThat(doc.getPromotionMode()).isEqualTo(PromotionMode.AUTOMATIC);
         final Script script = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
 
         // Seven lines — six records and a header — against a minimum of ten: the candidate clears the
-        // floor, so it is bound and serves this stream, but provisionally — A14 cannot yet be met.
+        // floor, but there are not enough records to judge it on, so it waits for a person.
         final StageRun first = scenarios.process(script, doc, stream("CSV")).learned();
         script.verifyExhausted();
-        assertThat(first.decision()).isInstanceOf(Provisional.class);
-        final Provisional provisional = (Provisional) first.decision();
-        assertThat(provisional.records()).describedAs("the six records the parser cut, not the seven lines")
-                .isEqualTo(6);
-        assertThat(provisional.required()).isEqualTo(10);
-        assertThat(provisional.binding().isProvisional()).isTrue();
-        assertThat(provisional.binding().getPromotedTimeMs()).isNull();
-        assertThat(first.output()).isEqualTo(EXPECTED_EVENTS);
-        assertThat(scenarios.regressionSet.accepted(provisional.binding().getUuid()))
-                .describedAs("what was learned for goes in under a provisional binding too (A56): the five "
-                             + "records of the sample")
+        assertThat(first.decision()).isInstanceOf(Drafted.class);
+        final Binding draft = ((Drafted) first.decision()).binding();
+        assertThat(draft.isDraft()).isTrue();
+        assertThat(draft.getPromotedTimeMs()).isNull();
+        assertThat(first.output()).describedAs("a draft serves nothing, so this stream waits too").isNull();
+        assertThat(scenarios.regressionSet.accepted(draft.getUuid()))
+                .describedAs("what was learned for goes in under a draft too (A56): the five records of "
+                             + "the sample")
                 .hasSize(5);
 
-        // The same learner again with twelve records: the provisional binding serves it and, now that the
-        // learner has enough records and clears the floor, is promoted in place.
-        final String[] lines = CSV.input().split("\n");
-        final StringBuilder twelve = new StringBuilder(lines[0]).append('\n');
-        for (int i = 0; i < 2; i++) {
-            for (int line = 1; line < lines.length; line++) {
-                twelve.append(lines[line]).append('\n');
-            }
-        }
+        // A second stream of the same learner waits behind the draft rather than opening a second session.
         final Script silent = Script.of();
-        final StageRun second = scenarios.process(silent, first.doc(),
-                new Input(2L, "DOOR-ACCESS", "Raw Events", Map.of("Format", "CSV"), twelve.toString())).learned();
-
+        final StageRun waiting = scenarios.process(silent, first.doc(), stream("CSV")).learned();
+        assertThat(waiting.decision()).isInstanceOf(Deferred.class);
+        assertThat(((Deferred) waiting.decision()).reason())
+                .startsWith("Awaiting review: draft binding " + draft.getUuid());
         assertThat(silent.asked()).isEmpty();
-        // Served by the provisional binding, which the stream promotes in place as it is served (design 04 §3).
-        assertThat(second.decision()).isInstanceOf(Bound.class);
-        assertThat(second.output()).describedAs("served").isNotNull();
-        final Binding promoted = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
-        assertThat(promoted.getUuid()).isEqualTo(provisional.binding().getUuid());
-        assertThat(promoted.isProvisional()).isFalse();
-        assertThat(promoted.getPromotedTimeMs()).isEqualTo(Scenarios.NOW.toEpochMilli());
-        assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).containsExactly(promoted);
-        assertThat(scenarios.regressionSet.accepted(promoted.getUuid()))
-                .describedAs("a stream that merely brought enough records learned nothing, and adds nothing")
-                .hasSize(5);
 
-        // And a third stream is simply bound.
-        final StageRun third = scenarios.process(silent, second.doc(), stream("CSV")).learned();
-        assertThat(third.decision()).isInstanceOf(Bound.class);
+        // A person approves it: it goes live, with the records it was learned from behind it, and serves.
+        scenarios.stage(Script.of()).approve(first.doc(), draft.getUuid());
+        final Binding live = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
+        assertThat(live.getUuid()).isEqualTo(draft.getUuid());
+        assertThat(live.isDraft()).isFalse();
+        assertThat(live.getPromotedTimeMs()).isEqualTo(Scenarios.NOW.toEpochMilli());
+
+        final StageRun served = scenarios.process(silent, first.doc(), stream("CSV")).learned();
+        assertThat(served.decision()).isInstanceOf(Bound.class);
+        assertThat(served.output()).describedAs("served by the binding a person approved").isNotNull();
     }
 
     @Test
@@ -289,8 +286,8 @@ class TestScenariosBindingBeforeLearning {
             }
 
             @Override
-            public void replace(final Learner learner, final String docUuid, final Binding binding) {
-                scenarios.learnerBindings.replace(learner, docUuid, binding);
+            public boolean replace(final Learner learner, final String docUuid, final Binding binding) {
+                return scenarios.learnerBindings.replace(learner, docUuid, binding);
             }
 
             @Override

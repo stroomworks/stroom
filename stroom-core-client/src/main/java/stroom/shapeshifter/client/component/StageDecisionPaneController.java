@@ -99,9 +99,6 @@ public class StageDecisionPaneController extends Controller implements ElementSt
         if (stage.getScore() != null) {
             terms.put("Score", String.valueOf(stage.getScore()));
         }
-        if (stage.isProvisional()) {
-            terms.put("Provisional", "yes, until the learner brings enough records to judge it");
-        }
         if (stage.getRecordBoundary() != null) {
             terms.put("Record", stage.getRecordBoundary());
         }

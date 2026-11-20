@@ -20,7 +20,6 @@ import stroom.shapeshifter.client.component.ConversationList.Row;
 import stroom.shapeshifter.client.component.FeedProgress.Item;
 import stroom.shapeshifter.client.component.FeedProgress.State;
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.Suggestion;
 import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.shapeshifter.shared.SupervisorAttempt;
@@ -93,14 +92,6 @@ public class FeedDetail extends Component {
     FlowPanel suggestionsPart;
     @UiField
     AriaPanel suggestions;
-    @UiField
-    FlowPanel issuesPart;
-    @UiField
-    Label issuesHeading;
-    @UiField
-    AriaPanel issues;
-    @UiField
-    LinkButton openQuality;
     @UiField
     FlowPanel actions;
     @UiField
@@ -283,27 +274,6 @@ public class FeedDetail extends Component {
         }
         progressNote.setText(Objects.requireNonNullElse(shown.getNote(), ""));
         progressNote.setVisible(shown.getNote() != null);
-    }
-
-    /// Shows the issues QA people have flagged with the pipeline's translated output and nobody has resolved, for
-    /// the Data Provider to fix at the pipeline; nothing where there are none.
-    ///
-    /// @param open The open issues, newest first.
-    public void setIssues(final List<QualityAssessment> open) {
-        issues.clear();
-        for (final QualityAssessment issue : open) {
-            issues.add(item(text(Objects.requireNonNullElse(issue.getComment(), "No comment") + " (" + issue.getAuthor()
-                                 + ")")));
-        }
-        issuesHeading.setText(open.size() == 1
-                ? "Flagged by QA: 1 open issue"
-                : "Flagged by QA: " + open.size() + " open issues");
-        issuesPart.setVisible(!open.isEmpty());
-    }
-
-    /// @param onOpenQuality Run when the person asks to see the issues on the Quality Assurance tab.
-    public void setOnOpenQuality(final Runnable onOpenQuality) {
-        openQuality.setOnClick(onOpenQuality);
     }
 
     /// Whether there is any learning history to show, and whether streams wait, whose tab is shown only then.

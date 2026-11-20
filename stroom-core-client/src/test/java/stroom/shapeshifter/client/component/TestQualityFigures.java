@@ -19,10 +19,8 @@ package stroom.shapeshifter.client.component;
 import stroom.docref.DocRef;
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
 import stroom.shapeshifter.client.component.QualityFigures.Figure;
-import stroom.shapeshifter.shared.AssessmentVerdict;
 import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.LearnerState;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorLearner;
@@ -46,14 +44,14 @@ class TestQualityFigures {
             .build();
 
     @Test
-    void aTranslationInUseIsJudgedByItsScoresTrustAndWaitingStreams() {
-        final QualityFigures figures = QualityFigures.of(serving(0.98, 0.95, 1204, false, false, 0, false), DOC);
+    void aTranslationInUseIsJudgedByItsScoresAndWaitingStreams() {
+        final QualityFigures figures = QualityFigures.of(serving(0.98, 0.95, 1204, false, 0, false), DOC);
 
         assertThat(figures.getMessage()).isNull();
         assertThat(figures.getFigures()).extracting(Figure::getLabel)
-                .containsExactly("Score lately", "Score when it went live", "Trust", "Waiting streams");
+                .containsExactly("Score lately", "Score when it went live", "Waiting streams");
         assertThat(figures.getFigures()).extracting(Figure::getValue)
-                .containsExactly("98%", "95%", "Trusted", "None");
+                .containsExactly("98%", "95%", "None");
         assertThat(figures.getFigures().get(0).getNote())
                 .isEqualTo("Over the last 1,204 records translated. Its Learning Flow flags a translation in use "
                            + "below 80%.");
@@ -63,7 +61,7 @@ class TestQualityFigures {
 
     @Test
     void aScoreBelowTheFlagCallsForAttention() {
-        final Figure lately = QualityFigures.of(serving(0.62, 0.95, 300, false, false, 0, true), DOC)
+        final Figure lately = QualityFigures.of(serving(0.62, 0.95, 300, false, 0, true), DOC)
                 .getFigures().get(0);
         assertThat(lately.getValue()).isEqualTo("62%");
         assertThat(lately.getTone()).isEqualTo(Tone.WARNING);
@@ -72,24 +70,16 @@ class TestQualityFigures {
 
     @Test
     void aTranslationNotScoredSinceItWentLiveSaysSo() {
-        final Figure lately = QualityFigures.of(serving(null, 0.95, 0, false, false, 0, false), DOC)
+        final Figure lately = QualityFigures.of(serving(null, 0.95, 0, false, 0, false), DOC)
                 .getFigures().get(0);
         assertThat(lately.getValue()).isEqualTo("Not scored yet");
         assertThat(lately.getTone()).isEqualTo(Tone.IDLE);
     }
 
     @Test
-    void aTranslationOnTrialSaysHowManyRecordsItNeeds() {
-        final Figure trust = QualityFigures.of(serving(0.97, 0.95, 4, true, false, 0, false), DOC)
-                .getFigures().get(2);
-        assertThat(trust.getValue()).isEqualTo("On trial");
-        assertThat(trust.getNote()).contains("once 20 clean records have passed");
-    }
-
-    @Test
     void overdueWaitingStreamsCallForAttention() {
-        final Figure waiting = QualityFigures.of(serving(0.97, 0.95, 400, false, true, 3, false), DOC)
-                .getFigures().get(3);
+        final Figure waiting = QualityFigures.of(serving(0.97, 0.95, 400, true, 3, false), DOC)
+                .getFigures().get(2);
         assertThat(waiting.getValue()).isEqualTo("3");
         assertThat(waiting.getTone()).isEqualTo(Tone.WARNING);
         assertThat(waiting.getNote()).contains("overdue");
@@ -97,16 +87,15 @@ class TestQualityFigures {
 
     @Test
     void withoutItsLearningFlowsSettingsTheLinesAreNotSaid() {
-        final QualityFigures figures = QualityFigures.of(serving(0.98, 0.95, 10, true, false, 0, false), null);
+        final QualityFigures figures = QualityFigures.of(serving(0.98, 0.95, 10, false, 0, false), null);
         assertThat(figures.getFigures().get(0).getNote()).isEqualTo("Over the last 10 records translated.");
         assertThat(figures.getFigures().get(1).getNote()).isEqualTo("On the stream it was learned from.");
-        assertThat(figures.getFigures().get(2).getNote()).contains("once enough clean records have passed");
     }
 
     @Test
     void nothingInUseHasNothingToJudgeButWhatWaits() {
         final SupervisorLearner learning = new SupervisorLearner(new LearnerRef("p-1", "shapeshifterAi"), null,
-                DOC_REF, LearnerState.LEARNING, null, null, null, false, null, null, 0, 2, null, false, null, 0,
+                DOC_REF, LearnerState.LEARNING, null, null, null, null, null, 0, 2, null, false, null, 0,
                 false, false);
         final QualityFigures figures = QualityFigures.of(learning, DOC);
         assertThat(figures.getMessage()).isEqualTo(QualityFigures.NOTHING_IN_USE);
@@ -122,6 +111,21 @@ class TestQualityFigures {
                 .isEqualTo("Nothing translated over the last 1 day.");
         assertThat(QualityFigures.volume(List.of(day(0, 2L, 0L))))
                 .isEqualTo("2 streams translated over the last 1 day. Their records weren't counted.");
+    }
+
+    @Test
+    void theVolumeSaysHowManyRecordsTheTranslationDeclaredItSkipped() {
+        // Nothing caps how many records a translation may declare it skipped (ruling A148), so the count
+        // being read is the whole of what stops it quietly skipping its awkward ones
+        assertThat(QualityFigures.volume(List.of(day(0, 3L, 1200L, 12L), day(1, 1L, 4L, 6L))))
+                .isEqualTo("1,204 records in 4 streams over the last 2 days. 18 of those records were "
+                           + "declared skipped by the translation.");
+    }
+
+    @Test
+    void aTranslationThatSkippedNothingSaysNothingAboutSkips() {
+        assertThat(QualityFigures.volume(List.of(day(0, 3L, 1200L, 0L))))
+                .isEqualTo("1,200 records in 3 streams over the last 1 day.");
     }
 
     @Test
@@ -158,32 +162,27 @@ class TestQualityFigures {
         assertThat(QualityFigures.cardinalityNote(empty)).contains("keeps no records");
     }
 
-    @Test
-    void onlyAnUnresolvedIssueIsOpen() {
-        assertThat(QualityFigures.isOpenIssue(assessment(AssessmentVerdict.ISSUE, null))).isTrue();
-        assertThat(QualityFigures.isOpenIssue(assessment(AssessmentVerdict.ISSUE, "provider"))).isFalse();
-        assertThat(QualityFigures.isOpenIssue(assessment(AssessmentVerdict.LOOKS_RIGHT, null))).isFalse();
-    }
-
     private static VolumeDay day(final int day, final Long streams, final Long records) {
-        return new VolumeDay(day * 86_400_000L, streams, records);
+        return day(day, streams, records, 0L);
     }
 
-    private static QualityAssessment assessment(final AssessmentVerdict verdict, final String resolvedBy) {
-        return new QualityAssessment(1L, 1000L, "b-1", verdict, "x", "qa", resolvedBy, resolvedBy == null
-                ? null
-                : 2000L);
+    /// @param day     Which day.
+    /// @param streams How many streams it translated.
+    /// @param records How many records those streams held.
+    /// @param skips   How many of them the translation declared it skipped.
+    /// @return The day.
+    private static VolumeDay day(final int day, final Long streams, final Long records, final Long skips) {
+        return new VolumeDay(day * 86_400_000L, streams, records, skips);
     }
 
     private static SupervisorLearner serving(final Double lately,
                                              final Double promoted,
                                              final int records,
-                                             final boolean provisional,
                                              final boolean raised,
                                              final int waiting,
                                              final boolean below) {
         return new SupervisorLearner(new LearnerRef("p-1", "shapeshifterAi"), null, DOC_REF, LearnerState.SERVING,
-                null, "b-1", FRAGMENT, provisional, promoted, lately, records, waiting, null, raised, null, 0,
+                null, "b-1", FRAGMENT, promoted, lately, records, waiting, null, raised, null, 0,
                 false, below);
     }
 }

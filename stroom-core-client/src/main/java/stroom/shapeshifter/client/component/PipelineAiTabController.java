@@ -95,7 +95,6 @@ public class PipelineAiTabController extends Controller {
         detail.setOnActed(this::refresh);
         detail.setOnOpenSettings(() -> openDocument(editor -> editor.showLearning()));
         detail.setOnOpenSetup(action -> openDocument(editor -> editor.followSuggestion(action)));
-        detail.setOnOpenQuality(() -> onOpenQuality.run());
         view.setOnElement(element -> {
             if (element != null && !element.equals(chosen)) {
                 chosen = element;
@@ -156,11 +155,6 @@ public class PipelineAiTabController extends Controller {
     ///                    be shown only where it has.
     public void setOnAvailable(final Consumer<Boolean> onAvailable) {
         this.onAvailable = onAvailable;
-    }
-
-    /// @param onOpenQuality Run when the person asks to see the issues QA flagged, on the Quality Assurance tab.
-    public void setOnOpenQuality(final Runnable onOpenQuality) {
-        this.onOpenQuality = onOpenQuality;
     }
 
     /// @return The id of the AI Translator element shown, or null for none.

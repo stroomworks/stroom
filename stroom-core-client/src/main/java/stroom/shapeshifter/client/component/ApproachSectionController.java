@@ -19,10 +19,12 @@ package stroom.shapeshifter.client.component;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
+import stroom.shapeshifter.client.FlowExamplesCache;
 import stroom.shapeshifter.client.component.ApproachFlow.Addable;
 import stroom.shapeshifter.client.component.ApproachFlow.Condition;
 import stroom.shapeshifter.client.component.ApproachFlow.Destination;
 import stroom.shapeshifter.client.component.StepCard.CardAction;
+import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowProblem;
@@ -80,6 +82,7 @@ public class ApproachSectionController extends Controller {
     private static final ShapeshifterAiResource RESOURCE = GWT.create(ShapeshifterAiResource.class);
 
     private final RestFactory restFactory;
+    private final FlowExamplesCache flowExamples;
     private final Provider<BuiltInTextController> builtInTextProvider;
     private ApproachSection view;
     /// The card of the step chosen; null where it has none (the fallback).
@@ -90,8 +93,12 @@ public class ApproachSectionController extends Controller {
     private Integer builtInVersion;
     private boolean builtInsRequested;
     private List<FlowStep> steps = new ArrayList<>();
-    /// The flow as read, for what the steps don't hold: the built-in version its texts were saved against.
-    private LearningFlow flow = LearningFlow.of(FlowExample.DIRECT);
+    /// The flow as read, for what the steps don't hold: the built-in version its texts were saved
+    /// against. Its own steps are never read — [#steps] holds those — so until a document is read this
+    /// is empty rather than a default setup's: the setups are the server's now (Track 2 step 1c), and
+    /// a placeholder that pretended to be one of them would be the last thing in the client still
+    /// claiming to know what they are.
+    private LearningFlow flow = new LearningFlow(List.of(), Map.of(), null);
     /// The step chosen, whose card and question text are shown.
     private int selected;
     /// The steps whose "Fine-tune this step" is unfolded, by index; folded again when the steps change shape.
@@ -117,10 +124,12 @@ public class ApproachSectionController extends Controller {
     @Inject
     public ApproachSectionController(final EventBus eventBus,
                                      final Provider<BuiltInTextController> builtInTextProvider,
-                                     final RestFactory restFactory) {
+                                     final RestFactory restFactory,
+                                     final FlowExamplesCache flowExamples) {
         super(eventBus);
         this.restFactory = restFactory;
         this.builtInTextProvider = builtInTextProvider;
+        this.flowExamples = flowExamples;
     }
 
     /// Attaches it to its section, declared in its owner's template.
@@ -154,6 +163,7 @@ public class ApproachSectionController extends Controller {
     /// @param doc    Its content.
     public void read(final DocRef docRef, final ShapeshifterAiDoc doc) {
         fetchBuiltIns();
+        fetchFlowExamples();
         defaultTries = doc.getMaxAttempts();
         checks = new ArrayList<>(doc.getChecks());
         flow = doc.getFlow();
@@ -238,9 +248,9 @@ public class ApproachSectionController extends Controller {
         return flowProblem;
     }
 
-    /// @return The example the steps are exactly, or null where they are the document's own.
+    /// @return The default setup the steps are exactly, or null where they are the document's own.
     public FlowExample example() {
-        return ApproachFlow.example(steps);
+        return ApproachFlow.example(flowExamples.known(), steps);
     }
 
     /// Switches the fallback on or off, as chosen under Approving new translations
@@ -547,18 +557,30 @@ public class ApproachSectionController extends Controller {
     ///
     /// @param example The example.
     public void startFrom(final FlowExample example) {
-        if (readOnly || example.steps().equals(steps)) {
+        if (readOnly) {
             return;
         }
-        ConfirmEvent.fire(this,
-                "Load the default setup '" + PlainWords.example(example) + "'? Its "
-                + PlainWords.count(example.steps().size(),
-                        "step") + " replace the " + PlainWords.count(steps.size(), "step") + " there are now.",
-                ok -> {
-                    if (ok && !isDisposed()) {
-                        reshape(new ArrayList<>(example.steps()), 0);
-                    }
-                });
+        // The setups are the server's now (Track 2 step 1c), so this asks for them rather than reading
+        // a constant; where they are already in hand it answers at once and nothing is seen to wait.
+        flowExamples.get(examples -> {
+            if (isDisposed()) {
+                return;
+            }
+            final List<FlowStep> loaded = ApproachFlow.steps(examples, example);
+            if (loaded.isEmpty() || loaded.equals(steps)) {
+                return;
+            }
+            ConfirmEvent.fire(this,
+                    "Load the default setup '" + PlainWords.example(example) + "'? Its "
+                    + PlainWords.count(loaded.size(),
+                            "step") + " replace the " + PlainWords.count(steps.size(), "step")
+                    + " there are now.",
+                    ok -> {
+                        if (ok && !isDisposed()) {
+                            reshape(new ArrayList<>(loaded), 0);
+                        }
+                    });
+        }, taskMonitor());
     }
 
     /// The kinds of step that may be added, as a menu below the place: those that can't be added are shown
@@ -597,6 +619,22 @@ public class ApproachSectionController extends Controller {
 
     // The built-in text of every template, so that an override is edited from the words it replaces;
     // fetched once, when the tab is first read
+    /// The default setups, which the approach is named against (Track 2 step 1c). Fetched as the
+    /// built-in texts beside them are, and the section drawn again when they land, so that a document
+    /// that is one of them says so rather than reading as its own for the moment the fetch takes.
+    private void fetchFlowExamples() {
+        flowExamples.get(examples -> {
+            if (!isDisposed()) {
+                rebuild();
+            }
+        }, taskMonitor());
+    }
+
+    /// @return The default setups in hand, for an owner that names the approach too.
+    public List<BuiltInFlow> flowExamples() {
+        return flowExamples.known();
+    }
+
     private void fetchBuiltIns() {
         if (builtInsRequested) {
             return;

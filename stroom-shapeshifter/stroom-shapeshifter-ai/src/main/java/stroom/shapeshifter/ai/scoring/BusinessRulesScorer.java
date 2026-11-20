@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
@@ -57,7 +58,9 @@ public final class BusinessRulesScorer implements Scorer {
     }
 
     @Override
-    public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         final BusinessRulesParameters rules = (BusinessRulesParameters) parameters;
         final Optional<OutputRecords> parsed = OutputRecords.ofTransformed(step);
         if (parsed.isEmpty() || parsed.get().records().isEmpty()) {

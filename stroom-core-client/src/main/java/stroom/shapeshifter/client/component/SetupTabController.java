@@ -169,8 +169,7 @@ public class SetupTabController extends Controller {
     }
 
     /// @param doc The document.
-    /// @return A copy of it with the setup shown. The regression retention, which nothing reads (ISSUES item
-    ///         24), is kept as it was.
+    /// @return A copy of it with the setup shown.
     public ShapeshifterAiDoc write(final ShapeshifterAiDoc doc) {
         return approach.write(doc.copy()
                 .learningMode(view.getLearningMode())
@@ -314,7 +313,7 @@ public class SetupTabController extends Controller {
             view.showMap(stepsShown
                             ? approach.getSteps()
                             : List.of(),
-                    SetupSummary.of(shown),
+                    SetupSummary.of(shown, approach.flowExamples()),
                     stepsShown
                             ? approach.stepProblems()
                             : Map.of(),

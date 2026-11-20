@@ -28,8 +28,10 @@ import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
@@ -71,9 +73,9 @@ class TestScenario60AParseThatCannotBeLearnedErrorsItsStreams {
                 .heldOutFraction(0.0)
                 .checks(checks)
                 .flow(new LearningFlow(List.of(
-                        FlowStep.parse("CHAIN"),
-                        FlowStep.parse("CONFIGURE parser candidates 1"),
-                        FlowStep.parse("CONFIGURE transform")), null, null))
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).candidates(1).build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()), null, null))
                 .build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(input(1L));

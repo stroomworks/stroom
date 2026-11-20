@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scenario;
 
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
@@ -64,7 +65,7 @@ class TestScenario22ReviewMode {
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .promotionMode(PromotionMode.REVIEW)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
@@ -327,14 +328,20 @@ class TestScenario22ReviewMode {
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(2);
         assertThat(silent.asked()).isEmpty();
 
-        // Approve rebinds the incumbent to the draft's fragment: one binding, the incumbent's uuid, the
-        // draft's fragment, and a regression set that carries both histories.
+        // Approve copies the draft into the fragment that serves (A58): one binding, the incumbent's uuid,
+        // the incumbent's own fragment holding what the draft learned, and a regression set that carries
+        // both histories.
         final int incumbentHeld = scenarios.regressionSet.accepted(incumbent.getUuid()).size();
         scenarios.stage(Script.of()).approve(relearned.doc(), draft.getUuid());
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
         final Binding rebound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(rebound.getUuid()).isEqualTo(incumbent.getUuid());
-        assertThat(rebound.getPipeline()).isEqualTo(draft.getPipeline());
+        assertThat(rebound.getPipeline())
+                .describedAs("one fragment per learner (A58): the draft's documents were copied into it")
+                .isEqualTo(incumbent.getPipeline());
+        assertThat(scenarios.stores.pipelines.list())
+                .describedAs("the draft's fragment went with the draft")
+                .hasSize(1);
         assertThat(rebound.isDraft()).isFalse();
         assertThat(scenarios.regressionSet.accepted(incumbent.getUuid()))
                 .describedAs("the draft's records, learned for in its session, now follow the incumbent's")
@@ -378,7 +385,7 @@ class TestScenario22ReviewMode {
     }
 
     @Test
-    void approvingAProvisionalDraftStartsItsRegressionSet() {
+    void approvingADraftLearnedFromTooFewRecordsStartsItsRegressionSet() {
         // Too few records for A14; a person approving the draft is design 01 §6's exception, and the binding
         // goes live with the records it was judged on in its regression set (A18).
         final Scenarios scenarios = new Scenarios();
@@ -386,12 +393,12 @@ class TestScenario22ReviewMode {
         final StageRun first = scenarios.process(script, review().copy().minRecordsToLearn(10).build(),
                 stream(1, lines(6, 0))).learned();
         final Binding draft = ((Drafted) first.decision()).binding();
-        assertThat(draft.isProvisional()).isTrue();
+        assertThat(draft.isDraft()).isTrue();
 
         scenarios.stage(Script.of()).approve(first.doc(), draft.getUuid());
 
         final Binding live = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
-        assertThat(live.isProvisional()).isFalse();
+        assertThat(live.isDraft()).isFalse();
         assertThat(live.getPromotedTimeMs()).isEqualTo(Scenarios.NOW.toEpochMilli());
         assertThat(scenarios.regressionSet.accepted(live.getUuid()))
                 .describedAs("one entry per record of the sample it was learned from, however few (A56)")

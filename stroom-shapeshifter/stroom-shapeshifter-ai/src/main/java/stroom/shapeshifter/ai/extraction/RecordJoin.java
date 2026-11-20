@@ -27,7 +27,11 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.sax.SAXTransformerFactory;
@@ -67,9 +71,13 @@ public final class RecordJoin {
         try {
             final TransformerHandler handler = newHandler(writing);
             handler.startDocument();
+            // What the first document declared stays open for all of them; a later document that
+            // declares something of its own — a skip marker's namespace, say — carries it itself, or the
+            // element is written with no binding and comes back in whatever namespace was in force.
+            final Map<String, String> opened = new HashMap<>();
             for (int i = 0; i < written.size(); i++) {
                 final XMLReader reader = ConfinedXml.reader();
-                reader.setContentHandler(new Contents(handler, i == 0, i == written.size() - 1));
+                reader.setContentHandler(new Contents(handler, i == 0, i == written.size() - 1, opened));
                 reader.parse(new InputSource(new StringReader(written.get(i))));
             }
             handler.endDocument();
@@ -104,23 +112,44 @@ public final class RecordJoin {
         private final TransformerHandler joined;
         private final boolean first;
         private final boolean last;
+        /// What the first document declared, which stays open for the whole of the joined document.
+        private final Map<String, String> opened;
+        /// The prefixes this document declared that the first did not, so that each is closed again when
+        /// this document ends: a start passed on without its end leaves the joined document's namespace
+        /// stack one deep in the wrong place.
+        private final Deque<String> ownPrefixes = new ArrayDeque<>();
         private int depth;
 
-        private Contents(final TransformerHandler joined, final boolean first, final boolean last) {
+        private Contents(final TransformerHandler joined,
+                         final boolean first,
+                         final boolean last,
+                         final Map<String, String> opened) {
             this.joined = joined;
             this.first = first;
             this.last = last;
+            this.opened = opened;
         }
 
         @Override
         public void startPrefixMapping(final String prefix, final String uri) throws SAXException {
             if (first) {
+                opened.put(prefix, uri);
+                joined.startPrefixMapping(prefix, uri);
+                return;
+            }
+            if (!uri.equals(opened.get(prefix))) {
+                // This document's own: without it the element is written with no binding at all
+                ownPrefixes.addLast(prefix);
                 joined.startPrefixMapping(prefix, uri);
             }
         }
 
         @Override
         public void endPrefixMapping(final String prefix) throws SAXException {
+            if (ownPrefixes.removeLastOccurrence(prefix)) {
+                joined.endPrefixMapping(prefix);
+                return;
+            }
             if (last) {
                 joined.endPrefixMapping(prefix);
             }

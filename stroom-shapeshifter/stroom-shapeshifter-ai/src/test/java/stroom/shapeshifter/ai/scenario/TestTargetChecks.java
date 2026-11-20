@@ -76,6 +76,34 @@ class TestTargetChecks {
     }
 
     @Test
+    void aTargetThatIsAlreadyADocumentIsNotWrappedAgain() {
+        // Audit finding W1-2. It used to be decided by whether the text held the characters "<Events"
+        // anywhere, so a prefixed root was wrapped a second time and the scorers judged a document inside
+        // a document.
+        final String prefixed = "<evt:Events xmlns:evt=\"event-logging:3\"><evt:Event/></evt:Events>";
+
+        assertThat(TargetChecks.asDocument(prefixed))
+                .describedAs("a root of its own, whatever prefix it carries")
+                .isEqualTo(prefixed);
+    }
+
+    @Test
+    void anEventThatMerelyMentionsTheRootIsStillWrapped() {
+        // The same fault the other way round: the characters appearing in an attribute or a comment are
+        // not a root
+        final String mentions = "<Event><Description>wrapped in &lt;Events&gt;</Description></Event>";
+
+        assertThat(TargetChecks.asDocument(mentions))
+                .startsWith("<Events ")
+                .endsWith("</Events>");
+    }
+
+    @Test
+    void anEventAloneIsWrapped() {
+        assertThat(TargetChecks.asDocument(EVENT)).startsWith("<Events ").endsWith("</Events>");
+    }
+
+    @Test
     void anEventThatDoesNotParseIsRefusedNotPassedUnscored() {
         final String broken = EVENT.replace("</EventTime>", "");
         final List<StoredError> refusal = TargetChecks.judge(scorecard(), RECORD, TargetChecks.asDocument(broken));

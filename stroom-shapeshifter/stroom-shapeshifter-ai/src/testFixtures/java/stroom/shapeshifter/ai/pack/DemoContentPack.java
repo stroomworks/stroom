@@ -61,7 +61,7 @@ import java.util.zip.ZipOutputStream;
 /// the pack ships a configuration that has been seen to learn four unrelated formats rather than a
 /// plausible one. What the pack adds is the wiring the scenario has no need of: the model the stage
 /// calls, the feeds to point it at, and for each feed the pipeline the stage sits in and the filter
-/// that processes it: one pipeline per feed, as the Pipeline Factory makes them (A103, A126), since a
+/// that processes it: one pipeline per feed, as a Content Template makes them (A103, A126), since a
 /// learner learns one translation for whatever its pipeline is given.
 ///
 /// **The written form** is the import/export format Stroom has always read: one `.node` file naming a
@@ -279,7 +279,7 @@ public final class DemoContentPack {
     /// the ordinary tail of an event pipeline after it.
     ///
     /// The appender names no feed, so a feed's events are written back to the feed they came from. Each
-    /// feed has a pipeline of these, as the Pipeline Factory would make from a template.
+    /// feed has a pipeline of these, as a Content Template would make from a template pipeline.
     ///
     /// @param document The Shapeshifter AI document the stage is configured by.
     /// @return The pipeline's elements, links and properties.
@@ -496,7 +496,7 @@ public final class DemoContentPack {
                 - **`%s`** — the model the stage asks. Edit it before running anything.
                 - **`<feed> supervised`** — a pipeline for each feed, `Source -> Shapeshifter AI -> Schema
                   filter -> ... -> Stream appender`, each learning its own feed (one pipeline per feed, as
-                  the Pipeline Factory makes them).
+                  a Content Template makes them).
                 - **`%s`** — four feeds. The pack tells the stages nothing about their formats.
 
                 A processor filter over each feed comes with its pipeline. Importing from

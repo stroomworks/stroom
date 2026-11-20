@@ -23,6 +23,8 @@ import stroom.docstore.impl.memory.MemoryPersistence;
 import stroom.openai.shared.OpenAIModelDoc;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.security.mock.MockSecurityContext;
+import stroom.security.shared.AppPermission;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
@@ -30,7 +32,9 @@ import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * What the document store tests share: a store over the real {@code StoreImpl} and in-memory persistence,
@@ -45,12 +49,16 @@ final class ShapeshifterAiFixture {
     static final List<CheckSetting> CHECKS = List.of(
             new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
             new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.8, null),
+            CheckSetting.of(Check.COMPLETENESS, CheckState.GATE),
             CheckSetting.of(Check.YIELD, CheckState.OFF),
             CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
             CheckSetting.of(Check.CONFORMANCE, CheckState.OFF),
             CheckSetting.of(Check.QUALITY, CheckState.OFF),
             new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0, new BusinessRulesParameters(
                     List.of(new XPathAssertion("has a time", "EventTime/TimeCreated != ''")), true)),
+            CheckSetting.of(Check.TIMES, CheckState.ADVICE),
+            CheckSetting.of(Check.LITERALS, CheckState.ADVICE),
+            CheckSetting.of(Check.PERMITTED, CheckState.GATE),
             CheckSetting.of(Check.PRESERVATION, CheckState.GATE),
             CheckSetting.of(Check.FIDELITY, CheckState.GATE),
             CheckSetting.of(Check.REGRESSION, CheckState.GATE));
@@ -59,11 +67,37 @@ final class ShapeshifterAiFixture {
     }
 
     static ShapeshifterAiStoreImpl store() {
+        return store(TargetSchemas.none());
+    }
+
+    /// A store over its own in-memory persistence that reads target schemas from where it is told, so a
+    /// test can say what a new document should start with (task 7).
+    ///
+    /// @param targetSchemas Where the target schemas come from.
+    /// @return The store.
+    static ShapeshifterAiStoreImpl store(final TargetSchemas targetSchemas) {
         final MockSecurityContext securityContext = new MockSecurityContext();
         return new ShapeshifterAiStoreImpl(
                 new StoreFactoryImpl(new MemoryPersistence(), null, securityContext, null, () -> null),
                 securityContext,
-                new ShapeshifterAiSerialiser(new Serialiser2FactoryImpl()));
+                new ShapeshifterAiSerialiser(new Serialiser2FactoryImpl()),
+                targetSchemas);
+    }
+
+    /// A store over its own in-memory persistence whose user can have an application permission taken away
+    /// part way through, so that one test can write a document as someone who holds a permission and then
+    /// edit that same document as someone who does not.
+    ///
+    /// @return The store and the set of permissions to withhold from it.
+    static Restricted restricted() {
+        final Set<AppPermission> withheld = EnumSet.noneOf(AppPermission.class);
+        final MockSecurityContext securityContext = new WithheldPermissions(withheld);
+        return new Restricted(new ShapeshifterAiStoreImpl(
+                new StoreFactoryImpl(new MemoryPersistence(), null, securityContext, null, () -> null),
+                securityContext,
+                new ShapeshifterAiSerialiser(new Serialiser2FactoryImpl()),
+                TargetSchemas.none()),
+                withheld);
     }
 
     static ShapeshifterAiDoc.Builder configured(final ShapeshifterAiDoc doc) {
@@ -71,5 +105,51 @@ final class ShapeshifterAiFixture {
                 .model(MODEL)
                 .instructions("Prefer named fields.")
                 .checks(CHECKS);
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    /// A store and the permissions its user does not hold. The set is the one the store's security context
+    /// reads, so adding to it takes the permission away from the next call and removing gives it back.
+    ///
+    /// @param store    The store.
+    /// @param withheld The permissions its user does not hold.
+    record Restricted(ShapeshifterAiStoreImpl store, Set<AppPermission> withheld) {
+
+        /// Takes a permission away from the store's user.
+        ///
+        /// @param permission The permission to withhold.
+        void withhold(final AppPermission permission) {
+            withheld.add(permission);
+        }
+
+        /// Gives a permission back to the store's user.
+        ///
+        /// @param permission The permission to grant.
+        void grant(final AppPermission permission) {
+            withheld.remove(permission);
+        }
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    /// A security context that holds every application permission the mock holds, less those a test has
+    /// withheld.
+    private static final class WithheldPermissions extends MockSecurityContext {
+
+        private final Set<AppPermission> withheld;
+
+        private WithheldPermissions(final Set<AppPermission> withheld) {
+            this.withheld = withheld;
+        }
+
+        @Override
+        public boolean hasAppPermission(final AppPermission permission) {
+            return !withheld.contains(permission);
+        }
     }
 }

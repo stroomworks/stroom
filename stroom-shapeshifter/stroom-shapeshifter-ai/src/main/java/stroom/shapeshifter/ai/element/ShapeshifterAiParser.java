@@ -110,8 +110,27 @@ public class ShapeshifterAiParser extends AbstractParser implements HasStepDetai
         this.asProcessed = asProcessed;
     }
 
+    /// Which zone timestamps that carry no offset are in (decision N6, option F), e.g. `Europe/London`.
+    /// A stream's own `TimeZone` header beats it; where neither is set, times with no offset are read as
+    /// UTC. The resolved zone goes into the stream's metadata as `ResolvedTimeZone`, which the learned
+    /// stylesheet reads with `stroom:meta` and passes to `stroom:format-date` — so changing it here needs
+    /// no relearning, and the model is never asked to assume a zone.
+    ///
+    /// Declared here so that the pipeline editor and a factory can set it; it is read from the pipeline
+    /// by [PipelineZones], since the worker that carries a session on runs no pipeline and has no element
+    /// to be told it by.
+    @PipelineProperty(
+            description = "The time zone of timestamps that carry no offset, e.g. Europe/London. A "
+                          + "stream's own TimeZone header beats this; where neither is set, UTC.",
+            displayPriority = 5)
+    public void setTimeZone(final String timeZone) {
+        // The serving run is told it here; a judged run has no element, and reads it from the pipeline
+        // through PipelineZones
+        supervision.setTimeZone(timeZone);
+    }
+
     /// Where what this stage learns goes (design 06 A113): a folder path from the top of the tree, e.g.
-    /// `Feeds/DOOR-ACCESS`, which a Pipeline Factory writes from its pattern. Unset, beside the pipeline.
+    /// `Feeds/DOOR-ACCESS`, where a person has named one. Unset, beside the pipeline.
     ///
     /// Declared here so that the pipeline editor and a factory can set it; it is read from the pipeline by
     /// [PipelinePlaces], since the worker that carries a session on runs no pipeline and has no element to

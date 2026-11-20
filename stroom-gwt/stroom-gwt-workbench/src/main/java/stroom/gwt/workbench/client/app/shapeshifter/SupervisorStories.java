@@ -60,14 +60,14 @@ public final class SupervisorStories {
               "pipeline": {"type": "Pipeline", "uuid": "p-4", "name": "Audit pipeline"},
               "state": "Given up", "givenUpReason": "No passing configuration for the parser after 5 attempts",
               "waiting": 0, "records": 0, "guidance": 0, "raised": false, "belowThreshold": false,
-              "provisional": false, "pipelineDeleted": false, "lastSessionMs": 1761500000000}""";
+              "pipelineDeleted": false, "lastSessionMs": 1761500000000}""";
     // A pipeline since deleted, listed only when deleted pipelines are asked for
     private static final String DELETED_LEARNER = """
             {"learner": {"pipelineUuid": "p-2", "elementId": "shapeshifterAi"},
               "doc": {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs"},
               "pipeline": {"type": "Pipeline", "uuid": "p-2", "name": "Old proxy pipeline"},
               "state": "Given up", "waiting": 0, "records": 0, "guidance": 0, "raised": false,
-              "belowThreshold": false, "provisional": false, "pipelineDeleted": true}""";
+              "belowThreshold": false, "pipelineDeleted": true}""";
     private static final String LEARNERS = page(ShapeshifterAiFixtures.FIREWALL_LEARNER,
             ShapeshifterAiFixtures.PROXY_LEARNER, AUDIT_LEARNER);
     private static final String WITH_DELETED = page(ShapeshifterAiFixtures.FIREWALL_LEARNER,

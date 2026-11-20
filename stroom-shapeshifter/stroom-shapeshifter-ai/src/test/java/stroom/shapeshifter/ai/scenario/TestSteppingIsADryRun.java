@@ -179,14 +179,12 @@ class TestSteppingIsADryRun {
         scenarios.learnerBindings.append(Scenarios.LEARNER, "doc-1", Binding.builder()
                 .uuid("rule-on-trial")
                 .pipeline(fragment)
-                .provisional(true)
                 .build());
 
         final StageRun stepped = stage.dryRun(doc, Scenarios.LEARNER, stream(), false);
 
         assertThat(stepped.decision()).isInstanceOf(Bound.class);
         assertThat(((Bound) stepped.decision()).binding().getUuid()).isEqualTo("rule-on-trial");
-        assertThat(stepped.produced().provisional()).describedAs("still on trial").isTrue();
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
                 .describedAs("the binding is still there: a step decides nothing").hasSize(1);
     }

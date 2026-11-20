@@ -39,7 +39,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A113 and A132: what a learner learns is named as its element says — which a Pipeline Factory
+/// Design 06 A113 and A132: what a learner learns is named as its element says — which a person
 /// sets from its patterns — and a second fragment it learns takes the first free number after the name.
 class TestWhereLearnedContentGoes {
 

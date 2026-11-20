@@ -33,10 +33,14 @@ import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.StepOutcome;
+import stroom.shapeshifter.shared.Transition;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
@@ -85,7 +89,13 @@ class TestConversation {
     }
 
     private static ShapeshifterAiDoc policy() {
-        return ShapeshifterAiDoc.builder().uuid("policy-1").name("csv-logon").build();
+        // With `Direct`'s steps: a document built here has none of its own (Track 2 step 1c), and these
+        // tests are about the conversation the steps drive.
+        return ShapeshifterAiDoc.builder()
+                .uuid("policy-1")
+                .name("csv-logon")
+                .flow(FlowExamples.flow(FlowExample.DIRECT))
+                .build();
     }
 
     /**
@@ -387,12 +397,16 @@ class TestConversation {
                         Severity.FATAL_ERROR, null, new ElementId(elementId()), "not XML")));
             }
         };
-        for (final String transition : List.of("on run-failed goto end", "on spent goto end")) {
+        // Either rule takes the flow to 'end': the one that fires on the failure, and the one that fires
+        // when the step's candidates are spent.
+        for (final Transition transition : List.of(new Transition(StepOutcome.RUN_FAILED, Transition.END),
+                new Transition(null, Transition.END))) {
             final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
-            final ShapeshifterAiDoc doc = policy().copy().flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                    FlowStep.parse("CHAIN elements XMLParser,XSLTFilter"),
-                    FlowStep.parse("CONFIGURE parser " + transition),
-                    FlowStep.parse("CONFIGURE transform")))).build();
+            final ShapeshifterAiDoc doc = policy().copy().flow(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
+                    FlowStep.builder(QuestionKind.CHAIN).elements("XMLParser", "XSLTFilter").build(),
+                    new FlowStep(null, QuestionKind.CONFIGURE, ConfigureRole.PARSER, null, null, null,
+                            List.of(transition)),
+                    FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()))).build();
             final Conversation conversation = new Conversation(model, List.of(failing, new XsltStep()),
                     Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
@@ -400,15 +414,18 @@ class TestConversation {
 
             // The transition fired: the flow ended at 'end', where the unconfigured elements are found out,
             // rather than abandoning at the parser.
-            assertThat(outcome).describedAs(transition).isInstanceOf(Abandoned.class);
-            assertThat(((Abandoned) outcome).reason()).describedAs(transition)
+            assertThat(outcome).describedAs(transition.toString()).isInstanceOf(Abandoned.class);
+            assertThat(((Abandoned) outcome).reason()).describedAs(transition.toString())
                     .startsWith("The learning steps ended without writing ");
         }
         final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
-        final ShapeshifterAiDoc doc = policy().copy().flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN elements XMLParser,XSLTFilter"),
-                FlowStep.parse("CONFIGURE parser on compile-failed goto end"),
-                FlowStep.parse("CONFIGURE transform")))).build();
+        final ShapeshifterAiDoc doc = policy().copy().flow(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
+                FlowStep.builder(QuestionKind.CHAIN).elements("XMLParser", "XSLTFilter").build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.PARSER)
+                        .goTo(StepOutcome.COMPILE_FAILED, "end")
+                        .build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()))).build();
         final Outcome outcome = new Conversation(model, List.of(failing, new XsltStep()),
                 Scorecard.of(List.of(), List.of()), Clock.systemUTC()).run(doc, SAMPLE);
         assertThat(((Abandoned) outcome).reason()).describedAs("nothing was compiled, so compile-failed is not it")
@@ -447,10 +464,13 @@ class TestConversation {
         };
         final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter", "not a stylesheet",
                 Scenarios.fenced(XSLT));
-        final ShapeshifterAiDoc doc = policy().copy().flow(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN elements XMLParser,XSLTFilter"),
-                FlowStep.parse("CONFIGURE parser"),
-                FlowStep.parse("CONFIGURE transform on refused goto parser")))).build();
+        final ShapeshifterAiDoc doc = policy().copy().flow(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
+                FlowStep.builder(QuestionKind.CHAIN).elements("XMLParser", "XSLTFilter").build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.TRANSFORM)
+                        .goTo(StepOutcome.REFUSED, "parser")
+                        .build()))).build();
         final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
                 Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 

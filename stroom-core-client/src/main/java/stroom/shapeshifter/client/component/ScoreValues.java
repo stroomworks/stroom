@@ -46,22 +46,6 @@ public final class ScoreValues {
         return percent / (double) PERCENT;
     }
 
-    /// @param days The regression retention in days, or null when the feed's own retention applies.
-    /// @return What the field shows: the days, or zero for the feed's own.
-    public static long toDays(final Integer days) {
-        return days == null
-                ? 0
-                : days;
-    }
-
-    /// @param days What the field shows.
-    /// @return The regression retention in days, or null for zero, the feed's own.
-    public static Integer fromDays(final int days) {
-        return days == 0
-                ? null
-                : days;
-    }
-
     /// @param items The items, or null for none.
     /// @return The items, one per line.
     public static String toLines(final List<String> items) {

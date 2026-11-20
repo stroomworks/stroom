@@ -18,8 +18,6 @@ package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
 import stroom.shapeshifter.client.component.QualityFigures.Figure;
-import stroom.shapeshifter.shared.AssessmentVerdict;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.QualitySample;
 import stroom.shapeshifter.shared.SupervisorAttempt;
@@ -50,9 +48,8 @@ import java.util.function.LongFunction;
 /// own: which of its AI Translator elements, where it has more than one; the overall figures its translation is
 /// judged by ([QualityFigures]), each with what it rests on and coloured where it calls for attention; its
 /// **volume** day by day, as a chart ([VolumeChart]) and, folded, a table; **what its records became** (its
-/// cardinality); **samples** of those records beside what they became; the **assessments** recorded of it, with
-/// Record an assessment and, for someone who may edit the pipeline, Mark resolved on an open issue; and each
-/// learning run's score, newest first. Where there is nothing to judge, a sentence says why.
+/// cardinality); **samples** of those records beside what they became; and each learning run's score, newest
+/// first. Where there is nothing to judge, a sentence says why.
 /// [QualityTabController] fills it.
 public class QualityTab extends Component {
 
@@ -85,28 +82,17 @@ public class QualityTab extends Component {
     @UiField
     AriaPanel samples;
     @UiField
-    Button assess;
-    @UiField
-    Label assessmentsNote;
-    @UiField
-    AriaPanel assessments;
-    @UiField
     DataGrid<SupervisorAttempt> runs;
 
     private Consumer<PipelineAiElement> onElement = chosen -> {
     };
     private LongFunction<String> dates = String::valueOf;
     private LongFunction<String> dayLabels = String::valueOf;
-    private Runnable onAssess = () -> {
-    };
-    private LongConsumer onResolve = id -> {
-    };
 
     /// Makes the tab, empty.
     public QualityTab() {
         initWidget(BINDER.createAndBindUi(this));
         element.setOnChange(chosen -> onElement.accept(chosen));
-        assess.setOnClick(() -> onAssess.run());
         days.addResizableColumn(
                 DataGridUtil.textColumnBuilder((VolumeDay day) -> dayLabels.apply(day.getDayMs())).build(),
                 DataGridUtil.headingBuilder("Day").build(),
@@ -203,34 +189,6 @@ public class QualityTab extends Component {
         samplesNote.setText(why);
     }
 
-    /// Shows the assessments recorded of the pipeline's element.
-    ///
-    /// @param said       The assessments, newest first.
-    /// @param canResolve Whether the person may resolve an open issue: they may edit the pipeline.
-    public void showAssessments(final List<QualityAssessment> said, final boolean canResolve) {
-        assessments.clear();
-        for (final QualityAssessment assessment : said) {
-            assessments.add(assessment(assessment, canResolve));
-        }
-        assessments.setVisible(!said.isEmpty());
-        final long open = said.stream().filter(QualityFigures::isOpenIssue).count();
-        assessmentsNote.setText(said.isEmpty()
-                ? "Nothing has been recorded yet."
-                : open == 0
-                        ? "No issues are open."
-                        : PlainWords.count(open, "open issue") + " flagged to the Data Provider.");
-    }
-
-    /// @param onAssess Run when the person asks to record an assessment.
-    public void setOnAssess(final Runnable onAssess) {
-        this.onAssess = onAssess;
-    }
-
-    /// @param onResolve Told the id of the issue the person marks resolved.
-    public void setOnResolve(final LongConsumer onResolve) {
-        this.onResolve = onResolve;
-    }
-
     /// The pipeline's AI Translator elements: the choice of them is offered only where there is more than one.
     ///
     /// @param elements Its AI Translator elements.
@@ -318,48 +276,6 @@ public class QualityTab extends Component {
         code.setStyleName("quality-tab__code");
         side.add(code);
         return side;
-    }
-
-    // An assessment: what was said, what was written, by whom and when, and Mark resolved where it may be
-    private AriaPanel assessment(final QualityAssessment assessment, final boolean canResolve) {
-        final AriaPanel item = new AriaPanel();
-        item.setRole("listitem");
-        item.addStyleName("quality-tab__assessment");
-        final boolean open = QualityFigures.isOpenIssue(assessment);
-        final InlineLabel chip = new InlineLabel(assessment.getVerdict() == AssessmentVerdict.LOOKS_RIGHT
-                ? "Looks right"
-                : open
-                        ? "Issue: open"
-                        : "Issue: resolved");
-        chip.setStyleName(assessment.getVerdict() == AssessmentVerdict.LOOKS_RIGHT
-                ? "quality-tab__verdict quality-tab__verdict--good"
-                : open
-                        ? "quality-tab__verdict quality-tab__verdict--warning"
-                        : "quality-tab__verdict quality-tab__verdict--idle");
-        item.add(chip);
-        if (assessment.getComment() != null) {
-            final Label comment = new Label(assessment.getComment());
-            comment.setStyleName("quality-tab__assessment-comment");
-            item.add(comment);
-        }
-        final StringBuilder by = new StringBuilder("By ").append(assessment.getAuthor()).append(", ")
-                .append(dates.apply(assessment.getCreateTimeMs()));
-        if (assessment.getResolvedBy() != null) {
-            by.append(" · resolved by ").append(assessment.getResolvedBy());
-            if (assessment.getResolveTimeMs() != null) {
-                by.append(", ").append(dates.apply(assessment.getResolveTimeMs()));
-            }
-        }
-        final Label meta = new Label(by.toString());
-        meta.setStyleName("quality-tab__assessment-meta");
-        item.add(meta);
-        if (open && canResolve) {
-            final Button resolve = new Button("Mark resolved");
-            resolve.addStyleName("quality-tab__resolve");
-            resolve.setOnClick(() -> onResolve.accept(assessment.getId()));
-            item.add(resolve);
-        }
-        return item;
     }
 
     // One figure: what it is, its value, and what it rests on, coloured by its tone

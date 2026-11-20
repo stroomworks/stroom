@@ -16,13 +16,15 @@
 
 package stroom.shapeshifter.ai.scenario;
 
+import stroom.processor.api.DeferTaskException;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.Deferred;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
-import stroom.shapeshifter.ai.stage.Decision.Provisional;
 import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.Input;
+import stroom.shapeshifter.ai.stage.Stage;
 import stroom.shapeshifter.ai.stage.StageRun;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.Check;
@@ -40,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Design 02 §5, scenarios 28, 27 and 13: what happens to a binding after it is made. A provisional
@@ -59,7 +62,7 @@ class TestScenariosRetractionRelearningAndRelease {
                 .uuid(DOC)
                 .name("door-access")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(minRecordsToLearn)
                 .relearnThreshold(0.8)
@@ -110,41 +113,11 @@ class TestScenariosRetractionRelearningAndRelease {
         return output.split("<Event>", -1).length - 1;
     }
 
-    @Test
-    void scenario28AProvisionalBindingIsNotRetractedByTheFloor() {
-        // A101: a provisional binding is held to the record bar like any other, and the floor no longer
-        // retracts it. A stream whose records all clear it is served by it; one whose records fall short
-        // sends the learner back to learn (scenario 54); and enough clean records promote it in place
-        // (scenario 14).
-        final Scenarios scenarios = new Scenarios();
-        final ShapeshifterAiDoc doc = doc(10);
-
-        // Six records against a minimum of ten: learned, bound provisionally (scenario 14).
-        final Script script = learning(scenarios, FOUR_FIELDS);
-        final StageRun first = scenarios.process(script, doc, stream(1, lines(6, 0))).learned();
-        script.verifyExhausted();
-        assertThat(first.decision()).isInstanceOf(Provisional.class);
-        final Binding provisional = ((Provisional) first.decision()).binding();
-        assertThat(first.produced().provisional()).isTrue();
-
-        // Four more records: still too few to promote it, so the provisional binding serves them as it is.
-        final Script silent = Script.of();
-        final StageRun second = scenarios.process(silent, first.doc(), stream(2, lines(4, 0))).learned();
-        assertThat(second.decision()).isInstanceOf(Bound.class);
-        assertThat(second.produced().provisional()).isTrue();
-        assertThat(events(second.output())).isEqualTo(4);
-
-        // Ten records the feed now sends with a fifth field: the splitter matches none of them, so there is
-        // no record to fall short and nothing to promote on. The binding stays, provisional, and nothing is
-        // retracted, released or asked.
-        final String fiveFields = lines(10, 0).replace(",logon\n", ",logon,badge\n");
-        final StageRun third = scenarios.process(silent, second.doc(), stream(3, fiveFields)).learned();
-
-        assertThat(silent.asked()).isEmpty();
-        assertThat(third.decision()).isInstanceOf(Bound.class);
-        assertThat(events(third.output())).isZero();
-        assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).containsExactly(provisional);
-    }
+    // Scenario 28 (a provisional binding is not retracted by the floor) is retired with the provisional
+    // state itself (SIM-3 option E, Track 2 step 1): a first result learned from too few records is a
+    // draft now, whatever the Learning Flow's mode, so nothing serves on a judgement it has not had.
+    // What the scenario was really about — a stream the translation cannot read puts the stream back
+    // rather than recording a clean run — is scenario 27's third stream and Track 1 task 2's fix 1.
 
     @Test
     void scenario27AFallingRollingScoreIsKeptForTheListAndAPersonMarksTheLearner() {

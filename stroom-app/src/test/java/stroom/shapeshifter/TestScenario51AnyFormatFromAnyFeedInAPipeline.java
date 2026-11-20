@@ -26,6 +26,7 @@ import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.xml.converter.ds3.DS3ParserFactory;
+import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorResult;
 import stroom.processor.shared.CreateProcessFilterRequest;
@@ -77,7 +78,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * processed as processor tasks against real feeds and real streams.
  * <p>
  * Tier 1 proves the stage reaches the right decisions. What only this tier can claim is that the whole
- * arrangement works: a pipeline per feed, as the Pipeline Factory makes them, each with its supervised
+ * arrangement works: a pipeline per feed, as a Content Template makes them, each with its supervised
  * element attached to one document, and four feeds of four unrelated formats in turn — delimited text
  * with a header, JSON lines, syslog in two forms, and fixed-width columns with nothing to split on. Each
  * is learned, each writes a fragment that
@@ -122,6 +123,8 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
     private ShapeshifterAiStore shapeshifterAiStore;
     @Inject
     private PipelineStore pipelineStore;
+    @Inject
+    private XmlSchemaStore xmlSchemaStore;
     @Inject
     private LearnerBindings learnerBindings;
     @Inject
@@ -189,9 +192,6 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                 .toList();
         assertThat(table).allSatisfy(binding -> {
             assertThat(binding.isDraft()).isFalse();
-            assertThat(binding.isProvisional())
-                    .describedAs("each brought enough records to be judged on, so none is provisional")
-                    .isFalse();
             assertThat(pipelineStore.readDocument(binding.getPipeline()))
                     .describedAs("what it learned is a pipeline anyone can open")
                     .isNotNull();
@@ -237,8 +237,7 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                 .isEqualTo(canonical(expected));
         assertThat(streamStore.getAttributes(output.getId()))
                 .describedAs("design 01 §7.3 rule 3: the output carries what produced it")
-                .containsEntry(Produced.DOC_ATTRIBUTE, document.getUuid())
-                .containsEntry(Produced.PROVISIONAL_ATTRIBUTE, "false");
+                .containsEntry(Produced.DOC_ATTRIBUTE, document.getUuid());
     }
 
     /**
@@ -250,6 +249,9 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
         final DocRef docRef = shapeshifterAiStore.createDocument(shipped.getName());
         shapeshifterAiStore.writeDocument(DemoDocument
                 .configure(shapeshifterAiStore.readDocument(docRef).copy())
+                // Task 7: a new document starts on the latest event-logging installed, and this
+                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .description(shipped.getDescription())
                 .build());
         return docRef;

@@ -70,15 +70,6 @@ public sealed interface Decision {
     }
 
     /**
-     * A variant cleared the floor on the learner's records but there were too few for a held-out split
-     * (A14), so it is bound provisionally (A5, design 01 §6): it handles this stream and every one after
-     * it, marked as such, until the learner has {@code required} records and the gate can be met.
-     */
-    record Provisional(Binding binding, double score, int records, int required) implements Decision {
-
-    }
-
-    /**
      * No fragment passed within the budget; the learner is recorded as given up. The diagnostics are the
      * last candidate's — what the sentinel names beside the reason (design 02 §4 step 5), and what a person
      * reads to see why the model could not.

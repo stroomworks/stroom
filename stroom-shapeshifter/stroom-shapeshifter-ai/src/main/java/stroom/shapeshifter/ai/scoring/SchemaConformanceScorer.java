@@ -24,6 +24,7 @@ import stroom.pipeline.filter.SplitFilter;
 import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.security.api.SecurityContext;
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
@@ -106,7 +107,9 @@ public final class SchemaConformanceScorer implements Scorer {
     }
 
     @Override
-    public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         final String output = step.result().output();
         final Optional<OutputRecords> parsed = OutputRecords.ofTransformed(step)
                 .filter(records -> !records.records().isEmpty());
@@ -122,9 +125,7 @@ public final class SchemaConformanceScorer implements Scorer {
         try {
             final SchemaFilter schemaFilter = schemaFilters.get();
             schemaFilter.setElementId(CONFORMANCE);
-            final FindXMLSchemaCriteria constraint = new FindXMLSchemaCriteria();
-            constraint.setSchemaGroup(conformance.getSchemaGroup());
-            schemaFilter.setSchemaConstraint(constraint);
+            schemaFilter.setSchemaConstraint(constraint(conformance, target));
             counter.setTarget(schemaFilter);
             final SplitFilter split = new SplitFilter();
             split.setSplitCount(1);
@@ -134,7 +135,9 @@ public final class SchemaConformanceScorer implements Scorer {
             try {
                 split.startStream();
                 final XMLReader reader = ConfinedXml.reader();
-                reader.setContentHandler(split);
+                // A declared skip is the module's own marker, not an event, and no schema knows it:
+                // validating it would fail every feed that has header lines (the declared-skips design)
+                reader.setContentHandler(DeclaredSkips.stripping(split));
                 reader.parse(new InputSource(new StringReader(output)));
                 split.endStream();
             } finally {
@@ -154,7 +157,7 @@ public final class SchemaConformanceScorer implements Scorer {
         final List<StoredError> diagnostics = new ArrayList<>();
         // The schema's own account first: it is what turns one missing child per candidate into one step.
         if (!errors.failing.isEmpty()) {
-            diagnostics.addAll(hints(conformance.getSchemaGroup(), errors.failing.values()));
+            diagnostics.addAll(hints(constraint(conformance, target), errors.failing.values()));
         }
         int shown = 0;
         for (final Map.Entry<Integer, String> failure : errors.failing.entrySet()) {
@@ -182,16 +185,34 @@ public final class SchemaConformanceScorer implements Scorer {
         return Optional.of(new Score(type(), (double) passing / total, diagnostics, failingRecords));
     }
 
+    /// Which schemas the output is validated against: the one version the document names as its target
+    /// (task 7), or, where it names none, every schema of the group the check was configured with —
+    /// which is what a document written before the setting existed still does, so that it behaves
+    /// exactly as it did.
+    ///
+    /// @param conformance The check's own parameters.
+    /// @param target      The document's target schema, or null.
+    /// @return The criteria.
+    private static FindXMLSchemaCriteria constraint(final SchemaConformanceParameters conformance,
+                                                    final TargetSchema target) {
+        if (target == null) {
+            final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
+            criteria.setSchemaGroup(conformance.getSchemaGroup());
+            return criteria;
+        }
+        return target.criteria();
+    }
+
     /**
      * What the schema says about the elements the messages complain of: the whole content model of an
      * element reported incomplete, and of the parents that could hold an unexpected child beside what
      * was expected instead. A few, distinct, so the feedback stays readable.
      */
-    private List<StoredError> hints(final String schemaGroup, final Collection<String> messages) {
+    private List<StoredError> hints(final FindXMLSchemaCriteria constraint, final Collection<String> messages) {
         final Set<String> texts = new LinkedHashSet<>();
         final Set<String> misplaced = new LinkedHashSet<>();
         try {
-            final ContentModels models = contentModels.computeIfAbsent(schemaGroup, this::load);
+            final ContentModels models = contentModels.computeIfAbsent(key(constraint), ignored -> load(constraint));
             for (final String message : messages) {
                 final Matcher incomplete = INCOMPLETE.matcher(message);
                 if (incomplete.find()) {
@@ -237,13 +258,17 @@ public final class SchemaConformanceScorer implements Scorer {
         return hints;
     }
 
+    /// What the content models are cached under: a group, or one version's namespace and system id.
+    private static String key(final FindXMLSchemaCriteria criteria) {
+        return criteria.getSchemaGroup() + "\u0000" + criteria.getNamespaceURI() + "\u0000"
+               + criteria.getSystemId();
+    }
+
     /**
-     * The group's schemas as the validator reads them — as the processing user, since the stream's user
-     * need not be able to read schema documents to have their output judged against them.
+     * The schemas as the validator reads them — as the processing user, since the stream's user need not
+     * be able to read schema documents to have their output judged against them.
      */
-    private ContentModels load(final String schemaGroup) {
-        final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
-        criteria.setSchemaGroup(schemaGroup);
+    private ContentModels load(final FindXMLSchemaCriteria criteria) {
         return securityContext.asProcessingUserResult(() -> new ContentModels(
                 schemaStore.find(criteria).getValues().stream()
                         .map(XmlSchemaDoc::getData)

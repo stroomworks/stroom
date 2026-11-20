@@ -69,11 +69,13 @@ public class LearnerStatesDao implements LearnerStates {
                                  final String docUuid,
                                  final double score,
                                  final int records,
+                                 final int skipped,
                                  final int memory) {
         return JooqUtil.transactionResult(connProvider, context -> {
             row(context, learner, docUuid);
             final var current = context
-                    .select(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE, SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS)
+                    .select(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE, SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS,
+                            SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS)
                     .from(SHAPESHIFTER_LEARNER_STATE)
                     .where(key(learner))
                     .forUpdate()
@@ -86,9 +88,18 @@ public class LearnerStatesDao implements LearnerStates {
                     ? (was * remembered + score * records) / (remembered + records)
                     : was;
             final int held = remembered + records;
+            // The skips are carried with the records they belong to: where the memory has dropped older
+            // records, their skips go with them, in the same proportion, or a learner that skipped badly
+            // once would look as though it still were
+            final int skipsWas = current.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS);
+            final int kept = current.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS) == 0
+                    ? 0
+                    : (int) Math.round((double) skipsWas * remembered
+                                       / current.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS));
             context.update(SHAPESHIFTER_LEARNER_STATE)
                     .set(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE, now)
                     .set(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS, held)
+                    .set(SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS, kept + skipped)
                     .set(SHAPESHIFTER_LEARNER_STATE.VERSION, SHAPESHIFTER_LEARNER_STATE.VERSION.plus(1))
                     .set(SHAPESHIFTER_LEARNER_STATE.UPDATE_TIME_MS, System.currentTimeMillis())
                     .set(SHAPESHIFTER_LEARNER_STATE.DOC_UUID, docUuid)
@@ -134,6 +145,7 @@ public class LearnerStatesDao implements LearnerStates {
                     .setNull(SHAPESHIFTER_LEARNER_STATE.AWAITING_BINDING_UUID)
                     .setNull(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE)
                     .set(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS, 0)
+                    .set(SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS, 0)
                     .set(SHAPESHIFTER_LEARNER_STATE.VERSION, SHAPESHIFTER_LEARNER_STATE.VERSION.plus(1))
                     .set(SHAPESHIFTER_LEARNER_STATE.UPDATE_TIME_MS, System.currentTimeMillis())
                     .where(key(learner))
@@ -146,7 +158,8 @@ public class LearnerStatesDao implements LearnerStates {
     @Override
     public Optional<Rolling> rolling(final Learner learner) {
         return JooqUtil.contextResult(connProvider, context -> context
-                .select(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE, SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS)
+                .select(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE, SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS,
+                        SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS)
                 .from(SHAPESHIFTER_LEARNER_STATE)
                 .where(key(learner))
                 .fetchOptional()
@@ -155,7 +168,8 @@ public class LearnerStatesDao implements LearnerStates {
                         row.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE) == null
                                 ? 0.0
                                 : row.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_SCORE),
-                        row.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS))));
+                        row.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_RECORDS),
+                        row.get(SHAPESHIFTER_LEARNER_STATE.ROLLING_SKIPS))));
     }
 
     private Optional<String> text(final Learner learner,

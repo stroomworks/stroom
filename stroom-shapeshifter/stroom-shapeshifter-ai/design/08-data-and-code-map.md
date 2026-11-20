@@ -122,7 +122,6 @@ The feature needed these in shared Stroom code. Each is general: none knows what
 | Where | Change | Why |
 |---|---|---|
 | `stroom-processor` | `TaskStatus.DEFERRED`; `DeferTaskException`; the handler's third outcome; the reaper's return after `deferredTaskRetryDelay`; `ProcessorTaskDao.wakeDeferredTasks`; deferred tasks in the filter budget; the deferred count on the claim system info | [3.5](03-processing.md#35-deferring-a-stream) (A59, A109) |
-| `stroom-processor` | `SupervisedPipelines`: a filter over a pipeline that may defer is refused while the node is master-fed. Deferred tasks need `stroom.processor.claimTasksOnWorker`, since a wake writes a row the worker reads and a master-fed queue would not see it | A deployment requirement |
 | `stroom-core` | `AbstractProcessorTaskExecutor` lets a deferral through without writing an error stream | [3.5](03-processing.md#35-deferring-a-stream) |
 | `stroom-pipeline` | Elements and plumbing (`AbstractParser`, `CombinedParser`, `DSParser`, `XMLFragmentParser`, `XsltFilter`, `XMLFilterFork`, the factories) let a deferral through | [3.5](03-processing.md#35-deferring-a-stream) |
 | `stroom-pipeline` | `InjectedCode`: run an element with configuration that is not in the store, scoped to the pipeline being built. Stepping used to be the only way | Judging a candidate before writing it |
@@ -169,6 +168,6 @@ the code would write.
 |---|---|---|
 | `stroom.shapeshifterAi` | `ShapeshifterAiConfig` | `deferredLearningBatchSize`, `sessionLease`, `attemptRetention`, `bindingCache`, `learnerStateCache`, `db` ([4.10](04-learning.md#410-configuration)) |
 | `stroom.pipelineFactory` | `PipelineFactoryConfig` | `scanBatchSize`, `maxScanBatchesPerRun`, `retryFailedAfter`, `db` ([2.3](02-pipeline-factory.md#23-the-job)) |
-| `stroom.processor` | `ProcessorConfig` | `deferredTaskRetryDelay` (5m); `claimTasksOnWorker` must be on |
+| `stroom.processor` | `ProcessorConfig` | `deferredTaskRetryDelay` (5m). `claimTasksOnWorker` is nothing to do with Shapeshifter: either way of getting tasks to workers serves a deferred stream ([3.5](03-processing.md#35-deferring-a-stream)) |
 
 `expected.yaml` in `stroom-config-app` is regenerated with `GenerateExpectedYaml` after a config change.

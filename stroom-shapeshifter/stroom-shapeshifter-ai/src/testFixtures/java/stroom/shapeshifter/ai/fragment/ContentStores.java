@@ -42,6 +42,7 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.util.Providers;
 
+import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -54,8 +55,9 @@ import java.util.stream.Stream;
  * injected, and their modules would drag in REST resources and a URI resolver with dependencies of
  * their own, so they are reached by name through Guice, which constructs them as a node would. The
  * pipeline store also wants the processor services, for deleting a pipeline's filters, and a registry of
- * the other stores, for deleting a pipeline's embedded documents; neither path is exercised by writing,
- * so all three are absent.
+ * the other stores, for deleting a pipeline's embedded documents. Deleting a draft fragment (A58) reaches
+ * the first, so the processor services answer every call with nothing; a learned fragment embeds no
+ * document, so the registry is absent.
  */
 public final class ContentStores {
 
@@ -85,8 +87,8 @@ public final class ContentStores {
             binder.bind(StoreFactory.class).toInstance(storeFactory);
             binder.bind(SecurityContext.class).toInstance(securityContext);
             binder.bind(Serialiser2Factory.class).to(Serialiser2FactoryImpl.class);
-            binder.bind(ProcessorFilterService.class).toProvider(Providers.of(null));
-            binder.bind(ProcessorService.class).toProvider(Providers.of(null));
+            binder.bind(ProcessorFilterService.class).toInstance(nothing(ProcessorFilterService.class));
+            binder.bind(ProcessorService.class).toInstance(nothing(ProcessorService.class));
             binder.bind(DocumentStoreRegistry.class).toProvider(Providers.of(null));
             binder.bind(PipelineStore.class).to(PipelineStoreImpl.class);
             bindByName(binder, TextConverterStore.class, "stroom.pipeline.textconverter.TextConverterStoreImpl");
@@ -107,6 +109,16 @@ public final class ContentStores {
                     case XsltDoc.TYPE -> xslts.createDocument(name);
                     default -> throw new IllegalArgumentException(type);
                 };
+            }
+
+            @Override
+            public void delete(final DocRef docRef) {
+                switch (docRef.getType()) {
+                    case PipelineDoc.TYPE -> pipelines.deleteDocument(docRef);
+                    case TextConverterDoc.TYPE -> textConverters.deleteDocument(docRef);
+                    case XsltDoc.TYPE -> xslts.deleteDocument(docRef);
+                    default -> throw new IllegalArgumentException(docRef.getType());
+                }
             }
 
             @Override
@@ -135,6 +147,27 @@ public final class ContentStores {
 
     public FragmentWriter writer() {
         return new FragmentWriter(creator, pipelines, textConverters, xslts);
+    }
+
+    /// A stand-in that answers every call with nothing: the pipeline store reaches for the processor
+    /// services when a pipeline is deleted, and there are no processors here.
+    ///
+    /// @param type The interface to stand in for.
+    /// @param <T>  The interface.
+    /// @return An instance of it that does nothing.
+    @SuppressWarnings("unchecked")
+    private static <T> T nothing(final Class<T> type) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},
+                (proxy, method, args) -> {
+                    final Class<?> returns = method.getReturnType();
+                    if (boolean.class.equals(returns)) {
+                        return false;
+                    }
+                    if (returns.isPrimitive() && !void.class.equals(returns)) {
+                        return 0;
+                    }
+                    return null;
+                });
     }
 
     private static <S> void bindByName(final Binder binder, final Class<S> store, final String implName) {

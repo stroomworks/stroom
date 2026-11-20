@@ -91,11 +91,6 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
     public final TableField<ShapeshifterOutputRecord, String> FRAGMENT_UUID = createField(DSL.name("fragment_uuid"), SQLDataType.VARCHAR(255).nullable(false), this, "");
 
     /**
-     * The column <code>stroom.shapeshifter_output.provisional</code>.
-     */
-    public final TableField<ShapeshifterOutputRecord, Boolean> PROVISIONAL = createField(DSL.name("provisional"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.inline("0", SQLDataType.BOOLEAN)), this, "");
-
-    /**
      * The column <code>stroom.shapeshifter_output.score</code>.
      */
     public final TableField<ShapeshifterOutputRecord, Double> SCORE = createField(DSL.name("score"), SQLDataType.DOUBLE, this, "");
@@ -104,6 +99,11 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      * The column <code>stroom.shapeshifter_output.boundary_element</code>.
      */
     public final TableField<ShapeshifterOutputRecord, String> BOUNDARY_ELEMENT = createField(DSL.name("boundary_element"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_output.boundary_children</code>.
+     */
+    public final TableField<ShapeshifterOutputRecord, String> BOUNDARY_CHILDREN = createField(DSL.name("boundary_children"), SQLDataType.VARCHAR(255), this, "");
 
     /**
      * The column <code>stroom.shapeshifter_output.boundary_array</code>.
@@ -121,11 +121,6 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
     public final TableField<ShapeshifterOutputRecord, Long> PRODUCE_TIME_MS = createField(DSL.name("produce_time_ms"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.inline("0", SQLDataType.BIGINT)), this, "");
 
     /**
-     * The column <code>stroom.shapeshifter_output.record_spans</code>.
-     */
-    public final TableField<ShapeshifterOutputRecord, String> RECORD_SPANS = createField(DSL.name("record_spans"), SQLDataType.CLOB(16777215), this, "");
-
-    /**
      * The column <code>stroom.shapeshifter_output.snapshot_id</code>.
      */
     public final TableField<ShapeshifterOutputRecord, String> SNAPSHOT_ID = createField(DSL.name("snapshot_id"), SQLDataType.VARCHAR(255), this, "");
@@ -134,6 +129,11 @@ public class ShapeshifterOutput extends TableImpl<ShapeshifterOutputRecord> {
      * The column <code>stroom.shapeshifter_output.record_count</code>.
      */
     public final TableField<ShapeshifterOutputRecord, Integer> RECORD_COUNT = createField(DSL.name("record_count"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_output.skip_count</code>.
+     */
+    public final TableField<ShapeshifterOutputRecord, Integer> SKIP_COUNT = createField(DSL.name("skip_count"), SQLDataType.INTEGER, this, "");
 
     private ShapeshifterOutput(Name alias, Table<ShapeshifterOutputRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);

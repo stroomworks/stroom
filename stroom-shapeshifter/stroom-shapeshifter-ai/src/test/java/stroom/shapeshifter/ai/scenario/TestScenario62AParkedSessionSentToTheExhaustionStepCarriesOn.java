@@ -27,6 +27,7 @@ import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
 import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.QuestionKind;
@@ -70,7 +71,11 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         final Scenarios scenarios = new Scenarios();
         // Four tokens at a token a question, the budget being the attempt's across its rounds (A5): round
         // one's three questions and round two's chain, and the parser's second question is over it.
-        final ShapeshifterAiDoc doc = doc(FlowStep.parse("CONFIGURE transform candidates 1 on spent goto admit"))
+        final ShapeshifterAiDoc doc = doc(FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.TRANSFORM)
+                .candidates(1)
+                .whenSpentGoTo("admit")
+                .build())
                 .copy().tokenBudget(4L).build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(streamed(1L));
@@ -140,7 +145,10 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
     @Test
     void aFlowWithNoSpentTransitionParksTheSessionAgainAndSaysSo() {
         final Scenarios scenarios = new Scenarios();
-        final ShapeshifterAiDoc doc = doc(FlowStep.parse("CONFIGURE transform candidates 1"))
+        final ShapeshifterAiDoc doc = doc(FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.TRANSFORM)
+                .candidates(1)
+                .build())
                 .copy().tokenBudget(4L).build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(streamed(1L));
@@ -184,7 +192,11 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         // step, where a replayed first would hide it — and the exhaustion step admits what the first
         // candidate, which does not compile, could not.
         final Scenarios scenarios = new Scenarios();
-        final ShapeshifterAiDoc doc = doc(FlowStep.parse("CONFIGURE transform candidates 2 on spent goto admit"))
+        final ShapeshifterAiDoc doc = doc(FlowStep.builder(QuestionKind.CONFIGURE)
+                .role(ConfigureRole.TRANSFORM)
+                .candidates(2)
+                .whenSpentGoTo("admit")
+                .build())
                 .copy().tokenBudget(2L).build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(streamed(1L));
@@ -225,10 +237,10 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
                 .heldOutFraction(0.0)
                 .sampleSizeLimit(200)
                 .flow(new LearningFlow(List.of(
-                        FlowStep.parse("CHAIN"),
-                        FlowStep.parse("CONFIGURE parser"),
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
                         transform,
-                        FlowStep.parse("ADMIT candidates 1")), null, null))
+                        FlowStep.builder(QuestionKind.ADMIT).candidates(1).build()), null, null))
                 .build();
     }
 

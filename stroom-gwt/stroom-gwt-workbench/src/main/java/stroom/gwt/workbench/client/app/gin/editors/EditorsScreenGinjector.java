@@ -37,7 +37,6 @@ import stroom.openai.client.component.OpenAIModelEditor;
 import stroom.pathways.client.component.PathwaysEditor;
 import stroom.pipeline.client.component.TextConverterEditor;
 import stroom.pipeline.client.component.XsltEditor;
-import stroom.pipelinefactory.client.component.PipelineFactoryEditor;
 import stroom.script.client.component.ScriptEditor;
 import stroom.search.elastic.client.component.ElasticClusterEditor;
 import stroom.search.elastic.client.component.ElasticIndexEditor;
@@ -161,7 +160,7 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
     /// @return A Feed's editor, as `FeedPlugin` opens it.
     FeedEditor getFeedEditor();
 
-    // Shapeshifter AI and the Pipeline Factory
+    // Shapeshifter AI
 
     /// @return A Shapeshifter AI document's editor, as `ShapeshifterAiPlugin` opens it.
     ShapeshifterAiEditor getShapeshifterAiEditor();
@@ -169,9 +168,6 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
     /// @return A supervised stage's pane in the stepping screen, as `ShapeshifterAiPlugin` registers
     /// it with `ElementStepDetailsPaneRegistry`.
     StageDecisionPaneController getStageDecisionPane();
-
-    /// @return A Pipeline Factory's editor, as `PipelineFactoryPlugin` opens it.
-    PipelineFactoryEditor getPipelineFactoryEditor();
 
     // AI
 

@@ -295,6 +295,11 @@ class TestFragmentWriter {
             }
 
             @Override
+            public void delete(final DocRef docRef) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
             public void ensure(final DocPath folder) {
                 throw new UnsupportedOperationException();
             }

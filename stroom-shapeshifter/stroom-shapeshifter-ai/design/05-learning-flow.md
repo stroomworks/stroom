@@ -52,86 +52,90 @@ of the flow, with a chain to judge.
 
 ## 5.3 A step
 
-A step is written as one line (`FlowStep.parse`), and the editor builds the same thing as a form:
+A step is JSON (`FlowStep`), read and written with Stroom's usual Jackson conversion, and the editor
+builds the same thing as a form. Code builds one with `FlowStep.builder(QuestionKind)`. The one-line flow
+language a step used to be written in is gone (Track 2 step 1c): there is one model and one format.
 
-```
-[id:] KIND [parser|transform] [when always|text|xml|json] [candidates n] [kinds n] [elements a,b,…]
-      [checks a,b,…] [on <outcome> goto <id>|end|park|give-up | abandon]… [on spent goto … | abandon]
+```json
+{
+  "id" : "first",
+  "kind" : "CONFIGURE",
+  "role" : "TRANSFORM",
+  "when" : "ALWAYS",
+  "candidates" : 2,
+  "kinds" : 3,
+  "elements" : [ "DSParser", "XSLTFilter" ],
+  "transitions" : [ { "on" : "PASSED", "goTo" : "end" }, { "goTo" : "target" } ]
+}
 ```
 
-| Part | Meaning |
+Every field but `kind` may be left out, and a field left out takes its default.
+
+| Field | Meaning |
 |---|---|
-| `id:` | A name for `goto` to reach. Without one, a step is reached by its kind's default name |
-| `parser` / `transform` | `CONFIGURE` only (`ConfigureRole`): the chain's first element where it parses raw input, or every element after it. Neither means every element in chain order |
-| `when` | `StepGuard`: ask always, or only where the input is raw text, XML or JSON. A step whose guard fails is skipped |
-| `candidates n` | How many answers the step may have before it is *spent*. Default: the document's `maxAttempts` (5) |
-| `kinds n` | `TARGET` only: how many kinds of record to propose a target for. Default 3 |
-| `elements` | `CHAIN` only: the element types to choose from (A95). Default `DSParser`, `JSONParser`, `XMLParser`, `XSLTFilter` (A10). With exactly one, the question is not asked |
-| `checks` | Replaces the kind's default checks |
-| `on <outcome> goto` | Leave at once, on the first candidate with that outcome |
-| `on spent goto` | Where to go when the candidates are gone |
-| `abandon` | Take the step's own default exit: `give-up` for a parser step, whose spent candidates are the one failure nothing can serve (A52, A54); `park` for any other (A65) |
+| `id` | A name for a transition's `goTo` to reach. Without one, a step is reached by its kind's default name |
+| `kind` | `QuestionKind`: the question the step asks |
+| `role` | `CONFIGURE` only (`ConfigureRole`): `PARSER` for the chain's first element where it parses raw input, `TRANSFORM` for every element after it. Neither means every element in chain order |
+| `when` | `StepGuard`: ask `ALWAYS`, or only where the input is raw `TEXT`, `XML` or `JSON`. A step whose guard fails is skipped |
+| `candidates` | How many answers the step may have before it is *spent*. Default: the document's `maxAttempts` (5) |
+| `kinds` | `TARGET` only: how many kinds of record to propose a target for. Default 3 |
+| `elements` | `CHAIN` only: the element types to choose from (A95). Default `DSParser`, `JSONParser`, `XMLFragmentParser`, `XSLTFilter` (A10). With exactly one, the question is not asked |
+| `transitions` | Where the step goes; each is a `Transition` |
+
+A transition names the outcome it fires on and where it goes:
+
+| Field | Meaning |
+|---|---|
+| `on` | A `StepOutcome`. Left out, the transition fires when the step's candidates are spent |
+| `goTo` | A step's id, `end`, `park` or `give-up`. Left out, the step takes its own default exit: `give-up` for a parser step, whose spent candidates are the one failure nothing can serve (A52, A54); `park` for any other (A65) |
 
 **How a step behaves** (`Conversation`):
 
 - A step **re-asks itself** with the feedback of what fell short until its candidates are spent. That
   needs no transition.
-- `passed` goes to the **next line**, unless `on passed goto` says otherwise.
-- A transition on an outcome fires at once. One on `spent` fires when the candidates are gone; without
-  one, the step takes its default exit.
+- `PASSED` goes to the **next step**, unless a transition on `PASSED` says otherwise.
+- A transition on an outcome fires at once. One with no outcome fires when the candidates are gone;
+  without one, the step takes its default exit.
 - **Each transition is taken at most once per session**, so every flow terminates. A flow that would take
   one twice abandons, saying which.
 - What a transition carries (the feedback that sent it) is given to the next question asked, so a skipped
   step passes it on.
-- `ADMIT` is entered only by a transition, never by falling through from the line above it.
+- `ADMIT` is entered only by a transition, never by falling through from the step above it.
 - An element whose configuration is not the model's business is run once and judged, without a question
   (*run-only*).
 
 **Structure rules** (`LearningFlow.check`, A88): `CHAIN` first, once, with no transitions; `CONFIGURE` or
 `ADMIT` last; `SPLIT` and `TARGET` at most once each; ids unique and none reserved (`end`, `park`,
-`give-up`); every `goto` names a step, `end` or an exit. A flow with problems cannot be saved, and a
+`give-up`); every `goTo` names a step, `end` or an exit. A flow with problems cannot be saved, and a
 session under one abandons before asking anything. The flow must also configure every element of the
 chain, or the session abandons at the end.
 
-## 5.4 The example flows
+## 5.4 The built-in setups
 
-A new document starts with `DIRECT`. `FlowExample` holds three flows the Learn tab can load; they
-are starting points, and the document owns its steps once loaded (A34).
+A new document starts with `DIRECT`. There are three built-in setups the Setup tab can load; they are
+starting points, and the document owns its steps once loaded (A34).
 
-**Direct** (the default) asks for the chain and then each element's configuration (A21):
+Each is a JSON file of steps beside `FlowExamples`, in
+`src/main/resources/stroom/shapeshifter/ai/learning/flow/`, read with the same mapper a stored document
+is read with: a built-in setup and a saved Learning Flow are one format, and these files are the one
+place a setup is defined. `FlowExample` names them, and is compiled to JavaScript for the client, which
+is given their steps by `ShapeshifterAiResource.flowExamples()`. `TestFlowExamples` holds each to its
+shape.
 
-```
-CHAIN
-CONFIGURE parser
-CONFIGURE transform on spent goto admit
-ADMIT
-```
+**Direct** (`direct.json`, the default) asks for the chain and then each element's configuration (A21):
+chain; configure the parser; configure the transform, falling back to the exhaustion step when its
+candidates are spent; admit.
 
-**Target first** settles the record boundary, then what each kind of record should become, and holds
-every configuration to those events (A31). A parser that loses what a target needs is sent back:
+**Target first** (`target-first.json`) settles the record boundary, then what each kind of record should
+become, and holds every configuration to those events (A31): chain; split; target, three kinds; configure
+the parser; configure the transform, back to the parser on `PRESERVATION_SHORT` — a parser that loses
+what a target needs is sent back — and to the exhaustion step when spent; admit.
 
-```
-CHAIN
-SPLIT
-TARGET kinds 3
-CONFIGURE parser
-CONFIGURE transform on preservation-short goto parser on spent goto admit
-ADMIT
-```
-
-**Escalating** settles the split, goes direct, and asks for targets only if the transform stays short
-(A39, A40):
-
-```
-CHAIN
-SPLIT
-CONFIGURE parser on yield-short goto split
-first: CONFIGURE transform candidates 2 on passed goto end on spent goto target
-TARGET kinds 3
-again: CONFIGURE parser
-CONFIGURE transform on preservation-short goto again on spent goto admit
-ADMIT
-```
+**Escalating** (`escalating.json`) settles the split, goes direct, and asks for targets only if the
+transform stays short (A39, A40): chain; split; configure the parser, back to the split on `YIELD_SHORT`;
+configure the transform as step `first`, two candidates, to `end` on `PASSED` and to the target when
+spent; target, three kinds; configure the parser again as step `again`; configure the transform, back to
+`again` on `PRESERVATION_SHORT` and to the exhaustion step when spent; admit.
 
 ```mermaid
 flowchart TB
@@ -200,7 +204,8 @@ sample may not contain them. A candidate that falls short on one is told which.
 Some kinds of record cannot be translated into anything better than "unknown". The `ADMIT` step exists so
 that such a stream can still be served, honestly:
 
-- It is reached only by a transition from a spent transform step, typically `on spent goto admit` (A76).
+- It is reached only by a transition from a spent transform step, typically one with no `on` and
+  `"goTo": "admit"` (A76).
 - It asks for the transform once more, now allowed to write, for each kind it cannot translate, an
   `EventDetail/Unknown` carrying a `Data` item named by `LearnedUnknown.MARKER` whose value is the model's
   name for the kind (A53, A62, A74).
@@ -251,6 +256,7 @@ Budgets are in [4.4](04-learning.md#44-budgets); scorers, thresholds and the pro
 | Class | Role |
 |---|---|
 | `shared.LearningFlow`, `FlowStep`, `Transition`, `FlowExample`, `FlowProblem`, `Template` | The flow as data |
+| `learning.FlowExamples` and `flow/*.json`; `shared.BuiltInFlow` | The built-in setups, and how the client is given them |
 | `shared.QuestionKind`, `Check`, `StepOutcome`, `StepGuard`, `ConfigureRole`, `FlowExit` | The closed vocabulary |
 | `learning.Conversation` | The interpreter: walks the flow, asks, runs, judges, follows transitions |
 | `learning.ChainReply`, `ConfigurationReply`, `Boundary`, `Target`, `TargetChecks` | Reply grammars and the target checks |

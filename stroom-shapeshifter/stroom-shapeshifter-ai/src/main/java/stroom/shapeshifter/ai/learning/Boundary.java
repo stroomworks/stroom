@@ -25,45 +25,59 @@ import stroom.shapeshifter.shared.RecordBoundary;
 ///
 /// @param configuration The Data Splitter configuration that cuts the records, or null.
 /// @param element       The element that is one record, or null.
+/// @param children      The element whose children are each one record, [#ROOT] for the document's own
+///                      root, or null. For a feed that interleaves several record types as siblings
+///                      under one container (`docs/shapeshifter-ai-mixed-record-elements.md`).
 /// @param array         The key of the array whose items are records, or [#ROOT], or null.
 /// @param depth         How deep in the document the transform receives one record sits, where it is
 ///                      known: what the fragment's `SplitFilter` is set to split at (§12 item 25). Null
 ///                      for raw text, whose parser cuts the records itself.
-public record Boundary(String configuration, String element, String array, Integer depth) {
+public record Boundary(String configuration, String element, String children, String array, Integer depth) {
 
     /// The JSON boundary where every top-level value is one record, as JSON lines are.
     public static final String ROOT = "root";
 
     public Boundary {
-        final int set = (configuration == null ? 0 : 1) + (element == null ? 0 : 1) + (array == null ? 0 : 1);
+        final int set = (configuration == null ? 0 : 1) + (element == null ? 0 : 1)
+                        + (children == null ? 0 : 1) + (array == null ? 0 : 1);
         if (set != 1) {
-            throw new IllegalArgumentException("A boundary is a configuration, an element or an array, one of them");
+            throw new IllegalArgumentException("A boundary is a configuration, an element, the children of "
+                                               + "an element, or an array: one of them");
         }
     }
 
     /// The boundary of raw text: a configuration that cuts it.
     public static Boundary ofConfiguration(final String configuration) {
-        return new Boundary(configuration, null, null, null);
+        return new Boundary(configuration, null, null, null, null);
     }
 
     /// The boundary of input that is already XML: the element that is one record.
     public static Boundary ofElement(final String element) {
-        return new Boundary(null, element, null, null);
+        return new Boundary(null, element, null, null, null);
     }
 
     /// The boundary of input that is already XML, with how deep one record sits.
     public static Boundary ofElement(final String element, final Integer depth) {
-        return new Boundary(null, element, null, depth);
+        return new Boundary(null, element, null, null, depth);
+    }
+
+    /// The boundary of XML whose records are mixed: every child element of the named one is a record.
+    ///
+    /// @param parent The container's local name, or [#ROOT] for the document's own root.
+    /// @param depth  How deep one record sits.
+    /// @return The boundary.
+    public static Boundary ofChildrenOf(final String parent, final Integer depth) {
+        return new Boundary(null, null, parent, null, depth);
     }
 
     /// The boundary of JSON: the key of the array whose items are records, or [#ROOT].
     public static Boundary ofArray(final String array) {
-        return new Boundary(null, null, array, null);
+        return new Boundary(null, null, null, array, null);
     }
 
     /// The boundary of JSON, with how deep one record sits.
     public static Boundary ofArray(final String array, final Integer depth) {
-        return new Boundary(null, null, array, depth);
+        return new Boundary(null, null, null, array, depth);
     }
 
     /// The boundary as a binding carries it (A35): the element or the array; null for raw text, whose parser
@@ -71,6 +85,9 @@ public record Boundary(String configuration, String element, String array, Integ
     public RecordBoundary shared() {
         if (element != null) {
             return RecordBoundary.ofElement(element).atDepth(depth);
+        }
+        if (children != null) {
+            return RecordBoundary.ofChildrenOf(children).atDepth(depth);
         }
         return array != null
                 ? RecordBoundary.ofArray(array).atDepth(depth)

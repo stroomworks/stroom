@@ -62,8 +62,11 @@ class TestLearnerBindingsDao {
                 .uuid(fresh("array"))
                 .recordBoundary(RecordBoundary.ofArray("events").atDepth(3))
                 .build());
+        // A draft beside it: a learner has one *live* binding (W7-2), and a draft awaiting review sits
+        // next to it
         learnerBindings.append(LEARNER, DOC, Binding.builder()
                 .uuid(fresh("element"))
+                .draft(true)
                 .recordBoundary(RecordBoundary.ofElement("Event"))
                 .build());
 
@@ -79,10 +82,28 @@ class TestLearnerBindingsDao {
     }
 
     @Test
+    void aBoundaryOfAContainersChildrenSurvivesTheRoundTrip() {
+        // The shape that lets a feed whose records have different element names be learned at all
+        // (`docs/shapeshifter-ai-mixed-record-elements.md`). Without a column of its own it was written
+        // as all-nulls and read back as no boundary, so a node would have lost it silently.
+        learnerBindings.append(LEARNER, DOC, Binding.builder()
+                .uuid(fresh("children"))
+                .recordBoundary(RecordBoundary.ofChildrenOf("batch").atDepth(2))
+                .build());
+
+        final RecordBoundary read = learnerBindings.forLearner(LEARNER).get(0).getRecordBoundary();
+
+        assertThat(read.isChildren()).isTrue();
+        assertThat(read.getChildren()).isEqualTo("batch");
+        assertThat(read.getElement()).describedAs("not the element of that name").isNull();
+        assertThat(read.splitDepth()).hasValue(2);
+        assertThat(read).isEqualTo(RecordBoundary.ofChildrenOf("batch"));
+    }
+
+    @Test
     void aBindingSurvivesTheRoundTripWholeAndSaysWhoseItIs() {
         final Binding learned = Binding.builder()
                 .pipeline(new DocRef("Pipeline", "fragment-1", "door-v1"))
-                .provisional(true)
                 .promotedTimeMs(1_700_000_000_000L)
                 .score(0.97)
                 .recordBoundary(RecordBoundary.ofArray("events"))
@@ -97,26 +118,85 @@ class TestLearnerBindingsDao {
         assertThat(read.get(0).getPipeline()).isEqualTo(new DocRef("Pipeline", "fragment-1", "door-v1"));
         assertThat(read.get(0).getRecordBoundary()).isEqualTo(RecordBoundary.ofArray("events"));
         assertThat(read.get(0).getScore()).isEqualTo(0.97);
-        assertThat(read.get(0).isProvisional()).isTrue();
         assertThat(learnerBindings.byUuid(stored.getUuid())).contains(new Held(LEARNER, DOC, stored));
         assertThat(learnerBindings.byUuid(fresh("no-such-rule"))).isEmpty();
     }
 
     @Test
     void replacingABindingKeepsItAndPromotingOneThatWentPutsItBack() {
+        // One live binding, and a draft beside it: a second live one is refused now (W7-2)
         final String a = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
-        final String b = learnerBindings.append(LEARNER, DOC, named("b")).getUuid();
+        final String b = learnerBindings.append(LEARNER, DOC,
+                named("b").copy().draft(true).build()).getUuid();
 
-        learnerBindings.replace(LEARNER, DOC, binding(a).copy().provisional(true).score(1.0).build());
+        learnerBindings.replace(LEARNER, DOC, binding(a).copy().score(1.0).build());
 
         assertThat(uuids()).containsExactly(a, b);
-        assertThat(binding(a).isProvisional()).isTrue();
         assertThat(binding(a).getScore()).isEqualTo(1.0);
 
         // A promotion must not be lost because its row was pruned between the run and the write.
         learnerBindings.remove(LEARNER, a);
         learnerBindings.replace(LEARNER, DOC, Binding.builder().uuid(a).score(0.95).build());
         assertThat(uuids()).containsExactly(b, a);
+    }
+
+    @Test
+    void aSecondLiveBindingForOneLearnerIsRefusedAndTheFirstHandedBack() {
+        // Audit finding W7-2. A node whose cache has not yet seen another node's promotion would
+        // otherwise write a second live binding, after which the first by id wins and the second is
+        // orphaned — serving nothing, visible to nobody, and with a regression corpus of its own.
+        final String first = learnerBindings.append(LEARNER, DOC, named("first")).getUuid();
+
+        final Binding second = learnerBindings.append(LEARNER, DOC, named("second"));
+
+        assertThat(second.getUuid())
+                .describedAs("the promotion that is already there, not a rival to it")
+                .isEqualTo(first);
+        assertThat(uuids()).containsExactly(first);
+    }
+
+    @Test
+    void aDraftSitsBesideTheLiveBinding() {
+        // The guard is about what *serves* a learner: a draft awaiting review is not that
+        final String live = learnerBindings.append(LEARNER, DOC, named("live")).getUuid();
+
+        final String draft = learnerBindings.append(LEARNER, DOC,
+                named("draft").copy().draft(true).build()).getUuid();
+
+        assertThat(uuids()).containsExactly(live, draft);
+    }
+
+    @Test
+    void aReplaceFromACopyTheRowHasMovedPastIsRefused() {
+        // Audit finding W7-3. Taking the row lock was not enough: the writer then wrote every field back
+        // from a copy taken before the other, so a node promoting a provisional binding from its cache
+        // reverted a rebind another node had made to the pipeline and the snapshot.
+        final String uuid = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
+        final Binding read = binding(uuid);
+
+        assertThat(learnerBindings.replace(LEARNER, DOC,
+                read.copy().pipeline(new DocRef("Pipeline", "fragment-rebound", "rebound")).build()))
+                .describedAs("the first writer, from the copy it read")
+                .isTrue();
+
+        assertThat(learnerBindings.replace(LEARNER, DOC, read.copy().score(0.5).build()))
+                .describedAs("the second, from the same copy, which the row has moved past")
+                .isFalse();
+        assertThat(binding(uuid).getPipeline().getUuid())
+                .describedAs("and the rebind stands")
+                .isEqualTo("fragment-rebound");
+        assertThat(binding(uuid).getScore()).isNull();
+    }
+
+    @Test
+    void aBindingBuiltRatherThanReadIsWrittenAsBefore() {
+        // No version is "no opinion": a promotion whose row was pruned between the run and the write must
+        // not be lost because it cannot say what version it saw
+        final String uuid = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
+
+        assertThat(learnerBindings.replace(LEARNER, DOC, Binding.builder().uuid(uuid).score(0.9).build()))
+                .isTrue();
+        assertThat(binding(uuid).getScore()).isEqualTo(0.9);
     }
 
     /// A row records the document the learner runs under, and a replacement brings it up to date: a

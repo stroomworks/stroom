@@ -24,23 +24,18 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
-/// Where a step goes on one outcome (A37; design 01 §10.2), written `on <outcome> goto <step>`,
-/// `on <outcome> abandon`, `on spent goto <step>` or `on spent abandon`. A transition on an outcome
-/// fires at once, on the first candidate that has it; a transition on `spent` fires when the step's
-/// candidates are gone, where the default is to abandon. Self re-ask on a shortfall needs no transition:
-/// it is what a step does until it is spent, and a pass goes to the next line unless `on passed goto`
-/// says otherwise. The step named [#END] is the end of the flow.
+/// Where a step goes on one outcome (A37; design 01 §10.2). A transition on an outcome fires at once, on
+/// the first candidate that has it; a transition with no outcome fires when the step's candidates are
+/// spent, where the default is to abandon. Self re-ask on a shortfall needs no transition: it is what a
+/// step does until it is spent, and a pass goes to the next step unless a transition on
+/// [StepOutcome#PASSED] says otherwise. The step named [#END] is the end of the flow.
 @JsonPropertyOrder({"on", "goTo"})
 @JsonInclude(Include.NON_NULL)
 public class Transition {
 
-    public static final String SPENT = "spent";
-    public static final String ON = "on";
-    public static final String GOTO = "goto";
-    public static final String ABANDON = "abandon";
-    /// The reserved step name a `goto` reaches when the flow is complete.
+    /// The reserved step name a transition reaches when the flow is complete.
     public static final String END = "end";
-    /// The reserved names of the two exits (A83): `goto park` and `goto give-up`.
+    /// The reserved names of the two exits (A83).
     public static final String PARK = "park";
     public static final String GIVE_UP = "give-up";
 
@@ -76,13 +71,13 @@ public class Transition {
         return on == null;
     }
 
-    /// Whether this leaves the flow without binding, rather than going to a step or to `end`: written
-    /// `abandon`, which is the step's own default exit, or `goto park` or `goto give-up` (A83).
+    /// Whether this leaves the flow without binding, rather than going to a step or to `end`: with no
+    /// step named, which is the step's own default exit, or by naming `park` or `give-up` (A83).
     public boolean exits() {
         return goTo == null || PARK.equals(goTo) || GIVE_UP.equals(goTo);
     }
 
-    /// The exit this names, or null where it is written `abandon` and the step's default applies: give-up
+    /// The exit this names, or null where it names no step and the step's default applies: give-up
     /// for a parser, whose spent candidates are the one failure nothing can serve (A52, A54), and park for
     /// any other step (A65).
     public FlowExit namedExit() {
@@ -98,15 +93,6 @@ public class Transition {
     /// Whether a name is one of the flow's own places, which no step may take: `end` and the two exits.
     public static boolean isReserved(final String id) {
         return END.equals(id) || PARK.equals(id) || GIVE_UP.equals(id);
-    }
-
-    /// The transition as it is written: `on coverage-short goto parser`, `on spent abandon`.
-    public String format() {
-        return ON + ' ' + (on == null
-                ? SPENT
-                : on.getDisplayValue()) + ' ' + (goTo == null
-                ? ABANDON
-                : GOTO + ' ' + goTo);
     }
 
     @Override
@@ -128,6 +114,6 @@ public class Transition {
 
     @Override
     public String toString() {
-        return format();
+        return "Transition{on=" + on + ", goTo=" + goTo + '}';
     }
 }

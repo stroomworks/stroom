@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.stage;
 
+import stroom.shapeshifter.ai.learning.AskedWith;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.PromotionMode;
@@ -160,11 +161,11 @@ public interface Attempts {
     void decided(String docUuid, String bindingUuid, AttemptStatus status, String decision);
 
     /// What has become of the binding an attempt bound (A28, design 01 §6, §11.6): retracted by the gate or
-    /// by a person, or promoted out of a provisional binding because somebody accepted it.
+    /// by a person.
     ///
     /// Separate from [#decided], and it has to be: that one is A25's decision about a draft *awaiting
     /// review*, and filters to attempts in that state. These are about a binding that was **serving**,
-    /// whose attempt closed promoted or provisional a long time ago, so the same call would match
+    /// whose attempt closed promoted a long time ago, so the same call would match
     /// nothing and the attempt would go on saying what is no longer true.
     ///
     /// Attempts that ended some other way are left alone: an abandoned attempt did not write this binding.
@@ -205,7 +206,10 @@ public interface Attempts {
     /// @param type     The type of the stream it opened on.
     /// @param inputId  The stream that raised the attempt, so a person can see what it was learning from.
     /// @param node     Which node opened it.
-    /// @param expiryMs When the claim lapses if nothing heartbeats it (A45).
+    /// @param expiryMs   When the claim lapses if nothing heartbeats it (A45).
+    /// @param askedWith The words it was asked with (N9): the template set and texts the run used, so
+    ///                  that a parked run resumes in the words it began in and a person with *View
+    ///                  Data* can be shown the prompt as it was sent.
     record Attempt(Learner learner,
                    String docUuid,
                    String feed,
@@ -213,8 +217,71 @@ public interface Attempts {
                    Long inputId,
                    String node,
                    PromotionMode promotionMode,
-                   long expiryMs) {
+                   long expiryMs,
+                   AskedWith askedWith,
+                   String improving) {
 
+        public Attempt {
+            askedWith = askedWith == null
+                    ? AskedWith.UNKNOWN
+                    : askedWith;
+        }
+
+        /// An attempt that is learning from a stream rather than improving a binding, which is every
+        /// attempt but the ones a person asks for with *Improve*.
+        ///
+        /// @param learner       What is learning.
+        /// @param docUuid       The document it learns under.
+        /// @param feed          The feed of the stream it opened on.
+        /// @param type          The type of the stream it opened on.
+        /// @param inputId       The stream that raised it.
+        /// @param node          Which node opened it.
+        /// @param promotionMode The mode it opened under.
+        /// @param expiryMs      When its claim lapses.
+        /// @param askedWith     The words it is asked with.
+        public Attempt(final Learner learner,
+                       final String docUuid,
+                       final String feed,
+                       final String type,
+                       final Long inputId,
+                       final String node,
+                       final PromotionMode promotionMode,
+                       final long expiryMs,
+                       final AskedWith askedWith) {
+            this(learner, docUuid, feed, type, inputId, node, promotionMode, expiryMs, askedWith, null);
+        }
+
+        /// Whether this attempt is an improvement a person asked for (A46) rather than a learning raised
+        /// by a stream. An improvement has no stream behind it: its sample is the records the binding was
+        /// accepted on, put back together, so the worker reads it from the regression set rather than
+        /// from the stream store.
+        ///
+        /// @return True where it is improving a binding.
+        public boolean isImprovement() {
+            return improving != null;
+        }
+
+        /// An attempt whose words were not recorded: one opened before N9, or a test that is not about
+        /// them.
+        ///
+        /// @param learner       What is learning.
+        /// @param docUuid       The document it learns under.
+        /// @param feed          The feed of the stream it opened on.
+        /// @param type          The type of the stream it opened on.
+        /// @param inputId       The stream that raised it.
+        /// @param node          Which node opened it.
+        /// @param promotionMode The mode it opened under.
+        /// @param expiryMs      When its claim lapses.
+        public Attempt(final Learner learner,
+                       final String docUuid,
+                       final String feed,
+                       final String type,
+                       final Long inputId,
+                       final String node,
+                       final PromotionMode promotionMode,
+                       final long expiryMs) {
+            this(learner, docUuid, feed, type, inputId, node, promotionMode, expiryMs, AskedWith.UNKNOWN, null);
+        }
     }
 
     /// @param answer     What was answered, or null for a turn an attempt stopped at and nobody has

@@ -51,7 +51,7 @@ import java.util.function.Consumer;
 
 /// Smart Pipelines and where each stands: a Learning Flow's Pipelines tab, and the Smart Pipelines screen of
 /// every Learning Flow's ([FeedListController] fills it). A row each, named by its pipeline (one pipeline per
-/// feed, as the Pipeline Factory makes them), with a button that opens the pipeline at its Learning Status tab,
+/// feed, as a Content Template makes them), with a button that opens the pipeline at its Learning Status tab,
 /// where its learning is followed and acted on; on the Smart Pipelines screen, the Learning Flow it learns
 /// under; a chip saying where it stands; and a line of what it scores, what waits or why it stopped
 /// ([FeedSituation#listChip]). Above, a quick filter of the names; the pager's toolbar has auto refresh and the

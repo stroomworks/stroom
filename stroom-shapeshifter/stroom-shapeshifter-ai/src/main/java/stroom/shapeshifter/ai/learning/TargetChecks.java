@@ -39,6 +39,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The checks a target brings to the conversation (design 01 §10.1, ruling A31), beside the document's
@@ -56,11 +58,13 @@ public final class TargetChecks {
     public static final String NONE = "none";
     private static final ElementId TARGET = new ElementId("Target");
     private static final int VALUE_LENGTH_COUNTED = 2;
-    private static final String EVENTS_OPEN = "<Events xmlns=\"event-logging:3\" "
-            + "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
-            + "xsi:schemaLocation=\"event-logging:3 file://event-logging-v3.0.0.xsd\" "
-            + "Version=\"3.0.0\">";
-    private static final String EVENTS_CLOSE = "</Events>";
+    /// The local name of the events root, which is what says a target is already a document where the
+    /// target schema names none of its own.
+    private static final String EVENTS_ROOT = "Events";
+    private static final String EVENTS_VERSION = "3.0.0";
+    private static final String EVENTS_SYSTEM_ID = "file://event-logging-v3.0.0.xsd";
+    /// The first element a piece of markup opens, capturing its local name without any prefix.
+    private static final Pattern ROOT = Pattern.compile("\\s*<(?:[\\w.-]+:)?([\\w.-]+)[\\s/>]");
 
     private TargetChecks() {
     }
@@ -151,11 +155,8 @@ public final class TargetChecks {
                         + "records is not a record — name the element that repeats"));
             }
         }
-        final long documentChars = document.root().getStringValue().chars().filter(c -> !Character.isWhitespace(c))
-                .count();
-        final long recordChars = found.stream()
-                .mapToLong(item -> item.getStringValue().chars().filter(c -> !Character.isWhitespace(c)).count())
-                .sum();
+        final long documentChars = text(document.root());
+        final long recordChars = found.stream().mapToLong(TargetChecks::text).sum();
         if (documentChars > 0 && (double) recordChars / documentChars < wholeness) {
             return Optional.of(new StoredError(Severity.ERROR, null, TARGET, "The " + found.size() + " element(s) "
                     + "named " + name + " hold " + recordChars + " of the document's " + documentChars
@@ -163,6 +164,57 @@ public final class TargetChecks {
                     + "occurrences"));
         }
         return Optional.empty();
+    }
+
+    /// Whether the children of a named element are the records
+    /// (`docs/shapeshifter-ai-mixed-record-elements.md`): a feed that interleaves several record types as
+    /// siblings under one container, where no single element name describes a record.
+    ///
+    /// Unlike [#recordElement] this does **not** refuse a parent that occurs once. A container that
+    /// repeats in the stream may well appear once in a sample — `gateway-audit.xml`'s first `</batch>`
+    /// is at byte 11,318 and the default sample is 8,192 — and refusing it was half of why that feed
+    /// could not be learned at all.
+    ///
+    /// @param document  The sample, parsed.
+    /// @param parent    The container's local name, or [RecordBoundary#ROOT] for the document's own root.
+    /// @param wholeness What share of the document's text the records must hold between them.
+    /// @return The shortfall, empty where the children will do.
+    public static Optional<StoredError> recordChildren(final OutputRecords document,
+                                                       final String parent,
+                                                       final double wholeness) {
+        final boolean ofRoot = RecordBoundary.ROOT.equalsIgnoreCase(parent)
+                               || parent.equals(document.root().getNodeName().getLocalName());
+        final List<XdmNode> found = document.recordsBy(ofRoot
+                ? RecordBoundary.ofChildrenOf(RecordBoundary.ROOT)
+                : RecordBoundary.ofChildrenOf(parent));
+        if (found.isEmpty()) {
+            return Optional.of(new StoredError(Severity.ERROR, null, TARGET, ofRoot
+                    ? "The root holds no element children to be records"
+                    : "No element named " + parent + " holds any element children here; name the element "
+                      + "whose children are the records"));
+        }
+        if (found.size() == 1) {
+            // One child is a wrapper named as though it were a container: the records are inside it, and
+            // the model is being told to look one level deeper rather than refused outright.
+            return Optional.of(new StoredError(Severity.ERROR, null, TARGET, (ofRoot
+                    ? "The root"
+                    : parent) + " holds one element child, so its children are not a sequence of records; "
+                    + "name the element whose children repeat, or the element that is one record"));
+        }
+        final long documentChars = text(document.root());
+        final long recordChars = found.stream().mapToLong(TargetChecks::text).sum();
+        if (documentChars > 0 && (double) recordChars / documentChars < wholeness) {
+            return Optional.of(new StoredError(Severity.ERROR, null, TARGET, "The " + found.size()
+                    + " children of " + parent + " hold " + recordChars + " of the document's "
+                    + documentChars + " characters; the records hold nearly all of them between them"));
+        }
+        return Optional.empty();
+    }
+
+    /// @param node A node.
+    /// @return How many non-whitespace characters its text holds.
+    private static long text(final XdmNode node) {
+        return node.getStringValue().chars().filter(c -> !Character.isWhitespace(c)).count();
     }
 
     /**
@@ -209,11 +261,34 @@ public final class TargetChecks {
                                                                           + "field, however many lines it spans"));
     }
 
-    /**
-     * A proposed target as a whole document the scorers can judge: the event wrapped in the events root
-     * where the model gave the event alone.
-     */
+    /// A proposed target as a whole document the scorers can judge: the event wrapped in the events root
+    /// where the model gave the event alone.
+    ///
+    /// Whether it is already a document is decided by its **root element's name**, not by whether the
+    /// text holds the characters `<Events` somewhere (audit finding W1-2). The substring test wrapped a
+    /// prefixed root — `<evt:Events>` — a second time, so the scorers judged a document inside a
+    /// document; and an event carrying those characters in an attribute or a comment was left unwrapped,
+    /// which is the same fault the other way round.
+    ///
+    /// A root of another schema's name is still wrapped in event-logging's, because that is the only
+    /// root this knows. Naming the target schema's root belongs with Track 1 task 7 (D1).
+    ///
+    /// @param event What the model gave.
+    /// @return It as a document.
     public static String asDocument(final String event) {
+        return asDocument(event, null);
+    }
+
+    /// The same, wrapped in the root of the schema the document's translations must write (task 7).
+    ///
+    /// @param event  The proposed event, which may already be a whole document.
+    /// @param target The target schema, or null where the document names none — in which case the
+    ///               wrapper is event-logging 3.0.0, which is what it always was.
+    /// @return It as a document.
+    public static String asDocument(final String event, final TargetSchema target) {
+        final String root = target == null || target.rootElement() == null
+                ? EVENTS_ROOT
+                : target.rootElement();
         String stripped = event.strip();
         if (stripped.startsWith("<?xml")) {
             final int end = stripped.indexOf("?>");
@@ -221,9 +296,28 @@ public final class TargetChecks {
                     ? stripped
                     : stripped.substring(end + 2).strip();
         }
-        return stripped.contains("<Events")
+        final Matcher opened = ROOT.matcher(stripped);
+        return opened.lookingAt() && root.equals(opened.group(1))
                 ? stripped
-                : EVENTS_OPEN + stripped + EVENTS_CLOSE;
+                : open(root, target) + stripped + "</" + root + ">";
+    }
+
+    /// The opening tag a proposed event is wrapped in: the target's root, namespace, schema location and
+    /// version, or event-logging 3.0.0's where the document names no target.
+    private static String open(final String root, final TargetSchema target) {
+        final String namespace = target == null
+                ? TargetSchema.EVENT_LOGGING
+                : target.namespaceURI();
+        final String schemaLocation = target == null
+                ? TargetSchema.EVENT_LOGGING + " " + EVENTS_SYSTEM_ID
+                : target.schemaLocation();
+        final String version = target == null || target.version() == null
+                ? EVENTS_VERSION
+                : target.version();
+        return "<" + root + " xmlns=\"" + namespace + "\" "
+               + "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
+               + "xsi:schemaLocation=\"" + schemaLocation + "\" "
+               + "Version=\"" + version + "\">";
     }
 
     /**

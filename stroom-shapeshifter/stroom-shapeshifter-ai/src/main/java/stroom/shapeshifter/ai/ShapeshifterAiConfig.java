@@ -38,22 +38,38 @@ public class ShapeshifterAiConfig extends AbstractConfig implements IsStroomConf
     private final int deferredLearningBatchSize;
     private final StroomDuration attemptRetention;
     private final StroomDuration sessionLease;
+    private final long spendTokensPerHour;
+    private final int spendCallsPerHour;
 
     public ShapeshifterAiConfig() {
         dbConfig = new ShapeshifterAiDbConfig();
         // Read for every stream of every learner and written only when something is learned, so it is
         // invalidated by what writes it rather than by time; the expiry is a backstop.
+        //
+        // `expireAfterWrite` as well as `expireAfterAccess` (audit finding W7-1). Access alone never
+        // expires a **busy** learner — every stream touches it — so a node that missed the invalidation
+        // event goes on serving an old binding, or "no binding", for as long as the feed keeps arriving,
+        // which is exactly when it matters. The write expiry is the bound on how long a lost event can
+        // be wrong for.
         bindingCache = CacheConfig.builder()
                 .maximumSize(1000L)
                 .expireAfterAccess(StroomDuration.ofMinutes(10))
+                .expireAfterWrite(StroomDuration.ofMinutes(10))
                 .build();
         learnerStateCache = CacheConfig.builder()
                 .maximumSize(10_000L)
                 .expireAfterAccess(StroomDuration.ofMinutes(10))
+                .expireAfterWrite(StroomDuration.ofMinutes(10))
                 .build();
         deferredLearningBatchSize = 10;
         attemptRetention = StroomDuration.ofDays(90);
         sessionLease = StroomDuration.ofMinutes(10);
+        // A backstop against a runaway, not a budget: high enough that no honest cluster meets it, low
+        // enough that a loop cannot spend without limit. One feed learned from scratch cost about 550,000
+        // tokens over thirteen calls on the development instance, so this is roughly eighteen whole
+        // learnings an hour across every document on the cluster.
+        spendTokensPerHour = 10_000_000L;
+        spendCallsPerHour = 1_000;
     }
 
     @SuppressWarnings("unused")
@@ -63,13 +79,21 @@ public class ShapeshifterAiConfig extends AbstractConfig implements IsStroomConf
                                 @JsonProperty("learnerStateCache") final CacheConfig learnerStateCache,
                                 @JsonProperty("deferredLearningBatchSize") final int deferredLearningBatchSize,
                                 @JsonProperty("attemptRetention") final StroomDuration attemptRetention,
-                                @JsonProperty("sessionLease") final StroomDuration sessionLease) {
+                                @JsonProperty("sessionLease") final StroomDuration sessionLease,
+                                @JsonProperty("spendTokensPerHour") final Long spendTokensPerHour,
+                                @JsonProperty("spendCallsPerHour") final Integer spendCallsPerHour) {
         this.dbConfig = dbConfig;
         this.bindingCache = bindingCache;
         this.learnerStateCache = learnerStateCache;
         this.deferredLearningBatchSize = deferredLearningBatchSize;
         this.attemptRetention = attemptRetention;
         this.sessionLease = sessionLease;
+        this.spendTokensPerHour = spendTokensPerHour == null
+                ? 10_000_000L
+                : spendTokensPerHour;
+        this.spendCallsPerHour = spendCallsPerHour == null
+                ? 1_000
+                : spendCallsPerHour;
     }
 
     @Override
@@ -84,7 +108,11 @@ public class ShapeshifterAiConfig extends AbstractConfig implements IsStroomConf
     @JsonProperty("bindingCache")
     @JsonPropertyDescription("What serves each Shapeshifter AI learner, cached per node. Every stream of "
                              + "every learner reads it, and it changes only when something is learned or a "
-                             + "person acts on it, which clears the entry on every node.")
+                             + "person acts on it, which clears the entry on every node. The write expiry "
+                             + "is the backstop for a clearing event a node misses: without it a busy "
+                             + "learner, whose entry is touched by every stream, would never expire and "
+                             + "the node would serve the old binding for as long as the feed kept "
+                             + "arriving.")
     public CacheConfig getBindingCache() {
         return bindingCache;
     }
@@ -129,5 +157,30 @@ public class ShapeshifterAiConfig extends AbstractConfig implements IsStroomConf
                              + "walk one session.")
     public StroomDuration getSessionLease() {
         return sessionLease;
+    }
+
+    @Min(0)
+    @JsonProperty("spendTokensPerHour")
+    @JsonPropertyDescription("The most tokens every Smart Pipeline on the cluster may spend between them "
+                             + "in an hour (ruling A24). Past it no new learning session opens and the "
+                             + "streams that would have opened one wait, saying so, until the hour rolls; "
+                             + "a session already running is left to finish, since it has budgets of its "
+                             + "own. This is a backstop against a runaway rather than a budget: one feed "
+                             + "learned from scratch costs of the order of half a million tokens, so the "
+                             + "default is roughly eighteen whole learnings an hour across the whole "
+                             + "cluster. Zero turns it off, which leaves unattended learning with no upper "
+                             + "bound on what it can spend.")
+    public long getSpendTokensPerHour() {
+        return spendTokensPerHour;
+    }
+
+    @Min(0)
+    @JsonProperty("spendCallsPerHour")
+    @JsonPropertyDescription("The most questions every Smart Pipeline on the cluster may put to a model "
+                             + "between them in an hour: the rate limit beside the spend ceiling, for a "
+                             + "model priced or throttled by the call rather than by the token. It is read "
+                             + "and acted on exactly as the token ceiling is. Zero turns it off.")
+    public int getSpendCallsPerHour() {
+        return spendCallsPerHour;
     }
 }

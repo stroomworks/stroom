@@ -22,6 +22,9 @@ import stroom.shapeshifter.ai.stage.Spend;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jooq.Record3;
+import org.jooq.impl.DSL;
+
+import java.math.BigDecimal;
 
 import static stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterSpend.SHAPESHIFTER_SPEND;
 
@@ -101,5 +104,31 @@ public class SpendDao implements Spend {
                         ? new Spent(now, 0L, 0)
                         : new Spent(row.value1(), row.value2(), row.value3()))
                 .orElseGet(() -> new Spent(now, 0L, 0));
+    }
+
+    @Override
+    public Spent spentAll(final long windowMs) {
+        final long now = System.currentTimeMillis();
+        // Rows whose window has run out are left out rather than reset: resetting is `record`'s to do,
+        // under its lock, and a read must not write
+        return JooqUtil.contextResult(connProvider, context -> {
+            final Record3<Long, BigDecimal, BigDecimal> row = context
+                    .select(DSL.min(SHAPESHIFTER_SPEND.WINDOW_START_MS),
+                            DSL.sum(SHAPESHIFTER_SPEND.TOKENS_SPENT),
+                            DSL.sum(SHAPESHIFTER_SPEND.CALLS_MADE))
+                    .from(SHAPESHIFTER_SPEND)
+                    .where(SHAPESHIFTER_SPEND.WINDOW_START_MS.gt(now - windowMs))
+                    .fetchOne();
+            if (row == null || row.value1() == null) {
+                return new Spent(now, 0L, 0);
+            }
+            return new Spent(row.value1(),
+                    row.value2() == null
+                            ? 0L
+                            : row.value2().longValue(),
+                    row.value3() == null
+                            ? 0
+                            : row.value3().intValue());
+        });
     }
 }

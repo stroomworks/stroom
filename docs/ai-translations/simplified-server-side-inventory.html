@@ -662,7 +662,6 @@ svg .ah.bad { fill: var(--danger); }
   <tr><td>Pipeline element</td><td>Input coverage <span class="tag info">new</span></td><td><code>impl/pipeline/CoverageFilter</code></td><td>Internal: added by <code>CandidateRunner</code> when judging, to record how much input each record used. Replaces the module's own parser runners (i)</td></tr>
   <tr><td>Document type</td><td><code>ShapeshifterAiDoc</code></td><td><code>impl/doc/</code></td><td>Registered through <code>DocumentStoreBinder</code> as now. Fields change: see below</td></tr>
   <tr><td>Content creation</td><td>Learned documents</td><td><code>impl/pipeline/LearnedContent</code></td><td>One port where there were two (<code>Places</code> and <code>ContentCreator</code>). Writes the draft, then copies it into the learner's single set of documents on approve</td></tr>
-  <tr><td>Processor hook</td><td><code>SupervisedPipelines</code></td><td><code>impl/pipeline/SupervisedPipelineCheck</code></td><td>Unchanged</td></tr>
   <tr><td>Entity events</td><td>Pipeline deletion, cache invalidation</td><td><code>impl/…/PipelineDeletions</code>, <code>impl-db</code> caches</td><td>Unchanged</td></tr>
   <tr><td>Audit</td><td><code>ShapeshifterAiAsk</code> events, plus promotion events <span class="tag info">new</span></td><td><code>ModelAdvisor</code>, <code>PromotionService</code></td><td>Each automatic approval is audited with the scores it passed on, so it can be told apart from a person's approval</td></tr>
 </table></div>

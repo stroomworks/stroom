@@ -20,6 +20,7 @@ import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
 import stroom.importexport.api.ImportExportDocument;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
@@ -95,7 +96,7 @@ public class ShapeshifterAiSerialiser implements DocumentSerialiser2<Shapeshifte
         if (preset != null && !preset.isNull() && (legacy.get("steps") == null || legacy.get("steps").isNull())) {
             // A preset this build does not know — a renamed example, a hand-edited document — leaves the
             // steps as the default rather than making the document unopenable, and so unrepairable.
-            flow = flow.withSteps(example(preset.asText()).steps());
+            flow = flow.withSteps(FlowExamples.steps(example(preset.asText())));
         }
         return document.copy().flow(flow).build();
     }

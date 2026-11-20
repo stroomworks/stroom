@@ -33,16 +33,20 @@ import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.filter.SchemaFilter;
 import stroom.pipeline.state.PipelineContext;
 import stroom.pipeline.xml.converter.ds3.DS3ParserFactory;
+import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
 import stroom.pipeline.xmlschema.XmlSchemaCache;
 import stroom.pipeline.xmlschema.XmlSchemaSerialiser;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.pipeline.xmlschema.XmlSchemaStoreImpl;
 import stroom.security.api.SecurityContext;
 import stroom.security.mock.MockSecurityContext;
+import stroom.shapeshifter.ai.element.XmlSchemaTargetSchemas;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.ai.scoring.SchemaConformanceScorer;
 import stroom.test.common.util.test.ContentPackZipDownloader;
 import stroom.test.common.util.test.FileSystemTestUtil;
 import stroom.util.io.StreamUtil;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -131,6 +135,35 @@ public final class NodeFixture {
      */
     public SchemaConformanceScorer schemaConformanceScorer() {
         return new SchemaConformanceScorer(schemaFilters, errorReceiverProxy, schemaStore, securityContext);
+    }
+
+    /// Target schemas over the fixture's own store, which holds event-logging 3.0.0 (task 7), so that a
+    /// scenario reads a real `XMLSchema` document rather than a made-up one.
+    ///
+    /// @return Them.
+    public TargetSchemas targetSchemas() {
+        return new XmlSchemaTargetSchemas(schemaStore, securityContext);
+    }
+
+    /// The event-logging schema the fixture loaded, for a scenario that sets a document's target.
+    ///
+    /// @return Its reference.
+    public DocRef eventLoggingSchemaRef() {
+        return schemaRef(EVENTS_NAMESPACE_URI);
+    }
+
+    /// A schema the fixture loaded, by its namespace.
+    ///
+    /// @param namespaceURI Its namespace, e.g. `data-splitter:3`.
+    /// @return Its reference.
+    public DocRef schemaRef(final String namespaceURI) {
+        final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
+        criteria.setNamespaceURI(namespaceURI);
+        return securityContext.asProcessingUserResult(() -> schemaStore.find(criteria).getValues().stream()
+                .findFirst()
+                .map(XmlSchemaDoc::asDocRef)
+                .orElseThrow(() -> new IllegalStateException(
+                        "The fixture loaded no schema in " + namespaceURI)));
     }
 
     private static void loadDataSplitterSchema(final XmlSchemaStore schemaStore) {

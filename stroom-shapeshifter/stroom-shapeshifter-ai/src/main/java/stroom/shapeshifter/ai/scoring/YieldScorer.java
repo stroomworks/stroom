@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
@@ -46,7 +47,9 @@ public final class YieldScorer implements Scorer {
     }
 
     @Override
-    public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         final YieldParameters yield = (YieldParameters) parameters;
         final String output = step.result().output();
         if (output == null || !isXml(output)) {

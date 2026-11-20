@@ -51,10 +51,10 @@ class TestVolumesDao {
     @Test
     void eachDayCountsTheBindingsStreamsAndTheirRecords() {
         final long input = System.nanoTime();
-        outputs.emitted(input, "p-1", produced(BINDING), List.of(), 10);
-        outputs.emitted(input + 1, "p-1", produced(BINDING), List.of(), 5);
-        outputs.emitted(input + 2, "p-1", produced(BINDING), List.of());
-        outputs.emitted(input + 3, "p-1", produced(OTHER), List.of(), 100);
+        outputs.emitted(input, "p-1", produced(BINDING), 10);
+        outputs.emitted(input + 1, "p-1", produced(BINDING), 5);
+        outputs.emitted(input + 2, "p-1", produced(BINDING));
+        outputs.emitted(input + 3, "p-1", produced(OTHER), 100);
 
         final long today = Math.floorDiv(System.currentTimeMillis(), DAY_MS) * DAY_MS;
         assertThat(volumes.perDay(List.of(BINDING), today - DAY_MS))
@@ -70,8 +70,8 @@ class TestVolumesDao {
     void aReplayThatCannotCountKeepsWhatWasCounted() {
         final String replayed = "replayed-" + System.nanoTime();
         final long input = System.nanoTime();
-        outputs.emitted(input, "p-1", produced(replayed), List.of(), 12);
-        outputs.emitted(input, "p-1", produced(replayed), List.of());
+        outputs.emitted(input, "p-1", produced(replayed), 12);
+        outputs.emitted(input, "p-1", produced(replayed));
 
         assertThat(volumes.perDay(List.of(replayed), 0L))
                 .singleElement()
@@ -89,6 +89,6 @@ class TestVolumesDao {
     }
 
     private static Produced produced(final String binding) {
-        return new Produced(DOC, binding, FRAGMENT, null, false, 0.9);
+        return new Produced(DOC, binding, FRAGMENT, null, 0.9);
     }
 }

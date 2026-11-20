@@ -340,6 +340,78 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
         return (String) get(22);
     }
 
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.templates</code>.
+     */
+    public void setTemplates(String value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.templates</code>.
+     */
+    public String getTemplates() {
+        return (String) get(23);
+    }
+
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.built_in_version</code>.
+     */
+    public void setBuiltInVersion(Integer value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.built_in_version</code>.
+     */
+    public Integer getBuiltInVersion() {
+        return (Integer) get(24);
+    }
+
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.instructions</code>.
+     */
+    public void setInstructions(String value) {
+        set(25, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.instructions</code>.
+     */
+    public String getInstructions() {
+        return (String) get(25);
+    }
+
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.build_version</code>.
+     */
+    public void setBuildVersion(String value) {
+        set(26, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.build_version</code>.
+     */
+    public String getBuildVersion() {
+        return (String) get(26);
+    }
+
+    /**
+     * Setter for
+     * <code>stroom.shapeshifter_attempt.improving_binding_uuid</code>.
+     */
+    public void setImprovingBindingUuid(String value) {
+        set(27, value);
+    }
+
+    /**
+     * Getter for
+     * <code>stroom.shapeshifter_attempt.improving_binding_uuid</code>.
+     */
+    public String getImprovingBindingUuid() {
+        return (String) get(27);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -363,7 +435,7 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
     /**
      * Create a detached, initialised ShapeshifterAttemptRecord
      */
-    public ShapeshifterAttemptRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String feedName, String typeName, Long inputMetaId, String nodeName, String promotionMode, String status, String decision, String bindingUuid, Double score, Long tokensSpent, Long expiryMs, Byte claimed, Long grantedTokens, Long grantedMs, Byte exhaustNext, String report) {
+    public ShapeshifterAttemptRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String feedName, String typeName, Long inputMetaId, String nodeName, String promotionMode, String status, String decision, String bindingUuid, Double score, Long tokensSpent, Long expiryMs, Byte claimed, Long grantedTokens, Long grantedMs, Byte exhaustNext, String report, String templates, Integer builtInVersion, String instructions, String buildVersion, String improvingBindingUuid) {
         super(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT);
 
         setId(id);
@@ -389,6 +461,11 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
         setGrantedMs(grantedMs);
         setExhaustNext(exhaustNext);
         setReport(report);
+        setTemplates(templates);
+        setBuiltInVersion(builtInVersion);
+        setInstructions(instructions);
+        setBuildVersion(buildVersion);
+        setImprovingBindingUuid(improvingBindingUuid);
         resetTouchedOnNotNull();
     }
 }

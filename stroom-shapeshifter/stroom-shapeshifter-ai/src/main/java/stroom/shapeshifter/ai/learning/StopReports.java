@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.learning;
 
+import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.shared.FlowExit;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.FlowWords;
@@ -81,15 +82,58 @@ public final class StopReports {
                                     final List<StoredError> feedback,
                                     final List<Exchange> transcript,
                                     final FlowExit exit) {
+        return ofStep(cause, steps, index, about, feedback, transcript, exit, null);
+    }
+
+    /// The same, saying what the model was shown of the stream where it was not shown all of it.
+    ///
+    /// @param cause      Why it stopped.
+    /// @param steps      The flow's steps.
+    /// @param index      The index of the step it stopped at.
+    /// @param about      More to say about the step; null for nothing.
+    /// @param feedback   What the last answer fell short on.
+    /// @param transcript The run's turns so far.
+    /// @param exit       Where the run leaves to.
+    /// @param sample     The sample the step judged, or null where there was none: a person told
+    ///                   "couldn't write the parser" is owed the fact that the model saw eight kilobytes
+    ///                   of a two-megabyte stream (supervisor visibility item 3).
+    /// @return The report.
+    public static StopReport ofStep(final StopCause cause,
+                                    final List<FlowStep> steps,
+                                    final int index,
+                                    final String about,
+                                    final List<StoredError> feedback,
+                                    final List<Exchange> transcript,
+                                    final FlowExit exit,
+                                    final Sample sample) {
         final FlowStep step = steps.get(index);
         final String name = FlowWords.stepName(steps, index);
         final List<Exchange> answers = answers(step, transcript);
         return switch (cause) {
+            // A rule firing is the flow doing what it was told, and a missing fallback is a fault in the
+            // flow: neither is a question of what the model was shown, so neither carries that line.
             case STEP_RULE -> byRule(step, name, answers, feedback, exit);
-            case STEP_FAILED -> failed(step, name, about, feedback, exit);
             case FALLBACK_MISSING -> fallbackMissing(step, name);
-            default -> spent(step, name, about, answers, feedback, exit);
+            case STEP_FAILED -> withSample(failed(step, name, about, feedback, exit), sample);
+            default -> withSample(spent(step, name, about, answers, feedback, exit), sample);
         };
+    }
+
+    /// The report with a line about what the model was shown, where it was shown less than was read.
+    ///
+    /// @param report The report.
+    /// @param sample The sample, or null.
+    /// @return The report, with the line where there is one to add.
+    private static StopReport withSample(final StopReport report, final Sample sample) {
+        if (sample == null || sample.notShown() == 0) {
+            return report;
+        }
+        final List<String> details = new ArrayList<>(report.getDetails());
+        details.add("The AI was shown " + Input.bytes(sample.text()) + " bytes of the "
+                    + sample.cutFrom() + " read from this stream — the sample size limit on the Learning "
+                    + "Flow. What it wrote was judged on all of them.");
+        return new StopReport(report.getCause(), report.getStep(), report.getError(), details,
+                report.getSuggestions());
     }
 
     private static StopReport spent(final FlowStep step,
@@ -259,11 +303,55 @@ public final class StopReports {
                 "Put the learning steps right on the Setup tab.");
     }
 
+    /// A translation refused at promotion for using something a learned translation may not (decision N1).
+    /// It is checked when a candidate is judged and again here, so this is a translation that reached
+    /// promotion by a route that judged no stylesheet, or one whose pipeline was edited by hand since.
+    ///
+    /// @param refusals What it uses that it may not, one sentence each.
+    /// @return The report.
+    public static StopReport refusedByTheList(final List<String> refusals) {
+        final List<String> details = new ArrayList<>();
+        for (final String refusal : refusals) {
+            details.add(sentence(refusal));
+        }
+        return setup("The translation uses something a learned translation may not, so it wasn't put in use.",
+                details,
+                "A learned translation may use only what is on the Smart Pipelines list. Where the pipeline "
+                + "was edited by hand, take out what the list doesn't allow; otherwise let it learn again.");
+    }
+
     /// A run that went round a loop of rules.
     ///
     /// @param rule The rule, as [FlowWords#rule] says it.
     /// @param step The step it is on, as [FlowWords#step] says it.
     /// @return The report.
+    /// A stream that is one XML or JSON document larger than the prefix read as text (N2 option E).
+    ///
+    /// A prefix of a document is not a document: cut at 64 KiB it does not parse, so there is nothing to
+    /// settle a record boundary over and no sample to put to the model. Reading the whole of a stream of
+    /// any size into memory to learn from is the thing the prefix exists to prevent, so the answer is to
+    /// say what is wrong and what would make it learnable, rather than to fail quietly as it did before
+    /// — the split step passed with no boundary, and everything after it was judged on nothing.
+    ///
+    /// @param kind  What the stream is, for the message: "XML" or "JSON".
+    /// @param bytes How much of it was read.
+    /// @return The report.
+    public static StopReport oneDocumentTooLarge(final String kind, final int bytes) {
+        return new StopReport(StopCause.STEP_FAILED, null,
+                "This stream is a single " + kind + " document larger than the "
+                + bytes + " bytes that are read to learn from",
+                List.of("A part of a document is not a document, so there is nothing here that can be "
+                        + "parsed to settle what one record is.",
+                        "Reading a whole stream of any size into memory to learn from is what that limit "
+                        + "prevents, so a larger limit is not the answer."),
+                List.of(new Suggestion("Send this feed as a stream of records — one document per record, "
+                                       + "or records separated by lines — rather than as one document.",
+                        SuggestionAction.LEAVE_NOTE),
+                        new Suggestion("Or split the stream before it reaches this stage, with a pipeline "
+                                       + "element in front of the Smart Pipelines stage.",
+                                SuggestionAction.LEAVE_NOTE)));
+    }
+
     public static StopReport loop(final String rule, final String step) {
         return setup("The learning steps went round in a loop.",
                 List.of("The rule \"" + rule + "\" on " + step + " would be followed a second time, and each rule "

@@ -39,8 +39,9 @@ class TestFlowStep {
 
     @Test
     void aFlowWithOtherElementsIsNoLongerTheExample() {
-        final List<FlowStep> steps = FlowExample.DIRECT.steps();
-        final LearningFlow changed = LearningFlow.of(FlowExample.DIRECT).withChainElements(List.of("XMLParser"));
+        final List<FlowStep> steps = FlowFixtures.direct();
+        final LearningFlow changed = new LearningFlow(steps, null, null)
+                .withChainElements(List.of("XMLParser"));
 
         assertThat(changed.getSteps()).isNotEqualTo(steps);
         assertThat(changed.allowedElements()).containsExactly("XMLParser");

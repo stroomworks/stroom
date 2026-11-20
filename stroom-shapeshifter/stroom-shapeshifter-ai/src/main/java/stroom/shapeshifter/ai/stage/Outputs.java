@@ -16,8 +16,6 @@
 
 package stroom.shapeshifter.ai.stage;
 
-import stroom.util.shared.TextRange;
-
 import java.util.List;
 import java.util.Optional;
 
@@ -30,40 +28,43 @@ public interface Outputs {
 
     /// One output, as it is emitted: which input it was made from, which pipeline was running, and what
     /// bound it (design 01 §7.3 rule 3).
-    void emitted(long inputId, String pipeline, Produced produced, List<TextRange> spans);
-
-    /// The same, with how many records the stream held, for the volume a Smart Pipeline's Quality Assurance tab
-    /// shows. A store that doesn't count records ignores it.
     ///
-    /// @param records How many records the stream held, or null where nobody counted them.
+    /// @param inputId  The stream's meta id.
+    /// @param pipeline The pipeline that was running.
+    /// @param produced What bound it.
+    void emitted(long inputId, String pipeline, Produced produced);
+
+    /// The same, with how many records the stream held, for the volume a Smart Pipeline's Quality
+    /// Assurance tab shows. A store that doesn't count records ignores it.
+    ///
+    /// @param inputId  The stream's meta id.
+    /// @param pipeline The pipeline that was running.
+    /// @param produced What bound it.
+    /// @param records  How many records the stream held, or null where nobody counted them.
     default void emitted(final long inputId,
                          final String pipeline,
                          final Produced produced,
-                         final List<TextRange> spans,
                          final Integer records) {
-        emitted(inputId, pipeline, produced, spans);
+        emitted(inputId, pipeline, produced, records, null);
     }
 
-    /// The same, for an output whose records nobody can say the span of: a chain with no parser was
-    /// given records that already existed, and where they came from in some earlier stream is not this
-    /// stream's business.
-    default void emitted(final long inputId, final String pipeline, final Produced produced) {
-        emitted(inputId, pipeline, produced, List.of());
-    }
-
-    /// Where one record of an input began and ended in it (§12 item 21, design 01 §10.1), so that a
-    /// fault found at an event — by a scorer, by a reviewer, by a person — can be relearned with the
-    /// record's own text in hand rather than by running the parser again over a stream that may be
-    /// thirty gigabytes.
+    /// The same, with how many of the stream's records the translation declared it deliberately skipped
+    /// (`DeclaredSkips`, ruling A148). There is no cap on the skip rate by decision, so the count being
+    /// visible beside the volume is the whole of what stops a translation quietly skipping its awkward
+    /// records. A store that doesn't count records ignores it.
     ///
-    /// @param docUuid     Whose stage is asking. A pipeline may hold two supervised stages and each
-    ///                     records what it produced, so an input on a pipeline names two outputs; a
-    ///                     document belongs to one stage, because what it may learn has to match where
-    ///                     it stands (A1), so it is what tells them apart.
-    /// @param recordIndex  Counted from zero, in the order the parser emitted them.
-    /// @return Empty where nothing was recorded for that record: an output with no parser to ask, a row
-    /// written before spans were kept, or a record past what was kept.
-    Optional<TextRange> span(String docUuid, long inputId, String pipeline, int recordIndex);
+    /// @param inputId  The stream's meta id.
+    /// @param pipeline The pipeline that was running.
+    /// @param produced What bound it.
+    /// @param records  How many records the stream held, or null where nobody counted them.
+    /// @param skipped  How many of them were declared skipped, or null where nobody counted them.
+    default void emitted(final long inputId,
+                         final String pipeline,
+                         final Produced produced,
+                         final Integer records,
+                         final Integer skipped) {
+        emitted(inputId, pipeline, produced);
+    }
 
     /**
      * What one binding produced: the inputs whose output this binding made *with this fragment*, oldest
@@ -83,9 +84,9 @@ public interface Outputs {
     /// This is what an audit needs, and it is the opposite of the release A12 performs, which resolves
     /// the learner's binding as it is today so that a backlog picks up what was learned since.
     ///
-    /// @param docUuid Whose stage is asking, as [#span] means it: without it, a pipeline holding both
-    ///                stages of §3 would answer the extraction stage with the transformation stage's
-    ///                fragment, which would then be run over raw bytes.
+    /// @param docUuid Whose stage is asking: without it, a pipeline holding both stages of §3 would
+    ///                answer the extraction stage with the transformation stage's fragment, which would
+    ///                then be run over raw bytes.
     /// @return Empty where nothing is recorded for that document, input and pipeline: nothing was
     /// produced, or it was produced before this node began recording, or the row has been pruned. An
     /// as-processed reprocess of an input nothing remembers cannot be served and must say so rather than

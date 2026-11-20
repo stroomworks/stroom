@@ -53,10 +53,19 @@ public interface LearnerBindings {
     /// Replace the binding of the same uuid; one the learner does not have is added, since a promotion
     /// must not be lost because its row was pruned.
     ///
+    /// **Checked against the version the binding was read at** (audit finding W7-3), where it has one.
+    /// Taking the row lock was not enough: the writer then wrote every field back, so a node promoting a
+    /// binding from its cache reverted a rebind another node had made to the pipeline and
+    /// the snapshot in between. A binding built rather than read carries no version and is written as
+    /// before.
+    ///
     /// @param learner The learner.
     /// @param docUuid The document the learner runs under.
     /// @param binding The binding.
-    void replace(Learner learner, String docUuid, Binding binding);
+    /// @return Whether it was written. False means the row has moved since the binding was read, and
+    ///         what is there now is somebody else's more recent work: the caller's copy is stale and
+    ///         must not be forced over it.
+    boolean replace(Learner learner, String docUuid, Binding binding);
 
     /// Remove a binding: a draft rejected, a binding retracted.
     ///

@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.ScorerParameters;
 
@@ -34,7 +35,9 @@ public final class CompileScorer implements Scorer {
     }
 
     @Override
-    public Optional<Score> score(final ScorerParameters parameters, final Attempted step) {
+    public Optional<Score> score(final ScorerParameters parameters,
+                                 final Attempted step,
+                                 final TargetSchema target) {
         return Optional.of(new Score(type(), step.result().output() == null
                 ? 0.0
                 : 1.0, step.result().diagnostics()));

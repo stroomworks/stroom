@@ -21,6 +21,7 @@ import stroom.pipeline.factory.PipelineElementModule;
 import stroom.shapeshifter.ai.fragment.FragmentOutputFilter;
 import stroom.shapeshifter.ai.fragment.FragmentTapFilter;
 import stroom.shapeshifter.ai.learning.Advisors;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.ai.stage.Documents;
 import stroom.shapeshifter.ai.stage.Inputs;
 import stroom.shapeshifter.ai.stage.Places;
@@ -57,6 +58,9 @@ public class ShapeshifterAiElementModule extends PipelineElementModule {
         // names, and the stream it was raised on (A5, A28).
         bind(Documents.class).to(StoreDocuments.class).in(Scopes.SINGLETON);
         bind(Inputs.class).to(StreamInputs.class).in(Scopes.SINGLETON);
+        // Task 7: the one schema a document's translations must write, read from Stroom's XMLSchema
+        // documents
+        bind(TargetSchemas.class).to(XmlSchemaTargetSchemas.class).in(Scopes.SINGLETON);
         // A pipeline's deletion marks its learning deleted, and lets go of what waits on it (A134, A135).
         GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
                 .addBinding(PipelineDeletions.class);

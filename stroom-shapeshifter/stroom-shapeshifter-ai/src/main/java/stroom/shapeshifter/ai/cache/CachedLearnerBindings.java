@@ -90,9 +90,12 @@ public class CachedLearnerBindings implements LearnerBindings, Clearable, Entity
     }
 
     @Override
-    public void replace(final Learner learner, final String docUuid, final Binding binding) {
-        rows.replace(learner, docUuid, binding);
+    public boolean replace(final Learner learner, final String docUuid, final Binding binding) {
+        final boolean written = rows.replace(learner, docUuid, binding);
+        // Cleared either way: a write that lost to another node's means this node's copy is the stale
+        // one, which is exactly when it must be thrown away.
         changed(learner);
+        return written;
     }
 
     @Override

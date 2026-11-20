@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.learning.Exchange;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.learning.Question.TargetFor;
@@ -64,7 +65,7 @@ class TestScenario44Auditd {
                 .uuid("doc-1")
                 .name("linux-auditd")
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FlowExample.TARGET_FIRST)
+                .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)
                 .checks(List.of(
@@ -168,7 +169,8 @@ class TestScenario44Auditd {
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(BY_EVENT))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withoutFeedback()).reply(Scenarios.fenced(XSLT));
 
-        final StageRun run = scenarios.process(script, doc().copy().flow(FlowExample.ESCALATING).build(),
+        final StageRun run = scenarios.process(script,
+                doc().copy().flow(FlowExamples.flow(FlowExample.ESCALATING)).build(),
                 stream(1, LOG)).learned();
 
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);

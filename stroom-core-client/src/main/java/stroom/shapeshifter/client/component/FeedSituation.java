@@ -43,7 +43,7 @@ import java.util.Set;
 /// has to know which level an action belongs to.
 ///
 /// The guards are the Supervisor's: nothing that would change a deleted pipeline's learning (A137), the
-/// translation's actions only where one serves, accept only on trial, stop only where it hasn't stopped and
+/// translation's actions only where one serves, stop only where it hasn't stopped and
 /// no draft awaits review, approve and reject only on a draft, grant and the fallback only on a paused run.
 public final class FeedSituation {
 
@@ -188,16 +188,6 @@ public final class FeedSituation {
                     available, List.of());
         }
         if (learner.getState() == LearnerState.SERVING) {
-            if (learner.isProvisional()) {
-                final String scored = learner.getPromotedScore() == null
-                        ? "It was learned"
-                        : "It scored " + PlainWords.percent(learner.getPromotedScore()) + " when it was learned";
-                return build(Tone.GOOD, "On trial",
-                        "Translating on trial",
-                        scored + ", but from fewer records than its Learning Flow asks for. It is accepted once "
-                        + "enough clean records have passed, or you can accept it now.",
-                        available, List.of(FeedAction.ACCEPT));
-            }
             if (learner.isBelowThreshold()) {
                 return build(Tone.WARNING, "Below par",
                         "Translating, but scoring below its Learning Flow's flag",
@@ -236,9 +226,6 @@ public final class FeedSituation {
             case LEARNING_OFF:
                 return "Off";
             default:
-                if (learner.isProvisional()) {
-                    return "On trial";
-                }
                 return learner.isBelowThreshold()
                         ? "Below par"
                         : "Translating";
@@ -275,6 +262,13 @@ public final class FeedSituation {
             parts.add(learner.getGivenUpReason());
         } else if (learner.getBindingUuid() != null && learner.getRollingScore() != null) {
             parts.add("Scores " + PlainWords.percent(learner.getRollingScore()));
+        }
+        if (learner.getSkips() > 0) {
+            // A record the translation said was deliberately not an event. Nothing caps how many it may
+            // declare (ruling A148), so the count is what a person judges it by, and it belongs where
+            // they already read the score rather than behind another click.
+            parts.add(PlainWords.number(learner.getSkips()) + " of "
+                      + PlainWords.number(learner.getRecords()) + " skipped");
         }
         if (learner.getWaiting() > 0) {
             parts.add(PlainWords.number(learner.getWaiting()) + " waiting" + (learner.isRaised()
@@ -387,9 +381,6 @@ public final class FeedSituation {
             if (unanswered(run) != null) {
                 available.add(FeedAction.ANSWER);
             }
-        }
-        if (serving && learner.isProvisional()) {
-            available.add(FeedAction.ACCEPT);
         }
         if (serving) {
             available.add(FeedAction.IMPROVE);

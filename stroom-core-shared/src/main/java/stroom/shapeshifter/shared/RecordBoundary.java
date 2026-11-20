@@ -28,18 +28,31 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Objects;
 import java.util.OptionalInt;
 
-/// What one record is in a stream that arrives as, or is parsed into, markup (A31, A35): the local name of
-/// the element that is one record where the input is XML, or the key of the array whose items are records
-/// where it is JSON — [#ROOT] where every top-level value is one. A binding carries the boundary its variant
-/// was learned with, so that the stage counts the stream's records and judges yield by it rather than by
-/// the root's children; raw text has none, since the parser's configuration cuts it.
-@JsonPropertyOrder({"element", "array", "depth"})
+/// What one record is in a stream that arrives as, or is parsed into, markup (A31, A35).
+///
+/// Three shapes:
+///
+/// - **An element**, by local name: every `<record>` is one record. The usual XML case.
+/// - **The children of an element**, whatever they are called: every child of `<batch>` is one record.
+///   For a feed that interleaves several record types as siblings under a container — common in audit
+///   exports, SIEM exports and event logs — where no single name describes a record and the old
+///   vocabulary could say nothing at all (`docs/shapeshifter-ai-mixed-record-elements.md`).
+/// - **A JSON array**, by key, or [#ROOT] where every top-level value is one record.
+///
+/// A binding carries the boundary its variant was learned with, so that the stage counts the stream's
+/// records and judges yield by it rather than by the root's children; raw text has none, since the
+/// parser's configuration cuts it.
+@JsonPropertyOrder({"element", "children", "array", "depth"})
 @JsonInclude(Include.NON_NULL)
 public final class RecordBoundary {
 
     /// The JSON boundary where every top-level value is one record, as JSON lines are.
     public static final String ROOT = "root";
 
+    /// The element whose **children** are each one record, [#ROOT] for the document's own root; null
+    /// where the boundary is not of that shape.
+    @JsonProperty
+    private final String children;
     @JsonProperty
     private final String element;
     @JsonProperty
@@ -49,36 +62,66 @@ public final class RecordBoundary {
 
     @JsonCreator
     public RecordBoundary(@JsonProperty("element") final String element,
+                          @JsonProperty("children") final String children,
                           @JsonProperty("array") final String array,
                           @JsonProperty("depth") final Integer depth) {
-        if ((element == null) == (array == null)) {
-            throw new IllegalArgumentException("A record boundary is an element or an array, one of them");
+        final int named = (element == null
+                ? 0
+                : 1) + (children == null
+                ? 0
+                : 1) + (array == null
+                ? 0
+                : 1);
+        if (named != 1) {
+            throw new IllegalArgumentException("A record boundary is an element, the children of an "
+                                               + "element, or an array: one of them");
         }
         this.element = element;
+        this.children = children;
         this.array = array;
         this.depth = depth;
+    }
+
+    /// A boundary as it was written before the children shape existed, so that a stored binding still
+    /// reads.
+    ///
+    /// @param element The element that is one record, or null.
+    /// @param array   The array whose items are records, or null.
+    /// @param depth   How deep a record sits, or null.
+    public RecordBoundary(final String element, final String array, final Integer depth) {
+        this(element, null, array, depth);
     }
 
     /// A boundary that is only enough to be one: what a serialisation test builds, since the real
     /// constructor refuses the empty one.
     @SerialisationTestConstructor
     private RecordBoundary() {
-        this(null, ROOT, null);
+        this(null, null, ROOT, null);
     }
 
     /// The boundary of input that is already XML: the element that is one record.
     public static RecordBoundary ofElement(final String element) {
-        return new RecordBoundary(element, null, null);
+        return new RecordBoundary(element, null, null, null);
+    }
+
+    /// The boundary of XML whose records are mixed: every child element of the named one is a record,
+    /// whatever it is called.
+    ///
+    /// @param parent The local name of the element whose children are records, or [#ROOT] for the
+    ///               document's own root.
+    /// @return The boundary.
+    public static RecordBoundary ofChildrenOf(final String parent) {
+        return new RecordBoundary(null, parent, null, null);
     }
 
     /// The boundary of JSON: the key of the array whose items are records, or [#ROOT].
     public static RecordBoundary ofArray(final String array) {
-        return new RecordBoundary(null, array, null);
+        return new RecordBoundary(null, null, array, null);
     }
 
     /// The same boundary, knowing how deep in the document one record sits.
     public RecordBoundary atDepth(final Integer depth) {
-        return new RecordBoundary(element, array, depth);
+        return new RecordBoundary(element, children, array, depth);
     }
 
     /// How deep in the document the transform receives one record sits: what the fragment's `SplitFilter`
@@ -113,6 +156,18 @@ public final class RecordBoundary {
         return array;
     }
 
+    /// The local name of the element whose children are each one record, [#ROOT] for the document's own
+    /// root, or null where the boundary is not of that shape.
+    public String getChildren() {
+        return children;
+    }
+
+    /// Whether the boundary is the children of an element rather than an element or an array.
+    @JsonIgnore
+    public boolean isChildren() {
+        return children != null;
+    }
+
     /// Whether the boundary is a JSON array — [#getArray()] is set — rather than an element.
     @JsonIgnore
     public boolean isArray() {
@@ -130,18 +185,26 @@ public final class RecordBoundary {
             return false;
         }
         final RecordBoundary that = (RecordBoundary) o;
-        return Objects.equals(element, that.element) && Objects.equals(array, that.array);
+        // The children of an element are not the same records as the element itself, so the two must not
+        // compare equal however they are named
+        return Objects.equals(element, that.element)
+               && Objects.equals(children, that.children)
+               && Objects.equals(array, that.array);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(element, array);
+        return Objects.hash(element, children, array);
     }
 
     @Override
     public String toString() {
-        return element != null
-                ? "element " + element
-                : "array " + array;
+        if (element != null) {
+            return "element " + element;
+        }
+        if (children != null) {
+            return "children of " + children;
+        }
+        return "array " + array;
     }
 }

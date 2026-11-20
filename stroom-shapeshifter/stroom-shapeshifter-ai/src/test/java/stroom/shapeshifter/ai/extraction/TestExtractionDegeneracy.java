@@ -117,7 +117,8 @@ class TestExtractionDegeneracy {
                 .orElseThrow();
         final Probe probe = probe(header.configuration(), header);
         final Optional<Score> score = new InputCoverageScorer().score(null, new Attempted("DSParser", true,
-                header.input(), new StepResult(probe.result().records(), List.of(), probe.result().recordRanges())));
+                header.input(), new StepResult(probe.result().records(), List.of(),
+                        probe.result().recordRanges())), null);
 
         assertThat(probe.coverage().lineRatio()).isLessThan(0.9);
         assertThat(probe.coverage().charRatio()).isGreaterThan(0.9);

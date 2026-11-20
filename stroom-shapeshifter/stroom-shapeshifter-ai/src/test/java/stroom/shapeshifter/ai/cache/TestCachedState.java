@@ -78,7 +78,8 @@ class TestCachedState {
 
         // What this node learns it sees at once, and every other node is told.
         fired.clear();
-        learnerBindings.append(LEARNER, DOC, Binding.builder().uuid("rule-2").build());
+        // A draft, because a learner has one *live* binding and a second would be refused (W7-2)
+        learnerBindings.append(LEARNER, DOC, Binding.builder().uuid("rule-2").draft(true).build());
 
         assertThat(learnerBindings.forLearner(LEARNER)).extracting(Binding::getUuid)
                 .describedAs("the node that wrote it is not reading its own stale copy")
@@ -95,7 +96,7 @@ class TestCachedState {
         assertThat(learnerBindings.forLearner(LEARNER)).hasSize(1);
         assertThat(learnerBindings.forLearner(NEIGHBOUR)).hasSize(1);
         // Another node appends to the same learner: this node sees only the event.
-        rows.delegate.append(LEARNER, DOC, Binding.builder().uuid("rule-2").build());
+        rows.delegate.append(LEARNER, DOC, Binding.builder().uuid("rule-2").draft(true).build());
         final int beforeEvent = rows.reads;
 
         assertThat(learnerBindings.forLearner(LEARNER)).describedAs("still what it was told").hasSize(1);
@@ -216,8 +217,8 @@ class TestCachedState {
         }
 
         @Override
-        public void replace(final Learner learner, final String docUuid, final Binding binding) {
-            delegate.replace(learner, docUuid, binding);
+        public boolean replace(final Learner learner, final String docUuid, final Binding binding) {
+            return delegate.replace(learner, docUuid, binding);
         }
 
         @Override
@@ -244,9 +245,9 @@ class TestCachedState {
 
         @Override
         public OptionalDouble scored(final Learner learner, final String docUuid, final double score,
-                                     final int records, final int memory) {
+                                     final int records, final int skipped, final int memory) {
             scores++;
-            return delegate.scored(learner, docUuid, score, records, memory);
+            return delegate.scored(learner, docUuid, score, records, skipped, memory);
         }
 
         @Override

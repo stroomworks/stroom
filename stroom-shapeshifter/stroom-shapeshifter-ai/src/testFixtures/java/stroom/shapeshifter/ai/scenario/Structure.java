@@ -24,6 +24,7 @@ import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.ai.learning.StepRunner;
 import stroom.shapeshifter.ai.learning.TargetChecks;
 import stroom.shapeshifter.ai.scoring.OutputRecords;
+import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
 
 import java.util.List;
@@ -154,7 +155,14 @@ public final class Structure {
         if (document.isEmpty()) {
             return TargetChecks.NONE;
         }
-        final List<String> records = TargetChecks.elementsNamed(document.get(), recordElement);
+        // `batch/*`, or `*` for the root's children: the records are the mixed children of a container,
+        // not the elements of one name (`docs/shapeshifter-ai-mixed-record-elements.md`)
+        final List<String> records = recordElement.endsWith("*")
+                ? document.get().recordsBy(RecordBoundary.ofChildrenOf(recordElement.equals("*")
+                        ? RecordBoundary.ROOT
+                        : recordElement.substring(0, recordElement.length() - 2)))
+                        .stream().map(Object::toString).toList()
+                : TargetChecks.elementsNamed(document.get(), recordElement);
         final int at = records.indexOf(record);
         if (at < 0) {
             return TargetChecks.NONE;

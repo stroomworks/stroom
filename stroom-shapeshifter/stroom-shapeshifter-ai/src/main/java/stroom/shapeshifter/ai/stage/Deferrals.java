@@ -79,9 +79,13 @@ public interface Deferrals {
     /// @return Its rows.
     List<Deferral> forDocument(String docUuid);
 
-    /// The learners with a stream waiting against a transform, and the transforms they wait against, each
-    /// pair once: what the learning job sweeps for streams a promotion's wake could not reach (A130, see
-    /// [Stage#wakeSuperseded]). As many as there are learners and transforms, not streams.
+    /// The learners with a stream waiting, and what each waits against, each pair once: what the learning
+    /// job sweeps for streams a promotion's wake could not reach (A130, see [Stage#wakeSuperseded]). As
+    /// many as there are learners and transforms, not streams.
+    ///
+    /// Rows waiting for a **first** learning are included, with a null stamp (W7-4). They have nothing to
+    /// have failed against, and leaving them out meant a stream deferred just after a promotion's wake
+    /// waited the full retry delay for a translation that already existed.
     ///
     /// @return The pairs.
     List<Stamp> stampsWaiting();
@@ -147,8 +151,21 @@ public interface Deferrals {
     /// A transform a learner's streams wait against.
     ///
     /// @param learner       The learner.
-    /// @param failedAgainst The stamp of the transform they fell short of.
-    record Stamp(Learner learner, String failedAgainst) {
+    /// @param failedAgainst The stamp of the transform they fell short of, or **null** where they wait
+    ///                      for a first learning and so fell short of nothing (W7-4).
+    /// @param latestMs      When the most recently deferred of them first waited. Only read for a row
+    ///                      with no stamp, where it is what tells a stream deferred *after* a promotion
+    ///                      — which that promotion's wake could not have reached — from one deferred
+    ///                      before it and woken already.
+    record Stamp(Learner learner, String failedAgainst, long latestMs) {
+
+        /// A stamp with no time, for a caller that does not need one.
+        ///
+        /// @param learner       The learner.
+        /// @param failedAgainst What its streams fell short of.
+        public Stamp(final Learner learner, final String failedAgainst) {
+            this(learner, failedAgainst, 0L);
+        }
 
     }
 }

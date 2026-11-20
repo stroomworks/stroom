@@ -55,11 +55,6 @@ public class DocumentTypeRegistry {
             "ProcessorFilter",
             "Processor Filter",
             SvgImage.FILTER);
-    public static final DocumentType PIPELINE_FACTORY_DOCUMENT_TYPE = new DocumentType(
-            DocumentTypeGroup.DATA_PROCESSING,
-            "PipelineFactory",
-            "Pipeline Factory",
-            SvgImage.DOCUMENT_PIPELINE_FACTORY);
     public static final DocumentType SHAPESHIFTER_AI_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
             "ShapeshifterAi",
@@ -282,7 +277,6 @@ public class DocumentTypeRegistry {
 
 
     static {
-        put(PIPELINE_FACTORY_DOCUMENT_TYPE);
         put(SHAPESHIFTER_AI_DOCUMENT_TYPE);
         put(ANALYTICS_STORE_DOCUMENT_TYPE);
         put(ANALYTIC_RULE_DOCUMENT_TYPE);

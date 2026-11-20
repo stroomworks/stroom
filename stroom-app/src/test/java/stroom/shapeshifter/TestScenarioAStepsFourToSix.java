@@ -32,6 +32,7 @@ import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.xml.converter.ds3.DS3ParserFactory;
+import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorResult;
 import stroom.processor.api.ProcessorTaskService;
@@ -71,9 +72,11 @@ import stroom.shapeshifter.ai.stage.RegressionSet.Kind;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearnedUnknown;
 import stroom.shapeshifter.shared.LearningFlow;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.test.AbstractCoreIntegrationTest;
 import stroom.test.CommonTranslationTestHelper;
@@ -85,7 +88,8 @@ import stroom.util.time.StroomDuration;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -154,6 +158,8 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
     @Inject
     private PipelineStore pipelineStore;
     @Inject
+    private XmlSchemaStore xmlSchemaStore;
+    @Inject
     private MetaService metaService;
     @Inject
     private Store store;
@@ -181,16 +187,20 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
     @BeforeEach
     void setUp() {
         processorConfigProvider.get().setSkipEmptyFilterFetchDuration(StroomDuration.ZERO);
-        // A filter over a supervised pipeline needs the node to claim its own tasks (design 04 §7).
-        processorConfigProvider.get().setClaimTasksOnWorker(true);
         feed = FileSystemTestUtil.getUniqueTestString();
         storeCreationTool.getOrCreateFeedDoc(feed);
         document = document();
         filter = filterOver(pipeline(document));
     }
 
-    @Test
-    void anUnseenKindIsLearnedWhereItCanBeAndAdmittedWhereItCannot() {
+    /// Run both ways round (simplification option H): off is the default, and was the case the
+    /// removed requirement refused outright. With the master queue this is the whole of an AI
+    /// feed end to end — its streams defer, learning promotes, the wake returns the tasks to
+    /// `CREATED`, the master hands them out, and they complete.
+    @ParameterizedTest(name = "claimTasksOnWorker={0}")
+    @ValueSource(booleans = {false, true})
+    void anUnseenKindIsLearnedWhereItCanBeAndAdmittedWhereItCannot(final boolean claimTasksOnWorker) {
+        processorConfigProvider.get().setClaimTasksOnWorker(claimTasksOnWorker);
         // Steps 1 to 3, compressed: a stream of logons learns the feed, logon-only.
         final Script silent = Script.of();
         advisor.set(silent);
@@ -302,11 +312,18 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
         // session there.
         shapeshifterAiStore.writeDocument(DemoDocument
                 .configure(shapeshifterAiStore.readDocument(docRef).copy())
+                // Task 7: a new document starts on the latest event-logging installed, and this
+                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .flow(new LearningFlow(List.of(
-                        FlowStep.parse("CHAIN"),
-                        FlowStep.parse("CONFIGURE parser"),
-                        FlowStep.parse("CONFIGURE transform candidates 1 on spent goto admit"),
-                        FlowStep.parse("ADMIT candidates 1")), null, null))
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.TRANSFORM)
+                                .candidates(1)
+                                .whenSpentGoTo("admit")
+                                .build(),
+                        FlowStep.builder(QuestionKind.ADMIT).candidates(1).build()), null, null))
                 .build());
         return docRef;
     }

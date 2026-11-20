@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckSettings;
@@ -51,10 +52,16 @@ public final class Scorecard {
 
     private final List<CheckSetting> settings;
     private final Map<Check, Scorer> scorers;
+    /// The one schema the document's translations must write (task 7), or null where it names none.
+    private final TargetSchema target;
 
-    private Scorecard(final List<CheckSetting> settings, final List<Scorer> scorers, final boolean validate) {
+    private Scorecard(final List<CheckSetting> settings,
+                      final List<Scorer> scorers,
+                      final TargetSchema target,
+                      final boolean validate) {
         this.settings = settings.stream().filter(CheckSetting::isOn).toList();
         this.scorers = scorers.stream().collect(Collectors.toUnmodifiableMap(Scorer::type, Function.identity()));
+        this.target = target;
         if (validate) {
             for (final CheckSetting setting : this.settings) {
                 final Check check = setting.getCheck();
@@ -70,9 +77,20 @@ public final class Scorecard {
 
     /// @param settings A Learning Flow's checks; those that are off are not run.
     /// @param scorers  The installed scorers.
-    /// @return The scorecard.
+    /// @return The scorecard, judging against no particular schema.
     public static Scorecard of(final List<CheckSetting> settings, final List<Scorer> scorers) {
-        return new Scorecard(settings, scorers, true);
+        return of(settings, scorers, null);
+    }
+
+    /// @param settings A Learning Flow's checks; those that are off are not run.
+    /// @param scorers  The installed scorers.
+    /// @param target   The one schema the document's translations must write (task 7), or null where it
+    ///                 names none.
+    /// @return The scorecard.
+    public static Scorecard of(final List<CheckSetting> settings,
+                               final List<Scorer> scorers,
+                               final TargetSchema target) {
+        return new Scorecard(settings, scorers, target, true);
     }
 
     /**
@@ -87,12 +105,20 @@ public final class Scorecard {
     /// stands on.
     public Scorecard only(final Collection<Check> checks) {
         return narrowed(settings.stream()
-                .filter(setting -> setting.getCheck() == Check.COMPILE || checks.contains(setting.getCheck()))
+                .filter(setting -> setting.getCheck() == Check.COMPILE
+                                   || setting.getCheck() == Check.PERMITTED
+                                   || checks.contains(setting.getCheck()))
                 .toList());
     }
 
     private Scorecard narrowed(final List<CheckSetting> kept) {
-        return new Scorecard(kept, List.copyOf(scorers.values()), false);
+        return new Scorecard(kept, List.copyOf(scorers.values()), target, false);
+    }
+
+    /// @return The one schema the document's translations must write (task 7), or null where it names
+    ///         none.
+    public TargetSchema target() {
+        return target;
     }
 
     /// @param check A check.
@@ -197,7 +223,7 @@ public final class Scorecard {
         for (final CheckSetting setting : settings) {
             final Check check = setting.getCheck();
             if (check.isScored()) {
-                scorers.get(check).score(setting.getParameters(), step)
+                scorers.get(check).score(setting.getParameters(), step, target)
                         .ifPresent(score -> judgements.add(new Judgement(setting, score)));
             }
         }

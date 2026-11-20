@@ -24,8 +24,9 @@ import java.util.Optional;
 /// The streams an attempt was raised on, by the meta id its row names (A28): what lets an attempt be
 /// carried on outside the task that raised it. The worker re-walks the conversation over the
 /// same sample, and the sample is the stream, which is kept where every stream is kept rather than
-/// copied into the attempt — a stream's own text may not be stored until redaction is built (A17, A38),
-/// and storing it twice would be storing it twice.
+/// copied into the attempt — a stream is kept once, and storing its text again would be storing it
+/// twice. (It used to say "until redaction is built (A17, A38)"; A146 settled that samples are never
+/// redacted, so the reason is simply that the stream is already there.)
 ///
 /// A node reads the stream store; a scenario answers from what it put there.
 public interface Inputs {
@@ -39,8 +40,9 @@ public interface Inputs {
     /// input that made it, without running the parser over the stream again.
     ///
     /// It is read from the stream rather than kept anywhere, because the stream is already kept and
-    /// keeping the record too would be keeping it twice (A17 has not been built, and a copy of a record
-    /// is a copy of real data). A span is a line and column, which is what the Data Splitter's locator
+    /// keeping the record too would be keeping it twice — a copy of a record is a copy of real data,
+    /// living under its own retention rather than the stream's. A span is a line and column, which is
+    /// what the Data Splitter's locator
     /// reports, so reading one still means reading the stream down to that line — cheaper than
     /// re-parsing it, and not free.
     ///

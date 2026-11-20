@@ -26,11 +26,8 @@ import stroom.shapeshifter.ai.stage.LearnerBindings;
 import stroom.shapeshifter.ai.stage.LearningPipelines;
 import stroom.shapeshifter.ai.stage.RegressionSet;
 import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
-import stroom.shapeshifter.shared.AssessmentRequest;
-import stroom.shapeshifter.shared.AssessmentVerdict;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.LearnerRef;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.QualitySample;
 import stroom.shapeshifter.shared.RecordKind;
@@ -58,9 +55,6 @@ import java.util.function.LongSupplier;
 ///   many became a real translation, a marked Unknown or nothing, and how many kinds of record it settled.
 /// - **Samples**: those records beside what they became, newest first, for someone who may also view data.
 ///   Reading them reads the feed's data, so a stream the person may not read is left out by the store.
-/// - **Assessments** ([Assessments]): recorded by anyone who may view the pipeline, as saying something
-///   changes nothing about how it translates; an issue resolved by someone who may edit it, who fixes it there.
-///   Nothing is recorded or resolved for a deleted pipeline (A137).
 public class QualityService {
 
     /// How many days of volume are shown.
@@ -76,7 +70,6 @@ public class QualityService {
     private final Provider<LearnerBindings> learnerBindingsProvider;
     private final Provider<Volumes> volumesProvider;
     private final Provider<RegressionSet> regressionSetProvider;
-    private final Provider<Assessments> assessmentsProvider;
     private final LongSupplier clock;
 
     /// Made by Guice.
@@ -88,7 +81,6 @@ public class QualityService {
     /// @param learnerBindingsProvider   A learner's translations.
     /// @param volumesProvider           What its translations translated, day by day.
     /// @param regressionSetProvider     The records its translation was learned and checked on.
-    /// @param assessmentsProvider       What has been said of it.
     @Inject
     public QualityService(final LearnerAccess access,
                           final Provider<SecurityContext> securityContextProvider,
@@ -96,10 +88,9 @@ public class QualityService {
                           final Provider<LearningPipelines> learningPipelinesProvider,
                           final Provider<LearnerBindings> learnerBindingsProvider,
                           final Provider<Volumes> volumesProvider,
-                          final Provider<RegressionSet> regressionSetProvider,
-                          final Provider<Assessments> assessmentsProvider) {
+                          final Provider<RegressionSet> regressionSetProvider) {
         this(access, securityContextProvider, learnerDocumentsProvider, learningPipelinesProvider,
-                learnerBindingsProvider, volumesProvider, regressionSetProvider, assessmentsProvider,
+                learnerBindingsProvider, volumesProvider, regressionSetProvider,
                 System::currentTimeMillis);
     }
 
@@ -111,7 +102,6 @@ public class QualityService {
                    final Provider<LearnerBindings> learnerBindingsProvider,
                    final Provider<Volumes> volumesProvider,
                    final Provider<RegressionSet> regressionSetProvider,
-                   final Provider<Assessments> assessmentsProvider,
                    final LongSupplier clock) {
         this.access = access;
         this.securityContextProvider = securityContextProvider;
@@ -120,7 +110,6 @@ public class QualityService {
         this.learnerBindingsProvider = learnerBindingsProvider;
         this.volumesProvider = volumesProvider;
         this.regressionSetProvider = regressionSetProvider;
-        this.assessmentsProvider = assessmentsProvider;
         this.clock = clock;
     }
 
@@ -186,63 +175,6 @@ public class QualityService {
                     entry.score(), entry.acceptedMs(), entry.target()));
         }
         return samples;
-    }
-
-    /// @param pipelineUuid The pipeline.
-    /// @param elementId    Its AI Translator element.
-    /// @return What has been said of it, newest first.
-    public List<QualityAssessment> assessments(final String pipelineUuid, final String elementId) {
-        return assessmentsProvider.get().forLearner(readable(pipelineUuid, elementId));
-    }
-
-    /// Records an assessment of a live pipeline's translated output.
-    ///
-    /// @param request What is said, and of which learner.
-    /// @return What has been said of it, newest first, this among it.
-    public List<QualityAssessment> assess(final AssessmentRequest request) {
-        if (request == null || request.getLearner() == null || request.getVerdict() == null) {
-            throw new IllegalArgumentException("Say which pipeline's element, and whether it looks right");
-        }
-        final String comment = NullSafe.isBlankString(request.getComment())
-                ? null
-                : request.getComment().trim();
-        if (request.getVerdict() == AssessmentVerdict.ISSUE && comment == null) {
-            throw new IllegalArgumentException("Say what the issue is, for the Data Provider to fix it");
-        }
-        final LearnerRef ref = request.getLearner();
-        final Learner learner = live(readable(ref.getPipelineUuid(), ref.getElementId()));
-        final String docUuid = documentOf(learner).orElseThrow(() -> new IllegalStateException(
-                "Element " + learner.elementId() + " doesn't name a Learning Flow, so has nothing to assess"));
-        final Assessments assessments = assessmentsProvider.get();
-        assessments.add(learner, docUuid, serving(learnerBindingsProvider.get().forLearner(learner)).orElse(null),
-                request.getVerdict(), comment, securityContextProvider.get().getUserIdentityForAudit(),
-                clock.getAsLong());
-        return assessments.forLearner(learner);
-    }
-
-    /// Resolves an open issue, for someone who may edit its live pipeline.
-    ///
-    /// @param id The assessment.
-    /// @return What has been said of its learner, newest first.
-    public List<QualityAssessment> resolve(final long id) {
-        final Assessments assessments = assessmentsProvider.get();
-        final Assessments.Held held = assessments.byId(id)
-                .filter(found -> access.mayLearner(found.learner(), found.docUuid(), DocumentPermission.VIEW))
-                // One they may not see and one that isn't there answer alike, or the answer says which exist
-                .orElseThrow(() -> new PermissionException(securityContextProvider.get().getUserRef(),
-                        "You do not have permission to resolve assessment " + id));
-        final Learner learner = live(held.learner());
-        if (!access.mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to resolve an issue with the pipeline of element "
-                    + learner.elementId() + ": that is for someone who may edit it");
-        }
-        if (held.assessment().getVerdict() != AssessmentVerdict.ISSUE) {
-            throw new IllegalArgumentException("Assessment " + id + " isn't an issue, so there is nothing to "
-                                               + "resolve");
-        }
-        assessments.resolve(id, securityContextProvider.get().getUserIdentityForAudit(), clock.getAsLong());
-        return assessments.forLearner(learner);
     }
 
     // The learner, where this person may view its pipeline (or, for a pipeline since deleted, its Learning Flow)

@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.impl.db;
 
 import stroom.db.util.JooqUtil;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterDeletedPipeline;
+import stroom.shapeshifter.ai.learning.AskedWith;
 import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.shared.AttemptCriteria;
@@ -27,8 +28,12 @@ import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.StopReport;
+import stroom.shapeshifter.shared.Template;
 import stroom.shapeshifter.shared.TurnScore;
 import stroom.util.json.JsonUtil;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.logging.LogUtil;
 import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
@@ -42,6 +47,7 @@ import org.jooq.impl.DSL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -56,6 +62,8 @@ import static stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterTurn.SHAPES
 /// to.
 @Singleton
 public class AttemptsDao implements Attempts {
+
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(AttemptsDao.class);
 
     /// The states in which an attempt is still learning, and so still holds its learner's claim (A45). A
     /// draft awaiting review is not one of them: it has written its binding, and the binding is what the
@@ -81,7 +89,7 @@ public class AttemptsDao implements Attempts {
     /// The states in which an attempt's binding is one that was, or was about to be, serving: the ones a
     /// retraction is about.
     private static final List<String> BOUND = List.of(AttemptStatus.PROMOTED.name(),
-            AttemptStatus.PROVISIONAL.name(), AttemptStatus.AWAITING_REVIEW.name());
+            AttemptStatus.AWAITING_REVIEW.name());
 
     private static final int PRUNE_BATCH = 1000;
 
@@ -297,6 +305,16 @@ public class AttemptsDao implements Attempts {
                 .set(SHAPESHIFTER_ATTEMPT.PROMOTION_MODE, attempt.promotionMode().name())
                 .set(SHAPESHIFTER_ATTEMPT.STATUS, AttemptStatus.IN_PROGRESS.name())
                 .set(SHAPESHIFTER_ATTEMPT.EXPIRY_MS, attempt.expiryMs())
+                // The words it is asked with (N9), so that a parked run resumes in the words it began
+                // in and a prompt can be rebuilt as it was sent.
+                .set(SHAPESHIFTER_ATTEMPT.TEMPLATES, templates(attempt.askedWith()))
+                .set(SHAPESHIFTER_ATTEMPT.BUILT_IN_VERSION, attempt.askedWith().known()
+                        ? attempt.askedWith().builtInVersion()
+                        : null)
+                .set(SHAPESHIFTER_ATTEMPT.INSTRUCTIONS, attempt.askedWith().instructions())
+                .set(SHAPESHIFTER_ATTEMPT.BUILD_VERSION, attempt.askedWith().build())
+                // The binding a person asked to be improved (A46), where that is what this run is.
+                .set(SHAPESHIFTER_ATTEMPT.IMPROVING_BINDING_UUID, attempt.improving())
                 .returning(SHAPESHIFTER_ATTEMPT.ID)
                 .fetchOne(SHAPESHIFTER_ATTEMPT.ID);
     }
@@ -406,7 +424,7 @@ public class AttemptsDao implements Attempts {
                 .execute());
     }
 
-    /// The attempts that bound this binding, whatever state they ended in — promoted, provisional, or
+    /// The attempts that bound this binding, whatever state they ended in — promoted, or
     /// awaiting a review that will now never happen. Not [#decided]'s filter, which is A25's decision
     /// about a draft *awaiting review*: these are about a binding that was serving.
     @Override
@@ -571,7 +589,9 @@ public class AttemptsDao implements Attempts {
                 PromotionMode.valueOf(record.get(SHAPESHIFTER_ATTEMPT.PROMOTION_MODE)),
                 record.get(SHAPESHIFTER_ATTEMPT.EXPIRY_MS) == null
                         ? 0L
-                        : record.get(SHAPESHIFTER_ATTEMPT.EXPIRY_MS));
+                        : record.get(SHAPESHIFTER_ATTEMPT.EXPIRY_MS),
+                askedWith(record),
+                record.get(SHAPESHIFTER_ATTEMPT.IMPROVING_BINDING_UUID));
         return new Recorded(
                 record.get(SHAPESHIFTER_ATTEMPT.ID),
                 attempt,
@@ -587,6 +607,44 @@ public class AttemptsDao implements Attempts {
                         record.get(SHAPESHIFTER_ATTEMPT.GRANTED_MS)),
                 record.get(SHAPESHIFTER_ATTEMPT.EXHAUST_NEXT) != 0,
                 report(record.get(SHAPESHIFTER_ATTEMPT.REPORT)));
+    }
+
+    /// The template set as its column holds it, JSON keyed by template name; null where the run's words
+    /// were not recorded.
+    private static String templates(final AskedWith askedWith) {
+        return askedWith.known()
+                ? JsonUtil.writeValueAsString(askedWith.templates(), false)
+                : null;
+    }
+
+    /// The words a run was asked with, read back from its columns (N9). A row written before they were
+    /// kept answers [AskedWith#UNKNOWN], which says so rather than offering today's words as though they
+    /// were the ones used.
+    private static AskedWith askedWith(final Record record) {
+        final String json = record.get(SHAPESHIFTER_ATTEMPT.TEMPLATES);
+        if (NullSafe.isBlankString(json)) {
+            return AskedWith.UNKNOWN;
+        }
+        final Map<Template, String> templates = new EnumMap<>(Template.class);
+        final Map<?, ?> read = JsonUtil.readValue(json, Map.class);
+        for (final Map.Entry<?, ?> entry : read.entrySet()) {
+            final String name = String.valueOf(entry.getKey());
+            // A template this build no longer has is dropped rather than failing the read: an attempt is
+            // history, and history may name something since removed.
+            try {
+                templates.put(Template.valueOf(name), String.valueOf(entry.getValue()));
+            } catch (final IllegalArgumentException e) {
+                LOGGER.debug(() -> LogUtil.message("Attempt was asked with template {}, which this build "
+                                                   + "no longer has", name));
+            }
+        }
+        final Integer version = record.get(SHAPESHIFTER_ATTEMPT.BUILT_IN_VERSION);
+        return new AskedWith(version == null
+                ? 0
+                : version,
+                templates,
+                record.get(SHAPESHIFTER_ATTEMPT.INSTRUCTIONS),
+                record.get(SHAPESHIFTER_ATTEMPT.BUILD_VERSION));
     }
 
     // A stop report as its column holds it, JSON; null for none

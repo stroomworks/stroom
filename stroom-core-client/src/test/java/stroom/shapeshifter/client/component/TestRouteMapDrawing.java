@@ -37,26 +37,27 @@ class TestRouteMapDrawing {
             + "aria-label=\"([^\"]*)\"( aria-current=\"location\")?>");
     // Learning off, no model and no checks: problems under AI model and Quality checks
     private static final SetupSummary NEW = SetupSummary.of(ShapeshifterAiDoc.builder().uuid("new").name("New")
-            .build());
+            .build(), FlowExampleFixtures.all());
+    // The setup most of these walk: the chain, the two configures, and the exhaustion step
+    private static final List<FlowStep> DIRECT = FlowExampleFixtures.steps(FlowExample.DIRECT);
 
     @Test
     void theStopsAreTheSectionsInOrderWithTheStepsUnderLearningSteps() {
         // Straight to it: three steps, then the fallback
-        final List<FlowStep> steps = FlowExample.DIRECT.steps();
-        assertThat(steps).hasSize(4);
-        final List<Button> buttons = buttons(RouteMapDrawing.draw(steps, NEW, Map.of(),
+        assertThat(DIRECT).hasSize(4);
+        final List<Button> buttons = buttons(RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                 SetupStop.of(SetupSection.LEARNING), false));
 
         assertThat(buttons).extracting(button -> button.key).containsExactly(
                 "section:LEARNING", "section:APPROACH", "step:0", "step:1", "step:2", "step:3", "section:QUALITY",
                 "section:GOING_LIVE", "section:IN_SERVICE");
-        assertThat(buttons.get(2).label).isEqualTo("Step 1: " + PlainWords.stepName(steps, 0));
+        assertThat(buttons.get(2).label).isEqualTo("Step 1: " + PlainWords.stepName(DIRECT, 0));
         assertThat(buttons.get(5).label).isEqualTo(RouteMapDrawing.FALLBACK);
     }
 
     @Test
     void onlyTheStopChosenIsCurrentAndInTheTabOrder() {
-        final List<Button> buttons = buttons(RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(),
+        final List<Button> buttons = buttons(RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                 SetupStop.step(1), false));
 
         for (final Button button : buttons) {
@@ -71,7 +72,7 @@ class TestRouteMapDrawing {
 
     @Test
     void aSectionSaysWhatItIsSetToOrWhatIsWrongInIt() {
-        final List<Button> buttons = buttons(RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(),
+        final List<Button> buttons = buttons(RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                 SetupStop.of(SetupSection.LEARNING), false));
 
         assertThat(label(buttons, "section:LEARNING")).isEqualTo(
@@ -82,7 +83,7 @@ class TestRouteMapDrawing {
 
     @Test
     void aStepSaysWhatIsWrongWithIt() {
-        final String svg = RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(1, "It has no tries"),
+        final String svg = RouteMapDrawing.draw(DIRECT, NEW, Map.of(1, "It has no tries"),
                 SetupStop.of(SetupSection.LEARNING), false);
 
         assertThat(label(buttons(svg), "step:1")).endsWith(". Needs attention: It has no tries");
@@ -92,7 +93,7 @@ class TestRouteMapDrawing {
     @Test
     void everyStopHasTheSameRoomAboutItsWordsAndItsMark() {
         // Stops with no lines under their names, with one, and with problems more than a line long
-        final String svg = RouteMapDrawing.draw(FlowExample.ESCALATING.steps(), NEW,
+        final String svg = RouteMapDrawing.draw(FlowExampleFixtures.steps(FlowExample.ESCALATING), NEW,
                 Map.of(1, "This step is wrong in a way that takes more than one line of the map to say"),
                 SetupStop.of(SetupSection.QUALITY), false);
         final Pattern rect = Pattern.compile("<rect class=\"route-map__area\" x=\"\\d+\" y=\"(\\d+)\" "
@@ -148,7 +149,7 @@ class TestRouteMapDrawing {
     @Test
     void addStepIsAButtonUnderTheStepChosenThatTheArrowKeysPassBy() {
         // Straight to it, its second step chosen: a step added after it goes third
-        final String svg = RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(), SetupStop.step(1),
+        final String svg = RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(1),
                 true);
 
         assertThat(count(svg, RouteMapDrawing.DATA_ADD + "=")).isEqualTo(1);
@@ -157,33 +158,32 @@ class TestRouteMapDrawing {
         assertThat(svg).contains(">+ Add step</text>");
         // Not a stop: the stops, which the arrow keys move between, are as without it
         assertThat(buttons(svg)).extracting(button -> button.key)
-                .isEqualTo(buttons(RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(),
+                .isEqualTo(buttons(RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                         SetupStop.step(1), false)).stream().map(button -> button.key).toList());
         // Drawn between the step chosen and the next, which moves down to make room for it
         final int add = svg.indexOf(RouteMapDrawing.DATA_ADD + "=");
         assertThat(add).isGreaterThan(svg.indexOf("data-stop=\"step:1\""));
-        final String without = RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(), SetupStop.step(1),
+        final String without = RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(1),
                 false);
         assertThat(boxTop(svg, "step:2")).isGreaterThan(boxTop(without, "step:2"));
     }
 
     @Test
     void addStepIsOfferedUnderAStepAloneAndNotUnderTheFallback() {
-        final List<FlowStep> steps = FlowExample.DIRECT.steps();
-        final int fallback = steps.size() - 1;
-        assertThat(RouteMapDrawing.draw(steps, NEW, Map.of(), SetupStop.step(fallback), true))
+        final int fallback = DIRECT.size() - 1;
+        assertThat(RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(fallback), true))
                 .doesNotContain(RouteMapDrawing.DATA_ADD + "=");
-        assertThat(RouteMapDrawing.draw(steps, NEW, Map.of(), SetupStop.of(SetupSection.APPROACH), true))
+        assertThat(RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.of(SetupSection.APPROACH), true))
                 .doesNotContain(RouteMapDrawing.DATA_ADD + "=");
         // Nor where the document can't have one added
-        assertThat(RouteMapDrawing.draw(steps, NEW, Map.of(), SetupStop.step(0), false))
+        assertThat(RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(0), false))
                 .doesNotContain(RouteMapDrawing.DATA_ADD + "=");
     }
 
     @Test
     void everyLineOfWordsHasALinesHeightToItself() {
         // Problems under two sections and a step, each more than one line long
-        final String svg = RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW,
+        final String svg = RouteMapDrawing.draw(DIRECT, NEW,
                 Map.of(1, "This step is wrong in a way that takes more than one line of the map to say"),
                 SetupStop.of(SetupSection.LEARNING), false);
 
@@ -202,9 +202,9 @@ class TestRouteMapDrawing {
 
     @Test
     void theLineIsDashedIntoTheFallbackOnly() {
-        final String withFallback = RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(),
+        final String withFallback = RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                 SetupStop.of(SetupSection.LEARNING), false);
-        final List<FlowStep> without = ApproachFlow.withFallback(FlowExample.DIRECT.steps(), false);
+        final List<FlowStep> without = ApproachFlow.withFallback(DIRECT, false);
         final String withoutFallback = RouteMapDrawing.draw(without, NEW, Map.of(),
                 SetupStop.of(SetupSection.LEARNING), false);
 
@@ -225,7 +225,7 @@ class TestRouteMapDrawing {
 
     @Test
     void whatIsSaidIsEscaped() {
-        final String svg = RouteMapDrawing.draw(FlowExample.DIRECT.steps(), NEW, Map.of(0, "<b>&</b>"),
+        final String svg = RouteMapDrawing.draw(DIRECT, NEW, Map.of(0, "<b>&</b>"),
                 SetupStop.of(SetupSection.LEARNING), false);
 
         assertThat(svg).doesNotContain("<b>").contains("&lt;b&gt;&amp;&lt;/b&gt;");

@@ -4,7 +4,6 @@
 package stroom.shapeshifter.ai.impl.db.jooq;
 
 
-import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAssessment;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterAttempt;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterBinding;
 import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterCorpus;
@@ -23,11 +22,6 @@ import stroom.shapeshifter.ai.impl.db.jooq.tables.ShapeshifterTurn;
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Tables {
-
-    /**
-     * The table <code>stroom.shapeshifter_assessment</code>.
-     */
-    public static final ShapeshifterAssessment SHAPESHIFTER_ASSESSMENT = ShapeshifterAssessment.SHAPESHIFTER_ASSESSMENT;
 
     /**
      * The table <code>stroom.shapeshifter_attempt</code>.

@@ -53,9 +53,10 @@ class TestMeaningScorers {
                 new StepResult(EVENTS, List.of()));
         final ExtractionQualityParameters quality = new ExtractionQualityParameters(false, List.of());
 
-        assertThat(new ExtractionQualityScorer().score(quality, parser)).isEmpty();
-        assertThat(new ExtractionQualityScorer().score(quality, transform)).isPresent();
-        assertThat(new BusinessRulesScorer().score(new BusinessRulesParameters(List.of(), true), parser)).isEmpty();
+        assertThat(new ExtractionQualityScorer().score(quality, parser, null)).isEmpty();
+        assertThat(new ExtractionQualityScorer().score(quality, transform, null)).isPresent();
+        assertThat(new BusinessRulesScorer().score(new BusinessRulesParameters(List.of(), true), parser, null))
+                .isEmpty();
     }
 
     @Test

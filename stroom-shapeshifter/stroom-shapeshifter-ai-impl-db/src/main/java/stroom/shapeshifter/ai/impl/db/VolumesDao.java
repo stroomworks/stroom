@@ -59,8 +59,9 @@ public class VolumesDao implements Volumes {
                 OUTPUT.CREATE_TIME_MS, DSL.inline(DAY_MS));
         final Field<Integer> streams = DSL.count();
         final Field<BigDecimal> records = DSL.sum(DSL.coalesce(OUTPUT.RECORD_COUNT, 0));
+        final Field<BigDecimal> skips = DSL.sum(DSL.coalesce(OUTPUT.SKIP_COUNT, 0));
         return JooqUtil.contextResult(connProvider, context -> context
-                .select(day, streams, records)
+                .select(day, streams, records, skips)
                 .from(OUTPUT)
                 .where(OUTPUT.BINDING_UUID.in(bindingUuids))
                 .and(OUTPUT.CREATE_TIME_MS.ge(sinceMs))
@@ -69,6 +70,7 @@ public class VolumesDao implements Volumes {
                 .fetch(row -> new VolumeDay(
                         row.get(day),
                         Long.valueOf(row.get(streams)),
-                        Objects.requireNonNullElse(row.get(records), BigDecimal.ZERO).longValue())));
+                        Objects.requireNonNullElse(row.get(records), BigDecimal.ZERO).longValue(),
+                        Objects.requireNonNullElse(row.get(skips), BigDecimal.ZERO).longValue())));
     }
 }

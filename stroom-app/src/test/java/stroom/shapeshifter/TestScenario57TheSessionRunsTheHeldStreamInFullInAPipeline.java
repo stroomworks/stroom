@@ -31,6 +31,7 @@ import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.xml.converter.ds3.DS3ParserFactory;
+import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorResult;
 import stroom.processor.api.ProcessorTaskService;
@@ -132,6 +133,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
     @Inject
     private PipelineStore pipelineStore;
     @Inject
+    private XmlSchemaStore xmlSchemaStore;
+    @Inject
     private MetaService metaService;
     @Inject
     private Store store;
@@ -157,8 +160,6 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
     @BeforeEach
     void setUp() {
         processorConfigProvider.get().setSkipEmptyFilterFetchDuration(StroomDuration.ZERO);
-        // A filter over a supervised pipeline needs the node to claim its own tasks (design 04 §7).
-        processorConfigProvider.get().setClaimTasksOnWorker(true);
         feed = FileSystemTestUtil.getUniqueTestString();
         storeCreationTool.getOrCreateFeedDoc(feed);
         document = document();
@@ -280,6 +281,9 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
         final DocRef docRef = shapeshifterAiStore.createDocument(shipped.getName() + " " + feed);
         shapeshifterAiStore.writeDocument(DemoDocument
                 .configure(shapeshifterAiStore.readDocument(docRef).copy())
+                // Task 7: a new document starts on the latest event-logging installed, and this
+                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .build());
         return docRef;
     }

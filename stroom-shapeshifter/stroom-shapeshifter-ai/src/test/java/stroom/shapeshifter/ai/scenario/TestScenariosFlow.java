@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.learning.Exchange;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.learning.Question;
 import stroom.shapeshifter.ai.learning.Question.Split;
 import stroom.shapeshifter.ai.learning.Question.TargetFor;
@@ -29,13 +30,16 @@ import stroom.shapeshifter.shared.BusinessRulesParameters;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
+import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.LearningMode;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.StepGuard;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -129,7 +133,7 @@ class TestScenariosFlow {
                 .expect(QuestionMatcher.configuration("DSParser").withTargets(0)).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withTargets(0)).reply(Scenarios.fenced(XSLT));
 
-        final StageRun run = scenarios.process(script, doc(LearningFlow.of(FlowExample.ESCALATING)),
+        final StageRun run = scenarios.process(script, doc(FlowExamples.flow(FlowExample.ESCALATING)),
                 stream(1, CsvLines.lines(6))).learned();
 
         script.verifyExhausted();
@@ -152,12 +156,12 @@ class TestScenariosFlow {
                 .reply(Scenarios.fenced(DEGENERATE))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withFeedbackMentioning("Extraction quality scored"))
                 .reply(Scenarios.fenced(DEGENERATE))
-                // The transform's two candidates are spent: 'on spent goto target' fires, a target is proposed
+                // The transform's two candidates are spent: its rule for that fires, a target is proposed
                 // per kind (the structure answers), and the parser is asked again, now against the targets.
                 .expect(QuestionMatcher.configuration("DSParser").withTargets(1)).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withTargets(1)).reply(Scenarios.fenced(XSLT));
 
-        final StageRun run = scenarios.process(script, doc(LearningFlow.of(FlowExample.ESCALATING)),
+        final StageRun run = scenarios.process(script, doc(FlowExamples.flow(FlowExample.ESCALATING)),
                 stream(1, CsvLines.lines(6))).learned();
 
         script.verifyExhausted();
@@ -185,12 +189,12 @@ class TestScenariosFlow {
                 .reply(Scenarios.fenced(Structure.LINE_SPLIT))
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        final LearningFlow flow = LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
-                FlowStep.parse("CHAIN"),
-                FlowStep.parse("SPLIT on wholeness-short abandon"),
-                FlowStep.parse("TARGET kinds 3"),
-                FlowStep.parse("CONFIGURE parser"),
-                FlowStep.parse("CONFIGURE transform")));
+        final LearningFlow flow = FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
+                FlowStep.of(QuestionKind.CHAIN),
+                FlowStep.builder(QuestionKind.SPLIT).abandonOn(StepOutcome.WHOLENESS_SHORT).build(),
+                FlowStep.builder(QuestionKind.TARGET).kinds(3).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()));
 
         final StageRun run = scenarios.process(script, doc(flow), stream(1, CsvLines.lines(6))).learned();
 
@@ -205,12 +209,15 @@ class TestScenariosFlow {
      * fail the parser first on the fields it cannot find.
      */
     private static LearningFlow preservationAtTheTransform() {
-        return LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
-                FlowStep.parse("CHAIN"),
-                FlowStep.parse("SPLIT"),
-                FlowStep.parse("TARGET kinds 3"),
-                FlowStep.parse("CONFIGURE parser"),
-                FlowStep.parse("CONFIGURE transform on preservation-short goto parser")));
+        return FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
+                FlowStep.of(QuestionKind.CHAIN),
+                FlowStep.of(QuestionKind.SPLIT),
+                FlowStep.builder(QuestionKind.TARGET).kinds(3).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.TRANSFORM)
+                        .goTo(StepOutcome.PRESERVATION_SHORT, "parser")
+                        .build()));
     }
 
     @Test
@@ -284,12 +291,16 @@ class TestScenariosFlow {
                         .withFeedbackMentioning("the records carry no value for [logon, office]"))
                 .reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        final StageRun run = scenarios.process(script, doc(LearningFlow.of(FlowExample.TARGET_FIRST).withSteps(List.of(
-                FlowStep.parse("CHAIN"),
-                FlowStep.parse("TARGET kinds 3"),
-                FlowStep.parse("SPLIT when xml"),
-                FlowStep.parse("CONFIGURE parser on preservation-short goto split"),
-                FlowStep.parse("CONFIGURE transform")))),
+        final StageRun run = scenarios.process(script, doc(FlowExamples.flow(FlowExample.TARGET_FIRST)
+                .withSteps(List.of(
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.TARGET).kinds(3).build(),
+                        FlowStep.of(QuestionKind.SPLIT, StepGuard.XML),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.PARSER)
+                                .goTo(StepOutcome.PRESERVATION_SHORT, "split")
+                                .build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()))),
                 stream(1, CsvLines.lines(6))).learned();
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();
@@ -305,9 +316,14 @@ class TestScenariosFlow {
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        final StageRun run = scenarios.process(script, doc(LearningFlow.of(FlowExample.DIRECT).withSteps(List.of(
-                FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE on passed goto end"),
-                FlowStep.parse("never: CONFIGURE transform")))), stream(1, CsvLines.lines(6))).learned();
+        final StageRun run = scenarios.process(script, doc(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
+                FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .goTo(StepOutcome.PASSED, "end")
+                        .build(),
+                FlowStep.builder(QuestionKind.CONFIGURE)
+                        .id("never")
+                        .role(ConfigureRole.TRANSFORM)
+                        .build()))), stream(1, CsvLines.lines(6))).learned();
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
         assertThat(steps(run)).containsExactly("chain", "configure", "configure");
@@ -318,9 +334,14 @@ class TestScenariosFlow {
         final Script refused = afresh.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS));
-        final StageRun abandoned = afresh.process(refused, doc(LearningFlow.of(FlowExample.DIRECT).withSteps(
-                List.of(FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE parser on passed abandon"),
-                        FlowStep.parse("CONFIGURE transform")))), stream(2, CsvLines.lines(6))).learned();
+        final StageRun abandoned = afresh.process(refused, doc(FlowExamples.flow(FlowExample.DIRECT).withSteps(
+                List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .role(ConfigureRole.PARSER)
+                        .abandonOn(StepOutcome.PASSED)
+                        .build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.TRANSFORM)
+                                .build()))), stream(2, CsvLines.lines(6))).learned();
         refused.verifyExhausted();
         assertThat(abandoned.decision()).isInstanceOf(GivenUp.class);
         assertThat(((GivenUp) abandoned.decision()).reason())
@@ -334,8 +355,10 @@ class TestScenariosFlow {
         final Script prose = fresh.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply("not a configuration");
-        final StageRun atOnce = fresh.process(prose, doc(LearningFlow.of(FlowExample.DIRECT).withSteps(
-                List.of(FlowStep.parse("CHAIN"), FlowStep.parse("CONFIGURE on refused abandon")))),
+        final StageRun atOnce = fresh.process(prose, doc(FlowExamples.flow(FlowExample.DIRECT).withSteps(
+                List.of(FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
+                        .abandonOn(StepOutcome.REFUSED)
+                        .build()))),
                 stream(3, CsvLines.lines(6))).learned();
         prose.verifyExhausted();
         assertThat(((GivenUp) atOnce.decision()).reason())

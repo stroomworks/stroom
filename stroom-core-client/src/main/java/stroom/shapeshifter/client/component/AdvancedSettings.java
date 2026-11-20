@@ -57,8 +57,7 @@ public final class AdvancedSettings {
             || !samePercent(doc.getHeldOutFraction(), NEW.getHeldOutFraction())) {
             changed.add(SetupSection.QUALITY);
         }
-        if (doc.getMinRecordsToLearn() != NEW.getMinRecordsToLearn()
-            || hasFallback(doc) != hasFallback(NEW)) {
+        if (doc.getMinRecordsToLearn() != NEW.getMinRecordsToLearn() || fallbackTurnedOff(doc)) {
             changed.add(SetupSection.GOING_LIVE);
         }
         if (doc.getRegressionCap() != NEW.getRegressionCap()
@@ -72,7 +71,17 @@ public final class AdvancedSettings {
         return ScoreValues.toPercent(a) == ScoreValues.toPercent(b);
     }
 
-    private static boolean hasFallback(final ShapeshifterAiDoc doc) {
-        return ApproachFlow.hasFallback(doc.getFlow().getSteps());
+    /// Whether the fallback has been turned off, which is a change from how every default setup comes.
+    ///
+    /// Asked of the document directly rather than against [#NEW]: a document built in the client has no
+    /// steps now (Track 2 step 1c), so a baseline built here has no fallback either, and comparing
+    /// against it would mark **every** Learning Flow as having changed this. A flow with no steps at all
+    /// is not "the fallback turned off" — it is a flow with no steps, which the approach already
+    /// reports.
+    ///
+    /// @param doc The document.
+    /// @return Whether it has steps and no fallback among them.
+    private static boolean fallbackTurnedOff(final ShapeshifterAiDoc doc) {
+        return !doc.getFlow().getSteps().isEmpty() && !ApproachFlow.hasFallback(doc.getFlow().getSteps());
     }
 }

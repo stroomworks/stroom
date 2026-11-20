@@ -17,13 +17,13 @@
 package stroom.shapeshifter.ai.scenario;
 
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
+import stroom.shapeshifter.ai.learning.FlowExamples;
 import stroom.shapeshifter.ai.scenario.LiveAdvisor.Turn;
 import stroom.shapeshifter.ai.stage.Decision;
 import stroom.shapeshifter.ai.stage.Decision.Bound;
 import stroom.shapeshifter.ai.stage.Decision.GivenUp;
 import stroom.shapeshifter.ai.stage.Decision.Kept;
 import stroom.shapeshifter.ai.stage.Decision.Promoted;
-import stroom.shapeshifter.ai.stage.Decision.Provisional;
 import stroom.shapeshifter.ai.stage.Decision.Rebound;
 import stroom.shapeshifter.ai.stage.Input;
 import stroom.shapeshifter.ai.stage.StageRun;
@@ -125,7 +125,7 @@ class TestLiveScenarios {
                 .uuid("live-" + name)
                 .name(name)
                 .learningMode(LearningMode.AUTOMATIC)
-                .flow(FLOW_UNDER_TEST)
+                .flow(FlowExamples.flow(FLOW_UNDER_TEST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .instructions(INSTRUCTIONS)
                 .minRecordsToLearn(5);
@@ -444,7 +444,6 @@ class TestLiveScenarios {
     private static String describe(final Decision decision) {
         return switch (decision) {
             case Promoted p -> "Promoted " + round(p.score());
-            case Provisional p -> "Provisional " + round(p.score());
             case Rebound r -> "Rebound " + round(r.score());
             case Kept k -> "Kept: " + k.reason();
             case GivenUp g -> "GivenUp: " + g.reason();

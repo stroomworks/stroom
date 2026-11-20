@@ -25,5 +25,26 @@ import stroom.shapeshifter.shared.ShapeshifterAiDoc;
  */
 public interface Advisors {
 
+    /// An advisor that asks in the document's words as they stand now: what a run opening for the first
+    /// time is asked with.
+    ///
+    /// @param doc The document.
+    /// @return How to ask the model.
     Advisor of(ShapeshifterAiDoc doc);
+
+    /// An advisor that asks in the words a run was asked with (decision N9), for carrying a parked run
+    /// on. A session is a conversation: every turn before this one was put in the words of the templates
+    /// the run began with, and the model is shown its own history as it resumes. Rendering that history
+    /// from templates somebody has edited since — or from built-ins an upgrade has moved — would show
+    /// the model a conversation it never had.
+    ///
+    /// Falls back to the document's words where the run's were not recorded, which is every attempt
+    /// opened before they were kept.
+    ///
+    /// @param doc       The document.
+    /// @param askedWith The words the run was asked with.
+    /// @return How to ask the model.
+    default Advisor of(final ShapeshifterAiDoc doc, final AskedWith askedWith) {
+        return of(doc);
+    }
 }

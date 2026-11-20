@@ -25,6 +25,7 @@ import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.xml.converter.ds3.DS3ParserFactory;
+import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorResult;
 import stroom.processor.shared.CreateProcessFilterRequest;
@@ -47,9 +48,7 @@ import stroom.shapeshifter.ai.scenario.QuestionMatcher;
 import stroom.shapeshifter.ai.scenario.Scenarios;
 import stroom.shapeshifter.ai.scenario.Script;
 import stroom.shapeshifter.ai.scenario.Structure;
-import stroom.shapeshifter.ai.stage.Decision;
-import stroom.shapeshifter.ai.stage.Decision.Kept;
-import stroom.shapeshifter.ai.stage.Decision.Rebound;
+import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.ai.stage.LearnerBindings;
 import stroom.shapeshifter.ai.stage.RegressionSet;
@@ -117,6 +116,8 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
     @Inject
     private PipelineStore pipelineStore;
     @Inject
+    private XmlSchemaStore xmlSchemaStore;
+    @Inject
     private LearnerBindings learnerBindings;
     @Inject
     private RegressionSet regressionSet;
@@ -128,6 +129,8 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
     private AdvisorHolder advisor;
     @Inject
     private DeferredLearning deferredLearning;
+    @Inject
+    private Attempts attempts;
     @Inject
     private Provider<DS3ParserFactory> parserFactories;
     @Inject
@@ -170,8 +173,8 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
 
         // A session after a restart: a stage built afresh, as the Supervisor builds one, learning from the
         // corpus put back together. The candidate translates what was admitted, and is accepted.
-        final Decision better = improve(document, binding, TRANSLATES_BOTH);
-        assertThat(better).describedAs(better.toString()).isInstanceOf(Rebound.class);
+        final String better = improve(document, binding, TRANSLATES_BOTH);
+        assertThat(better).describedAs(better).startsWith("Rebound");
         assertThat(corpusStreams()).describedAs("a second promotion, a second stream").hasSize(2);
         assertThat(corpusStreams()).extracting(Meta::getFeedName)
                 .describedAs("and on the source feed too, though no stream of it was in hand: a learner does "
@@ -184,23 +187,28 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
         // And one more, that would turn a record that now translates back into an admission: refused by
         // the corpus, naming the entry, and the binding serves on as it was.
         final Binding rebound = learnerBindings.forLearner(learner).get(0);
-        final Decision worse = improve(document, rebound, ADMITS_LOGOFF);
-        assertThat(worse).describedAs(worse.toString()).isInstanceOf(Kept.class);
-        assertThat(((Kept) worse).reason())
+        final String worse = improve(document, rebound, ADMITS_LOGOFF);
+        assertThat(worse).describedAs(worse)
+                .startsWith("Kept the incumbent")
                 .contains("turns a record that translated into an Unknown")
                 .contains("record 9 of 12 in the corpus");
         assertThat(learnerBindings.forLearner(learner).get(0).getPipeline()).isEqualTo(rebound.getPipeline());
         assertThat(corpusStreams()).hasSize(2);
     }
 
-    private Decision improve(final DocRef document, final Binding binding, final String stylesheet) {
+    /// A person's *Improve*, asked and then carried on by the worker (A46): the ask opens an attempt and
+    /// parks it at its first question, and the Deferred Learning job is what puts them. So what the
+    /// improvement came to is read back from the attempt, in the words the one switch that describes
+    /// every decision puts it, rather than returned from the call that asked.
+    private String improve(final DocRef document, final Binding binding, final String stylesheet) {
         final Script script = script(CSV.configuration(), stylesheet);
         advisor.set(script);
         final ShapeshifterAiDoc doc = shapeshifterAiStore.readDocument(document);
-        final Decision decision = pipelineScopes.get().scopeResult(() ->
-                stageFactories.get().create().improve(doc, binding.getUuid(), null, "jo").decision());
+        pipelineScopes.get().scopeRunnable(() ->
+                stageFactories.get().create().improve(doc, binding.getUuid(), null, "jo"));
+        deferredLearning.exec();
         script.verifyExhausted();
-        return decision;
+        return attempts.forDocument(doc.getUuid(), 1).get(0).decision();
     }
 
     private List<Meta> corpusStreams() {
@@ -218,6 +226,9 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
         final DocRef docRef = shapeshifterAiStore.createDocument(shipped.getName());
         final ShapeshifterAiDoc configured = DemoDocument
                 .configure(shapeshifterAiStore.readDocument(docRef).copy())
+                // Task 7: a new document starts on the latest event-logging installed, and this
+                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .heldOutFraction(0.0)
                 .build();
         shapeshifterAiStore.writeDocument(configured.copy()
