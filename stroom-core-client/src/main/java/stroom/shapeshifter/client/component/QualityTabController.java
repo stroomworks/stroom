@@ -19,23 +19,19 @@ package stroom.shapeshifter.client.component;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.preferences.client.DateTimeFormatter;
-import stroom.shapeshifter.shared.AssessmentRequest;
 import stroom.shapeshifter.shared.AttemptCriteria;
-import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.QualityResource;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorLearner;
 import stroom.shapeshifter.shared.SupervisorResource;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
-import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.i18n.client.DateTimeFormat;
 import com.google.gwt.i18n.client.TimeZone;
 import com.google.inject.Inject;
-import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.ArrayList;
@@ -53,9 +49,7 @@ import java.util.function.Consumer;
 ///
 /// Beside the figures, through the quality resource ([QualityResource]): the volume day by day and what the
 /// records of the translation in use became, samples of those records beside what they became (for someone who
-/// may also view data; for anyone else, a sentence says why there are none), and the assessments recorded of it.
-/// Anyone who may view the pipeline records an assessment ([AssessmentEditorController]); someone who may edit it
-/// marks an issue resolved, once it is fixed.
+/// may also view data; for anyone else, a sentence says why there are none).
 ///
 /// Read when it is shown, and when another element is chosen: quality changes over hours, not seconds, so it
 /// isn't read again on a timer.
@@ -70,15 +64,12 @@ public class QualityTabController extends Controller {
 
     private final QualityTab view;
     private final RestFactory restFactory;
-    private final Provider<AssessmentEditorController> assessmentEditorProvider;
     /// The settings of each Learning Flow an element learns under, by its uuid, read once while the tab is open.
     private final Map<String, ShapeshifterAiDoc> settings = new HashMap<>();
     private DocRef pipeline;
     private List<PipelineAiElement> elements = List.of();
     private PipelineAiElement chosen;
     private boolean showing;
-    /// Whether the pipeline can't be edited here: then an open issue isn't offered to be resolved.
-    private boolean readOnly = true;
     /// Which read is current, so that a slower earlier reply is ignored.
     private int asked;
 
@@ -87,29 +78,18 @@ public class QualityTabController extends Controller {
     /// @param eventBus          The application's event bus.
     /// @param view              The tab.
     /// @param restFactory       Makes REST requests.
-    /// @param dateTimeFormatter        Says when each learning run started, as the user likes dates.
-    /// @param assessmentEditorProvider Makes the dialog an assessment is recorded in.
+    /// @param dateTimeFormatter Says when each learning run started, as the user likes dates.
     @Inject
     public QualityTabController(final EventBus eventBus,
                                 final QualityTab view,
                                 final RestFactory restFactory,
-                                final DateTimeFormatter dateTimeFormatter,
-                                final Provider<AssessmentEditorController> assessmentEditorProvider) {
+                                final DateTimeFormatter dateTimeFormatter) {
         super(eventBus);
         this.view = view;
         this.restFactory = restFactory;
-        this.assessmentEditorProvider = assessmentEditorProvider;
         initWidget(view);
         view.setDateFormat(dateTimeFormatter::format);
         view.setDayFormat(QualityTabController::day);
-        view.setOnAssess(this::assess);
-        view.setOnResolve(this::resolve);
-        watch(Contexts.READ_ONLY, value -> {
-            readOnly = value;
-            if (showing) {
-                refresh();
-            }
-        });
         view.setOnElement(element -> {
             if (element != null && !element.equals(chosen)) {
                 chosen = element;
@@ -138,21 +118,6 @@ public class QualityTabController extends Controller {
         view.setElements(elements, chosen);
         if (showing) {
             refresh();
-        }
-    }
-
-    /// Shows one of the pipeline's AI Translator elements, e.g. from Learning Status, read when the tab is shown.
-    ///
-    /// @param elementId The element's id.
-    public void showElement(final String elementId) {
-        for (final PipelineAiElement element : elements) {
-            if (element.getId().equals(elementId) && !element.equals(chosen)) {
-                chosen = element;
-                view.setElements(elements, chosen);
-                if (showing) {
-                    refresh();
-                }
-            }
         }
     }
 
@@ -217,7 +182,7 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-    // The volume and cardinality, the samples, and the assessments, each shown as it comes
+    // The volume and cardinality, and the samples, each shown as it comes
     private void readQuality(final int request, final SupervisorLearner row) {
         final String pipelineUuid = row.getLearner().getPipelineUuid();
         final String elementId = row.getLearner().getElementId();
@@ -244,63 +209,6 @@ public class QualityTabController extends Controller {
                 .onFailure(error -> {
                     if (request == asked) {
                         view.showSamplesNote(NO_DATA);
-                    }
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
-        readAssessments(request, pipelineUuid, elementId);
-    }
-
-    private void readAssessments(final int request, final String pipelineUuid, final String elementId) {
-        restFactory
-                .create(QUALITY_RESOURCE)
-                .method(resource -> resource.assessments(pipelineUuid, elementId))
-                .onSuccess(said -> {
-                    if (request == asked) {
-                        view.showAssessments(NullSafe.list(said), !readOnly);
-                    }
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
-    }
-
-    // Records an assessment of the element shown, from the dialog
-    private void assess() {
-        final PipelineAiElement element = chosen;
-        if (pipeline == null || element == null) {
-            return;
-        }
-        assessmentEditorProvider.get().assess(this, (verdict, comment) -> {
-            final int request = asked;
-            restFactory
-                    .create(QUALITY_RESOURCE)
-                    .method(resource -> resource.assess(new AssessmentRequest(
-                            new LearnerRef(pipeline.getUuid(), element.getId()), verdict, comment)))
-                    .onSuccess(said -> {
-                        if (request == asked) {
-                            view.showAssessments(NullSafe.list(said), !readOnly);
-                        }
-                    })
-                    .owner(this)
-                    .taskMonitorFactory(taskMonitor())
-                    .exec();
-        });
-    }
-
-    // Marks an open issue resolved, for someone who may edit the pipeline
-    private void resolve(final long id) {
-        if (readOnly) {
-            return;
-        }
-        final int request = asked;
-        restFactory
-                .create(QUALITY_RESOURCE)
-                .method(resource -> resource.resolve(id))
-                .onSuccess(said -> {
-                    if (request == asked) {
-                        view.showAssessments(NullSafe.list(said), !readOnly);
                     }
                 })
                 .owner(this)

@@ -41,10 +41,12 @@ public final class FeedProgress {
 
     private final List<Item> items;
     private final String note;
+    private final boolean finished;
 
-    private FeedProgress(final List<Item> items, final String note) {
+    private FeedProgress(final List<Item> items, final String note, final boolean finished) {
         this.items = Collections.unmodifiableList(items);
         this.note = note;
+        this.finished = finished;
     }
 
     /// Works out a run's progress.
@@ -57,7 +59,7 @@ public final class FeedProgress {
                 ? List.of()
                 : run.getTurns();
         if (run == null) {
-            return new FeedProgress(new ArrayList<>(), null);
+            return new FeedProgress(new ArrayList<>(), null, false);
         }
         final List<Stop> stops = stops(steps, turns);
         final Map<String, Integer> index = new LinkedHashMap<>();
@@ -106,11 +108,11 @@ public final class FeedProgress {
             } else {
                 state = State.TODO;
             }
-            items.add(new Item(stop.name, state, tries[i]));
+            items.add(new Item(stop.name, state, tries[i], false));
         }
         items.add(new Item("Done", finished
                 ? State.DONE
-                : State.TODO, 0));
+                : State.TODO, 0, true));
 
         final String note = wentBack == 0
                 ? null
@@ -119,7 +121,7 @@ public final class FeedProgress {
                         : wentBack + " times") + (why == null
                         ? "."
                         : ", most recently because: " + why + ".");
-        return new FeedProgress(items, note);
+        return new FeedProgress(items, note, finished);
     }
 
     // The flow's steps, or where the turns name steps it doesn't have, the steps the turns name
@@ -163,6 +165,25 @@ public final class FeedProgress {
         return note;
     }
 
+    /// Where the run is, in words, for beside the strip's heading: e.g. "Step 3 of 5 · Agree the target events",
+    /// counting the fallback only where the run reached it, as the strip does; or "Finished".
+    ///
+    /// @return Where the run is, or null where it is at no step, e.g. it has asked nothing yet.
+    public String getWhere() {
+        if (finished) {
+            return "Finished";
+        }
+        final List<Item> steps = items.stream()
+                .filter(item -> !item.isFinish())
+                .toList();
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).getState() == State.NOW) {
+                return "Step " + (i + 1) + " of " + steps.size() + " · " + steps.get(i).getName();
+            }
+        }
+        return null;
+    }
+
 
     // --------------------------------------------------------------------------------
 
@@ -173,7 +194,7 @@ public final class FeedProgress {
         DONE,
         /// The step the run is at, or stopped at.
         NOW,
-        /// Tried and not passed, and the run has moved on, e.g. back to an earlier step.
+        /// Tried and not passed, and the run has moved on: back to an earlier step, or on to the fallback.
         TRIED,
         /// Not reached.
         TODO
@@ -189,11 +210,13 @@ public final class FeedProgress {
         private final String name;
         private final State state;
         private final int tries;
+        private final boolean finish;
 
-        Item(final String name, final State state, final int tries) {
+        Item(final String name, final State state, final int tries, final boolean finish) {
             this.name = name;
             this.state = state;
             this.tries = tries;
+            this.finish = finish;
         }
 
         /// @return The step's name.
@@ -211,11 +234,61 @@ public final class FeedProgress {
             return tries;
         }
 
-        /// @return What the strip says of it, e.g. "Write the parser · 2 tries".
-        public String getLabel() {
-            return tries > 1
-                    ? name + " · " + tries + " tries"
-                    : name;
+        /// @return True for the strip's last item, Done, which is where the run finishes rather than a step.
+        public boolean isFinish() {
+            return finish;
+        }
+
+        /// @return True where the run has got as far as it, i.e. it is anything but [State#TODO].
+        public boolean isReached() {
+            return state != State.TODO;
+        }
+
+        /// What the strip says under the step's name: where it stands, for the step the run is at or one it
+        /// tried and didn't pass, and how many tries it took where that was more than one.
+        ///
+        /// @return E.g. "In progress · try 2", "Not passed · 3 tries" or "2 tries"; null where there is nothing to
+        /// say beyond its mark.
+        public String getMeta() {
+            if (finish) {
+                return null;
+            }
+            switch (state) {
+                case NOW:
+                    return tries > 1
+                            ? "In progress · try " + tries
+                            : "In progress";
+                case TRIED:
+                    return tries > 1
+                            ? "Not passed · " + tries + " tries"
+                            : "Not passed";
+                case DONE:
+                    return tries > 1
+                            ? tries + " tries"
+                            : null;
+                default:
+                    return null;
+            }
+        }
+
+        /// Where the step stands, for a screen reader, which is shown neither its colour nor its mark, where
+        /// [#getMeta()] doesn't already say so.
+        ///
+        /// @return E.g. "Done" or "Not reached"; null where its meta says where it stands.
+        public String getStateWords() {
+            if (finish) {
+                return state == State.DONE
+                        ? "Reached"
+                        : "Not reached";
+            }
+            switch (state) {
+                case DONE:
+                    return "Done";
+                case TODO:
+                    return "Not reached";
+                default:
+                    return null;
+            }
         }
 
         @Override
@@ -227,17 +300,22 @@ public final class FeedProgress {
                 return false;
             }
             final Item item = (Item) o;
-            return tries == item.tries && Objects.equals(name, item.name) && state == item.state;
+            return tries == item.tries
+                   && finish == item.finish
+                   && Objects.equals(name, item.name)
+                   && state == item.state;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(name, state, tries);
+            return Objects.hash(name, state, tries, finish);
         }
 
         @Override
         public String toString() {
-            return name + "(" + state + ", " + tries + ")";
+            return name + "(" + state + ", " + tries + (finish
+                    ? ", finish"
+                    : "") + ")";
         }
     }
 

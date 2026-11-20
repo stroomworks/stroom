@@ -72,6 +72,12 @@ public class AriaPanel extends FlowPanel {
         }
     }
 
+    /// @param ariaCurrent Which kind of current item the panel is among its siblings, e.g. `step` for where a
+    ///                    process is now; null or blank where it isn't the current one.
+    public void setAriaCurrent(final String ariaCurrent) {
+        setAttribute("aria-current", ariaCurrent);
+    }
+
     /// @param ariaLive How screen readers announce changes to what it holds, e.g. `polite`.
     public void setAriaLive(final String ariaLive) {
         setAttribute("aria-live", ariaLive);

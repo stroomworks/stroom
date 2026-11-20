@@ -206,68 +206,235 @@
 
 .feed-detail__heading {
     font-weight: 600;
-    margin-bottom: 4px;
 }
 
+/* The section is the stepper's container, so the stepper stacks when the section, not the window, is narrow */
 .feed-detail__progress-section {
     display: flex;
     flex-direction: column;
+    container: feed-detail-progress / inline-size;
 }
 
-/* The steps of the run in order, each by where it stands. The space between them is the row's gap, so a
-   step that wraps starts its line where the first did. */
-.feed-detail__progress {
+.feed-detail__progress-heading {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 14px;
+    align-items: baseline;
+    gap: 2px 8px;
+    margin-bottom: 8px;
+}
+
+.feed-detail__progress-where {
+    color: var(--text-color--low-emphasis);
+}
+
+/* The steps of the run in order, as a stepper: each step a mark over its name, the marks joined by a line, solid
+   into a step the run has reached and dashed into one it hasn't. Each state has its own mark (a tick, a ring
+   with a dot, an exclamation mark, an empty circle, a flag for the finish), so none relies on its colour. The
+   steps are all as wide, so a line from the middle of one step's box to the middle of the next joins their
+   marks. */
+.feed-detail__progress {
+    display: flex;
+    align-items: flex-start;
 }
 
 .feed-detail__step {
-    display: inline-flex;
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 170px;
+    display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 6px;
-    padding: 3px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
+    padding: 0 4px;
+    text-align: center;
     font-size: 12.5px;
 }
 
-.feed-detail__step::before {
+.feed-detail__step + .feed-detail__step::before {
     content: "";
-    width: 9px;
-    height: 9px;
+    position: absolute;
+    top: 10px;
+    left: calc(-50% + 15px);
+    right: calc(50% + 15px);
+    border-top: 2px dashed var(--border-color);
+}
+
+.feed-detail__step + .feed-detail__step--reached::before {
+    top: 9.5px;
+    border-top: 3px solid var(--primary);
+}
+
+.feed-detail__step-mark {
+    position: relative;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    box-sizing: border-box;
+    border: 2px solid var(--text-color--low-emphasis);
     border-radius: 50%;
-    border: 1.5px solid var(--text-color--low-emphasis);
+}
+
+.feed-detail__step-mark::before,
+.feed-detail__step-mark::after {
+    position: absolute;
     box-sizing: border-box;
 }
 
-.feed-detail__step--done::before {
+.feed-detail__step--done .feed-detail__step-mark {
     border-color: var(--status__color--success);
     background-color: var(--status__color--success);
 }
 
-.feed-detail__step--now {
-    border-color: var(--status__color--warning);
+/* A tick */
+.feed-detail__step--done:not(.feed-detail__step--finish) .feed-detail__step-mark::after {
+    content: "";
+    left: 5.5px;
+    top: 2px;
+    width: 6px;
+    height: 11px;
+    border: solid var(--white);
+    border-width: 0 2.5px 2.5px 0;
+    transform: rotate(45deg);
 }
 
-.feed-detail__step--now::before {
+/* A ring with a dot in it, and a halo */
+.feed-detail__step--now .feed-detail__step-mark {
+    border: 3px solid var(--primary);
+    box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .25);
+}
+
+.feed-detail__step--now .feed-detail__step-mark::after {
+    content: "";
+    inset: 0;
+    margin: auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--primary);
+}
+
+/* An exclamation mark, dark on the amber in either theme */
+.feed-detail__step--tried .feed-detail__step-mark {
     border-color: var(--status__color--warning);
     background-color: var(--status__color--warning);
 }
 
-.feed-detail__step--tried::before {
-    border-color: var(--status__color--warning);
+.feed-detail__step--tried .feed-detail__step-mark::after {
+    content: "!";
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--black);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
 }
 
-.feed-detail__step--todo {
+/* A flag: its pole and its cloth, white on the green once the run has finished */
+.feed-detail__step--finish .feed-detail__step-mark::before,
+.feed-detail__step--finish .feed-detail__step-mark::after {
+    content: "";
+    background-color: var(--text-color--low-emphasis);
+}
+
+.feed-detail__step--finish .feed-detail__step-mark::before {
+    left: 5px;
+    top: 3px;
+    width: 2px;
+    height: 12px;
+}
+
+.feed-detail__step--finish .feed-detail__step-mark::after {
+    left: 7px;
+    top: 3px;
+    width: 7px;
+    height: 6px;
+}
+
+.feed-detail__step--finish.feed-detail__step--done .feed-detail__step-mark::before,
+.feed-detail__step--finish.feed-detail__step--done .feed-detail__step-mark::after {
+    background-color: var(--white);
+}
+
+.feed-detail__step-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.feed-detail__step-name {
+    overflow-wrap: anywhere;
+}
+
+.feed-detail__step-meta {
     color: var(--text-color--low-emphasis);
+    font-size: 11.5px;
+}
+
+.feed-detail__step--now .feed-detail__step-name {
+    font-weight: 600;
+}
+
+.feed-detail__step--now .feed-detail__step-meta {
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.feed-detail__step--todo .feed-detail__step-name {
+    color: var(--text-color--low-emphasis);
+}
+
+/* Narrow: one step to a line, the line running down the left between the marks, rather than wrapping, which
+   would break the order across lines. Stacked, the line below a step is solid where the next is reached. */
+@container feed-detail-progress (max-width: 560px) {
+    .feed-detail__progress {
+        flex-direction: column;
+    }
+
+    .feed-detail__step {
+        flex: none;
+        max-width: none;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 0 0 14px;
+        text-align: left;
+    }
+
+    .feed-detail__step:last-child {
+        padding-bottom: 0;
+    }
+
+    .feed-detail__step-text {
+        padding-top: 2px;
+    }
+
+    .feed-detail__progress .feed-detail__step + .feed-detail__step::before {
+        content: none;
+    }
+
+    .feed-detail__step:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        left: 10px;
+        top: 26px;
+        bottom: 2px;
+        border-left: 2px dashed var(--border-color);
+    }
+
+    .feed-detail__step--next-reached:not(:last-child)::after {
+        left: 9.5px;
+        border-left: 3px solid var(--primary);
+    }
 }
 
 .feed-detail__note {
     color: var(--text-color--low-emphasis);
     font-size: 12px;
-    margin-top: 4px;
+    margin-top: 10px;
 }
 
 .feed-detail__tab-bar {

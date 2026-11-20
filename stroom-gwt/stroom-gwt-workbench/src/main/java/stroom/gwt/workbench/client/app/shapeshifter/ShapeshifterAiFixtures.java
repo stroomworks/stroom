@@ -343,8 +343,8 @@ final class ShapeshifterAiFixtures {
                 .get("/shapeshifterAiSupervisor/v1/pipelines/p-3/learners",
                         RestReply.json("[" + PROXY_LEARNER + "]"))
                 .get("/shapeshifterAiSupervisor/v1/learners/ss-1/settings", RestReply.json(doc))
-                // Nothing said by QA of any pipeline, which Learning Status asks to flag open issues; a story of
-                // the Quality Assurance tab gives its own replies first
+                // Nothing from the quality resource; a story of the Quality Assurance tab gives its own replies
+                // first
                 .route(RequestMatcher.get("/shapeshifterAiQuality/v1/*"), RestReply.json("[]"));
     }
 

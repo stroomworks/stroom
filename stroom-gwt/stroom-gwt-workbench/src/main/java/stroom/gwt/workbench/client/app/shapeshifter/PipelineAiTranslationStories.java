@@ -49,14 +49,6 @@ public final class PipelineAiTranslationStories {
     private static final String TAB = "Learning Status";
     private static final String TRANSLATING_WITH = "Translating with";
     private static final String HISTORY = "Learning history";
-    private static final String QA = "/shapeshifterAiQuality/v1/pipelines/p-1/elements/shapeshifterAi";
-    private static final String QA_ISSUES = """
-            [{"id": 2, "createTimeMs": 1761900000000, "verdict": "ISSUE", "comment": "Ports are swapped",
-              "author": "qa"},
-             {"id": 1, "createTimeMs": 1761800000000, "verdict": "ISSUE", "comment": "Times are local",
-              "author": "qa", "resolvedBy": "provider", "resolveTimeMs": 1761850000000}]""";
-    private static final String QA_REPORT = """
-            {"days": [], "translated": 0, "unknown": 0, "none": 0, "kinds": 0}""";
     // The firewall's pipeline just translating, with nothing waiting
     private static final String TRANSLATING_NOTHING_WAITING = ShapeshifterAiFixtures.FIREWALL_TRANSLATING
             .replace("\"waiting\": 2", "\"waiting\": 0");
@@ -99,6 +91,8 @@ public final class PipelineAiTranslationStories {
                     play.expect(play.getByText(TextMatch.startingWith("Went back once"))).toBeInTheDocument();
                     // Nothing learned yet, so no learned translation to open
                     play.expect(play.queryByText(TRANSLATING_WITH)).not().toBeVisible();
+                    // Issues flagged by QA are no longer shown here
+                    play.expect(play.queryByRole("list", "Issues flagged by QA")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
                 // A feed translating says which learned translation it runs; its name opens it
@@ -132,31 +126,12 @@ public final class PipelineAiTranslationStories {
                     play.click(history);
                     play.waitFor(() -> play.expect(play.getByText("Progress")).toBeVisible());
                     play.expect(history).toHaveAttribute("aria-expanded", "true");
+                    // The run finished, so the stepper's flag is reached and no step is current
+                    play.expect(play.getByText("Finished")).toBeVisible();
+                    final Play steps = play.within(play.getByRole("list", "Learning run steps"));
+                    play.expect(steps.getByText(TextMatch.startingWith("Reached:"))).toBeInTheDocument();
+                    play.expect(steps.querySelector("[aria-current='step']")).toBeNull();
                     play.expect(play.queryByText("Waiting streams", StroomDom.LINK_TAB_LABEL)).not().toBeVisible();
-                    DocEditors.expectNoProblems(play);
-                })
-                // An issue QA flagged and nobody has resolved is shown to the Data Provider, with the way to the
-                // Quality Assurance tab, where it is read in full
-                .story("QaIssueFlagged", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
-                        ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder()
-                                        .get(QA + "/assessments", RestReply.json(QA_ISSUES))
-                                        .get(QA, RestReply.json(QA_REPORT)),
-                                ShapeshifterAiFixtures.DOC, ShapeshifterAiFixtures.PAUSED,
-                                "[" + ShapeshifterAiFixtures.FIREWALL_LEARNER + "]"),
-                        AiPipelines.ELEMENT))
-                .withPlay(play -> {
-                    final Play issues = play.within(play.findByRole("list", "Issues flagged by QA"));
-                    play.expect(issues.findByText("Ports are swapped (qa)")).toBeVisible();
-                    play.expect(play.getByText("Flagged by QA: 1 open issue")).toBeVisible();
-                    play.click(play.getByRole("button", "See them on the Quality Assurance tab"));
-                    play.expect(play.findByText("1 open issue flagged to the Data Provider.")).toBeVisible();
-                    DocEditors.expectNoProblems(play);
-                })
-                // A resolved issue, or none, isn't flagged
-                .story("QaNothingFlagged", context -> render(context, false))
-                .withPlay(play -> {
-                    play.expect(play.findByText(PAUSED)).toBeInTheDocument();
-                    play.expect(play.queryByText(TextMatch.startingWith("Flagged by QA"))).not().toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
                 // A run that needs someone opens the learning history of its own accord
@@ -165,6 +140,24 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(play.getByRole("button", HISTORY))
                             .toHaveAttribute("aria-expanded", "true"));
                     play.expect(play.findByText(ShapeshifterAiFixtures.TURN_4)).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // How far the run has got, as a stepper: each step's mark and words say where it stands, the step
+                // the run is at is the list's current step, and where that is is said beside the heading
+                .story("ProgressStepper", context -> render(context, false))
+                .withPlay(play -> {
+                    play.waitFor(() -> play.expect(play.getByRole("button", HISTORY))
+                            .toHaveAttribute("aria-expanded", "true"));
+                    final Play steps = play.within(play.findByRole("list", "Learning run steps"));
+                    play.expect(steps.getAllByRole("listitem")).toHaveLength(3);
+                    play.expect(play.getByText("Step 2 of 2 · Write the parser")).toBeVisible();
+                    play.expect(steps.querySelector("[aria-current='step']"))
+                            .toHaveTextContent(TextMatch.startingWith("Write the parser"));
+                    play.expect(steps.getByText("In progress · try 2")).toBeVisible();
+                    play.expect(steps.getByText("2 tries")).toBeVisible();
+                    // Done and not reached are said to a screen reader, which is shown neither marks nor colours
+                    play.expect(steps.getByText(TextMatch.startingWith("Done:"))).toBeInTheDocument();
+                    play.expect(steps.getByText(TextMatch.startingWith("Not reached:"))).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
                 // The last question is open, with what it asked; another opens to its score and answer

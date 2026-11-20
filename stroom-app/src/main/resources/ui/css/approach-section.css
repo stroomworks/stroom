@@ -36,10 +36,6 @@
 }
 
 /* A text button (LinkButton), in the colour of a link so that it reads as one before it is hovered */
-.approach-section__link {
-    color: var(--link__text-color);
-}
-
 /* What the fallback is, under a heading made as every part's heading on the Setup tab */
 .approach-section__fallback {
     display: flex;
@@ -74,13 +70,6 @@
 .approach-section__texts--under-heading {
     padding-top: 0;
     border-top: none;
-}
-
-.approach-section__texts-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
 }
 
 .approach-section__heading {

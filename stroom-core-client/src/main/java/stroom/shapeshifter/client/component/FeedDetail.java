@@ -20,7 +20,6 @@ import stroom.shapeshifter.client.component.ConversationList.Row;
 import stroom.shapeshifter.client.component.FeedProgress.Item;
 import stroom.shapeshifter.client.component.FeedProgress.State;
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.Suggestion;
 import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.shapeshifter.shared.SupervisorAttempt;
@@ -94,14 +93,6 @@ public class FeedDetail extends Component {
     @UiField
     AriaPanel suggestions;
     @UiField
-    FlowPanel issuesPart;
-    @UiField
-    Label issuesHeading;
-    @UiField
-    AriaPanel issues;
-    @UiField
-    LinkButton openQuality;
-    @UiField
     FlowPanel actions;
     @UiField
     Disclosure history;
@@ -112,7 +103,9 @@ public class FeedDetail extends Component {
     @UiField
     FlowPanel progressSection;
     @UiField
-    FlowPanel progress;
+    InlineLabel progressWhere;
+    @UiField
+    AriaPanel progress;
     @UiField
     Label progressNote;
     @UiField
@@ -264,46 +257,66 @@ public class FeedDetail extends Component {
         }
     }
 
-    /// Shows how far the run has got.
+    /// Shows how far the run has got, as a stepper: each step a mark that says where it stands by its shape as
+    /// well as its colour, joined by a line that is solid as far as the run has got and dashed beyond.
     ///
     /// @param shown The run's progress.
     public void setProgress(final FeedProgress shown) {
+        progressWhere.setText(Objects.requireNonNullElse(shown.getWhere(), ""));
+        progressWhere.setVisible(shown.getWhere() != null);
         progress.clear();
-        for (final Item item : shown.getItems()) {
-            final FlowPanel step = new FlowPanel();
-            step.addStyleName("feed-detail__step");
-            step.addStyleName(stepClass(item.getState()));
-            step.setTitle(stateWords(item));
-            // Where it stands, for a screen reader, which is not shown the step's colour
-            final InlineLabel state = new InlineLabel(stateWords(item) + ": ");
-            state.addStyleName("sr-only");
-            step.add(state);
-            step.add(new InlineLabel(item.getLabel()));
-            progress.add(step);
+        final List<Item> items = shown.getItems();
+        for (int i = 0; i < items.size(); i++) {
+            final boolean nextReached = i + 1 < items.size() && items.get(i + 1).isReached();
+            progress.add(step(items.get(i), nextReached));
         }
         progressNote.setText(Objects.requireNonNullElse(shown.getNote(), ""));
         progressNote.setVisible(shown.getNote() != null);
     }
 
-    /// Shows the issues QA people have flagged with the pipeline's translated output and nobody has resolved, for
-    /// the Data Provider to fix at the pipeline; nothing where there are none.
-    ///
-    /// @param open The open issues, newest first.
-    public void setIssues(final List<QualityAssessment> open) {
-        issues.clear();
-        for (final QualityAssessment issue : open) {
-            issues.add(item(text(Objects.requireNonNullElse(issue.getComment(), "No comment") + " (" + issue.getAuthor()
-                                 + ")")));
+    // One step of the stepper; whether the next is reached decides the line down to it when the steps stack
+    private static AriaPanel step(final Item item, final boolean nextReached) {
+        final AriaPanel step = new AriaPanel();
+        step.setRole("listitem");
+        step.addStyleName("feed-detail__step");
+        step.addStyleName(stepClass(item.getState()));
+        if (item.isFinish()) {
+            step.addStyleName("feed-detail__step--finish");
         }
-        issuesHeading.setText(open.size() == 1
-                ? "Flagged by QA: 1 open issue"
-                : "Flagged by QA: " + open.size() + " open issues");
-        issuesPart.setVisible(!open.isEmpty());
-    }
+        if (item.isReached()) {
+            step.addStyleName("feed-detail__step--reached");
+        }
+        if (nextReached) {
+            step.addStyleName("feed-detail__step--next-reached");
+        }
+        if (item.getState() == State.NOW) {
+            step.setAriaCurrent("step");
+        }
 
-    /// @param onOpenQuality Run when the person asks to see the issues on the Quality Assurance tab.
-    public void setOnOpenQuality(final Runnable onOpenQuality) {
-        openQuality.setOnClick(onOpenQuality);
+        final AriaPanel mark = new AriaPanel();
+        mark.addStyleName("feed-detail__step-mark");
+        mark.setAriaHidden(true);
+        step.add(mark);
+
+        final FlowPanel text = new FlowPanel();
+        text.addStyleName("feed-detail__step-text");
+        final String stateWords = item.getStateWords();
+        if (stateWords != null) {
+            final InlineLabel hidden = new InlineLabel(stateWords + ": ");
+            hidden.addStyleName("sr-only");
+            text.add(hidden);
+        }
+        final InlineLabel name = new InlineLabel(item.getName());
+        name.addStyleName("feed-detail__step-name");
+        text.add(name);
+        final String meta = item.getMeta();
+        if (meta != null) {
+            final InlineLabel said = new InlineLabel(meta);
+            said.addStyleName("feed-detail__step-meta");
+            text.add(said);
+        }
+        step.add(text);
+        return step;
     }
 
     /// Whether there is any learning history to show, and whether streams wait, whose tab is shown only then.
@@ -502,19 +515,6 @@ public class FeedDetail extends Component {
                 return "feed-detail__step--tried";
             default:
                 return "feed-detail__step--todo";
-        }
-    }
-
-    private static String stateWords(final Item item) {
-        switch (item.getState()) {
-            case DONE:
-                return "Done";
-            case NOW:
-                return "Where the run is now";
-            case TRIED:
-                return "Tried, then went back";
-            default:
-                return "Not reached";
         }
     }
 

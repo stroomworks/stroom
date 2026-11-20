@@ -24,6 +24,12 @@
     border-bottom: 1px solid var(--border-color);
 }
 
+/* Held to the height the tab leaves it, rather than growing to fit the feed, so that the feed scrolls within it
+   (feed-detail.css) instead of running off the bottom of the tab */
+.pipeline-ai-tab__detail {
+    min-height: 0;
+}
+
 .pipeline-ai-tab__element {
     width: 360px;
     max-width: 100%;

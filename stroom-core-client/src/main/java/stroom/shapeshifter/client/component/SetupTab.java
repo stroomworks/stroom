@@ -58,7 +58,8 @@ import java.util.function.Consumer;
 /// **Learning steps**:
 /// which starting point the steps are, showing or hiding them, Load default setup (a menu of the starting points,
 /// once they are shown), what is wrong with the flow as a whole, and what a run may spend; under Advanced options,
-/// the tries per step and the largest sample. **A step**: its card and question text ([ApproachSection]).
+/// the tries per step, the largest sample, and the question text every step shares ([QuestionTexts]).
+/// **A step**: its card and its own question text ([ApproachSection]).
 /// **Quality checks**: the starting set; under Advanced options, the checks ([ScorerList]) and the lines kept back
 /// to test against. **Approving new translations**: the pass mark and whether a person approves; under Advanced
 /// options, how many records before a translation is trusted, and what a feed gets when the transform can't be
@@ -106,6 +107,8 @@ public class SetupTab extends Component {
     ApproachSection approach;
     @UiField
     Disclosure approachAdvanced;
+    @UiField
+    QuestionTexts sharedTexts;
     @UiField
     ValueSpinner maxAttempts;
     @UiField
@@ -372,6 +375,12 @@ public class SetupTab extends Component {
         return approach;
     }
 
+    /// @return The question texts every step shares, under Learning steps' Advanced options, which the step's
+    ///         controller fills, as it holds the document's texts.
+    public QuestionTexts getSharedTexts() {
+        return sharedTexts;
+    }
+
     /// @return The tries a step has where it doesn't say.
     public int getMaxAttempts() {
         return maxAttempts.getIntValue();
@@ -573,6 +582,7 @@ public class SetupTab extends Component {
         instructions.setReadOnly(readOnly);
         loadDefault.setEnabled(!readOnly);
         approach.setReadOnly(readOnly);
+        sharedTexts.setReadOnly(readOnly);
         maxAttempts.setReadOnly(readOnly);
         attemptBudget.setReadOnly(readOnly);
         tokenBudget.setReadOnly(readOnly);

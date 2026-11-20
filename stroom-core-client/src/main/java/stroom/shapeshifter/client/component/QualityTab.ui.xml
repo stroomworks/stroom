@@ -1,15 +1,13 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <!-- A Smart Pipeline's Quality Assurance tab (quality-tab.css): which of its AI Translator elements, where it has
      more than one; then the figures its translation is judged by, its volume day by day, what its records became,
-     samples of them beside what they became, the assessments recorded of it, and each learning run's score; or why
-     there is nothing to judge -->
+     samples of them beside what they became, and each learning run's score; or why there is nothing to judge -->
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:c="urn:import:stroom.widget.component.client"
              xmlns:dg="urn:import:stroom.widget.datagrid.client"
              xmlns:form="urn:import:stroom.widget.form.client"
              xmlns:l="urn:import:stroom.widget.selection.client"
-             xmlns:b="urn:import:stroom.widget.button.client"
              xmlns:tx="urn:import:stroom.widget.text.client"
              xmlns:s="urn:import:stroom.shapeshifter.client.component">
     <g:FlowPanel styleName="max quality-tab">
@@ -60,17 +58,6 @@
             <tx:Label ui:field="samplesNote" styleName="quality-tab__message"/>
             <c:AriaPanel ui:field="samples" styleName="quality-tab__samples" role="list" ariaLabel="Samples"/>
 
-            <g:HTMLPanel styleName="quality-tab__head">
-                <h2 class="quality-tab__title">Assessments</h2>
-                <span class="quality-tab__question">What has been said of the translated output. An issue is
-                    flagged to the Data Provider on Learning Status until it is resolved</span>
-            </g:HTMLPanel>
-            <g:FlowPanel styleName="quality-tab__actions">
-                <b:Button ui:field="assess" text="Record an assessment…" opensDialog="true"/>
-            </g:FlowPanel>
-            <tx:Label ui:field="assessmentsNote" styleName="quality-tab__message"/>
-            <c:AriaPanel ui:field="assessments" styleName="quality-tab__assessments" role="list"
-                         ariaLabel="Assessments"/>
             <g:HTMLPanel styleName="quality-tab__head">
                 <h2 class="quality-tab__title">Learning runs</h2>
                 <span class="quality-tab__question">What each learning run scored on the stream it learned from,

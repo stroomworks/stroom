@@ -182,11 +182,6 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
             // Told the elements by Learning Status
         });
         setTabHidden(QUALITY, true);
-        // The issues QA flagged, shown on Learning Status, are read on the Quality Assurance tab, at the same element
-        aiTranslation.setOnOpenQuality(() -> {
-            NullSafe.consume(aiTranslation.getChosenElementId(), quality::showElement);
-            selectTab(QUALITY);
-        });
         aiTranslation.setOnElements(found -> {
             quality.setElements(getDocRef(), found);
             setTabHidden(QUALITY, found.isEmpty());

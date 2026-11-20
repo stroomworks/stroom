@@ -64,6 +64,9 @@ public final class ShapeshifterAiEditorStories {
     private static final String TARGET_SCHEMA = "#shapeshifterAiTargetSchema";
     private static final String NO_TARGET_SCHEMA =
             "No target schema is chosen, so the AI has no schema to write to.";
+    // A new document with its own words for the system text, one of the texts every step shares
+    private static final String OWN_SYSTEM_TEXT = ShapeshifterAiFixtures.NEW_DOC.replace("\"flow\": {\"steps\": [",
+            "\"flow\": {\"templates\": {\"SYSTEM\": \"Our own system text.\"}, \"steps\": [");
     private static final String FEED_FILTER = "Which pipelines to show";
     private static final String FEEDS_FILTERED = "Pipelines are being filtered; click to change or clear";
 
@@ -465,6 +468,10 @@ public final class ShapeshifterAiEditorStories {
                     // Add step, on the map under the step chosen
                     play.expect(play.getByRole("button", "Add a step after step 1")).toBeVisible();
                     play.expect(play.getByText("Question text of step 1: Choose the elements")).toBeVisible();
+                    // A step shows only its own text; the text every step shares is under Learning steps
+                    play.expect(play.queryByRole("button", "Show the text every step shares")).toBeNull();
+                    play.expect(play.getByLabelText("Chain question")).toBeVisible();
+                    play.expect(play.getByLabelText("System text")).not().toBeVisible();
                     openStop(play, "Step 2:");
                     play.expect(play.findByText("If it runs out of tries, it will stop learning.")).toBeVisible();
                     play.expect(play.findByRole("heading", "Step 2: Write the parser")).toBeVisible();
@@ -588,6 +595,49 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(play.getByLabelText("Records before a translation is trusted")).toBeVisible();
                     openStop(play, "Quality checks:");
                     play.expect(play.findByRole("grid", "Quality checks")).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // The question text every step shares, under Learning steps' Advanced options rather than with any
+                // one step: the built-in's words until the document has its own, edited in place and saved
+                .story("SetupSharedTexts", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
+                .withPlay(play -> {
+                    openStop(play, "Learning steps:");
+                    play.expect(play.findByLabelText("System text")).not().toBeVisible();
+                    openAdvanced(play);
+                    play.expect(play.getByText("Question text every step shares")).toBeVisible();
+                    final Query system = play.getByLabelText("System text");
+                    play.waitFor(() -> play.expect(system).toHaveValue("You write Stroom pipelines."));
+                    play.expect(play.getByLabelText("Split rules")).toBeVisible();
+                    play.expect(play.getByLabelText("Extraction rules")).toBeVisible();
+                    play.expect(play.getByLabelText("Transformation rules")).toBeVisible();
+                    play.clear(system);
+                    play.type(system, "Write only XSLT 2.0.");
+                    play.tab();
+                    play.waitFor(() -> play.expect(play.getByText(TextMatch.startingWith("This document's own text")))
+                            .toBeVisible());
+                    save(play, "{\"flow\": {\"templates\": {\"SYSTEM\": \"Write only XSLT 2.0.\"}}}");
+                })
+                // A document with its own words for a text every step shares: Learning steps' Advanced options are
+                // open of their own accord, so those words are never out of sight
+                .story("SetupSharedTextsOpenWhereChanged", context -> render(context, false, OWN_SYSTEM_TEXT))
+                .withPlay(play -> {
+                    openStop(play, "Learning steps:");
+                    play.expect(play.findByRole("button", "Advanced options"))
+                            .toHaveAttribute("aria-expanded", "true");
+                    final Query system = play.getByLabelText("System text");
+                    play.expect(system).toBeVisible();
+                    play.waitFor(() -> play.expect(system).toHaveValue("Our own system text."));
+                    DocEditors.expectNoProblems(play);
+                })
+                // Read only, the texts every step shares are shown and can't be changed or loaded
+                .story("SetupSharedTextsReadOnly", context -> render(context, true, ShapeshifterAiFixtures.NEW_DOC))
+                .withPlay(play -> {
+                    openStop(play, "Learning steps:");
+                    openAdvanced(play);
+                    final Query system = play.getByLabelText("System text");
+                    play.waitFor(() -> play.expect(system).toHaveValue("You write Stroom pipelines."));
+                    play.expect(system).toHaveAttribute("readonly");
+                    play.expect(play.getAllByRole("button", "Load built-in").nth(0)).toBeDisabled();
                     DocEditors.expectNoProblems(play);
                 })
                 // A new document's steps are a starting point, so they are off the route map until the person

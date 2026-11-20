@@ -95,7 +95,7 @@ public class SetupTabController extends Controller {
         targetSchemaSelection.setIncludedTypes(XmlSchemaDoc.TYPE);
         targetSchemaSelection.setRequiredPermissions(DocumentPermission.VIEW);
         this.scorerList = own(scorerList).attach(view.getScorerList());
-        this.approach = own(approach).attach(view.getApproach());
+        this.approach = own(approach).attach(view.getApproach(), view.getSharedTexts());
 
         own(modelSelection.addSelectionListener(docRef -> changed()));
         own(targetSchemaSelection.addSelectionListener(docRef -> changed()));

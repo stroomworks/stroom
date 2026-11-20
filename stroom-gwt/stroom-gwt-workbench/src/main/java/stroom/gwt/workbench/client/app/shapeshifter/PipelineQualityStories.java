@@ -77,8 +77,6 @@ public final class PipelineQualityStories {
                     "value": {"entity": {"type": "XSLT", "uuid": "x-1", "name": "Firewall transform"}}}]}}}]""";
 
     private static final String QUALITY = "/shapeshifterAiQuality/v1/pipelines/p-1/elements/shapeshifterAi";
-    private static final String ASSESS = "Record an assessment…";
-    private static final String DIALOG = "Record an assessment";
     // A fortnight, oldest first, from the 30th of October 2025 (UTC), busiest on the twelfth day
     private static final long FIRST_DAY = 1_761_782_400_000L;
     private static final String REPORT = report();
@@ -88,20 +86,6 @@ public final class PipelineQualityStories {
               "kind": "TRANSLATION", "score": 0.95, "acceptedMs": 1761800000000, "target": "Network/Open"},
              {"text": "# firewall log v2", "record": "<record/>", "kind": "NONE", "score": 0.95,
               "acceptedMs": 1761700000000}]""";
-    private static final String ISSUE = """
-            {"id": 2, "createTimeMs": 1761900000000, "bindingUuid": "b-2", "verdict": "ISSUE",
-              "comment": "Source and destination ports are swapped", "author": "qa"}""";
-    private static final String LOOKS_RIGHT = """
-            {"id": 1, "createTimeMs": 1761800000000, "bindingUuid": "b-2", "verdict": "LOOKS_RIGHT",
-              "author": "qa"}""";
-    private static final String ASSESSMENTS = "[" + ISSUE + ", " + LOOKS_RIGHT + "]";
-    private static final String RESOLVED = "[" + ISSUE.replace("\"author\": \"qa\"",
-            "\"author\": \"qa\", \"resolvedBy\": \"provider\", \"resolveTimeMs\": 1762000000000")
-                                           + ", " + LOOKS_RIGHT + "]";
-    private static final String NEW_ISSUE = """
-            {"id": 3, "createTimeMs": 1762000000000, "bindingUuid": "b-2", "verdict": "ISSUE",
-              "comment": "Times are local, not UTC", "author": "qa"}""";
-    private static final String AFTER_ASSESSING = "[" + NEW_ISSUE + ", " + ISSUE + ", " + LOOKS_RIGHT + "]";
 
     private PipelineQualityStories() {
         // Static utility
@@ -145,9 +129,9 @@ public final class PipelineQualityStories {
                     play.expect(samples.getByText(TextMatch.containing("<TypeId>Network/Open</TypeId>")))
                             .toBeVisible();
                     play.expect(samples.getByText("No event: this kind of record yields none.")).toBeVisible();
-                    // Assessments: an open issue, which someone who may edit the pipeline can resolve
-                    play.expect(play.findByText("1 open issue flagged to the Data Provider.")).toBeVisible();
-                    play.expect(play.getByRole("button", "Mark resolved")).toBeVisible();
+                    // Assessments are no longer recorded on the tab
+                    play.expect(play.queryByText("Assessments")).toBeNull();
+                    play.expect(play.queryByRole("button", "Record an assessment…")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
                 // Day by day, folded beneath the chart
@@ -160,60 +144,6 @@ public final class PipelineQualityStories {
                     final Play grid = play.within(play.getByRole("grid", "Volume by day"));
                     play.expect(grid.findByText("10 Nov")).toBeVisible();
                     play.expect(grid.getByText("600")).toBeVisible();
-                    DocEditors.expectNoProblems(play);
-                })
-                // An issue recorded: flagged to the Data Provider, the list read back with it
-                .story("AssessmentDialogOk", context -> render(context, false, "[" + TRANSLATING + "]"))
-                .withPlay(play -> {
-                    final Play dialog = openAssessment(play);
-                    play.click(dialog.getByRole("radio", TextMatch.startingWith("Has an issue")));
-                    play.type(dialog.getByLabelText("What you found"), "Times are local, not UTC");
-                    play.click(dialog.getByRole("button", StroomDom.button("OK")));
-                    play.waitFor(() -> play.expect(play.screen().queryByText(DIALOG, StroomDom.DIALOG_TITLE))
-                            .toBeNull());
-                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiQuality/v1/assessments")
-                                    .withJsonBodyContaining("{\"verdict\": \"ISSUE\", "
-                                                            + "\"comment\": \"Times are local, not UTC\"}")
-                                    .toSpyMatcher()));
-                    play.expect(play.findByText("2 open issues flagged to the Data Provider.")).toBeVisible();
-                    DocEditors.expectNoProblems(play);
-                })
-                // Cancelled: nothing is recorded
-                .story("AssessmentDialogCancel", context -> render(context, false, "[" + TRANSLATING + "]"))
-                .withPlay(play -> {
-                    final Play dialog = openAssessment(play);
-                    play.type(dialog.getByLabelText("What you found"), "Never mind");
-                    play.click(dialog.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(play.screen().queryByText(DIALOG, StroomDom.DIALOG_TITLE))
-                            .toBeNull());
-                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiQuality/v1/assessments").toSpyMatcher());
-                    DocEditors.expectNoProblems(play);
-                })
-                // An issue that doesn't say what it is is refused, the dialog kept open and usable
-                .story("AssessmentIssueNeedsSaying", context -> render(context, false, "[" + TRANSLATING + "]"))
-                .withPlay(play -> {
-                    final Play dialog = openAssessment(play);
-                    play.click(dialog.getByRole("radio", TextMatch.startingWith("Has an issue")));
-                    play.click(dialog.getByRole("button", StroomDom.button("OK")));
-                    play.expect(dialog.findByText(TextMatch.startingWith("Say what the issue is"))).toBeVisible();
-                    play.expect(dialog.getByRole("button", StroomDom.button("OK")))
-                            .not().toHaveAttribute("aria-disabled", "true");
-                    play.click(dialog.getByRole("button", StroomDom.button("Cancel")));
-                    play.waitFor(() -> play.expect(play.screen().queryByText(DIALOG, StroomDom.DIALOG_TITLE))
-                            .toBeNull());
-                    DocEditors.expectNoProblems(play);
-                })
-                // An open issue marked resolved by someone who may edit the pipeline
-                .story("ResolveIssue", context -> render(context, false, "[" + TRANSLATING + "]"))
-                .withPlay(play -> {
-                    openTab(play);
-                    play.click(play.findByRole("button", "Mark resolved"));
-                    play.waitFor(() -> play.expect(play.getByText("No issues are open.")).toBeVisible());
-                    play.expect(play.getByText(TextMatch.containing("resolved by provider"))).toBeVisible();
-                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiQuality/v1/assessments/2/resolve").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
                 // Someone who may not view data sees why there are no samples, and nothing is alerted
@@ -231,10 +161,6 @@ public final class PipelineQualityStories {
                     openTab(play);
                     play.expect(play.within(play.findByRole("list", "Quality figures")).findByText("98%"))
                             .toBeInTheDocument();
-                    // An assessment may be recorded by someone who may only view; resolving is for an editor
-                    play.expect(play.findByText("1 open issue flagged to the Data Provider.")).toBeVisible();
-                    play.expect(play.getByRole("button", ASSESS)).toBeVisible();
-                    play.expect(play.queryByRole("button", "Mark resolved")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
                 // Scoring lately below its Learning Flow's flag: the figure calls for attention
@@ -317,15 +243,6 @@ public final class PipelineQualityStories {
                 });
     }
 
-    // Opens the Quality Assurance tab and the dialog an assessment is recorded in, and gives the dialog
-    private static Play openAssessment(final Play play) {
-        openTab(play);
-        play.click(play.findByRole("button", ASSESS));
-        final Query title = play.screen().findByText(DIALOG, StroomDom.DIALOG_TITLE);
-        play.expect(title).toBeInTheDocument();
-        return play.within(title.closest(StroomDom.DIALOG));
-    }
-
     private static void openTab(final Play play) {
         play.waitFor(() -> play.expect(DocEditors.tab(play, TAB)).toBeInTheDocument());
         play.click(DocEditors.tab(play, TAB));
@@ -354,10 +271,7 @@ public final class PipelineQualityStories {
                                         .withJsonBodyContaining("{\"uuid\": \"f-2\"}"),
                                 RestReply.json(FRAGMENT_LAYERS))
                         .get(QUALITY, RestReply.json(REPORT))
-                        .get(QUALITY + "/samples", samples)
-                        .get(QUALITY + "/assessments", RestReply.json(ASSESSMENTS))
-                        .post("/shapeshifterAiQuality/v1/assessments", RestReply.json(AFTER_ASSESSING))
-                        .post("/shapeshifterAiQuality/v1/assessments/2/resolve", RestReply.json(RESOLVED)),
+                        .get(QUALITY + "/samples", samples),
                 ShapeshifterAiFixtures.DOC, ShapeshifterAiFixtures.FIREWALL_PROMOTED, learners);
     }
 

@@ -3,8 +3,8 @@
      the fallback, what it is; then the question text it is asked with -->
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
-             xmlns:b="urn:import:stroom.widget.button.client"
-             xmlns:tx="urn:import:stroom.widget.text.client">
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.shapeshifter.client.component">
     <g:FlowPanel styleName="approach-section">
         <g:FlowPanel ui:field="cards" styleName="approach-section__cards"/>
         <g:HTMLPanel ui:field="fallback" styleName="approach-section__fallback" visible="false">
@@ -15,11 +15,8 @@
         </g:HTMLPanel>
 
         <g:FlowPanel ui:field="textsPart" styleName="approach-section__texts">
-            <g:FlowPanel styleName="approach-section__texts-head">
-                <tx:Label ui:field="textsHeading" styleName="approach-section__heading"/>
-                <b:LinkButton ui:field="textsToggle" addStyleNames="approach-section__link"/>
-            </g:FlowPanel>
-            <g:FlowPanel ui:field="texts"/>
+            <tx:Label ui:field="textsHeading" styleName="approach-section__heading"/>
+            <s:QuestionTexts ui:field="texts"/>
         </g:FlowPanel>
     </g:FlowPanel>
 </ui:UiBinder>

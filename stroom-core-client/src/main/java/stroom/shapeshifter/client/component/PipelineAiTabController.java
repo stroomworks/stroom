@@ -73,8 +73,6 @@ public class PipelineAiTabController extends Controller {
     };
     private Consumer<List<PipelineAiElement>> onElements = found -> {
     };
-    private Runnable onOpenQuality = () -> {
-    };
 
     /// Made by GIN, with its tab and the feed's controller.
     ///
@@ -95,7 +93,6 @@ public class PipelineAiTabController extends Controller {
         detail.setOnActed(this::refresh);
         detail.setOnOpenSettings(() -> openDocument(editor -> editor.showLearning()));
         detail.setOnOpenSetup(action -> openDocument(editor -> editor.followSuggestion(action)));
-        detail.setOnOpenQuality(() -> onOpenQuality.run());
         view.setOnElement(element -> {
             if (element != null && !element.equals(chosen)) {
                 chosen = element;
@@ -156,16 +153,6 @@ public class PipelineAiTabController extends Controller {
     ///                    be shown only where it has.
     public void setOnAvailable(final Consumer<Boolean> onAvailable) {
         this.onAvailable = onAvailable;
-    }
-
-    /// @param onOpenQuality Run when the person asks to see the issues QA flagged, on the Quality Assurance tab.
-    public void setOnOpenQuality(final Runnable onOpenQuality) {
-        this.onOpenQuality = onOpenQuality;
-    }
-
-    /// @return The id of the AI Translator element shown, or null for none.
-    public String getChosenElementId() {
-        return NullSafe.get(chosen, PipelineAiElement::getId);
     }
 
     /// @param onElements Told the pipeline's AI Translator elements, each time it is read, e.g. for its Quality

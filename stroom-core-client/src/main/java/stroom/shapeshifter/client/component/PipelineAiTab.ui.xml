@@ -16,7 +16,7 @@
             </form:FormGroup>
         </g:FlowPanel>
         <tx:Label ui:field="nothing" styleName="dock-min pipeline-ai-tab__nothing" visible="false"/>
-        <g:SimplePanel ui:field="detailPanel" styleName="dock-max">
+        <g:SimplePanel ui:field="detailPanel" styleName="dock-max pipeline-ai-tab__detail">
             <s:FeedDetail ui:field="feedDetail"/>
         </g:SimplePanel>
     </g:FlowPanel>

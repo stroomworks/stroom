@@ -23,11 +23,13 @@ import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.ScorerSetting;
 import stroom.shapeshifter.shared.ScorerType;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.Template;
 
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,6 +61,23 @@ class TestAdvancedSettings {
                 .containsExactly(SetupSection.APPROACH);
         assertThat(AdvancedSettings.changed(doc().sampleSizeLimit(1024).build()))
                 .containsExactly(SetupSection.APPROACH);
+    }
+
+    @Test
+    void aSharedQuestionTextOfItsOwnOpensLearningSteps() {
+        // Each of the texts every step shares, now under Learning steps' Advanced options
+        for (final Template shared : LearnFlow.SHARED_TEXTS) {
+            assertThat(AdvancedSettings.changed(doc().flow(withTexts(Map.of(shared, "Our own words"))).build()))
+                    .as(shared.name())
+                    .containsExactly(SetupSection.APPROACH);
+        }
+    }
+
+    @Test
+    void aStepsQuestionTextOfItsOwnLeavesLearningStepsFolded() {
+        // A step's own text is shown with the step, not under Advanced options
+        assertThat(AdvancedSettings.changed(doc().flow(withTexts(Map.of(Template.CHAIN, "Our own words"))).build()))
+                .isEmpty();
     }
 
     @Test
@@ -119,5 +138,10 @@ class TestAdvancedSettings {
     // A Learning Flow as new, to change one thing of
     private static ShapeshifterAiDoc.Builder doc() {
         return ShapeshifterAiDoc.builder().uuid("ss-1");
+    }
+
+    // A new Learning Flow's steps with its own words for some of the question texts
+    private static LearningFlow withTexts(final Map<Template, String> texts) {
+        return new LearningFlow(doc().build().getFlow().getSteps(), texts, null);
     }
 }

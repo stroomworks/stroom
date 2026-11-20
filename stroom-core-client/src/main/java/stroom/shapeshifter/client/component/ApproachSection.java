@@ -17,7 +17,6 @@
 package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.shared.Template;
-import stroom.widget.button.client.LinkButton;
 import stroom.widget.component.client.Component;
 import stroom.widget.text.client.Label;
 
@@ -28,17 +27,14 @@ import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.gwt.user.client.ui.Widget;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /// The step of the learning flow chosen on the Setup tab's route map ([RouteMap]; design 07; design 05): its
 /// card ([StepCard]); or, for the fallback, which has no card, what it is.
-/// Beneath, the question text the step is asked with, or the text every step shares (A85, A86). The starting
-/// points, and what is wrong with the flow as a whole, are under Learning steps on [SetupTab].
+/// Beneath, the question text the step is asked with ([QuestionTexts]; A85, A86). The text every step shares,
+/// the starting points, and what is wrong with the flow as a whole are under Learning steps on [SetupTab].
 /// [ApproachSectionController] fills it.
 public class ApproachSection extends Component {
 
@@ -56,22 +52,11 @@ public class ApproachSection extends Component {
     @UiField
     Label textsHeading;
     @UiField
-    LinkButton textsToggle;
-    @UiField
-    FlowPanel texts;
-
-    private final Map<Template, LearnQuestionText> slots = new LinkedHashMap<>();
-    private Runnable onTextsToggle = () -> {
-    };
-    private BiConsumer<Template, String> onTextEdit = (template, text) -> {
-    };
-    private Consumer<Template> onLoadBuiltIn = template -> {
-    };
+    QuestionTexts texts;
 
     /// Makes the section, showing no step.
     public ApproachSection() {
         initWidget(BINDER.createAndBindUi(this));
-        textsToggle.setOnClick(() -> onTextsToggle.run());
     }
 
     /// Removes the step shown, for another to be shown.
@@ -97,31 +82,18 @@ public class ApproachSection extends Component {
         textsPart.addStyleName(TEXTS_UNDER_HEADING);
     }
 
-    /// The question texts shown beneath the step, each in its own place.
+    /// The question texts the step is asked with, shown beneath it, each in its own place.
     ///
-    /// @param heading   What they are the text of.
-    /// @param toggle    What the link beside the heading shows instead.
+    /// @param heading   What they are the text of, e.g. "Question text of step 1: Choose the elements".
     /// @param templates The texts.
-    public void setTexts(final String heading, final String toggle, final List<Template> templates) {
+    public void setTexts(final String heading, final List<Template> templates) {
         textsHeading.setText(heading);
-        textsToggle.setText(toggle);
-        slots.clear();
-        texts.clear();
-        for (final Template template : templates) {
-            final LearnQuestionText slot = new LearnQuestionText();
-            slot.setName(template.getDisplayValue());
-            slot.setVariables(LearnFlow.variablesTitle(template));
-            slot.setReadOnly(isReadOnly());
-            slot.setOnEdit(words -> onTextEdit.accept(template, words));
-            slot.setOnLoad(() -> onLoadBuiltIn.accept(template));
-            slots.put(template, slot);
-            texts.add(slot);
-        }
+        texts.setTexts(templates);
     }
 
     /// @return The question texts shown, in order.
     public List<Template> getTexts() {
-        return new ArrayList<>(slots.keySet());
+        return texts.getTexts();
     }
 
     /// Shows the words of one of the question texts shown, and where they come from.
@@ -130,25 +102,17 @@ public class ApproachSection extends Component {
     /// @param words    Its words.
     /// @param source   Where they come from.
     public void showText(final Template template, final String words, final String source) {
-        final LearnQuestionText slot = slots.get(template);
-        if (slot != null) {
-            slot.setWords(words, source);
-        }
-    }
-
-    /// @param onTextsToggle Run when the user asks for the other question texts.
-    public void setOnTextsToggle(final Runnable onTextsToggle) {
-        this.onTextsToggle = onTextsToggle;
+        texts.showText(template, words, source);
     }
 
     /// @param onTextEdit Told a question text and its words when the user edits them.
     public void setOnTextEdit(final BiConsumer<Template, String> onTextEdit) {
-        this.onTextEdit = onTextEdit;
+        texts.setOnTextEdit(onTextEdit);
     }
 
     /// @param onLoadBuiltIn Told the question text a built-in is to be loaded into.
     public void setOnLoadBuiltIn(final Consumer<Template> onLoadBuiltIn) {
-        this.onLoadBuiltIn = onLoadBuiltIn;
+        texts.setOnLoadBuiltIn(onLoadBuiltIn);
     }
 
     @Override
@@ -158,7 +122,7 @@ public class ApproachSection extends Component {
                 ((StepCard) cards.getWidget(i)).setReadOnly(readOnly);
             }
         }
-        slots.values().forEach(slot -> slot.setReadOnly(readOnly));
+        texts.setReadOnly(readOnly);
     }
 
 

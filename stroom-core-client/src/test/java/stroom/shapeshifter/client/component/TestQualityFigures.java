@@ -19,10 +19,8 @@ package stroom.shapeshifter.client.component;
 import stroom.docref.DocRef;
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
 import stroom.shapeshifter.client.component.QualityFigures.Figure;
-import stroom.shapeshifter.shared.AssessmentVerdict;
 import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.LearnerState;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorLearner;
@@ -159,21 +157,8 @@ class TestQualityFigures {
         assertThat(QualityFigures.cardinalityNote(empty)).contains("keeps no records");
     }
 
-    @Test
-    void onlyAnUnresolvedIssueIsOpen() {
-        assertThat(QualityFigures.isOpenIssue(assessment(AssessmentVerdict.ISSUE, null))).isTrue();
-        assertThat(QualityFigures.isOpenIssue(assessment(AssessmentVerdict.ISSUE, "provider"))).isFalse();
-        assertThat(QualityFigures.isOpenIssue(assessment(AssessmentVerdict.LOOKS_RIGHT, null))).isFalse();
-    }
-
     private static VolumeDay day(final int day, final Long streams, final Long records) {
         return new VolumeDay(day * 86_400_000L, streams, records);
-    }
-
-    private static QualityAssessment assessment(final AssessmentVerdict verdict, final String resolvedBy) {
-        return new QualityAssessment(1L, 1000L, "b-1", verdict, "x", "qa", resolvedBy, resolvedBy == null
-                ? null
-                : 2000L);
     }
 
     private static SupervisorLearner serving(final Double lately,

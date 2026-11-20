@@ -31,7 +31,7 @@ import java.util.Set;
 ///
 /// | Section | Advanced options |
 /// |---|---|
-/// | Learning steps | tries per step, largest sample |
+/// | Learning steps | tries per step, largest sample, the question text every step shares |
 /// | Quality checks | the checks themselves where they are no starting set, lines kept back |
 /// | Approving new translations | records before a translation is trusted, the fallback |
 /// | Monitoring translations in use | records kept to check against, when a waiting stream is overdue |
@@ -51,7 +51,8 @@ public final class AdvancedSettings {
     public static Set<SetupSection> changed(final ShapeshifterAiDoc doc) {
         final Set<SetupSection> changed = EnumSet.noneOf(SetupSection.class);
         if (doc.getMaxAttempts() != NEW.getMaxAttempts()
-            || doc.getSampleSizeLimit() != NEW.getSampleSizeLimit()) {
+            || doc.getSampleSizeLimit() != NEW.getSampleSizeLimit()
+            || ownSharedTexts(doc)) {
             changed.add(SetupSection.APPROACH);
         }
         if (ownChecks(doc.getScorers())
@@ -73,6 +74,12 @@ public final class AdvancedSettings {
     // the starting sets are always in sight
     private static boolean ownChecks(final List<ScorerSetting> scorers) {
         return scorers != null && !scorers.isEmpty() && QualityPreset.of(scorers) == null;
+    }
+
+    // Any of the question texts every step shares that the document has its own words for, rather than the
+    // built-in's
+    private static boolean ownSharedTexts(final ShapeshifterAiDoc doc) {
+        return doc.getFlow().getTemplates().keySet().stream().anyMatch(LearnFlow.SHARED_TEXTS::contains);
     }
 
     private static boolean samePercent(final double a, final double b) {

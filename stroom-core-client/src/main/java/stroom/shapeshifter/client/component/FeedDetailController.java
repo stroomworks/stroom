@@ -30,7 +30,6 @@ import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.GuidanceRequest;
 import stroom.shapeshifter.shared.ImproveRequest;
 import stroom.shapeshifter.shared.LearnerRequest;
-import stroom.shapeshifter.shared.QualityResource;
 import stroom.shapeshifter.shared.RejectRequest;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepOutcome;
@@ -70,7 +69,6 @@ import java.util.function.Function;
 public class FeedDetailController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
-    private static final QualityResource QUALITY_RESOURCE = GWT.create(QualityResource.class);
     private static final int RUNS = 50;
 
     private final RestFactory restFactory;
@@ -214,53 +212,21 @@ public class FeedDetailController extends Controller {
         historyWanted = false;
         view.setHistoryOpen(false);
         waitingList.setLearner(learner);
-        view.setIssues(List.of());
         show(true);
         readRuns(true);
-        readIssues();
     }
 
     /// Reads the feed's runs and the run shown again, keeping what is chosen and open.
     public void refresh() {
         if (learner != null) {
             readRuns(false);
-            readIssues();
             if (view.isWaitingShown()) {
                 waitingList.refresh();
             }
         }
     }
 
-    /// @param onOpenQuality Run when the person asks to see the issues QA flagged, on the Quality Assurance tab.
-    public void setOnOpenQuality(final Runnable onOpenQuality) {
-        view.setOnOpenQuality(onOpenQuality);
-    }
-
     // ---- Reading ----
-
-    // The issues QA people have flagged and nobody has resolved, shown to the Data Provider here; a pipeline
-    // whose issues can't be read shows none
-    private void readIssues() {
-        final SupervisorLearner whose = learner;
-        if (whose == null || whose.isPipelineDeleted()) {
-            view.setIssues(List.of());
-            return;
-        }
-        restFactory
-                .create(QUALITY_RESOURCE)
-                .method(resource -> resource.assessments(whose.getLearner().getPipelineUuid(),
-                        whose.getLearner().getElementId()))
-                .onSuccess(said -> {
-                    if (whose == learner || (learner != null && whose.getLearner().equals(learner.getLearner()))) {
-                        view.setIssues(NullSafe.list(said).stream().filter(QualityFigures::isOpenIssue).toList());
-                    }
-                })
-                .onFailure(error -> {
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
-    }
 
     private void readRuns(final boolean fresh) {
         final int request = ++asked;

@@ -17,8 +17,6 @@
 package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
-import stroom.shapeshifter.shared.AssessmentVerdict;
-import stroom.shapeshifter.shared.QualityAssessment;
 import stroom.shapeshifter.shared.QualityReport;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorLearner;
@@ -64,12 +62,6 @@ public final class QualityFigures {
         figures.add(trust(learner, doc));
         figures.add(waiting(learner));
         return new QualityFigures(figures, null);
-    }
-
-    /// @param assessment An assessment.
-    /// @return Whether it is an issue nobody has resolved, which is flagged to the Data Provider.
-    public static boolean isOpenIssue(final QualityAssessment assessment) {
-        return assessment.getVerdict() == AssessmentVerdict.ISSUE && assessment.getResolvedBy() == null;
     }
 
     /// The volume over the window, in a sentence.

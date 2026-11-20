@@ -61,7 +61,9 @@ import java.util.Set;
 /// chooses from the parsers and filters the AI can learn ([FlowStep#LEARNABLE_ELEMENTS]). A starting point
 /// replaces the steps with an example's (A34, [#startFrom]); the step chosen ([#select]) is edited in place on
 /// its card, every choice from a menu ([ApproachFlow]), with the question text it is asked with beneath
-/// (A85, A86). The flow is not shown or edited as text. What is wrong with a step is said on its card, and
+/// (A85, A86). It also fills the question text every step shares ([LearnFlow#SHARED_TEXTS]), shown under
+/// Learning steps' Advanced options ([QuestionTexts]), as it holds all the document's texts. The flow is not
+/// shown or edited as text. What is wrong with a step is said on its card, and
 /// what is wrong with the whole flow ([#flowProblem()]) under Learning steps (A88); the store refuses to save
 /// a flow with problems.
 ///
@@ -80,6 +82,8 @@ public class ApproachSectionController extends Controller {
     private final RestFactory restFactory;
     private final Provider<BuiltInTextController> builtInTextProvider;
     private ApproachSection view;
+    /// The question texts every step shares, under Learning steps' Advanced options.
+    private QuestionTexts sharedTexts;
     /// The card of the step chosen; null where it has none (the fallback).
     private StepCard card;
     /// This document's own question texts, by template; the built-ins are shown where it has none.
@@ -101,10 +105,9 @@ public class ApproachSectionController extends Controller {
     private String flowProblem;
     private Runnable onChange = () -> {
     };
-    private Texts texts = Texts.STEP;
     private boolean readOnly = true;
 
-    /// Made by GIN; [#attach(ApproachSection)] gives it its section.
+    /// Made by GIN; [#attach(ApproachSection, QuestionTexts)] gives it its section and the shared texts.
     ///
     /// @param eventBus            The application's event bus.
     /// @param builtInTextProvider Makes the dialog that loads a built-in text.
@@ -118,23 +121,22 @@ public class ApproachSectionController extends Controller {
         this.builtInTextProvider = builtInTextProvider;
     }
 
-    /// Attaches it to its section, declared in its owner's template.
+    /// Attaches it to its section and to the question texts every step shares, both declared in its owner's
+    /// template.
     ///
-    /// @param view The section.
+    /// @param view        The section.
+    /// @param sharedTexts The question texts every step shares, under Learning steps' Advanced options.
     /// @return This.
-    public ApproachSectionController attach(final ApproachSection view) {
+    public ApproachSectionController attach(final ApproachSection view, final QuestionTexts sharedTexts) {
         this.view = Objects.requireNonNull(view, "view");
+        this.sharedTexts = Objects.requireNonNull(sharedTexts, "sharedTexts");
         initWidget(view);
 
-        view.setOnTextsToggle(() -> showTexts(texts == Texts.STEP
-                ? Texts.SHARED
-                : Texts.STEP));
-        view.setOnTextEdit((template, words) -> {
-            if (!readOnly) {
-                setText(template, words);
-            }
-        });
+        view.setOnTextEdit(this::editText);
         view.setOnLoadBuiltIn(this::loadBuiltIn);
+        sharedTexts.setTexts(LearnFlow.SHARED_TEXTS);
+        sharedTexts.setOnTextEdit(this::editText);
+        sharedTexts.setOnLoadBuiltIn(this::loadBuiltIn);
         watch(Contexts.READ_ONLY, readOnly -> {
             this.readOnly = readOnly;
             view.setReadOnly(readOnly);
@@ -158,7 +160,6 @@ public class ApproachSectionController extends Controller {
         if (!sameSteps) {
             selected = 0;
             tuned.clear();
-            texts = Texts.STEP;
         }
         rebuild();
     }
@@ -238,8 +239,7 @@ public class ApproachSectionController extends Controller {
         }
     }
 
-    /// Chooses a step, whose card and question text are then shown. The question text every step shares
-    /// stays shown where it was.
+    /// Chooses a step, whose card and question text are then shown.
     ///
     /// @param index The step's index.
     public void select(final int index) {
@@ -270,7 +270,7 @@ public class ApproachSectionController extends Controller {
             }
         }
         refresh();
-        showTexts(texts);
+        showStepTexts();
     }
 
     /// Everything that follows an edit within the card: the card's problem, usual lines and tags, and what
@@ -453,11 +453,11 @@ public class ApproachSectionController extends Controller {
         steps = ApproachFlow.replace(steps, index, step);
         refresh();
         changed();
-        if (index == selected && texts == Texts.STEP) {
+        if (index == selected) {
             // A Find records step's guard decides which of its texts it is asked with
             final List<Template> now = LearnFlow.textsOf(step);
             if (!now.equals(view.getTexts())) {
-                showTexts(Texts.STEP);
+                showStepTexts();
             }
         }
     }
@@ -604,33 +604,49 @@ public class ApproachSectionController extends Controller {
                 .exec();
     }
 
-    /// Shows the question texts of the step chosen, or those every question shares.
-    private void showTexts(final Texts which) {
-        texts = which;
-        if (which == Texts.SHARED) {
-            view.setTexts("Question text every step shares", "Show this step's text", LearnFlow.SHARED_TEXTS);
-        } else if (steps.isEmpty()) {
-            view.setTexts("Question text", "Show the text every step shares", List.of());
+    /// Shows the question texts of the step chosen.
+    private void showStepTexts() {
+        if (steps.isEmpty()) {
+            view.setTexts("Question text", List.of());
         } else {
             final FlowStep step = steps.get(selected);
             view.setTexts(step.getKind() == QuestionKind.ADMIT
                             ? "Question text of the fallback"
                             : "Question text of step " + (selected + 1) + ": " + PlainWords.stepName(steps, selected),
-                    "Show the text every step shares", LearnFlow.textsOf(step));
+                    LearnFlow.textsOf(step));
         }
         showWords();
     }
 
-    /// Every text shown as this document uses it, and where its words come from.
+    /// Every text shown, the step's and those every step shares, as this document uses it, and where its words
+    /// come from.
     private void showWords() {
         for (final Template template : view.getTexts()) {
-            final String override = overrides.get(template);
-            view.showText(template,
-                    override != null
-                            ? override
-                            : builtIns.getOrDefault(template, ""),
-                    LearnFlow.textStatus(template, override != null, builtIns.containsKey(template),
-                            builtInVersion, flow.getBuiltInVersion()));
+            view.showText(template, words(template), source(template));
+        }
+        for (final Template template : sharedTexts.getTexts()) {
+            sharedTexts.showText(template, words(template), source(template));
+        }
+    }
+
+    // A text's words as this document uses them: its own, or the built-in's
+    private String words(final Template template) {
+        final String override = overrides.get(template);
+        return override != null
+                ? override
+                : builtIns.getOrDefault(template, "");
+    }
+
+    // Where a text's words come from
+    private String source(final Template template) {
+        return LearnFlow.textStatus(template, overrides.get(template) != null, builtIns.containsKey(template),
+                builtInVersion, flow.getBuiltInVersion());
+    }
+
+    // A text edited in place, by someone who may edit the document
+    private void editText(final Template template, final String words) {
+        if (!readOnly) {
+            setText(template, words);
         }
     }
 
@@ -665,17 +681,5 @@ public class ApproachSectionController extends Controller {
 
     private boolean isFallback(final String id) {
         return steps.stream().anyMatch(step -> step.getKind() == QuestionKind.ADMIT && step.effectiveId().equals(id));
-    }
-
-
-    // --------------------------------------------------------------------------------
-
-
-    /// Which question texts are shown beneath the step.
-    private enum Texts {
-        /// The step chosen's.
-        STEP,
-        /// Those every question shares.
-        SHARED
     }
 }

@@ -82,17 +82,25 @@
                     </form:FormGroup>
                 </g:FlowPanel>
                 <s:Disclosure ui:field="approachAdvanced" text="Advanced options">
-                    <g:FlowPanel styleName="setup-tab__row">
-                        <form:FormGroup identity="shapeshifterAiMaxAttempts"
-                                        label="Tries per step, unless a step says otherwise"
-                                        helpText="How many answers a step asks for before it has run out of tries, where the step doesn't say. Each answer that falls short is asked again with what fell short.">
-                            <v:ValueSpinner ui:field="maxAttempts" addStyleNames="value-spinner--narrow"/>
-                        </form:FormGroup>
-                        <form:FormGroup identity="shapeshifterAiSampleSizeLimit"
-                                        label="Largest sample of a stream (bytes)"
-                                        helpText="The most of a stream the AI is shown, cut at whole lines. Every answer is still run over the whole stream.">
-                            <v:ValueSpinner ui:field="sampleSizeLimit" addStyleNames="setup-tab__number"/>
-                        </form:FormGroup>
+                    <g:FlowPanel styleName="setup-tab__advanced">
+                        <g:FlowPanel styleName="setup-tab__row">
+                            <form:FormGroup identity="shapeshifterAiMaxAttempts"
+                                            label="Tries per step, unless a step says otherwise"
+                                            helpText="How many answers a step asks for before it has run out of tries, where the step doesn't say. Each answer that falls short is asked again with what fell short.">
+                                <v:ValueSpinner ui:field="maxAttempts" addStyleNames="value-spinner--narrow"/>
+                            </form:FormGroup>
+                            <form:FormGroup identity="shapeshifterAiSampleSizeLimit"
+                                            label="Largest sample of a stream (bytes)"
+                                            helpText="The most of a stream the AI is shown, cut at whole lines. Every answer is still run over the whole stream.">
+                                <v:ValueSpinner ui:field="sampleSizeLimit" addStyleNames="setup-tab__number"/>
+                            </form:FormGroup>
+                        </g:FlowPanel>
+                        <g:FlowPanel>
+                            <tx:Label styleName="setup-tab__subheading" text="Question text every step shares"/>
+                            <tx:Label styleName="setup-tab__note"
+                                      text="Every question is asked under the system text. The rules texts go into each question that uses them."/>
+                        </g:FlowPanel>
+                        <s:QuestionTexts ui:field="sharedTexts"/>
                     </g:FlowPanel>
                 </s:Disclosure>
             </c:AriaPanel>
