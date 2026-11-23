@@ -37,7 +37,11 @@ import java.util.Objects;
 /// is the clear case and this catches it. A time-zone error is only hours out, and no window tight enough
 /// to catch that would survive back-loaded data — for zones the prompt's rule, and the `timeZone` property
 /// of decision N6, are the tools.
-@JsonPropertyOrder({"beforeDays", "afterDays"})
+///
+/// **Which time is judged** is event-logging's `EventTime/TimeCreated` unless the Learning Flow names
+/// another (task 7): a schema that isn't event-logging keeps its time elsewhere, and where it names none
+/// the check doesn't run for that schema.
+@JsonPropertyOrder({"beforeDays", "afterDays", "timeField"})
 @JsonInclude(Include.NON_NULL)
 public final class TimesParameters extends ScorerParameters {
 
@@ -51,15 +55,32 @@ public final class TimesParameters extends ScorerParameters {
     private final int beforeDays;
     @JsonProperty
     private final int afterDays;
+    @JsonProperty
+    private final String timeField;
+
+    /// The window alone, judging event-logging's time.
+    ///
+    /// @param beforeDays How long before the stream was received an event may be dated; the default is a
+    ///                   year.
+    /// @param afterDays  How long after it an event may be dated; the default is a day.
+    public TimesParameters(final Integer beforeDays, final Integer afterDays) {
+        this(beforeDays, afterDays, null);
+    }
 
     /// @param beforeDays How long before the stream was received an event may be dated; the default is a
     ///                   year.
     /// @param afterDays  How long after it an event may be dated; the default is a day.
+    /// @param timeField  An XPath, from a record, to the time to judge, e.g. `EventTime/TimeCreated`; null
+    ///                   or blank for event-logging's.
     @JsonCreator
     public TimesParameters(@JsonProperty("beforeDays") final Integer beforeDays,
-                           @JsonProperty("afterDays") final Integer afterDays) {
+                           @JsonProperty("afterDays") final Integer afterDays,
+                           @JsonProperty("timeField") final String timeField) {
         this.beforeDays = Objects.requireNonNullElse(beforeDays, DEFAULT_BEFORE_DAYS);
         this.afterDays = Objects.requireNonNullElse(afterDays, DEFAULT_AFTER_DAYS);
+        this.timeField = timeField == null || timeField.isBlank()
+                ? null
+                : timeField.trim();
         if (this.beforeDays < 0 || this.afterDays < 0) {
             throw new IllegalArgumentException("A time window cannot be negative");
         }
@@ -78,6 +99,12 @@ public final class TimesParameters extends ScorerParameters {
         return afterDays;
     }
 
+    /// @return The XPath, from a record, to the time to judge; null for event-logging's
+    ///         `EventTime/TimeCreated`.
+    public String getTimeField() {
+        return timeField;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -87,16 +114,21 @@ public final class TimesParameters extends ScorerParameters {
             return false;
         }
         final TimesParameters that = (TimesParameters) o;
-        return beforeDays == that.beforeDays && afterDays == that.afterDays;
+        return beforeDays == that.beforeDays
+               && afterDays == that.afterDays
+               && Objects.equals(timeField, that.timeField);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(beforeDays, afterDays);
+        return Objects.hash(beforeDays, afterDays, timeField);
     }
 
     @Override
     public String toString() {
-        return "within " + beforeDays + " days before and " + afterDays + " days after the stream";
+        return (timeField == null
+                ? ""
+                : timeField + " ")
+               + "within " + beforeDays + " days before and " + afterDays + " days after the stream";
     }
 }

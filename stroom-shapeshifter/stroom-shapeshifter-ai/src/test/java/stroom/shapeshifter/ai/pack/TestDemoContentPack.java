@@ -155,6 +155,26 @@ class TestDemoContentPack {
                 .noneMatch(property -> "feed".equals(property.getName()));
     }
 
+    /// Task 7, W1-6: the document's translations are judged against one set of schemas and the pipeline's
+    /// Schema filter validates against another, unless the two agree. The demo document names no target
+    /// schema, so it works on any installation whatever version of event-logging is installed: it is
+    /// asked for event-logging 3.0.0, which its content writes, and judged against the `EVENTS` group,
+    /// which is what each pipeline's Schema filter validates against too.
+    @Test
+    void thePipelinesValidateAgainstTheSchemasTheDocumentIsJudgedAgainst() {
+        assertThat(DemoContentPack.document().getTargetSchema())
+                .describedAs("a target would name an XMLSchema document by a uuid one installation has")
+                .isNull();
+        final List<String> elements = pathsFor(PipelineDoc.TYPE, ".json");
+        elements.forEach(path -> {
+            final PipelineData data = JsonUtil.readValue(DemoContentPack.files().get(path), PipelineData.class);
+            assertThat(data.getAddedProperties())
+                    .filteredOn(property -> "schemaGroup".equals(property.getName()))
+                    .extracting(property -> property.getValue().getString())
+                    .containsExactly("EVENTS");
+        });
+    }
+
     /// A filter carrying an id, a processor or a tracker is refused on import, and the pack would then
     /// need a filter building by hand — which is most of what it exists to save.
     @Test

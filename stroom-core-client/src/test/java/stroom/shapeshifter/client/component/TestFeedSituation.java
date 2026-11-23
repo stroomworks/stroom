@@ -34,6 +34,7 @@ import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.shapeshifter.shared.SupervisorAttempt;
 import stroom.shapeshifter.shared.SupervisorLearner;
 import stroom.shapeshifter.shared.SupervisorTurn;
+import stroom.shapeshifter.shared.TimeZoneSource;
 
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +83,56 @@ class TestFeedSituation {
                                                     + "oldest for 3 hours.");
         assertThat(situation.getPrimary()).containsExactly(FeedAction.GRANT, FeedAction.EXHAUST, FeedAction.ANSWER);
         assertThat(situation.getMore()).containsExactly(FeedAction.RELEARN, FeedAction.GIVE_UP);
+    }
+
+    @Test
+    void aPausedRunWhoseTargetHasNoMarkedUnknownOffersNoFallback() {
+        // Task 7, W1-3: Finish with Unknowns writes event-logging's marked Unknown, which another target
+        // schema doesn't have, so it isn't offered; the server refuses it too
+        final SupervisorLearner learner = learner(LearnerState.AWAITING_PERSON, null, 2);
+        final SupervisorLearner noFallback = learner.named(learner.getPipeline(), learner.getDoc(),
+                learner.isRaised(), learner.isBelowThreshold(), true, null);
+
+        final FeedSituation situation = FeedSituation.of(noFallback, run(AttemptStatus.PARKED, STOPPED_AT_PARSER),
+                DOC, NOW);
+
+        assertThat(situation.getPrimary()).containsExactly(FeedAction.GRANT, FeedAction.ANSWER);
+    }
+
+    @Test
+    void aSmartPipelineHeldBackByASpendCeilingSaysWhoseAndThatItClears() {
+        // Track 2 step 4: the spend breaker (A24), in its own words, on the row and on the Learning Status tab
+        final SupervisorLearner learner = learner(LearnerState.LEARNING, null, 2);
+        final SupervisorLearner paused = learner.named(learner.getPipeline(), learner.getDoc(),
+                learner.isRaised(), learner.isBelowThreshold(), false,
+                "This Learning Flow spent 1500 token(s) in the last hour, which is its ceiling of 1000.");
+
+        final FeedSituation situation = FeedSituation.of(paused, null, DOC, NOW);
+
+        assertThat(situation.getChip()).isEqualTo("Spend limit");
+        assertThat(situation.getTone()).isEqualTo(Tone.WARNING);
+        assertThat(situation.getHeadline()).isEqualTo("Not learning until a spend ceiling clears");
+        assertThat(situation.getDetail()).startsWith("This Learning Flow spent 1500 token(s)");
+        assertThat(FeedSituation.listChip(paused)).isEqualTo("Spend limit");
+        assertThat(FeedSituation.listTone(paused)).isEqualTo(Tone.WARNING);
+        assertThat(FeedSituation.listChip(learner)).describedAs("and nothing said where nothing holds it")
+                .isEqualTo("Learning");
+    }
+
+    @Test
+    void theTimeZoneSaysWhereItComesFromAndWhatIsWrongWithIt() {
+        // Decision N6, Track 2 step 4: a surprising date is traced to what set the zone
+        final SupervisorLearner learner = learner(LearnerState.SERVING, "b-1", 0);
+
+        assertThat(FeedSituation.timeZone(learner.withTimeZone("Europe/London", TimeZoneSource.PIPELINE, null)))
+                .isEqualTo("Timestamps with no offset are read in Europe/London, this pipeline's time zone, "
+                           + "unless a stream's TimeZone header says otherwise.");
+        assertThat(FeedSituation.timeZone(learner.withTimeZone("UTC", TimeZoneSource.DEFAULT,
+                "The pipeline's time zone is \"Mars/Olympus\", which is not a time zone. Times with no offset "
+                + "are being read as UTC.")))
+                .startsWith("Timestamps with no offset are read as UTC, as this pipeline sets no time zone, ")
+                .endsWith("which is not a time zone. Times with no offset are being read as UTC.");
+        assertThat(FeedSituation.timeZone(learner)).describedAs("a row that wasn't asked says nothing").isNull();
     }
 
     @Test

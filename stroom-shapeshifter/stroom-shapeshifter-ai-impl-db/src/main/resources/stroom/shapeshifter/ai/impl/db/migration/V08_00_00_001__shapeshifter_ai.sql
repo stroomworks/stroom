@@ -172,6 +172,13 @@ CREATE TABLE IF NOT EXISTS shapeshifter_attempt (
     -- it. An improvement has no stream behind it: its sample is the records the binding was accepted on,
     -- put back together, so the worker reads it from the regression set and not from the stream store.
     improving_binding_uuid varchar(255) DEFAULT NULL,
+    -- How what it learned did on each check that ran (Track 2 step 4, approval evidence), as JSON: the
+    -- check, whether it was advice or a gate, the score and the threshold. Numbers only, never what a check
+    -- said about a record, which quotes the stream (A146). Null for a run that learned nothing.
+    evidence              longtext DEFAULT NULL,
+    -- Who approved or rejected what it learned, and when; null where nobody has.
+    reviewed_by           varchar(255) DEFAULT NULL,
+    reviewed_time_ms      bigint DEFAULT NULL,
     PRIMARY KEY           (id),
     UNIQUE KEY            shapeshifter_attempt_claim (pipeline_uuid, element_id, claimed),
     KEY                   shapeshifter_attempt_doc_uuid (doc_uuid),

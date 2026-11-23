@@ -23,13 +23,13 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
  * What a scorer of design §8.4 needs to know beyond its weight and threshold. One class per scorer that
- * takes parameters; the compile gate and input coverage take none. {@link #check()} says which
+ * takes parameters; the compile gate, input coverage and schema conformance take none (conformance judges
+ * against the Learning Flow's target schema, task 7). {@link #check()} says which
  * check a set of parameters belongs to, and {@link CheckSetting} refuses a mismatch.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
         @JsonSubTypes.Type(value = YieldParameters.class, name = "yield"),
-        @JsonSubTypes.Type(value = SchemaConformanceParameters.class, name = "schemaConformance"),
         @JsonSubTypes.Type(value = ExtractionQualityParameters.class, name = "extractionQuality"),
         @JsonSubTypes.Type(value = BusinessRulesParameters.class, name = "businessRules"),
         @JsonSubTypes.Type(value = TimesParameters.class, name = "times")
@@ -37,7 +37,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonInclude(Include.NON_NULL)
 public abstract sealed class ScorerParameters
         permits YieldParameters,
-        SchemaConformanceParameters,
         ExtractionQualityParameters,
         BusinessRulesParameters,
         TimesParameters {
@@ -52,7 +51,6 @@ public abstract sealed class ScorerParameters
     public static ScorerParameters defaultsFor(final Check check) {
         return switch (check) {
             case YIELD -> new YieldParameters(null, null);
-            case CONFORMANCE -> new SchemaConformanceParameters(null);
             case QUALITY -> new ExtractionQualityParameters(null, null);
             case RULES -> new BusinessRulesParameters(null, null);
             case TIMES -> new TimesParameters(null, null);

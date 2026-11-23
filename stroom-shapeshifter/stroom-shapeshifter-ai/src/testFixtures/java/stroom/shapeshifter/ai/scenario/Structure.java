@@ -24,8 +24,8 @@ import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.ai.learning.StepRunner;
 import stroom.shapeshifter.ai.learning.TargetChecks;
 import stroom.shapeshifter.ai.scoring.OutputRecords;
-import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.ai.stage.RecordSkeleton;
+import stroom.shapeshifter.shared.RecordBoundary;
 
 import java.util.List;
 import java.util.Optional;

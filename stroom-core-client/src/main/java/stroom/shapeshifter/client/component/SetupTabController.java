@@ -17,6 +17,7 @@
 package stroom.shapeshifter.client.component;
 
 import stroom.alert.client.event.ConfirmEvent;
+import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.explorer.client.component.DocSelectionController;
 import stroom.openai.shared.OpenAIModelDoc;
@@ -24,9 +25,12 @@ import stroom.security.shared.DocumentPermission;
 import stroom.shapeshifter.shared.CheckPreset;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.ShapeshifterAiResource;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
+import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
@@ -35,7 +39,8 @@ import java.util.List;
 import java.util.Map;
 
 /// A Shapeshifter AI document's Setup tab ([SetupTab]): reads the document into its parts and writes it
-/// back. The model is chosen from the `stroom-ai` model documents the user may use; the checks are
+/// back. The model is chosen from the `stroom-ai` model documents the user may use, and the target schema from
+/// the `XMLSchema` documents the user may use; the checks are
 /// [CheckListController]'s, and the approach, with the step chosen, [ApproachSectionController]'s. Choosing
 /// a starting set of checks replaces the checks, and asks first where that would lose checks of the
 /// document's own. The fallback, chosen under Approving new translations, is a step of the approach's flow,
@@ -52,8 +57,12 @@ import java.util.Map;
 /// which is where a readiness check sends a person to put them right.
 public class SetupTabController extends Controller {
 
+    private static final ShapeshifterAiResource RESOURCE = GWT.create(ShapeshifterAiResource.class);
+
     private final SetupTab view;
+    private final RestFactory restFactory;
     private final DocSelectionController modelSelection;
+    private final DocSelectionController targetSchemaSelection;
     private final CheckListController checkList;
     private final ApproachSectionController approach;
     /// The document as last read, which what the tab shows is written over to sum it up.
@@ -70,26 +79,37 @@ public class SetupTabController extends Controller {
     ///
     /// @param eventBus             The application's event bus.
     /// @param view                 The tab.
-    /// @param docSelectionProvider Makes the model's picker.
+    /// @param docSelectionProvider Makes the model's and the target schema's pickers.
     /// @param checkList           The checks' list's controller.
     /// @param approach             The approach's controller.
+    /// @param restFactory          Fetches what the server says of the target schema.
     @Inject
     public SetupTabController(final EventBus eventBus,
                               final SetupTab view,
+                              final RestFactory restFactory,
                               final Provider<DocSelectionController> docSelectionProvider,
                               final CheckListController checkList,
                               final ApproachSectionController approach) {
         super(eventBus);
         this.view = view;
+        this.restFactory = restFactory;
         initWidget(view);
         modelSelection = make(docSelectionProvider);
         modelSelection.attach(view.getModelBox());
         modelSelection.setIncludedTypes(OpenAIModelDoc.TYPE);
         modelSelection.setRequiredPermissions(DocumentPermission.USE);
+        targetSchemaSelection = make(docSelectionProvider);
+        targetSchemaSelection.attach(view.getTargetSchemaBox());
+        targetSchemaSelection.setIncludedTypes(XmlSchemaDoc.TYPE);
+        targetSchemaSelection.setRequiredPermissions(DocumentPermission.USE);
         this.checkList = own(checkList).attach(view.getCheckList());
         this.approach = own(approach).attach(view.getApproach());
 
         own(modelSelection.addSelectionListener(docRef -> changed()));
+        own(targetSchemaSelection.addSelectionListener(docRef -> {
+            describeTargetSchema(docRef);
+            changed();
+        }));
         view.setOnChange(this::changed);
         view.setOnMaxAttempts(() -> {
             approach.setDefaultTries(view.getMaxAttempts());
@@ -127,6 +147,7 @@ public class SetupTabController extends Controller {
             this.readOnly = readOnly;
             view.setReadOnly(readOnly);
             modelSelection.setReadOnly(readOnly);
+            targetSchemaSelection.setReadOnly(readOnly);
             // The map offers Add step only where the document can be changed
             showSummary();
         });
@@ -143,6 +164,8 @@ public class SetupTabController extends Controller {
         view.foldAdvanced();
         view.setLearningMode(doc.getLearningMode());
         modelSelection.setSelectedEntityReference(doc.getModel(), true);
+        targetSchemaSelection.setSelectedEntityReference(doc.getTargetSchema(), true);
+        describeTargetSchema(doc.getTargetSchema());
         view.setInstructions(doc.getInstructions());
 
         view.setMaxAttempts(doc.getMaxAttempts());
@@ -174,6 +197,7 @@ public class SetupTabController extends Controller {
         return approach.write(doc.copy()
                 .learningMode(view.getLearningMode())
                 .model(modelSelection.getSelectedEntityReference())
+                .targetSchema(targetSchemaSelection.getSelectedEntityReference())
                 .instructions(view.getInstructions())
                 .maxAttempts(view.getMaxAttempts())
                 .attemptBudgetMs(view.getAttemptBudgetMs())
@@ -255,6 +279,37 @@ public class SetupTabController extends Controller {
                         showPreset();
                     }
                 });
+    }
+
+    // What the server reads from the target schema's XSD (task 7): the fallback writes event-logging's
+    // marked Unknowns, so it doesn't apply to another schema (W1-3), and every child of the root is read as
+    // a record, so a root that may hold several kinds of element is warned of (W1-5). A schema that can't
+    // be read says nothing: the server refuses what doesn't apply whatever the tab says
+    private void describeTargetSchema(final DocRef target) {
+        view.setFallbackNotApplying(null);
+        view.setRootHoldsSeveralKinds(null, List.of());
+        if (target == null) {
+            return;
+        }
+        restFactory
+                .create(RESOURCE)
+                .method(resource -> resource.targetSchema(target.getUuid()))
+                .onSuccess(schema -> {
+                    final boolean stillChosen = target.equals(targetSchemaSelection.getSelectedEntityReference());
+                    if (stillChosen && schema != null) {
+                        view.setFallbackNotApplying(schema.isEventLogging()
+                                ? null
+                                : schema.getName());
+                        view.setRootHoldsSeveralKinds(schema.getRootElement(), schema.getRootChildren());
+                    }
+                })
+                .onFailure(error -> {
+                    view.setFallbackNotApplying(null);
+                    view.setRootHoldsSeveralKinds(null, List.of());
+                })
+                .owner(this)
+                .taskMonitorFactory(taskMonitor())
+                .exec();
     }
 
     private void showPreset() {

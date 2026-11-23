@@ -34,6 +34,7 @@ import stroom.util.shared.StoredError;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -54,6 +55,10 @@ public final class QuestionText {
 
     /// The namespace a parser puts its records in, which the transformation rules describe.
     private static final String RECORDS = "records:2";
+    // Event-logging's own rule against its untyped Data and its Unknown branch, which another schema doesn't
+    // have (task 7, W1-4). It ends in a space, as the passage it goes into carries on after it
+    private static final String UNTYPED_RULE = "Do not put fields into Data elements or use the Unknown branch: "
+                                               + "output that validates but says nothing scores as nothing. ";
 
     /**
      * What each allowed element does, in one line, so the chain question is answered from a vocabulary
@@ -168,7 +173,9 @@ public final class QuestionText {
             }
             if (setting.getParameters() instanceof final BusinessRulesParameters rules
                 && !rules.getAssertions().isEmpty()) {
-                demands.append("\n\nEvery event must satisfy these rules, each an XPath over the Event:");
+                demands.append("\n\nEvery event must satisfy these rules, each an XPath over the ")
+                        .append(Objects.requireNonNullElse(recordElement(target), "record"))
+                        .append(":");
                 rules.getAssertions().forEach(rule -> demands.append("\n- ").append(rule.getName()).append(": ")
                         .append(rule.getXpath()));
             }
@@ -272,6 +279,7 @@ public final class QuestionText {
         variables.put("transformationRules", rules(Template.TRANSFORMATION_RULES));
         variables.put("record", fenced(question.record()));
         variables.put("feedback", feedback(question.feedback()));
+        variables.put("targetRecord", targetRecord());
         return templates.render(Template.TARGET, variables);
     }
 
@@ -315,6 +323,12 @@ public final class QuestionText {
     private String rules(final Template template) {
         return templates.render(template, Map.of(
                 "targetStructure", structure(),
+                "aTargetRecord", TargetSchema.isEventLoggingOrNone(target)
+                        ? "an Event"
+                        : "one " + targetRecord(),
+                "untypedRule", TargetSchema.isEventLoggingOrNone(target)
+                        ? UNTYPED_RULE
+                        : "",
                 "targetNamespace", target == null
                         ? TargetSchema.EVENT_LOGGING
                         : target.namespaceURI(),
@@ -327,6 +341,30 @@ public final class QuestionText {
                 "targetRoot", target == null || target.rootElement() == null
                         ? "Events"
                         : target.rootElement()));
+    }
+
+    /// The element one record becomes, as the questions name it (task 7, W1-1): event-logging's `Event`, or
+    /// the target's own where its schema makes it plain.
+    ///
+    /// @param target The target, or null for none, which is event-logging.
+    /// @return The element's local name, or null where the schema doesn't make it plain.
+    private static String recordElement(final TargetSchema target) {
+        if (TargetSchema.isEventLoggingOrNone(target)) {
+            return "Event";
+        }
+        return TargetStructure.recordElement(target).orElse(null);
+    }
+
+    /// @return The element one record becomes, as markup, e.g. `<Event>`; where the schema doesn't make it
+    ///         plain, said as a place, e.g. "element under <Sightings>".
+    private String targetRecord() {
+        final String element = recordElement(target);
+        if (element != null) {
+            return "<" + element + ">";
+        }
+        return target.rootElement() == null
+                ? "element the schema allows"
+                : "element under <" + target.rootElement() + ">";
     }
 
     /// What the target schema says a document of it holds (task 7, decision D2 option G).

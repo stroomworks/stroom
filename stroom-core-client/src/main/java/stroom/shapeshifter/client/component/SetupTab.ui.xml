@@ -25,8 +25,8 @@
                          tabIndex="-1">
                 <g:HTMLPanel styleName="setup-tab__head">
                     <h2 class="setup-tab__title">AI model and instructions</h2>
-                    <span class="setup-tab__question">Whether new feeds are learned, which model learns them, and what
-                        it is told</span>
+                    <span class="setup-tab__question">Whether new feeds are learned, which model learns them, what it
+                        writes and what it is told</span>
                 </g:HTMLPanel>
                 <form:FormGroup identity="shapeshifterAiLearningMode"
                                 label="Learning"
@@ -38,6 +38,12 @@
                                 helpText="The OpenAI-compatible model the learning runs ask. A feed's data is sent to it as it is, so choose one the data may go to.">
                     <dd:DropDownBox ui:field="model"/>
                 </form:FormGroup>
+                <form:FormGroup identity="shapeshifterAiTargetSchema"
+                                label="Target schema"
+                                helpText="The XML schema every translation writes, as one version of it: the AI is told its namespace, version and structure, and every answer is judged against it. A new Learning Flow starts on the latest event-logging installed. With none chosen, answers are judged against the schema group its conformance check names.">
+                    <dd:DropDownBox ui:field="targetSchema"/>
+                </form:FormGroup>
+                <tx:Label ui:field="targetSchemaNote" styleName="setup-tab__note" visible="false"/>
                 <form:FormGroup identity="shapeshifterAiInstructions"
                                 label="Instructions to the AI"
                                 helpText="Added to every question this document asks, e.g. a naming convention, or which events a kind of record should become. For something about one pipeline alone, leave a note on its Learning Status tab.">
@@ -153,6 +159,7 @@
                                         helpText="What a feed gets when the step that writes the transform runs out of tries. Marked Unknown events keep the stream served, and a later learning run may turn them into a real translation; nothing turns a translation back into an Unknown. A parser that can't be written always stops learning.">
                             <form:RadioGroup ui:field="fallback"/>
                         </form:FormGroup>
+                        <tx:Label ui:field="fallbackNote" styleName="setup-tab__note" visible="false"/>
                         <b:LinkButton ui:field="fallbackText" addStyleNames="setup-tab__link-button"
                                       text="Show the fallback's question text"/>
                     </g:FlowPanel>

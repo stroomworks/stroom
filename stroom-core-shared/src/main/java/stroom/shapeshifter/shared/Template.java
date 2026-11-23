@@ -29,7 +29,9 @@ public enum Template implements HasDisplayValue {
     SPLIT("Split question", "headers", "elementType", "documentType", "splitRules", "sample", "feedback"),
     SPLIT_XML("Split question, XML input", "headers", "sample", "feedback"),
     SPLIT_JSON("Split question, JSON input", "headers", "sample", "feedback"),
-    TARGET("Target question", "headers", "kind", "total", "transformationRules", "record", "feedback"),
+    /// Task 7: `targetRecord` is the element one record becomes, e.g. `<Event>`.
+    TARGET("Target question", "headers", "kind", "total", "transformationRules", "record", "feedback",
+            "targetRecord"),
     CONFIGURATION("Configuration question", "headers", "elementType", "documentType", "rules", "input", "split",
             "targets", "previous", "feedback"),
     ADMISSION("Admission question", "headers", "elementType", "documentType", "rules", "input", "split",
@@ -37,9 +39,13 @@ public enum Template implements HasDisplayValue {
     SPLIT_RULES("Split rules"),
     EXTRACTION_RULES("Extraction rules"),
     /// Task 7: the schema a translation must write is a setting on the Learning Flow, so the namespace,
-    /// the `xsi:schemaLocation`, the version and the root element are variables here rather than words.
+    /// the `xsi:schemaLocation`, the version and the root element are variables here rather than words, and
+    /// so are the element one record becomes, with its article (`aTargetRecord`, e.g. "an Event"), and the
+    /// rule against event-logging's untyped `Data` and `Unknown` (`untypedRule`), which is empty for any
+    /// other schema.
     TRANSFORMATION_RULES("Transformation rules",
-            "targetNamespace", "targetSchemaLocation", "targetVersion", "targetRoot", "targetStructure"),
+            "targetNamespace", "targetSchemaLocation", "targetVersion", "targetRoot", "targetStructure",
+            "aTargetRecord", "untypedRule"),
     /// What the target schema says a document of it holds (task 7, decision D2 option G). Its built-in
     /// text is event-logging's, written by hand; for any other schema it is generated from the XSD. A
     /// Learning Flow that overrides it says what it wants for its own schema, whichever that is.

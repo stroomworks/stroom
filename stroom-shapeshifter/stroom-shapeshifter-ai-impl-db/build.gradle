@@ -42,6 +42,8 @@ dependencies {
 
     runtimeOnly libs.mysql.connector.java
 
+    // The in-memory stores, which TestLearningPipelinesDao is checked against (simplification option iv)
+    testImplementation testFixtures(project(':stroom-shapeshifter:stroom-shapeshifter-ai'))
     testImplementation project(':stroom-cache:stroom-cache-impl')
     testImplementation project(':stroom-meta:stroom-meta-api')
     testImplementation project(':stroom-test-common')

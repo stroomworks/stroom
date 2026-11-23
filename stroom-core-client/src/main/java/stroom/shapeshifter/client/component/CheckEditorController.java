@@ -22,8 +22,8 @@ import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
+import stroom.shapeshifter.shared.TimesParameters;
 import stroom.shapeshifter.shared.YieldParameters;
 import stroom.widget.component.client.Contexts;
 import stroom.widget.component.client.Controller;
@@ -108,11 +108,11 @@ public class CheckEditorController extends Controller {
         if (parameters instanceof final YieldParameters yield) {
             view.setExpectedRatio(yield.getExpectedRatio());
             view.setBasis(yield.getBasis());
-        } else if (parameters instanceof final SchemaConformanceParameters schema) {
-            view.setSchemaGroup(schema.getSchemaGroup());
         } else if (parameters instanceof final ExtractionQualityParameters quality) {
             view.setAllowUnknownEventDetail(quality.isAllowUnknownEventDetail());
             view.setRequiredFields(quality.getRequiredFields());
+        } else if (parameters instanceof final TimesParameters times) {
+            view.setTimes(times.getBeforeDays(), times.getAfterDays(), times.getTimeField());
         } else if (parameters instanceof final BusinessRulesParameters rules) {
             assertionList.read(rules.getAssertions());
             view.setIncludeTransformMessages(rules.isIncludeTransformMessages());
@@ -122,10 +122,10 @@ public class CheckEditorController extends Controller {
     private ScorerParameters writeParameters() {
         return switch (check) {
             case YIELD -> new YieldParameters(view.getExpectedRatio(), view.getBasis());
-            case CONFORMANCE -> new SchemaConformanceParameters(view.getSchemaGroup());
             case QUALITY -> new ExtractionQualityParameters(
                     view.isAllowUnknownEventDetail(), view.getRequiredFields());
             case RULES -> new BusinessRulesParameters(assertionList.write(), view.isIncludeTransformMessages());
+            case TIMES -> new TimesParameters(view.getBeforeDays(), view.getAfterDays(), view.getTimeField());
             default -> null;
         };
     }

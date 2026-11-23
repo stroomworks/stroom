@@ -196,6 +196,21 @@ public class ShapeshifterAttempt extends TableImpl<ShapeshifterAttemptRecord> {
      */
     public final TableField<ShapeshifterAttemptRecord, String> IMPROVING_BINDING_UUID = createField(DSL.name("improving_binding_uuid"), SQLDataType.VARCHAR(255), this, "");
 
+    /**
+     * The column <code>stroom.shapeshifter_attempt.evidence</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> EVIDENCE = createField(DSL.name("evidence"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_attempt.reviewed_by</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, String> REVIEWED_BY = createField(DSL.name("reviewed_by"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column <code>stroom.shapeshifter_attempt.reviewed_time_ms</code>.
+     */
+    public final TableField<ShapeshifterAttemptRecord, Long> REVIEWED_TIME_MS = createField(DSL.name("reviewed_time_ms"), SQLDataType.BIGINT, this, "");
+
     private ShapeshifterAttempt(Name alias, Table<ShapeshifterAttemptRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

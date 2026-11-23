@@ -125,8 +125,8 @@ public final class Templates {
                 The record:
                 ${record}
 
-                Write the single <Event> this record should become, with every value the record carries in a \
-                typed element and the constants the stream's description gives. If this kind of record \
+                Write the single ${targetRecord} this record should become, with every value the record \
+                carries in a typed element and the constants the stream's description gives. If this kind of record \
                 should produce no event at all — a header, a comment — reply with the single word none.
                 ${feedback}
                 Reply with the event as a single fenced XML code block, or the word none, and nothing else.""");
@@ -265,9 +265,8 @@ public final class Templates {
             the zone it was written in, declaring xmlns:stroom="stroom" on the stylesheet. That takes whatever \
             the timestamp leaves out from the time this stream was received, so the same translation is right \
             for a stream received next year. Never read a local time as if it were UTC. \
-            Every field the input carries should land in a typed element. Do not put fields into Data elements \
-            or use the Unknown branch: output that validates but says nothing scores as nothing. \
-            Every record must be accounted for: produce an Event for each one. Where a record is \
+            Every field the input carries should land in a typed element. ${untypedRule}\
+            Every record must be accounted for: produce ${aTargetRecord} for each one. Where a record is \
             deliberately not an event - a header line, a column banner, a heartbeat, a comment - write \
             <Skipped xmlns="shapeshifter:skips" reason="..."/> in its place, saying briefly why. The marker \
             is counted, shown to the reviewer and removed before anything is written, so it is never a way \

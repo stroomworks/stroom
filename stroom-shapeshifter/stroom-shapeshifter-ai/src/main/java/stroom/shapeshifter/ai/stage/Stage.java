@@ -38,7 +38,9 @@ import stroom.shapeshifter.ai.learning.LearnedStep;
 import stroom.shapeshifter.ai.learning.Outcome;
 import stroom.shapeshifter.ai.learning.Outcome.Abandoned;
 import stroom.shapeshifter.ai.learning.Outcome.Learned;
+import stroom.shapeshifter.ai.learning.PromptCapture;
 import stroom.shapeshifter.ai.learning.Question;
+import stroom.shapeshifter.ai.learning.QuestionText;
 import stroom.shapeshifter.ai.learning.RecordedAdvisor;
 import stroom.shapeshifter.ai.learning.RecordedAdvisor.AwaitingAnswer;
 import stroom.shapeshifter.ai.learning.Sample;
@@ -47,6 +49,7 @@ import stroom.shapeshifter.ai.learning.StepRunner;
 import stroom.shapeshifter.ai.learning.StopReports;
 import stroom.shapeshifter.ai.learning.Target;
 import stroom.shapeshifter.ai.learning.TargetChecks;
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.ai.learning.TargetSchemas;
 import stroom.shapeshifter.ai.scoring.Attempted;
 import stroom.shapeshifter.ai.scoring.Judgement;
@@ -69,11 +72,13 @@ import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.ai.stage.Decision.Would;
 import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.RegressionSet.Accepted;
+import stroom.shapeshifter.ai.stage.Sessions.Recorder;
 import stroom.shapeshifter.ai.transformation.AiXsltAllowList;
 import stroom.shapeshifter.ai.transformation.LearnedStylesheetCheck;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckResult;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckSettings;
 import stroom.shapeshifter.shared.LearningMode;
@@ -91,8 +96,6 @@ import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
 import stroom.util.shared.TextRange;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
 import net.sf.saxon.s9api.XdmNode;
 import org.xml.sax.ContentHandler;
 
@@ -141,13 +144,8 @@ public final class Stage {
      * is measured against; until then it is an hour, which is long enough to see a feed burning spend and
      * short enough that yesterday's does not hide it.
      */
-    private static final long SPEND_WINDOW_MS = SpendBreaker.WINDOW_MS;
-    private static final JsonFactory JSON = new JsonFactory();
-    private static final ElementId STAGE = new ElementId("Stage");
-    private static final ElementId PERMITTED = new ElementId("Permitted");
-    /// What a learned translation may use (decision N1), in code until Track 2 step 6 puts it
-    /// on the Egress Policy screen.
-    private static final AiXsltAllowList ALLOW_LIST = AiXsltAllowList.hardCoded();
+    /// The element a stage's own diagnostics are laid at.
+    static final ElementId STAGE = new ElementId("Stage");
 
     private final Advisors advisors;
     private final List<StepRunner> runners;
@@ -170,8 +168,6 @@ public final class Stage {
     private final Places places;
     private final Snapshots snapshots;
     private final FragmentCodes codes;
-    /// The element whose output is always `records` over `record`.
-    private static final String DATA_SPLITTER = "DSParser";
     /// What a record of the chain's output is judged as when it is served: the element type the scorers
     /// of meaning read it as, which is any element that is not a parser.
     private static final String TRANSFORM = "XSLTFilter";
@@ -183,6 +179,16 @@ public final class Stage {
     /// The build of Stroom running, recorded against each attempt's words (N9) so that a prompt rebuilt
     /// after an upgrade can say the checks' wording may have moved under it.
     private final String build;
+    /// Drafts, approval, rejection, promotion and retraction (simplification option iii).
+    private final Promotion promotion;
+    /// A person's actions on a run or a learner (simplification option iii).
+    private final SupervisorActions actions;
+    /// The record of each learning run (simplification option iii).
+    private final Sessions sessions;
+    /// How what a stage runs is judged, shared by serving and learning (simplification option iii).
+    private final Judging judging;
+    /// Learning, relearning, improving and resuming (simplification option iii).
+    private final Learning learning;
 
     /// A stage that does not know its build: a harness, where a rebuilt prompt's caveat has no reader.
     ///
@@ -292,215 +298,111 @@ public final class Stage {
         this.seed = seed;
         this.node = node;
         this.build = build;
+        this.promotion = new Promotion(learnerBindings, states, regressionSet, snapshots, outputs, attempts, writer,
+                codes, places, wake, clock);
+        this.judging = new Judging(scorers, this.targetSchemas, fragmentRunner);
+        this.sessions = new Sessions(advisors, attempts, breaker, writer, places, clock, lease, node, build);
+        this.learning = new Learning(this.runners, this.scorers, this.targetSchemas, attempts, learnerBindings,
+                states, spend, breaker, guidance, outputs, regressionSet, wake, places, writer, codes, clock, lease,
+                node, promotion, sessions, judging, fragmentRunner);
+        this.actions = new SupervisorActions(attempts, learnerBindings, states, regressionSet, snapshots,
+                this.targetSchemas, wake, clock, lease);
     }
 
-    /// When a claim taken or renewed now lapses: one lease on, which is a turn's allowance and not the
-    /// attempt's whole budget, so that a session whose node has died is noticed within a turn (§4). The
-    /// claim is renewed before every question and as every turn is recorded.
-    private long claimUntil() {
-        return clock.millis() + lease.toMillis();
-    }
-
-    /**
-     * Carry on an attempt that stopped at a question, with the answers it has been given (A28): the
-     * conversation is re-walked from the start over the same sample, answered from the record until the record
-     * runs out, which re-derives everything those answers produced — the chain, the boundary, the records,
-     * the targets, each element's configuration and output — because all of it follows from the sample and
-     * the answers. What is asked beyond the record is asked of {@code answerer}: the model, for the worker
-     * advancing a deferred attempt; nothing, for one that is to stop again.
-     *
-     * Whatever becomes of the attempt, the stream is not errored here: it was read back out of the store,
-     * and its own task is deferred behind the attempt, which errors it or serves it when it next runs.
-     *
-     * @param input The stream the attempt was raised on, which the attempt's row names.
-     */
+    /// As [Learning#resume].
+    ///
+    /// @param doc       The document.
+    /// @param attemptId The run.
+    /// @param input     The stream it was raised on.
+    /// @param answerer  Who answers what the record does not.
+    /// @return What the run came to.
     public StageRun resume(final ShapeshifterAiDoc doc, final long attemptId, final Input input,
                            final Advisor answerer) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        final Learner learner = recorded.attempt().learner();
-        // Carrying it on is taking it (A45): an attempt that has finished is not resumed, and one another
-        // node has taken since is that node's until its claim lapses.
-        if (!attempts.claimed(attemptId, node, clock.millis(), claimUntil())) {
-            return refused(doc, learner, "Attempt " + attemptId + " is not this node's to carry on: it has "
-                                         + "finished, or another node holds it");
-        }
-        // An attempt may have waited a long time, and the learner is not as it left it: an operator may
-        // have turned learning off, a person may have a draft of it in front of them, or it may have been
-        // given up. Whatever the attempt was learning towards, it is not wanted
-        // now, so it is closed rather than carried on into a binding nobody asked for.
-        final Optional<Binding> matched = bindingFor(learner);
-        final Optional<String> stop = whyNotToCarryOn(doc, learner, matched);
-        if (stop.isPresent()) {
-            record(() -> attempts.closed(attemptId, AttemptStatus.ABANDONED, stop.get(), null, null, 0L));
-            return refused(doc, learner, stop.get());
-        }
-        final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers, targetSchemas.of(doc).orElse(null));
-        final RecordedAdvisor replay = new RecordedAdvisor(recorded.turns(), answerer);
-        // Who answered each turn the first time, by its number: a replayed turn is rewritten as it is
-        // re-walked, and it must not come back saying the model answered what a person answered (A28).
-        final Map<Integer, String> answeredBefore = recorded.turns().stream()
-                .filter(turn -> turn.answeredBy() != null)
-                .collect(Collectors.toMap(Attempts.Turn::number, Attempts.Turn::answeredBy,
-                        (first, second) -> first));
-        // An improvement is the one thing the bindings cannot tell us (A46): its learner is served, like
-        // a relearning's, but it was asked for by a person and opens with "it is not failing: make it
-        // better" rather than with what a stream fell short on. So the attempt says so, and is carried
-        // on as the improvement it is.
-        if (recorded.attempt().isImprovement()) {
-            final String bindingUuid = recorded.attempt().improving();
-            final Optional<Binding> incumbent = learnerBindings.byUuid(bindingUuid)
-                    .map(LearnerBindings.Held::binding);
-            final List<Accepted> accepted = regressionSet.accepted(bindingUuid);
-            final Optional<String> corpusFeed = regressionSet.feedOf(bindingUuid);
-            if (incumbent.isEmpty() || accepted.isEmpty() || corpusFeed.isEmpty()) {
-                // Retracted, relearned or pruned while the attempt waited: there is nothing left to
-                // improve or nothing to hold a candidate to, and asking the model anyway would be a
-                // promotion in disguise.
-                final String gone = "The binding this was improving, or the records it was accepted on, "
-                                    + "has gone since it was asked for";
-                record(() -> attempts.closed(attemptId, AttemptStatus.ABANDONED, gone, null, null, 0L));
-                return refused(doc, learner, gone);
-            }
-            return carrying(doc, learner, input, attemptId, recorded.tokensSpent(), recorded.grant(),
-                    recorded.exhaustNext(), answeredBefore, replay, true,
-                    reason -> refused(doc, learner, reason),
-                    recorder -> improveUnderClaim(doc, learner, incumbent.get(), input, scorecard, accepted,
-                            corpusFeed.get(), recorder));
-        }
-        // What the attempt is doing is otherwise not stored: it is read from the bindings as they stand. A
-        // learner a binding already serves is being relearned (A29), and carrying the attempt on as though
-        // it were learning afresh would append a second binding for one learner and orphan a fragment
-        // behind the first.
-        if (matched.isPresent()) {
-            final Binding binding = matched.get();
-            final Judged served = judge(scorecard, binding.getPipeline(), input.data(), binding.getRecordBoundary());
-            final String marked = states.relearnReason(learner)
-                    .orElse("the learner was marked to learn again");
-            return carrying(doc, learner, input, attemptId, recorded.tokensSpent(), recorded.grant(),
-                    recorded.exhaustNext(), answeredBefore, replay, true,
-                    reason -> emit(doc, new Kept(binding, reason), learner, input, binding, served, List.of()),
-                    recorder -> settle(doc, learner, input, scorecard, recorder,
-                            relearnUnderClaim(doc, learner, binding, input, scorecard, served, marked,
-                                    recorder)));
-        }
-        return carrying(doc, learner, input, attemptId, recorded.tokensSpent(), recorded.grant(),
-                recorded.exhaustNext(), answeredBefore, replay, true,
-                reason -> refused(doc, learner, reason),
-                recorder -> settle(doc, learner, input, scorecard, recorder,
-                        learnAndBind(doc, learner, input, scorecard, recorder)));
+        return learning.resume(doc, attemptId, input, answerer);
     }
 
-    /**
-     * A person's answer in place of a turn's (A28): *answer instead*, for the question an attempt stopped
-     * at, and *edit and re-run from here*, for one it had already been answered. Either way the attempt
-     * is left waiting, for the worker to carry on from what it has now been told — the answer is written
-     * and nothing is run here, since a person's request must not wait on a model.
-     * <p>
-     * The turns after the one answered are discarded: what they were is a consequence of an answer that
-     * has changed, and re-walking derives them again (A45). An attempt that had finished is opened again
-     * and takes its learner's claim back, which fails where another attempt holds it — and an attempt a node
-     * is walking right now is refused, since its answers are that walk's to give and a person's answer
-     * would be overwritten by the turn it is about to record.
-     *
-     * @param answeredBy Who answered: recorded against the turn, and not overwritten when the attempt is
-     *                   re-walked (A28).
-     */
-    /// Give a parked session more to spend (A65, A77): tokens and milliseconds beyond the document's
-    /// budgets, recorded against the attempt alone, and the attempt opened again for the worker to carry
-    /// on with them. Only a parked attempt takes a grant: one still running has budget, and one that
-    /// finished has nothing to spend it on.
+    /// As [Learning#improve].
     ///
-    /// @param tokens Tokens to add; zero for none.
-    /// @param ms     Milliseconds to add; zero for none.
+    /// @param doc         The document.
+    /// @param bindingUuid The binding to improve.
+    /// @param message     What a person said to improve it with.
+    /// @param by          Who asked.
+    /// @return What the ask came to.
+    public StageRun improve(final ShapeshifterAiDoc doc,
+                            final String bindingUuid,
+                            final String message,
+                            final String by) {
+        return learning.improve(doc, bindingUuid, message, by);
+    }
+
+    /// As [Learning#improvementInput].
+    ///
+    /// @param attempt An improvement.
+    /// @return Its sample, put back together from the records its binding was accepted on.
+    public Optional<Input> improvementInput(final Attempts.Attempt attempt) {
+        return learning.improvementInput(attempt);
+    }
+
+    /// As [Learning#rebuild].
+    ///
+    /// @param doc       The document.
+    /// @param attemptId The run.
+    /// @param input     The stream it learned from.
+    /// @return The prompts, or empty where the run's words were not kept.
+    public Optional<Rebuilt> rebuild(final ShapeshifterAiDoc doc, final long attemptId, final Input input) {
+        return learning.rebuild(doc, attemptId, input);
+    }
+
+    /// As [SupervisorActions#grant].
+    ///
+    /// @param doc       The document.
+    /// @param attemptId The run.
+    /// @param tokens    Tokens to add; zero for none.
+    /// @param ms        Milliseconds to add; zero for none.
     public void grant(final ShapeshifterAiDoc doc, final long attemptId, final long tokens, final long ms) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
-                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
-        }
-        if (recorded.status() != AttemptStatus.PARKED) {
-            throw new IllegalStateException("Attempt " + attemptId + " is not parked for a person: it is "
-                                            + recorded.status().getDisplayValue());
-        }
-        if (tokens < 0 || ms < 0 || (tokens == 0 && ms == 0)) {
-            throw new IllegalArgumentException("A grant is tokens, milliseconds or both, and not less than nothing");
-        }
-        attempts.granted(attemptId, tokens, ms);
-        if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
-            throw new IllegalStateException("Attempt " + attemptId + " cannot be carried on: another attempt is "
-                                            + "learning for " + recorded.attempt().learner());
-        }
+        actions.grant(doc, attemptId, tokens, ms);
     }
 
-    /// Send a parked session to the exhaustion step (A65, A76): the attempt is opened again for the
-    /// worker, which carries it on from its recorded turns and, at the first transform question it would
-    /// put to the model, takes the flow's spent transition instead — to `ADMIT`, where the flow has one.
-    /// Only a parked attempt is sent.
+    /// As [SupervisorActions#exhaust].
+    ///
+    /// @param doc       The document.
+    /// @param attemptId The run.
     public void exhaust(final ShapeshifterAiDoc doc, final long attemptId) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
-                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
-        }
-        if (recorded.status() != AttemptStatus.PARKED) {
-            throw new IllegalStateException("Attempt " + attemptId + " is not parked for a person: it is "
-                                            + recorded.status().getDisplayValue());
-        }
-        // The sending first, so that no worker takes the attempt between the reopening and it; on a
-        // parked row it stands harmlessly until the attempt is reopened and closed.
-        attempts.exhaustNext(attemptId);
-        if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
-            throw new IllegalStateException("Attempt " + attemptId + " cannot be carried on: another attempt is "
-                                            + "learning for " + recorded.attempt().learner());
-        }
+        actions.exhaust(doc, attemptId);
     }
 
+    /// As [SupervisorActions#amend].
+    ///
+    /// @param doc        The document.
+    /// @param attemptId  The run.
+    /// @param turnNumber The turn answered.
+    /// @param answer     The answer.
+    /// @param answeredBy Who answered.
     public void amend(final ShapeshifterAiDoc doc,
                       final long attemptId,
                       final int turnNumber,
                       final String answer,
                       final String answeredBy) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
-                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
-        }
-        // Before anything is changed: an attempt is not opened again for a turn it has not got, or a
-        // person who mistyped a number would reopen a finished attempt, wipe what it came to and be told
-        // their request failed.
-        if (recorded.turns().stream().noneMatch(turn -> turn.number() == turnNumber)) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " has no turn " + turnNumber);
-        }
-        if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
-            throw new IllegalStateException("Attempt " + attemptId + " cannot be run again: it is being "
-                                            + "carried on now, or another attempt is learning for "
-                                            + recorded.attempt().learner());
-        }
-        attempts.amended(attemptId, turnNumber, answer, answeredBy);
-        // What the attempt drafted goes with the answer that produced it. The turns after the one
-        // answered are discarded for exactly this reason — they are a consequence of an answer that has
-        // changed — and a draft binding is the last of those consequences. Left in place it would be a
-        // draft nothing awaits: the reset below clears the pointer that says the learner is waiting for
-        // it, so approving or rejecting it would throw, every stream of the learner would be sentinelled
-        // by it, and the only way out would be deleting the binding by hand.
-        if (recorded.bindingUuid() != null) {
-            learnerBindings.byUuid(recorded.bindingUuid())
-                    .map(LearnerBindings.Held::binding)
-                    .filter(Binding::isDraft)
-                    .ifPresent(draft -> {
-                        learnerBindings.remove(recorded.attempt().learner(), draft.getUuid());
-                        regressionSet.discard(draft.getUuid());
-                        snapshots.discard(draft.getUuid());
-                    });
-        }
-        // A person re-running an attempt is saying the learner is not settled: whatever this attempt
-        // concluded about it — given up, marked, a draft awaiting someone — is undone, or the re-run would
-        // be refused by the state its own first run left behind (A28).
-        states.reset(recorded.attempt().learner());
+        actions.amend(doc, attemptId, turnNumber, answer, answeredBy);
+    }
+
+    /// As [SupervisorActions#relearn].
+    ///
+    /// @param doc     The document.
+    /// @param learner The learner.
+    /// @param reason  Why.
+    public void relearn(final ShapeshifterAiDoc doc, final Learner learner, final String reason) {
+        actions.relearn(doc, learner, reason);
+    }
+
+    /// As [SupervisorActions#giveUp].
+    ///
+    /// @param doc     The document.
+    /// @param learner The learner.
+    /// @param reason  Why.
+    /// @param by      Who gave it up.
+    public void giveUp(final ShapeshifterAiDoc doc, final Learner learner, final String reason, final String by) {
+        actions.giveUp(doc, learner, reason, by);
     }
 
     /// What each of the fragment's own elements made of the stream on the run this stage just made, a
@@ -515,266 +417,6 @@ public final class Stage {
     /// nothing was bound and so nothing ran.
     public List<FragmentRecord> takeFragment() {
         return fragmentRunner.takeRecords();
-    }
-
-    /// Ask for a binding that is already serving to be made **better** (A46, §12 item 29).
-    ///
-    /// Not `relearn`, which marks a learner and waits for the next stream to carry the work. An
-    /// improvement does not wait for traffic: the records the binding was accepted on are kept per binding
-    /// (A18) with the score each achieved, so an attempt has both a sample to learn from and the bar to
-    /// beat without a stream arriving. A feed that ships once a day can be improved at eleven in the
-    /// morning.
-    ///
-    /// It begins from what the incumbent wrote rather than from nothing — the model is shown what is
-    /// serving, what it scores, and what the person wants better — and the incumbent keeps serving
-    /// throughout (A29): a candidate takes over only through the ordinary gate (A15, A18, §7.4). So
-    /// nothing waits for a person and a person waits for nothing.
-    ///
-    /// The message is recorded as guidance for the learner (A46) before the attempt opens, which is what
-    /// carries it into every question the attempt asks — and leaves it standing for the relearning after
-    /// this one, because what a person knows about a feed does not stop being true.
-    ///
-    /// @param bindingUuid The binding to improve: one that is serving. A draft is decided, not improved.
-    /// @param message     What the person wants better, in their words. Optional: asking again from the
-    ///                    incumbent is itself worth something.
-    /// @param by          Who asked, for the guidance and for the attempt.
-    public StageRun improve(final ShapeshifterAiDoc doc,
-                            final String bindingUuid,
-                            final String message,
-                            final String by) {
-        final LearnerBindings.Held held = held(doc, bindingUuid);
-        final Binding incumbent = held.binding();
-        if (incumbent.isDraft()) {
-            throw new IllegalArgumentException("Binding " + bindingUuid + " is a draft awaiting review: approve or "
-                                               + "reject it rather than improving it");
-        }
-        if (incumbent.getPipeline() == null) {
-            throw new IllegalArgumentException("Binding " + bindingUuid + " binds nothing, so there is nothing to "
-                                               + "improve");
-        }
-        if (doc.getLearningMode() == LearningMode.DISABLED) {
-            // The kill switch is a kill switch. Every other path that asks a model reads it, and a
-            // button that asked anyway would be a way round it.
-            throw new IllegalStateException("Shapeshifter AI is disabled for this document");
-        }
-        // The binding's learner, since an improvement is that learner learning better.
-        final Learner learner = held.learner();
-        final Optional<String> awaiting = states.draftAwaiting(learner);
-        if (awaiting.isPresent()) {
-            // One draft per learner: a second would overwrite the pointer that says which one is awaiting
-            // review, leaving the first in place with nothing to approve or reject it by.
-            throw new IllegalStateException("Draft binding " + awaiting.get() + " is already awaiting review "
-                                            + "for this learner; decide it before asking for another");
-        }
-        final List<Accepted> accepted = regressionSet.accepted(bindingUuid);
-        if (accepted.isEmpty()) {
-            // Without a record it was accepted on there is nothing to learn from and nothing to beat.
-            // Said rather than guessed at: an improvement judged on nothing would be a promotion in
-            // disguise.
-            throw new IllegalArgumentException("Binding " + bindingUuid + " has no accepted records to improve "
-                                               + "against; learn again instead");
-        }
-        // Where what it learns for is kept: on the feed its records already are (A18), since there is no
-        // stream here to keep them on.
-        final String corpusFeed = regressionSet.feedOf(bindingUuid)
-                .orElseThrow(() -> new IllegalStateException("Binding " + bindingUuid + "'s records are kept on no "
-                                                             + "feed that can be read"));
-        if (!NullSafe.isBlankString(message)) {
-            guidance.given(learner, doc.getUuid(), message, by);
-        }
-
-        // The stream to learn from is the corpus itself, put back together: every record as it was
-        // received, between what the stream wrapped them in. A record whose parser did not say where it
-        // cut — JSON's, XML's — cannot be put back through one, and that is said rather than guessed at.
-        final String sample = Corpus.stream(accepted)
-                .orElseThrow(() -> new IllegalArgumentException("Binding " + bindingUuid + " was accepted on records "
-                                                                + "that cannot be put back through its parser; "
-                                                                + "learn again instead"));
-        // No feed and no type: there is no stream here to read them off, and a learner does not know its
-        // feed (A126), so the model is shown the corpus alone.
-        final Input input = improvementSample(sample);
-        final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers, targetSchemas.of(doc).orElse(null));
-        // Asked by the worker, not here (A46). A model conversation is minutes long: run inside the web
-        // request it holds an HTTP thread for all of them, cannot survive the node restarting, and is
-        // lost if the browser gives up. So the attempt is opened, parked at its first question, and
-        // carried on by the worker exactly as a deferred learning is — which is what the ruling asks
-        // for. The attempt remembers the binding it is improving, and the worker puts the corpus back
-        // together to ask about rather than looking for a stream that does not exist.
-        //
-        // Nothing waits on it meanwhile: the incumbent serves every stream throughout, and a candidate
-        // takes over only through the ordinary gate.
-        return recording(doc, learner, input, RecordedAdvisor.awaiting(), bindingUuid,
-                reason -> refused(doc, learner, "Binding " + bindingUuid + " is not being improved: " + reason),
-                recorder -> improveUnderClaim(doc, learner, incumbent, input, scorecard, accepted,
-                        corpusFeed, recorder));
-    }
-
-    /// The stream an improvement learns from: the records the binding was accepted on, put back together
-    /// (A18), since there is no stream here to learn from. No feed and no type — there is none to read
-    /// them off, and a learner does not know its feed (A126) — so the model is shown the corpus alone.
-    ///
-    /// @param sample The corpus as one stream.
-    /// @return It as an input.
-    private static Input improvementSample(final String sample) {
-        return new Input(-1L, null, null, Map.of(), sample, null);
-    }
-
-    /// The sample an improvement attempt is carried on with, for the worker: its binding's accepted
-    /// records put back together. Empty where the binding or its records have gone since the person
-    /// asked, which closes the attempt rather than asking the model about nothing.
-    ///
-    /// @param attempt The attempt, which must be an improvement.
-    /// @return The stream to ask about, or empty.
-    public Optional<Input> improvementInput(final Attempts.Attempt attempt) {
-        final List<Accepted> accepted = regressionSet.accepted(attempt.improving());
-        return accepted.isEmpty()
-                ? Optional.empty()
-                : Corpus.stream(accepted).map(Stage::improvementSample);
-    }
-
-    /// The improvement itself, under the attempt's claim (A42, A45).
-    ///
-    /// The model opens with what the incumbent is and what it scores, so that it improves something
-    /// rather than starting again in ignorance; and the gate is the accepted records themselves — every
-    /// one of them, since there is no stream to be better on. A candidate that is worse on any record
-    /// the binding was accepted on is not an improvement whatever else it does (A18).
-    private StageRun improveUnderClaim(final ShapeshifterAiDoc doc,
-                                       final Learner learner,
-                                       final Binding incumbent,
-                                       final Input input,
-                                       final Scorecard scorecard,
-                                       final List<Accepted> accepted,
-                                       final String corpusFeed,
-                                       final Recorder recorder) {
-        final List<StoredError> opening = new ArrayList<>();
-        opening.add(new StoredError(Severity.ERROR, null, STAGE,
-                "Improving " + incumbent.getPipeline().getName() + ", which is serving and scored "
-                + incumbent.getScore() + " when it was promoted. It is not failing: make it better."));
-        final Outcome outcome = learn(doc, learner, input, scorecard, opening, List.of(), recorder);
-        if (outcome instanceof final Abandoned abandoned) {
-            return kept(doc, learner, incumbent, "No candidate: " + abandoned.reason(), outcome.transcript());
-        }
-        final Learned learned = (Learned) outcome;
-        final Judged candidate = asLearned(rerun(learned.chain(), input.data(), boundary(learned)), scorecard);
-        if (!candidate.clearsGates()) {
-            return kept(doc, learner, incumbent, "Candidate failed " + candidate.failedGates(),
-                    learned.transcript());
-        }
-        // Every accepted record, not one: an improvement asked for out of the blue has no stream to be
-        // better on, so the records the binding was accepted on are the whole of the evidence (A18). Held
-        // to them only where the regression corpus is a gate, and to the same bar a served record is.
-        final List<Accepted> held = doc.getCheck(Check.REGRESSION).isGate()
-                ? accepted
-                : List.of();
-        final Scorecard bar = recordBar(doc);
-        for (int i = 0; i < held.size(); i++) {
-            final Accepted record = held.get(i);
-            final List<LearnedStep> transforms = Corpus.transforms(learned.chain());
-            final Judged onRecord = asLearned(rerun(transforms, record.record(), boundary(learned)), bar);
-            final Optional<String> shortfall = Corpus.shortfall(record, onRecord.verdicts(),
-                    Corpus.outputFor(transforms, record.record(), boundary(learned)));
-            if (shortfall.isPresent()) {
-                return kept(doc, learner, incumbent, "Candidate " + shortfall.get() + " — "
-                                                   + Corpus.name(i + 1, held.size(), record),
-                        learned.transcript());
-            }
-        }
-        // The corpus was the stream, so what the model was shown of it was learned for again: each of
-        // those records goes in with what the candidate now makes of it, and the cap lets the oldest go
-        // (A63).
-        final List<Accepted> entries = Corpus.entries(learned.chain(), boundary(learned),
-                learningPrefix(input.data(), doc), null, learned.targets(), candidate.score(),
-                recorder.attemptId(), clock.millis(), doc.getRegressionCap());
-        // Always a draft, whatever the mode (simplification option A): the result is written the same way
-        // for both, and the only difference is who approves it — a person, or the system at once.
-        final DocRef fragment = write(learner, learned);
-        // A learner marked to learn again has just done so, by hand: the mark is spent, or its next stream
-        // would relearn the binding somebody has only now improved.
-        states.reset(learner);
-        // Behind the incumbent, which keeps serving until this is approved (A25).
-        final Binding draft = writeDraft(doc, learner, fragment, candidate.score(), boundary(learned));
-        regressionSet.accept(doc.getUuid(), draft.getUuid(), corpusFeed, null, entries,
-                doc.getRegressionCap());
-        if (!approvesItself(doc)) {
-            states.awaitReview(learner, doc.getUuid(), draft.getUuid());
-            return new StageRun(doc, new Drafted(draft, candidate.score()), learner, null, candidate.output(),
-                    candidate.verdicts(), learned.transcript(), null, List.of());
-        }
-        final Binding rebound = promoteDraft(doc, learner, draft);
-        return new StageRun(doc, new Rebound(incumbent, rebound, candidate.score()), learner,
-                new Produced(doc.getUuid(), rebound.getUuid(), fragment, boundary(learned),
-                        candidate.score()),
-                candidate.output(), candidate.verdicts(), learned.transcript(), null, List.of());
-    }
-
-    /// The incumbent goes on serving, and why it was not replaced is said rather than swallowed.
-    private StageRun kept(final ShapeshifterAiDoc doc,
-                          final Learner learner,
-                          final Binding incumbent,
-                          final String reason,
-                          final List<Exchange> transcript) {
-        return new StageRun(doc, new Kept(incumbent, reason), learner, null, null, List.of(), transcript, null,
-                List.of());
-    }
-
-    /**
-     * Send a learner back to learn afresh (A28): what a person does to an attempt they are reading when
-     * the binding it wrote is not the binding they want and no particular turn is to blame. The learner's next
-     * stream relearns, with the incumbent serving until the relearning settles (A29).
-     *
-     * @param learner The learner.
-     * @param reason  Why, in the words a person gave: the model opens its next attempt with it.
-     */
-    public void relearn(final ShapeshifterAiDoc doc, final Learner learner, final String reason) {
-        if (states.reasonGivenUp(learner).isPresent()) {
-            // A learner that gave up stays given up until something says otherwise, and a mark alone
-            // says nothing: every path reads the give-up first and sentinels the stream before it ever
-            // looks at the mark. Sending a learner back *is* saying otherwise, so the give-up goes — and
-            // with it the rest of what was concluded, since it is being started afresh.
-            states.reset(learner);
-        }
-        states.markForRelearning(learner, doc.getUuid(), reason);
-    }
-
-    /// A person gives a learner up (design 06 A115): it learns no more, its streams with nothing serving
-    /// them error with the reason rather than wait, and an open session is not carried on. What serves it
-    /// goes on serving. Sending it back to learn again undoes it ([#relearn]). Its pipeline is woken, so
-    /// that the streams waiting on it come to their end now rather than at the retry delay.
-    ///
-    /// @param learner The learner.
-    /// @param reason  Why, in the words a person gave: its streams error with it.
-    /// @param by      Who gave it up.
-    public void giveUp(final ShapeshifterAiDoc doc, final Learner learner, final String reason, final String by) {
-        // A draft is decided before a give-up is read, so its streams would go on waiting for a review
-        // after the learner had been given up. Rejecting it is giving the learner up, and discards the draft.
-        final Optional<String> draft = states.draftAwaiting(learner);
-        if (draft.isPresent()) {
-            throw new IllegalStateException("Draft binding " + draft.get() + " awaits review: reject it, which "
-                                            + "gives the learner up with the reason");
-        }
-        states.giveUp(learner, doc.getUuid(), "Given up by " + by + ": " + reason);
-        wake(learner);
-    }
-
-    /**
-     * Why an attempt that stopped is not to be carried on, if it is not: the learner's state as it stands
-     * now, read as a task's decision reads it for a stream. Empty where the attempt may go on.
-     */
-    private Optional<String> whyNotToCarryOn(final ShapeshifterAiDoc doc,
-                                             final Learner learner,
-                                             final Optional<Binding> matched) {
-        if (matched.isPresent() && matched.get().isDraft()) {
-            return Optional.of("Awaiting review: draft binding " + matched.get().getUuid()
-                               + " already serves this learner");
-        }
-        final Optional<String> givenUp = states.reasonGivenUp(learner);
-        if (givenUp.isPresent()) {
-            return Optional.of("Given up: " + givenUp.get());
-        }
-        if (doc.getLearningMode() == LearningMode.DISABLED) {
-            return Optional.of("Shapeshifter AI is disabled for this document");
-        }
-        return Optional.empty();
     }
 
     /// The stream through the fragment that produced its output before: an **as-processed** reprocess
@@ -795,7 +437,7 @@ public final class Stage {
     public StageRun reprocess(final ShapeshifterAiDoc doc, final Learner learner, final Input input) {
         final Optional<Produced> recorded = outputs.asProcessed(doc.getUuid(), input.id(), input.pipeline());
         if (recorded.isEmpty()) {
-            return refused(doc, learner, "Nothing is recorded for input " + input.id()
+            return StageRun.refused(doc, learner, "Nothing is recorded for input " + input.id()
                                        + " on this pipeline, so it cannot be processed again as it was; "
                                        + "reprocess it as-current instead");
         }
@@ -819,7 +461,7 @@ public final class Stage {
         if (output == null) {
             // The fragment is still there and still immutable, so this is the content having gone — a
             // document deleted by hand, or a fragment that never ran cleanly. Said rather than served.
-            return refused(doc, learner, "The fragment " + produced.fragment().getUuid()
+            return StageRun.refused(doc, learner, "The fragment " + produced.fragment().getUuid()
                                        + " that produced input " + input.id() + " produced nothing this time");
         }
         // Recorded again, because this output carries the same bindings as the one it replaces.
@@ -871,20 +513,21 @@ public final class Stage {
             final Optional<Produced> recorded = outputs.asProcessed(doc.getUuid(), input.id(), input.pipeline());
             return recorded
                     .map(bindings -> served(doc, new Bound(null), learner, bindings,
-                            judge(scorecard, bindings.fragment(), input.data(), bindings.boundary())))
+                            judging.judge(scorecard, bindings.fragment(), input.data(), bindings.boundary())))
                     .orElseGet(() -> would(doc, learner, "Refuse the stream: nothing is recorded for input "
                                                        + input.id() + " on this pipeline, so it cannot be "
                                                        + "processed again as it was"));
         }
 
-        final Optional<Binding> matched = bindingFor(learner);
+        final Optional<Binding> matched = promotion.bindingFor(learner);
         if (matched.isPresent()) {
             final Binding binding = matched.get();
             if (binding.isDraft()) {
                 return would(doc, learner, "Wait: draft binding " + binding.getUuid() + " binds "
                                          + binding.getPipeline().getName() + " and awaits review");
             }
-            final Judged judged = judge(scorecard, binding.getPipeline(), input.data(), binding.getRecordBoundary());
+            final Judged judged = judging.judge(scorecard, binding.getPipeline(), input.data(),
+                    binding.getRecordBoundary());
             return served(doc, new Bound(binding), learner,
                     new Produced(doc.getUuid(), binding.getUuid(), binding.getPipeline(), binding.getRecordBoundary(),
                             judged.score()),
@@ -936,7 +579,7 @@ public final class Stage {
         // Supervisor shows what serves its pipeline and no other document's editors can act on it.
         learners.runsUnder(learner, doc.getUuid());
         final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers, targetSchemas.of(doc).orElse(null));
-        final Optional<Binding> matched = bindingFor(learner);
+        final Optional<Binding> matched = promotion.bindingFor(learner);
 
         if (matched.isPresent()) {
             final Binding binding = matched.get();
@@ -955,7 +598,7 @@ public final class Stage {
             // it errors with the reason. A person sends the learner back from the attempt that gave up,
             // and reprocesses its error streams as they would any others (A129, A131).
             deferrals.released(learner, input.id());
-            return refused(doc, learner, "Given up: " + givenUp.get());
+            return StageRun.refused(doc, learner, "Given up: " + givenUp.get());
         }
         if (doc.getLearningMode() == LearningMode.DISABLED) {
             // The kill switch: no session can open, so the stream waits for a person to turn learning on
@@ -966,9 +609,9 @@ public final class Stage {
         // Learning leaves the task (A60, A64): the session is opened on this stream and parked at its
         // first question for the worker, and the stream waits on it. Where an attempt already holds the
         // learner's claim, this stream waits on that one.
-        return recording(doc, learner, input, RecordedAdvisor.awaiting(),
+        return sessions.recording(doc, learner, input, RecordedAdvisor.awaiting(),
                 reason -> deferred(doc, learner, input, null, 0, reason),
-                recorder -> learnAndBind(doc, learner, input, scorecard, recorder));
+                recorder -> learning.learnAndBind(doc, learner, input, scorecard, recorder));
     }
 
     /// The task decision for a learner a binding serves.
@@ -979,7 +622,7 @@ public final class Stage {
                                   final Scorecard scorecard) {
         // As it serves now (A72): a hand edit is snapshotted here, before the stamp is compared, so that
         // a stream deferred against the old snapshot is scored against the edit.
-        final Binding binding = freshened(doc, learner, matched);
+        final Binding binding = promotion.freshened(doc, learner, matched);
         final String stamp = stamp(binding);
         final Optional<Deferral> row = deferrals.of(learner, input.id());
         if (row.isPresent() && stamp.equals(row.get().failedAgainst())) {
@@ -1018,13 +661,14 @@ public final class Stage {
             || attempts.open(learner, clock.millis()).isPresent()) {
             return;
         }
-        final Judged judged = judge(scorecard, binding.getPipeline(), input.data(), binding.getRecordBoundary());
+        final Judged judged = judging.judge(scorecard, binding.getPipeline(), input.data(),
+                binding.getRecordBoundary());
         if (judged.records() < doc.getMinRecordsToLearn()) {
             return;
         }
-        recording(doc, learner, input, RecordedAdvisor.awaiting(),
+        sessions.recording(doc, learner, input, RecordedAdvisor.awaiting(),
                 waiting -> null,
-                recorder -> relearnUnderClaim(doc, learner, binding, input, scorecard, judged, marked.get(),
+                recorder -> learning.relearnUnderClaim(doc, learner, binding, input, scorecard, judged, marked.get(),
                         recorder));
     }
 
@@ -1049,7 +693,7 @@ public final class Stage {
                                final Binding binding,
                                final Input input,
                                final ContentHandler downstream) {
-        final Scorecard bar = recordBar(doc);
+        final Scorecard bar = judging.recordBar(doc);
         final RecordJudge judge = (index, record, parsed) -> bar.judge(new Attempted(TRANSFORM, false, null,
                 new StepResult(record, List.of()), binding.getRecordBoundary(), null));
         final ServedStream served = fragmentRunner.serve(binding.getPipeline(), input.open(),
@@ -1071,7 +715,7 @@ public final class Stage {
         // What came out is only half of it. A record the parser could not read becomes no event, so no
         // check judges it and the stream is recorded as clean — the fault this task exists to fix
         // (`docs/shapeshifter-ai-parser-drift-not-detected.md`). The serving run now says what went in.
-        final Optional<String> lost = inputShortfall(doc, served);
+        final Optional<String> lost = Judging.inputShortfall(doc, served);
         if (lost.isPresent()) {
             final StageRun deferred = session(doc, learner, binding, input,
                     Scorecard.of(doc.getChecks(), scorers, targetSchemas.of(doc).orElse(null)),
@@ -1092,85 +736,6 @@ public final class Stage {
         outputs.emitted(input.id(), input.pipeline(), producedBy(doc, binding, served),
                 served.records(), served.skipped());
         return served;
-    }
-
-    /// What a served stream's **input** says, judged by the Learning Flow's own checks (Track 1 task 2,
-    /// fix 1).
-    ///
-    /// Every other check judges what came out. A record the parser could not read becomes no event, so
-    /// nothing judges it and the stream is recorded as clean — which is the fault in
-    /// `docs/shapeshifter-ai-parser-drift-not-detected.md`. This is the only place that asks what went
-    /// in.
-    ///
-    /// **A stream the parser read nothing of is deferred whatever the checks say.** That is not a
-    /// quality judgement with a threshold; it is the translation not working here at all, and it is the
-    /// fault the dev instance showed. Everything short of that — records lost, or a parser reporting
-    /// records it could not read — **defers only on a gate**, exactly as the record bar works (A55) and
-    /// as the one model of checks requires: what refuses a candidate while it is learned is what refuses
-    /// a stream while it is served. So a document that has turned input coverage down to advice goes on
-    /// serving a feed its parser reads badly, and its rolling score falls instead — which is what a
-    /// *Lenient* Learning Flow is asking for.
-    ///
-    /// @param doc    The document.
-    /// @param served What the run came to.
-    /// @return Why the stream should not be served as it stands, or empty.
-    private Optional<String> inputShortfall(final ShapeshifterAiDoc doc, final ServedStream served) {
-        if (!served.input().counted() || served.input().empty()) {
-            // A fragment handed records somebody else cut has no input of its own to account for, and an
-            // empty stream is nobody's fault
-            return Optional.empty();
-        }
-        if (served.input().records() == 0) {
-            // Not a check, and not a threshold: a translation that reads nothing at all of a stream that
-            // holds something is not translating it. The compile gate is fixed for the same reason — a
-            // candidate that does not compile is not a candidate — and this is its serving twin. Leaving
-            // it to the coverage check would have left the fault uncaught on the very document the dev
-            // instance ran, which has coverage off.
-            return Optional.of("The parser read no records from this stream: the translation no longer "
-                               + "reads this feed.");
-        }
-        final int lost = served.lost();
-        if (lost > 0 && gated(doc, Check.COMPLETENESS)) {
-            return Optional.of(lost + " of " + served.input().records() + " record(s) the parser read "
-                               + "became neither an event nor a declared skip.");
-        }
-        final CheckSetting coverage = setting(doc, Check.COVERAGE);
-        if (coverage != null && coverage.isGate() && served.coverage() < coverage.getPassingValue()) {
-            return Optional.of("The parser read " + served.input().records() + " record(s) and reported "
-                               + served.input().errors() + " it could not, which is "
-                               + Math.round(served.coverage() * 100) + "% of the stream against the "
-                               + Math.round(coverage.getPassingValue() * 100) + "% this Learning Flow "
-                               + "asks for.");
-        }
-        return Optional.empty();
-    }
-
-    /// @param doc   The document.
-    /// @param check The check.
-    /// @return Whether the Learning Flow makes it a gate, so that it may hold a stream back.
-    private static boolean gated(final ShapeshifterAiDoc doc, final Check check) {
-        final CheckSetting setting = setting(doc, check);
-        return setting != null && setting.isGate();
-    }
-
-    /// @param doc   The document.
-    /// @param check The check.
-    /// @return The Learning Flow's setting for it, filled in with the default where it names none.
-    private static CheckSetting setting(final ShapeshifterAiDoc doc, final Check check) {
-        return CheckSettings.complete(doc.getChecks()).stream()
-                .filter(candidate -> candidate.getCheck() == check)
-                .findFirst()
-                .orElse(null);
-    }
-
-    /// The bar a record is held to (A55): the Learning Flow's checks that judge records one at a time. Those
-    /// that are gates hold a record back; those that are advice only count towards the rolling score. The
-    /// checks that measure a stream — compile, coverage, yield — judged the candidate when it was promoted
-    /// and have nothing to say about one record.
-    private Scorecard recordBar(final ShapeshifterAiDoc doc) {
-        return Scorecard.of(doc.getChecks().stream()
-                .filter(setting -> setting.getCheck().judgesRecords())
-                .toList(), scorers, targetSchemas.of(doc).orElse(null));
     }
 
     private static Produced producedBy(final ShapeshifterAiDoc doc, final Binding binding) {
@@ -1215,7 +780,7 @@ public final class Stage {
         // one in force (A69): marking the learner on its word would relearn what has just been learned. It
         // waits against the stamp it failed, which is no longer in force, so its next try is scored
         // against the new transform rather than deferred again.
-        final Optional<Binding> inForce = bindingFor(learner);
+        final Optional<Binding> inForce = promotion.bindingFor(learner);
         if (inForce.isPresent() && !stamp.equals(stamp(inForce.get()))) {
             return deferred(doc, learner, input, stamp, failingRecords, reason,
                     reason + " (against a transform since replaced; it is tried again against the new one)");
@@ -1248,7 +813,7 @@ public final class Stage {
             return deferred(doc, learner, input, stamp, failingRecords,
                     reason + "; Shapeshifter AI is disabled for this document, so the stream waits for a person");
         }
-        return recording(doc, learner, input, RecordedAdvisor.awaiting(),
+        return sessions.recording(doc, learner, input, RecordedAdvisor.awaiting(),
                 waiting -> deferred(doc, learner, input, stamp, failingRecords, reason,
                         reason + " (" + waiting + ")"),
                 recorder -> {
@@ -1258,8 +823,9 @@ public final class Stage {
                     // is judged here, since the session's opening needs to say what fell short.
                     final Judged served = judged != null
                             ? judged
-                            : judge(scorecard, binding.getPipeline(), input.data(), binding.getRecordBoundary());
-                    return relearnUnderClaim(doc, learner, binding, input, scorecard, served, reason,
+                            : judging.judge(scorecard, binding.getPipeline(), input.data(),
+                                    binding.getRecordBoundary());
+                    return learning.relearnUnderClaim(doc, learner, binding, input, scorecard, served, reason,
                             recorder);
                 });
     }
@@ -1318,7 +884,7 @@ public final class Stage {
     public int wakeSuperseded() {
         final Set<String> pipelines = new LinkedHashSet<>();
         for (final Deferrals.Stamp waiting : deferrals.stampsWaiting()) {
-            final boolean replaced = bindingFor(waiting.learner())
+            final boolean replaced = promotion.bindingFor(waiting.learner())
                     .filter(binding -> !binding.isDraft())
                     // A row with no stamp is a stream waiting for a *first* learning (W7-4): there was
                     // nothing to fail against, so anything serving the learner now is new to it. Such a
@@ -1339,177 +905,7 @@ public final class Stage {
         return pipelines.stream().mapToInt(wake::wake).sum();
     }
 
-    /// One attempt, recorded (A28): a row when this node commits to learning, a turn for every
-    /// question as the transcript has them, and what it came to. The record outlives the node that made
-    /// it, which is what lets a person read back what was said and another node pick the attempt up (A45).
-    ///
-    /// @param waiting What becomes of *this stream* where the attempt is not this stage's to carry to an
-    ///                end — another node holds the claim, or the attempt has parked awaiting an answer.
-    ///                In a task where nothing serves the learner the stream is deferred; in the worker it
-    ///                is refused, since its own task is the one deferred; where a binding
-    ///                already serves it, it is that binding serving the stream as it serves every other.
-    private StageRun recording(final ShapeshifterAiDoc doc,
-                               final Learner learner,
-                               final Input input,
-                               final Function<String, StageRun> waiting,
-                               final Function<Recorder, StageRun> attempt) {
-        // One advisor for the attempt, since the node's makes a new one per call and each counts its own
-        // tokens: asking twice would read two fresh counters and record nothing spent. A task never
-        // learns (A60, A99): it decides, and a session is opened and carried by the worker, or by a
-        // person's improve (A102), which asks as it goes.
-        return recording(doc, learner, input, advisors.of(doc), waiting, attempt);
-    }
-
-    /// The same, for a caller that has already decided who answers.
-    private StageRun recording(final ShapeshifterAiDoc doc,
-                               final Learner learner,
-                               final Input input,
-                               final Advisor advisor,
-                               final Function<String, StageRun> waiting,
-                               final Function<Recorder, StageRun> attempt) {
-        return recording(doc, learner, input, advisor, null, waiting, attempt);
-    }
-
-    /// The same, for an improvement: the attempt remembers which binding it is improving (A46), so that
-    /// the worker carrying it on knows to find its sample in the regression set rather than in the
-    /// stream store.
-    private StageRun recording(final ShapeshifterAiDoc doc,
-                               final Learner learner,
-                               final Input input,
-                               final Advisor advisor,
-                               final String improving,
-                               final Function<String, StageRun> waiting,
-                               final Function<Recorder, StageRun> attempt) {
-        // What the session learns must have somewhere to go, and that is found out now rather than after
-        // the model has been paid: a folder that cannot be made would close every session in error once it
-        // had learned, and the learner's next stream would open another.
-        final Optional<String> unplaceable = unplaceable(learner);
-        if (unplaceable.isPresent()) {
-            return waiting.apply(unplaceable.get());
-        }
-        // And what it would cost, before anything is asked (A24). An attempt's own budgets bound one
-        // session; this is what bounds a feed that keeps opening them. The stream waits and is tried
-        // again, so nothing is lost by refusing here.
-        final Optional<String> tripped = breaker.tripped(doc);
-        if (tripped.isPresent()) {
-            return waiting.apply(tripped.get());
-        }
-        final Optional<Long> opened = attempts.opened(new Attempts.Attempt(learner, doc.getUuid(),
-                input.feed(), input.type(),
-                // An improvement has no stream behind it (A46): its sample is the corpus, so the attempt
-                // says it has none rather than naming one that was never there.
-                improving == null
-                        ? input.id()
-                        : null,
-                node, doc.getPromotionMode(),
-                // The words it is asked with, kept with it (N9): a parked run resumes in the words it
-                // began in, however the Learning Flow is edited while it waits.
-                claimUntil(), AskedWith.of(doc, build), improving), clock.millis());
-        if (opened.isEmpty()) {
-            // Another attempt holds the learner's claim (A45): it is still learning, parked or not, and
-            // this stream takes what that attempt comes to rather than learning the same thing beside it.
-            return waiting.apply(waitingFor(attempts.open(learner, clock.millis())));
-        }
-        return carrying(doc, learner, input, opened.get(), 0L, Grant.NONE, false, Map.of(), advisor, false, waiting,
-                attempt);
-    }
-
-    /**
-     * One attempt, carried to whatever it comes to and recorded as it goes (A28): whether this node opened
-     * it or picked it up where another stopped.
-     */
-    private StageRun carrying(final ShapeshifterAiDoc doc,
-                              final Learner learner,
-                              final Input input,
-                              final long attemptId,
-                              final long alreadySpent,
-                              final Grant grant,
-                              final boolean exhaustNext,
-                              final Map<Integer, String> answeredBefore,
-                              final Advisor advisor,
-                              final boolean worker,
-                              final Function<String, StageRun> waiting,
-                              final Function<Recorder, StageRun> attempt) {
-        final long before = advisor.tokensUsed();
-        final Recorder recorder = new Recorder(doc, advisor, attemptId, alreadySpent, grant, exhaustNext,
-                answeredBefore, answeredBy(doc));
-        recorder.worker = worker;
-        final StageRun run;
-        try {
-            run = attempt.apply(recorder);
-        } catch (final AwaitingAnswer awaiting) {
-            // The attempt has reached a question nobody present can answer: it stops here, keeps its claim
-            // on the learner, and waits for the worker or a person (A28, A45). The stream is sentinelled, as
-            // an unknown learner's is, and released when the attempt finishes.
-            // The question it stopped at is recorded unanswered (A28), so that a person can see what is
-            // being waited for and answer it instead, and so that the replay has something to check its
-            // re-walk against when they do.
-            record(() -> attempts.turn(attemptId, new Attempts.Turn(recorder.numbered(awaiting.number()),
-                    awaiting.stepId(), awaiting.candidate(), Question.kindOf(awaiting.question()),
-                    awaiting.question().summary(), null, null, null)));
-            record(() -> attempts.parked(attemptId, AttemptStatus.AWAITING_MODEL, claimUntil(),
-                    Math.max(0L, advisor.tokensUsed() - before)));
-            return waiting.apply("Awaiting the model: attempt " + attemptId + " stopped at "
-                                 + awaiting.question().summary());
-        } catch (final RuntimeException e) {
-            // The model, the node or the database failed: the attempt says so, with the turns it had got
-            // to, rather than vanishing, and in words a person can act on. Nothing here may throw over the
-            // failure that brought us.
-            record(() -> {
-                final StopReport report = StopReports.failure(e, NullSafe.get(doc.getModel(), DocRef::getName));
-                attempts.closed(attemptId, AttemptStatus.ERROR, report.getError(), null, null, report,
-                        Math.max(0L, advisor.tokensUsed() - before));
-            });
-            throw e;
-        }
-        if (run.decision() instanceof final Parked parked) {
-            // Parked for a person (A65): the attempt keeps its claim with a lease that does not lapse, and
-            // the worker leaves it alone. Not closed — a person's answer carries it on.
-            record(() -> attempts.parked(attemptId, parked.reason(), parked.report(),
-                    Math.max(0L, advisor.tokensUsed() - before)));
-            return run;
-        }
-        // The run is done and its binding is written: the record of it must not be what fails the stream.
-        record(() -> attempts.closed(attemptId, statusOf(run.decision()), reason(run.decision()),
-                bindingOf(run.decision()), scoreOf(run.decision()), reportOf(run.decision()),
-                Math.max(0L, advisor.tokensUsed() - before)));
-        return run;
-    }
-
-    /// Why a stream waits on the attempt that holds its learner's claim, by what that attempt is doing: a
-    /// stream that waits on a session paused for a person waits until someone acts, which is not what
-    /// "learning" would say.
-    static String waitingFor(final Optional<Recorded> holder) {
-        if (holder.isEmpty()) {
-            return "Waiting for the learning run that holds this pipeline, which has just finished; this stream "
-                   + "is tried again.";
-        }
-        final Recorded attempt = holder.get();
-        final String run = "learning run " + attempt.id();
-        return switch (attempt.status()) {
-            case PARKED -> "Waiting for " + run + ", which is paused for a person" + why(attempt.decision())
-                           + ". This stream carries on once it is answered, given more, or stopped, on the "
-                           + "pipeline's Learning Status tab.";
-            case AWAITING_MODEL -> "Waiting for " + run + ", which is waiting for the model to answer.";
-            case AWAITING_REVIEW -> "Waiting for a new translation, learned by " + run + ", to be approved or "
-                                    + "rejected on the pipeline's Learning Status tab.";
-            default -> "Waiting for " + run + ", which is learning" + (attempt.attempt().node() == null
-                    ? ""
-                    : " on node " + attempt.attempt().node()) + "; this stream takes what it learns.";
-        };
-    }
-
     // What a paused attempt stopped on, in brackets, without its full stop; empty where it says nothing
-    private static String why(final String decision) {
-        if (NullSafe.isBlankString(decision)) {
-            return "";
-        }
-        final String line = decision.strip();
-        return " (" + Character.toLowerCase(line.charAt(0)) + (line.endsWith(".")
-                ? line.substring(1, line.length() - 1)
-                : line.substring(1)) + ")";
-    }
-
     /**
      * Bookkeeping, which may not fail what it is a record of: an attempt is written after the fragment, the
      * binding and the output are, so a database that refuses the row must not undo a stream that succeeded.
@@ -1523,574 +919,33 @@ public final class Stage {
     }
 
     /**
-     * What an attempt writes as it goes: the advisor it is asking, so the tokens it charges are counted
-     * once, and a turn for every exchange as it is answered and again as it is judged (A28).
-     */
-    private final class Recorder {
-
-        private final ShapeshifterAiDoc doc;
-        private final Advisor advisor;
-        private final long attemptId;
-        private final long alreadySpent;
-        private final Map<Integer, String> answeredBefore;
-        private final String answeredBy;
-        /// Whether this is the worker carrying a session (A64): a session that cannot finish parks for a
-        /// person (A65) rather than giving up, and runs its held stream in full before it ends.
-        private boolean worker;
-        /// What a person granted the attempt beyond the document's budgets (A77).
-        private final Grant grant;
-        /// The advisor's count and the clock as this carrying began: a round that follows another in the
-        /// same carrying is under the same budget, counted from here (A5).
-        private final long tokensBefore;
-        private final long startedMs;
-        /// Whether a person sent the attempt to the exhaustion step (A65).
-        private final boolean exhaustNext;
-        /// The highest turn number recorded so far, and the number the current walk's turns count on from.
-        private int highest;
-        private int base;
-
-        private Recorder(final ShapeshifterAiDoc doc,
-                         final Advisor advisor,
-                         final long attemptId,
-                         final long alreadySpent,
-                         final Grant grant,
-                         final boolean exhaustNext,
-                         final Map<Integer, String> answeredBefore,
-                         final String answeredBy) {
-            this.doc = doc;
-            this.advisor = advisor;
-            this.attemptId = attemptId;
-            this.alreadySpent = alreadySpent;
-            this.grant = grant;
-            this.exhaustNext = exhaustNext;
-            this.tokensBefore = advisor.tokensUsed();
-            this.startedMs = clock.millis();
-            this.answeredBefore = Map.copyOf(answeredBefore);
-            this.answeredBy = answeredBy;
-        }
-
-        private boolean worker() {
-            return worker;
-        }
-
-        private Advisor advisor() {
-            return advisor;
-        }
-
-        private long attemptId() {
-            return attemptId;
-        }
-
-        /// What this attempt had spent before it was last parked (A5): its budget is the whole of it.
-        private long alreadySpent() {
-            return alreadySpent;
-        }
-
-        /// What this attempt has spent so far: before it was last parked, and in this carrying up to now.
-        /// A round that follows another is under the one budget, so it starts from here and not from
-        /// nothing.
-        private long spentSoFar() {
-            return alreadySpent + Math.max(0L, advisor.tokensUsed() - tokensBefore);
-        }
-
-        /// The claim pushed out, before every question: an attempt held up by one slow model call would
-        /// otherwise run past its expiry and have its learner's work taken up by another node (A45).
-        private void heartbeat() {
-            record(() -> attempts.heartbeat(attemptId, claimUntil()));
-        }
-
-        private void turn(final int number, final Exchange exchange) {
-            final int numbered = numbered(number);
-            // Renewed as the turn completes as well as before it is asked, so a live session is never
-            // mistaken for a dead one however long the model took.
-            heartbeat();
-            record(() -> attempts.turn(attemptId, new Attempts.Turn(numbered, exchange.step(),
-                    exchange.candidate(), Question.kindOf(exchange.question()), exchange.question().summary(),
-                    exchange.reply(), answeredBefore.getOrDefault(numbered, answeredBy),
-                    exchange.outcome(), exchange.score(), exchange.carried())));
-        }
-
-        /// A turn's number in the attempt, from its number in the walk that asked it. A session runs its
-        /// walks one after another — a learning, then a relearning for each round that did not clear the
-        /// held stream (A64) — and each walk numbers its own turns from one; the attempt numbers them on
-        /// from where the last walk left off, so that no round's turns are written over an earlier
-        /// round's and a re-walk replays them all, in order. A turn is recorded twice under one number,
-        /// as it is answered and as it is judged, which is why a walk's beginning is said and not inferred.
-        private int numbered(final int number) {
-            highest = Math.max(highest, base + number);
-            return base + number;
-        }
-
-        /// A walk begins: its turns count on from the highest the attempt has.
-        private void walkBegins() {
-            base = highest;
-        }
-    }
-
-    /**
-     * Where an attempt stands, from what it decided (A28).
-     */
-    private static AttemptStatus statusOf(final Decision decision) {
-        return switch (decision) {
-            case Promoted ignored -> AttemptStatus.PROMOTED;
-            case Rebound ignored -> AttemptStatus.PROMOTED;
-            case Drafted ignored -> AttemptStatus.AWAITING_REVIEW;
-            case Parked ignored -> AttemptStatus.PARKED;
-            default -> AttemptStatus.ABANDONED;
-        };
-    }
-
-    /**
-     * What an attempt came to, in the words the decision itself uses — and only those: a decision's
-     * diagnostics quote the stream's own text, which would be a second copy of real data under the
-     * attempt's retention rather than the stream's (A146: samples are never redacted). That is the same
-     * reason a turn records what it asked rather than the prompt it sent.
-     */
-    private static String reason(final Decision decision) {
-        return switch (decision) {
-            case Promoted promoted -> "Promoted " + promoted.score();
-            case Rebound rebound -> "Rebound " + rebound.score();
-            case Drafted drafted -> "Awaiting review, scored " + drafted.score();
-            case Kept kept -> "Kept the incumbent: " + kept.reason();
-            case GivenUp givenUp -> givenUp.reason();
-            case Sentinel sentinel -> sentinel.reason();
-            default -> decision.getClass().getSimpleName();
-        };
-    }
-
-    private static StopReport reportOf(final Decision decision) {
-        return decision instanceof final GivenUp givenUp
-                ? givenUp.report()
-                : null;
-    }
-
-    private static String bindingOf(final Decision decision) {
-        return switch (decision) {
-            case Promoted promoted -> promoted.binding().getUuid();
-            case Drafted drafted -> drafted.binding().getUuid();
-            case Rebound rebound -> rebound.binding().getUuid();
-            default -> null;
-        };
-    }
-
-    private static Double scoreOf(final Decision decision) {
-        return switch (decision) {
-            case Promoted promoted -> promoted.score();
-            case Drafted drafted -> drafted.score();
-            case Rebound rebound -> rebound.score();
-            default -> null;
-        };
-    }
-
-    /**
-     * Who answered a turn: the model this document names, since nothing else answers one yet — a person
-     * answering instead is A28's, in a later slice, and writes their own name here.
-     */
-    private static String answeredBy(final ShapeshifterAiDoc doc) {
-        // A DocRef may carry no name — a document stored as type and uuid alone — and the column may not be
-        // null, so the uuid stands in: a record that cannot be written is worse than one that names a uuid.
-        if (doc.getModel() == null) {
-            return "model";
-        }
-        return doc.getModel().getName() == null
-                ? doc.getModel().getUuid()
-                : doc.getModel().getName();
-    }
-
-    private StageRun learnAndBind(final ShapeshifterAiDoc doc,
-                                  final Learner learner,
-                                  final Input input,
-                                  final Scorecard scorecard,
-                                  final Recorder recorder) {
-        // Learn on a prefix, judge on the whole stream.
-        final Outcome outcome = learn(doc, learner, input, scorecard, List.of(), List.of(), recorder);
-        if (outcome instanceof final Abandoned abandoned) {
-            if (abandoned.givesUp()) {
-                // The flow's exit is give-up (A83): a parser's default, since a stream that cannot be cut
-                // into records that meet the gates is the one failure nothing can serve (A52, A54), or
-                // any step's where the flow says so. The learner gives up, and the streams waiting on it
-                // are woken to error with the reason, as a given-up learner's streams do.
-                final StageRun givenUp = givenUp(doc, learner, abandoned.reason(),
-                        abandoned.reason(), abandoned.diagnostics(), List.of(), outcome.transcript(),
-                        abandoned.report());
-                wake(learner);
-                return givenUp;
-            }
-            if (recorder.worker()) {
-                // A session that cannot finish parks for a person (A65) rather than giving up: its
-                // streams go on waiting, and nothing is baked because money or candidates ran out.
-                return parked(doc, learner, abandoned.reason(), abandoned.report(), outcome.transcript());
-            }
-            return givenUp(doc, learner, abandoned.reason(), abandoned.reason(),
-                    abandoned.diagnostics(), List.of(), outcome.transcript(), abandoned.report());
-        }
-        final Learned learned = (Learned) outcome;
-
-        // The candidate over the whole stream: the held-out judgement of A14/A15 where there are enough
-        // records for one, and the floor a provisional binding must clear where there are not.
-        final Judged judged = asLearned(rerun(learned.chain(), input.data(), boundary(learned)), scorecard);
-        if (!judged.clearsGates()) {
-            // Woken, as for the flow's give-up: the streams waiting on the learner error with the reason
-            // now, rather than after the retry delay.
-            final StageRun givenUp = givenUp(doc, learner, "A gate failed",
-                    "Candidate failed " + judged.failedGates(),
-                    judged.verdicts().stream().flatMap(verdict -> verdict.feedback().stream()).toList(),
-                    judged.verdicts(), learned.transcript());
-            wake(learner);
-            return givenUp;
-        }
-        final DocRef fragment = write(learner, learned);
-        // What goes in the corpus (A56): the sample the model was shown, every record of it, since a
-        // first learning learned for all of them.
-        final List<Accepted> entries = Corpus.entries(learned.chain(), boundary(learned),
-                learningPrefix(input.data(), doc), null, learned.targets(), judged.score(), recorder.attemptId(),
-                clock.millis(), doc.getRegressionCap());
-        return bind(doc, learner, input, fragment, judged, entries, learned.transcript(),
-                boundary(learned));
-    }
-
-    private StageRun relearnUnderClaim(final ShapeshifterAiDoc doc,
-                                       final Learner learner,
-                                       final Binding incumbent,
-                                       final Input input,
-                                       final Scorecard scorecard,
-                                       final Judged served,
-                                       final String marked,
-                                       final Recorder recorder) {
-        final List<StoredError> opening = new ArrayList<>();
-        opening.add(new StoredError(Severity.ERROR, null, STAGE, "Relearning: " + marked
-                                                                 + ". The bound fragment scored " + served.score()
-                                                                 + " on this stream"));
-        served.verdicts().forEach(verdict -> opening.addAll(verdict.feedback()));
-        // And what the fragment's run had to say — for a full pass, the records that fell short, as the
-        // parser cut them and as the transform left them (A64): what the model has to see to learn for
-        // a record that lay beyond the sample.
-        opening.addAll(served.diagnostics());
-        final Outcome outcome = learn(doc, learner, input, scorecard, opening, served.held(), recorder);
-        // The mark is spent now that the relearning has happened, and not before: an attempt that parks
-        // at a question (A5) is carried on by the worker, which must find the learner as this walk found it
-        // or ask something else (A45). Spent whatever the candidate came to, or a learner that cannot be
-        // fixed would be relearned on every stream.
-        states.reset(learner);
-        if (outcome instanceof final Abandoned abandoned) {
-            // Whatever exit the flow named (A83): a learner a binding is serving does not give up, since that
-            // would error streams that are being served.
-            if (recorder.worker()) {
-                // As a first learning does (A65): the incumbent serves what it can, the held stream waits.
-                return parked(doc, learner, abandoned.reason(), abandoned.report(), outcome.transcript());
-            }
-            return emit(doc, new Kept(incumbent, "No candidate: " + abandoned.reason()), learner, input, incumbent,
-                    served, outcome.transcript());
-        }
-        final Learned learned = (Learned) outcome;
-        final Judged candidate = asLearned(rerun(learned.chain(), input.data(), boundary(learned)), scorecard);
-        if (!candidate.clearsGates()) {
-            return emit(doc, new Kept(incumbent, "Candidate failed " + candidate.failedGates()), learner, input,
-                    incumbent, served, learned.transcript());
-        }
-        // No comparison with the incumbent's score (the one model of checks, D2): the regression corpus
-        // below, a gate, is what holds a relearn to no worse than what it replaces.
-        // Held to the corpus, to no worse (A66): every record the binding was accepted on, run through the
-        // candidate's transform, must clear the bar, and none that translated may become an Unknown.
-        // Output may otherwise change — the output each was accepted with is kept so that a person can
-        // see what changed, not so that the gate can refuse it. Held to it only where the regression corpus
-        // is a gate, and to the same bar a served record is.
-        final List<Accepted> corpus = doc.getCheck(Check.REGRESSION).isGate()
-                ? regressionSet.accepted(incumbent.getUuid())
-                : List.of();
-        final Scorecard bar = recordBar(doc);
-        for (int i = 0; i < corpus.size(); i++) {
-            final Accepted accepted = corpus.get(i);
-            final List<LearnedStep> transforms = Corpus.transforms(learned.chain());
-            final Judged onRecord = asLearned(rerun(transforms, accepted.record(), boundary(learned)), bar);
-            final Optional<String> shortfall = Corpus.shortfall(accepted, onRecord.verdicts(),
-                    Corpus.outputFor(transforms, accepted.record(), boundary(learned)));
-            if (shortfall.isPresent()) {
-                return emit(doc, new Kept(incumbent, "Candidate " + shortfall.get() + " — "
-                                                     + Corpus.name(i + 1, corpus.size(), accepted)),
-                        learner, input, incumbent, served, learned.transcript());
-            }
-        }
-        // What this session learned for (A56): the records of the stream that fell short under the
-        // incumbent, with what the candidate makes of them. A relearning that names no record — the stream
-        // fell short on yield or coverage, which are measures of the stream and lay nothing at a record —
-        // learned for the sample it was shown, as a first learning does.
-        final Set<Integer> fellShort = served.failingRecords();
-        final List<Accepted> entries;
-        if (!served.held().isEmpty()) {
-            // A full pass kept the records themselves (design 04 §4), which may lie beyond the text in
-            // hand: they are the entries.
-            entries = Corpus.heldEntries(learned.chain(), boundary(learned), served.held(), learned.targets(),
-                    candidate.score(), recorder.attemptId(), clock.millis(), doc.getRegressionCap());
-        } else if (fellShort.isEmpty()) {
-            entries = Corpus.entries(learned.chain(), boundary(learned), learningPrefix(input.data(), doc), null,
-                    learned.targets(), candidate.score(), recorder.attemptId(), clock.millis(),
-                    doc.getRegressionCap());
-        } else {
-            entries = Corpus.entries(learned.chain(), boundary(learned), input.data(), fellShort,
-                    learned.targets(), candidate.score(), recorder.attemptId(), clock.millis(),
-                    doc.getRegressionCap());
-        }
-        // Always a draft, whatever the mode (simplification option A): behind the incumbent, which keeps
-        // matching first; approval rebinds the incumbent to this fragment and carries the history over.
-        final DocRef fragment = write(learner, learned);
-        final Binding draft = writeDraft(doc, learner, fragment, candidate.score(), boundary(learned));
-        regressionSet.accept(doc.getUuid(), draft.getUuid(), input.feed(), input.type(), entries,
-                doc.getRegressionCap());
-        if (!approvesItself(doc)) {
-            states.awaitReview(learner, doc.getUuid(), draft.getUuid());
-            return emit(doc, new Drafted(draft, candidate.score()), learner, input,
-                    incumbent, served, learned.transcript());
-        }
-        // Spent again now the new transform is in force: a stream that fell short of the incumbent while
-        // the session ran marked the learner after it was spent above, and a mark left standing would
-        // relearn what has just been learned. A stream that falls short from here on was judged
-        // against a transform since replaced, and does not mark it (see [#session]). [#promoteDraft]
-        // resets the learner and wakes it.
-        final Binding rebound = promoteDraft(doc, learner, draft);
-        return emit(doc, new Rebound(incumbent, rebound, candidate.score()), learner,
-                input, incumbent, served, learned.transcript());
-    }
-
-    /**
-     * Bind a fragment that cleared the floor: a new binding for the learner, promoted if the stream had
-     * enough records for a held-out judgement and provisional otherwise; the learner's pipeline woken,
-     * which is what puts its waiting streams through; and the stream's output emitted. In review mode (A25)
-     * the binding is a draft instead, and the learner's streams wait on it, this one with them.
-     */
-    private StageRun bind(final ShapeshifterAiDoc doc,
-                          final Learner learner,
-                          final Input input,
-                          final DocRef fragment,
-                          final Judged judged,
-                          final List<Accepted> entries,
-                          final List<Exchange> transcript,
-                          final RecordBoundary boundary) {
-        // What a learned translation may use is checked again here, not only when the candidate was
-        // judged (decision N1). A fragment can reach this point by a route that judged no stylesheet — a
-        // draft approved by a person, a binding promoted by hand — and can have been edited between the
-        // two. There is no run-time enforcement until Track 2 step 6, so this is the last look.
-        final List<String> refusals = refusedByTheList(fragment);
-        if (!refusals.isEmpty()) {
-            return givenUp(doc, learner, "Refused", refusals.get(0),
-                    refusals.stream().map(refusal -> new StoredError(Severity.ERROR, null, PERMITTED, refusal))
-                            .toList(),
-                    judged.verdicts(), transcript,
-                    StopReports.refusedByTheList(refusals));
-        }
-        // Always a draft, whatever the mode (simplification option A).
-        final Binding draft = writeDraft(doc, learner, fragment, judged.score(), boundary);
-        // What was learned for goes in now, under a draft too (A56): the records are what the session put
-        // to the model whether or not a person has yet approved what it made of them. Reject and
-        // retraction take them out again.
-        regressionSet.accept(doc.getUuid(), draft.getUuid(), input.feed(), input.type(), entries,
-                doc.getRegressionCap());
-        states.reset(learner);
-        // A first result learned from too few records is never approved by the system, even on an
-        // automatic Learning Flow (SIM-3 option E): it has no held-out judgement behind it, so it waits
-        // for a person as review mode's results do. The record minimum is a first learning's bar only,
-        // which is why the relearning paths don't ask it (N4).
-        if (!approvesItself(doc) || judged.records() < doc.getMinRecordsToLearn()) {
-            states.awaitReview(learner, doc.getUuid(), draft.getUuid());
-            return new StageRun(doc, new Drafted(draft, judged.score()), learner, null,
-                    null, judged.verdicts(), transcript, null, List.of());
-        }
-        final Binding promoted = promoteDraft(doc, learner, draft);
-        return emit(doc, new Promoted(promoted, judged.score()), learner, input, promoted, judged, transcript);
-    }
-
-    /// Whether the system approves a draft the gate has just cleared, rather than a person
-    /// (simplification option A): on an automatic Learning Flow it does, at once, through the same code a
-    /// person's approval takes; on one left on review — the default (SIM-1) — the draft waits.
-    ///
-    /// @param doc The document.
-    /// @return True where the system approves its own drafts.
-    private static boolean approvesItself(final ShapeshifterAiDoc doc) {
-        return doc.getPromotionMode() == PromotionMode.AUTOMATIC;
-    }
-
-    /// A draft binding over a freshly written fragment, behind whatever serves the learner now (A25).
-    ///
-    /// @param doc      The document.
-    /// @param learner  The learner.
-    /// @param fragment The fragment the draft binds.
-    /// @param score    What the candidate scored.
-    /// @param boundary What one record is, where settled.
-    /// @return The draft, as it was written.
-    private Binding writeDraft(final ShapeshifterAiDoc doc,
-                               final Learner learner,
-                               final DocRef fragment,
-                               final Double score,
-                               final RecordBoundary boundary) {
-        final String draftUuid = UUID.randomUUID().toString();
-        final Binding draft = Binding.builder()
-                .uuid(draftUuid)
-                .pipeline(fragment)
-                .draft(true)
-                .score(score)
-                .recordBoundary(boundary)
-                // The configuration it serves with, kept (A61).
-                .snapshot(snapshot(doc, draftUuid, fragment))
-                .build();
-        learnerBindings.append(learner, doc.getUuid(), draft);
-        return draft;
-    }
-
-    private Outcome learn(final ShapeshifterAiDoc doc,
-                          final Learner learner,
-                          final Input input,
-                          final Scorecard scorecard,
-                          final List<StoredError> opening,
-                          final List<String> held,
-                          final Recorder recorder) {
-        // Kept alive while a question is with the model as well as between questions (A45): one call
-        // longer than the lease would otherwise let another node take the attempt mid-call.
-        final Advisor advisor = new HeartbeatingAdvisor(recorder.advisor(), recorder::heartbeat,
-                HeartbeatingAdvisor.intervalFor(lease));
-        recorder.walkBegins();
-        // The attempt's claim is pushed out before every question (A45), and every turn is recorded as it
-        // is answered and again as it is judged, so an attempt still running shows what it had got to
-        // (A28).
-        final Conversation conversation = new Conversation(advisor, runners, scorecard, clock,
-                recorder::heartbeat, recorder::turn)
-                .alreadySpent(recorder.spentSoFar())
-                .begunAt(recorder.startedMs)
-                .granted(recorder.grant.tokens(), recorder.grant.ms())
-                .exhaustFirst(recorder.exhaustNext)
-                // The records the held stream fell short on (design 04 §4): every candidate for the
-                // transform is held to them, beyond the sample they are not in.
-                .heldTo(held)
-                // What a supervisor has said to this learner (A46), read afresh before every question
-                // so that a hint given while the attempt was parked is carried by the turn that
-                // resumes it.
-                .guidedBy(() -> guidance.standing(learner));
-        final Sample sample = Sample.of(learningPrefix(input.data(), doc), input.feed(), input.type())
-                .from(input.facts())
-                // How much of what was read the model is not shown, so that a stop report can say it
-                // (supervisor visibility item 3): a person told "couldn't write the parser" is owed the
-                // fact that the model saw eight kilobytes of a two-megabyte stream.
-                .cutFrom(Input.bytes(input.data()))
-                // A stream longer than the prefix read as text: a prefix of a single document is not a
-                // document, so such a stream cannot be sampled at all (N2 option E)
-                .beyondPrefix(input.opener() != null);
-        final long before = advisor.tokensUsed();
-        final List<Exchange> asked = new ArrayList<>();
-        try {
-            final Outcome outcome = conversation.run(doc, sample, opening);
-            asked.addAll(outcome.transcript());
-            return outcome;
-        } finally {
-            // What the attempt cost, counted for the document across the cluster (A44), whether it learned
-            // anything or not and whether it returned or threw: an attempt that abandons costs what it
-            // asked, and a model that fails after charging is the runaway A24's breaker exists to see. The
-            // policy that reads the count is A24's, in phase E.
-            spend.record(doc.getUuid(), Math.max(0L, advisor.tokensUsed() - before), asked.size(),
-                    SPEND_WINDOW_MS);
-        }
-    }
-
-    /**
      * Approve a draft (A25): the promotion. Where a binding already serves the learner — the draft came of
      * relearning — that binding is rebound to the draft's fragment and keeps its {@code uuid} and its
      * history; otherwise the draft itself goes live. Either way the learner's pipeline is woken, which puts
      * what waited for the review through.
      */
     public void approve(final ShapeshifterAiDoc doc, final String bindingUuid) {
-        final LearnerBindings.Held held = draft(doc, bindingUuid);
-        promoteDraft(doc, awaitingReview(doc, held), held.binding());
-        // The attempt that wrote the draft is no longer awaiting review (A28).
-        record(() -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.PROMOTED, "Approved"));
+        promotion.approve(doc, bindingUuid, null);
     }
 
-    /// The promotion itself: the one path both modes take (simplification option A). Where a binding
-    /// already serves the learner — the draft came of relearning — that binding is rebound to the draft's
-    /// fragment and keeps its `uuid` and its history, so that what the learner produced before and after
-    /// hangs off one binding; otherwise the draft itself goes live.
+    /// As [Promotion#approve], saying who approved it.
     ///
-    /// Either way the learner's state starts afresh and its pipeline is woken, which puts through what
-    /// waited for the review (design 04 §5.3) — all it needs, since those tasks were deferred, not
-    /// errored.
-    ///
-    /// @param doc     The document.
-    /// @param learner The learner the draft was learned for.
-    /// @param draft   The draft.
-    /// @return The binding that serves the learner from here on.
-    private Binding promoteDraft(final ShapeshifterAiDoc doc, final Learner learner, final Binding draft) {
-        final Optional<Binding> incumbent = incumbentOf(learnerBindings.forLearner(learner));
-        final Binding promoted;
-        if (incumbent.isPresent()) {
-            // One fragment per learner (A58): the draft is copied into the fragment that serves, which
-            // keeps its own DocRef, and the draft's documents go. The snapshot is taken afresh over the
-            // serving fragment, since the draft's was taken over documents that no longer exist.
-            final DocRef fragment = incumbent.get().getPipeline();
-            writer.copyInto(fragment, draft.getPipeline(), places.of(learner).folder(), fragment.getName());
-            promoted = incumbent.get().copy()
-                    .snapshot(snapshot(doc, incumbent.get().getUuid(), fragment))
-                    .promotedTimeMs(clock.millis())
-                    .score(draft.getScore())
-                    .recordBoundary(draft.getRecordBoundary())
-                    .build();
-            learnerBindings.replace(learner, doc.getUuid(), promoted);
-            learnerBindings.remove(learner, draft.getUuid());
-            regressionSet.move(draft.getUuid(), incumbent.get().getUuid(), doc.getRegressionCap());
-            snapshots.discard(draft.getUuid());
-        } else {
-            promoted = draft.copy()
-                    .draft(false)
-                    .promotedTimeMs(clock.millis())
-                    .build();
-            learnerBindings.replace(learner, doc.getUuid(), promoted);
-        }
-        states.reset(learner);
-        wake(learner);
-        return promoted;
+    /// @param doc         The document.
+    /// @param bindingUuid The draft.
+    /// @param reviewedBy  Who approved it; null where nobody is named.
+    public void approve(final ShapeshifterAiDoc doc, final String bindingUuid, final String reviewedBy) {
+        promotion.approve(doc, bindingUuid, reviewedBy);
     }
 
-    /// Take back a binding that is serving, by hand (A28, design 01 §11.6).
+    /// As [Promotion#retract].
     ///
-    /// A person has read what the binding is producing and decided it should not be: a reason no gate can
-    /// see. The binding goes and the learner knows nothing again. What the binding produced was
-    /// produced by a binding that has been withdrawn, and is counted rather than asked for (A129): a
-    /// person who wants it as it would be now makes a reprocess filter on the pipeline.
-    ///
-    /// Not a removal, which is what it says: a row taken out of the table. Removing a learned binding leaves the
-    /// learner thinking it is bound and leaves the streams it produced standing as though they were right.
-    /// Retracting says they were not.
-    ///
-    /// Not `reject` either, which is A25's decision about a draft that never served anything, and which
-    /// gives the learner up so it does not learn again. A retracted learner *does* learn again: its next
-    /// stream starts afresh, which is the point — the binding was wrong, the feed is not.
-    ///
-    /// @param reason Why, in the person's words. It goes on the attempt, so that a person reading it a week
-    ///               later knows what took the binding back.
-    /// @param by     Who retracted it, since this overrides what the gate decided.
-    /// @return How many streams the binding produced output for: what a person would reprocess, the one
-    /// consequence a person retracting a binding cannot see for themselves and the one worth telling them.
+    /// @param doc         The document.
+    /// @param bindingUuid The binding.
+    /// @param reason      Why, in the person's words.
+    /// @param by          Who retracted it.
+    /// @return How many streams the binding produced output for.
     public int retract(final ShapeshifterAiDoc doc, final String bindingUuid, final String reason, final String by) {
-        final LearnerBindings.Held held = held(doc, bindingUuid);
-        final Learner learner = held.learner();
-        final Binding binding = held.binding();
-        if (binding.isDraft()) {
-            // A draft has served nothing, so there is nothing to take back. Deciding it is Approve or
-            // Reject (A25), and saying so beats retracting something that was never bound.
-            throw new IllegalArgumentException("Binding " + bindingUuid + " is a draft awaiting review: approve "
-                                               + "or reject it rather than retracting it");
-        }
-        final String said = "Retracted by " + by + ": " + reason;
-        learnerBindings.remove(learner, binding.getUuid());
-        regressionSet.discard(binding.getUuid());
-        snapshots.discard(binding.getUuid());
-        // The learner knows nothing again rather than giving up: the binding was wrong, not the feed, and the
-        // next stream learns afresh — unless a draft awaits review, which is still the learner's candidate
-        // and a person's to decide.
-        resetKeepingDraft(doc, learner);
-        // By the fragment as well as the binding: a binding keeps its uuid when it is rebound (§7.3 rule 3), and
-        // what an earlier generation produced was produced correctly by what was bound then.
-        final List<Replayable> produced = outputs.boundBy(binding.getUuid(), binding.getPipeline() == null
-                ? null
-                : binding.getPipeline().getUuid());
-        record(() -> attempts.settled(doc.getUuid(), bindingUuid, AttemptStatus.RETRACTED, said));
-        return produced.size();
+        return promotion.retract(doc, bindingUuid, reason, by);
     }
 
     /**
@@ -2101,131 +956,21 @@ public final class Stage {
      *
      */
     public void reject(final ShapeshifterAiDoc doc, final String bindingUuid, final String reason) {
-        final LearnerBindings.Held held = draft(doc, bindingUuid);
-        final Binding draft = held.binding();
-        final Learner learner = awaitingReview(doc, held);
-        learnerBindings.remove(learner, draft.getUuid());
-        regressionSet.discard(draft.getUuid());
-        snapshots.discard(draft.getUuid());
-        states.reset(learner);
-        states.giveUp(learner, doc.getUuid(), "Rejected: " + reason);
-        record(() -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.REJECTED, "Rejected: " + reason));
-        // The streams waiting behind the draft (design 04 §3) are woken to error, as a given-up learner's
-        // always are (A52, A80): left waiting, they would wait for a review that is no longer coming.
-        wake(learner);
+        promotion.reject(doc, bindingUuid, reason, null);
     }
 
-    /// The learner's state starts afresh — not given up, not marked, its rolling score forgotten — but a
-    /// draft awaiting review still awaits it: it is a person's to decide (A25), and nothing that calls this
-    /// decided it. Forgotten, it would be a draft nothing awaits, serving the learner's streams a wait that
-    /// approve and reject both refuse to end.
-    private void resetKeepingDraft(final ShapeshifterAiDoc doc, final Learner learner) {
-        final Optional<String> draft = states.draftAwaiting(learner);
-        states.reset(learner);
-        draft.ifPresent(bindingUuid -> states.awaitReview(learner, doc.getUuid(), bindingUuid));
-    }
-
-    /// A draft of this document, with whose it is.
-    private LearnerBindings.Held draft(final ShapeshifterAiDoc doc, final String bindingUuid) {
-        return learnerBindings.byUuid(bindingUuid)
-                .filter(row -> row.docUuid().equals(doc.getUuid()) && row.binding().isDraft())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Binding " + bindingUuid + " is not a draft on document " + doc.getName()));
-    }
-
-    /// The learner whose review the draft is: the one whose state says it awaits that draft. A draft no
-    /// learner awaits is one nothing would release on approval and nothing would give up on rejection.
-    private Learner awaitingReview(final ShapeshifterAiDoc doc, final LearnerBindings.Held draft) {
-        if (!states.draftAwaiting(draft.learner()).filter(draft.binding().getUuid()::equals).isPresent()) {
-            throw new IllegalStateException("Nothing awaits review under draft binding " + draft.binding().getUuid()
-                                            + " on document " + doc.getName());
-        }
-        return draft.learner();
-    }
-
-    /// The binding a draft would replace: the one serving the learner.
-    private static Optional<Binding> incumbentOf(final List<Binding> table) {
-        return table.stream()
-                .filter(binding -> !binding.isDraft())
-                .findFirst();
-    }
-
-    /// A binding of this document, with whose it is: what an action that begins from a binding rather than a
-    /// stream acts on (design 06 phase J slice 2b). A binding of another document is not this one's, whatever
-    /// its uuid, since the document is what decided the person may act on it.
-    private LearnerBindings.Held held(final ShapeshifterAiDoc doc, final String bindingUuid) {
-        return learnerBindings.byUuid(bindingUuid)
-                .filter(row -> row.docUuid().equals(doc.getUuid()))
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Binding " + bindingUuid + " is not a binding of this document"));
-    }
-
-    /// What serves a learner (A124): its binding, or failing that the draft awaiting review.
-    private Optional<Binding> bindingFor(final Learner learner) {
-        final List<Binding> bindings = learnerBindings.forLearner(learner);
-        return bindings.stream()
-                .filter(binding -> !binding.isDraft())
-                .findFirst()
-                .or(() -> bindings.stream().filter(Binding::isDraft).findFirst());
-    }
-
-    /// A snapshot of a fragment as it stands, kept against a binding (A61, A70): the version the binding serves
-    /// with, stamps its deferrals with and records its outputs under.
-    /// What the fragment's stylesheets use that a learned translation may not (decision N1).
+    /// As [Promotion#reject], saying who rejected it.
     ///
-    /// @param fragment The fragment about to serve.
-    /// @return One sentence per refusal, and empty where every stylesheet uses only what it may.
-    private List<String> refusedByTheList(final DocRef fragment) {
-        if (fragment == null) {
-            return List.of();
-        }
-        final List<String> refusals = new ArrayList<>();
-        for (final Map.Entry<String, String> stylesheet : codes.stylesheets(fragment).entrySet()) {
-            for (final String refusal : LearnedStylesheetCheck.refusals(stylesheet.getValue(), ALLOW_LIST)) {
-                refusals.add(stylesheet.getKey() + ": " + refusal);
-            }
-        }
-        return refusals;
+    /// @param doc         The document.
+    /// @param bindingUuid The draft.
+    /// @param reason      Why.
+    /// @param reviewedBy  Who rejected it; null where nobody is named.
+    public void reject(final ShapeshifterAiDoc doc,
+                       final String bindingUuid,
+                       final String reason,
+                       final String reviewedBy) {
+        promotion.reject(doc, bindingUuid, reason, reviewedBy);
     }
-
-    private String snapshot(final ShapeshifterAiDoc doc, final String bindingUuid, final DocRef fragment) {
-        final FragmentCodes.Codes read = codes.read(fragment);
-        final String id = UUID.randomUUID().toString();
-        snapshots.keep(new Snapshots.Snapshot(id, doc.getUuid(), bindingUuid, fragment.getUuid(), read.structure(),
-                read.code(), read.versions(), clock.millis()));
-        return id;
-    }
-
-    /// The binding as it serves now (A72): where its fragment has been edited by hand since its snapshot
-    /// was taken — the documents' versions differ — or it has no snapshot at all, having been written
-    /// before snapshots existed, a snapshot is taken and the binding points at it. A promotion by hand.
-    private Binding freshened(final ShapeshifterAiDoc doc, final Learner learner, final Binding binding) {
-        if (binding.getPipeline() == null) {
-            return binding;
-        }
-        try {
-            if (binding.getSnapshot() != null) {
-                final Optional<Snapshots.Snapshot> kept = snapshots.byId(binding.getSnapshot());
-                if (kept.isPresent() && kept.get().versions().equals(codes.versions(binding.getPipeline()))) {
-                    return binding;
-                }
-            }
-            final Binding fresh = binding.copy().snapshot(snapshot(doc, binding.getUuid(), binding.getPipeline()))
-                    .build();
-            learnerBindings.replace(learner, doc.getUuid(), fresh);
-            return fresh;
-        } catch (final RuntimeException e) {
-            // A fragment whose documents cannot be read — deleted by hand — cannot be snapshotted, and is
-            // not what this is about: the binding serves as it stands and the serve says what it finds.
-            LOGGER.debug(() -> LogUtil.message("Binding {} could not be snapshotted: {}", binding.getUuid(),
-                    e.getMessage()), e);
-            return binding;
-        }
-    }
-
-    /// The most rounds a session runs before it parks regardless: the budgets are what bound a session
-    /// (A65), and this is the guard behind them for a document whose budgets are generous.
-    private static final int MOST_ROUNDS = 10;
 
     /// How many times one stream may open a relearning session against the **same** translation before it
     /// stops asking and waits for a person (audit finding W4-5). A translation that has not moved after
@@ -2233,773 +978,9 @@ public final class Stage {
     /// every try costs a call to the model.
     private static final int MOST_SESSIONS_PER_STREAM = 3;
 
-    /// How many records short of the bar a full pass keeps as evidence: enough kinds to learn for, few
-    /// enough to put to a model.
-    private static final int EVIDENCE = 5;
-
-    /// The session carried to its end (A64, A50): the held stream is the acceptance test. A promotion is
-    /// followed by a full pass of the stream through the promoted transform, judging every record; where
-    /// any falls short, the records that did — as the parser cut them, with what the transform made of
-    /// them — open the next question, and the transform is learned again in place. The session ends when
-    /// the stream clears, or parks (A65) when its budgets or its rounds are spent.
-    private StageRun settle(final ShapeshifterAiDoc doc,
-                            final Learner learner,
-                            final Input input,
-                            final Scorecard scorecard,
-                            final Recorder recorder,
-                            final StageRun first) {
-        StageRun run = first;
-        HeldPass pass = null;
-        for (int round = 1; round <= MOST_ROUNDS; round++) {
-            final Binding binding;
-            // Why the last round kept the incumbent, where it did: the candidate was asked to clear the
-            // held stream and did not get to serve, so the incumbent's pass still stands and the next
-            // question says what kept the candidate out as well as what the stream wants.
-            String kept = null;
-            final boolean passed = pass != null;
-            switch (run.decision()) {
-                case Promoted promoted -> binding = promoted.binding();
-                case Rebound rebound -> binding = rebound.binding();
-                case Kept held when passed -> {
-                    binding = held.incumbent();
-                    kept = held.reason();
-                }
-                default -> {
-                    // A draft, an incumbent kept before any pass, a parking: nothing is serving the stream
-                    // yet, or the session has already said what it came to.
-                    return run;
-                }
-            }
-            if (kept == null) {
-                pass = fullPass(doc, binding, input);
-                if (pass.clear()) {
-                    return run;
-                }
-            }
-            final Judged served = pass.judged();
-            final String reason = pass.reason(round)
-                                  + (kept == null
-                    ? ""
-                    : "; the last candidate was kept out: " + kept);
-            if (round == MOST_ROUNDS) {
-                return parked(doc, learner, reason + "; " + MOST_ROUNDS + " rounds without the stream clearing",
-                        run.transcript());
-            }
-            run = relearnUnderClaim(doc, learner, binding, input, scorecard, served, reason, recorder);
-        }
-        return run;
-    }
-
-    /// The held stream run in full through a binding's fragment, every record judged by the bar, the ones
-    /// that fall short kept (design 04 §4). Nothing is handed on and nothing is written.
-    ///
-    /// What the run made of the **input** is kept as well as what it made of the output (audit finding
-    /// W4-4). Without it the worker reads a stream the parser could make nothing of as a stream with
-    /// nothing wrong, wakes it, and the task defers it again — a relearn loop that costs money on every
-    /// turn.
-    private HeldPass fullPass(final ShapeshifterAiDoc doc, final Binding binding, final Input input) {
-        final Scorecard bar = recordBar(doc);
-        final Shortfalls shortfalls = new Shortfalls((index, record, parsed) -> bar.judge(
-                new Attempted(TRANSFORM, false, null, new StepResult(record, List.of()),
-                        binding.getRecordBoundary(), null)),
-                EVIDENCE);
-        final ServedStream served = fragmentRunner.serve(binding.getPipeline(), input.open(),
-                binding.getRecordBoundary(), shortfalls, null);
-        return new HeldPass(shortfalls, served, inputShortfall(doc, served).orElse(null));
-    }
-
-    /// The session parks for a person (A65).
-    private StageRun parked(final ShapeshifterAiDoc doc,
-                            final Learner learner,
-                            final String reason,
-                            final List<Exchange> transcript) {
-        return parked(doc, learner, reason, null, transcript);
-    }
-
-    /// The session parks for a person (A65), with why in parts where the run worded it as a report.
-    private StageRun parked(final ShapeshifterAiDoc doc,
-                            final Learner learner,
-                            final String reason,
-                            final StopReport report,
-                            final List<Exchange> transcript) {
-        return new StageRun(doc, new Parked(reason, report), learner, null, null, List.of(), transcript, null,
-                List.of());
-    }
-
-    /// What one record is for a learned chain: the boundary the flow settled, or for a chain that begins
-    /// with the Data Splitter — whose output is always `records` over `record` — one record per `record`,
-    /// one deep. Settled here and not left empty because an empty boundary is a fragment with no
-    /// `SplitFilter`, whose transform is given the whole parsed stream as one document and holds it
-    /// (design 04 §3, *streams of any size*); a text stream of any size has to be cut too.
-    static RecordBoundary boundary(final Learned learned) {
-        if (learned.boundary() != null) {
-            return learned.boundary();
-        }
-        return !learned.chain().isEmpty() && DATA_SPLITTER.equals(learned.chain().get(0).elementType())
-                ? RecordBoundary.ofElement("record").atDepth(1)
-                : null;
-    }
-
-    /// Why what the learner learns could not be put where its element says, if it could not: the folder is
-    /// made, or found, before a session is opened.
-    private Optional<String> unplaceable(final Learner learner) {
-        final DocPath folder = places.of(learner).folder();
-        try {
-            writer.ensure(folder);
-            return Optional.empty();
-        } catch (final RuntimeException e) {
-            LOGGER.debug(() -> LogUtil.message("Learner {} cannot be placed in {}: {}", learner, folder,
-                    e.getMessage()), e);
-            // Most often a name the explorer will not have for a folder, but not always: the reason
-            // says what it was, and where the folder is set.
-            return Optional.of("What this learner learns cannot be put in the folder " + folder + ": "
-                               + Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName())
-                               + ". The element's learnedFolder says where it goes; a folder's name may "
-                               + "hold letters, digits, spaces and - _ . ( )");
-        }
-    }
-
-    /// A new fragment, in the learner's folder under its name (A113), or the first free number after the
-    /// name where the folder already has one (A132).
-    private DocRef write(final Learner learner, final Learned learned) {
-        final Places.Place place = places.of(learner);
-        return writer.write(place.folder(), place.name(), learned.chain(), boundary(learned));
-    }
-
-    /**
-     * The stream's output with the bindings that produced it (design 01 §7.3 rule 3).
-     */
-    private StageRun emit(final ShapeshifterAiDoc doc,
-                          final Decision decision,
-                          final Learner learner,
-                          final Input input,
-                          final Binding binding,
-                          final Judged judged,
-                          final List<Exchange> transcript) {
-        final Produced produced = new Produced(doc.getUuid(), binding.getUuid(), binding.getPipeline(),
-                binding.getRecordBoundary(), judged.score(), binding.getSnapshot());
-        outputs.emitted(input.id(), input.pipeline(), produced, judged.records());
-        return new StageRun(doc, decision, learner, produced, judged.output(), judged.verdicts(), transcript,
-                judged.events(), judged.diagnostics());
-    }
-
-    /// The stream is not processed here: an error naming the reason, and nothing else written (A131).
-    private StageRun refused(final ShapeshifterAiDoc doc, final Learner learner, final String reason) {
-        return new StageRun(doc, new Sentinel(reason), learner, null, null, List.of(), List.of(), null,
-                List.of());
-    }
-
-    /**
-     * No candidate passed: the learner gives up, and this stream is sentinelled like every later one will
-     * be until a person sends it back.
-     */
-    private StageRun givenUp(final ShapeshifterAiDoc doc,
-                             final Learner learner,
-                             final String decision,
-                             final String reason,
-                             final List<StoredError> diagnostics,
-                             final List<Verdict> verdicts,
-                             final List<Exchange> transcript) {
-        return givenUp(doc, learner, decision, reason, diagnostics, verdicts, transcript, null);
-    }
-
-    /// As [#givenUp(ShapeshifterAiDoc, Learner, String, String, List, List, List)], with why in parts where
-    /// the run worded it as a report.
-    private StageRun givenUp(final ShapeshifterAiDoc doc,
-                             final Learner learner,
-                             final String decision,
-                             final String reason,
-                             final List<StoredError> diagnostics,
-                             final List<Verdict> verdicts,
-                             final List<Exchange> transcript,
-                             final StopReport report) {
-        states.giveUp(learner, doc.getUuid(), reason);
-        return new StageRun(doc, new GivenUp(decision, diagnostics, report), learner, null, null, verdicts,
-                transcript, null, List.of());
-    }
-
-    /// The first `1 - heldOutFraction` of the stream's records: what the model learns from. The whole
-    /// stream is what it is judged on, so what judges a promotion includes records the model never saw
-    /// (A14).
-    ///
-    /// **Markup and JSON are held out by record, not left whole** (audit finding S5). A prefix of a
-    /// document is not a document — which is why they cannot simply be cut by lines — but a document's
-    /// records can be dropped from the end and the root closed again, which is what `wholeChildren` and
-    /// `wholeItems` already did for the size limit. Until this they were cut only when they were *too
-    /// big*, so for every XML or JSON feed within the limit the model was shown the whole stream and A14
-    /// did not hold, though the editor said it did.
-    ///
-    /// A document of one record is shown whole: holding out the only record there is would leave nothing
-    /// to learn from.
-    ///
-    /// @param data   The stream's text.
-    /// @param policy The document.
-    /// @return What to show the model.
-    static String learningPrefix(final String data, final ShapeshifterAiDoc policy) {
-        final int limit = policy.getSampleSizeLimit();
-        // Markup that is one document is held out by record; markup that is not — a fragment per line, no
-        // root — is lines, held out and cut like any text.
-        if (RecordSkeleton.isMarkup(data) && Records.parsed(data) >= 0) {
-            return wholeChildren(data, limit, policy.getHeldOutFraction());
-        }
-        final List<String> lines = data.lines().filter(line -> !line.isBlank()).toList();
-        if (isJsonDocument(data)) {
-            // A prefix of a JSON document is not a document either: cut by lines it would not parse, and the
-            // split question would abandon the attempt on a sample the parser cannot read. It is cut at its
-            // widest array's items and closed again, as wholeChildren closes an XML root.
-            return wholeItems(data, limit, policy.getHeldOutFraction());
-        }
-        if (lines.isEmpty()) {
-            // A blank stream has nothing to learn from; the compile gate and coverage will say so.
-            return "";
-        }
-        int keep = (int) Math.ceil(lines.size() * (1.0 - policy.getHeldOutFraction()));
-        keep = Math.max(1, Math.min(keep, lines.size()));
-        return wholeLines(lines, keep, limit);
-    }
-
-    /**
-     * The first {@code keep} lines, as many of them as the size limit allows; one line is always shown.
-     */
-    private static String wholeLines(final List<String> lines, final int keep, final int limit) {
-        int length = Input.bytes(lines.get(0));
-        int within = 1;
-        while (within < keep && length + 1 + Input.bytes(lines.get(within)) <= limit) {
-            length += 1 + Input.bytes(lines.get(within));
-            within++;
-        }
-        return String.join("\n", lines.subList(0, within)) + "\n";
-    }
-
-    /**
-     * How many records a stream brought, the evidence a judgement rests on (A14), counted on the input so
-     * that a variant that drops records is judged, not excused. Where a boundary was settled (A35) it is
-     * counted by that — the elements of the name in XML input, the array's items in the XML the parser
-     * makes of JSON; otherwise as {@link #recordsBrought(String)} counts the input alone.
-     */
-    static int recordsBrought(final Attempted first) {
-        final RecordBoundary boundary = first.boundary();
-        if (boundary != null) {
-            // The parser's output is the document a JSON boundary applies to; XML input is its own.
-            final String document = first.parser()
-                    ? first.result().output()
-                    : first.input();
-            final int by = document == null
-                    ? -1
-                    : Records.parsed(document, boundary);
-            // A parser whose output holds no records at all did not cut a stream of none: it failed to
-            // cut what the stream brought, and the stream is judged as what it brought — not as too few
-            // records to judge (A14).
-            if (by > 0) {
-                return by;
-            }
-        }
-        return recordsBrought(first.input());
-    }
-
-    /**
-     * How many records a stream brought where no boundary was settled: a document's root's children; the
-     * lines of markup that is not one document — a fragment per line — as the yield scorer counts them; one
-     * for a JSON document, however many lines it is printed over; the non-blank lines of text.
-     */
-    static int recordsBrought(final String input) {
-        if (RecordSkeleton.isMarkup(input)) {
-            final int parsed = Records.parsed(input);
-            if (parsed >= 0) {
-                return parsed;
-            }
-        } else if (isJsonDocument(input)) {
-            return 1;
-        }
-        return (int) input.lines().filter(line -> !line.isBlank()).count();
-    }
-
-    /**
-     * Whether text is one JSON document spanning lines — one object or array, and nothing after it, whose
-     * first line does not close it — rather than JSON lines, each a value of its own, which are cut like any
-     * text. A bracket is not enough: a log whose lines open with {@code [Mon Sep 21 ...]} is text, so the
-     * value is parsed.
-     */
-    static boolean isJsonDocument(final String data) {
-        final String trimmed = RecordSkeleton.withoutBom(data).stripLeading();
-        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-            return false;
-        }
-        final String first = trimmed.lines().findFirst().orElse("").stripTrailing();
-        if (first.endsWith("}") || first.endsWith("]")) {
-            return false;
-        }
-        try (JsonParser parser = JSON.createParser(trimmed)) {
-            parser.nextToken();
-            parser.skipChildren();
-            return parser.nextToken() == null;
-        } catch (final IOException e) {
-            return false;
-        }
-    }
-
-    /**
-     * A JSON document over the sample size limit, cut at the items of its widest array — the one a split will
-     * name — and closed again, so that what the model is shown is still one JSON document. Where no array can
-     * be cut that way, the whole document is shown: a sample the parser cannot read is worse than a long one,
-     * and the budget of A5 is what stops a runaway.
-     */
-    private static String wholeItems(final String data, final int limit, final double heldOut) {
-        final String trimmed = RecordSkeleton.withoutBom(data).stripLeading();
-        final Optional<int[]> widest = widestArray(trimmed);
-        if (widest.isEmpty()) {
-            return data;
-        }
-        final int open = widest.get()[0];
-        final int close = widest.get()[1];
-        final String before = trimmed.substring(0, open + 1);
-        final String after = trimmed.substring(close);
-        final List<String> items = items(trimmed.substring(open + 1, close));
-        final int show = shown(items.size(), heldOut);
-        if (show == items.size() && Input.bytes(data) <= limit) {
-            // Nothing held out and nothing over the limit: the stream as it came
-            return data;
-        }
-        final int room = limit - Input.bytes(before) - Input.bytes(after);
-        final StringBuilder kept = new StringBuilder();
-        int taken = 0;
-        int used = 0;
-        for (final String item : items) {
-            final int cost = Input.bytes(item) + (kept.isEmpty()
-                    ? 0
-                    : 1);
-            if (taken >= show || (!kept.isEmpty() && used + cost > room)) {
-                break;
-            }
-            if (!kept.isEmpty()) {
-                kept.append(',');
-            }
-            kept.append(item);
-            used += cost;
-            taken++;
-        }
-        return before + kept + after;
-    }
-
-    /**
-     * The widest array in a JSON document — the outermost one holding the most — as the offsets of its
-     * brackets, ignoring brackets inside strings.
-     */
-    private static Optional<int[]> widestArray(final String json) {
-        int[] widest = null;
-        final Deque<Integer> opens = new ArrayDeque<>();
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = 0; i < json.length(); i++) {
-            final char c = json.charAt(i);
-            if (escaped) {
-                escaped = false;
-            } else if (c == '\\' && inString) {
-                escaped = true;
-            } else if (c == '"') {
-                inString = !inString;
-            } else if (!inString && c == '[') {
-                opens.push(i);
-            } else if (!inString && c == ']' && !opens.isEmpty()) {
-                final int open = opens.pop();
-                if (widest == null || i - open > widest[1] - widest[0]) {
-                    widest = new int[]{open, i};
-                }
-            }
-        }
-        return Optional.ofNullable(widest);
-    }
-
-    /**
-     * An array's items as text, split at the commas between them rather than those inside them.
-     */
-    private static List<String> items(final String inside) {
-        final List<String> items = new ArrayList<>();
-        int depth = 0;
-        int from = 0;
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = 0; i < inside.length(); i++) {
-            final char c = inside.charAt(i);
-            if (escaped) {
-                escaped = false;
-            } else if (c == '\\' && inString) {
-                escaped = true;
-            } else if (c == '"') {
-                inString = !inString;
-            } else if (!inString && (c == '{' || c == '[')) {
-                depth++;
-            } else if (!inString && (c == '}' || c == ']')) {
-                depth--;
-            } else if (!inString && c == ',' && depth == 0) {
-                items.add(inside.substring(from, i).strip());
-                from = i + 1;
-            }
-        }
-        final String last = inside.substring(from).strip();
-        if (!last.isEmpty()) {
-            items.add(last);
-        }
-        return items;
-    }
-
-    /**
-     * A document over the sample size limit, cut at a record boundary: the root's start tag, as many of its
-     * children as fit — at least one — and its end tag, so that what the model is shown is still a document.
-     * What looks like markup but is not one document — fragments, or text beginning with a bracketed word —
-     * is cut by whole lines, as text is; the split question will find it what it is.
-     */
-    private static String wholeChildren(final String data, final int limit, final double heldOut) {
-        final Optional<OutputRecords> document = OutputRecords.parse(data);
-        if (document.isEmpty() || document.get().records().isEmpty()) {
-            final List<String> lines = data.lines().filter(line -> !line.isBlank()).toList();
-            return lines.isEmpty()
-                    ? ""
-                    : wholeLines(lines, lines.size(), limit);
-        }
-        final int show = shown(document.get().records().size(), heldOut);
-        if (show == document.get().records().size() && Input.bytes(data) <= limit) {
-            // Nothing held out and nothing over the limit: the stream as it came, rather than the same
-            // document rebuilt with its whitespace changed
-            return data;
-        }
-        final String rootName = document.get().root().getNodeName().toString();
-        final int open = data.indexOf('<' + rootName);
-        final int close = open < 0
-                ? -1
-                : endOfTag(data, open);
-        if (close < 0) {
-            return data;
-        }
-        final StringBuilder cut = new StringBuilder(data.substring(open, close + 1)).append('\n');
-        int kept = 0;
-        // Counted in bytes, as the setting is labelled (audit finding S4), and kept running rather than
-        // measured afresh per record, which would be quadratic over a long stream
-        int used = Input.bytes(cut.toString());
-        for (final XdmNode child : document.get().records()) {
-            final String text = child.toString();
-            final int cost = Input.bytes(text) + 1;
-            if (kept >= show || (kept > 0 && used + cost > limit)) {
-                break;
-            }
-            cut.append(text).append('\n');
-            used += cost;
-            kept++;
-        }
-        return cut.append("</").append(rootName).append('>').toString();
-    }
-
-    /// How many of a document's records the model is shown, the rest held back to judge the promotion on
-    /// (A14, audit finding S5).
-    ///
-    /// @param records  How many the document holds.
-    /// @param heldOut  The share to hold back.
-    /// @return How many to show; at least one, because a sample of nothing teaches nothing.
-    private static int shown(final int records, final double heldOut) {
-        return Math.max(1, Math.min(records, (int) Math.ceil(records * (1.0 - heldOut))));
-    }
-
-    /**
-     * @return The index of the {@code >} that ends the tag opening at {@code from}, outside any quoted
-     * attribute value, or -1.
-     */
-    private static int endOfTag(final String data, final int from) {
-        char quote = 0;
-        for (int i = from; i < data.length(); i++) {
-            final char c = data.charAt(i);
-            if (quote != 0) {
-                if (c == quote) {
-                    quote = 0;
-                }
-            } else if (c == '"' || c == '\'') {
-                quote = c;
-            } else if (c == '>') {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * The chain over an input, step by step. A step that produced nothing leaves the rest unrun; one that
-     * produced output with errors is followed, as {@link FragmentRunner} follows it.
-     */
-    static List<Attempted> rerun(final List<LearnedStep> chain,
-                                         final String input,
-                                         final RecordBoundary boundary) {
-        final List<Attempted> attempted = new ArrayList<>();
-        // What the fragment's SplitFilter will give the transform (§12 item 25): from the first element
-        // that is not a parser, the chain is run one record at a time, because that is how it will run.
-        final OptionalInt depth = boundary == null
-                ? OptionalInt.empty()
-                : boundary.splitDepth();
-        boolean split = false;
-        String current = input;
-        for (final LearnedStep step : chain) {
-            final boolean first = !split && !step.runner().parser() && depth.isPresent();
-            split = split || first;
-            // The first element after the parser is given the parser's records; every element after that
-            // is given what the one before it wrote for each record, which is one record deep. A fragment
-            // carries one SplitFilter, not one per element.
-            final StepResult result = split
-                    ? PerRecord.run(step.runner(), step.configuration(), current, first
-                            ? depth.getAsInt()
-                            : PerRecord.WRITTEN)
-                    : step.runner().run(step.configuration(), current);
-            final Attempted attempt = Attempted.of(step.runner(), current, result, boundary);
-            attempted.add(attempt);
-            if (attempt.result().output() == null) {
-                break;
-            }
-            current = attempt.result().output();
-        }
-        return attempted;
-    }
-
-    /**
-     * The candidate's score as people see it (the one model of checks, D3): the average of the checks that
-     * ran on it, gates and advice alike, each counted once at its lowest value over the chain's steps. It
-     * decides nothing: whether the candidate is promoted is its gates' to say. A candidate with no step
-     * scores nothing.
-     */
-    private static double candidateScore(final List<Verdict> verdicts) {
-        if (verdicts.isEmpty()) {
-            return 0.0;
-        }
-        final Map<Check, Double> lowest = new EnumMap<>(Check.class);
-        for (final Verdict verdict : verdicts) {
-            for (final Judgement judgement : verdict.judgements()) {
-                lowest.merge(judgement.setting().getCheck(), judgement.score().value(), Math::min);
-            }
-        }
-        return lowest.values().stream().mapToDouble(Double::doubleValue).average().orElse(1.0);
-    }
-
-    private Judged judge(final Scorecard scorecard,
-                         final DocRef fragment,
-                         final String input,
-                         final RecordBoundary boundary) {
-        // The events are taken here, in the call that made the run, and carried with the judgement they
-        // belong to. Which of a call's runs is the one being served is not known until the decision is
-        // made — a candidate is run and may be discarded, an incumbent is run and may be kept — and the
-        // runner keeps only the last, so reading them anywhere else reads somebody else's stream.
-        final List<Attempted> attempted = fragmentRunner.run(fragment, input, boundary);
-        return Judged.of(attempted, scorecard, fragmentRunner.lastOutput().orElse(null));
-    }
-
-    /// A chain judged as it was *learned*: step by step over the element runners, before it has been
-    /// written as a fragment and so before anything has run it as a pipeline.
-    ///
-    /// It carries no events, because there are none to carry. Whoever serves the stream asks for them
-    /// with [#stream] once the fragment exists. Taking the runner's last output here instead would hand
-    /// this stream the events of whatever ran before it — a variant tried and rejected earlier in this
-    /// very call, or an earlier record of the same pipeline scope.
-    private static Judged asLearned(final List<Attempted> attempted, final Scorecard scorecard) {
-        return Judged.of(attempted, scorecard, null);
-    }
-
-    /// The held stream run in full (design 04 §4), as both ends of it: what the bar made of each record,
-    /// and what the parser made of the input.
-    ///
-    /// Both matter. A pass where every record cleared the bar is not a clear pass if the parser read
-    /// only half the stream — that is the fault in
-    /// `docs/shapeshifter-ai-parser-drift-not-detected.md` wearing the pass's own badge, and reading only
-    /// the first half of this is what would have left the worker waking a stream the task then defers
-    /// again (W4-4).
-    ///
-    /// @param shortfalls What the bar made of each record.
-    /// @param served     What the run made of the input.
-    /// @param lostInput What the stream's input did not account for, as the document's checks judge it;
-    ///                   null where it accounted for itself.
-    private record HeldPass(Shortfalls shortfalls, ServedStream served, String lostInput) {
-
-        /// Whether the stream came through whole: every record cleared the bar, **and** the input
-        /// accounted for itself.
-        boolean clear() {
-            return shortfalls.clear() && lostInput == null;
-        }
-
-        /// The pass as the session judges it: the records that fell short where any did, else what the
-        /// input lost.
-        Judged judged() {
-            return shortfalls.clear()
-                    ? Judged.lostFrom(served, lostInput)
-                    : Judged.shortOf(shortfalls);
-        }
-
-        /// Why the stream did not come through, for the next question and for the row.
-        ///
-        /// @param round Which round of the session this was.
-        /// @return The reason.
-        String reason(final int round) {
-            return (shortfalls.clear()
-                    ? lostInput
-                    : shortfalls.shortCount() + " of " + shortfalls.judged()
-                      + " record(s) fell short of the bar")
-                   + " on the held stream, round " + round;
-        }
-    }
-
-
     // --------------------------------------------------------------------------------
 
-
-    /**
-     * A variant's run over a whole stream, scored: what promotion, provisional binding, retraction and
-     * relearning all decide on.
-     *
-     * @param records How many records the stream brought — its lines where it is text, its records by the
-     *                boundary where one was settled, else the root's children of markup. The evidence the
-     *                judgement rests on (A14), counted on the input so that a variant that drops records is
-     *                judged, not excused.
-     */
-    /// @param held The records that fell short, each as the parser cut it, where a full pass kept them
-    ///             (design 04 §4): what the next question's candidates are held to. Empty otherwise.
-    private record Judged(String output, List<Verdict> verdicts, double score, int records,
-                          EventList events, List<StoredError> diagnostics,
-                          Set<Integer> fellShort, List<String> held) {
-
-        Judged(final String output, final List<Verdict> verdicts, final double score, final int records,
-               final EventList events, final List<StoredError> diagnostics,
-               final Set<Integer> fellShort) {
-            this(output, verdicts, score, records, events, diagnostics, fellShort, List.of());
-        }
-
-        Judged(final String output, final List<Verdict> verdicts, final double score, final int records,
-               final EventList events, final List<StoredError> diagnostics) {
-            this(output, verdicts, score, records, events, diagnostics, null, List.of());
-        }
-
-        /// A stream served as it was read, stopped at the record that fell short (design 04 §3): what is
-        /// known of it is the records judged before and including that one and the verdict on the one.
-        /// No output, since nothing was held; the stream is not read again to learn what was already
-        /// found. Its score is nothing: a stream with a record short of the bar did not clear it
-        /// (A55), and a candidate that clears the floor must not be kept out by the mean of the records
-        /// before the one that failed.
-        static Judged shortOf(final ServedStream served, final RecordShortfall shortfall) {
-            return new Judged(null, List.of(shortfall.verdict()), 0.0, served.records(),
-                    null, served.diagnostics(), Set.of(shortfall.index()));
-        }
-
-        /// A served stream whose **input** was not accounted for (Track 1 task 2, fix 1): the parser read
-        /// nothing, or read records that became neither an event nor a declared skip, or reported errors.
-        /// There is no output record to point at — the records went missing before anything could judge
-        /// them — so there are no verdicts and no failing index, and the reason stands in their place as
-        /// the evidence the next question opens with. Scores nothing, as a stream that lost records did.
-        ///
-        /// @param served What the run came to.
-        /// @param reason What was not accounted for.
-        /// @return The judgement.
-        static Judged lostFrom(final ServedStream served, final String reason) {
-            final List<StoredError> evidence = new ArrayList<>();
-            evidence.add(new StoredError(Severity.ERROR, null, STAGE, reason));
-            evidence.addAll(served.diagnostics());
-            return new Judged(null, List.of(), 0.0, served.input().counted()
-                    ? served.input().records()
-                    : served.records(), null, List.copyOf(evidence), Set.of());
-        }
-
-        /// A held stream run in full by a session, with the records that fell short kept as evidence
-        /// (A64): their verdicts, and as diagnostics what each was and became, which is what the next
-        /// question opens with. Scores nothing, as a stream with a record short of the bar does.
-        static Judged shortOf(final Shortfalls pass) {
-            final List<Verdict> verdicts = new ArrayList<>();
-            final List<StoredError> evidence = new ArrayList<>();
-            final Set<Integer> indices = new TreeSet<>();
-            for (final Shortfalls.Shortfall shortfall : pass.kept()) {
-                verdicts.add(shortfall.verdict());
-                indices.add(shortfall.index());
-                evidence.add(new StoredError(Severity.ERROR, null, STAGE, "Record " + (shortfall.index() + 1)
-                                                                        + " of the held stream fell short of the bar."
-                                                                        + (shortfall.parsed() == null
-                        ? ""
-                        : " The record as the parser cut it:\n" + shortfall.parsed())
-                                                                        + "\nWhat the transform made of it:\n"
-                                                                        + shortfall.output()));
-            }
-            final List<String> held = pass.kept().stream()
-                    .map(Shortfalls.Shortfall::parsed)
-                    .filter(Objects::nonNull)
-                    .toList();
-            return new Judged(null, verdicts, 0.0, pass.judged(), null, evidence, indices, held);
-        }
-
-        static Judged of(final List<Attempted> attempted, final Scorecard scorecard, final EventList events) {
-            final List<Verdict> verdicts = attempted.stream().map(scorecard::judge).toList();
-            final String output = attempted.isEmpty()
-                    ? null
-                    : attempted.get(attempted.size() - 1).result().output();
-            final int records = attempted.isEmpty()
-                    ? 0
-                    : recordsBrought(attempted.get(0));
-            // What the checks that passed still have to say goes on the error stream with what the
-            // elements said: a translation that declared records skipped is not failing, and is exactly
-            // what a person approving it has to be told about
-            final List<StoredError> said = new ArrayList<>(diagnostics(attempted));
-            verdicts.forEach(verdict -> said.addAll(verdict.notices()));
-            return new Judged(output, verdicts, candidateScore(verdicts), records, events,
-                    List.copyOf(said));
-        }
-
-
-        /// What the elements said, in chain order. A run that is served rather than discarded has these
-        /// put on the pipeline's error stream by whoever serves it (A20): the fragment runs under a
-        /// receiver of its own, so that a candidate's complaints go to the model rather than to the
-        /// operator, and the one run that is kept must not be silent for the same reason.
-        private static List<StoredError> diagnostics(final List<Attempted> attempted) {
-            return attempted.stream()
-                    .flatMap(step -> step.result().diagnostics().stream())
-                    .toList();
-        }
-
-        /// @return Whether every gate passed on every step of the chain, and every record of the stream
-        ///         cleared the gates that judge records, which is the bar it will be served to (the one model
-        ///         of checks: serving uses the same gates). There is no total to reach, so a check that is
-        ///         advice never refuses a candidate.
-        boolean clearsGates() {
-            return !verdicts.isEmpty()
-                   && verdicts.stream().allMatch(Verdict::gatesPassed)
-                   && failingRecords().isEmpty();
-        }
-
-        /// @return The gates that failed, named for a person, e.g. "the Schema conformance gate (0.4 of 1.0)".
-        String failedGates() {
-            final List<String> failed = verdicts.stream()
-                    .flatMap(verdict -> verdict.judgements().stream())
-                    .filter(Judgement::failedGate)
-                    .map(judgement -> judgement.setting().getCheck().getName() + " ("
-                                      + judgement.score().value() + " of " + judgement.setting().getPassingValue()
-                                      + ")")
-                    .toList();
-            if (failed.isEmpty()) {
-                final int records = failingRecords().size();
-                return records == 0
-                        ? "with nothing to judge"
-                        : "the gates that judge records on " + records + " record" + (records == 1
-                                ? ""
-                                : "s") + " of the stream";
-            }
-            return "the gate" + (failed.size() == 1
-                            ? " "
-                            : "s ") + String.join(", ", failed);
-        }
-
-        /// The records of the chain's output that fell short of the bar (design 04 §3, A55): the last
-        /// step's, since that is what is emitted, and the scorers that judge records one by one judge a
-        /// transform's records and not a parser's. Zero-based, in output order.
-        Set<Integer> failingRecords() {
-            if (fellShort != null) {
-                return fellShort;
-            }
-            return verdicts.isEmpty()
-                    ? Set.of()
-                    : verdicts.get(verdicts.size() - 1).failingRecords();
-        }
-    }
-
-
     // --------------------------------------------------------------------------------
-
 
     /// One run of a bound fragment, for a caller that means to serve it.
     ///

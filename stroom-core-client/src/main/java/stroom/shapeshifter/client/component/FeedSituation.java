@@ -26,6 +26,7 @@ import stroom.shapeshifter.shared.SuggestionAction;
 import stroom.shapeshifter.shared.SupervisorAttempt;
 import stroom.shapeshifter.shared.SupervisorLearner;
 import stroom.shapeshifter.shared.SupervisorTurn;
+import stroom.shapeshifter.shared.TimeZoneSource;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,6 +47,9 @@ import java.util.Set;
 /// translation's actions only where one serves, stop only where it hasn't stopped and
 /// no draft awaits review, approve and reject only on a draft, grant and the fallback only on a paused run.
 public final class FeedSituation {
+
+    // The chip of a Smart Pipeline that would learn but for a spend ceiling (A24)
+    private static final String SPEND_LIMIT = "Spend limit";
 
     private final Tone tone;
     private final String chip;
@@ -179,6 +183,13 @@ public final class FeedSituation {
             return build(Tone.INFO, "Learning", "Learning: " + atStep(run, doc), waiting,
                     available, List.of());
         }
+        if (learner.getState() == LearnerState.LEARNING && learner.getSpendPaused() != null) {
+            // A spend ceiling (A24): nothing is wrong with the feed, and it starts again by itself
+            return build(Tone.WARNING, SPEND_LIMIT,
+                    "Not learning until a spend ceiling clears",
+                    learner.getSpendPaused() + " " + waiting,
+                    available, List.of());
+        }
         if (learner.getState() == LearnerState.LEARNING) {
             return build(Tone.INFO, "Learning",
                     learner.getBindingUuid() == null
@@ -206,6 +217,25 @@ public final class FeedSituation {
                 available, List.of());
     }
 
+    /// Which zone the pipeline reads timestamps in, and where that comes from (decision N6, Track 2 step 4),
+    /// so that a surprising date can be traced to what set the zone.
+    ///
+    /// @param learner A feed's learner row, as its pipeline's Learning Status tab lists it.
+    /// @return The sentence, or null where the row doesn't say.
+    public static String timeZone(final SupervisorLearner learner) {
+        if (learner == null || learner.getTimeZone() == null) {
+            return null;
+        }
+        final String where = learner.getTimeZoneSource() == TimeZoneSource.PIPELINE
+                ? "Timestamps with no offset are read in " + learner.getTimeZone() + ", this pipeline's time zone"
+                : "Timestamps with no offset are read as " + learner.getTimeZone()
+                  + ", as this pipeline sets no time zone";
+        final String said = where + ", unless a stream's TimeZone header says otherwise.";
+        return learner.getTimeZoneProblem() == null
+                ? said
+                : said + " " + learner.getTimeZoneProblem();
+    }
+
     /// @param learner A feed's learner row.
     /// @return The chip its row in the list shows, from the row alone.
     public static String listChip(final SupervisorLearner learner) {
@@ -220,7 +250,9 @@ public final class FeedSituation {
             case AWAITING_PERSON:
                 return "Needs you";
             case LEARNING:
-                return "Learning";
+                return learner.getSpendPaused() == null
+                        ? "Learning"
+                        : SPEND_LIMIT;
             case GIVEN_UP:
                 return "Stopped";
             case LEARNING_OFF:
@@ -242,7 +274,9 @@ public final class FeedSituation {
             case AWAITING_PERSON:
                 return Tone.WARNING;
             case LEARNING:
-                return Tone.INFO;
+                return learner.getSpendPaused() == null
+                        ? Tone.INFO
+                        : Tone.WARNING;
             case GIVEN_UP:
                 return Tone.DANGER;
             case LEARNING_OFF:
@@ -375,7 +409,8 @@ public final class FeedSituation {
         }
         if (live && status == AttemptStatus.PARKED) {
             available.add(FeedAction.GRANT);
-            if (!run.isExhaustNext()) {
+            // Marked Unknowns are event-logging's: a target with none has no fallback to finish with
+            if (!run.isExhaustNext() && !learner.isFallbackUnavailable()) {
                 available.add(FeedAction.EXHAUST);
             }
             if (unanswered(run) != null) {

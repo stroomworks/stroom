@@ -150,3 +150,8 @@
     align-self: flex-start;
     margin-top: 6px;
 }
+
+/* The link to the prompt as it was sent, under the question (N9) */
+.conversation-list__prompt-link {
+    margin-bottom: 8px;
+}

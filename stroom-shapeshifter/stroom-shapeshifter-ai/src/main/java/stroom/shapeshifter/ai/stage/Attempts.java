@@ -19,6 +19,7 @@ package stroom.shapeshifter.ai.stage;
 import stroom.shapeshifter.ai.learning.AskedWith;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.CheckResult;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepOutcome;
@@ -158,7 +159,18 @@ public interface Attempts {
     /// What a person decided about the draft an attempt wrote (A25, A28): the attempt that is awaiting
     /// review for this binding is closed with their decision, so that an approved draft stops reading as
     /// though it were still waiting.
-    void decided(String docUuid, String bindingUuid, AttemptStatus status, String decision);
+    /// Who decided is kept with the time, and shown beside what was learned (Track 2 step 4).
+    ///
+    /// @param reviewedBy Who approved or rejected the draft.
+    void decided(String docUuid, String bindingUuid, AttemptStatus status, String decision, String reviewedBy);
+
+    /// How what an attempt learned did on each check that ran (Track 2 step 4, approval evidence), kept
+    /// beside the attempt for a person deciding whether to approve it. Numbers only: what a check said
+    /// about a record quotes the stream (A146).
+    ///
+    /// @param attemptId The attempt.
+    /// @param evidence  One result per check.
+    void evidence(long attemptId, List<CheckResult> evidence);
 
     /// What has become of the binding an attempt bound (A28, design 01 §6, §11.6): retracted by the gate or
     /// by a person.
@@ -355,7 +367,22 @@ public interface Attempts {
                     List<Turn> turns,
                     Grant grant,
                     boolean exhaustNext,
-                    StopReport report) {
+                    StopReport report,
+                    Review review) {
+
+        public Recorded {
+            review = review == null
+                    ? Review.NONE
+                    : review;
+        }
+
+        public Recorded(final long id, final Attempt attempt, final AttemptStatus status, final String decision,
+                        final String bindingUuid, final Double score, final long tokensSpent, final long createTimeMs,
+                        final long updateTimeMs, final List<Turn> turns, final Grant grant,
+                        final boolean exhaustNext, final StopReport report) {
+            this(id, attempt, status, decision, bindingUuid, score, tokensSpent, createTimeMs, updateTimeMs, turns,
+                    grant, exhaustNext, report, Review.NONE);
+        }
 
         public Recorded(final long id, final Attempt attempt, final AttemptStatus status, final String decision,
                         final String bindingUuid, final Double score, final long tokensSpent, final long createTimeMs,
@@ -377,6 +404,22 @@ public interface Attempts {
                         final long updateTimeMs, final List<Turn> turns, final Grant grant) {
             this(id, attempt, status, decision, bindingUuid, score, tokensSpent, createTimeMs, updateTimeMs, turns,
                     grant, false);
+        }
+    }
+
+    /// What a person deciding about an attempt's draft is shown, and what they decided (Track 2 step 4).
+    ///
+    /// @param evidence       How what it learned did on each check that ran; empty where it learned nothing.
+    /// @param reviewedBy     Who approved or rejected it; null where nobody has.
+    /// @param reviewedTimeMs When; null where nobody has.
+    record Review(List<CheckResult> evidence, String reviewedBy, Long reviewedTimeMs) {
+
+        public static final Review NONE = new Review(List.of(), null, null);
+
+        public Review {
+            evidence = evidence == null
+                    ? List.of()
+                    : List.copyOf(evidence);
         }
     }
 

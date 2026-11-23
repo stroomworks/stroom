@@ -41,8 +41,9 @@ class TestRecordSkeleton {
 
     @Test
     void aBlankStreamHasAnEmptyLearningPrefix() {
-        assertThat(Stage.learningPrefix("\n\n", ShapeshifterAiDoc.builder().uuid("d").build())).isEmpty();
-        assertThat(Stage.learningPrefix("only\n", ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.9).build()))
+        assertThat(LearningPrefix.learningPrefix("\n\n", ShapeshifterAiDoc.builder().uuid("d").build())).isEmpty();
+        assertThat(LearningPrefix.learningPrefix("only\n",
+                ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.9).build()))
                 .describedAs("at least one line is kept when there is one")
                 .isEqualTo("only\n");
     }
@@ -56,7 +57,7 @@ class TestRecordSkeleton {
         document.append("</log>\n");
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(600).build();
 
-        final String prefix = Stage.learningPrefix(document.toString(), doc);
+        final String prefix = LearningPrefix.learningPrefix(document.toString(), doc);
 
         // Still a document — the root's start tag whole, whole children, the root closed — within the limit.
         assertThat(prefix).startsWith("<log xmlns=\"urn:x\" v=\"a>b\">").endsWith("</log>");
@@ -64,8 +65,8 @@ class TestRecordSkeleton {
         assertThat(OutputRecords.parse(prefix)).isPresent();
         assertThat(OutputRecords.parse(prefix).orElseThrow().records()).hasSizeBetween(1, 39);
         // A document too small to cut is shown whole; one whose first child alone exceeds the limit still shows it.
-        assertThat(Stage.learningPrefix("<a><b/></a>", doc)).isEqualTo("<a><b/></a>");
-        assertThat(OutputRecords.parse(Stage.learningPrefix(document.toString(),
+        assertThat(LearningPrefix.learningPrefix("<a><b/></a>", doc)).isEqualTo("<a><b/></a>");
+        assertThat(OutputRecords.parse(LearningPrefix.learningPrefix(document.toString(),
                 ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(10).build())).orElseThrow().records())
                 .hasSize(1);
     }
@@ -74,7 +75,8 @@ class TestRecordSkeleton {
     void textThatLooksLikeMarkupButIsNotADocumentIsCutByWholeLines() {
         final String chat = "<alice> hello there everyone\n<bob> hi alice\n<carol> morning all\n";
         assertThat(RecordSkeleton.isMarkup(chat)).isTrue();
-        assertThat(Stage.learningPrefix(chat, ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(45).build()))
+        assertThat(LearningPrefix.learningPrefix(chat,
+                ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(45).build()))
                 .isEqualTo("<alice> hello there everyone\n<bob> hi alice\n");
     }
 
@@ -109,18 +111,19 @@ class TestRecordSkeleton {
 
     @Test
     void aJsonDocumentIsOneValueOverLinesAndABracketedLogIsNot() {
-        assertThat(Stage.isJsonDocument("{\n  \"events\": [\n    {\"a\": 1}\n  ]\n}\n")).isTrue();
-        assertThat(Stage.isJsonDocument("[\n  {\"a\": 1},\n  {\"a\": 2}\n]\n")).isTrue();
-        assertThat(Stage.isJsonDocument("{\"a\": 1}\n{\"a\": 2}\n")).describedAs("JSON lines").isFalse();
+        assertThat(LearningPrefix.isJsonDocument("{\n  \"events\": [\n    {\"a\": 1}\n  ]\n}\n")).isTrue();
+        assertThat(LearningPrefix.isJsonDocument("[\n  {\"a\": 1},\n  {\"a\": 2}\n]\n")).isTrue();
+        assertThat(LearningPrefix.isJsonDocument("{\"a\": 1}\n{\"a\": 2}\n")).describedAs("JSON lines").isFalse();
         final String apache = "[Mon Sep 21 10:00:00 2026] [error] [client 10.0.0.1] File does not exist\n"
                               + "[Mon Sep 21 10:00:01 2026] [error] [client 10.0.0.2] File does not exist\n";
-        assertThat(Stage.isJsonDocument(apache)).isFalse();
-        assertThat(Stage.isJsonDocument("[1.2.3.4] up\n[1.2.3.5] down\n")).isFalse();
-        assertThat(Stage.isJsonDocument("{\n\"a\": 1}\n{\"b\": 2}\n")).describedAs("two values").isFalse();
+        assertThat(LearningPrefix.isJsonDocument(apache)).isFalse();
+        assertThat(LearningPrefix.isJsonDocument("[1.2.3.4] up\n[1.2.3.5] down\n")).isFalse();
+        assertThat(LearningPrefix.isJsonDocument("{\n\"a\": 1}\n{\"b\": 2}\n")).describedAs("two values").isFalse();
         // A bracketed log is cut by lines and held out like any text, not learned whole.
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.5).sampleSizeLimit(1000)
                 .build();
-        assertThat(Stage.learningPrefix(apache, doc)).isEqualTo(apache.lines().findFirst().orElseThrow() + "\n");
+        assertThat(LearningPrefix.learningPrefix(apache, doc))
+                .isEqualTo(apache.lines().findFirst().orElseThrow() + "\n");
     }
 
     @Test
@@ -130,21 +133,23 @@ class TestRecordSkeleton {
         final String fragments = "<Event id=\"1\"/>\n<Event id=\"2\"/>\n<Event id=\"3\"/>\n<Event id=\"4\"/>\n";
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.5).sampleSizeLimit(1000)
                 .build();
-        assertThat(Stage.learningPrefix(fragments, doc)).isEqualTo("<Event id=\"1\"/>\n<Event id=\"2\"/>\n");
+        assertThat(LearningPrefix.learningPrefix(fragments, doc)).isEqualTo("<Event id=\"1\"/>\n<Event id=\"2\"/>\n");
         final ShapeshifterAiDoc small = ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.5).sampleSizeLimit(20)
                 .build();
-        assertThat(Stage.learningPrefix(fragments, small)).isEqualTo("<Event id=\"1\"/>\n");
+        assertThat(LearningPrefix.learningPrefix(fragments, small)).isEqualTo("<Event id=\"1\"/>\n");
     }
 
     @Test
     void aStreamBringsItsRecordsAsTheYieldScorerCountsThem() {
         // A document brings its root's children; fragments with no root bring their lines, not zero, or the
         // learner would be bound provisionally and stay so; a JSON document is one value; text is its lines.
-        assertThat(Stage.recordsBrought(THREE_RECORDS)).isEqualTo(3);
-        assertThat(Stage.recordsBrought("<Event id=\"1\"/>\n<Event id=\"2\"/>\n<Event id=\"3\"/>\n")).isEqualTo(3);
-        assertThat(Stage.recordsBrought("{\n  \"events\": [\n    {\"a\": 1},\n    {\"a\": 2}\n  ]\n}\n")).isEqualTo(1);
-        assertThat(Stage.recordsBrought("{\"a\": 1}\n{\"a\": 2}\n")).isEqualTo(2);
-        assertThat(Stage.recordsBrought("one\n\ntwo\n")).isEqualTo(2);
+        assertThat(LearningPrefix.recordsBrought(THREE_RECORDS)).isEqualTo(3);
+        assertThat(LearningPrefix.recordsBrought("<Event id=\"1\"/>\n<Event id=\"2\"/>\n<Event id=\"3\"/>\n"))
+                .isEqualTo(3);
+        assertThat(LearningPrefix.recordsBrought("{\n  \"events\": [\n    {\"a\": 1},\n    {\"a\": 2}\n  ]\n}\n"))
+                .isEqualTo(1);
+        assertThat(LearningPrefix.recordsBrought("{\"a\": 1}\n{\"a\": 2}\n")).isEqualTo(2);
+        assertThat(LearningPrefix.recordsBrought("one\n\ntwo\n")).isEqualTo(2);
     }
 
     @Test
@@ -153,7 +158,7 @@ class TestRecordSkeleton {
         assertThat(RecordSkeleton.isMarkup("\uFEFF<records/>")).isTrue();
         assertThat(RecordSkeleton.recordSkeleton(RecordSkeleton.withoutBom("\uFEFF" + ONE_RECORD)))
                 .isEqualTo(RecordSkeleton.recordSkeleton(ONE_RECORD));
-        assertThat(Stage.isJsonDocument("\uFEFF{\n  \"a\": 1\n}\n")).isTrue();
+        assertThat(LearningPrefix.isJsonDocument("\uFEFF{\n  \"a\": 1\n}\n")).isTrue();
         assertThat(RecordSkeleton.withoutBom("\uFEFFx")).isEqualTo("x");
         assertThat(RecordSkeleton.withoutBom("")).isEmpty();
     }
@@ -172,31 +177,32 @@ class TestRecordSkeleton {
         }
         document.append("  ]\n}\n");
         final String whole = document.toString();
-        assertThat(Stage.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d")
+        assertThat(LearningPrefix.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d")
                 .sampleSizeLimit(10_000).heldOutFraction(0.0).build()))
                 .describedAs("within the limit and nothing held out, whole").isEqualTo(whole);
 
         // Audit finding S5: a document within the limit used to be shown whole whatever the Learning
         // Flow's held-out fraction said, so for every JSON feed that fitted, promotion was judged on
         // exactly what the model had been shown and A14 did not hold.
-        final String held = Stage.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d")
+        final String held = LearningPrefix.learningPrefix(whole, ShapeshifterAiDoc.builder().uuid("d")
                 .sampleSizeLimit(10_000).heldOutFraction(0.2).build());
 
         assertThat(held).describedAs("a fifth of the items held back").doesNotContain("user32");
         assertThat(held).contains("user31");
-        assertThat(Stage.isJsonDocument(held)).describedAs("and still one value the parser can read").isTrue();
+        assertThat(LearningPrefix.isJsonDocument(held)).describedAs("and still one value the parser can read").isTrue();
 
-        final String cut = Stage.learningPrefix(whole,
+        final String cut = LearningPrefix.learningPrefix(whole,
                 ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(500).build());
 
         assertThat(cut.length()).isLessThanOrEqualTo(500);
         assertThat(cut).describedAs("still one document").startsWith("{").endsWith("}\n");
-        assertThat(Stage.isJsonDocument(cut)).describedAs("and still one value the parser can read").isTrue();
+        assertThat(LearningPrefix.isJsonDocument(cut)).describedAs("and still one value the parser can read").isTrue();
         assertThat(cut).contains("\"source\": \"api\"").contains("\"events\": [").contains("user0");
         assertThat(cut).describedAs("cut at an item, not mid-item").doesNotContain("user39");
         // A document with no array to cut is shown whole rather than truncated into nonsense.
         final String noArray = "{\n  \"a\": \"" + "x".repeat(200) + "\"\n}\n";
-        assertThat(Stage.learningPrefix(noArray, ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(50).build()))
+        assertThat(LearningPrefix.learningPrefix(noArray,
+                ShapeshifterAiDoc.builder().uuid("d").sampleSizeLimit(50).build()))
                 .isEqualTo(noArray);
     }
 
@@ -205,8 +211,8 @@ class TestRecordSkeleton {
         final String lines = "one,1\ntwo,2\nthree,3\nfour,4\n";
         final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.0).sampleSizeLimit(14)
                 .build();
-        assertThat(Stage.learningPrefix(lines, doc)).isEqualTo("one,1\ntwo,2\n");
-        assertThat(Stage.learningPrefix(lines, ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.0)
+        assertThat(LearningPrefix.learningPrefix(lines, doc)).isEqualTo("one,1\ntwo,2\n");
+        assertThat(LearningPrefix.learningPrefix(lines, ShapeshifterAiDoc.builder().uuid("d").heldOutFraction(0.0)
                 .sampleSizeLimit(2).build())).describedAs("one line is always shown").isEqualTo("one,1\n");
     }
 }

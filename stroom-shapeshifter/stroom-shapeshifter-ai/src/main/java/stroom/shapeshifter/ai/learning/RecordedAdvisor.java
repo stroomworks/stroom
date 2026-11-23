@@ -22,6 +22,7 @@ import stroom.shapeshifter.ai.stage.Guidance.Given;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /// An advisor that answers from what an attempt was already answered (A28): the turns a previous run
 /// recorded, in the order they were put, and then the model — or nothing, where the attempt is to stop
@@ -94,6 +95,12 @@ public final class RecordedAdvisor implements Advisor {
         }
         replayed = null;
         return then.ask(transcript, question, guidance);
+    }
+
+    /// @return The recorded turn the last question was answered from; empty where it was put afresh, or
+    ///         nothing has been asked yet.
+    public Optional<Turn> lastReplayed() {
+        return Optional.ofNullable(replayed);
     }
 
     @Override

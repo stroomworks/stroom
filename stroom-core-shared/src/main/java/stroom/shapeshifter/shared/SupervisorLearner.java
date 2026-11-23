@@ -80,6 +80,25 @@ public class SupervisorLearner {
     /// threshold is read, since it triggers nothing by itself (design 04 §6).
     @JsonProperty
     private final boolean belowThreshold;
+    /// Whether its document's target schema has no marked Unknown, so that *Finish with Unknowns* doesn't
+    /// apply to it (task 7, W1-3): true only for a target that isn't event-logging.
+    @JsonProperty
+    private final boolean fallbackUnavailable;
+    /// Why no new learning run may open for it now, where a spend ceiling has been reached (A24, Track 2
+    /// step 4): the breaker's own words, saying whose ceiling and that it clears when the hour rolls. Null
+    /// where nothing stops it.
+    @JsonProperty
+    private final String spendPaused;
+    /// The zone a stream of it with no `TimeZone` header has its timestamps read in (decision N6), where
+    /// the list asked; null where it didn't.
+    @JsonProperty
+    private final String timeZone;
+    /// Where that zone comes from: the pipeline's property, or UTC where it sets none.
+    @JsonProperty
+    private final TimeZoneSource timeZoneSource;
+    /// What is wrong with the pipeline's time zone, where something is; null where nothing is.
+    @JsonProperty
+    private final String timeZoneProblem;
 
     @JsonCreator
     public SupervisorLearner(@JsonProperty("learner") final LearnerRef learner,
@@ -99,7 +118,12 @@ public class SupervisorLearner {
                              @JsonProperty("lastSessionMs") final Long lastSessionMs,
                              @JsonProperty("guidance") final int guidance,
                              @JsonProperty("pipelineDeleted") final boolean pipelineDeleted,
-                             @JsonProperty("belowThreshold") final boolean belowThreshold) {
+                             @JsonProperty("belowThreshold") final boolean belowThreshold,
+                             @JsonProperty("fallbackUnavailable") final boolean fallbackUnavailable,
+                             @JsonProperty("spendPaused") final String spendPaused,
+                             @JsonProperty("timeZone") final String timeZone,
+                             @JsonProperty("timeZoneSource") final TimeZoneSource timeZoneSource,
+                             @JsonProperty("timeZoneProblem") final String timeZoneProblem) {
         this.learner = learner;
         this.pipeline = pipeline;
         this.doc = doc;
@@ -118,6 +142,55 @@ public class SupervisorLearner {
         this.guidance = guidance;
         this.pipelineDeleted = pipelineDeleted;
         this.belowThreshold = belowThreshold;
+        this.fallbackUnavailable = fallbackUnavailable;
+        this.spendPaused = spendPaused;
+        this.timeZone = timeZone;
+        this.timeZoneSource = timeZoneSource;
+        this.timeZoneProblem = timeZoneProblem;
+    }
+
+    /// A row as the database answers it, before the resource has said anything about its document's
+    /// target schema.
+    ///
+    /// @param learner         The learner.
+    /// @param pipeline        Its pipeline.
+    /// @param doc             The document it runs under.
+    /// @param state           Where it stands.
+    /// @param givenUpReason   Why it gave up, where it has.
+    /// @param bindingUuid     What serves it, or null.
+    /// @param fragment        The fragment that binding names.
+    /// @param promotedScore   What it scored when it was promoted.
+    /// @param rollingScore    What it has been scoring lately.
+    /// @param records         How many records that rests on.
+    /// @param skips           How many declared skips that rests on.
+    /// @param waiting         How many streams wait on it.
+    /// @param oldestWaitMs    When the longest waiting of them first waited.
+    /// @param raised          Whether that wait is overdue.
+    /// @param lastSessionMs   When its most recent session opened.
+    /// @param guidance        How much a supervisor has said to it.
+    /// @param pipelineDeleted Whether its pipeline has been deleted.
+    /// @param belowThreshold  Whether it scores below its document's relearn threshold.
+    public SupervisorLearner(final LearnerRef learner,
+                             final DocRef pipeline,
+                             final DocRef doc,
+                             final LearnerState state,
+                             final String givenUpReason,
+                             final String bindingUuid,
+                             final DocRef fragment,
+                             final Double promotedScore,
+                             final Double rollingScore,
+                             final int records,
+                             final int skips,
+                             final int waiting,
+                             final Long oldestWaitMs,
+                             final boolean raised,
+                             final Long lastSessionMs,
+                             final int guidance,
+                             final boolean pipelineDeleted,
+                             final boolean belowThreshold) {
+        this(learner, pipeline, doc, state, givenUpReason, bindingUuid, fragment, promotedScore,
+                rollingScore, records, skips, waiting, oldestWaitMs, raised, lastSessionMs, guidance,
+                pipelineDeleted, belowThreshold, false, null, null, null, null);
     }
 
     /// A row from before declared skips were counted, or one a test builds without them.
@@ -164,13 +237,38 @@ public class SupervisorLearner {
     /// The same row with its pipeline and document named, its wait judged against its document's maximum
     /// age, and its score against the document's relearn threshold: what the resource adds to what the
     /// database answers.
+    ///
+    /// @param pipeline            Its pipeline, named.
+    /// @param doc                 Its document, named.
+    /// @param raised              Whether its wait is overdue.
+    /// @param belowThreshold      Whether it scores below its document's relearn threshold.
+    /// @param fallbackUnavailable Whether its document's target schema has no marked Unknown.
+    /// @param spendPaused         Why no learning run may open for it now, or null where nothing stops one.
+    /// @return The row.
     public SupervisorLearner named(final DocRef pipeline,
                                    final DocRef doc,
                                    final boolean raised,
-                                   final boolean belowThreshold) {
+                                   final boolean belowThreshold,
+                                   final boolean fallbackUnavailable,
+                                   final String spendPaused) {
         return new SupervisorLearner(learner, pipeline, doc, state, givenUpReason, bindingUuid, fragment,
                 promotedScore, rollingScore, records, skips, waiting, oldestWaitMs, raised,
-                lastSessionMs, guidance, pipelineDeleted, belowThreshold);
+                lastSessionMs, guidance, pipelineDeleted, belowThreshold, fallbackUnavailable, spendPaused,
+                timeZone, timeZoneSource, timeZoneProblem);
+    }
+
+    /// The same row with the zone its pipeline reads timestamps in (decision N6): what the resource adds
+    /// for a pipeline's Learning Status tab.
+    ///
+    /// @param zone    The zone a stream with no `TimeZone` header is read in, e.g. `Europe/London`.
+    /// @param source  Where it comes from.
+    /// @param problem What is wrong with the pipeline's time zone, or null where nothing is.
+    /// @return The row.
+    public SupervisorLearner withTimeZone(final String zone, final TimeZoneSource source, final String problem) {
+        return new SupervisorLearner(learner, pipeline, doc, state, givenUpReason, bindingUuid, fragment,
+                promotedScore, rollingScore, records, skips, waiting, oldestWaitMs, raised,
+                lastSessionMs, guidance, pipelineDeleted, belowThreshold, fallbackUnavailable, spendPaused,
+                zone, source, problem);
     }
 
     public LearnerRef getLearner() {
@@ -244,6 +342,33 @@ public class SupervisorLearner {
 
     public boolean isBelowThreshold() {
         return belowThreshold;
+    }
+
+    /// @return Whether *Finish with Unknowns* doesn't apply, as its document's target schema has no marked
+    ///         Unknown.
+    public boolean isFallbackUnavailable() {
+        return fallbackUnavailable;
+    }
+
+    /// @return Why no new learning run may open for it now, where a spend ceiling has been reached; null
+    ///         where nothing stops one.
+    public String getSpendPaused() {
+        return spendPaused;
+    }
+
+    /// @return The zone a stream with no `TimeZone` header is read in; null where the list didn't ask.
+    public String getTimeZone() {
+        return timeZone;
+    }
+
+    /// @return Where that zone comes from; null where the list didn't ask.
+    public TimeZoneSource getTimeZoneSource() {
+        return timeZoneSource;
+    }
+
+    /// @return What is wrong with the pipeline's time zone, or null where nothing is.
+    public String getTimeZoneProblem() {
+        return timeZoneProblem;
     }
 
     @Override

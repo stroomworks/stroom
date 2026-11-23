@@ -26,6 +26,7 @@ import stroom.widget.form.client.TextArea;
 import stroom.widget.form.client.TextBox;
 import stroom.widget.selection.client.SelectionBox;
 import stroom.widget.tickbox.client.TickBox;
+import stroom.widget.valuespinner.client.ValueSpinner;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.uibinder.client.UiBinder;
@@ -57,11 +58,15 @@ public class CheckEditor extends Component {
     @UiField
     SelectionBox<YieldBasis> basis;
     @UiField
-    FlowPanel schemaConformanceParameters;
-    @UiField
-    TextBox schemaGroup;
-    @UiField
     FlowPanel extractionQualityParameters;
+    @UiField
+    FlowPanel timesParameters;
+    @UiField
+    ValueSpinner beforeDays;
+    @UiField
+    ValueSpinner afterDays;
+    @UiField
+    TextBox timeField;
     @UiField
     TickBox allowUnknownEventDetail;
     @UiField
@@ -96,8 +101,8 @@ public class CheckEditor extends Component {
     public void showCheck(final Check check) {
         thresholdGroup.setVisible(check != null && check.hasThreshold());
         yieldParameters.setVisible(check == Check.YIELD);
-        schemaConformanceParameters.setVisible(check == Check.CONFORMANCE);
         extractionQualityParameters.setVisible(check == Check.QUALITY);
+        timesParameters.setVisible(check == Check.TIMES);
         businessRulesParameters.setVisible(check == Check.RULES);
         state.setEnabled(check != Check.COMPILE);
     }
@@ -144,14 +149,32 @@ public class CheckEditor extends Component {
         basis.setValue(value);
     }
 
-    /// @return The schema group entered.
-    public String getSchemaGroup() {
-        return schemaGroup.getValue();
+    /// @return How many days before its stream was received an event may be dated.
+    public int getBeforeDays() {
+        return beforeDays.getIntValue();
     }
 
-    /// @param value The schema group.
-    public void setSchemaGroup(final String value) {
-        schemaGroup.setValue(value);
+    /// @return How many days after its stream was received an event may be dated.
+    public int getAfterDays() {
+        return afterDays.getIntValue();
+    }
+
+    /// @return The XPath to the time to judge, or blank for event-logging's.
+    public String getTimeField() {
+        return timeField.getValue();
+    }
+
+    /// Shows the window an event's time must fall in, and which time is judged.
+    ///
+    /// @param before The days before the stream was received.
+    /// @param after  The days after it.
+    /// @param field  The XPath to the time to judge, or null for event-logging's.
+    public void setTimes(final int before, final int after, final String field) {
+        beforeDays.setValue(before);
+        afterDays.setValue(after);
+        timeField.setValue(field == null
+                ? ""
+                : field);
     }
 
     /// @return Whether records classified as Unknown are tolerated.
@@ -196,9 +219,11 @@ public class CheckEditor extends Component {
         threshold.setReadOnly(readOnly);
         expectedRatio.setReadOnly(readOnly);
         basis.setReadOnly(readOnly);
-        schemaGroup.setReadOnly(readOnly);
         allowUnknownEventDetail.setReadOnly(readOnly);
         requiredFields.setReadOnly(readOnly);
+        beforeDays.setReadOnly(readOnly);
+        afterDays.setReadOnly(readOnly);
+        timeField.setReadOnly(readOnly);
         includeTransformMessages.setReadOnly(readOnly);
     }
 

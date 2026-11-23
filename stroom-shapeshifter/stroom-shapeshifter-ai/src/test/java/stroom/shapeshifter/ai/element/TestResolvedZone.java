@@ -18,7 +18,7 @@ package stroom.shapeshifter.ai.element;
 
 import stroom.meta.api.AttributeMap;
 import stroom.pipeline.state.MetaDataProvider;
-import stroom.shapeshifter.ai.element.ResolvedZone.Source;
+import stroom.shapeshifter.shared.TimeZoneSource;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +34,7 @@ class TestResolvedZone {
         final ResolvedZone zone = ResolvedZone.of("Europe/London", "America/New_York");
 
         assertThat(zone.id()).isEqualTo("Europe/London");
-        assertThat(zone.source()).isEqualTo(Source.HEADER);
+        assertThat(zone.source()).isEqualTo(TimeZoneSource.HEADER);
         assertThat(zone.problem()).isNull();
     }
 
@@ -43,7 +43,7 @@ class TestResolvedZone {
         final ResolvedZone zone = ResolvedZone.of(null, "America/New_York");
 
         assertThat(zone.id()).isEqualTo("America/New_York");
-        assertThat(zone.source()).isEqualTo(Source.PIPELINE);
+        assertThat(zone.source()).isEqualTo(TimeZoneSource.PIPELINE);
         assertThat(zone.problem()).isNull();
     }
 
@@ -52,7 +52,7 @@ class TestResolvedZone {
         final ResolvedZone zone = ResolvedZone.of(null, null);
 
         assertThat(zone.id()).isEqualTo("UTC");
-        assertThat(zone.source()).isEqualTo(Source.DEFAULT);
+        assertThat(zone.source()).isEqualTo(TimeZoneSource.DEFAULT);
         assertThat(zone.problem()).describedAs("nothing was asked for, so nothing is wrong").isNull();
     }
 
@@ -62,7 +62,7 @@ class TestResolvedZone {
         final ResolvedZone zone = ResolvedZone.of("Europe/Londn", null);
 
         assertThat(zone.id()).isEqualTo("UTC");
-        assertThat(zone.source()).isEqualTo(Source.DEFAULT);
+        assertThat(zone.source()).isEqualTo(TimeZoneSource.DEFAULT);
         assertThat(zone.problem())
                 .contains("Europe/Londn")
                 .contains("is not a time zone")
@@ -75,7 +75,7 @@ class TestResolvedZone {
         final ResolvedZone zone = ResolvedZone.of("nonsense", "Europe/London");
 
         assertThat(zone.id()).isEqualTo("Europe/London");
-        assertThat(zone.source()).isEqualTo(Source.PIPELINE);
+        assertThat(zone.source()).isEqualTo(TimeZoneSource.PIPELINE);
         assertThat(zone.problem())
                 .contains("nonsense")
                 .contains("pipeline's time zone is being used instead");
@@ -93,7 +93,7 @@ class TestResolvedZone {
     void anOffsetIsAZoneToo() {
         // Not every sender has an IANA zone to hand
         assertThat(ResolvedZone.of("+01:00", null).id()).isEqualTo("+01:00");
-        assertThat(ResolvedZone.of("Z", null).source()).isEqualTo(Source.HEADER);
+        assertThat(ResolvedZone.of("Z", null).source()).isEqualTo(TimeZoneSource.HEADER);
     }
 
     @Test
@@ -144,7 +144,7 @@ class TestResolvedZone {
 
     @Test
     void blanksAreNotValues() {
-        assertThat(ResolvedZone.of("  ", "  ").source()).isEqualTo(Source.DEFAULT);
+        assertThat(ResolvedZone.of("  ", "  ").source()).isEqualTo(TimeZoneSource.DEFAULT);
         assertThat(ResolvedZone.of("  ", "  ").problem())
                 .describedAs("a blank is nothing asked for, not something wrong")
                 .isNull();

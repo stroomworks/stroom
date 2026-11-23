@@ -6,6 +6,7 @@
              xmlns:form="urn:import:stroom.widget.form.client"
              xmlns:l="urn:import:stroom.widget.selection.client"
              xmlns:tickbox="urn:import:stroom.widget.tickbox.client"
+             xmlns:v="urn:import:stroom.widget.valuespinner.client"
              xmlns:s="urn:import:stroom.shapeshifter.client.component">
     <g:FlowPanel styleName="max form-padding form check-editor">
         <form:FormGroup identity="checkState"
@@ -35,14 +36,6 @@
                 <l:SelectionBox ui:field="basis"/>
             </form:FormGroup>
         </g:FlowPanel>
-        <!-- Schema conformance -->
-        <g:FlowPanel ui:field="schemaConformanceParameters" styleName="form">
-            <form:FormGroup identity="schemaGroup"
-                            label="Schema group"
-                            helpText="The XML schema group each record is validated against, e.g. EVENTS for event-logging.">
-                <form:TextBox ui:field="schemaGroup" addStyleNames="check-editor__text"/>
-            </form:FormGroup>
-        </g:FlowPanel>
         <!-- Extraction quality -->
         <g:FlowPanel ui:field="extractionQualityParameters" styleName="form">
             <form:FormGroup helpText="Whether records classified as Unknown are tolerated. They never count toward a passing score either way.">
@@ -55,6 +48,27 @@
                             helpText="XPaths, one per line, that every record must populate, e.g. /Event/EventSource/User/Id."
                             screenReaderText="One XPath per line.">
                 <form:TextArea ui:field="requiredFields" addStyleNames="check-editor__lines"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <!-- Time plausibility -->
+        <g:FlowPanel ui:field="timesParameters" styleName="form">
+            <form:FormGroup identity="timesBeforeDays"
+                            label="Days before the stream was received"
+                            helpText="How long before its stream arrived an event may be dated. A year allows for a stream being loaded from an archive.">
+                <v:ValueSpinner ui:field="beforeDays" addStyleNames="value-spinner--narrow"
+                                minValue="0" maxValue="36500"/>
+            </form:FormGroup>
+            <form:FormGroup identity="timesAfterDays"
+                            label="Days after it"
+                            helpText="How long after its stream arrived an event may be dated. A day allows for a clock a little ahead.">
+                <v:ValueSpinner ui:field="afterDays" addStyleNames="value-spinner--narrow"
+                                minValue="0" maxValue="36500"/>
+            </form:FormGroup>
+            <form:FormGroup identity="timesTimeField"
+                            label="Time field"
+                            helpText="An XPath, from a record, to the time to judge. Leave it empty for event-logging's EventTime/TimeCreated; for another target schema the check doesn't run until it names one.">
+                <form:TextBox ui:field="timeField" addStyleNames="check-editor__text"
+                              placeholder="EventTime/TimeCreated"/>
             </form:FormGroup>
         </g:FlowPanel>
         <!-- Business rules -->

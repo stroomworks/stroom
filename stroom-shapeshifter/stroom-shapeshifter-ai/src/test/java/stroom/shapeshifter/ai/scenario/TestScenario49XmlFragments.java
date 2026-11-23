@@ -31,7 +31,6 @@ import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -76,8 +75,7 @@ class TestScenario49XmlFragments {
                         new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
                         CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
-                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
-                                new SchemaConformanceParameters("EVENTS")),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0, null),
                         new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
                         new CheckSetting(Check.RULES, CheckState.ADVICE, 1.0,

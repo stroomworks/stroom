@@ -70,7 +70,7 @@ class TestSampleSizeLimit {
         // Three bytes a character, one character a line
         final String data = "€\n".repeat(200);
 
-        final String prefix = Stage.learningPrefix(data, doc);
+        final String prefix = LearningPrefix.learningPrefix(data, doc);
 
         assertThat(Input.bytes(prefix)).isLessThanOrEqualTo(100);
         assertThat(prefix.length()).describedAs("which is far fewer characters than the limit").isLessThan(100);

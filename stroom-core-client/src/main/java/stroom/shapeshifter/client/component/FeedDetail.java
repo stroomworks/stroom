@@ -85,7 +85,15 @@ public class FeedDetail extends Component {
     @UiField
     LinkButton translation;
     @UiField
+    Label timeZone;
+    @UiField
     FlowPanel detailsPart;
+    @UiField
+    FlowPanel evidencePart;
+    @UiField
+    AriaPanel evidence;
+    @UiField
+    Label reviewed;
     @UiField
     AriaPanel details;
     @UiField
@@ -214,6 +222,33 @@ public class FeedDetail extends Component {
             more.setOnClick(() -> onMore.accept(more.getElement()));
             actions.add(more);
         }
+    }
+
+    /// Says which zone the pipeline reads timestamps in, and where it comes from, or nothing.
+    ///
+    /// @param said The sentence, or null to say nothing.
+    public void setTimeZone(final String said) {
+        timeZone.setText(said == null
+                ? ""
+                : said);
+        timeZone.setVisible(said != null);
+    }
+
+    /// Shows how the run's translation was judged, one line per check, and who approved or rejected it
+    /// (Track 2 step 4), or hides them where there is nothing to say.
+    ///
+    /// @param lines      One line per check.
+    /// @param reviewedBy Who decided about it and when, or null where nobody has.
+    public void setEvidence(final List<String> lines, final String reviewedBy) {
+        evidence.clear();
+        for (final String line : lines) {
+            evidence.add(item(text(line)));
+        }
+        reviewed.setText(reviewedBy == null
+                ? ""
+                : reviewedBy);
+        reviewed.setVisible(reviewedBy != null);
+        evidencePart.setVisible(!lines.isEmpty() || reviewedBy != null);
     }
 
     /// Shows the learned translation the feed runs, as a link that opens it, or hides the line where it
@@ -358,6 +393,11 @@ public class FeedDetail extends Component {
     /// @param onRun Told the learning run the user chooses.
     public void setOnRun(final Consumer<SupervisorAttempt> onRun) {
         this.onRun = onRun;
+    }
+
+    /// @param onShowPrompt Told the number of a question whose prompt, as it was sent, the user asks for.
+    public void setOnShowPrompt(final Consumer<Integer> onShowPrompt) {
+        conversation.setOnShowPrompt(onShowPrompt);
     }
 
     /// @param onAnswer Told the number of a question the user answers or changes the answer of.

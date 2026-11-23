@@ -176,7 +176,7 @@ final class Corpus {
     static String outputFor(final List<LearnedStep> transforms, final String record, final RecordBoundary boundary) {
         return transforms.isEmpty()
                 ? record
-                : lastOutput(Stage.rerun(transforms, record, boundary));
+                : lastOutput(Judging.rerun(transforms, record, boundary));
     }
 
     /// Whether a candidate fell short on an entry (A66): its output must clear the bar, a translated

@@ -29,7 +29,6 @@ import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -70,8 +69,7 @@ class TestScenario48CsvMultiline {
                         new CheckSetting(Check.YIELD, CheckState.GATE, 0.9,
                                 new YieldParameters(0.77, YieldBasis.LINES)),
                         CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
-                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
-                                new SchemaConformanceParameters("EVENTS")),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0, null),
                         new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
                         CheckSetting.of(Check.RULES, CheckState.OFF),

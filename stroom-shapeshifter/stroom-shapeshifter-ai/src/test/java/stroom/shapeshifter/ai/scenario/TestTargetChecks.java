@@ -26,7 +26,6 @@ import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.RecordBoundary;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.YieldBasis;
 import stroom.shapeshifter.shared.YieldParameters;
 import stroom.util.shared.StoredError;
@@ -56,8 +55,7 @@ class TestTargetChecks {
                 CheckSetting.of(Check.COMPILE, CheckState.GATE),
                 new CheckSetting(Check.COVERAGE, CheckState.GATE, 0.9, null),
                 new CheckSetting(Check.YIELD, CheckState.GATE, 0.5, new YieldParameters(0.2, YieldBasis.LINES)),
-                new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
-                        new SchemaConformanceParameters("EVENTS")),
+                new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0, null),
                 new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                         new ExtractionQualityParameters(false, List.of("EventSource/User/Id")))),
                 new Scenarios().scorers());

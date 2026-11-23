@@ -26,7 +26,6 @@ import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.security.api.SecurityContext;
 import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.Check;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ScorerParameters;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.ErrorType;
@@ -75,6 +74,9 @@ import java.util.regex.Pattern;
  */
 public final class SchemaConformanceScorer implements Scorer {
 
+    /// The event-logging schemas' group in Stroom's content packs: what a document naming no target is
+    /// judged against.
+    static final String EVENTS_GROUP = "EVENTS";
     private static final ElementId CONFORMANCE = new ElementId("SchemaConformance");
     private static final int RECORDS_SHOWN = 5;
 
@@ -117,7 +119,6 @@ public final class SchemaConformanceScorer implements Scorer {
             return Optional.empty();
         }
         final int total = parsed.get().records().size();
-        final SchemaConformanceParameters conformance = (SchemaConformanceParameters) parameters;
         final RecordErrors errors = new RecordErrors();
         final RecordCounter counter = new RecordCounter(errors);
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();
@@ -125,7 +126,7 @@ public final class SchemaConformanceScorer implements Scorer {
         try {
             final SchemaFilter schemaFilter = schemaFilters.get();
             schemaFilter.setElementId(CONFORMANCE);
-            schemaFilter.setSchemaConstraint(constraint(conformance, target));
+            schemaFilter.setSchemaConstraint(constraint(target));
             counter.setTarget(schemaFilter);
             final SplitFilter split = new SplitFilter();
             split.setSplitCount(1);
@@ -157,7 +158,7 @@ public final class SchemaConformanceScorer implements Scorer {
         final List<StoredError> diagnostics = new ArrayList<>();
         // The schema's own account first: it is what turns one missing child per candidate into one step.
         if (!errors.failing.isEmpty()) {
-            diagnostics.addAll(hints(constraint(conformance, target), errors.failing.values()));
+            diagnostics.addAll(hints(constraint(target), errors.failing.values()));
         }
         int shown = 0;
         for (final Map.Entry<Integer, String> failure : errors.failing.entrySet()) {
@@ -186,18 +187,15 @@ public final class SchemaConformanceScorer implements Scorer {
     }
 
     /// Which schemas the output is validated against: the one version the document names as its target
-    /// (task 7), or, where it names none, every schema of the group the check was configured with —
-    /// which is what a document written before the setting existed still does, so that it behaves
-    /// exactly as it did.
+    /// (task 7), or, where it names none, every schema of the `EVENTS` group, which is what the check's
+    /// schema group setting always defaulted to before the target replaced it.
     ///
-    /// @param conformance The check's own parameters.
-    /// @param target      The document's target schema, or null.
+    /// @param target The document's target schema, or null.
     /// @return The criteria.
-    private static FindXMLSchemaCriteria constraint(final SchemaConformanceParameters conformance,
-                                                    final TargetSchema target) {
+    private static FindXMLSchemaCriteria constraint(final TargetSchema target) {
         if (target == null) {
             final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
-            criteria.setSchemaGroup(conformance.getSchemaGroup());
+            criteria.setSchemaGroup(EVENTS_GROUP);
             return criteria;
         }
         return target.criteria();

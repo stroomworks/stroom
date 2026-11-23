@@ -233,6 +233,29 @@ public final class StopReports {
                         new Suggestion("Or answer this step yourself.", SuggestionAction.ANSWER)));
     }
 
+    /// A run that reached the fallback for a target schema that isn't event-logging (task 7, W1-3). The
+    /// fallback writes event-logging's marked `Unknown`, which no other schema has, so it doesn't apply: the
+    /// run stops for a person, as it does where the fallback is off.
+    ///
+    /// @param step     The fallback step.
+    /// @param target   The target schema, not event-logging.
+    /// @param feedback What the transform's last answer fell short on, which the step was reached with.
+    /// @return The report.
+    public static StopReport noFallbackFor(final FlowStep step,
+                                           final TargetSchema target,
+                                           final List<StoredError> feedback) {
+        final List<String> details = new ArrayList<>();
+        details.add("Marked Unknown events are event-logging's, and the target schema, " + target.name()
+                    + ", has no Unknown to mark a record with, so the fallback doesn't apply to it.");
+        firstMessage(feedback).ifPresent(message -> details.add("The last answer fell short on: " + message));
+        return new StopReport(StopCause.STEP_SPENT, step.effectiveId(),
+                "Couldn't write the transform, and there is no fallback for " + target.name() + ".",
+                details,
+                List.of(new Suggestion("Leave the AI a note about the records it couldn't translate.",
+                                SuggestionAction.LEAVE_NOTE),
+                        new Suggestion("Or answer the transform yourself.", SuggestionAction.ANSWER)));
+    }
+
     // ---- The run's limits ----
 
     /// A run that took longer than its time for each run.

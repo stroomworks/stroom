@@ -16,13 +16,16 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.docref.DocRef;
 import stroom.shapeshifter.ai.learning.StepResult;
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.shared.BusinessRulesParameters;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
 import stroom.shapeshifter.shared.XPathAssertion;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +75,66 @@ class TestMeaningScorers {
         assertThatThrownBy(() -> Scorecard.of(List.of(field), List.of(new ExtractionQualityScorer())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EventSource/User/Id]");
+    }
+
+    // A schema that is not event-logging, with an element of its own called Data, which means something there
+    private static final TargetSchema SIGHTINGS = new TargetSchema(
+            new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4"), "sightings v2.4",
+            "urn:sightings:2", "file://sightings-v2.4.xsd", "2.4", "Sightings", null);
+    private static final String SIGHTINGS_OUTPUT = """
+            <Sightings xmlns="urn:sightings:2">
+              <Sighting><Species>heron</Species><Data>wet</Data></Sighting>
+              <Sighting><Species>egret</Species><Data>dry</Data></Sighting>
+            </Sightings>
+            """;
+    private static final String EVENTS_WITH_DATA = """
+            <Events xmlns="event-logging:3">
+              <Event><EventDetail><TypeId>t</TypeId><Authenticate><Data Name="x" Value="1"/></Authenticate>
+              </EventDetail></Event>
+            </Events>
+            """;
+
+    @Test
+    void untypedDataAndUnknownAreEventLoggingsAndAreNotMeasuredForAnotherSchema() {
+        // Task 7, W1-4: Data is event-logging's untyped element, and Unknown its branch for "no decision". A
+        // schema with an element of its own called Data is not marked down for using it, and, with no fields
+        // required, extraction quality has nothing to measure there, so it doesn't run
+        final Attempted transform = new Attempted("XSLTFilter", false, "<a/>",
+                new StepResult(SIGHTINGS_OUTPUT, List.of()));
+        final ExtractionQualityParameters nothingRequired = new ExtractionQualityParameters(false, List.of());
+
+        assertThat(new ExtractionQualityScorer().score(nothingRequired, transform, SIGHTINGS)).isEmpty();
+    }
+
+    @Test
+    void aRequiredFieldIsStillMeasuredForAnotherSchema() {
+        final Attempted transform = new Attempted("XSLTFilter", false, "<a/>",
+                new StepResult(SIGHTINGS_OUTPUT.replace("<Species>egret</Species>", ""), List.of()));
+        final ExtractionQualityParameters species = new ExtractionQualityParameters(false,
+                List.of("*[local-name() = 'Species']"));
+
+        final Score score = new ExtractionQualityScorer().score(species, transform, SIGHTINGS).orElseThrow();
+
+        // Only the field: one record of two has it, and nothing is said about Data
+        assertThat(score.value()).isEqualTo(0.5);
+        assertThat(score.failingRecords()).containsExactly(1);
+        assertThat(score.diagnostics()).noneMatch(error -> error.getMessage().contains("Data"));
+    }
+
+    @Test
+    void untypedDataIsStillMeasuredForEventLoggingAndForNoTarget() {
+        final Attempted transform = new Attempted("XSLTFilter", false, "<a/>",
+                new StepResult(EVENTS_WITH_DATA, List.of()));
+        final ExtractionQualityParameters quality = new ExtractionQualityParameters(false, List.of());
+        final TargetSchema eventLogging = new TargetSchema(
+                new DocRef(XmlSchemaDoc.TYPE, "schema-2", "event-logging v4.1.0"), "event-logging v4.1.0",
+                TargetSchema.EVENT_LOGGING, "file://event-logging-v4.1.0.xsd", "4.1.0", "Events", null);
+
+        for (final TargetSchema target : new TargetSchema[]{null, eventLogging}) {
+            final Score score = new ExtractionQualityScorer().score(quality, transform, target).orElseThrow();
+            assertThat(score.value()).isLessThan(1.0);
+            assertThat(score.diagnostics()).anyMatch(error -> error.getMessage().contains("untyped Data"));
+        }
     }
 
     @Test

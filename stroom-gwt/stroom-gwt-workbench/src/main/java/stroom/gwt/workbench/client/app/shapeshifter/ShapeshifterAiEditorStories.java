@@ -61,7 +61,8 @@ import java.util.Map;
 /// | `GET` and `PUT /shapeshifterAi/v1/{uuid}` | the document, fetched and saved |
 /// | `GET /shapeshifterAi/v1/templates` | the built-in texts the Setup tab's question texts start from |
 /// | `POST /shapeshifterAiSupervisor/v1/learners` | the document's feeds |
-/// | `POST /explorer/v2/decorate` and `getFromDocRef` | the Setup tab's model picker |
+/// | `POST /explorer/v2/decorate` and `getFromDocRef` | the Setup tab's model and target schema pickers |
+/// | `GET /shapeshifterAi/v1/targetSchema/{uuid}` | what the target schema means for the fallback and records |
 /// | the Permissions tab's routes | the Permissions tab |
 public final class ShapeshifterAiEditorStories {
 
@@ -69,11 +70,18 @@ public final class ShapeshifterAiEditorStories {
     // A FormGroup gives its control the group's identity as its id
     private static final String THRESHOLD = "#checkThreshold";
     private static final String RULES = "Meets the business rules";
+    private static final String TIMES = "Event times are plausible";
+    private static final String TIME_FIELD = "#timesTimeField";
     // The fixture's checks, every one, as a save sends them: the Standard set with business rules as advice
     private static final List<CheckSetting> DOC_CHECKS = CheckSettings.complete(List.of(
             CheckSetting.of(Check.COMPILE, CheckState.GATE),
             new CheckSetting(Check.RULES, CheckState.ADVICE, 0.9, null)));
     private static final String MAP = "Setup route map";
+    // The target schema's picker, by the identity its FormGroup gives it
+    private static final String TARGET_SCHEMA = "#shapeshifterAiTargetSchema";
+    private static final String FALLBACK_ON = "Serve what it can, with the rest as marked Unknown events";
+    private static final String NO_UNKNOWN = "has none, so a transform that can't be finished";
+    private static final String TARGET_SCHEMA_BUTTON = TARGET_SCHEMA + ".drop-down, " + TARGET_SCHEMA + " .drop-down";
     private static final String FEED_FILTER = "Which pipelines to show";
     private static final String FEEDS_FILTERED = "Pipelines are being filtered; click to change or clear";
 
@@ -225,6 +233,75 @@ public final class ShapeshifterAiEditorStories {
                     play.expect(play.findByRole("button", "Advanced options")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
+                // The target schema: the one the document names, shown beside the model, and kept as it is
+                // when something else on the tab is saved
+                .story("SetupTargetSchema", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    openTab(play, "Setup");
+                    play.waitFor(() -> play.expect(play.querySelector(TARGET_SCHEMA))
+                            .toHaveTextContent(TextMatch.containing("event-logging v4.1.0")));
+                    play.expect(play.querySelector(TARGET_SCHEMA_BUTTON)).not().toHaveAttribute("aria-disabled");
+                    play.expect(play.queryByText(TextMatch.startingWith("Every child of"))).toBeNull();
+                    final Query instructions = play.getByLabelText("Instructions to the AI");
+                    play.clear(instructions);
+                    play.type(instructions, "Prefer Network events.");
+                    play.tab();
+                    save(play, "{\"instructions\": \"Prefer Network events.\", "
+                               + "\"targetSchema\": {\"type\": \"XMLSchema\", \"uuid\": \"schema-1\"}}");
+                })
+                // Read only: the target schema is shown, but can't be changed
+                .story("SetupTargetSchemaReadOnly", context -> render(context, true, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    openTab(play, "Setup");
+                    play.waitFor(() -> play.expect(play.querySelector(TARGET_SCHEMA))
+                            .toHaveTextContent(TextMatch.containing("event-logging v4.1.0")));
+                    play.expect(play.querySelector(TARGET_SCHEMA_BUTTON)).toHaveAttribute("aria-disabled", "true");
+                    DocEditors.expectNoProblems(play);
+                })
+                // A root that may hold a header beside its records: every child of the root is read as a
+                // record, so the tab warns; event-logging's root holds only events, and nothing is said
+                .story("SetupTargetSchemaRootHoldsSeveralKinds",
+                        context -> render(context, false, ShapeshifterAiFixtures.HEADED_SCHEMA_DOC))
+                .withPlay(play -> {
+                    openTab(play, "Setup");
+                    play.waitFor(() -> play.expect(play.getByText(TextMatch.startingWith(
+                            "Every child of <Batch> is read as one record, and it may hold Header, Record.")))
+                            .toBeVisible());
+                    DocEditors.expectNoProblems(play);
+                })
+                // Event-logging: the fallback applies, and nothing says otherwise
+                .story("SetupFallbackForEventLogging", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    openStop(play, "Approving new translations:");
+                    // The fixture's Advanced options are open already, as it is not as a new document has them
+                    play.waitFor(() -> play.expect(play.getByRole("button", "Advanced options"))
+                            .toHaveAttribute("aria-expanded", "true"));
+                    play.expect(play.findByRole("radio", FALLBACK_ON)).toBeInTheDocument();
+                    play.expect(play.queryByText(TextMatch.containing(NO_UNKNOWN))).toBeNull();
+                    DocEditors.expectNoProblems(play);
+                })
+                // Another schema has no marked Unknown, so the fallback doesn't apply: a note says so beside it
+                .story("SetupFallbackNotForOtherSchemas",
+                        context -> render(context, false, ShapeshifterAiFixtures.OTHER_SCHEMA_DOC))
+                .withPlay(play -> {
+                    openStop(play, "Approving new translations:");
+                    // The fixture's Advanced options are open already, as it is not as a new document has them
+                    play.waitFor(() -> play.expect(play.getByRole("button", "Advanced options"))
+                            .toHaveAttribute("aria-expanded", "true"));
+                    play.waitFor(() -> play.expect(play.getByText(TextMatch.containing(
+                            "and sightings v2.4 has none"))).toBeVisible());
+                    DocEditors.expectNoProblems(play);
+                })
+                // A document naming no target schema (one made before the setting existed) shows none, and is
+                // saved with none: it goes on being judged against its conformance check's schema group
+                .story("SetupNoTargetSchema", context -> render(context, false, ShapeshifterAiFixtures.NEW_DOC))
+                .withPlay(play -> {
+                    openTab(play, "Setup");
+                    play.waitFor(() -> play.expect(play.querySelector(TARGET_SCHEMA)).toBeVisible());
+                    play.expect(play.querySelector(TARGET_SCHEMA))
+                            .not().toHaveTextContent(TextMatch.containing("event-logging"));
+                    DocEditors.expectNoProblems(play);
+                })
                 // The route map says what each section is set to; choosing a stop marks it and shows its part,
                 // alone
                 .story("SetupRouteMap", context -> render(context, false, ShapeshifterAiFixtures.DOC))
@@ -361,6 +438,32 @@ public final class ShapeshifterAiEditorStories {
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
                     play.waitFor(() -> play.expect(screen.queryByText(RULES, StroomDom.DIALOG_TITLE)).toBeNull());
                     play.expect(play.queryByText("40%")).toBeNull();
+                    play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
+                    DocEditors.expectNoProblems(play);
+                })
+                // Time plausibility's dialog: its window and the time it judges, which another target schema
+                // must name; OK and Save write all three
+                .story("TimesDialogOk", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    openScorer(play, TIMES);
+                    final Query field = screen.querySelector(TIME_FIELD);
+                    play.type(field, "When");
+                    play.tab();
+                    play.click(screen.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(screen.queryByText(TIMES, StroomDom.DIALOG_TITLE)).toBeNull());
+                    save(play, checks(DOC_CHECKS, Map.of(Check.TIMES,
+                            "{\"check\": \"TIMES\", \"parameters\": {\"type\": \"times\", "
+                            + "\"beforeDays\": 365, \"afterDays\": 1, \"timeField\": \"When\"}}")));
+                })
+                .story("TimesDialogCancel", context -> render(context, false, ShapeshifterAiFixtures.DOC))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    openScorer(play, TIMES);
+                    play.type(screen.querySelector(TIME_FIELD), "When");
+                    play.tab();
+                    play.click(screen.getByRole("button", StroomDom.button("Cancel")));
+                    play.waitFor(() -> play.expect(screen.queryByText(TIMES, StroomDom.DIALOG_TITLE)).toBeNull());
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })

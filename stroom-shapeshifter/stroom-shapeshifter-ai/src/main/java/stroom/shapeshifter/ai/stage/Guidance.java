@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.stage;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /// What a supervisor has told a learner (ruling A46, design 01 §12 item 29): a hint, a correction, or a
 /// fact about the feed that the sample does not show.
@@ -56,6 +57,22 @@ public interface Guidance {
 
     // --------------------------------------------------------------------------------
 
+
+    /// What a supervisor has told the model about a learner, as the question's system text carries it:
+    /// oldest first and attributed, because the model should weigh a person's words as a person's, and
+    /// because the transcript a person reads afterwards has to show whose they were. The rebuilt prompt
+    /// (N9) says it in the same words, so this is the one place they are written.
+    ///
+    /// @param guidance What was carried, oldest first.
+    /// @return The passage, with its blank line in front; empty where nothing was said.
+    static String asSaid(final List<Given> guidance) {
+        if (guidance == null || guidance.isEmpty()) {
+            return "";
+        }
+        return guidance.stream()
+                .map(given -> "- " + given.message().strip() + " (" + given.author() + ")")
+                .collect(Collectors.joining("\n", "\n\nA supervisor of this feed has said:\n", ""));
+    }
 
     /// One thing a supervisor said.
     ///

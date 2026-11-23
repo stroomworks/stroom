@@ -193,7 +193,8 @@ None of these were settled by the plan, so they are the ones to argue with:
 
 ### What is left of it
 
-- **No run-time enforcement until Track 2 step 6** — N1's accepted position (AS21), not a gap introduced
+- **No run-time enforcement here** — it is the separate XSLT egress project's (23 November); until its code
+  arrives this is N1's accepted position (AS21), not a gap introduced
   here. A route the static check misses runs unchecked on a node.
 - **25 of the 32 allowed `stroom:` functions have no harness stand-in** (`StroomStandIns.missing`), so a
   stylesheet using one passes the check and fails in the scenario suite. Nothing uses them; a test pins the
@@ -977,12 +978,166 @@ The shipped demo content still writes 3.0.0 while a document made on a standard 
 Nothing depends on the two agreeing — the demo document carries its own target once imported — but
 regenerating the demo content for 4.1.0 is worth doing before release.
 
+### The Setup tab picker and other schemas made usable (23 November)
+
+The fourth slice.
+
+**The *Target schema* picker** is on the Setup tab, under *AI model and instructions*, below *Model*: a
+document picker over `XMLSchema` documents the user may use (`SetupTab`, `SetupTabController`). Stories:
+`SetupTargetSchema` (shown and kept on save), `SetupTargetSchemaReadOnly`, `SetupNoTargetSchema`,
+`SetupFallbackForEventLogging` and `SetupFallbackNotForOtherSchemas`. The fixture `DOC` now names a target
+(`schema-1`, event-logging 4.1.0), and the editor's routes serve `GET /xmlSchema/v1/{uuid}`.
+
+**Untyped `Data` and `Unknown` are event-logging's (W1-4).** `ExtractionQualityScorer` measures them only
+where the target is event-logging or none (`TargetSchema.isEventLoggingOrNone`). For another schema only
+the required fields are measured, and with none required the check doesn't run.
+
+**The questions name the target's own record (W1-1).** New template variables, filled by `QuestionText`:
+`${targetRecord}` in `TARGET`, `${aTargetRecord}` and `${untypedRule}` in `TRANSFORMATION_RULES`
+(registered on `Template`). The record element comes from `TargetStructure.recordElement`: the root's
+child where the root holds only one kind of element. Otherwise the question names a place ("element under
+<Sightings>"). The business-rules line in the system text says "over the Sighting". Event-logging's text is
+unchanged character for character (`TestTheTargetSchemaDrivesTheWords` still passes), so
+`Templates.VERSION` stays at 10.
+
+**No fallback for another schema (W1-3, the user's decision of 23 November: option "No fallback").**
+`Conversation.admit` stops the run for a person (`FlowExit.PARK`) with `StopReports.noFallbackFor` instead
+of asking for a marked Unknown. `Stage.exhaust` refuses *Finish with Unknowns* for such a target. The Setup
+tab shows a note beside *If the transform can't be finished* once it has fetched the schema and found it
+isn't event-logging.
+
+**The rest of task 7, the same day.** All of it, so **Track 1 task 7 is complete**:
+
+- **`schemaGroup` is gone.** `SchemaConformanceParameters` is deleted; the conformance check takes no
+  parameters and judges against the target, or the `EVENTS` group where a document names none, which is
+  what the setting always defaulted to. Its field is gone from the check dialog. No document migration
+  (AS1): a dev document saved with `"type": "schemaConformance"` parameters won't read and must be reset,
+  as N5 does for the database. About 20 test call sites moved to `null` parameters. The OpenAPI spec is
+  regenerated (`:stroom-app:resolve`).
+- **Time plausibility's time field** (`TimesParameters.timeField`, an XPath from a record). With none named
+  it judges `EventTime/TimeCreated` for event-logging, or no target, and doesn't run for another schema.
+  The check dialog has a panel for it and the window (*Days before*, *Days after*), which it never had:
+  **saving the check from its dialog used to reset a custom window to the default**, as it wrote no
+  parameters. Stories `TimesDialogOk` and `TimesDialogCancel`.
+- **Finish with Unknowns hidden in the client** for a target that isn't event-logging:
+  `SupervisorLearner.fallbackUnavailable`, set by `SupervisorResourceImpl` from `TargetSchemas`, read by
+  `FeedSituation`.
+- **`TargetChecks.refusal`** names the target's own record and root.
+- **W1-5, by the user's decision (23 November: "State the limit"):** a record is still a child of the
+  root. The Setup tab warns under *Target schema* when the root may hold more than one kind of element.
+  The tab learns this, and whether the schema is event-logging, from a new endpoint,
+  `GET /shapeshifterAi/v1/targetSchema/{uuid}` (`TargetSchemaSummary`, held to USE on the schema), which
+  replaces the direct `XMLSchema` fetch. Story `SetupTargetSchemaRootHoldsSeveralKinds`.
+- **W1-6:** the demo document keeps no target, so it works on any install; a test holds its pipelines'
+  Schema filter to the `EVENTS` group it is judged against. The demo pack is regenerated.
+- The conformance check's plain name is now "Valid against the target schema".
+
+## Track 2 step 4, four of its five parts (23 November)
+
+**Approval evidence and who approved.** Three columns on `shapeshifter_attempt`, in the unreleased
+migration (N5), jOOQ regenerated: `evidence` (JSON `CheckResult`s: check, state, score, threshold;
+numbers only, as a check's diagnostics quote the stream, A146), `reviewed_by` and `reviewed_time_ms`.
+`Stage` records the evidence whenever a run writes a translation (`Stage.evidence(verdicts)`, a check
+judging several steps shown at its least score); `approve` and `reject` take who decided, which
+`SupervisorResourceImpl` passes as the audit identity. `Attempts.Review` carries it on `Recorded`;
+`SupervisorAttempt` has `evidence`, `reviewedBy` and `reviewedTimeMs`. The Learning Status card shows
+*How it was judged*, gates first (`Evidence`), and "Approved by jo, <time>". Stories
+`AwaitingReviewEvidence` and `ApprovedBy`.
+
+**The spend breaker's state.** The breaker is computed, not stored, so `StageFactory.breaker()` is the
+one the stages use and the Supervisor asks it per document. `SupervisorLearner.spendPaused` carries the
+breaker's own words; a learning learner held back shows **Spend limit** as its chip in both lists of
+Smart Pipelines and a warning on its Learning Status tab. **A deviation from the plan, worth a look:**
+it is shown on the rows and the Learning Status tab rather than on the Learning Flow's readiness banner,
+which describes the document's settings, not what is happening now. Story `SpendLimit`. The
+`shapeshifter_spend.breaker_open_since_ms` and `breaker_reason` columns are still unused.
+
+**The time zone (AS18, N6).** The pipeline's Learning Status tab says which zone timestamps with no
+offset are read in, whether it is the pipeline's `timeZone` property or UTC, and what is wrong with the
+property, with the stream's `TimeZone` header said to come first. `SupervisorLearner.withTimeZone`, set
+by `pipelineLearners` from `PipelineZones`; `TimeZoneSource` is now shared and `ResolvedZone` uses it.
+**Not shown:** which zone a particular stream was read in, where its header set one, as nothing records
+it; that would need the attempt to keep its stream's resolved zone. Story `TimeZone`.
+
+**What was asked, and N9's rebuild service (the fifth part, 23 November): Track 2 step 4 is complete.**
+`Stage.rebuild(doc, attemptId, input)` re-walks the run's first walk over the sample read back from its
+stream with `PromptCapture`, an advisor that answers from the record (`RecordedAdvisor`) and keeps each
+turn's prompt — the system text with the guidance the turn carried (`Guidance.asSaid`, now shared with
+`ModelAdvisor`) and the question — rendered from the run's recorded words. It writes nothing and asks
+nobody. `GET /shapeshifterAiSupervisor/v1/{id}/turns/{number}/prompt` (`RebuiltPrompt`) is held to the
+attempt's VIEW and, for the prompt itself, to *View Data*; it refuses in words for: no *View Data*; an
+improvement (no stream); a stream deleted or unreadable; a run asked before its words were kept; and a
+turn from a later round, which only the first walk's re-walk can't reach. Notes say the earlier exchanges
+are the turns above, that withdrawn guidance isn't shown, and that an upgrade since may change the checks'
+wording. The conversation has *Show the prompt as it was sent* under each question, opening the
+`TurnPrompt` dialog. Stories `PromptDialog` and `PromptDialogRefused`; tests `TestRebuildingWhatWasAsked`
+and resource refusals in `TestSupervisorResourceImpl`.
+
+**Limits worth a reviewer's eye:** a relearning's later rounds aren't rebuilt (they opened with feedback
+from a full pass, which the rebuild doesn't repeat); the prompt shows the system text and the question,
+not the earlier exchanges, which the conversation already shows; and the re-walk runs the steps again,
+so asking costs a learning walk's CPU without the model.
+
+## Track 2 step 5, under way (23 November)
+
+**Scope, the user's decision of 23 November:** options iv and iii before stage R; option ii (17 storage
+interfaces into about 5) and the rest of option i after the first release.
+
+**iv, done.** The in-memory stores (`stroom.shapeshifter.ai.state`, 20 classes) moved from `src/main` to
+`src/testFixtures`; nothing in production used them. `stroom-shapeshifter-ai-impl-db`'s tests now take this
+module's test fixtures (`TestLearningPipelinesDao` checks the database against them). The three
+import-order errors `testFixtures` had are fixed, so its checkstyle is clean.
+
+**i, largely done before it started.** On a node, XSLT candidates run through the real pipeline
+(`PipelineStepRunner`, `StageFactory.runners`); the parser runners drive Stroom's own Data Splitter, JSON
+and XML factories and also report what each record consumed; the full pass and serving run the real
+pipeline. The plan's "about 1,900 lines" predates that. What is left is parser candidates through the
+pipeline as well, with the coverage filter, which is post-release.
+
+**iii, serving and learning split (23 November).** `Stage` (3,115 lines) is now serving alone (993 lines):
+`decide`, `stream`, `serve`, `reprocess`, `dryRun`, waking, and one-line delegates for everything that moved,
+so its callers — the resource, the worker and about 60 tests — are unchanged. Extracted, each step behaviour-
+preserving with every test green after it:
+
+| Class | Lines | What it is | Pipeline scope? |
+|---|---|---|---|
+| `Learning` | 1,012 | Learning, relearning, improving, settling round by round, resuming (A28, A45), rebuilding (N9) | Yes, as the runners are |
+| `Sessions` (with `Sessions.Recorder`) | 519 | Opening a run, carrying it under its claim, writing its turns and what it came to | No |
+| `Promotion` | 356 | Drafts, approve, reject, retract, the one promotion path, snapshots | No |
+| `SupervisorActions` | 242 | Grant, exhaust, amend, relearn, give up | No |
+| `Judging` | 197 | Running a fragment and scoring it, re-running a learned chain, the record bar, input shortfall | Yes, through the fragment runner |
+| `LearningPrefix` | 349 | What the model is shown of a stream (static) | No |
+| `Judged`, `HeldPass` | 271 | The judgement records, out of `Stage`'s body | — |
+
+Serving calls learning at two points (`learnAndBind`, `relearnUnderClaim`); learning does not call back.
+`Stage` builds the others from its own constructor arguments, so `StageFactory` and the test fixtures are
+unchanged. Two doc comments that had drifted onto the wrong methods are fixed.
+
+**The REST class's logic is a service (23 November).** `SupervisorService` (873 lines) holds what
+each Supervisor request does and who may make it; `SupervisorResourceImpl` is the 163-line `@AutoLogged`
+resource that delegates to it (resource, service, DAO, as `AGENTS.md` asks). `TestSupervisorResourceImpl`
+is now `TestSupervisorService`. Approve, reject, retract, grant, exhaust, amend, relearn and give up no
+longer build a whole stage in a pipeline scope: `StageFactory.promotion()` and
+`StageFactory.supervisorActions()` give the service the pipeline-free classes directly. Improve and the
+prompt rebuild still run in a stage, since both run pipelines. `TestRestResources` passes (236).
+
+**Option iii is done, with three loose ends** worth knowing, none of them behaviour:
+- `Stage` keeps one-line delegates for the moved public methods, which only tests now call (about 60
+  call sites, mostly `scenarios.stage(...).approve(...)`). Moving those tests onto `Promotion` and
+  `SupervisorActions` would let the delegates go.
+- `Promotion` and `SupervisorActions` are built by `StageFactory`, which Guice builds, rather than by
+  Guice themselves: binding them directly needs a `Clock` and the lease bound, which nothing else wants.
+- `Stage` still keeps every constructor argument as a field, some now only passed on; its `seed` was
+  never read, before or after.
+
 ## What passes now
 
-> **Not re-run since the D2 option G slice (20 November, end of session):** the `stroom-app` scenarios
-> (`:stroom-app:test --tests 'stroom.shapeshifter.*'`) and the workbench stories. They passed on the
-> slice before it, and this slice touches prompt text rather than the store or the client, but that is
-> reasoning, not a run. **Run both before a pull request.**
+> **Re-run 23 November, after Track 2 step 4 (all five parts):** `:stroom-app:test --tests 'stroom.shapeshifter.*'`
+> 42 of 42; `:stroom-shapeshifter:stroom-shapeshifter-ai:test`, `stroom-shapeshifter-ai-impl-db:test` (real
+> MySQL), `:stroom-core-client:test` and `:stroom-core-shared:test` pass; checkstyle passes for the changed
+> modules (`checkstyleTestFixtures` keeps its three older import-order errors); every Shapeshifter story
+> title passes with the leak check, 110 stories. The OpenAPI spec is regenerated. Not run: the full build
+> and `./buildDockerImages.sh`.
 
 | Check | Result |
 |---|---|
@@ -1008,18 +1163,17 @@ Not run: the full build (`clean build shadowJar buildDistribution`) and `./build
 
 ## Next, in order
 
-1. **Re-run the `stroom-app` scenarios and the workbench stories**, which the last slice of task 7 did
-   not get to.
-2. **Track 1 task 7's next slice**: the Setup tab's *Target schema* picker, with its stories.
-2. **Track 2 step 1c's last piece**, the `ESCALATING` default (N3) — blocked on a `TestLiveScenarios`
-   run against a live model.
-2. **Track 1 task 7**, single target schema: the last Track 1 task, and the largest. It needs a Setup
-   tab change for its *Target schema* picker.
-3. **Track 2 step 4**'s UI additions, then steps 5 and 6, then stage R.
-3. **Track 1 tasks 4, 8 and 9**, and task 7's schema field and prompt summary.
-4. **Track 2 steps 1, 1b and 3**, which need no further decisions, and step 4's client additions, which
-   is where AS18's time-zone display belongs.
-5. **Stage R, the rename**, at its window: after Track 2 step 6's egress merge, before the first release.
+*Rewritten 23 November. Everything in the Done table above is committed (`67d54e0648`); the 23 November
+work is uncommitted.*
+
+1. **Stage R, the rename**, before the first release. Track 2 step 5 is done as scoped (iv and iii);
+   ii and the rest of i are post-release. Options iv is done; ii and the rest of i are
+   post-release.
+2. Track 2 step 6 is out of scope (23 November): XSLT egress is managed by a separate project, whose code
+   arrives in due course, so the rename no longer waits for an egress merge.
+3. **When Track 1 is done** (it now is): re-run the demo evaluation, which needs the dev instance.
+4. **Blocked on a live model or the dev instance:** the `ESCALATING` default (Track 2 step 1c), re-learning
+   stream 2152 on `OTEL-TRACES`, and the demo evaluation.
 
 ## Known gaps, recorded in the design or plan
 
@@ -1031,7 +1185,7 @@ Not run: the full build (`clean build shadowJar buildDistribution`) and `./build
 - **A step's warning shows only on the card of the step selected.** `stepProblems` is problems-only, so the route map and "the approach has a problem" don't mark a step whose only fault is a warning. A user who switches a check off sees nothing until they open that step. Deliberate for now, but worth a decision — it may make the warning too easy to miss.
 - **The four changelog entries in `unreleased_changes/` still say "Shapeshifter AI"** and are uncommitted. Since the rename is decided, they can be reworded now so CHANGELOG.md never carries the old name.
 - **`shapeshifter-ai-demo-v1.0.zip` is modified** because step 1 regenerated it (documents now carry `checks`). It is binary, so a reviewer can't see the change; it was regenerated again after Track 2 step 1 removed `regressionRetentionDays` from the document, and must be renamed in stage R. `TestDemoContentPack.theCommittedPackIsTheOneThisCodeWrites` is what catches a stale pack, so regenerate it after **any** change to the document model.
-- **Branch state:** `ai_translations_egress` is unmerged (Track 2 step 6); `ai_translations_ui_rework` was merged at `7e06bb589c`.
+- **Branch state:** `ai_translations_ui_rework` was merged at `7e06bb589c`. `ai_translations_egress` is not to be merged by this project: XSLT egress moved to a separate project on 23 November.
 - **The MCP server:** the fix is not in this document — see the memory note `stroom-mcp-server-setup` for where the bridge's config lives on the host and what each error means.
 
 ## Uncommitted files

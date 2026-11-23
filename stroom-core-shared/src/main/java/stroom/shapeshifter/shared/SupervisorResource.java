@@ -64,6 +64,18 @@ public interface SupervisorResource extends RestResource, DirectRestService {
             operationId = "fetchShapeshifterAiAttempt")
     SupervisorAttempt fetch(@PathParam("id") long id);
 
+    /// What a turn was put to the model with (decision N9, Track 2 step 4): rebuilt from the run's own
+    /// words over its stream, for someone who may view data, since it carries the stream's text.
+    ///
+    /// @param id     The attempt.
+    /// @param number The turn.
+    /// @return The prompt, or why it can't be shown.
+    @GET
+    @Path("/{id}/turns/{number}/prompt")
+    @Operation(summary = "Rebuild the prompt a turn was put to the model with",
+            operationId = "fetchShapeshifterAiTurnPrompt")
+    RebuiltPrompt prompt(@PathParam("id") long id, @PathParam("number") int number);
+
     @POST
     @Path("/{id}/turns/{number}")
     @Operation(summary = "Answer a turn instead, or edit one and run the attempt again from there",

@@ -55,7 +55,8 @@ import java.util.function.Consumer;
 /// "Advanced options" ([Disclosure], [AdvancedSettings]), and the steps are on the map only once someone
 /// customises them, or they are no starting point, or something is wrong with them.
 ///
-/// The parts: **AI model and instructions**: whether it learns, the model and the instructions. **Learning steps**:
+/// The parts: **AI model and instructions**: whether it learns, the model, the target schema and the instructions.
+/// **Learning steps**:
 /// which starting point the steps are, showing or hiding them, Load default setup (a menu of the starting points,
 /// once they are shown), what is wrong with the flow as a whole, and what a run may spend; under Advanced options,
 /// the tries per step and the largest sample. **A step**: its card and question text ([ApproachSection]).
@@ -90,6 +91,10 @@ public class SetupTab extends Component {
     RadioGroup<LearningMode> learningMode;
     @UiField
     DropDownBox model;
+    @UiField
+    DropDownBox targetSchema;
+    @UiField
+    Label targetSchemaNote;
     @UiField
     TextArea instructions;
     @UiField
@@ -132,6 +137,8 @@ public class SetupTab extends Component {
     RadioGroup<Boolean> fallback;
     @UiField
     LinkButton fallbackText;
+    @UiField
+    Label fallbackNote;
     @UiField
     ValueSpinner relearnThreshold;
     @UiField
@@ -268,6 +275,28 @@ public class SetupTab extends Component {
     /// @return The model picker, which its controller attaches a document picker's controller to.
     public DropDownBox getModelBox() {
         return model;
+    }
+
+    /// @return The target schema's picker, which its controller attaches a document picker's controller to.
+    public DropDownBox getTargetSchemaBox() {
+        return targetSchema;
+    }
+
+    /// Warns that the target schema's root may hold more than one kind of element, every one of which
+    /// would be read as a record (task 7, W1-5), or says nothing.
+    ///
+    /// @param root     The root element's name; null to say nothing.
+    /// @param children The elements it may hold.
+    public void setRootHoldsSeveralKinds(final String root, final List<String> children) {
+        if (root == null || children.size() < 2) {
+            targetSchemaNote.setVisible(false);
+            return;
+        }
+        targetSchemaNote.setText("Every child of <" + root + "> is read as one record, and it may hold "
+                                 + String.join(", ", children) + ". A header or other element among them would "
+                                 + "be counted as a record, so choose a schema whose root holds only its "
+                                 + "records.");
+        targetSchemaNote.setVisible(true);
     }
 
     /// @return Whether the document learns.
@@ -457,6 +486,20 @@ public class SetupTab extends Component {
     public void setFallback(final boolean on) {
         fallback.setValue(on, false);
         fallbackText.setVisible(on);
+    }
+
+    /// Says that the fallback doesn't apply to the target schema, or says nothing.
+    ///
+    /// @param schema The target schema's name, where it isn't event-logging, whose marked Unknowns the
+    ///               fallback writes; null where the fallback applies.
+    public void setFallbackNotApplying(final String schema) {
+        if (schema == null) {
+            fallbackNote.setVisible(false);
+            return;
+        }
+        fallbackNote.setText("Marked Unknown events are event-logging's, and " + schema + " has none, so a "
+                             + "transform that can't be finished pauses for a person whichever is chosen.");
+        fallbackNote.setVisible(true);
     }
 
     // ---- Monitoring translations in use ----

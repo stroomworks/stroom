@@ -412,6 +412,48 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
         return (String) get(27);
     }
 
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.evidence</code>.
+     */
+    public void setEvidence(String value) {
+        set(28, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.evidence</code>.
+     */
+    public String getEvidence() {
+        return (String) get(28);
+    }
+
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.reviewed_by</code>.
+     */
+    public void setReviewedBy(String value) {
+        set(29, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.reviewed_by</code>.
+     */
+    public String getReviewedBy() {
+        return (String) get(29);
+    }
+
+    /**
+     * Setter for <code>stroom.shapeshifter_attempt.reviewed_time_ms</code>.
+     */
+    public void setReviewedTimeMs(Long value) {
+        set(30, value);
+    }
+
+    /**
+     * Getter for <code>stroom.shapeshifter_attempt.reviewed_time_ms</code>.
+     */
+    public Long getReviewedTimeMs() {
+        return (Long) get(30);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -435,7 +477,7 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
     /**
      * Create a detached, initialised ShapeshifterAttemptRecord
      */
-    public ShapeshifterAttemptRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String feedName, String typeName, Long inputMetaId, String nodeName, String promotionMode, String status, String decision, String bindingUuid, Double score, Long tokensSpent, Long expiryMs, Byte claimed, Long grantedTokens, Long grantedMs, Byte exhaustNext, String report, String templates, Integer builtInVersion, String instructions, String buildVersion, String improvingBindingUuid) {
+    public ShapeshifterAttemptRecord(Long id, Integer version, Long createTimeMs, Long updateTimeMs, String pipelineUuid, String elementId, String docUuid, String feedName, String typeName, Long inputMetaId, String nodeName, String promotionMode, String status, String decision, String bindingUuid, Double score, Long tokensSpent, Long expiryMs, Byte claimed, Long grantedTokens, Long grantedMs, Byte exhaustNext, String report, String templates, Integer builtInVersion, String instructions, String buildVersion, String improvingBindingUuid, String evidence, String reviewedBy, Long reviewedTimeMs) {
         super(ShapeshifterAttempt.SHAPESHIFTER_ATTEMPT);
 
         setId(id);
@@ -466,6 +508,9 @@ public class ShapeshifterAttemptRecord extends UpdatableRecordImpl<ShapeshifterA
         setInstructions(instructions);
         setBuildVersion(buildVersion);
         setImprovingBindingUuid(improvingBindingUuid);
+        setEvidence(evidence);
+        setReviewedBy(reviewedBy);
+        setReviewedTimeMs(reviewedTimeMs);
         resetTouchedOnNotNull();
     }
 }

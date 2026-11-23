@@ -20,7 +20,6 @@ import stroom.docref.DocRef;
 import stroom.shapeshifter.ai.extraction.NodeFixture;
 import stroom.shapeshifter.ai.learning.StepResult;
 import stroom.shapeshifter.ai.learning.TargetSchema;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import org.junit.jupiter.api.Test;
@@ -55,7 +54,7 @@ class TestConformanceAgainstTheTargetSchema {
         final TargetSchema target = node.targetSchemas().resolve(node.eventLoggingSchemaRef()).orElseThrow();
 
         final Score score = node.schemaConformanceScorer()
-                .score(new SchemaConformanceParameters(NodeFixture.EVENTS_SCHEMA_GROUP), transform(), target)
+                .score(null, transform(), target)
                 .orElseThrow();
 
         assertThat(score.value()).isEqualTo(1.0);
@@ -66,7 +65,7 @@ class TestConformanceAgainstTheTargetSchema {
         // The migration path, and the acceptance criterion behind it: a document written before the
         // setting existed has no target, and the group its check carries is what it is judged against.
         final Score score = node.schemaConformanceScorer()
-                .score(new SchemaConformanceParameters(NodeFixture.EVENTS_SCHEMA_GROUP), transform(), null)
+                .score(null, transform(), null)
                 .orElseThrow();
 
         assertThat(score.value()).isEqualTo(1.0);
@@ -86,7 +85,7 @@ class TestConformanceAgainstTheTargetSchema {
                 "<xs:schema/>");
 
         final Score score = node.schemaConformanceScorer()
-                .score(new SchemaConformanceParameters(NodeFixture.EVENTS_SCHEMA_GROUP), transform(), missing)
+                .score(null, transform(), missing)
                 .orElseThrow();
 
         assertThat(score.value())

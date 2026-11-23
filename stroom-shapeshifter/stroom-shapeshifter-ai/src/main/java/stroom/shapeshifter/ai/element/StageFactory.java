@@ -56,11 +56,13 @@ import stroom.shapeshifter.ai.stage.LearnerStates;
 import stroom.shapeshifter.ai.stage.Learners;
 import stroom.shapeshifter.ai.stage.Outputs;
 import stroom.shapeshifter.ai.stage.Places;
+import stroom.shapeshifter.ai.stage.Promotion;
 import stroom.shapeshifter.ai.stage.RegressionSet;
 import stroom.shapeshifter.ai.stage.Snapshots;
 import stroom.shapeshifter.ai.stage.Spend;
 import stroom.shapeshifter.ai.stage.SpendBreaker;
 import stroom.shapeshifter.ai.stage.Stage;
+import stroom.shapeshifter.ai.stage.SupervisorActions;
 import stroom.shapeshifter.ai.stage.Wake;
 import stroom.shapeshifter.ai.transformation.XsltStep;
 import stroom.shapeshifter.shared.FlowStep;
@@ -185,6 +187,33 @@ public class StageFactory {
         this.configProvider = configProvider;
     }
 
+    /// The spend breaker (A24), over this node's configured cluster ceilings: what [#create()] gives a stage,
+    /// and what the Supervisor asks to say which Smart Pipelines can't learn now (Track 2 step 4).
+    ///
+    /// @return The breaker.
+    public SpendBreaker breaker() {
+        return new SpendBreaker(spend, configProvider.get().getSpendTokensPerHour(),
+                configProvider.get().getSpendCallsPerHour());
+    }
+
+    /// Promotion on this node (simplification option iii): approve, reject and retract, which run no
+    /// pipeline and so need no pipeline scope, unlike a stage.
+    ///
+    /// @return It, under the wall clock.
+    public Promotion promotion() {
+        return new Promotion(learnerBindings, states, regressionSet, snapshots, outputs, attempts, fragmentWriter,
+                codes, places, wake, Clock.systemUTC());
+    }
+
+    /// A person's actions on a run or a learner on this node (simplification option iii): grant, exhaust,
+    /// amend, relearn and give up, which run no pipeline and so need no pipeline scope.
+    ///
+    /// @return Them, under the wall clock and this node's lease.
+    public SupervisorActions supervisorActions() {
+        return new SupervisorActions(attempts, learnerBindings, states, regressionSet, snapshots, targetSchemas,
+                wake, Clock.systemUTC(), configProvider.get().getSessionLease().getDuration());
+    }
+
     /// A stage on this node, under the wall clock and a fresh seed for the held-out split (A14).
     public Stage create() {
         // A node judges a candidate with the element that will run it (§12 item 2) — but only where the
@@ -219,8 +248,7 @@ public class StageFactory {
                 spend,
                 // The policy over A44's counter (A24): the cluster's ceilings come from the node's
                 // configuration, a Learning Flow's from the document
-                new SpendBreaker(spend, configProvider.get().getSpendTokensPerHour(),
-                        configProvider.get().getSpendCallsPerHour()),
+                breaker(),
                 guidance,
                 outputs,
                 regressionSet,

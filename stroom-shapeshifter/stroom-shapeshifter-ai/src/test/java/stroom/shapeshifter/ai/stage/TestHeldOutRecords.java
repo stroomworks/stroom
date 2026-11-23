@@ -34,7 +34,7 @@ class TestHeldOutRecords {
 
     @Test
     void anXmlDocumentHoldsBackItsShareOfRecords() {
-        final String shown = Stage.learningPrefix(xml(), doc(0.2));
+        final String shown = LearningPrefix.learningPrefix(xml(), doc(0.2));
 
         assertThat(shown).describedAs("eight of ten shown").contains("<id>7</id>").doesNotContain("<id>8</id>");
         assertThat(shown).describedAs("still one document").startsWith("<records").endsWith("</records>");
@@ -42,18 +42,18 @@ class TestHeldOutRecords {
 
     @Test
     void aJsonDocumentHoldsBackItsShareOfItems() {
-        final String shown = Stage.learningPrefix(json(), doc(0.2));
+        final String shown = LearningPrefix.learningPrefix(json(), doc(0.2));
 
         assertThat(shown).contains("\"id\": 7").doesNotContain("\"id\": 8");
-        assertThat(Stage.isJsonDocument(shown)).describedAs("still one value the parser can read").isTrue();
+        assertThat(LearningPrefix.isJsonDocument(shown)).describedAs("still one value the parser can read").isTrue();
     }
 
     @Test
     void nothingHeldBackShowsTheStreamAsItCame() {
         // And byte for byte, rather than the same document rebuilt with its whitespace changed: a model
         // shown a reformatted stream is being shown something the parser will never see
-        assertThat(Stage.learningPrefix(xml(), doc(0.0))).isEqualTo(xml());
-        assertThat(Stage.learningPrefix(json(), doc(0.0))).isEqualTo(json());
+        assertThat(LearningPrefix.learningPrefix(xml(), doc(0.0))).isEqualTo(xml());
+        assertThat(LearningPrefix.learningPrefix(json(), doc(0.0))).isEqualTo(json());
     }
 
     @Test
@@ -61,7 +61,7 @@ class TestHeldOutRecords {
         // Holding out the only record there is would leave nothing to learn from
         final String one = "<records xmlns=\"records:2\"><record><id>0</id></record></records>";
 
-        assertThat(Stage.learningPrefix(one, doc(0.9))).contains("<id>0</id>");
+        assertThat(LearningPrefix.learningPrefix(one, doc(0.9))).contains("<id>0</id>");
     }
 
     /// @param heldOut The share to hold back.

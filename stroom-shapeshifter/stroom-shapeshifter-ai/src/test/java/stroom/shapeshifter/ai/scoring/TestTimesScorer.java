@@ -16,7 +16,9 @@
 
 package stroom.shapeshifter.ai.scoring;
 
+import stroom.docref.DocRef;
 import stroom.shapeshifter.ai.learning.StepResult;
+import stroom.shapeshifter.ai.learning.TargetSchema;
 import stroom.shapeshifter.ai.transformation.StreamFacts;
 import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckPreset;
@@ -26,6 +28,7 @@ import stroom.shapeshifter.shared.RecordBoundary;
 import stroom.shapeshifter.shared.TimesParameters;
 import stroom.util.date.DateUtil;
 import stroom.util.shared.StoredError;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// The time plausibility check (Track 1 task 3, fix 3): whether an event is dated anywhere near the stream
 /// it came from.
@@ -44,6 +48,10 @@ class TestTimesScorer {
 
     private static final long RECEIVED = DateUtil.parseNormalDateTimeString("2026-11-11T09:18:19.000Z");
     private static final StreamFacts STREAM = new StreamFacts(1L, "NETFILTER", "Raw Events", RECEIVED, Map.of());
+    // A schema that keeps its time in When, not event-logging's EventTime/TimeCreated
+    private static final TargetSchema SIGHTINGS = new TargetSchema(
+            new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4"), "sightings v2.4",
+            "urn:sightings:2", "file://sightings-v2.4.xsd", "2.4", "Sightings", null);
 
     @Test
     void anEventDatedNearItsStreamIsPlausible() {
@@ -124,6 +132,56 @@ class TestTimesScorer {
 
     private static CheckSetting setting(final CheckPreset preset) {
         return preset.settings().stream().filter(s -> s.getCheck() == Check.TIMES).findFirst().orElseThrow();
+    }
+
+    @Test
+    void anotherSchemaIsNotJudgedUntilTheLearningFlowNamesItsTime() {
+        // Task 7: EventTime/TimeCreated is event-logging's. A schema that keeps its time elsewhere is not
+        // judged on a path it doesn't have, and not refused for lacking it either
+        assertThat(new TimesScorer().score(null, attempted(sightings("2023-10-19T09:06:02.000Z")), SIGHTINGS))
+                .isEmpty();
+    }
+
+    @Test
+    void aNamedTimeFieldIsJudgedForAnotherSchema() {
+        final TimesParameters when = new TimesParameters(null, null, "*[local-name() = 'When']");
+
+        final Score score = new TimesScorer()
+                .score(when, attempted(sightings("2026-11-11T09:06:02.000Z", "2023-10-19T09:06:02.000Z")),
+                        SIGHTINGS)
+                .orElseThrow();
+
+        assertThat(score.value()).isEqualTo(0.5);
+        assertThat(score.diagnostics()).extracting(StoredError::getMessage)
+                .anyMatch(message -> message.startsWith("Record 2's *[local-name() = 'When'] is 2023-10-19"));
+    }
+
+    @Test
+    void eventLoggingIsJudgedOnItsOwnTimeWithNoFieldNamed() {
+        final TargetSchema eventLogging = new TargetSchema(
+                new DocRef(XmlSchemaDoc.TYPE, "schema-2", "event-logging v4.1.0"), "event-logging v4.1.0",
+                TargetSchema.EVENT_LOGGING, "file://event-logging-v4.1.0.xsd", "4.1.0", "Events", null);
+
+        assertThat(new TimesScorer().score(null, attempted(events("2023-10-19T09:06:02.000Z")), eventLogging)
+                .orElseThrow().value()).isEqualTo(0.0);
+    }
+
+    @Test
+    void aTimeFieldThatIsNotAnXPathIsRefusedWhenTheScorecardIsBuilt() {
+        final CheckSetting broken = new CheckSetting(Check.TIMES, CheckState.ADVICE, null,
+                new TimesParameters(null, null, "When]"));
+
+        assertThatThrownBy(() -> Scorecard.of(List.of(broken), List.of(new TimesScorer())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("When]");
+    }
+
+    private static String sightings(final String... times) {
+        final StringBuilder xml = new StringBuilder("<Sightings xmlns=\"urn:sightings:2\">");
+        for (final String time : times) {
+            xml.append("<Sighting><When>").append(time).append("</When></Sighting>");
+        }
+        return xml.append("</Sightings>").toString();
     }
 
     private static Score score(final String events) {

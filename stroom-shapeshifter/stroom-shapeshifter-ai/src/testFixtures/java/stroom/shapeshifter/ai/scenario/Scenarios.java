@@ -18,8 +18,8 @@ package stroom.shapeshifter.ai.scenario;
 
 import stroom.processor.api.DeferTaskException;
 import stroom.shapeshifter.ai.extraction.DataSplitterStep;
-import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus;
+import stroom.shapeshifter.ai.extraction.ExtractionCorpus.Golden;
 import stroom.shapeshifter.ai.extraction.JsonStep;
 import stroom.shapeshifter.ai.extraction.NodeFixture;
 import stroom.shapeshifter.ai.extraction.XmlFragmentStep;

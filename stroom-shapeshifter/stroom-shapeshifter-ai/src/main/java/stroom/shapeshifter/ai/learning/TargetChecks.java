@@ -329,7 +329,7 @@ public final class TargetChecks {
      * @return The shortfalls, empty where the target is accepted.
      */
     public static List<StoredError> judge(final Scorecard scorecard, final String record, final String document) {
-        final Optional<StoredError> refusal = refusal(document);
+        final Optional<StoredError> refusal = refusal(document, scorecard.target());
         if (refusal.isPresent()) {
             return List.of(refusal.get());
         }
@@ -341,16 +341,39 @@ public final class TargetChecks {
 
     /// Why a proposed target is not an event to judge at all: not well-formed, or more than one event.
     ///
+    /// @param document The proposed target, wrapped as a document.
+    /// @param target   The schema it must be in, which names the element to reply with (task 7, W1-1); null
+    ///                 for event-logging.
     /// @return The refusal, empty where the document is one event.
-    public static Optional<StoredError> refusal(final String document) {
+    public static Optional<StoredError> refusal(final String document, final TargetSchema target) {
         final Optional<OutputRecords> parsed = OutputRecords.parse(document);
         if (parsed.isEmpty() || parsed.get().records().size() != 1) {
             return Optional.of(new StoredError(Severity.FATAL_ERROR, null, TARGET, parsed.isEmpty()
-                    ? "The event is not well-formed XML. Reply with the Event element alone, without an XML "
-                      + "declaration or an Events wrapper"
+                    ? "The event is not well-formed XML. Reply with " + replyWith(target) + " alone, without an "
+                      + "XML declaration or " + wrapper(target)
                     : "The reply holds " + parsed.get().records().size() + " events; one record becomes one event"));
         }
         return Optional.empty();
+    }
+
+    // The element one record becomes, as the refusal names it: event-logging's Event, or the target's own
+    private static String replyWith(final TargetSchema target) {
+        if (TargetSchema.isEventLoggingOrNone(target)) {
+            return "the Event element";
+        }
+        return TargetStructure.recordElement(target)
+                .map(element -> "the " + element + " element")
+                .orElse("the one record's element");
+    }
+
+    // The document's root, which the reply must leave out
+    private static String wrapper(final TargetSchema target) {
+        if (TargetSchema.isEventLoggingOrNone(target)) {
+            return "an Events wrapper";
+        }
+        return target.rootElement() == null
+                ? "a wrapper"
+                : "a " + target.rootElement() + " wrapper";
     }
 
     /// The scorers of meaning over one proposed event, as a transform's output would be judged.

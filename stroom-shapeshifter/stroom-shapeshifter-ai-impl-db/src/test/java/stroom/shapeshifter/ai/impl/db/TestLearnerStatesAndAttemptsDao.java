@@ -23,6 +23,7 @@ import stroom.shapeshifter.ai.stage.Attempts.Attempt;
 import stroom.shapeshifter.ai.stage.Attempts.Grant;
 import stroom.shapeshifter.ai.stage.Attempts.Page;
 import stroom.shapeshifter.ai.stage.Attempts.Recorded;
+import stroom.shapeshifter.ai.stage.Attempts.Review;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
 import stroom.shapeshifter.ai.stage.Guidance.Given;
 import stroom.shapeshifter.ai.stage.Learner;
@@ -33,6 +34,8 @@ import stroom.shapeshifter.ai.stage.Spend.Spent;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckResult;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.RecordBoundary;
@@ -340,6 +343,27 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(granted.grant().ms()).isEqualTo(60_000L);
         attempts.closed(id, AttemptStatus.PROMOTED, "Promoted", "rule-g", 1.0, 100L);
         assertThat(attempts.byId(id).orElseThrow().grant().tokens()).describedAs("kept with the row").isEqualTo(750L);
+    }
+
+    @Test
+    void theEvidenceADraftWasJudgedOnAndWhoDecidedAreKeptOnItsRow() {
+        // Track 2 step 4: what a person approving a draft is shown, and who decided and when
+        final Learner learner = learner("review");
+        final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
+                PromotionMode.REVIEW, now() + 60_000L), now()).orElseThrow();
+        assertThat(attempts.byId(id).orElseThrow().review()).isEqualTo(Review.NONE);
+        final List<CheckResult> evidence = List.of(
+                new CheckResult(Check.COMPILE, CheckState.GATE, 1.0, 1.0),
+                new CheckResult(Check.TIMES, CheckState.ADVICE, 0.5, 1.0));
+
+        attempts.closed(id, AttemptStatus.AWAITING_REVIEW, "Awaiting review", "rule-r", 0.75, 100L);
+        attempts.evidence(id, evidence);
+        attempts.decided(DOC, "rule-r", AttemptStatus.PROMOTED, "Approved", "jo");
+
+        final Review review = attempts.byId(id).orElseThrow().review();
+        assertThat(review.evidence()).isEqualTo(evidence);
+        assertThat(review.reviewedBy()).isEqualTo("jo");
+        assertThat(review.reviewedTimeMs()).isNotNull();
     }
 
     @Test

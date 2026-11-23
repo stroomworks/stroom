@@ -19,6 +19,7 @@ package stroom.shapeshifter.ai.stage;
 import stroom.pipeline.xml.event.EventList;
 import stroom.shapeshifter.ai.learning.Exchange;
 import stroom.shapeshifter.ai.scoring.Verdict;
+import stroom.shapeshifter.ai.stage.Decision.Sentinel;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.util.shared.StoredError;
 
@@ -57,4 +58,14 @@ public record StageRun(ShapeshifterAiDoc doc,
                        EventList events,
                        List<StoredError> diagnostics) {
 
+    /// A run refused before it decided anything: the stream is sentinelled with the reason.
+    ///
+    /// @param doc     The document.
+    /// @param learner The learner.
+    /// @param reason  Why.
+    /// @return The run.
+    static StageRun refused(final ShapeshifterAiDoc doc, final Learner learner, final String reason) {
+        return new StageRun(doc, new Sentinel(reason), learner, null, null, List.of(), List.of(), null,
+                List.of());
+    }
 }

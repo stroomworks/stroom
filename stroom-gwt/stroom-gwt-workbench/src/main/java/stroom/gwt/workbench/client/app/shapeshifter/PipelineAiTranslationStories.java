@@ -246,6 +246,37 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(play.getByLabelText("Note to the AI")).toHaveValue(""));
                     DocEditors.expectNoProblems(play);
                 })
+                // What the open question was sent as (N9): rebuilt by the server and shown in a dialog, with what
+                // to know about it
+                .story("PromptDialog", context -> promptRender(context, """
+                        {"prompt": "You write Stroom pipeline configurations.\\n\\nWrite the parser for:\\na,b,c",
+                          "notes": ["The questions and answers before it went with it, as the turns above \
+                        show them."]}"""))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.click(play.findByRole("button", TextMatch.startingWith("Show the prompt as it was sent")));
+                    play.expect(screen.findByText(TextMatch.startingWith("The questions and answers before it")))
+                            .toBeInTheDocument();
+                    play.waitFor(() -> play.expect(screen.getByLabelText("The prompt as it was sent"))
+                            .toHaveValue("You write Stroom pipeline configurations.\n\nWrite the parser for:\na,b,c"));
+                    play.click(screen.getByRole("button", StroomDom.button("Close")));
+                    play.waitFor(() -> play.expect(screen.queryByText(TextMatch.startingWith(
+                            "The questions and answers before it"))).toBeNull());
+                    DocEditors.expectNoProblems(play);
+                })
+                // Someone who may not view data is told why, and shown no prompt
+                .story("PromptDialogRefused", context -> promptRender(context, """
+                        {"refusal": "The prompt carries the stream's own text, so it is shown only to \
+                        someone who may view data."}"""))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.click(play.findByRole("button", TextMatch.startingWith("Show the prompt as it was sent")));
+                    play.expect(screen.findByText(TextMatch.startingWith("The prompt carries the stream's own text")))
+                            .toBeInTheDocument();
+                    play.expect(screen.getByLabelText("The prompt as it was sent")).not().toBeVisible();
+                    play.click(screen.getByRole("button", StroomDom.button("Close")));
+                    DocEditors.expectNoProblems(play);
+                })
                 // The notes in use, shown in the guidance dialog, closed with Close
                 .story("NotesDialog", context -> render(context, false))
                 .withPlay(play -> {
@@ -273,6 +304,51 @@ public final class PipelineAiTranslationStories {
                             .toBeInTheDocument();
                     play.expect(suggestions.getByRole("button", "Or choose a faster model on the Setup tab."))
                             .toBeInTheDocument();
+                    DocEditors.expectNoProblems(play);
+                })
+                // A new translation waiting for a person (Track 2 step 4): how it was judged, the gates first,
+                // beside Approve and Reject
+                .story("AwaitingReviewEvidence", context -> runRender(context, ShapeshifterAiFixtures.AWAITING_REVIEW))
+                .withPlay(play -> {
+                    play.expect(play.findByText("A new translation is ready for you to check")).toBeInTheDocument();
+                    final Play judged = play.within(play.getByRole("list", "How it was judged"));
+                    play.expect(judged.getByText("Compiles: 100%, a gate it passed")).toBeInTheDocument();
+                    play.expect(judged.getByText(
+                            "Event times are plausible: 50%, advice it fell short of, which asks for 100%"))
+                            .toBeInTheDocument();
+                    play.expect(play.getByRole("button", StroomDom.button("Approve and use it"))).toBeInTheDocument();
+                    play.expect(play.queryByText(TextMatch.startingWith("Approved by"))).toBeNull();
+                    DocEditors.expectNoProblems(play);
+                })
+                // Held back by a spend ceiling (A24): whose, and that it clears by itself
+                .story("SpendLimit", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
+                        ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder(), ShapeshifterAiFixtures.DOC,
+                                ShapeshifterAiFixtures.APPROVED,
+                                "[" + ShapeshifterAiFixtures.FIREWALL_SPEND_PAUSED + "]"),
+                        AiPipelines.ELEMENT))
+                .withPlay(play -> {
+                    play.expect(play.findByText("Not learning until a spend ceiling clears")).toBeInTheDocument();
+                    play.expect(play.getByText(TextMatch.startingWith("This Learning Flow spent 1500 token(s)")))
+                            .toBeInTheDocument();
+                    DocEditors.expectNoProblems(play);
+                })
+                // The zone the pipeline reads timestamps in, and where it comes from (decision N6)
+                .story("TimeZone", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
+                        ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder(), ShapeshifterAiFixtures.DOC,
+                                ShapeshifterAiFixtures.PAUSED,
+                                "[" + ShapeshifterAiFixtures.FIREWALL_ZONED + "]"),
+                        AiPipelines.ELEMENT))
+                .withPlay(play -> {
+                    play.expect(play.findByText("Timestamps with no offset are read in Europe/London, this "
+                                                + "pipeline's time zone, unless a stream's TimeZone header says "
+                                                + "otherwise.")).toBeInTheDocument();
+                    DocEditors.expectNoProblems(play);
+                })
+                // Once approved, who approved it and when stays beside how it was judged
+                .story("ApprovedBy", context -> runRender(context, ShapeshifterAiFixtures.APPROVED))
+                .withPlay(play -> {
+                    play.expect(play.findByText(TextMatch.startingWith("Approved by jo, "))).toBeInTheDocument();
+                    play.expect(play.getByRole("list", "How it was judged")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
                 // Read only, the pipeline viewed and not edited: where the feed stands, and nothing offered that
@@ -343,6 +419,24 @@ public final class PipelineAiTranslationStories {
     }
 
     // The firewall's pipeline at its AI Translation tab, its feed paused out of time
+    // The pipeline with the firewall's paused run, its open question's prompt answered as given
+    private static Widget promptRender(final StoryContext context, final String rebuilt) {
+        return AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
+                ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder()
+                                .get("/shapeshifterAiSupervisor/v1/7/turns/4/prompt", RestReply.json(rebuilt)),
+                        ShapeshifterAiFixtures.DOC, ShapeshifterAiFixtures.PAUSED,
+                        "[" + ShapeshifterAiFixtures.FIREWALL_LEARNER + "]"),
+                AiPipelines.ELEMENT);
+    }
+
+    // The pipeline with the firewall's run as given
+    private static Widget runRender(final StoryContext context, final String run) {
+        return AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
+                ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder(), ShapeshifterAiFixtures.DOC, run,
+                        "[" + ShapeshifterAiFixtures.FIREWALL_LEARNER + "]"),
+                AiPipelines.ELEMENT);
+    }
+
     private static Widget render(final StoryContext context, final boolean readOnly) {
         return AiPipelines.render(context, readOnly, AiPipelines.ONE_ELEMENT,
                 ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder(), ShapeshifterAiFixtures.DOC,

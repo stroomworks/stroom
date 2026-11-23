@@ -24,6 +24,7 @@ import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
 import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckResult;
 import stroom.shapeshifter.shared.PromotionMode;
 import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.StepOutcome;
@@ -411,16 +412,30 @@ public class AttemptsDao implements Attempts {
     public void decided(final String docUuid,
                         final String bindingUuid,
                         final AttemptStatus status,
-                        final String decision) {
+                        final String decision,
+                        final String reviewedBy) {
+        final long now = System.currentTimeMillis();
         JooqUtil.context(connProvider, context -> context
                 .update(SHAPESHIFTER_ATTEMPT)
                 .set(SHAPESHIFTER_ATTEMPT.STATUS, status.name())
                 .set(SHAPESHIFTER_ATTEMPT.DECISION, decision)
+                .set(SHAPESHIFTER_ATTEMPT.REVIEWED_BY, reviewedBy)
+                .set(SHAPESHIFTER_ATTEMPT.REVIEWED_TIME_MS, now)
                 .set(SHAPESHIFTER_ATTEMPT.VERSION, SHAPESHIFTER_ATTEMPT.VERSION.plus(1))
-                .set(SHAPESHIFTER_ATTEMPT.UPDATE_TIME_MS, System.currentTimeMillis())
+                .set(SHAPESHIFTER_ATTEMPT.UPDATE_TIME_MS, now)
                 .where(SHAPESHIFTER_ATTEMPT.DOC_UUID.eq(docUuid))
                 .and(SHAPESHIFTER_ATTEMPT.BINDING_UUID.eq(bindingUuid))
                 .and(SHAPESHIFTER_ATTEMPT.STATUS.eq(AttemptStatus.AWAITING_REVIEW.name()))
+                .execute());
+    }
+
+    @Override
+    public void evidence(final long attemptId, final List<CheckResult> evidence) {
+        JooqUtil.context(connProvider, context -> context
+                .update(SHAPESHIFTER_ATTEMPT)
+                .set(SHAPESHIFTER_ATTEMPT.EVIDENCE, JsonUtil.writeValueAsString(evidence, false))
+                .set(SHAPESHIFTER_ATTEMPT.VERSION, SHAPESHIFTER_ATTEMPT.VERSION.plus(1))
+                .where(SHAPESHIFTER_ATTEMPT.ID.eq(attemptId))
                 .execute());
     }
 
@@ -606,7 +621,17 @@ public class AttemptsDao implements Attempts {
                 new Grant(record.get(SHAPESHIFTER_ATTEMPT.GRANTED_TOKENS),
                         record.get(SHAPESHIFTER_ATTEMPT.GRANTED_MS)),
                 record.get(SHAPESHIFTER_ATTEMPT.EXHAUST_NEXT) != 0,
-                report(record.get(SHAPESHIFTER_ATTEMPT.REPORT)));
+                report(record.get(SHAPESHIFTER_ATTEMPT.REPORT)),
+                new Review(evidence(record.get(SHAPESHIFTER_ATTEMPT.EVIDENCE)),
+                        record.get(SHAPESHIFTER_ATTEMPT.REVIEWED_BY),
+                        record.get(SHAPESHIFTER_ATTEMPT.REVIEWED_TIME_MS)));
+    }
+
+    // The evidence read back from its column; empty for none
+    private static List<CheckResult> evidence(final String json) {
+        return NullSafe.isBlankString(json)
+                ? List.of()
+                : List.of(JsonUtil.readValue(json, CheckResult[].class));
     }
 
     /// The template set as its column holds it, JSON keyed by template name; null where the run's words

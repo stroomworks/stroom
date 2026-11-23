@@ -19,11 +19,21 @@ package stroom.shapeshifter.ai.learning;
 import stroom.docref.DocRef;
 import stroom.shapeshifter.ai.learning.Question.Chain;
 import stroom.shapeshifter.ai.learning.Question.Configuration;
+import stroom.shapeshifter.ai.learning.Question.TargetFor;
+import stroom.shapeshifter.shared.BusinessRulesParameters;
+import stroom.shapeshifter.shared.Check;
+import stroom.shapeshifter.shared.CheckSetting;
+import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -171,6 +181,86 @@ class TestTheTargetSchemaDrivesTheWords {
                 .contains("xsi:schemaLocation=\"urn:bare:1 file://bare.xsd\"")
                 .contains("Version=\"3.0.0\"");
         assertThat(TargetChecks.asDocument("<Event/>", bare)).startsWith("<Events xmlns=\"urn:bare:1\"");
+    }
+
+    @Test
+    void theQuestionsNameTheElementOneRecordBecomesInTheTargetsOwnWords() {
+        // W1-1: the target question and the rules said <Event> whatever the schema. The sightings schema's
+        // root holds only Sighting, so that is what one record becomes
+        final TargetSchema sightings = new TargetSchema(SIGHTINGS.docRef(), SIGHTINGS.name(),
+                SIGHTINGS.namespaceURI(), SIGHTINGS.systemId(), SIGHTINGS.version(), SIGHTINGS.rootElement(),
+                read("sightings.xsd"));
+
+        assertThat(words(sightings).render(targetFor()))
+                .contains("Write the single <Sighting> this record should become")
+                .contains("produce one <Sighting> for each one")
+                .doesNotContain("<Event>")
+                .doesNotContain("an Event");
+    }
+
+    @Test
+    void eventLoggingsRuleAgainstDataAndUnknownIsNotGivenForAnotherSchema() {
+        // W1-4: Data and Unknown are event-logging's; another schema may have a Data that means something
+        assertThat(words(SIGHTINGS).render(transform()))
+                .doesNotContain("Data elements")
+                .doesNotContain("Unknown branch")
+                .contains("should land in a typed element. Every record must be accounted for");
+        assertThat(words(null).render(transform()))
+                .contains("Do not put fields into Data elements or use the Unknown branch");
+    }
+
+    @Test
+    void aRootThatHoldsSeveralKindsOrIsNotDescribedIsNamedAsAPlace() {
+        // SIGHTINGS' XSD here declares nothing, so which element one record becomes isn't plain
+        assertThat(words(SIGHTINGS).render(targetFor()))
+                .contains("Write the single element under <Sightings> this record should become");
+        assertThat(words(SIGHTINGS).render(transform()))
+                .contains("produce one element under <Sightings> for each one");
+    }
+
+    @Test
+    void theBusinessRulesAreSaidToBeOverTheTargetsRecord() {
+        final ShapeshifterAiDoc doc = ShapeshifterAiDoc.builder().uuid("d").name("door")
+                .checks(List.of(new CheckSetting(Check.RULES, CheckState.ADVICE, 0.5,
+                        new BusinessRulesParameters(List.of(new XPathAssertion("named", "Species != ''")),
+                                true))))
+                .build();
+        final TargetSchema sightings = new TargetSchema(SIGHTINGS.docRef(), SIGHTINGS.name(),
+                SIGHTINGS.namespaceURI(), SIGHTINGS.systemId(), SIGHTINGS.version(), SIGHTINGS.rootElement(),
+                read("sightings.xsd"));
+
+        assertThat(QuestionText.of(doc, sightings).system()).contains("each an XPath over the Sighting:");
+        assertThat(QuestionText.of(doc, SIGHTINGS).system()).contains("each an XPath over the record:");
+        assertThat(QuestionText.of(doc, (TargetSchema) null).system()).contains("each an XPath over the Event:");
+    }
+
+    @Test
+    void aMalformedTargetIsRefusedInTheTargetsOwnWords() {
+        final TargetSchema sightings = new TargetSchema(SIGHTINGS.docRef(), SIGHTINGS.name(),
+                SIGHTINGS.namespaceURI(), SIGHTINGS.systemId(), SIGHTINGS.version(), SIGHTINGS.rootElement(),
+                read("sightings.xsd"));
+
+        assertThat(TargetChecks.refusal("<Sighting>", sightings).orElseThrow().getMessage())
+                .endsWith("Reply with the Sighting element alone, without an XML declaration or a Sightings "
+                          + "wrapper");
+        assertThat(TargetChecks.refusal("<Event>", null).orElseThrow().getMessage())
+                .describedAs("event-logging's words as they were")
+                .endsWith("Reply with the Event element alone, without an XML declaration or an Events wrapper");
+    }
+
+    private static TargetFor targetFor() {
+        return new TargetFor(SAMPLE, "a,b,c", 1, 1, List.of());
+    }
+
+    private static String read(final String file) {
+        try (InputStream in = TestTheTargetSchemaDrivesTheWords.class.getResourceAsStream(file)) {
+            if (in == null) {
+                throw new IllegalStateException("The fixture " + file + " is not on the classpath");
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static QuestionText words(final TargetSchema target) {

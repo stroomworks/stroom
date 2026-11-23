@@ -33,7 +33,7 @@ class TestStage {
 
     @Test
     void aStreamBehindAPausedRunWaitsForAPersonOnTheLearningStatusTab() {
-        final String reason = Stage.waitingFor(Optional.of(recorded(AttemptStatus.PARKED,
+        final String reason = Sessions.waitingFor(Optional.of(recorded(AttemptStatus.PARKED,
                 "No record boundary after 5 candidates.")));
         assertThat(reason)
                 .startsWith("Waiting for learning run 14, which is paused for a person "
@@ -45,7 +45,7 @@ class TestStage {
 
     @Test
     void aStreamBehindADraftWaitsForApprovalOnTheLearningStatusTab() {
-        final String reason = Stage.waitingFor(Optional.of(recorded(AttemptStatus.AWAITING_REVIEW, null)));
+        final String reason = Sessions.waitingFor(Optional.of(recorded(AttemptStatus.AWAITING_REVIEW, null)));
         assertThat(reason)
                 .contains("approved or rejected on the pipeline's Learning Status tab")
                 .doesNotContain("Feeds tab");
@@ -53,20 +53,20 @@ class TestStage {
 
     @Test
     void aStreamBehindARunWaitingForTheModelSaysSo() {
-        assertThat(Stage.waitingFor(Optional.of(recorded(AttemptStatus.AWAITING_MODEL, null))))
+        assertThat(Sessions.waitingFor(Optional.of(recorded(AttemptStatus.AWAITING_MODEL, null))))
                 .isEqualTo("Waiting for learning run 14, which is waiting for the model to answer.");
     }
 
     @Test
     void aStreamBehindARunInProgressNamesItsNode() {
-        assertThat(Stage.waitingFor(Optional.of(recorded(AttemptStatus.IN_PROGRESS, null))))
+        assertThat(Sessions.waitingFor(Optional.of(recorded(AttemptStatus.IN_PROGRESS, null))))
                 .isEqualTo("Waiting for learning run 14, which is learning on node node-a; this stream takes "
                            + "what it learns.");
     }
 
     @Test
     void aClaimReleasedBeforeItWasReadIsTriedAgain() {
-        assertThat(Stage.waitingFor(Optional.empty())).contains("is tried again");
+        assertThat(Sessions.waitingFor(Optional.empty())).contains("is tried again");
     }
 
     private static Recorded recorded(final AttemptStatus status, final String decision) {

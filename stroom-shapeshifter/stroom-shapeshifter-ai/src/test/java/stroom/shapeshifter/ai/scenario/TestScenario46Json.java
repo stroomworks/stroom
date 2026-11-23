@@ -38,7 +38,6 @@ import stroom.shapeshifter.shared.FlowExample;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.LearningMode;
 import stroom.shapeshifter.shared.RecordBoundary;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.shapeshifter.shared.YieldBasis;
@@ -78,8 +77,7 @@ class TestScenario46Json {
                         new CheckSetting(Check.YIELD, CheckState.GATE, 0.5,
                                 new YieldParameters(1.0, YieldBasis.RECORDS)),
                         CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
-                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
-                                new SchemaConformanceParameters("EVENTS")),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0, null),
                         new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(false, List.of("EventSource/User/Id"))),
                         new CheckSetting(Check.RULES, CheckState.GATE, 1.0,

@@ -354,8 +354,19 @@ public final class Conversation {
             case SPLIT -> split(step, walk);
             case TARGET -> target(step, walk);
             case CONFIGURE -> configure(step, walk, false);
-            case ADMIT -> configure(step, walk, true);
+            case ADMIT -> admit(step, walk);
         };
+    }
+
+    /// The fallback step (design 04 §4), which writes event-logging's marked Unknown. A target that is not
+    /// event-logging has no Unknown, so there the run stops for a person instead, as it does where the
+    /// fallback is off (task 7, W1-3).
+    private Visit admit(final FlowStep step, final Walk walk) {
+        final TargetSchema target = scorecard.target();
+        if (TargetSchema.isEventLoggingOrNone(target)) {
+            return configure(step, walk, true);
+        }
+        return Visit.abandonWith(StopReports.noFallbackFor(step, target, walk.carried), FlowExit.PARK);
     }
 
     /**
@@ -739,7 +750,7 @@ public final class Conversation {
                 }
                 // Task 7: wrapped in the root of the schema this document's translations must write
                 final String document = TargetChecks.asDocument(event.get(), scorecard.target());
-                final Optional<StoredError> refusal = TargetChecks.refusal(document);
+                final Optional<StoredError> refusal = TargetChecks.refusal(document, scorecard.target());
                 if (refusal.isPresent()) {
                     return new Judged(StepOutcome.REFUSED, List.of(refusal.get()), null);
                 }

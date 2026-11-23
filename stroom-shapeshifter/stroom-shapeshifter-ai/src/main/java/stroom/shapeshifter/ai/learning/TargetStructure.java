@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /// What a schema says a document of it holds, written for the model (task 7, decision D2 option G).
@@ -69,6 +70,34 @@ public final class TargetStructure {
                 .append("\nWhere the schema allows an element this does not describe, write it and let the "
                         + "validator say whether it fits.")
                 .toString();
+    }
+
+    /// The element one record becomes, where the schema makes it plain: the root's only child (task 7,
+    /// W1-1). A record is a child of the root (W1-5), so a root that may hold only one kind of element
+    /// names it; a root holding several, or a schema declaring no root, does not.
+    ///
+    /// @param target The schema. Never event-logging, whose record is `Event`, and never null.
+    /// @return The element's local name, or empty where the schema doesn't make it plain.
+    public static Optional<String> recordElement(final TargetSchema target) {
+        final List<String> children = rootChildren(target);
+        return children.size() == 1
+                ? Optional.of(children.getFirst())
+                : Optional.empty();
+    }
+
+    /// The elements a schema's root may hold (task 7, W1-5). Every child of the root is read as one record,
+    /// so a root that may hold more than one kind of element, such as a header beside its records, would
+    /// have the header counted as a record; the Setup tab warns of it.
+    ///
+    /// @param target The schema, never null.
+    /// @return Their names, in the order the XSD gives them; empty where the XSD declares no root, or it
+    ///         holds no elements.
+    public static List<String> rootChildren(final TargetSchema target) {
+        final String root = target.rootElement();
+        if (root == null || target.text() == null) {
+            return List.of();
+        }
+        return new ContentModels(List.of(target.text())).childrenOf(root);
     }
 
     /// The content models from the root outwards, broadest first, until the budget or the line count

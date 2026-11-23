@@ -57,6 +57,16 @@ public record TargetSchema(DocRef docRef,
         return EVENT_LOGGING.equals(namespaceURI);
     }
 
+    /// Whether the guidance and measures written for event-logging apply to a target: they do for
+    /// event-logging, and for no target at all, which is every document written before the setting
+    /// existed and which was always asked for event-logging.
+    ///
+    /// @param target The target, or null for none.
+    /// @return Whether it is event-logging, or none.
+    public static boolean isEventLoggingOrNone(final TargetSchema target) {
+        return target == null || target.isEventLogging();
+    }
+
     /// Criteria that pick out this schema version alone, rather than every version of its group: a
     /// system id is unique in Stroom, so the two together name one document.
     ///

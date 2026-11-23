@@ -18,6 +18,7 @@ package stroom.shapeshifter.client.component;
 
 import stroom.shapeshifter.client.component.FeedSituation.Tone;
 import stroom.widget.button.client.Button;
+import stroom.widget.button.client.LinkButton;
 import stroom.widget.component.client.Component;
 import stroom.widget.text.client.Label;
 
@@ -54,6 +55,8 @@ public class ConversationList extends Component {
     private boolean answerable;
     private Consumer<Integer> onAnswer = number -> {
     };
+    private Consumer<Integer> onShowPrompt = number -> {
+    };
 
     /// Makes an empty conversation.
     public ConversationList() {
@@ -80,6 +83,12 @@ public class ConversationList extends Component {
         for (final Row row : rows) {
             turns.add(turn(row));
         }
+    }
+
+    /// @param onShowPrompt Told the number of the question whose prompt, as it was sent, the user asks for
+    ///                     (decision N9).
+    public void setOnShowPrompt(final Consumer<Integer> onShowPrompt) {
+        this.onShowPrompt = onShowPrompt;
     }
 
     /// @param onAnswer Told the number of the question the user answers, or whose answer they change.
@@ -110,6 +119,13 @@ public class ConversationList extends Component {
         }
         body.add(text("Asked", "conversation-list__term"));
         body.add(text(row.question, "conversation-list__question"));
+        // The question above is what the turn recorded; what the model was actually sent is rebuilt when
+        // asked for, for someone who may view data (N9)
+        final LinkButton prompt = new LinkButton("Show the prompt as it was sent");
+        prompt.addStyleName("conversation-list__prompt-link");
+        prompt.setOpensDialog(true);
+        prompt.setOnClick(() -> onShowPrompt.accept(row.number));
+        body.add(prompt);
         body.add(text("Answer", "conversation-list__term"));
         if (row.answer == null) {
             body.add(text("Not answered yet: this is the question the run stopped at.", "conversation-list__note"));

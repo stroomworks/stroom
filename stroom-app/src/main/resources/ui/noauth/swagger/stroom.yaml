@@ -8156,6 +8156,25 @@ paths:
       summary: The built-in default setups and their steps
       tags:
       - Shapeshifter AI
+  /shapeshifterAi/v1/targetSchema/{uuid}:
+    get:
+      operationId: fetchShapeshifterAiTargetSchema
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetSchemaSummary"
+          description: default response
+      summary: What a Learning Flow's Setup tab says about a target schema
+      tags:
+      - Shapeshifter AI
   /shapeshifterAi/v1/templates:
     get:
       operationId: fetchShapeshifterAiTemplates
@@ -8751,6 +8770,32 @@ paths:
           description: default response
       summary: "Answer a turn instead, or edit one and run the attempt again from\
         \ there"
+      tags:
+      - Shapeshifter AI Supervisor
+  /shapeshifterAiSupervisor/v1/{id}/turns/{number}/prompt:
+    get:
+      operationId: fetchShapeshifterAiTurnPrompt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: path
+        name: number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RebuiltPrompt"
+          description: default response
+      summary: Rebuild the prompt a turn was put to the model with
       tags:
       - Shapeshifter AI Supervisor
   /signingKey/v1/list:
@@ -12698,6 +12743,38 @@ components:
           - EDIT
           - VIEW
           - USE
+    CheckResult:
+      type: object
+      properties:
+        check:
+          type: string
+          enum:
+          - COMPILE
+          - COVERAGE
+          - COMPLETENESS
+          - YIELD
+          - WHOLENESS
+          - CONFORMANCE
+          - QUALITY
+          - RULES
+          - TIMES
+          - LITERALS
+          - PERMITTED
+          - PRESERVATION
+          - FIDELITY
+          - REGRESSION
+        score:
+          type: number
+          format: double
+        state:
+          type: string
+          enum:
+          - "OFF"
+          - ADVICE
+          - GATE
+        threshold:
+          type: number
+          format: double
     CheckSetting:
       type: object
       properties:
@@ -20364,6 +20441,17 @@ components:
             type: boolean
           valueSchema:
             $ref: "#/components/schemas/StateValueSchema"
+    RebuiltPrompt:
+      type: object
+      properties:
+        notes:
+          type: array
+          items:
+            type: string
+        prompt:
+          type: string
+        refusal:
+          type: string
     Rec:
       type: object
       properties:
@@ -21607,14 +21695,6 @@ components:
           format: int64
         schedule:
           $ref: "#/components/schemas/Schedule"
-    SchemaConformanceParameters:
-      type: object
-      allOf:
-      - $ref: "#/components/schemas/ScorerParameters"
-      - type: object
-        properties:
-          schemaGroup:
-            type: string
     ScorerParameters:
       type: object
       discriminator:
@@ -22137,6 +22217,8 @@ components:
         spendTokensPerHour:
           type: integer
           format: int64
+        targetSchema:
+          $ref: "#/components/schemas/DocRef"
         tokenBudget:
           type: integer
           format: int64
@@ -23280,6 +23362,10 @@ components:
           type: string
         doc:
           $ref: "#/components/schemas/DocRef"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckResult"
         exhaustNext:
           type: boolean
         feed:
@@ -23309,6 +23395,11 @@ components:
           - REVIEW
         report:
           $ref: "#/components/schemas/StopReport"
+        reviewedBy:
+          type: string
+        reviewedTimeMs:
+          type: integer
+          format: int64
         score:
           type: number
           format: double
@@ -23358,6 +23449,8 @@ components:
           type: string
         doc:
           $ref: "#/components/schemas/DocRef"
+        fallbackUnavailable:
+          type: boolean
         fragment:
           $ref: "#/components/schemas/DocRef"
         givenUpReason:
@@ -23391,6 +23484,8 @@ components:
         skips:
           type: integer
           format: int32
+        spendPaused:
+          type: string
         state:
           type: string
           enum:
@@ -23399,6 +23494,16 @@ components:
           - Waiting for a person
           - Learning
           - Serving
+        timeZone:
+          type: string
+        timeZoneProblem:
+          type: string
+        timeZoneSource:
+          type: string
+          enum:
+          - HEADER
+          - PIPELINE
+          - DEFAULT
         waiting:
           type: integer
           format: int32
@@ -23797,6 +23902,19 @@ components:
           type: string
         tagValue:
           $ref: "#/components/schemas/Val"
+    TargetSchemaSummary:
+      type: object
+      properties:
+        eventLogging:
+          type: boolean
+        name:
+          type: string
+        rootChildren:
+          type: array
+          items:
+            type: string
+        rootElement:
+          type: string
     TaskId:
       type: object
       properties:
@@ -24193,6 +24311,8 @@ components:
           beforeDays:
             type: integer
             format: int32
+          timeField:
+            type: string
     TokenError:
       type: object
       properties:

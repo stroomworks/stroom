@@ -21,6 +21,7 @@ import stroom.shapeshifter.ai.stage.DeletedPipelines;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.AttemptStatus;
+import stroom.shapeshifter.shared.CheckResult;
 import stroom.shapeshifter.shared.StopReport;
 import stroom.util.shared.PageRequest;
 
@@ -58,6 +59,8 @@ public final class InMemoryAttempts implements Attempts {
     /// Why each attempt stopped, in parts, where it stopped with a report.
     private final Map<Long, StopReport> reports = new LinkedHashMap<>();
     private final Set<Long> exhaustNext = new HashSet<>();
+    /// What each attempt's draft was judged on, and who decided about it (Track 2 step 4).
+    private final Map<Long, Review> reviews = new LinkedHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
     /// Which pipelines are deleted, whose attempts a person sees only when they ask (A137).
     private final DeletedPipelines deletedPipelines;
@@ -199,14 +202,25 @@ public final class InMemoryAttempts implements Attempts {
     public synchronized void decided(final String docUuid,
                                      final String bindingUuid,
                                      final AttemptStatus status,
-                                     final String decision) {
+                                     final String decision,
+                                     final String reviewedBy) {
+        final long now = System.currentTimeMillis();
         attempts.values().stream()
                 .filter(attempt -> attempt.attempt().docUuid().equals(docUuid)
                                    && bindingUuid.equals(attempt.bindingUuid())
                                    && attempt.status() == AttemptStatus.AWAITING_REVIEW)
                 .toList()
-                .forEach(attempt -> closed(attempt.id(), status, decision, attempt.bindingUuid(), attempt.score(),
-                        0L));
+                .forEach(attempt -> {
+                    closed(attempt.id(), status, decision, attempt.bindingUuid(), attempt.score(), 0L);
+                    final Review was = reviews.getOrDefault(attempt.id(), Review.NONE);
+                    reviews.put(attempt.id(), new Review(was.evidence(), reviewedBy, now));
+                });
+    }
+
+    @Override
+    public synchronized void evidence(final long attemptId, final List<CheckResult> evidence) {
+        final Review was = reviews.getOrDefault(attemptId, Review.NONE);
+        reviews.put(attemptId, new Review(evidence, was.reviewedBy(), was.reviewedTimeMs()));
     }
 
     /// The attempts that bound this binding, whatever state they ended in — promoted, or
@@ -384,7 +398,7 @@ public final class InMemoryAttempts implements Attempts {
                 attempt.bindingUuid(), attempt.score(), attempt.tokensSpent(), attempt.createTimeMs(),
                 attempt.updateTimeMs(), List.copyOf(turns.getOrDefault(attempt.id(), List.of())),
                 grants.getOrDefault(attempt.id(), Grant.NONE), exhaustNext.contains(attempt.id()),
-                reports.get(attempt.id()));
+                reports.get(attempt.id()), reviews.getOrDefault(attempt.id(), Review.NONE));
     }
 
     private void report(final long attemptId, final StopReport report) {

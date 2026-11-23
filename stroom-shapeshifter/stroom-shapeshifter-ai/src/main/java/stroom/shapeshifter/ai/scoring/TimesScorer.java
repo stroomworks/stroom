@@ -50,10 +50,8 @@ import java.util.Optional;
 public final class TimesScorer implements Scorer {
 
     private static final ElementId TIMES = new ElementId("Times");
-    /// Where an event's time is, in the schema the module writes.
+    /// Where an event's time is in event-logging: what is judged where the Learning Flow names no other.
     private static final String TIME_CREATED = "EventTime/TimeCreated";
-    /// The same, as a string rather than the element: what the translation wrote, not its markup.
-    private static final String TIME_CREATED_TEXT = "string(" + TIME_CREATED + ")";
     /// How many records to name before the feedback stops listing them: a translation that gets the year
     /// wrong gets it wrong for every record, and twenty copies of one fault teach the model nothing more
     /// than three do.
@@ -62,6 +60,13 @@ public final class TimesScorer implements Scorer {
     @Override
     public Check type() {
         return Check.TIMES;
+    }
+
+    @Override
+    public void validate(final ScorerParameters parameters) {
+        if (parameters instanceof final TimesParameters times && times.getTimeField() != null) {
+            OutputRecords.check(times.getTimeField());
+        }
     }
 
     @Override
@@ -81,6 +86,12 @@ public final class TimesScorer implements Scorer {
         final TimesParameters window = parameters instanceof TimesParameters given
                 ? given
                 : new TimesParameters(null, null);
+        final String field = timeField(window, target);
+        if (field == null) {
+            // Another schema keeps its time elsewhere, and the Learning Flow hasn't said where
+            return Optional.empty();
+        }
+        final String fieldText = "string(" + field + ")";
         final OutputRecords output = parsed.get();
         final List<XdmNode> records = output.records();
         final Instant received = Instant.ofEpochMilli(receivedMs);
@@ -91,7 +102,7 @@ public final class TimesScorer implements Scorer {
         int judged = 0;
         int plausible = 0;
         for (int i = 0; i < records.size(); i++) {
-            final String written = output.evaluate(records.get(i), TIME_CREATED_TEXT).toString().trim();
+            final String written = output.evaluate(records.get(i), fieldText).toString().trim();
             if (written.isEmpty()) {
                 // An event with no time at all is the schema's business, not this check's
                 continue;
@@ -101,13 +112,13 @@ public final class TimesScorer implements Scorer {
             if (time == null) {
                 if (diagnostics.size() < SHOWN) {
                     diagnostics.add(new StoredError(Severity.WARNING, null, TIMES,
-                            "Record " + (i + 1) + "'s " + TIME_CREATED + " is \"" + written
+                            "Record " + (i + 1) + "'s " + field + " is \"" + written
                             + "\", which is not an ISO 8601 instant."));
                 }
             } else if (time.isBefore(earliest) || time.isAfter(latest)) {
                 if (diagnostics.size() < SHOWN) {
-                    diagnostics.add(new StoredError(Severity.WARNING, null, TIMES, outOfWindow(i, written,
-                            time, received)));
+                    diagnostics.add(new StoredError(Severity.WARNING, null, TIMES, outOfWindow(i, field,
+                            written, time, received)));
                 }
             } else {
                 plausible++;
@@ -122,18 +133,32 @@ public final class TimesScorer implements Scorer {
     /// The sentence the model is given: when the event says it happened, how far that is from the stream,
     /// and the way to put it right.
     private static String outOfWindow(final int index,
+                                      final String field,
                                       final String written,
                                       final Instant time,
                                       final Instant received) {
         final boolean before = time.isBefore(received);
         final long days = Math.abs(Duration.between(time, received).toDays());
-        return "Record " + (index + 1) + "'s " + TIME_CREATED + " is " + written + ", "
+        return "Record " + (index + 1) + "'s " + field + " is " + written + ", "
                + gap(days) + (before
                        ? " before"
                        : " after")
                + " the stream was received (" + DateUtil.createNormalDateTimeString(received.toEpochMilli())
                + "). A timestamp that does not carry its year must take it from the stream, with "
                + "stroom:format-date(value, pattern), rather than being given one.";
+    }
+
+    /// Which time is judged (task 7): the one the Learning Flow names, else event-logging's where the
+    /// target is event-logging or none.
+    ///
+    /// @return An XPath from a record, or null where there is none to judge.
+    private static String timeField(final TimesParameters window, final TargetSchema target) {
+        if (window.getTimeField() != null) {
+            return window.getTimeField();
+        }
+        return TargetSchema.isEventLoggingOrNone(target)
+                ? TIME_CREATED
+                : null;
     }
 
     private static String gap(final long days) {

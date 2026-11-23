@@ -68,6 +68,18 @@ public interface ShapeshifterAiResource
             operationId = "fetchShapeshifterAiFlowExamples")
     List<BuiltInFlow> flowExamples();
 
+    /// What the Setup tab says about a target schema (task 7): whether it is event-logging, and which
+    /// elements its root may hold. Held to USE on the schema, as the Setup tab's picker is.
+    ///
+    /// @param uuid The `XMLSchema` document's UUID.
+    /// @return Its summary, or null where it can't be read.
+    @GET
+    @Path("/targetSchema/{uuid}")
+    @Operation(
+            summary = "What a Learning Flow's Setup tab says about a target schema",
+            operationId = "fetchShapeshifterAiTargetSchema")
+    TargetSchemaSummary targetSchema(@PathParam("uuid") String uuid);
+
     @PUT
     @Path("/{uuid}")
     @Operation(

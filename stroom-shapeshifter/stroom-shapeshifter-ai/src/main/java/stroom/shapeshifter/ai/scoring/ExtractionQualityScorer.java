@@ -41,6 +41,11 @@ import java.util.TreeSet;
  * carrying each field the document requires. A transform that emits the mandatory skeleton, puts
  * {@code Unknown} where a decision was due and dumps every field into {@code Data} validates perfectly
  * and scores here as the nothing it extracted. Applies to a step that transformed records into records.
+ *
+ * <p>{@code Data} and {@code Unknown} are event-logging's, so the first two measures are taken only where
+ * the target is event-logging, or none (task 7, W1-4): another schema may have an element called
+ * {@code Data} that means something. For another schema only the required fields are measured, and where
+ * none is required there is nothing to measure and the check doesn't run.
  */
 public final class ExtractionQualityScorer implements Scorer {
 
@@ -74,17 +79,52 @@ public final class ExtractionQualityScorer implements Scorer {
         }
         final OutputRecords output = parsed.get();
         final ExtractionQualityParameters quality = (ExtractionQualityParameters) parameters;
+        final boolean eventLogging = TargetSchema.isEventLoggingOrNone(target);
+        if (!eventLogging && quality.getRequiredFields().isEmpty()) {
+            return Optional.empty();
+        }
         final List<XdmNode> records = output.records();
         final List<StoredError> diagnostics = new ArrayList<>();
         final List<Double> measures = new ArrayList<>();
 
-        long elements = 0;
-        long data = 0;
-        long unknown = 0;
         // Which records fell short, one by one (design 04 §3): a record that names Unknown where the
         // document does not allow it, or that lacks a required field. The typed-element ratio is a
         // measure of the whole and lays nothing at a record.
         final Set<Integer> failingRecords = new TreeSet<>();
+        if (eventLogging) {
+            measureEventLogging(quality, output, records, diagnostics, measures, failingRecords);
+        }
+        for (final String field : quality.getRequiredFields()) {
+            long present = 0;
+            for (int i = 0; i < records.size(); i++) {
+                if (output.holds(records.get(i), present(field))) {
+                    present++;
+                } else {
+                    failingRecords.add(i);
+                }
+            }
+            final double coverage = (double) present / records.size();
+            measures.add(coverage);
+            if (present < records.size()) {
+                diagnostics.add(diagnostic("Required field " + field + " is present in " + present + " of "
+                                           + records.size() + " records"));
+            }
+        }
+        final double value = measures.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        return Optional.of(new Score(type(), value, diagnostics, failingRecords));
+    }
+
+    // The typed-element ratio and, unless the document allows Unknown, the share of records naming a real
+    // branch: both event-logging's
+    private static void measureEventLogging(final ExtractionQualityParameters quality,
+                                            final OutputRecords output,
+                                            final List<XdmNode> records,
+                                            final List<StoredError> diagnostics,
+                                            final List<Double> measures,
+                                            final Set<Integer> failingRecords) {
+        long elements = 0;
+        long data = 0;
+        long unknown = 0;
         for (int i = 0; i < records.size(); i++) {
             final XdmNode record = records.get(i);
             elements += output.count(record, ALL_ELEMENTS);
@@ -112,24 +152,6 @@ public final class ExtractionQualityScorer implements Scorer {
                                            + " records name Unknown in EventDetail; Unknown extracts nothing"));
             }
         }
-        for (final String field : quality.getRequiredFields()) {
-            long present = 0;
-            for (int i = 0; i < records.size(); i++) {
-                if (output.holds(records.get(i), present(field))) {
-                    present++;
-                } else {
-                    failingRecords.add(i);
-                }
-            }
-            final double coverage = (double) present / records.size();
-            measures.add(coverage);
-            if (present < records.size()) {
-                diagnostics.add(diagnostic("Required field " + field + " is present in " + present + " of "
-                                           + records.size() + " records"));
-            }
-        }
-        final double value = measures.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-        return Optional.of(new Score(type(), value, diagnostics, failingRecords));
     }
 
     private static String present(final String field) {

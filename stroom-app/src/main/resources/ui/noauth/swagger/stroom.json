@@ -11894,6 +11894,33 @@
         "tags" : [ "Shapeshifter AI" ]
       }
     },
+    "/shapeshifterAi/v1/targetSchema/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiTargetSchema",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TargetSchemaSummary"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "What a Learning Flow's Setup tab says about a target schema",
+        "tags" : [ "Shapeshifter AI" ]
+      }
+    },
     "/shapeshifterAi/v1/templates" : {
       "get" : {
         "operationId" : "fetchShapeshifterAiTemplates",
@@ -12747,6 +12774,42 @@
           }
         },
         "summary" : "Answer a turn instead, or edit one and run the attempt again from there",
+        "tags" : [ "Shapeshifter AI Supervisor" ]
+      }
+    },
+    "/shapeshifterAiSupervisor/v1/{id}/turns/{number}/prompt" : {
+      "get" : {
+        "operationId" : "fetchShapeshifterAiTurnPrompt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "path",
+          "name" : "number",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RebuiltPrompt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Rebuild the prompt a turn was put to the model with",
         "tags" : [ "Shapeshifter AI Supervisor" ]
       }
     },
@@ -18029,6 +18092,27 @@
           "permission" : {
             "type" : "string",
             "enum" : [ "OWNER", "DELETE", "EDIT", "VIEW", "USE" ]
+          }
+        }
+      },
+      "CheckResult" : {
+        "type" : "object",
+        "properties" : {
+          "check" : {
+            "type" : "string",
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+          },
+          "score" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "state" : {
+            "type" : "string",
+            "enum" : [ "OFF", "ADVICE", "GATE" ]
+          },
+          "threshold" : {
+            "type" : "number",
+            "format" : "double"
           }
         }
       },
@@ -27505,6 +27589,23 @@
           }
         } ]
       },
+      "RebuiltPrompt" : {
+        "type" : "object",
+        "properties" : {
+          "notes" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "prompt" : {
+            "type" : "string"
+          },
+          "refusal" : {
+            "type" : "string"
+          }
+        }
+      },
       "Rec" : {
         "type" : "object",
         "properties" : {
@@ -29283,19 +29384,6 @@
           }
         }
       },
-      "SchemaConformanceParameters" : {
-        "type" : "object",
-        "allOf" : [ {
-          "$ref" : "#/components/schemas/ScorerParameters"
-        }, {
-          "type" : "object",
-          "properties" : {
-            "schemaGroup" : {
-              "type" : "string"
-            }
-          }
-        } ]
-      },
       "ScorerParameters" : {
         "type" : "object",
         "discriminator" : {
@@ -29946,6 +30034,9 @@
           "spendTokensPerHour" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "targetSchema" : {
+            "$ref" : "#/components/schemas/DocRef"
           },
           "tokenBudget" : {
             "type" : "integer",
@@ -31364,6 +31455,12 @@
           "doc" : {
             "$ref" : "#/components/schemas/DocRef"
           },
+          "evidence" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CheckResult"
+            }
+          },
           "exhaustNext" : {
             "type" : "boolean"
           },
@@ -31401,6 +31498,13 @@
           },
           "report" : {
             "$ref" : "#/components/schemas/StopReport"
+          },
+          "reviewedBy" : {
+            "type" : "string"
+          },
+          "reviewedTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
           },
           "score" : {
             "type" : "number",
@@ -31460,6 +31564,9 @@
           "doc" : {
             "$ref" : "#/components/schemas/DocRef"
           },
+          "fallbackUnavailable" : {
+            "type" : "boolean"
+          },
           "fragment" : {
             "$ref" : "#/components/schemas/DocRef"
           },
@@ -31506,9 +31613,22 @@
             "type" : "integer",
             "format" : "int32"
           },
+          "spendPaused" : {
+            "type" : "string"
+          },
           "state" : {
             "type" : "string",
             "enum" : [ "Given up", "Learning off", "Waiting for a person", "Learning", "Serving" ]
+          },
+          "timeZone" : {
+            "type" : "string"
+          },
+          "timeZoneProblem" : {
+            "type" : "string"
+          },
+          "timeZoneSource" : {
+            "type" : "string",
+            "enum" : [ "HEADER", "PIPELINE", "DEFAULT" ]
           },
           "waiting" : {
             "type" : "integer",
@@ -32031,6 +32151,26 @@
           }
         }
       },
+      "TargetSchemaSummary" : {
+        "type" : "object",
+        "properties" : {
+          "eventLogging" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "rootChildren" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "rootElement" : {
+            "type" : "string"
+          }
+        }
+      },
       "TaskId" : {
         "type" : "object",
         "properties" : {
@@ -32511,6 +32651,9 @@
             "beforeDays" : {
               "type" : "integer",
               "format" : "int32"
+            },
+            "timeField" : {
+              "type" : "string"
             }
           }
         } ]

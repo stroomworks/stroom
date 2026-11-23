@@ -163,7 +163,7 @@ public final class PlainWords {
             case YIELD:
                 return "Gives the right number of records";
             case CONFORMANCE:
-                return "Valid against the event schema";
+                return "Valid against the target schema";
             case QUALITY:
                 return "Events carry real content";
             case RULES:

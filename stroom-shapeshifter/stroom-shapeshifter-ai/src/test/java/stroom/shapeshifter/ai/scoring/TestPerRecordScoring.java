@@ -23,7 +23,6 @@ import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ExtractionQualityParameters;
-import stroom.shapeshifter.shared.SchemaConformanceParameters;
 import stroom.shapeshifter.shared.XPathAssertion;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Severity;
@@ -140,7 +139,7 @@ class TestPerRecordScoring {
         final Attempted transform = new Attempted("XSLTFilter", false, "<a/>", new StepResult(events, List.of()));
 
         final Score score = new NodeFixture().schemaConformanceScorer()
-                .score(new SchemaConformanceParameters(NodeFixture.EVENTS_SCHEMA_GROUP), transform, null)
+                .score(null, transform, null)
                 .orElseThrow();
 
         assertThat(score.value()).isEqualTo(0.5);

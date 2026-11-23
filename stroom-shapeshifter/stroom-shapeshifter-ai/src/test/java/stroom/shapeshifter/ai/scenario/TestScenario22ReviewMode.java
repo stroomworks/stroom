@@ -431,4 +431,39 @@ class TestScenario22ReviewMode {
         assertThat(rejected.status()).isEqualTo(AttemptStatus.REJECTED);
         assertThat(rejected.decision()).contains("the wrong parser");
     }
+
+    @Test
+    void aDraftCarriesTheEvidenceItWasJudgedOnAndKeepsWhoDecided() {
+        // Track 2 step 4: a person approving a draft is shown how it did on each check, and what they
+        // decided is kept with their name and the time
+        final Scenarios scenarios = new Scenarios();
+        final StageRun waiting = drafted(scenarios);
+        final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
+
+        final Recorded awaiting = scenarios.attempts.forDocument(DOC, 10).get(0);
+        assertThat(awaiting.review().evidence())
+                .describedAs("the compile gate, at least, judged it and it passed")
+                .anySatisfy(result -> {
+                    assertThat(result.getCheck()).isEqualTo(Check.COMPILE);
+                    assertThat(result.getState()).isEqualTo(CheckState.GATE);
+                    assertThat(result.isMet()).isTrue();
+                });
+        assertThat(awaiting.review().reviewedBy()).isNull();
+
+        scenarios.stage(Script.of()).approve(waiting.doc(), draft.getUuid(), "jo");
+
+        final Recorded approved = scenarios.attempts.forDocument(DOC, 10).get(0);
+        assertThat(approved.review().reviewedBy()).isEqualTo("jo");
+        assertThat(approved.review().reviewedTimeMs()).isNotNull();
+        assertThat(approved.review().evidence()).describedAs("and what it was shown stays")
+                .isEqualTo(awaiting.review().evidence());
+
+        final Scenarios other = new Scenarios();
+        final StageRun second = drafted(other);
+        final Binding rejectable = other.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
+
+        other.stage(Script.of()).reject(second.doc(), rejectable.getUuid(), "the wrong parser", "ann");
+
+        assertThat(other.attempts.forDocument(DOC, 10).get(0).review().reviewedBy()).isEqualTo("ann");
+    }
 }

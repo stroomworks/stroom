@@ -35,10 +35,17 @@
                     <tx:InlineLabel styleName="feed-detail__translation-label" text="Translating with"/>
                     <b:LinkButton ui:field="translation" addStyleNames="feed-detail__translation-link"/>
                 </g:FlowPanel>
+                <tx:Label ui:field="timeZone" styleName="feed-detail__note" visible="false"/>
                 <g:FlowPanel ui:field="detailsPart" styleName="feed-detail__report-part" visible="false">
                     <tx:Label styleName="feed-detail__report-heading" text="Details"/>
                     <c:AriaPanel ui:field="details" styleName="feed-detail__report-list" role="list"
                                  ariaLabel="Details"/>
+                </g:FlowPanel>
+                <g:FlowPanel ui:field="evidencePart" styleName="feed-detail__report-part" visible="false">
+                    <tx:Label styleName="feed-detail__report-heading" text="How it was judged"/>
+                    <c:AriaPanel ui:field="evidence" styleName="feed-detail__report-list" role="list"
+                                 ariaLabel="How it was judged"/>
+                    <tx:Label ui:field="reviewed" styleName="feed-detail__note" visible="false"/>
                 </g:FlowPanel>
                 <g:FlowPanel ui:field="suggestionsPart" styleName="feed-detail__report-part" visible="false">
                     <tx:Label styleName="feed-detail__report-heading" text="Suggestions"/>

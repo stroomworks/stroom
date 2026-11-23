@@ -80,6 +80,15 @@ public class SupervisorAttempt {
     /// otherwise, and for a session that stopped before reports were kept.
     @JsonProperty
     private final StopReport report;
+    /// How the translation it learned did on each check that ran (Track 2 step 4, approval evidence), for a
+    /// person deciding whether to approve it; empty for a run that learned nothing.
+    @JsonProperty
+    private final List<CheckResult> evidence;
+    /// Who approved or rejected what it learned, and when; null where nobody did.
+    @JsonProperty
+    private final String reviewedBy;
+    @JsonProperty
+    private final Long reviewedTimeMs;
 
     /// A session with no stop report.
     public SupervisorAttempt(final long id,
@@ -107,6 +116,33 @@ public class SupervisorAttempt {
                 pipelineDeleted, null);
     }
 
+    /// A session with no evidence and no review.
+    public SupervisorAttempt(final long id,
+                             final DocRef doc,
+                             final LearnerRef learner,
+                             final String feed,
+                             final String type,
+                             final Long inputId,
+                             final String node,
+                             final PromotionMode promotionMode,
+                             final AttemptStatus status,
+                             final String decision,
+                             final String bindingUuid,
+                             final Double score,
+                             final long tokensSpent,
+                             final long grantedTokens,
+                             final long grantedMs,
+                             final boolean exhaustNext,
+                             final long createTimeMs,
+                             final long updateTimeMs,
+                             final List<SupervisorTurn> turns,
+                             final boolean pipelineDeleted,
+                             final StopReport report) {
+        this(id, doc, learner, feed, type, inputId, node, promotionMode, status, decision, bindingUuid, score,
+                tokensSpent, grantedTokens, grantedMs, exhaustNext, createTimeMs, updateTimeMs, turns,
+                pipelineDeleted, report, List.of(), null, null);
+    }
+
     @JsonCreator
     public SupervisorAttempt(@JsonProperty("id") final long id,
                              @JsonProperty("doc") final DocRef doc,
@@ -128,7 +164,10 @@ public class SupervisorAttempt {
                              @JsonProperty("updateTimeMs") final long updateTimeMs,
                              @JsonProperty("turns") final List<SupervisorTurn> turns,
                              @JsonProperty("pipelineDeleted") final boolean pipelineDeleted,
-                             @JsonProperty("report") final StopReport report) {
+                             @JsonProperty("report") final StopReport report,
+                             @JsonProperty("evidence") final List<CheckResult> evidence,
+                             @JsonProperty("reviewedBy") final String reviewedBy,
+                             @JsonProperty("reviewedTimeMs") final Long reviewedTimeMs) {
         this.id = id;
         this.doc = doc;
         this.learner = learner;
@@ -152,6 +191,11 @@ public class SupervisorAttempt {
                 : List.copyOf(turns);
         this.pipelineDeleted = pipelineDeleted;
         this.report = report;
+        this.evidence = evidence == null
+                ? List.of()
+                : List.copyOf(evidence);
+        this.reviewedBy = reviewedBy;
+        this.reviewedTimeMs = reviewedTimeMs;
     }
 
     public long getId() {
@@ -238,5 +282,21 @@ public class SupervisorAttempt {
     /// @return Why it stopped, in parts, where it stopped short of a translation; null otherwise.
     public StopReport getReport() {
         return report;
+    }
+
+    /// @return How the translation it learned did on each check that ran; empty where it learned nothing,
+    ///         or ran before the evidence was kept.
+    public List<CheckResult> getEvidence() {
+        return evidence;
+    }
+
+    /// @return Who approved or rejected what it learned; null where nobody did.
+    public String getReviewedBy() {
+        return reviewedBy;
+    }
+
+    /// @return When they did; null where nobody did.
+    public Long getReviewedTimeMs() {
+        return reviewedTimeMs;
     }
 }

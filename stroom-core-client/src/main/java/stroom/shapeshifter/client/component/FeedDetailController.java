@@ -80,6 +80,7 @@ public class FeedDetailController extends Controller {
     private final Provider<SupervisorPromptController> promptProvider;
     private final Provider<GuidanceEditorController> guidanceProvider;
     private final Provider<TurnAnswerEditorController> answerProvider;
+    private final Provider<TurnPromptController> turnPromptProvider;
     private FeedDetail view;
     private ShapeshifterAiDoc doc;
     private SupervisorLearner learner;
@@ -112,6 +113,7 @@ public class FeedDetailController extends Controller {
     /// @param promptProvider    Makes the prompt that asks why, or what to improve.
     /// @param guidanceProvider  Makes the dialog of the notes left for a feed.
     /// @param answerProvider    Makes the dialog a question is answered in.
+    /// @param turnPromptProvider Makes the dialog that shows what a question was sent as (N9).
     @Inject
     public FeedDetailController(final EventBus eventBus,
                                 final RestFactory restFactory,
@@ -120,7 +122,8 @@ public class FeedDetailController extends Controller {
                                 final Provider<GrantEditorController> grantProvider,
                                 final Provider<SupervisorPromptController> promptProvider,
                                 final Provider<GuidanceEditorController> guidanceProvider,
-                                final Provider<TurnAnswerEditorController> answerProvider) {
+                                final Provider<TurnAnswerEditorController> answerProvider,
+                                final Provider<TurnPromptController> turnPromptProvider) {
         super(eventBus);
         this.restFactory = restFactory;
         this.dateTimeFormatter = dateTimeFormatter;
@@ -129,6 +132,7 @@ public class FeedDetailController extends Controller {
         this.promptProvider = promptProvider;
         this.guidanceProvider = guidanceProvider;
         this.answerProvider = answerProvider;
+        this.turnPromptProvider = turnPromptProvider;
     }
 
     /// Attaches this to its view, declared in its owner's template.
@@ -150,6 +154,11 @@ public class FeedDetailController extends Controller {
             readRun(true);
         });
         view.setOnAnswer(this::answer);
+        view.setOnShowPrompt(number -> {
+            if (run != null) {
+                turnPromptProvider.get().show(this, run.getId(), number);
+            }
+        });
         view.setOnSendNote(this::sendNote);
         view.setOnShowNotes(this::showNotes);
         view.setOnOpenTranslation(() -> {
@@ -288,6 +297,11 @@ public class FeedDetailController extends Controller {
         view.setSituation(readOnly
                 ? situation.readOnly()
                 : situation);
+        view.setTimeZone(FeedSituation.timeZone(learner));
+        view.setEvidence(run == null
+                        ? List.of()
+                        : Evidence.lines(run.getEvidence()),
+                Evidence.reviewed(run, dateTimeFormatter::format));
         view.setTranslation(learner.getFragment() == null
                 ? null
                 : NullSafe.getOrElse(learner.getFragment(), DocRef::getName, "Learned translation"));

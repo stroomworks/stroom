@@ -404,9 +404,9 @@ class TestShapeshifterAiDoc {
     @Test
     void aCheckRefusesAnotherChecksParameters() {
         assertThatThrownBy(() -> new CheckSetting(Check.YIELD, CheckState.ADVICE, null,
-                new SchemaConformanceParameters("EVENTS")))
+                new ExtractionQualityParameters(false, List.of())))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Schema conformance")
+                .hasMessageContaining("Extraction quality")
                 .hasMessageContaining("yield");
     }
 
@@ -458,8 +458,7 @@ class TestShapeshifterAiDoc {
                         new CheckSetting(Check.YIELD, CheckState.ADVICE, 0.5,
                                 new YieldParameters(0.9, YieldBasis.LINES)),
                         CheckSetting.of(Check.WHOLENESS, CheckState.GATE),
-                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0,
-                                new SchemaConformanceParameters("EVENTS")),
+                        new CheckSetting(Check.CONFORMANCE, CheckState.GATE, 1.0, null),
                         new CheckSetting(Check.QUALITY, CheckState.GATE, 0.7,
                                 new ExtractionQualityParameters(true,
                                                 List.of("/Event/EventTime", "/Event/EventSource/User/Id"))),

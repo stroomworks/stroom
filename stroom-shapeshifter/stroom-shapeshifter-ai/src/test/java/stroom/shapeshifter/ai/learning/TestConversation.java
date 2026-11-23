@@ -16,6 +16,7 @@
 
 package stroom.shapeshifter.ai.learning;
 
+import stroom.docref.DocRef;
 import stroom.meta.shared.MetaFields;
 import stroom.shapeshifter.ai.extraction.DataSplitterStep;
 import stroom.shapeshifter.ai.extraction.ExtractionCorpus;
@@ -35,6 +36,7 @@ import stroom.shapeshifter.shared.CheckSetting;
 import stroom.shapeshifter.shared.CheckState;
 import stroom.shapeshifter.shared.ConfigureRole;
 import stroom.shapeshifter.shared.FlowExample;
+import stroom.shapeshifter.shared.FlowExit;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.LearningFlow;
 import stroom.shapeshifter.shared.QuestionKind;
@@ -44,6 +46,7 @@ import stroom.shapeshifter.shared.Transition;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import org.junit.jupiter.api.Test;
 
@@ -122,6 +125,45 @@ class TestConversation {
                 return Instant.ofEpochMilli(now);
             }
         };
+    }
+
+    @Test
+    void aTargetThatIsNotEventLoggingHasNoFallbackSoASpentTransformStopsForAPerson() {
+        // Task 7, W1-3: the fallback writes event-logging's marked Unknown, which another schema doesn't
+        // have. Reached for one, the run stops for a person instead of asking for markup that can't conform
+        final TargetSchema sightings = new TargetSchema(
+                new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4"), "sightings v2.4",
+                "urn:sightings:2", "file://sightings-v2.4.xsd", "2.4", "Sightings", null);
+        final CannedAdvisor model = new CannedAdvisor(
+                "DSParser -> XSLTFilter",
+                CannedAdvisor.fenced(CSV.configuration()),
+                CannedAdvisor.fenced("<not a stylesheet"));
+        final Conversation conversation = new Conversation(model,
+                List.of(new DataSplitterStep(FIXTURE.compiler()), new XsltStep()),
+                Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
+                        List.of(new CompileScorer()), sightings), Clock.systemUTC());
+        final ShapeshifterAiDoc doc = policy().copy()
+                .flow(new LearningFlow(List.of(
+                        FlowStep.of(QuestionKind.CHAIN),
+                        FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.PARSER).build(),
+                        FlowStep.builder(QuestionKind.CONFIGURE)
+                                .role(ConfigureRole.TRANSFORM)
+                                .candidates(1)
+                                .whenSpentGoTo("admit")
+                                .build(),
+                        FlowStep.builder(QuestionKind.ADMIT).candidates(1).build()), null, null))
+                .build();
+
+        final Outcome outcome = conversation.run(doc, SAMPLE);
+
+        assertThat(outcome).isInstanceOf(Abandoned.class);
+        final Abandoned abandoned = (Abandoned) outcome;
+        assertThat(abandoned.exit()).isEqualTo(FlowExit.PARK);
+        assertThat(abandoned.report().getError())
+                .isEqualTo("Couldn't write the transform, and there is no fallback for sightings v2.4.");
+        assertThat(abandoned.report().getDetails().getFirst()).contains("has no Unknown to mark a record with");
+        assertThat(model.questions()).describedAs("the chain, the parser and the transform; no admission")
+                .hasSize(3);
     }
 
     @Test

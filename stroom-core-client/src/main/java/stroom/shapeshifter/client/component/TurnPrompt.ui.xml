@@ -1,0 +1,13 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The dialog that shows what a learning run's question was put to the model with (turn-prompt.css): what to
+     know about it, then the prompt itself, rebuilt from the run's own words; or why it can't be shown -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="max form turn-prompt">
+        <tx:Label ui:field="said" styleName="turn-prompt__said"/>
+        <form:TextArea ui:field="prompt" readOnly="true" ariaLabel="The prompt as it was sent"
+                       addStyleNames="w-100 dock-max turn-prompt__text" visible="false"/>
+    </g:FlowPanel>
+</ui:UiBinder>

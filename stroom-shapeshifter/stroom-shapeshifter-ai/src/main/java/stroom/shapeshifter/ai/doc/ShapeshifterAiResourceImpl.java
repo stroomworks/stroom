@@ -16,15 +16,23 @@
 
 package stroom.shapeshifter.ai.doc;
 
+import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.shapeshifter.ai.learning.FlowExamples;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
+import stroom.shapeshifter.ai.learning.TargetStructure;
 import stroom.shapeshifter.ai.learning.Templates;
 import stroom.shapeshifter.shared.BuiltInFlow;
 import stroom.shapeshifter.shared.BuiltInTemplates;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.ShapeshifterAiResource;
+import stroom.shapeshifter.shared.TargetSchemaSummary;
 import stroom.util.shared.EntityServiceException;
+import stroom.util.shared.PermissionException;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -39,12 +47,18 @@ public class ShapeshifterAiResourceImpl implements ShapeshifterAiResource {
 
     private final Provider<ShapeshifterAiStore> storeProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
+    private final Provider<TargetSchemas> targetSchemasProvider;
+    private final Provider<SecurityContext> securityContextProvider;
 
     @Inject
     ShapeshifterAiResourceImpl(final Provider<ShapeshifterAiStore> storeProvider,
-                               final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
+                               final Provider<DocumentResourceHelper> documentResourceHelperProvider,
+                               final Provider<TargetSchemas> targetSchemasProvider,
+                               final Provider<SecurityContext> securityContextProvider) {
         this.storeProvider = storeProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
+        this.targetSchemasProvider = targetSchemasProvider;
+        this.securityContextProvider = securityContextProvider;
     }
 
     @Override
@@ -62,6 +76,20 @@ public class ShapeshifterAiResourceImpl implements ShapeshifterAiResource {
     @Override
     public List<BuiltInFlow> flowExamples() {
         return FlowExamples.all();
+    }
+
+    @Override
+    public TargetSchemaSummary targetSchema(final String uuid) {
+        final DocRef docRef = new DocRef(XmlSchemaDoc.TYPE, uuid);
+        final SecurityContext securityContext = securityContextProvider.get();
+        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.USE)) {
+            throw new PermissionException(securityContext.getUserRef(),
+                    "You do not have permission to use this schema");
+        }
+        return targetSchemasProvider.get().resolve(docRef)
+                .map(target -> new TargetSchemaSummary(target.name(), target.isEventLogging(),
+                        target.rootElement(), TargetStructure.rootChildren(target)))
+                .orElse(null);
     }
 
     @Override

@@ -22,24 +22,41 @@ import stroom.docstore.api.DocFinder;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.security.api.SecurityContext;
 import stroom.security.mock.MockSecurityContext;
+import stroom.security.shared.AppPermission;
 import stroom.security.shared.DocumentPermission;
 import stroom.shapeshifter.ai.element.LearnerDocuments;
+import stroom.shapeshifter.ai.element.PipelineZones;
+import stroom.shapeshifter.ai.element.StageFactory;
+import stroom.shapeshifter.ai.learning.TargetSchema;
+import stroom.shapeshifter.ai.learning.TargetSchemas;
+import stroom.shapeshifter.ai.stage.Attempts;
 import stroom.shapeshifter.ai.stage.Guidance;
+import stroom.shapeshifter.ai.stage.Inputs;
 import stroom.shapeshifter.ai.stage.Learner;
 import stroom.shapeshifter.ai.stage.LearningPipelines;
+import stroom.shapeshifter.ai.stage.SpendBreaker;
+import stroom.shapeshifter.ai.state.InMemoryAttempts;
 import stroom.shapeshifter.ai.state.InMemoryDeletedPipelines;
 import stroom.shapeshifter.ai.state.InMemoryGuidance;
 import stroom.shapeshifter.ai.state.InMemoryLearnerBindings;
+import stroom.shapeshifter.ai.state.InMemorySpend;
 import stroom.shapeshifter.shared.Binding;
 import stroom.shapeshifter.shared.GuidanceRequest;
 import stroom.shapeshifter.shared.ImproveRequest;
 import stroom.shapeshifter.shared.LearnerRef;
 import stroom.shapeshifter.shared.LearnerRequest;
+import stroom.shapeshifter.shared.LearnerState;
+import stroom.shapeshifter.shared.PromotionMode;
+import stroom.shapeshifter.shared.QuestionKind;
 import stroom.shapeshifter.shared.RejectRequest;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
+import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.SupervisorLearner;
+import stroom.shapeshifter.shared.TimeZoneSource;
 import stroom.util.shared.PermissionException;
+import stroom.xmlschema.shared.XmlSchemaDoc;
 
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -58,7 +75,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /// permissions: a Data Provider who owns a pipeline acts on its learning without needing the document, and
 /// the document's permission alone does nothing to a pipeline's learner (except read one whose pipeline
 /// has been deleted, which has no permissions of its own to ask).
-class TestSupervisorResourceImpl {
+class TestSupervisorService {
 
     private static final LearnerRef OURS = new LearnerRef("pipeline-1", "shapeshifterAi");
     private static final LearnerRef THEIRS = new LearnerRef("pipeline-2", "shapeshifterAi");
@@ -69,7 +86,15 @@ class TestSupervisorResourceImpl {
     private final InMemoryLearnerBindings learnerBindings = new InMemoryLearnerBindings();
     private final ShapeshifterAiStore store = Mockito.mock(ShapeshifterAiStore.class);
     private final LearningPipelines pipelines = Mockito.mock(LearningPipelines.class);
-    private final SupervisorResourceImpl resource = resource(MockSecurityContext::new);
+    // What every document has spent, against which a test sets a ceiling where it wants one tripped
+    private final InMemorySpend spend = new InMemorySpend();
+    private final StageFactory stageFactory = Mockito.mock(StageFactory.class);
+    // The streams runs learned from; none is readable unless a test says otherwise
+    private final Inputs inputs = Mockito.mock(Inputs.class);
+    private final InMemoryAttempts attempts = new InMemoryAttempts();
+    // Every document targets event-logging, or nothing, unless a test says otherwise
+    private TargetSchemas targetSchemas = TargetSchemas.none();
+    private final SupervisorService resource = resource(MockSecurityContext::new);
 
     @Test
     void guidanceIsGivenToALearnerOfTheDocument() {
@@ -182,7 +207,7 @@ class TestSupervisorResourceImpl {
     /// document it learns under: tells it something, reads what was said, and reads the document's settings.
     @Test
     void thePipelinesEditorActsWithoutTheDocument() {
-        final SupervisorResourceImpl provider = resource(grants(Map.of(
+        final SupervisorService provider = resource(grants(Map.of(
                 pipeline(OURS), Set.of(DocumentPermission.VIEW, DocumentPermission.EDIT))));
 
         assertThat(provider.hint("doc-1", new GuidanceRequest(OURS, "Times are local.")))
@@ -202,7 +227,7 @@ class TestSupervisorResourceImpl {
     /// what its feed is told, approved and relearned with.
     @Test
     void theDocumentAloneIsNotEnough() {
-        final SupervisorResourceImpl owner = resource(grants(Map.of(
+        final SupervisorService owner = resource(grants(Map.of(
                 new DocRef(ShapeshifterAiDoc.TYPE, "doc-1"),
                 Set.of(DocumentPermission.VIEW, DocumentPermission.EDIT))));
 
@@ -229,7 +254,7 @@ class TestSupervisorResourceImpl {
                 .uuid("rule-1")
                 .pipeline(new DocRef("Pipeline", "fragment-1", "FIREWALL learned"))
                 .build());
-        final SupervisorResourceImpl viewer = resource(grants(Map.of(
+        final SupervisorService viewer = resource(grants(Map.of(
                 pipeline(OURS), Set.of(DocumentPermission.VIEW))));
 
         assertThat(viewer.guidance("doc-1", OURS.getPipelineUuid(), OURS.getElementId())).hasSize(1);
@@ -268,9 +293,9 @@ class TestSupervisorResourceImpl {
     @Test
     void aDeletedPipelinesLearningIsReadByItsDocument() {
         deletedPipelines.deleted(GONE.getPipelineUuid(), 1_000L);
-        final SupervisorResourceImpl reader = resource(grants(Map.of(
+        final SupervisorService reader = resource(grants(Map.of(
                 new DocRef(ShapeshifterAiDoc.TYPE, "doc-1"), Set.of(DocumentPermission.VIEW))));
-        final SupervisorResourceImpl stranger = resource(grants(Map.of()));
+        final SupervisorService stranger = resource(grants(Map.of()));
 
         assertThat(reader.guidance("doc-1", GONE.getPipelineUuid(), GONE.getElementId())).isEmpty();
         assertThatThrownBy(() -> stranger.guidance("doc-1", GONE.getPipelineUuid(), GONE.getElementId()))
@@ -288,7 +313,7 @@ class TestSupervisorResourceImpl {
                         Mockito.anyBoolean(), Mockito.eq(OURS.getPipelineUuid()), Mockito.anyLong(),
                         Mockito.anyInt()))
                 .thenReturn(new LearningPipelines.Page(List.of(), 0L));
-        final SupervisorResourceImpl viewer = resource(grants(Map.of(
+        final SupervisorService viewer = resource(grants(Map.of(
                 pipeline(OURS), Set.of(DocumentPermission.VIEW))));
 
         final List<SupervisorLearner> listed = viewer.pipelineLearners(OURS.getPipelineUuid());
@@ -300,7 +325,104 @@ class TestSupervisorResourceImpl {
                 Mockito.eq(OURS.getPipelineUuid()), Mockito.eq(0L), Mockito.anyInt());
     }
 
-    private SupervisorResourceImpl resource(final Supplier<SecurityContext> securityContext) {
+    /// Task 7, W1-3: *Finish with Unknowns* writes event-logging's marked Unknown, so a learner whose
+    /// document targets another schema is listed as having no fallback, and the client offers none.
+    @Test
+    void aLearnerWhoseDocumentTargetsAnotherSchemaHasNoFallback() {
+        final DocRef sightingsRef = new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4");
+        final DocRef ours = new DocRef(ShapeshifterAiDoc.TYPE, "doc-1", "ours");
+        final DocRef theirs = new DocRef(ShapeshifterAiDoc.TYPE, "doc-2", "theirs");
+        Mockito.when(store.listDocuments()).thenReturn(Set.of(ours, theirs));
+        Mockito.when(store.readDocument(ours)).thenReturn(ShapeshifterAiDoc.builder().uuid("doc-1").name("ours")
+                .targetSchema(sightingsRef).build());
+        Mockito.when(store.readDocument(theirs)).thenReturn(ShapeshifterAiDoc.builder().uuid("doc-2")
+                .name("theirs").build());
+        targetSchemas = new TargetSchemas() {
+            @Override
+            public Optional<TargetSchema> resolve(final DocRef docRef) {
+                return sightingsRef.equals(docRef)
+                        ? Optional.of(new TargetSchema(sightingsRef, "sightings v2.4", "urn:sightings:2",
+                        "file://sightings-v2.4.xsd", "2.4", "Sightings", null))
+                        : Optional.empty();
+            }
+
+            @Override
+            public Optional<TargetSchema> latestEventLogging() {
+                return Optional.empty();
+            }
+        };
+        Mockito.when(pipelines.learners(Mockito.anyCollection(), Mockito.anySet(), Mockito.anyCollection(),
+                        Mockito.anyBoolean(), Mockito.eq(OURS.getPipelineUuid()), Mockito.anyLong(),
+                        Mockito.anyInt()))
+                .thenReturn(new LearningPipelines.Page(List.of(row(OURS, "doc-1"), row(THEIRS, "doc-2")), 2));
+        final SupervisorService viewer = resource(grants(Map.of(
+                pipeline(OURS), Set.of(DocumentPermission.VIEW))));
+
+        assertThat(viewer.pipelineLearners(OURS.getPipelineUuid()))
+                .extracting(learner -> learner.getDoc().getUuid(), SupervisorLearner::isFallbackUnavailable)
+                .containsExactly(Tuple.tuple("doc-1", true), Tuple.tuple("doc-2", false));
+    }
+
+    /// Track 2 step 4: a learner whose document has reached its spend ceiling is listed saying so, in the
+    /// breaker's own words, and one whose document has not is listed as free to learn.
+    @Test
+    void aLearnerWhoseDocumentHasReachedItsSpendCeilingSaysSo() {
+        final DocRef ours = new DocRef(ShapeshifterAiDoc.TYPE, "doc-1", "ours");
+        final DocRef theirs = new DocRef(ShapeshifterAiDoc.TYPE, "doc-2", "theirs");
+        Mockito.when(store.listDocuments()).thenReturn(Set.of(ours, theirs));
+        Mockito.when(store.readDocument(ours)).thenReturn(ShapeshifterAiDoc.builder().uuid("doc-1").name("ours")
+                .spendTokensPerHour(1_000L).build());
+        Mockito.when(store.readDocument(theirs)).thenReturn(ShapeshifterAiDoc.builder().uuid("doc-2")
+                .name("theirs").build());
+        spend.record("doc-1", 1_500L, 3, SpendBreaker.WINDOW_MS);
+        Mockito.when(pipelines.learners(Mockito.anyCollection(), Mockito.anySet(), Mockito.anyCollection(),
+                        Mockito.anyBoolean(), Mockito.eq(OURS.getPipelineUuid()), Mockito.anyLong(),
+                        Mockito.anyInt()))
+                .thenReturn(new LearningPipelines.Page(List.of(row(OURS, "doc-1"), row(THEIRS, "doc-2")), 2));
+        final SupervisorService viewer = resource(grants(Map.of(
+                pipeline(OURS), Set.of(DocumentPermission.VIEW))));
+
+        final List<SupervisorLearner> listed = viewer.pipelineLearners(OURS.getPipelineUuid());
+
+        assertThat(listed.get(0).getSpendPaused()).startsWith("This Learning Flow spent 1500 token(s)");
+        assertThat(listed.get(1).getSpendPaused()).isNull();
+        assertThat(listed.get(0).getTimeZone()).describedAs("a pipeline setting no zone reads UTC").isEqualTo("UTC");
+        assertThat(listed.get(0).getTimeZoneSource()).isEqualTo(TimeZoneSource.DEFAULT);
+    }
+
+    /// N9, Track 2 step 4: the prompt carries the stream's own text, so it is refused to someone who may
+    /// not view data; and a stream since deleted can't be rebuilt from, which is said rather than guessed.
+    @Test
+    void aPromptIsRefusedWithoutViewDataOrWithoutItsStream() {
+        final long id = attemptWithATurn();
+        final SecurityContext noData = Mockito.mock(SecurityContext.class);
+        Mockito.when(noData.hasDocumentPermission(Mockito.any(), Mockito.any())).thenReturn(true);
+        Mockito.when(noData.hasAppPermission(AppPermission.VIEW_DATA_PERMISSION)).thenReturn(false);
+
+        assertThat(resource(() -> noData).prompt(id, 1).getRefusal())
+                .contains("only to someone who may view data");
+        assertThat(resource.prompt(id, 1).getRefusal())
+                .describedAs("the stream it learned from is gone")
+                .contains("has been deleted");
+        assertThatThrownBy(() -> resource.prompt(id, 9)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // An attempt of ours, on stream 1, with one turn answered
+    private long attemptWithATurn() {
+        final long id = attempts.opened(new Attempts.Attempt(learner(OURS), "doc-1", "F", "T", 1L, "node-1",
+                PromotionMode.AUTOMATIC, Long.MAX_VALUE), 0L).orElseThrow();
+        attempts.turn(id, new Attempts.Turn(1, "chain", 1, QuestionKind.CHAIN, "Chain: choose",
+                "DSParser -> XSLTFilter", "model", StepOutcome.PASSED, null, List.of()));
+        return id;
+    }
+
+    private static SupervisorLearner row(final LearnerRef learner, final String docUuid) {
+        return new SupervisorLearner(learner, new DocRef("Pipeline", learner.getPipelineUuid()),
+                new DocRef(ShapeshifterAiDoc.TYPE, docUuid), LearnerState.LEARNING, null, null, null, null,
+                null, 0, 0, null, false, null, 0, false, false);
+    }
+
+    private SupervisorService resource(final Supplier<SecurityContext> securityContext) {
         final LearnerDocuments documents = Mockito.mock(LearnerDocuments.class);
         Mockito.when(documents.documentOf(learner(OURS))).thenReturn(Optional.of("doc-1"));
         Mockito.when(documents.documentOf(learner(THEIRS))).thenReturn(Optional.of("doc-2"));
@@ -309,10 +431,11 @@ class TestSupervisorResourceImpl {
         Mockito.when(pipelines.documentOf(learner(GONE))).thenReturn(Optional.of("doc-1"));
         final DocFinder docFinder = Mockito.mock(DocFinder.class);
         Mockito.when(docFinder.decorate(Mockito.any())).thenAnswer(invocation -> invocation.getArgument(0));
-        return new SupervisorResourceImpl(
-                () -> null,
+        Mockito.when(stageFactory.breaker()).thenAnswer(invocation -> new SpendBreaker(spend, 0L, 0));
+        return new SupervisorService(
+                () -> attempts,
                 () -> store,
-                () -> null,
+                () -> stageFactory,
                 () -> null,
                 securityContext::get,
                 () -> guidance,
@@ -321,7 +444,10 @@ class TestSupervisorResourceImpl {
                 () -> deletedPipelines,
                 () -> learnerBindings,
                 () -> pipelines,
-                () -> docFinder);
+                () -> docFinder,
+                () -> targetSchemas,
+                () -> new PipelineZones(documents),
+                () -> inputs);
     }
 
     // A person granted these permissions on these documents (by type and uuid), and none on any other

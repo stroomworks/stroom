@@ -28,9 +28,9 @@ final class ShapeshifterAiFixtures {
 
     static final DocRef DOC_REF = new DocRef(ShapeshifterAiDoc.TYPE, "ss-1", "Firewall logs");
 
-    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, checks of its own (the Standard ones, with
-    /// business rules as advice, with one assertion), and a flow of two steps, the second going back to the
-    /// first when it doesn't read all the input.
+    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, a target schema, checks of its own (the
+    /// Standard ones, with business rules as advice, with one assertion), and a flow of two steps, the second
+    /// going back to the first when it doesn't read all the input.
     static final String DOC = """
             {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs",
               "description": "# Firewall logs",
@@ -45,6 +45,7 @@ final class ShapeshifterAiFixtures {
                       "xpath": "EventDetail/Authenticate/User/Id != ''"}]}}],
               "learningMode": "AUTOMATIC",
               "model": {"type": "OpenAIModel", "uuid": "model-1", "name": "GPT-4o"},
+              "targetSchema": {"type": "XMLSchema", "uuid": "schema-1", "name": "event-logging v4.1.0"},
               "instructions": "Prefer the standard schema.", "maxAttempts": 3,
               "attemptBudgetMs": 300000, "tokenBudget": 0, "sampleSizeLimit": 65536,
               "maxDeferralAgeMs": 86400000,
@@ -53,6 +54,33 @@ final class ShapeshifterAiFixtures {
                   {"kind": "CHAIN", "id": "chain"},
                   {"kind": "CONFIGURE", "role": "PARSER", "id": "parse",
                     "transitions": [{"on": "COVERAGE_SHORT", "goTo": "chain"}]}]}}""";
+
+    /// [#DOC] targeting a schema that isn't event-logging, which has no marked Unknown for the fallback to
+    /// write.
+    static final String OTHER_SCHEMA_DOC = DOC.replace(
+            "{\"type\": \"XMLSchema\", \"uuid\": \"schema-1\", \"name\": \"event-logging v4.1.0\"}",
+            "{\"type\": \"XMLSchema\", \"uuid\": \"schema-2\", \"name\": \"sightings v2.4\"}");
+
+    /// [#DOC] targeting a schema whose root may hold a header beside its records, each of which would be
+    /// read as a record.
+    static final String HEADED_SCHEMA_DOC = DOC.replace(
+            "{\"type\": \"XMLSchema\", \"uuid\": \"schema-1\", \"name\": \"event-logging v4.1.0\"}",
+            "{\"type\": \"XMLSchema\", \"uuid\": \"schema-3\", \"name\": \"batches v1\"}");
+
+    /// `GET /shapeshifterAi/v1/targetSchema/schema-1`: event-logging, the target of [#DOC].
+    private static final String EVENT_LOGGING_SCHEMA = """
+            {"name": "event-logging v4.1.0", "eventLogging": true, "rootElement": "Events",
+              "rootChildren": ["Event"]}""";
+    /// `GET /shapeshifterAi/v1/targetSchema/schema-2`: a schema that isn't event-logging, the target of
+    /// [#OTHER_SCHEMA_DOC].
+    private static final String SIGHTINGS_SCHEMA = """
+            {"name": "sightings v2.4", "eventLogging": false, "rootElement": "Sightings",
+              "rootChildren": ["Sighting"]}""";
+    /// `GET /shapeshifterAi/v1/targetSchema/schema-3`: a schema whose root may hold a header beside its
+    /// records, the target of [#HEADED_SCHEMA_DOC].
+    private static final String BATCHES_SCHEMA = """
+            {"name": "batches v1", "eventLogging": false, "rootElement": "Batch",
+              "rootChildren": ["Header", "Record"]}""";
 
     /// A document as it is made: learning off, no model, the Standard checks, the direct flow. It won't
     /// learn anything, and its Pipelines tab says so.
@@ -149,6 +177,16 @@ final class ShapeshifterAiFixtures {
               "state": "Waiting for a person", "waiting": 2, "records": 0, "guidance": 1, "raised": false,
               "belowThreshold": false, "pipelineDeleted": false,
               "lastSessionMs": 1761800600000, "oldestWaitMs": 1761700000000}""".replace("DOC", DOC_JSON);
+
+    /// The firewall's learner, which would learn but for its Learning Flow's spend ceiling (A24, Track 2 step 4).
+    static final String FIREWALL_SPEND_PAUSED = FIREWALL_LEARNER.replace("\"state\": \"Waiting for a person\",",
+            "\"state\": \"Learning\", \"spendPaused\": \"This Learning Flow spent 1500 token(s) in the last "
+            + "hour, which is its ceiling of 1000. No new learning starts until the hour rolls; what is already "
+            + "learning finishes.\",");
+
+    /// The firewall's learner, its pipeline reading timestamps in its own zone (decision N6, Track 2 step 4).
+    static final String FIREWALL_ZONED = FIREWALL_LEARNER.replace("\"belowThreshold\": false,",
+            "\"belowThreshold\": false, \"timeZone\": \"Europe/London\", \"timeZoneSource\": \"PIPELINE\",");
 
     /// The firewall's learner translating with what it learned: its pipeline's learned translation, as the
     /// Learning Status tab links to it.
@@ -261,6 +299,26 @@ final class ShapeshifterAiFixtures {
                 .replace("REPORT", report);
     }
 
+    // How the firewall's new translation was judged (Track 2 step 4): two gates passed, one piece of advice
+    // met and one fallen short of
+    private static final String EVIDENCE = """
+            "evidence": [
+              {"check": "COMPILE", "state": "GATE", "score": 1.0, "threshold": 1.0},
+              {"check": "CONFORMANCE", "state": "GATE", "score": 1.0, "threshold": 1.0},
+              {"check": "QUALITY", "state": "ADVICE", "score": 0.8, "threshold": 0.7},
+              {"check": "TIMES", "state": "ADVICE", "score": 0.5, "threshold": 1.0}], \
+            """;
+
+    /// `GET /shapeshifterAiSupervisor/v1/7`: the firewall's run, its new translation waiting for a person
+    /// to approve it, with how it was judged.
+    static final String AWAITING_REVIEW = firewallRun("Awaiting review", "Awaiting review, scored 0.88", "null")
+            .replace("\"turns\": ", "\"score\": 0.88, \"bindingUuid\": \"b-7\", " + EVIDENCE + "\"turns\": ");
+
+    /// The same run once a person approved it, saying who and when.
+    static final String APPROVED = firewallRun("Promoted", "Approved", "null")
+            .replace("\"turns\": ", "\"score\": 0.88, \"bindingUuid\": \"b-7\", " + EVIDENCE
+                                    + "\"reviewedBy\": \"jo\", \"reviewedTimeMs\": 1761900000000, \"turns\": ");
+
     /// The firewall's pipeline's learners ([#FIREWALL_LEARNER]) with its learner given up, for the reason
     /// given, as `GET /shapeshifterAiSupervisor/v1/pipelines/p-1/learners` lists them.
     ///
@@ -350,6 +408,9 @@ final class ShapeshifterAiFixtures {
                 .get("/shapeshifterAi/v1/templates", RestReply.json(TEMPLATES))
                 .get("/shapeshifterAi/v1/flowExamples", RestReply.json(FLOW_EXAMPLES))
                 .get("/shapeshifterAi/v1/ss-1", RestReply.json(doc))
+                .get("/shapeshifterAi/v1/targetSchema/schema-1", RestReply.json(EVENT_LOGGING_SCHEMA))
+                .get("/shapeshifterAi/v1/targetSchema/schema-2", RestReply.json(SIGHTINGS_SCHEMA))
+                .get("/shapeshifterAi/v1/targetSchema/schema-3", RestReply.json(BATCHES_SCHEMA))
                 .put("/shapeshifterAi/v1/ss-1", request -> RestReply.json(request.getBody()))
                 .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(learners))
                 .route(RequestMatcher.post("/shapeshifterAiSupervisor/v1/find")
