@@ -37,7 +37,7 @@ import com.google.gwt.user.client.ui.Widget;
 /// replies ([AiPipelines]):
 ///
 /// - `App/Editors/PipelineQualityAssurance`, its **Quality Assurance** tab ([QualityTabController]): the figures
-///   its translation is judged by, and each learning run's score.
+///   its translation is judged by, its regression set a record at a time, and each learning run's score.
 /// - `App/Editors/PipelineStructureLearned`, its Structure tab with the AI Translator selected
 ///   ([LearnedTranslationController]): **What it learned**, folded until asked for, then the learned translation's
 ///   elements and the documents they use, which open.
@@ -51,6 +51,9 @@ import com.google.gwt.user.client.ui.Widget;
 public final class PipelineQualityStories {
 
     private static final String TAB = "Quality Assurance";
+    private static final String RECORD = "Regression set record";
+    private static final String PREVIOUS = "Previous record";
+    private static final String NEXT = "Next record";
     private static final String WHAT_IT_LEARNED = "What it learned";
     private static final String AI_ELEMENT = "Learn the feed";
 
@@ -79,7 +82,10 @@ public final class PipelineQualityStories {
     private static final String QUALITY = "/shapeshifterAiQuality/v1/pipelines/p-1/elements/shapeshifterAi";
     // A fortnight, oldest first, from the 30th of October 2025 (UTC), busiest on the twelfth day
     private static final long FIRST_DAY = 1_761_782_400_000L;
-    private static final String REPORT = report();
+    // Its regression set holds the two records below
+    private static final String REPORT = report(1, 0, 1, 1);
+    // Its regression set holds more records than the newest twenty the samples endpoint gives
+    private static final String LARGE_REPORT = report(40, 3, 2, 4);
     private static final String SAMPLES = """
             [{"text": "2025-10-30T10:00:01Z,10.0.0.1,443,ALLOW", "record": "<record/>",
               "output": "<Event><EventDetail><TypeId>Network/Open</TypeId></EventDetail></Event>",
@@ -104,16 +110,13 @@ public final class PipelineQualityStories {
                     openTab(play);
                     final Play figures = play.within(play.findByRole("list", "Quality figures"));
                     play.expect(figures.findByText("98%")).toBeInTheDocument();
-                    play.expect(figures.getByText(TextMatch.startingWith("Over the last 1,204 records")))
+                    // A figure that calls for nothing says what it rests on only on hover
+                    play.expect(figures.getByTitle(TextMatch.startingWith("Over the last 1,204 records")))
                             .toBeInTheDocument();
-                    play.expect(figures.getByText(TextMatch.containing("flags a translation in use below 60%")))
-                            .toBeInTheDocument();
+                    play.expect(figures.queryByText(TextMatch.startingWith("Over the last 1,204 records")))
+                            .toBeNull();
                     play.expect(figures.getByText("97%")).toBeInTheDocument();
                     play.expect(figures.getByText("Trusted")).toBeInTheDocument();
-                    final Play runs = play.within(play.getByRole("grid", "Learning runs"));
-                    play.expect(runs.findByText("95%")).toBeInTheDocument();
-                    // Its result and its decision
-                    play.expect(runs.getAllByText("Promoted")).toHaveLength(2);
                     // One element, so there is no choosing between them
                     play.expect(play.queryByText("AI Translator element")).not().toBeVisible();
                     // The volume in words and as a chart, and what the kept records became
@@ -121,17 +124,69 @@ public final class PipelineQualityStories {
                             .toBeVisible();
                     play.expect(play.getByRole("img", TextMatch.startingWith("Records translated each day")))
                             .toBeInTheDocument();
-                    final Play cardinality = play.within(play.getByRole("list", "What its records became"));
-                    play.expect(cardinality.getByText("Marked Unknown")).toBeVisible();
-                    // Samples: a record as received beside what it became
-                    final Play samples = play.within(play.findByRole("list", "Samples"));
-                    play.expect(samples.findByText("2025-10-30T10:00:01Z,10.0.0.1,443,ALLOW")).toBeVisible();
-                    play.expect(samples.getByText(TextMatch.containing("<TypeId>Network/Open</TypeId>")))
+                    // The regression set counted by what its records became
+                    play.expect(play.findByText(
+                            "2 records: 1 translated, 0 marked Unknown, 1 with no event. 1 kind of record."))
                             .toBeVisible();
-                    play.expect(samples.getByText("No event: this kind of record yields none.")).toBeVisible();
+                    play.expect(play.queryByText("What its records became")).toBeNull();
+                    // The regression set, said to be all of it and what it holds a new translation to; the newest
+                    // record as received beside what it became when accepted
+                    play.expect(play.findByText(TextMatch.containing(
+                            "A new translation must still handle every one of them"))).toBeVisible();
+                    final Play record = play.within(play.findByRole("group", RECORD));
+                    play.expect(record.findByText("2025-10-30T10:00:01Z,10.0.0.1,443,ALLOW")).toBeVisible();
+                    play.expect(record.getByText(TextMatch.containing("<TypeId>Network/Open</TypeId>")))
+                            .toBeVisible();
+                    play.expect(record.getByText("Became, when accepted")).toBeVisible();
+                    play.expect(play.getByText("Record 1 of 2")).toBeVisible();
+                    // The learning runs are folded away until asked for
+                    play.expect(play.getByRole("button", "Learning runs")).toHaveAttribute("aria-expanded", "false");
                     // Assessments are no longer recorded on the tab
                     play.expect(play.queryByText("Assessments")).toBeNull();
                     play.expect(play.queryByRole("button", "Record an assessment…")).toBeNull();
+                    DocEditors.expectNoProblems(play);
+                })
+                // The regression set stepped through a record at a time, with no step past either end
+                .story("RegressionSetStepping", context -> render(context, false, "[" + TRANSLATING + "]"))
+                .withPlay(play -> {
+                    openTab(play);
+                    play.expect(play.findByText("Record 1 of 2")).toBeVisible();
+                    play.expect(play.getByRole("button", PREVIOUS)).toHaveAttribute("aria-disabled", "true");
+                    play.click(play.getByRole("button", NEXT));
+                    play.expect(play.findByText("Record 2 of 2")).toBeVisible();
+                    play.expect(play.within(play.getByRole("group", RECORD))
+                            .getByText("No event: this kind of record yields none.")).toBeVisible();
+                    play.expect(play.queryByText("2025-10-30T10:00:01Z,10.0.0.1,443,ALLOW")).toBeNull();
+                    play.expect(play.getByRole("button", NEXT)).toHaveAttribute("aria-disabled", "true");
+                    // A disabled step does nothing
+                    play.click(play.getByRole("button", NEXT));
+                    play.expect(play.getByText("Record 2 of 2")).toBeVisible();
+                    play.click(play.getByRole("button", PREVIOUS));
+                    play.expect(play.findByText("Record 1 of 2")).toBeVisible();
+                    play.expect(play.within(play.getByRole("group", RECORD))
+                            .getByText("2025-10-30T10:00:01Z,10.0.0.1,443,ALLOW")).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // A regression set larger than the records given says only the newest are shown
+                .story("RegressionSetLargerThanShown", context -> AiPipelines.render(context, false,
+                        AiPipelines.ONE_ELEMENT, routes("[" + TRANSLATING + "]", LARGE_REPORT,
+                                RestReply.json(newestSamples(20))), null))
+                .withPlay(play -> {
+                    openTab(play);
+                    play.expect(play.findByText(TextMatch.endingWith("The newest 20 are shown."))).toBeVisible();
+                    play.expect(play.getByText("Record 1 of 20")).toBeVisible();
+                    play.expect(play.within(play.getByRole("group", RECORD)).getByText("line 20")).toBeVisible();
+                    DocEditors.expectNoProblems(play);
+                })
+                // Each learning run's score, folded beneath the regression set
+                .story("LearningRuns", context -> render(context, false, "[" + TRANSLATING + "]"))
+                .withPlay(play -> {
+                    openTab(play);
+                    play.click(play.findByRole("button", "Learning runs"));
+                    final Play runs = play.within(play.getByRole("grid", "Learning runs"));
+                    play.expect(runs.findByText("95%")).toBeVisible();
+                    // Its result and its decision
+                    play.expect(runs.getAllByText("Promoted")).toHaveLength(2);
                     DocEditors.expectNoProblems(play);
                 })
                 // Day by day, folded beneath the chart
@@ -146,13 +201,14 @@ public final class PipelineQualityStories {
                     play.expect(grid.getByText("600")).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // Someone who may not view data sees why there are no samples, and nothing is alerted
+                // Someone who may not view data sees why the regression set isn't shown, and nothing is alerted
                 .story("SamplesNotPermitted", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                         routes("[" + TRANSLATING + "]", RestReply.error(403, "You may not view data")), null))
                 .withPlay(play -> {
                     openTab(play);
-                    play.expect(play.findByText(TextMatch.startingWith("Samples aren't shown"))).toBeVisible();
-                    play.expect(play.queryByRole("list", "Samples")).toBeNull();
+                    play.expect(play.findByText(TextMatch.startingWith("The regression set isn't shown")))
+                            .toBeVisible();
+                    play.expect(play.queryByRole("group", RECORD)).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
                 // Read only: the same figures, as there is nothing to change on the tab
@@ -266,17 +322,22 @@ public final class PipelineQualityStories {
     }
 
     private static RestFixtures.Builder routes(final String learners, final RestReply samples) {
+        return routes(learners, REPORT, samples);
+    }
+
+    private static RestFixtures.Builder routes(final String learners, final String report, final RestReply samples) {
         return ShapeshifterAiFixtures.pipelineRoutes(RestFixtures.builder()
                         .route(RequestMatcher.post("/pipeline/v1/fetchPipelineLayers")
                                         .withJsonBodyContaining("{\"uuid\": \"f-2\"}"),
                                 RestReply.json(FRAGMENT_LAYERS))
-                        .get(QUALITY, RestReply.json(REPORT))
+                        .get(QUALITY, RestReply.json(report))
                         .get(QUALITY + "/samples", samples),
                 ShapeshifterAiFixtures.DOC, ShapeshifterAiFixtures.FIREWALL_PROMOTED, learners);
     }
 
-    // The report: a fortnight of days, 61 streams and 1,830 records in all, and the kept records' kinds
-    private static String report() {
+    // The report: a fortnight of days, 61 streams and 1,830 records in all, and what its regression set's records
+    // became
+    private static String report(final int translated, final int unknown, final int none, final int kinds) {
         final long[] streams = {0, 2, 4, 5, 3, 0, 0, 6, 7, 5, 4, 20, 3, 2};
         final long[] records = {0, 60, 120, 150, 90, 0, 0, 180, 210, 150, 120, 600, 90, 60};
         final StringBuilder days = new StringBuilder();
@@ -287,7 +348,22 @@ public final class PipelineQualityStories {
             days.append("{\"dayMs\": ").append(FIRST_DAY + i * 86_400_000L).append(", \"streams\": ")
                     .append(streams[i]).append(", \"records\": ").append(records[i]).append('}');
         }
-        return "{\"days\": [" + days + "], \"bindingUuid\": \"b-2\", \"translated\": 12, \"unknown\": 2, "
-               + "\"none\": 1, \"kinds\": 3}";
+        return "{\"days\": [" + days + "], \"bindingUuid\": \"b-2\", \"translated\": " + translated
+               + ", \"unknown\": " + unknown + ", \"none\": " + none + ", \"kinds\": " + kinds + "}";
+    }
+
+    // The newest records of a regression set, newest first: "line N" down to "line 1", each translated
+    private static String newestSamples(final int count) {
+        final StringBuilder samples = new StringBuilder("[");
+        for (int i = count; i >= 1; i--) {
+            if (i < count) {
+                samples.append(", ");
+            }
+            samples.append("{\"text\": \"line ").append(i).append("\", \"record\": \"<record/>\", ")
+                    .append("\"output\": \"<Event>").append(i).append("</Event>\", \"kind\": \"TRANSLATION\", ")
+                    .append("\"score\": 0.95, \"acceptedMs\": ").append(1_761_700_000_000L + i * 1000L)
+                    .append(", \"target\": \"Network/Open\"}");
+        }
+        return samples.append(']').toString();
     }
 }

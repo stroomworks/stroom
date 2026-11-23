@@ -20,6 +20,7 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.preferences.client.DateTimeFormatter;
 import stroom.shapeshifter.shared.AttemptCriteria;
+import stroom.shapeshifter.shared.Check;
 import stroom.shapeshifter.shared.QualityResource;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorLearner;
@@ -48,8 +49,9 @@ import java.util.function.Consumer;
 /// so that the pipeline isn't read twice; it is shown only where there are any.
 ///
 /// Beside the figures, through the quality resource ([QualityResource]): the volume day by day and what the
-/// records of the translation in use became, samples of those records beside what they became (for someone who
-/// may also view data; for anyone else, a sentence says why there are none).
+/// records of the translation in use became, and its regression set: those records beside what they became, and
+/// whether a new translation is held to them (for someone who may also view data; for anyone else, a sentence
+/// says why they aren't shown).
 ///
 /// Read when it is shown, and when another element is chosen: quality changes over hours, not seconds, so it
 /// isn't read again on a timer.
@@ -57,7 +59,8 @@ public class QualityTabController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
     private static final QualityResource QUALITY_RESOURCE = GWT.create(QualityResource.class);
-    static final String NO_DATA = "Samples aren't shown: they are this pipeline's data, which you may not view.";
+    static final String NO_DATA = "The regression set isn't shown: its records are this pipeline's data, which you "
+                                  + "may not view.";
     private static final int RUNS = 50;
     private static final DateTimeFormat DAY_FORMAT = DateTimeFormat.getFormat("d MMM");
     private static final TimeZone UTC = TimeZone.createTimeZone(0);
@@ -173,6 +176,9 @@ public class QualityTabController extends Controller {
                         row.getLearner())))
                 .onSuccess(page -> {
                     if (request == asked) {
+                        view.setRegressionGate(doc == null
+                                ? null
+                                : doc.getCheck(Check.REGRESSION).isGate());
                         view.showQuality(QualityFigures.of(row, doc), NullSafe.list(page.getValues()));
                         readQuality(request, row);
                     }
@@ -182,7 +188,7 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-    // The volume and cardinality, and the samples, each shown as it comes
+    // The volume and cardinality, and the regression set, each shown as it comes
     private void readQuality(final int request, final SupervisorLearner row) {
         final String pipelineUuid = row.getLearner().getPipelineUuid();
         final String elementId = row.getLearner().getElementId();
@@ -205,7 +211,7 @@ public class QualityTabController extends Controller {
                         view.showSamples(NullSafe.list(samples));
                     }
                 })
-                // Refused for someone who may not view data, which the samples are: said, not alerted
+                // Refused for someone who may not view data, which its records are: said, not alerted
                 .onFailure(error -> {
                     if (request == asked) {
                         view.showSamplesNote(NO_DATA);

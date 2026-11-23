@@ -84,46 +84,56 @@ public final class QualityFigures {
                 : PlainWords.count(records, "record") + " in " + PlainWords.count(streams, "stream") + over;
     }
 
-    /// The cardinality of the translation in use: of the records it was learned and checked on, what they
-    /// became, and how many kinds of record it settled.
+    /// What the regression set is, and what it holds a new translation to: the section's subtitle.
     ///
-    /// @param report The pipeline's report.
-    /// @return The figures; none where no translation is in use or it keeps no records.
-    public static List<Figure> cardinality(final QualityReport report) {
-        final int kept = report.getTranslated() + report.getUnknown() + report.getNone();
-        if (report.getBindingUuid() == null || kept == 0) {
-            return List.of();
+    /// @param gate Whether the regression check is a gate, so that a new translation is held to it; null where
+    ///             the Learning Flow's settings can't be read, when it isn't said.
+    /// @return The description, in a sentence or two.
+    public static String regressionNote(final Boolean gate) {
+        final String what = "The records the translation in use was learned and checked on, each with the output "
+                            + "it was accepted with.";
+        if (Boolean.TRUE.equals(gate)) {
+            return what + " A new translation must still handle every one of them, and none that translated may "
+                   + "become a marked Unknown.";
         }
-        final List<Figure> figures = new ArrayList<>();
-        figures.add(new Figure("Translated", PlainWords.number(report.getTranslated()),
-                "Records that became a real event.", Tone.GOOD));
-        figures.add(new Figure("Marked Unknown", PlainWords.number(report.getUnknown()),
-                report.getUnknown() == 0
-                        ? "No record became a marked Unknown event."
-                        : "Records that became a marked Unknown event: kept, but not yet translated.",
-                report.getUnknown() == 0
-                        ? Tone.IDLE
-                        : Tone.WARNING));
-        figures.add(new Figure("Nothing", PlainWords.number(report.getNone()),
-                "Records that became no event, e.g. a header line.", Tone.IDLE));
-        if (report.getKinds() > 0) {
-            figures.add(new Figure("Kinds of record", PlainWords.number(report.getKinds()),
-                    "The kinds of record it settled, each with the event it should become.", Tone.IDLE));
+        if (Boolean.FALSE.equals(gate)) {
+            return what + " The regression check isn't a gate, so a new translation isn't held to them.";
         }
-        return figures;
+        return what;
     }
 
-    /// @param report The pipeline's report.
-    /// @return What the cardinality figures are of, in a sentence; null where there are none.
-    public static String cardinalityNote(final QualityReport report) {
-        final int kept = report.getTranslated() + report.getUnknown() + report.getNone();
-        if (report.getBindingUuid() == null) {
+    /// How many records the regression set holds, by what each became (its cardinality), and how many are shown.
+    ///
+    /// @param report The pipeline's report, or null where it hasn't been read.
+    /// @param shown  How many of its records are shown: the newest, as many as the server gives.
+    /// @return E.g. "6 records: 4 translated, 1 marked Unknown, 1 with no event. 3 kinds of record."; null where
+    ///         the report hasn't been read.
+    public static String regressionSummary(final QualityReport report, final int shown) {
+        if (report == null) {
             return null;
         }
-        return kept == 0
-                ? "The translation in use keeps no records it was learned and checked on."
-                : "Of the " + PlainWords.count(kept, "record") + " the translation in use was learned and "
-                  + "checked on, what each became.";
+        final int total = report.getTranslated() + report.getUnknown() + report.getNone();
+        if (report.getBindingUuid() == null || total == 0) {
+            return "The regression set is empty: no translation is in use, or it keeps no records.";
+        }
+        final StringBuilder summary = new StringBuilder(PlainWords.count(total, "record"))
+                .append(": ").append(PlainWords.number(report.getTranslated())).append(" translated, ")
+                .append(PlainWords.number(report.getUnknown())).append(" marked Unknown, ")
+                .append(PlainWords.number(report.getNone())).append(" with no event.");
+        if (report.getKinds() > 0) {
+            summary.append(' ').append(PlainWords.count(report.getKinds(), "kind")).append(" of record.");
+        }
+        if (shown > 0 && shown < total) {
+            summary.append(" The newest ").append(PlainWords.number(shown)).append(" are shown.");
+        }
+        return summary.toString();
+    }
+
+    /// @param index The record shown, from 0.
+    /// @param count How many records there are to step through.
+    /// @return Which record is shown, e.g. "Record 3 of 6".
+    public static String position(final int index, final int count) {
+        return "Record " + PlainWords.number(index + 1L) + " of " + PlainWords.number(count);
     }
 
     /// @return The figures, in the order they are shown.
@@ -224,6 +234,13 @@ public final class QualityFigures {
         /// @return Whether it calls for attention: warning where it does, good where all is well.
         public Tone getTone() {
             return tone;
+        }
+
+        /// @return Whether its note is shown on the tile: where it says something to act on or worth knowing (a
+        ///         warning, a danger, or information such as being on trial). Otherwise the note is only its
+        ///         tooltip, as the value says enough.
+        public boolean isNoteShown() {
+            return tone == Tone.WARNING || tone == Tone.DANGER || tone == Tone.INFO;
         }
     }
 }

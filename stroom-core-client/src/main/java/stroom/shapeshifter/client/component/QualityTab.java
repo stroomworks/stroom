@@ -23,6 +23,7 @@ import stroom.shapeshifter.shared.QualitySample;
 import stroom.shapeshifter.shared.SupervisorAttempt;
 import stroom.shapeshifter.shared.VolumeDay;
 import stroom.util.client.DataGridUtil;
+import stroom.widget.button.client.ToolbarButton;
 import stroom.widget.component.client.AriaPanel;
 import stroom.widget.component.client.Component;
 import stroom.widget.datagrid.client.DataGrid;
@@ -37,16 +38,18 @@ import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Widget;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
 
 /// A Smart Pipeline's **Quality Assurance** tab, for a QA person judging one pipeline's translated output on its
-/// own: which of its AI Translator elements, where it has more than one; the overall figures its translation is
-/// judged by ([QualityFigures]), each with what it rests on and coloured where it calls for attention; its
-/// **volume** day by day, as a chart ([VolumeChart]) and, folded, a table; **what its records became** (its
-/// cardinality); **samples** of those records beside what they became; and each learning run's score, newest
-/// first. Where there is nothing to judge, a sentence says why.
+/// own: which of its AI Translator elements, where it has more than one; then, each in a section of its own, the
+/// overall figures its translation is judged by ([QualityFigures]), coloured where they call for attention and
+/// saying what they rest on only then (otherwise as a tooltip); its **volume** day by day, as a chart
+/// ([VolumeChart]) and, folded, a table; its **regression set**, the records its translation in use was learned and
+/// checked on, counted by what each became and shown one at a time beside it, with buttons to step through them;
+/// and, folded, each learning run's score, newest first. Where there is nothing to judge, a sentence says why.
 /// [QualityTabController] fills it.
 public class QualityTab extends Component {
 
@@ -71,13 +74,23 @@ public class QualityTab extends Component {
     @UiField
     DataGrid<VolumeDay> days;
     @UiField
-    Label cardinalityNote;
+    Label regressionNote;
     @UiField
-    AriaPanel cardinality;
+    Label regressionSummary;
     @UiField
     Label samplesNote;
     @UiField
-    AriaPanel samples;
+    FlowPanel samples;
+    @UiField
+    FlowPanel stepper;
+    @UiField
+    ToolbarButton previousSample;
+    @UiField
+    ToolbarButton nextSample;
+    @UiField
+    Label samplePosition;
+    @UiField
+    AriaPanel sample;
     @UiField
     DataGrid<SupervisorAttempt> runs;
 
@@ -85,14 +98,24 @@ public class QualityTab extends Component {
     };
     private LongFunction<String> dates = String::valueOf;
     private LongFunction<String> dayLabels = String::valueOf;
+    /// The regression set's records shown, newest first, and which of them is on screen.
+    private List<QualitySample> regressionRecords = List.of();
+    private int recordIndex;
+    /// The report, which counts the regression set's records; null until it is read.
+    private QualityReport report;
+    /// Why the regression set isn't shown, e.g. that the person may not view data; null where it is.
+    private String regressionRefused;
 
     /// Makes the tab, empty.
     public QualityTab() {
         initWidget(BINDER.createAndBindUi(this));
         element.setOnChange(chosen -> onElement.accept(chosen));
+        previousSample.setOnClick(() -> showRecord(recordIndex - 1));
+        nextSample.setOnClick(() -> showRecord(recordIndex + 1));
+        regressionNote.setText(QualityFigures.regressionNote(null));
         days.addResizableColumn(
                 DataGridUtil.textColumnBuilder((VolumeDay day) -> dayLabels.apply(day.getDayMs())).build(),
-                DataGridUtil.headingBuilder("Day").build(),
+                DataGridUtil.headingBuilder("Day (UTC)").build(),
                 120);
         days.addResizableColumn(
                 DataGridUtil.textColumnBuilder((VolumeDay day) -> PlainWords.number(day.getStreams())).build(),
@@ -152,38 +175,36 @@ public class QualityTab extends Component {
         volumeChart.setHTML(SafeHtmlUtils.fromTrustedString(VolumeChart.draw(window, dayLabels)));
         days.setRowData(0, window);
         days.setRowCount(window.size(), true);
-        final String note = QualityFigures.cardinalityNote(report);
-        cardinalityNote.setText(note == null
-                ? "No translation is in use, so there are no records to count."
-                : note);
-        cardinality.clear();
-        for (final Figure figure : QualityFigures.cardinality(report)) {
-            cardinality.add(figure(figure));
-        }
-        cardinality.setVisible(cardinality.getWidgetCount() > 0);
+        this.report = report;
+        showRegressionSummary();
     }
 
-    /// Shows records the translation in use was learned and checked on, beside what they became.
+    /// Says what the regression set is, and whether a new translation is held to it.
     ///
-    /// @param shown The samples, newest first.
-    public void showSamples(final List<QualitySample> shown) {
-        samples.clear();
-        for (final QualitySample sample : shown) {
-            samples.add(sample(sample));
-        }
-        samples.setVisible(!shown.isEmpty());
-        samplesNote.setText(shown.isEmpty()
-                ? "There are no samples: no translation is in use, or it keeps no records."
-                : PlainWords.count(shown.size(), "record") + ", newest first.");
+    /// @param gate Whether the regression check is a gate; null where it isn't known.
+    public void setRegressionGate(final Boolean gate) {
+        regressionNote.setText(QualityFigures.regressionNote(gate));
     }
 
-    /// Says why no samples are shown, e.g. that the person may not view the data.
+    /// Shows the regression set: the records the translation in use was learned and checked on, beside what they
+    /// became, one at a time from the newest.
+    ///
+    /// @param shown Its records, newest first: all of them, or the newest where it holds more.
+    public void showSamples(final List<QualitySample> shown) {
+        regressionRecords = new ArrayList<>(shown);
+        regressionRefused = null;
+        showRecord(0);
+        showRegressionSummary();
+    }
+
+    /// Says why the regression set isn't shown, e.g. that the person may not view the data.
     ///
     /// @param why What to say.
     public void showSamplesNote(final String why) {
-        samples.clear();
-        samples.setVisible(false);
-        samplesNote.setText(why);
+        regressionRecords = List.of();
+        regressionRefused = why;
+        showRecord(0);
+        showRegressionSummary();
     }
 
     /// The pipeline's AI Translator elements: the choice of them is offered only where there is more than one.
@@ -202,6 +223,9 @@ public class QualityTab extends Component {
     /// @param shown       Its figures.
     /// @param learnedRuns Its learning runs, newest first.
     public void showQuality(final QualityFigures shown, final List<SupervisorAttempt> learnedRuns) {
+        // Another element's counts aren't this one's: its report says them again
+        report = null;
+        showRegressionSummary();
         nothing.setVisible(false);
         content.setVisible(true);
         message.setText(shown.getMessage() == null
@@ -230,35 +254,62 @@ public class QualityTab extends Component {
         this.onElement = onElement;
     }
 
-    // A record beside what it became: what it is and scored, then the record as received and its output
-    private AriaPanel sample(final QualitySample sample) {
-        final AriaPanel item = new AriaPanel();
-        item.setRole("listitem");
-        item.addStyleName("quality-tab__sample");
-        final StringBuilder head = new StringBuilder(sample.getKind() == null
-                ? "Record"
-                : sample.getKind().getDisplayValue());
-        if (sample.getTarget() != null) {
-            head.append(" as ").append(sample.getTarget());
+    // Shows one of the regression set's records, and which it is of how many, with a step either way where there
+    // is one to take
+    private void showRecord(final int index) {
+        final int count = regressionRecords.size();
+        recordIndex = Math.max(0, Math.min(index, count - 1));
+        sample.clear();
+        samples.setVisible(count > 0);
+        if (count == 0) {
+            return;
         }
-        head.append(" · scored ").append(PlainWords.percent(sample.getScore()))
-                .append(" · accepted ").append(dates.apply(sample.getAcceptedMs()));
+        fillRecord(regressionRecords.get(recordIndex));
+        stepper.setVisible(count > 1);
+        samplePosition.setText(QualityFigures.position(recordIndex, count));
+        previousSample.setEnabled(recordIndex > 0);
+        nextSample.setEnabled(recordIndex < count - 1);
+    }
+
+    // How many records the regression set holds and what they became, and why they aren't shown where they aren't
+    private void showRegressionSummary() {
+        final String summary = QualityFigures.regressionSummary(report, regressionRecords.size());
+        regressionSummary.setText(summary == null
+                ? ""
+                : summary);
+        regressionSummary.setVisible(summary != null);
+        samplesNote.setText(regressionRefused == null
+                ? ""
+                : regressionRefused);
+        samplesNote.setVisible(regressionRefused != null);
+    }
+
+    // A record beside what it became: what it is and scored, then the record as received and the output it was
+    // accepted with
+    private void fillRecord(final QualitySample record) {
+        final StringBuilder head = new StringBuilder(record.getKind() == null
+                ? "Record"
+                : record.getKind().getDisplayValue());
+        if (record.getTarget() != null) {
+            head.append(" as ").append(record.getTarget());
+        }
+        head.append(" · scored ").append(PlainWords.percent(record.getScore()))
+                .append(" · accepted ").append(dates.apply(record.getAcceptedMs()));
         final Label heading = new Label(head.toString());
         heading.setStyleName("quality-tab__sample-head");
-        item.add(heading);
+        sample.add(heading);
         final FlowPanel pair = new FlowPanel();
         pair.setStyleName("quality-tab__sample-pair");
-        pair.add(side(sample.getText() == null
+        pair.add(side(record.getText() == null
                         ? "Received, as the parser read it"
                         : "Received",
-                sample.getText() == null
-                        ? sample.getRecord()
-                        : sample.getText()));
-        pair.add(side("Became", sample.getOutput() == null
+                record.getText() == null
+                        ? record.getRecord()
+                        : record.getText()));
+        pair.add(side("Became, when accepted", record.getOutput() == null
                 ? "No event: this kind of record yields none."
-                : sample.getOutput()));
-        item.add(pair);
-        return item;
+                : record.getOutput()));
+        sample.add(pair);
     }
 
     private static FlowPanel side(final String title, final String text) {
@@ -287,9 +338,14 @@ public class QualityTab extends Component {
         final Label value = new Label(figure.getValue());
         value.setStyleName("quality-tab__figure-value");
         item.add(value);
-        final Label note = new Label(figure.getNote());
-        note.setStyleName("quality-tab__figure-note");
-        item.add(note);
+        if (figure.isNoteShown()) {
+            final Label note = new Label(figure.getNote());
+            note.setStyleName("quality-tab__figure-note");
+            item.add(note);
+        } else {
+            // The value says enough: what it rests on is there on hover
+            item.setTitle(figure.getNote());
+        }
         return item;
     }
 

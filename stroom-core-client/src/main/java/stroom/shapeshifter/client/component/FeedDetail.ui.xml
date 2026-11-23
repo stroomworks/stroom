@@ -51,7 +51,7 @@
                 <form:FormGroup identity="shapeshifterAiFeedNote" label="Note to the AI"
                                 helpText="Something about this feed the AI can't see in the sample: what a field means, a correction, a fact. It goes into every question asked about this feed from now on, including a run that is waiting.">
                     <form:TextArea ui:field="note" addStyleNames="w-100 feed-detail__note-text"
-                                   placeholder="For example: each line is one ASA syslog message, and the %ASA-6-302013 code is the event type."/>
+                                   placeholder="For example: the third field is the user's ID, and a status of 0 means the action succeeded."/>
                 </form:FormGroup>
                 <g:FlowPanel styleName="feed-detail__note-actions">
                     <b:Button ui:field="sendNote" addStyleNames="button--contained-primary" text="Send note"/>

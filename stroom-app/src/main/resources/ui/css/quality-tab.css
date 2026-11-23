@@ -16,8 +16,9 @@
 
 /*
    A Smart Pipeline's Quality Assurance tab (stroom.shapeshifter.client.component.QualityTab): which AI Translator
-   element, where there are several; the figures its translation is judged by, as tiles that wrap, each tinted by
-   whether it calls for attention; and its learning runs' scores in a grid.
+   element, where there are several; then sections, each after the first starting at a rule: the figures its
+   translation is judged by, as tiles that wrap, each tinted by whether it calls for attention; its volume; its
+   regression set, a record at a time; and, folded, its learning runs' scores in a grid.
 */
 
 .quality-tab {
@@ -42,17 +43,27 @@
 .quality-tab__content {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 24px;
     padding: 12px 16px 16px;
     max-width: 1100px;
+}
+
+/* A section: more room between sections than within one, and a rule where each after the first starts */
+.quality-tab__section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.quality-tab__section + .quality-tab__section {
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
 }
 
 .quality-tab__head {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color);
 }
 
 .quality-tab__title {
@@ -61,9 +72,13 @@
     font-weight: 600;
 }
 
-.quality-tab__question,
 .quality-tab__message {
     color: var(--text-color--low-emphasis);
+}
+
+/* The regression set's records counted by what each became */
+.quality-tab__summary {
+    font-weight: 500;
 }
 
 .quality-tab__figures {
@@ -167,11 +182,22 @@
     border-radius: 4px;
 }
 
-/* Samples: a record beside what it became */
+/* The regression set: one record at a time beside what it became, with a step either way above it */
 .quality-tab__samples {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
+}
+
+.quality-tab__stepper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quality-tab__position {
+    color: var(--text-color--low-emphasis);
+    font-variant-numeric: tabular-nums;
 }
 
 .quality-tab__sample {

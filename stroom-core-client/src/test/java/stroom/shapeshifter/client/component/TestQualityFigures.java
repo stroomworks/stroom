@@ -123,37 +123,76 @@ class TestQualityFigures {
     }
 
     @Test
-    void theCardinalityIsWhatTheKeptRecordsBecame() {
-        final QualityReport report = new QualityReport(List.of(), "b-1", 12, 2, 1, 3);
-        assertThat(QualityFigures.cardinality(report)).extracting(Figure::getLabel, Figure::getValue)
+    void theRegressionSummaryCountsWhatEachRecordBecame() {
+        final QualityReport report = new QualityReport(List.of(), "b-1", 4, 1, 1, 3);
+        assertThat(QualityFigures.regressionSummary(report, 6))
+                .isEqualTo("6 records: 4 translated, 1 marked Unknown, 1 with no event. 3 kinds of record.");
+        final QualityReport oneKind = new QualityReport(List.of(), "b-1", 1, 0, 0, 1);
+        assertThat(QualityFigures.regressionSummary(oneKind, 1))
+                .describedAs("counts of nought are said, not left out")
+                .isEqualTo("1 record: 1 translated, 0 marked Unknown, 0 with no event. 1 kind of record.");
+        final QualityReport noKinds = new QualityReport(List.of(), "b-1", 2, 0, 0, 0);
+        assertThat(QualityFigures.regressionSummary(noKinds, 2))
+                .describedAs("no kinds settled are not said")
+                .isEqualTo("2 records: 2 translated, 0 marked Unknown, 0 with no event.");
+    }
+
+    @Test
+    void aRegressionSetLargerThanShownSaysOnlyTheNewestAreShown() {
+        final QualityReport report = new QualityReport(List.of(), "b-1", 1440, 8, 2, 0);
+        assertThat(QualityFigures.regressionSummary(report, 20))
+                .isEqualTo("1,450 records: 1,440 translated, 8 marked Unknown, 2 with no event. The newest 20 are "
+                           + "shown.");
+        assertThat(QualityFigures.regressionSummary(report, 0))
+                .describedAs("records not shown, e.g. refused, aren't said to be the newest")
+                .doesNotContain("newest");
+    }
+
+    @Test
+    void anEmptyRegressionSetOrNoReportSaysSo() {
+        final String empty = "The regression set is empty: no translation is in use, or it keeps no records.";
+        assertThat(QualityFigures.regressionSummary(new QualityReport(List.of(), null, 0, 0, 0, 0), 0))
+                .isEqualTo(empty);
+        assertThat(QualityFigures.regressionSummary(new QualityReport(List.of(), "b-1", 0, 0, 0, 0), 0))
+                .isEqualTo(empty);
+        assertThat(QualityFigures.regressionSummary(null, 6))
+                .describedAs("nothing is said until the report is read")
+                .isNull();
+    }
+
+    @Test
+    void theRegressionNoteSaysWhatItHoldsANewTranslationTo() {
+        assertThat(QualityFigures.regressionNote(true))
+                .isEqualTo("The records the translation in use was learned and checked on, each with the output it "
+                           + "was accepted with. A new translation must still handle every one of them, and none "
+                           + "that translated may become a marked Unknown.");
+        assertThat(QualityFigures.regressionNote(false))
+                .endsWith("The regression check isn't a gate, so a new translation isn't held to them.");
+        assertThat(QualityFigures.regressionNote(null))
+                .describedAs("without the Learning Flow's settings, nothing is said of the check")
+                .endsWith("each with the output it was accepted with.");
+    }
+
+    @Test
+    void aFigureShowsItsNoteOnlyWhereItSaysSomethingWorthKnowing() {
+        final List<Figure> figures = QualityFigures.of(serving(0.42, 0.95, 1204, true, false, 2, true), DOC)
+                .getFigures();
+        assertThat(figures).extracting(Figure::getLabel, Figure::isNoteShown)
                 .containsExactly(
-                        tuple("Translated", "12"),
-                        tuple("Marked Unknown", "2"),
-                        tuple("Nothing", "1"),
-                        tuple("Kinds of record", "3"));
-        assertThat(QualityFigures.cardinality(report).get(1).getTone())
-                .describedAs("Unknowns call for attention")
-                .isEqualTo(Tone.WARNING);
-        assertThat(QualityFigures.cardinalityNote(report))
-                .isEqualTo("Of the 15 records the translation in use was learned and checked on, what each became.");
+                        tuple("Score lately", true),
+                        tuple("Score when it went live", false),
+                        tuple("Trust", true),
+                        tuple("Waiting streams", true));
+        final List<Figure> quiet = QualityFigures.of(serving(0.98, 0.97, 1204, false, false, 0, false), DOC)
+                .getFigures();
+        assertThat(quiet).extracting(Figure::isNoteShown).containsOnly(false);
     }
 
     @Test
-    void noUnknownsAndNoKindsSettledAreQuiet() {
-        final QualityReport report = new QualityReport(List.of(), "b-1", 4, 0, 0, 0);
-        assertThat(QualityFigures.cardinality(report)).extracting(Figure::getLabel)
-                .containsExactly("Translated", "Marked Unknown", "Nothing");
-        assertThat(QualityFigures.cardinality(report).get(1).getTone()).isEqualTo(Tone.IDLE);
-    }
-
-    @Test
-    void nothingInUseOrNothingKeptHasNoCardinality() {
-        final QualityReport none = new QualityReport(List.of(), null, 0, 0, 0, 0);
-        assertThat(QualityFigures.cardinality(none)).isEmpty();
-        assertThat(QualityFigures.cardinalityNote(none)).isNull();
-        final QualityReport empty = new QualityReport(List.of(), "b-1", 0, 0, 0, 0);
-        assertThat(QualityFigures.cardinality(empty)).isEmpty();
-        assertThat(QualityFigures.cardinalityNote(empty)).contains("keeps no records");
+    void thePositionCountsFromOne() {
+        assertThat(QualityFigures.position(0, 6)).isEqualTo("Record 1 of 6");
+        assertThat(QualityFigures.position(5, 6)).isEqualTo("Record 6 of 6");
+        assertThat(QualityFigures.position(999, 1200)).isEqualTo("Record 1,000 of 1,200");
     }
 
     private static VolumeDay day(final int day, final Long streams, final Long records) {
