@@ -176,9 +176,12 @@ public class SolrIndexFieldList extends Component {
     private void enableButtons() {
         final boolean readOnly = isReadOnly();
         newButton.setEnabled(!readOnly);
-        final boolean enabled = !readOnly && selectionModel.getSelected() != null;
-        editButton.setEnabled(enabled);
-        removeButton.setEnabled(enabled);
+        // Edit edits one field; Remove removes all selected
+        final int count = readOnly
+                ? 0
+                : selectionModel.getSelectedCount();
+        editButton.setEnabled(count == 1);
+        removeButton.setEnabled(count > 0);
 
         final String reason = readOnly
                 ? READ_ONLY_REASON
@@ -219,6 +222,7 @@ public class SolrIndexFieldList extends Component {
         }, name, width);
     }
 
+    // 110 pixels: room for a name such as "Term Positions" (100 cut it short by a couple of pixels)
     private void addBooleanColumn(final String name, final Function<SolrIndexField, Boolean> function) {
         dataGrid.addResizableColumn(new Column<SolrIndexField, String>(new TextCell()) {
             @Override
@@ -227,7 +231,7 @@ public class SolrIndexFieldList extends Component {
                         ? "Yes"
                         : "No";
             }
-        }, name, 100);
+        }, name, 110);
     }
 
 

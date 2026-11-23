@@ -98,6 +98,25 @@ public final class FloorMapEditorTabStories {
 
     private static final RestFixtures FIXTURES = fixtures(DOC);
 
+    // A desk with three versions, named A, B and C, earliest first
+    private static final String DESK_VERSIONS = """
+            [{"map": "office", "key": "desk-1", "effectiveTimeMs": 1700000000000,
+               "value": "{\\"type\\": \\"desk\\", \\"name\\": \\"A\\", \\"coords\\": [10, 20]}"},
+             {"map": "office", "key": "desk-1", "effectiveTimeMs": 1700000100000,
+               "value": "{\\"type\\": \\"desk\\", \\"name\\": \\"B\\", \\"coords\\": [10, 20]}"},
+             {"map": "office", "key": "desk-1", "effectiveTimeMs": 1700000200000,
+               "value": "{\\"type\\": \\"desk\\", \\"name\\": \\"C\\", \\"coords\\": [10, 20]}"}]""";
+
+    // The store has the desk: its latest version on the map, its three in the Time List
+    private static final RestFixtures DESK_FIXTURES = fixtures(DOC_WITH_LAYER, """
+                    [{"map": "office", "key": "desk-1", "effectiveTimeMs": 1700000200000,
+                       "value": "{\\"type\\": \\"desk\\", \\"name\\": \\"C\\", \\"coords\\": [10, 20]}"}]""",
+            RestFixtures.builder().route(RequestMatcher.post(FIND).withJsonBodyContaining(
+                            "{\"expression\": {\"children\": [{\"field\": \"Map\", \"value\": \"office\"}, "
+                            + "{\"field\": \"Key\", \"value\": \"desk-1\"}]}}"),
+                    RestReply.json("{\"values\": " + DESK_VERSIONS + ", \"pageResponse\": {\"offset\": 0, "
+                                   + "\"length\": 3, \"total\": 3, \"exact\": true}}")));
+
     // The canvas's focusable element (FloorMapCanvas's focus panel)
     private static final String CANVAS = ".floor-map-canvas";
     // Told when the editor tells its document of a change
@@ -122,15 +141,23 @@ public final class FloorMapEditorTabStories {
         // Static utility
     }
 
-    // The tab's routes, for a document
+    // The tab's routes, for a document, with an empty store
     private static RestFixtures fixtures(final String doc) {
+        return fixtures(doc, "[]", RestFixtures.builder());
+    }
+
+    // The tab's routes, for a document: the facts at a time given, after a story's own routes
+    // (which come first, so win)
+    private static RestFixtures fixtures(final String doc,
+                                         final String factsAtTime,
+                                         final RestFixtures.Builder first) {
         return DocEditors.docSelectionRoutes(
-                        DocEditors.permissionRoutes(RestFixtures.builder()))
+                        DocEditors.permissionRoutes(first))
                 .get("/floormap/v1/floormap-1", RestReply.json(doc))
             .put("/floormap/v1/floormap-1", request -> RestReply.json(request.getBody()))
             // An empty store: no time range and no facts
             .post("/sqltemporalstore/v1/timeRange", RestReply.json("{}"))
-            .post("/sqltemporalstore/v1/fetchAtTime", RestReply.json("[]"))
+            .post("/sqltemporalstore/v1/fetchAtTime", RestReply.json(factsAtTime))
             .post("/sqltemporalstore/v1/fetchAll", RestReply.json("[]"))
             // Discover's paged scan of the store: the first page says more follow (not exact), the
             // second is the last
@@ -155,6 +182,24 @@ public final class FloorMapEditorTabStories {
                     play.waitFor(() -> play.expect(play.querySelector(CANVAS)).toHaveAttribute("role", "group"));
                     play.click(play.getByRole("button", "Timeline help"));
                     play.expect(screen.findByText("Timeline", "h4")).toBeInTheDocument();
+                    play.expect(play.spy(ScreenHarness.ALERT_SPY)).not().toHaveBeenCalled();
+                })
+                // Deleting a fact's middle version selects the version now in its place, the next,
+                // as every list does after a delete; it once selected the version above
+                .story("DeleteTimeSelectsNext", context -> render(context, DESK_FIXTURES))
+                .withPlay(play -> {
+                    final Play facts = play.within(play.findByRole("grid", "Facts"));
+                    play.click(facts.findByText("desk-1"));
+                    final Play times = play.within(play.getByRole("grid", "Fact Times"));
+                    play.click(times.findByText("desk - B"));
+                    play.waitFor(() -> play.expect(times.getByText("desk - B").closest(StroomDom.GRID_ROW))
+                            .toHaveClass(StroomDom.SELECTED_ROW));
+                    play.click(play.within(play.getByRole("toolbar", "Time list actions"))
+                            .getByRole("button", "Delete"));
+                    play.waitFor(() -> play.expect(times.queryByText("desk - B")).toBeNull());
+                    play.waitFor(() -> play.expect(times.getByText("desk - C").closest(StroomDom.GRID_ROW))
+                            .toHaveClass(StroomDom.SELECTED_ROW));
+                    play.expect(times.querySelectorAll("." + StroomDom.SELECTED_ROW)).toHaveLength(1);
                     play.expect(play.spy(ScreenHarness.ALERT_SPY)).not().toHaveBeenCalled();
                 })
                 // The Fact List and Time List show below the timeline, filling the rest of the bottom
@@ -183,6 +228,20 @@ public final class FloorMapEditorTabStories {
                     play.click(dialog.getByRole("button", StroomDom.button("OK")));
                     play.waitFor(() -> play.expect(screen.queryByRole("dialog", "Add Object")).toBeNull());
                     play.expect(play.spy(ON_CHANGE)).toHaveBeenCalled();
+                })
+                // Add Object left open (the screenshot and the dialog measurement show it)
+                .story("AddObjectOpen", FloorMapEditorTabStories::render)
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    final Query canvas = play.querySelector(CANVAS);
+                    play.waitFor(() -> play.expect(canvas).toHaveAttribute("role", "group"));
+                    play.run("focus the canvas", () -> canvas.element().get().focus());
+                    play.keyboard("{Shift>}{F10}{/Shift}");
+                    expectMenuWithFocus(play, screen);
+                    play.click(screen.getByRole("menuitem", "Add Object Here"));
+                    final Play dialog = screen.within(screen.findByText("Add Object", StroomDom.DIALOG_TITLE)
+                            .closest(StroomDom.DIALOG));
+                    dialog.findByRole("textbox", "Type");
                 })
                 // Shift+F10 and the context menu key, the standard keys for a context menu, open the
                 // focused canvas's menu, as Enter and Space do. The menu is named for what it acts
@@ -242,6 +301,18 @@ public final class FloorMapEditorTabStories {
                             .toBeNull());
                     play.expect(play.spy(ScreenHarness.ALERT_SPY)).not().toHaveBeenCalled();
                     DocEditors.expectNoProblems(play);
+                })
+                // Set Scale left open, a form as every dialog's is: the measured length, then the real
+                // length's distance and unit, named by its label (the screenshot shows it)
+                .story("SetScaleOpen", FloorMapEditorTabStories::render)
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    final Play dialog = measureLine(play, screen);
+                    final Query distance = dialog.getByRole("textbox", "Distance");
+                    play.waitFor(() -> play.expect(distance).toHaveFocus());
+                    play.expect(dialog.getByRole("combobox", "Unit of the distance you typed")).toBeInTheDocument();
+                    play.expect(dialog.getByRole("group", "Real Length")).toBeInTheDocument();
+                    play.expect(dialog.getByText("Measured Length")).toBeInTheDocument();
                 })
                 // Set Scale with no distance: OK says what is wanted, and the dialog stays open
                 .story("SetScaleInvalid", FloorMapEditorTabStories::render)
@@ -311,6 +382,13 @@ public final class FloorMapEditorTabStories {
                     play.waitFor(() -> play.expect(screen.queryByText(APPEARANCE)).toBeNull());
                     play.expect(play.getByRole("button", DESK_SWATCH)).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
+                })
+                // Appearance left open (the screenshot and the dialog measurement show it)
+                .story("AppearanceOpen", context -> render(context, fixtures(DOC_WITH_LAYER)))
+                .withPlay(play -> {
+                    play.click(play.findByRole("button", DESK_SWATCH));
+                    final Play dialog = appearance(play.screen());
+                    play.waitFor(() -> play.expect(dialog.getByRole("combobox", "Shape")).toHaveValue("CIRCLE"));
                 })
                 // A layer's grip moves it with the arrow keys, keeping the focus on the moved layer's
                 // grip and saying where it went
