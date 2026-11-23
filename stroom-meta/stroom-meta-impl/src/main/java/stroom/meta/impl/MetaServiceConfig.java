@@ -82,11 +82,11 @@ public class MetaServiceConfig extends AbstractConfig implements IsStroomConfig,
                 .build();
         // Use LinkedHashSet for consistent order when serialised
         // The hard-coded types, and the Smart Pipelines corpus. The corpus is written by Stroom itself
-        // and must not be receivable from outside (see StreamTypeNames.SHAPESHIFTER_CORPUS), but it has
+        // and must not be receivable from outside (see StreamTypeNames.LEARNING_FLOW_CORPUS), but it has
         // to be listed here or it cannot be picked — and so cannot be excluded from a processor filter
         // written over a feed alone (audit finding S13).
         final Set<String> stored = new HashSet<>(StreamTypeNames.ALL_HARD_CODED_STREAM_TYPE_NAMES);
-        stored.add(StreamTypeNames.SHAPESHIFTER_CORPUS);
+        stored.add(StreamTypeNames.LEARNING_FLOW_CORPUS);
         metaTypes = CollectionUtil.asUnmodifiabledConsistentOrderSet(stored);
         rawMetaTypes = CollectionUtil.asUnmodifiabledConsistentOrderSet(
                 StreamTypeNames.ALL_HARD_CODED_RAW_STREAM_TYPE_NAMES);

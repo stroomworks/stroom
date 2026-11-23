@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParserFactory;
 
-/// A parser that stands where Shapeshifter AI's will: the first time it meets a stream it asks for the
+/// A parser that stands where Learning Flow's will: the first time it meets a stream it asks for the
 /// task back later, and the next time it emits one small document. What it proves is the path the
 /// exception takes out of a pipeline, not anything about parsing.
 @ConfigurableElement(

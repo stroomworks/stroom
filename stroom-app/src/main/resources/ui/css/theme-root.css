@@ -158,7 +158,7 @@
     --pipeline-connector__raw: var(--orange-900);
     --pipeline-connector__xml: var(--purple-600);
     --pipeline-connector__bytes: var(--blue-700);
-    /* A Shapeshifter AI flow chart's path taken, its labels and visits (flow-chart.css), at least
+    /* A Learning Flow flow chart's path taken, its labels and visits (flow-chart.css), at least
        4.5:1 against the page as its labels are text; and the visits' numbers, against the path */
     --flow-chart__path: var(--deep-orange-900);
     --flow-chart__path-text: var(--white);

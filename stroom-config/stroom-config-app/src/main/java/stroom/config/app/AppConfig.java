@@ -48,6 +48,7 @@ import stroom.index.impl.db.IndexFieldDbConfig;
 import stroom.index.impl.selection.VolumeConfig;
 import stroom.job.impl.JobSystemConfig;
 import stroom.kafka.impl.KafkaConfig;
+import stroom.learningflow.LearningFlowConfig;
 import stroom.lifecycle.impl.LifecycleConfig;
 import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
@@ -59,7 +60,6 @@ import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
 import stroom.search.impl.SearchConfig;
 import stroom.search.solr.SolrConfig;
-import stroom.shapeshifter.ai.ShapeshifterAiConfig;
 import stroom.sqlstore.impl.SqlStoreConfig;
 import stroom.storedquery.impl.StoredQueryConfig;
 import stroom.ui.config.shared.UiConfig;
@@ -136,7 +136,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_S3 = "s3";
     public static final String PROP_NAME_SEARCH = "search";
     public static final String PROP_NAME_SECURITY = "security";
-    public static final String PROP_NAME_SHAPESHIFTER_AI = "shapeshifterAi";
+    public static final String PROP_NAME_LEARNING_FLOW = "learningFlow";
     public static final String PROP_NAME_SESSION_COOKIE = "sessionCookie";
     public static final String PROP_NAME_SESSION = "session";
     public static final String PROP_NAME_SOLR = "solr";
@@ -204,7 +204,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final S3Config s3Config;
     private final SearchConfig searchConfig;
     private final SecurityConfig securityConfig;
-    private final ShapeshifterAiConfig shapeshifterAiConfig;
+    private final LearningFlowConfig learningFlowConfig;
     private final SessionCookieConfig sessionCookieConfig;
     private final SessionConfig sessionConfig;
     private final SolrConfig solrConfig;
@@ -265,7 +265,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new S3Config(),
                 new SearchConfig(),
                 new SecurityConfig(),
-                new ShapeshifterAiConfig(),
+                new LearningFlowConfig(),
                 new SessionCookieConfig(),
                 new SessionConfig(),
                 new SolrConfig(),
@@ -325,7 +325,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_S3) final S3Config s3Config,
                      @JsonProperty(PROP_NAME_SEARCH) final SearchConfig searchConfig,
                      @JsonProperty(PROP_NAME_SECURITY) final SecurityConfig securityConfig,
-                     @JsonProperty(PROP_NAME_SHAPESHIFTER_AI) final ShapeshifterAiConfig shapeshifterAiConfig,
+                     @JsonProperty(PROP_NAME_LEARNING_FLOW) final LearningFlowConfig learningFlowConfig,
                      @JsonProperty(PROP_NAME_SESSION_COOKIE) final SessionCookieConfig sessionCookieConfig,
                      @JsonProperty(PROP_NAME_SESSION) final SessionConfig sessionConfig,
                      @JsonProperty(PROP_NAME_SOLR) final SolrConfig solrConfig,
@@ -384,7 +384,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.s3Config = s3Config;
         this.searchConfig = searchConfig;
         this.securityConfig = securityConfig;
-        this.shapeshifterAiConfig = shapeshifterAiConfig;
+        this.learningFlowConfig = learningFlowConfig;
         this.sessionCookieConfig = sessionCookieConfig;
         this.sessionConfig = sessionConfig;
         this.solrConfig = solrConfig;
@@ -643,11 +643,11 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         return solrConfig;
     }
 
-    @JsonProperty(PROP_NAME_SHAPESHIFTER_AI)
-    @JsonPropertyDescription("Configuration for Shapeshifter AI, which learns a feed's extraction and "
+    @JsonProperty(PROP_NAME_LEARNING_FLOW)
+    @JsonPropertyDescription("Configuration for Learning Flow, which learns a feed's extraction and "
                              + "transformation and routes streams to what it learned.")
-    public ShapeshifterAiConfig getShapeshifterAiConfig() {
-        return shapeshifterAiConfig;
+    public LearningFlowConfig getLearningFlowConfig() {
+        return learningFlowConfig;
     }
 
     @JsonProperty(PROP_NAME_SECURITY)

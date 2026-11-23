@@ -45,6 +45,7 @@ import stroom.importexport.client.gin.ImportExportConfigModule;
 import stroom.index.client.gin.IndexModule;
 import stroom.job.client.gin.JobModule;
 import stroom.kafka.client.gin.KafkaConfigModule;
+import stroom.learningflow.client.gin.LearningFlowModule;
 import stroom.node.client.gin.NodeModule;
 import stroom.openai.client.gin.OpenAIModelModule;
 import stroom.pathways.client.gin.PathwaysModule;
@@ -64,7 +65,6 @@ import stroom.security.client.gin.SecurityGinjector;
 import stroom.security.client.gin.SecurityModule;
 import stroom.security.identity.client.gin.IdentityGinjector;
 import stroom.security.identity.client.gin.IdentityModule;
-import stroom.shapeshifter.client.gin.ShapeshifterAiModule;
 import stroom.sqlstore.client.gin.SqlTemporalStoreModule;
 import stroom.statistics.impl.sql.client.gin.StatisticsModule;
 import stroom.task.client.gin.TaskModule;
@@ -108,7 +108,7 @@ import com.google.web.bindery.event.shared.EventBus;
         OpenAIModelModule.class,
         PathwaysModule.class,
         PipelineModule.class,
-        ShapeshifterAiModule.class,
+        LearningFlowModule.class,
         PluginsModule.class,
         ReceiveRulesModule.class,
         PopupModule.class,

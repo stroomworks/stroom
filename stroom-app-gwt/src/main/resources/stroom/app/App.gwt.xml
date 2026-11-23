@@ -129,7 +129,7 @@
     <inherits name="stroom.gitrepo.GitRepo" />
     <inherits name="stroom.credentials.Credentials"/>
     <inherits name="stroom.openai.OpenAIModel" />
-    <inherits name="stroom.shapeshifter.ShapeshifterAi" />
+    <inherits name="stroom.learningflow.LearningFlow" />
 
     <inherits name="stroom.query.Query" />
 

@@ -41,11 +41,11 @@ import stroom.importexport.client.component.DependenciesTabController;
 import stroom.importexport.client.component.ImportConfigConfirmController;
 import stroom.importexport.client.component.ImportConfigController;
 import stroom.index.client.component.IndexVolumeGroupsController;
+import stroom.learningflow.client.component.SupervisorController;
 import stroom.node.client.component.DatabaseTablesController;
 import stroom.pathways.client.component.TracesEditor;
 import stroom.query.client.component.SearchResultStoresController;
 import stroom.receive.content.client.component.ContentTemplateTabController;
-import stroom.shapeshifter.client.component.SupervisorController;
 import stroom.xmlschema.client.XMLSchemaPlugin;
 
 import com.google.gwt.inject.client.GinModules;
@@ -66,7 +66,7 @@ public interface ContentScreenGinjector extends ScreenGinjector {
     /// @return The 'Caches' tab.
     CachesController getCachesController();
 
-    /// @return The Smart Pipelines screen, as `ShapeshifterAiSupervisorPlugin` opens it.
+    /// @return The Smart Pipelines screen, as `LearningFlowSupervisorPlugin` opens it.
     SupervisorController getSupervisorController();
 
     /// @return The 'Database Tables' tab.

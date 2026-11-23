@@ -16,7 +16,7 @@
 
 package stroom.pipeline.shared.stepping;
 
-import stroom.shapeshifter.shared.ShapeshifterAiStepDetails;
+import stroom.learningflow.shared.LearningFlowStepDetails;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -42,7 +42,7 @@ import java.util.List;
         use = JsonTypeInfo.Id.NAME,
         property = "type")
 @JsonSubTypes({
-        @JsonSubTypes.Type(value = ShapeshifterAiStepDetails.class, name = "shapeshifterAi")
+        @JsonSubTypes.Type(value = LearningFlowStepDetails.class, name = "learningFlow")
 })
 @JsonInclude(Include.NON_NULL)
 public abstract class ElementStepDetails {

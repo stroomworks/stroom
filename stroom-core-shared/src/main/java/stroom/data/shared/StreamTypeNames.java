@@ -100,7 +100,7 @@ public class StreamTypeNames {
      * cannot be chosen, and so cannot be <em>excluded</em> from a processor filter written over a feed
      * alone (audit finding S13).
      */
-    public static final String SHAPESHIFTER_CORPUS = "Shapeshifter Corpus";
+    public static final String LEARNING_FLOW_CORPUS = "Learning Flow Corpus";
 
     /**
      * Must NOT be used for stream type name validation or getting a full list

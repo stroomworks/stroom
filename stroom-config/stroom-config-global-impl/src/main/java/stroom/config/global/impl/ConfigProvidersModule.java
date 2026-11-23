@@ -847,10 +847,10 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
-    stroom.shapeshifter.ai.ShapeshifterAiConfig getShapeshifterAiConfig(
+    stroom.learningflow.LearningFlowConfig getLearningFlowConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
-                stroom.shapeshifter.ai.ShapeshifterAiConfig.class);
+                stroom.learningflow.LearningFlowConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")

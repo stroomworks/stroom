@@ -232,7 +232,7 @@ public class PipelineStructureController extends Controller {
     }
 
     /// @param detail What more its owner has to say about the element selected, shown above its
-    ///               properties (e.g. what an AI Translator has learned), which shows or hides itself.
+    ///               properties (e.g. what a Smart Pipeline has learned), which shows or hides itself.
     public void setElementDetail(final IsWidget detail) {
         view.setElementDetail(detail);
     }

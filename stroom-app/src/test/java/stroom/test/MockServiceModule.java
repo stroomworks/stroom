@@ -42,6 +42,7 @@ import stroom.feed.impl.MockFeedModule;
 import stroom.gitrepo.mock.MockGitRepoModule;
 import stroom.importexport.impl.ImportExportModule;
 import stroom.index.mock.MockIndexModule;
+import stroom.learningflow.LearningFlowTestModule;
 import stroom.meta.mock.MockMetaModule;
 import stroom.node.mock.MockNodeServiceModule;
 import stroom.pipeline.xmlschema.MockXmlSchemaModule;
@@ -54,7 +55,6 @@ import stroom.security.api.UserService;
 import stroom.security.mock.MockSecurityContext;
 import stroom.security.mock.MockSecurityContextModule;
 import stroom.security.shared.User;
-import stroom.shapeshifter.ShapeshifterAiTestModule;
 import stroom.statistics.mock.MockInternalStatisticsModule;
 import stroom.task.impl.MockTaskModule;
 import stroom.test.common.MockMetricsModule;
@@ -131,9 +131,9 @@ public class MockServiceModule extends AbstractModule {
         install(new MockPlanBModule());
         install(new MockClusterLockModule());
         install(new MockAiModule());
-        install(new ShapeshifterAiTestModule());
+        install(new LearningFlowTestModule());
         // No database in this harness: the runtime state of A26 is in memory (design 02 §2, tier 1's reach).
-        install(new stroom.shapeshifter.ai.state.InMemoryStateModule());
+        install(new stroom.learningflow.state.InMemoryStateModule());
         install(new stroom.core.entity.event.EntityEventModule());
 
         bind(stroom.pipeline.xsltfunctions.SqlStoreLookup.class).toProvider(() -> null);

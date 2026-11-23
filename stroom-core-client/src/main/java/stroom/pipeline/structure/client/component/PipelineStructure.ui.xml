@@ -42,7 +42,7 @@
             <split:SplitPane vertical="true" thin="true" sizes="50%, *"
                              names="Properties, Pipeline references" addStyleNames="max">
                 <!-- Above the properties, what else there is to say about the element selected, e.g. what an
-                     AI Translator has learned; empty for most -->
+                     Smart Pipeline has learned; empty for most -->
                 <g:FlowPanel styleName="max dock-container-vertical">
                     <g:SimplePanel ui:field="elementDetail" styleName="dock-min"/>
                     <g:SimplePanel styleName="dock-max">

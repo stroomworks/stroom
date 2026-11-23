@@ -106,8 +106,8 @@
 
     <!-- Additional -->
     <inherits name="stroom.ai.AI" />
-    <!-- PipelineEditor (stroom.pipeline.Pipeline) opens the Shapeshifter AI tabs, so needs their source -->
-    <inherits name="stroom.shapeshifter.ShapeshifterAi" />
+    <!-- PipelineEditor (stroom.pipeline.Pipeline) opens the Learning Flow tabs, so needs their source -->
+    <inherits name="stroom.learningflow.LearningFlow" />
     <inherits name="stroom.dashboard.Dashboard"/>
     <inherits name="stroom.expression.Expression"/>
     <inherits name="stroom.query.Query"/>

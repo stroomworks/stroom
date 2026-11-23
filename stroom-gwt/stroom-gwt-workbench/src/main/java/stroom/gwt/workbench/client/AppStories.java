@@ -97,6 +97,12 @@ import stroom.gwt.workbench.client.app.index.ElasticIndexEditorStories;
 import stroom.gwt.workbench.client.app.index.IndexEditorStories;
 import stroom.gwt.workbench.client.app.index.IndexVolumesScreenStories;
 import stroom.gwt.workbench.client.app.index.SolrIndexEditorStories;
+import stroom.gwt.workbench.client.app.learningflow.LearningFlowEditorStories;
+import stroom.gwt.workbench.client.app.learningflow.LearningFlowStopReportStories;
+import stroom.gwt.workbench.client.app.learningflow.PipelineAiTranslationStories;
+import stroom.gwt.workbench.client.app.learningflow.PipelineQualityStories;
+import stroom.gwt.workbench.client.app.learningflow.StageDecisionPaneStories;
+import stroom.gwt.workbench.client.app.learningflow.SupervisorStories;
 import stroom.gwt.workbench.client.app.main.AboutDialogStories;
 import stroom.gwt.workbench.client.app.main.ApiErrorAlertHostStories;
 import stroom.gwt.workbench.client.app.main.AppPageStories;
@@ -142,12 +148,6 @@ import stroom.gwt.workbench.client.app.security.UserGroupsScreenStories;
 import stroom.gwt.workbench.client.app.security.UserProfileScreenStories;
 import stroom.gwt.workbench.client.app.security.UserTabScreenStories;
 import stroom.gwt.workbench.client.app.security.UsersScreenStories;
-import stroom.gwt.workbench.client.app.shapeshifter.PipelineAiTranslationStories;
-import stroom.gwt.workbench.client.app.shapeshifter.PipelineQualityStories;
-import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiEditorStories;
-import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiStopReportStories;
-import stroom.gwt.workbench.client.app.shapeshifter.StageDecisionPaneStories;
-import stroom.gwt.workbench.client.app.shapeshifter.SupervisorStories;
 import stroom.gwt.workbench.client.app.vis.ChartVisStories;
 import stroom.gwt.workbench.client.app.vis.MapVisStories;
 import stroom.gwt.workbench.client.app.vis.NetworkVisStories;
@@ -292,7 +292,7 @@ public final class AppStories {
         RecentItemsDialogStories.addTo(registry);
         // App/Main/ResultStoresDialog
         ResultStoresDialogStories.addTo(registry);
-        // App/Main/ShapeshifterAiSupervisor
+        // App/Main/LearningFlowSupervisor
         SupervisorStories.addTo(registry);
         // App/Main/ServerTasksScreen
         ServerTasksScreenStories.addTo(registry);
@@ -367,9 +367,9 @@ public final class AppStories {
         QueryEditorStories.addTo(registry);
         // App/Editors/ReportEditor
         ReportEditorStories.addTo(registry);
-        // App/Editors/ShapeshifterAiEditor
-        ShapeshifterAiEditorStories.addTo(registry);
-        ShapeshifterAiStopReportStories.addTo(registry);
+        // App/Editors/LearningFlowEditor
+        LearningFlowEditorStories.addTo(registry);
+        LearningFlowStopReportStories.addTo(registry);
         // App/Editors/PipelineAiTranslation
         PipelineAiTranslationStories.addTo(registry);
         PipelineQualityStories.addTo(registry);

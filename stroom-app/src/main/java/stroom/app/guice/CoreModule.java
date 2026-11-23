@@ -134,7 +134,7 @@ public class CoreModule extends AbstractModule {
         install(new stroom.security.impl.SecurityModule());
         install(new stroom.security.impl.SessionSecurityModule());
         install(new stroom.security.impl.dao.SecurityDaoModule());
-        install(new stroom.shapeshifter.ai.impl.db.ShapeshifterAiDaoModule());
+        install(new stroom.learningflow.impl.db.LearningFlowDaoModule());
         install(new stroom.analytics.impl.AnalyticRuleModule());
         install(new stroom.analytics.impl.ReportModule());
         install(new stroom.datagen.impl.DataGenModule());

@@ -15,7 +15,7 @@
  */
 
 /*
-   A Smart Pipeline's Quality Assurance tab (stroom.shapeshifter.client.component.QualityTab): which AI Translator
+   A Smart Pipeline's Quality Assurance tab (stroom.learningflow.client.component.QualityTab): which Smart Pipeline
    element, where there are several; the figures its translation is judged by, as tiles that wrap, each tinted by
    whether it calls for attention; and its learning runs' scores in a grid.
 */

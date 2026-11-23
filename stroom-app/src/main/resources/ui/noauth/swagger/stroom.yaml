@@ -5185,6 +5185,663 @@ paths:
       summary: Update a kafkaConfig doc
       tags:
       - Kafka Config
+  /learningFlow/v1/flowExamples:
+    get:
+      operationId: fetchLearningFlowFlowExamples
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BuiltInFlow"
+          description: default response
+      summary: The built-in default setups and their steps
+      tags:
+      - Learning Flow
+  /learningFlow/v1/targetSchema/{uuid}:
+    get:
+      operationId: fetchLearningFlowTargetSchema
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetSchemaSummary"
+          description: default response
+      summary: What a Learning Flow's Setup tab says about a target schema
+      tags:
+      - Learning Flow
+  /learningFlow/v1/templates:
+    get:
+      operationId: fetchLearningFlowTemplates
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuiltInTemplates"
+          description: default response
+      summary: The built-in text of the flow's templates and its version
+      tags:
+      - Learning Flow
+  /learningFlow/v1/{uuid}:
+    get:
+      operationId: fetchLearningFlow
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningFlowDoc"
+          description: default response
+      summary: Fetch a Learning Flow document by its UUID
+      tags:
+      - Learning Flow
+    put:
+      operationId: updateLearningFlow
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearningFlowDoc"
+        description: doc
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningFlowDoc"
+          description: default response
+      summary: Update a Learning Flow document
+      tags:
+      - Learning Flow
+  /learningFlowQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}:
+    get:
+      operationId: fetchLearningFlowQuality
+      parameters:
+      - in: path
+        name: pipelineUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: elementId
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualityReport"
+          description: default response
+      summary: "The volume a Smart Pipeline translated lately, and the cardinality\
+        \ of its translation"
+      tags:
+      - Learning Flow Quality
+  /learningFlowQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}/samples:
+    get:
+      operationId: fetchLearningFlowQualitySamples
+      parameters:
+      - in: path
+        name: pipelineUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: elementId
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QualitySample"
+          description: default response
+      summary: Samples of a Smart Pipeline's source records beside its translated
+        output
+      tags:
+      - Learning Flow Quality
+  /learningFlowSupervisor/v1/backlog:
+    post:
+      operationId: findLearningFlowBacklog
+      parameters:
+      - in: query
+        name: docUuid
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageRequest"
+        description: page
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageBacklogStream"
+          description: default response
+      summary: "What is waiting on a session, a row per stream, the raised ones first"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/find:
+    post:
+      operationId: findLearningFlowAttempts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttemptCriteria"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageSupervisorAttempt"
+          description: default response
+      summary: Find attempts across every Learning Flow document
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/guidance/{docUuid}:
+    get:
+      operationId: fetchLearningFlowGuidance
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorGuidance"
+          description: default response
+      summary: What a supervisor has told a learner
+      tags:
+      - Learning Flow Supervisor
+    post:
+      operationId: addLearningFlowGuidance
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuidanceRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorGuidance"
+          description: default response
+      summary: "Tell a learner something, without asking for anything to be run"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/guidance/{docUuid}/{id}:
+    delete:
+      operationId: withdrawLearningFlowGuidance
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorGuidance"
+          description: default response
+      summary: "Take back something said to a learner, so that it stops being carried"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/learners:
+    post:
+      operationId: findLearningFlowLearners
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerCriteria"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageSupervisorLearner"
+          description: default response
+      summary: "The learning pipelines: each pipeline's Learning Flow element that\
+        \ has learned or is learning, where it stands, what serves it and what waits\
+        \ on it"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/learners/{docUuid}/giveUp:
+    post:
+      operationId: giveUpLearningFlowLearner
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: "Give a learner up: it learns no more, and its streams nothing serves\
+        \ error"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/learners/{docUuid}/relearn:
+    post:
+      operationId: relearnLearningFlowLearner
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Send a learner back to learn afresh from its next stream
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/learners/{docUuid}/settings:
+    get:
+      operationId: fetchLearningFlowLearnerSettings
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningFlowDoc"
+          description: default response
+      summary: "The settings of the Learning Flow document a learner runs under, for\
+        \ its pipeline's editor"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/learners/{docUuid}/waiting:
+    post:
+      operationId: findLearningFlowLearnerWaiting
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: pipelineUuid
+        schema:
+          type: string
+      - in: query
+        name: elementId
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageRequest"
+        description: page
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageBacklogStream"
+          description: default response
+      summary: "The streams waiting on one learner, oldest first"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/pipelines/{pipelineUuid}/learners:
+    get:
+      operationId: findLearningFlowPipelineLearners
+      parameters:
+      - in: path
+        name: pipelineUuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupervisorLearner"
+          description: default response
+      summary: "The learners of one pipeline: each of its Learning Flow elements that\
+        \ has learned or is learning, where it stands, what serves it and what waits\
+        \ on it"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/serving/{docUuid}/{bindingUuid}/improve:
+    post:
+      operationId: improveLearningFlowBinding
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: bindingUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImproveRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImproveOutcome"
+          description: default response
+      summary: Ask for a binding that is already serving to be made better
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/serving/{docUuid}/{bindingUuid}/retract:
+    post:
+      operationId: retractLearningFlowBinding
+      parameters:
+      - in: path
+        name: docUuid
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: bindingUuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: integer
+                format: int32
+          description: default response
+      summary: "Take back a binding that is serving, and say how many streams it produced\
+        \ output for"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}:
+    get:
+      operationId: fetchLearningFlowAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: Read one attempt with its turns
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}/approve:
+    post:
+      operationId: approveLearningFlowAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: Approve what an attempt drafted
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}/exhaust:
+    post:
+      operationId: exhaustLearningFlowAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Send a parked attempt to the exhaustion step, and carry it on"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}/grant:
+    post:
+      operationId: grantLearningFlowAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Give a parked attempt more to spend, and carry it on"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}/reject:
+    post:
+      operationId: rejectLearningFlowAttempt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Reject what an attempt drafted, and give its learner up"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}/turns/{number}:
+    post:
+      operationId: amendLearningFlowTurn
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: path
+        name: number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmendTurnRequest"
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorAttempt"
+          description: default response
+      summary: "Answer a turn instead, or edit one and run the attempt again from\
+        \ there"
+      tags:
+      - Learning Flow Supervisor
+  /learningFlowSupervisor/v1/{id}/turns/{number}/prompt:
+    get:
+      operationId: fetchLearningFlowTurnPrompt
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: path
+        name: number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RebuiltPrompt"
+          description: default response
+      summary: Rebuild the prompt a turn was put to the model with
+      tags:
+      - Learning Flow Supervisor
   /meta/v1/find:
     post:
       operationId: findMetaRow
@@ -8141,663 +8798,6 @@ paths:
       summary: Get information for the current session
       tags:
       - Session Info
-  /shapeshifterAi/v1/flowExamples:
-    get:
-      operationId: fetchShapeshifterAiFlowExamples
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/BuiltInFlow"
-          description: default response
-      summary: The built-in default setups and their steps
-      tags:
-      - Shapeshifter AI
-  /shapeshifterAi/v1/targetSchema/{uuid}:
-    get:
-      operationId: fetchShapeshifterAiTargetSchema
-      parameters:
-      - in: path
-        name: uuid
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TargetSchemaSummary"
-          description: default response
-      summary: What a Learning Flow's Setup tab says about a target schema
-      tags:
-      - Shapeshifter AI
-  /shapeshifterAi/v1/templates:
-    get:
-      operationId: fetchShapeshifterAiTemplates
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BuiltInTemplates"
-          description: default response
-      summary: The built-in text of the flow's templates and its version
-      tags:
-      - Shapeshifter AI
-  /shapeshifterAi/v1/{uuid}:
-    get:
-      operationId: fetchShapeshifterAi
-      parameters:
-      - in: path
-        name: uuid
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShapeshifterAiDoc"
-          description: default response
-      summary: Fetch a Shapeshifter AI document by its UUID
-      tags:
-      - Shapeshifter AI
-    put:
-      operationId: updateShapeshifterAi
-      parameters:
-      - in: path
-        name: uuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ShapeshifterAiDoc"
-        description: doc
-        required: true
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShapeshifterAiDoc"
-          description: default response
-      summary: Update a Shapeshifter AI document
-      tags:
-      - Shapeshifter AI
-  /shapeshifterAiQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}:
-    get:
-      operationId: fetchShapeshifterAiQuality
-      parameters:
-      - in: path
-        name: pipelineUuid
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: elementId
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QualityReport"
-          description: default response
-      summary: "The volume a Smart Pipeline translated lately, and the cardinality\
-        \ of its translation"
-      tags:
-      - Shapeshifter AI Quality
-  /shapeshifterAiQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}/samples:
-    get:
-      operationId: fetchShapeshifterAiQualitySamples
-      parameters:
-      - in: path
-        name: pipelineUuid
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: elementId
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/QualitySample"
-          description: default response
-      summary: Samples of a Smart Pipeline's source records beside its translated
-        output
-      tags:
-      - Shapeshifter AI Quality
-  /shapeshifterAiSupervisor/v1/backlog:
-    post:
-      operationId: findShapeshifterAiBacklog
-      parameters:
-      - in: query
-        name: docUuid
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PageRequest"
-        description: page
-        required: true
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultPageBacklogStream"
-          description: default response
-      summary: "What is waiting on a session, a row per stream, the raised ones first"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/find:
-    post:
-      operationId: findShapeshifterAiAttempts
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AttemptCriteria"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultPageSupervisorAttempt"
-          description: default response
-      summary: Find attempts across every Shapeshifter AI document
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/guidance/{docUuid}:
-    get:
-      operationId: fetchShapeshifterAiGuidance
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      - in: query
-        name: pipelineUuid
-        schema:
-          type: string
-      - in: query
-        name: elementId
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SupervisorGuidance"
-          description: default response
-      summary: What a supervisor has told a learner
-      tags:
-      - Shapeshifter AI Supervisor
-    post:
-      operationId: addShapeshifterAiGuidance
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GuidanceRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SupervisorGuidance"
-          description: default response
-      summary: "Tell a learner something, without asking for anything to be run"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/guidance/{docUuid}/{id}:
-    delete:
-      operationId: withdrawShapeshifterAiGuidance
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      - in: query
-        name: pipelineUuid
-        schema:
-          type: string
-      - in: query
-        name: elementId
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SupervisorGuidance"
-          description: default response
-      summary: "Take back something said to a learner, so that it stops being carried"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/learners:
-    post:
-      operationId: findShapeshifterAiLearners
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LearnerCriteria"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultPageSupervisorLearner"
-          description: default response
-      summary: "The learning pipelines: each pipeline's Shapeshifter AI element that\
-        \ has learned or is learning, where it stands, what serves it and what waits\
-        \ on it"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/learners/{docUuid}/giveUp:
-    post:
-      operationId: giveUpShapeshifterAiLearner
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LearnerRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: boolean
-          description: default response
-      summary: "Give a learner up: it learns no more, and its streams nothing serves\
-        \ error"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/learners/{docUuid}/relearn:
-    post:
-      operationId: relearnShapeshifterAiLearner
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LearnerRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: boolean
-          description: default response
-      summary: Send a learner back to learn afresh from its next stream
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/learners/{docUuid}/settings:
-    get:
-      operationId: fetchShapeshifterAiLearnerSettings
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      - in: query
-        name: pipelineUuid
-        schema:
-          type: string
-      - in: query
-        name: elementId
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShapeshifterAiDoc"
-          description: default response
-      summary: "The settings of the Shapeshifter AI document a learner runs under,\
-        \ for its pipeline's editor"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/learners/{docUuid}/waiting:
-    post:
-      operationId: findShapeshifterAiLearnerWaiting
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      - in: query
-        name: pipelineUuid
-        schema:
-          type: string
-      - in: query
-        name: elementId
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PageRequest"
-        description: page
-        required: true
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultPageBacklogStream"
-          description: default response
-      summary: "The streams waiting on one learner, oldest first"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/pipelines/{pipelineUuid}/learners:
-    get:
-      operationId: findShapeshifterAiPipelineLearners
-      parameters:
-      - in: path
-        name: pipelineUuid
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SupervisorLearner"
-          description: default response
-      summary: "The learners of one pipeline: each of its Shapeshifter AI elements\
-        \ that has learned or is learning, where it stands, what serves it and what\
-        \ waits on it"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/improve:
-    post:
-      operationId: improveShapeshifterAiBinding
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: bindingUuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ImproveRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ImproveOutcome"
-          description: default response
-      summary: Ask for a binding that is already serving to be made better
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/serving/{docUuid}/{bindingUuid}/retract:
-    post:
-      operationId: retractShapeshifterAiBinding
-      parameters:
-      - in: path
-        name: docUuid
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: bindingUuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RejectRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: integer
-                format: int32
-          description: default response
-      summary: "Take back a binding that is serving, and say how many streams it produced\
-        \ output for"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}:
-    get:
-      operationId: fetchShapeshifterAiAttempt
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupervisorAttempt"
-          description: default response
-      summary: Read one attempt with its turns
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}/approve:
-    post:
-      operationId: approveShapeshifterAiAttempt
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupervisorAttempt"
-          description: default response
-      summary: Approve what an attempt drafted
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}/exhaust:
-    post:
-      operationId: exhaustShapeshifterAiAttempt
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupervisorAttempt"
-          description: default response
-      summary: "Send a parked attempt to the exhaustion step, and carry it on"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}/grant:
-    post:
-      operationId: grantShapeshifterAiAttempt
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GrantRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupervisorAttempt"
-          description: default response
-      summary: "Give a parked attempt more to spend, and carry it on"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}/reject:
-    post:
-      operationId: rejectShapeshifterAiAttempt
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RejectRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupervisorAttempt"
-          description: default response
-      summary: "Reject what an attempt drafted, and give its learner up"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}/turns/{number}:
-    post:
-      operationId: amendShapeshifterAiTurn
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      - in: path
-        name: number
-        required: true
-        schema:
-          type: integer
-          format: int32
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AmendTurnRequest"
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SupervisorAttempt"
-          description: default response
-      summary: "Answer a turn instead, or edit one and run the attempt again from\
-        \ there"
-      tags:
-      - Shapeshifter AI Supervisor
-  /shapeshifterAiSupervisor/v1/{id}/turns/{number}/prompt:
-    get:
-      operationId: fetchShapeshifterAiTurnPrompt
-      parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-          format: int64
-      - in: path
-        name: number
-        required: true
-        schema:
-          type: integer
-          format: int32
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RebuiltPrompt"
-          description: default response
-      summary: Rebuild the prompt a turn was put to the model with
-      tags:
-      - Shapeshifter AI Supervisor
   /signingKey/v1/list:
     get:
       operationId: listSigningKeys
@@ -17947,6 +17947,123 @@ components:
           type: object
           additionalProperties:
             type: string
+    LearningFlowDoc:
+      type: object
+      properties:
+        attemptBudgetMs:
+          type: integer
+          format: int64
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckSetting"
+        createTimeMs:
+          type: integer
+          format: int64
+        createUser:
+          type: string
+        description:
+          type: string
+        flow:
+          $ref: "#/components/schemas/LearningFlow"
+        heldOutFraction:
+          type: number
+          format: double
+        instructions:
+          type: string
+        learningMode:
+          type: string
+          enum:
+          - AUTOMATIC
+          - DISABLED
+        maxAttempts:
+          type: integer
+          format: int32
+        maxDeferralAgeMs:
+          type: integer
+          format: int64
+        minRecordsToLearn:
+          type: integer
+          format: int32
+        model:
+          $ref: "#/components/schemas/DocRef"
+        name:
+          type: string
+        promotionMode:
+          type: string
+          enum:
+          - AUTOMATIC
+          - REVIEW
+        regressionCap:
+          type: integer
+          format: int32
+        relearnThreshold:
+          type: number
+          format: double
+        sampleSizeLimit:
+          type: integer
+          format: int32
+        spendCallsPerHour:
+          type: integer
+          format: int32
+        spendTokensPerHour:
+          type: integer
+          format: int64
+        targetSchema:
+          $ref: "#/components/schemas/DocRef"
+        tokenBudget:
+          type: integer
+          format: int64
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+        updateUser:
+          type: string
+        uuid:
+          type: string
+        version:
+          type: string
+    LearningFlowStepDetails:
+      type: object
+      allOf:
+      - $ref: "#/components/schemas/ElementStepDetails"
+      - type: object
+        properties:
+          bindingUuid:
+            type: string
+          decision:
+            type: string
+          document:
+            $ref: "#/components/schemas/DocRef"
+          dryRun:
+            type: boolean
+          fragment:
+            $ref: "#/components/schemas/DocRef"
+          nested:
+            type: array
+            items:
+              $ref: "#/components/schemas/NestedElementData"
+          reason:
+            type: string
+          recordBoundary:
+            type: string
+          score:
+            type: number
+            format: double
+          stream:
+            type: object
+            additionalProperties:
+              type: string
+          transcript:
+            type: array
+            items:
+              $ref: "#/components/schemas/SupervisorTurn"
+          verdicts:
+            type: array
+            items:
+              $ref: "#/components/schemas/StageVerdict"
     LifespanInfo:
       type: object
       properties:
@@ -22155,123 +22272,6 @@ components:
         properties:
           tag:
             $ref: "#/components/schemas/AnnotationTag"
-    ShapeshifterAiDoc:
-      type: object
-      properties:
-        attemptBudgetMs:
-          type: integer
-          format: int64
-        checks:
-          type: array
-          items:
-            $ref: "#/components/schemas/CheckSetting"
-        createTimeMs:
-          type: integer
-          format: int64
-        createUser:
-          type: string
-        description:
-          type: string
-        flow:
-          $ref: "#/components/schemas/LearningFlow"
-        heldOutFraction:
-          type: number
-          format: double
-        instructions:
-          type: string
-        learningMode:
-          type: string
-          enum:
-          - AUTOMATIC
-          - DISABLED
-        maxAttempts:
-          type: integer
-          format: int32
-        maxDeferralAgeMs:
-          type: integer
-          format: int64
-        minRecordsToLearn:
-          type: integer
-          format: int32
-        model:
-          $ref: "#/components/schemas/DocRef"
-        name:
-          type: string
-        promotionMode:
-          type: string
-          enum:
-          - AUTOMATIC
-          - REVIEW
-        regressionCap:
-          type: integer
-          format: int32
-        relearnThreshold:
-          type: number
-          format: double
-        sampleSizeLimit:
-          type: integer
-          format: int32
-        spendCallsPerHour:
-          type: integer
-          format: int32
-        spendTokensPerHour:
-          type: integer
-          format: int64
-        targetSchema:
-          $ref: "#/components/schemas/DocRef"
-        tokenBudget:
-          type: integer
-          format: int64
-        type:
-          type: string
-        updateTimeMs:
-          type: integer
-          format: int64
-        updateUser:
-          type: string
-        uuid:
-          type: string
-        version:
-          type: string
-    ShapeshifterAiStepDetails:
-      type: object
-      allOf:
-      - $ref: "#/components/schemas/ElementStepDetails"
-      - type: object
-        properties:
-          bindingUuid:
-            type: string
-          decision:
-            type: string
-          document:
-            $ref: "#/components/schemas/DocRef"
-          dryRun:
-            type: boolean
-          fragment:
-            $ref: "#/components/schemas/DocRef"
-          nested:
-            type: array
-            items:
-              $ref: "#/components/schemas/NestedElementData"
-          reason:
-            type: string
-          recordBoundary:
-            type: string
-          score:
-            type: number
-            format: double
-          stream:
-            type: object
-            additionalProperties:
-              type: string
-          transcript:
-            type: array
-            items:
-              $ref: "#/components/schemas/SupervisorTurn"
-          verdicts:
-            type: array
-            items:
-              $ref: "#/components/schemas/StageVerdict"
     SharedElementData:
       type: object
       properties:

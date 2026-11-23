@@ -397,12 +397,12 @@ appConfig:
       - "Detections"
       - "Error"
       - "Events"
+      - "Learning Flow Corpus"
       - "Meta Data"
       - "Raw Events"
       - "Raw Reference"
       - "Records"
       - "Reference"
-      - "Shapeshifter Corpus"
       - "Test Events"
       - "Test Reference"
       metaValue:
@@ -702,6 +702,40 @@ appConfig:
       #sasl.login.refresh.window.factor=\n#sasl.login.refresh.window.jitter=\n#ssl.cipher.suites=\n\
       #ssl.endpoint.identification.algorithm=\n#ssl.keymanager.algorithm=\n#ssl.secure.random.implementation=\n\
       #ssl.trustmanager.algorithm=\n#transaction.timeout.ms=\n#transactional.id=\n"
+  learningFlow:
+    attemptRetention: "P90D"
+    bindingCache:
+      expireAfterAccess: "PT10M"
+      expireAfterWrite: "PT10M"
+      maximumSize: 1000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    db:
+      connection:
+        jdbcDriverClassName: null
+        jdbcDriverPassword: null
+        jdbcDriverUrl: null
+        jdbcDriverUsername: null
+      connectionPool:
+        cachePrepStmts: false
+        connectionTimeout: "PT30S"
+        idleTimeout: "PT10M"
+        leakDetectionThreshold: "PT0S"
+        maxLifetime: "PT30M"
+        maxPoolSize: 30
+        minimumIdle: 10
+        prepStmtCacheSize: 25
+        prepStmtCacheSqlLimit: 256
+    deferredLearningBatchSize: 10
+    learnerStateCache:
+      expireAfterAccess: "PT10M"
+      expireAfterWrite: "PT10M"
+      maximumSize: 10000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    sessionLease: "PT10M"
+    spendCallsPerHour: 1000
+    spendTokensPerHour: 10000000
   lifecycle:
     enabled: true
   lmdbLibrary:
@@ -1342,40 +1376,6 @@ appConfig:
     httpOnly: true
     sameSite: "STRICT"
     secure: true
-  shapeshifterAi:
-    attemptRetention: "P90D"
-    bindingCache:
-      expireAfterAccess: "PT10M"
-      expireAfterWrite: "PT10M"
-      maximumSize: 1000
-      refreshAfterWrite: null
-      statisticsMode: "INTERNAL"
-    db:
-      connection:
-        jdbcDriverClassName: null
-        jdbcDriverPassword: null
-        jdbcDriverUrl: null
-        jdbcDriverUsername: null
-      connectionPool:
-        cachePrepStmts: false
-        connectionTimeout: "PT30S"
-        idleTimeout: "PT10M"
-        leakDetectionThreshold: "PT0S"
-        maxLifetime: "PT30M"
-        maxPoolSize: 30
-        minimumIdle: 10
-        prepStmtCacheSize: 25
-        prepStmtCacheSqlLimit: 256
-    deferredLearningBatchSize: 10
-    learnerStateCache:
-      expireAfterAccess: "PT10M"
-      expireAfterWrite: "PT10M"
-      maximumSize: 10000
-      refreshAfterWrite: null
-      statisticsMode: "INTERNAL"
-    sessionLease: "PT10M"
-    spendCallsPerHour: 1000
-    spendTokensPerHour: 10000000
   solr:
     indexCache:
       expireAfterAccess: null

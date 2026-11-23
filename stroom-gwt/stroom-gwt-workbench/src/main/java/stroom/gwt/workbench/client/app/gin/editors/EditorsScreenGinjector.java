@@ -33,6 +33,8 @@ import stroom.gitrepo.client.component.GitRepoEditor;
 import stroom.gwt.workbench.client.app.screen.ScreenGinjector;
 import stroom.index.client.component.LuceneIndexEditor;
 import stroom.kafka.client.component.KafkaConfigEditor;
+import stroom.learningflow.client.component.LearningFlowEditor;
+import stroom.learningflow.client.component.StageDecisionPaneController;
 import stroom.openai.client.component.OpenAIModelEditor;
 import stroom.pathways.client.component.PathwaysEditor;
 import stroom.pipeline.client.component.TextConverterEditor;
@@ -41,8 +43,6 @@ import stroom.script.client.component.ScriptEditor;
 import stroom.search.elastic.client.component.ElasticClusterEditor;
 import stroom.search.elastic.client.component.ElasticIndexEditor;
 import stroom.search.solr.client.component.SolrIndexEditor;
-import stroom.shapeshifter.client.component.ShapeshifterAiEditor;
-import stroom.shapeshifter.client.component.StageDecisionPaneController;
 import stroom.sqlstore.client.component.SqlTemporalStoreEditor;
 import stroom.sqlstore.client.component.SqlTemporalStoreSettingsController;
 import stroom.visualisation.client.component.VisualisationEditor;
@@ -160,12 +160,12 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
     /// @return A Feed's editor, as `FeedPlugin` opens it.
     FeedEditor getFeedEditor();
 
-    // Shapeshifter AI
+    // Learning Flow
 
-    /// @return A Shapeshifter AI document's editor, as `ShapeshifterAiPlugin` opens it.
-    ShapeshifterAiEditor getShapeshifterAiEditor();
+    /// @return A Learning Flow document's editor, as `LearningFlowPlugin` opens it.
+    LearningFlowEditor getLearningFlowEditor();
 
-    /// @return A supervised stage's pane in the stepping screen, as `ShapeshifterAiPlugin` registers
+    /// @return A supervised stage's pane in the stepping screen, as `LearningFlowPlugin` registers
     /// it with `ElementStepDetailsPaneRegistry`.
     StageDecisionPaneController getStageDecisionPane();
 

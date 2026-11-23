@@ -55,9 +55,9 @@ public class DocumentTypeRegistry {
             "ProcessorFilter",
             "Processor Filter",
             SvgImage.FILTER);
-    public static final DocumentType SHAPESHIFTER_AI_DOCUMENT_TYPE = new DocumentType(
+    public static final DocumentType LEARNING_FLOW_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
-            "ShapeshifterAi",
+            "LearningFlow",
             "Learning Flow",
             SvgImage.AI);
     public static final DocumentType ANALYTIC_RULE_DOCUMENT_TYPE = new DocumentType(
@@ -277,7 +277,7 @@ public class DocumentTypeRegistry {
 
 
     static {
-        put(SHAPESHIFTER_AI_DOCUMENT_TYPE);
+        put(LEARNING_FLOW_DOCUMENT_TYPE);
         put(ANALYTICS_STORE_DOCUMENT_TYPE);
         put(ANALYTIC_RULE_DOCUMENT_TYPE);
         put(DATA_GENERATOR_DOCUMENT_TYPE);
