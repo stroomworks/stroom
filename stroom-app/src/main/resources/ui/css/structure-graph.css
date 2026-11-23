@@ -86,7 +86,7 @@
 }
 
 .structure-graph__search {
-    width: 260px;
+    width: calc(260px * var(--text-scale));
 }
 
 .structure-graph__views {
@@ -151,7 +151,7 @@
 
 .structure-graph__lane-toggle-glyph {
     fill: var(--structure-graph__meta-color);
-    font-size: 15px;
+    font-size: var(--font-size-15);
 }
 
 /* Edges */
@@ -372,7 +372,7 @@
     position: absolute;
     left: var(--structure-graph__hover-card-left, 0);
     top: var(--structure-graph__hover-card-top, 0);
-    max-width: 320px;
+    max-width: calc(320px * var(--text-scale));
     padding: 8px 10px;
     background-color: var(--tooltip__background-color);
     color: var(--tooltip__text-color);
