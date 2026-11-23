@@ -25,6 +25,7 @@ import stroom.dependency.client.layout.LayoutResult;
 import stroom.dependency.shared.DependencyGraph;
 import stroom.dependency.shared.DependencyGraphRequest;
 import stroom.dependency.shared.DependencyGraphResource;
+import stroom.dependency.shared.GraphElement;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.event.OpenDocumentEvent;
@@ -76,6 +77,7 @@ public class StructureGraphController extends Controller {
 
     private final StructureGraph view;
     private final RestFactory restFactory;
+    private final StructureGraphViewStore viewStore;
     private final StructureGraphState state = new StructureGraphState();
     private final String markerId = AriaUtil.uniqueId("structure-graph-arrow");
 
@@ -84,6 +86,8 @@ public class StructureGraphController extends Controller {
     private String hoverId;
     // The table row with the keyboard focus, whose node the canvas rings.
     private String focusedRowId;
+    // What is shown: the graph, the table or both.
+    private StructureGraphView shown;
 
     private boolean pressed;
     private boolean dragged;
@@ -98,19 +102,24 @@ public class StructureGraphController extends Controller {
     /// @param eventBus    The application's event bus.
     /// @param view        The canvas.
     /// @param restFactory Fetches the graph.
+    /// @param viewStore   Remembers the view the user last chose: the graph, the table or both.
     @Inject
     public StructureGraphController(final EventBus eventBus,
                                     final StructureGraph view,
-                                    final RestFactory restFactory) {
+                                    final RestFactory restFactory,
+                                    final StructureGraphViewStore viewStore) {
         super(eventBus);
         this.view = view;
         this.restFactory = restFactory;
+        this.viewStore = viewStore;
         initWidget(view);
+        shown = viewStore.get();
+        view.setView(shown);
         view.setOnFit(() -> fit(FitMode.ALL));
         view.setOnSearch(this::search);
         view.setOnSearchEnter(this::selectFirstMatch);
         view.setOnResize(this::onResize);
-        view.setOnTableToggle(view::setTableShown);
+        view.setOnViewChange(this::show);
         view.setOnRowFocus(this::focusRow);
         view.setOnRowSelect(this::selectRow);
         view.setOnShowActionMenu((rowId, popupPosition, opener) -> {
@@ -570,12 +579,39 @@ public class StructureGraphController extends Controller {
         view.setFocusedNode(focusedRowId == null
                 ? null
                 : state.canvasIdFor(focusedRowId));
-        view.setSummary(state.getRows().isEmpty()
-                ? state.summary()
-                : state.summary() + ". Its documents are listed in the table that follows.");
+        applySummary();
     }
 
-    // Moves the drawing to the current pan and zoom, and fits the labels to the zoom.
+    // Shows the view the user has chosen, and remembers it for the next Structure view.
+    private void show(final StructureGraphView chosen) {
+        shown = chosen;
+        viewStore.set(chosen);
+        view.setView(chosen);
+        applySummary();
+    }
+
+    // Names the graph, and says where its documents are listed, or how to list them.
+    private void applySummary() {
+        if (state.getRows().isEmpty()) {
+            view.setSummary(state.summary());
+        } else if (shown.isTableShown()) {
+            view.setSummary(state.summary() + ". Its documents are listed in the table that follows.");
+        } else {
+            view.setSummary(state.summary() + ". To list its documents, choose Table or Both under View.");
+        }
+    }
+
+    // Each element's name then its type, as they fit at a zoom, in the order they are drawn.
+    private static List<String> elementTexts(final List<GraphElement> elements, final double zoom) {
+        final List<String> texts = new ArrayList<>(elements.size() * 2);
+        for (final GraphElement element : elements) {
+            texts.add(StructureGraphText.elementName(element, zoom));
+            texts.add(StructureGraphText.elementType(element, zoom));
+        }
+        return texts;
+    }
+
+        // Moves the drawing to the current pan and zoom, and fits the labels to the zoom.
     private void applyViewport() {
         final GraphViewport viewport = state.getViewport();
         final double zoom = viewport.getZoom();
@@ -589,6 +625,12 @@ public class StructureGraphController extends Controller {
                     view.setNodeText(instance.getId(),
                             StructureGraphText.name(layout, instance, zoom),
                             StructureGraphText.meta(layout, instance, zoom));
+                    final List<GraphElement> elements = instance.getNode() == null
+                            ? null
+                            : instance.getNode().getElements();
+                    if (elements != null && StructureGraphText.isExpanded(layout, instance)) {
+                        view.setElementText(instance.getId(), elementTexts(elements, zoom));
+                    }
                 }
             }
             textZoom = zoom;

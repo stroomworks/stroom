@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.List;
 import java.util.Objects;
 
 /// One node of a [DependencyGraph].
@@ -43,6 +44,7 @@ import java.util.Objects;
         "inScope",
         "hop",
         "elementCount",
+        "elements",
         "unresolvedRefs"})
 public class GraphNode {
 
@@ -61,6 +63,8 @@ public class GraphNode {
     @JsonProperty
     private final Integer elementCount;
     @JsonProperty
+    private final List<GraphElement> elements;
+    @JsonProperty
     private final Integer unresolvedRefs;
 
     /// @param id             Unique within the graph. The document's UUID, or a synthetic id for a pipeline
@@ -72,6 +76,8 @@ public class GraphNode {
     ///                       context around it. Null is treated as false.
     /// @param hop            For context, how many edges away from the folder it is. Null for a node in scope.
     /// @param elementCount   For a pipeline, how many elements it has. Null otherwise.
+    /// @param elements       For a pipeline, its elements in the order data flows through them, so an
+    ///                       expanded pipeline can name each one. Null otherwise, or if not known.
     /// @param unresolvedRefs How many of the document's references could not be resolved. Null if none.
     @JsonCreator
     public GraphNode(@JsonProperty("id") final String id,
@@ -81,6 +87,7 @@ public class GraphNode {
                      @JsonProperty("inScope") final Boolean inScope,
                      @JsonProperty("hop") final Integer hop,
                      @JsonProperty("elementCount") final Integer elementCount,
+                     @JsonProperty("elements") final List<GraphElement> elements,
                      @JsonProperty("unresolvedRefs") final Integer unresolvedRefs) {
         this.id = id;
         this.docRef = docRef;
@@ -89,7 +96,29 @@ public class GraphNode {
         this.inScope = inScope != null && inScope;
         this.hop = hop;
         this.elementCount = elementCount;
+        this.elements = elements;
         this.unresolvedRefs = unresolvedRefs;
+    }
+
+    /// A node whose elements, if it is a pipeline, are counted but not named.
+    ///
+    /// @param id             Unique within the graph (see the full constructor).
+    /// @param docRef         The document this node draws.
+    /// @param role           Which row of a lane the node belongs on.
+    /// @param streamType     For a feed, its stream type. Null otherwise.
+    /// @param inScope        Whether the document is inside the folder the graph was drawn for.
+    /// @param hop            For context, how many edges away from the folder it is. Null for a node in scope.
+    /// @param elementCount   For a pipeline, how many elements it has. Null otherwise.
+    /// @param unresolvedRefs How many of the document's references could not be resolved. Null if none.
+    public GraphNode(final String id,
+                     final DocRef docRef,
+                     final NodeRole role,
+                     final String streamType,
+                     final Boolean inScope,
+                     final Integer hop,
+                     final Integer elementCount,
+                     final Integer unresolvedRefs) {
+        this(id, docRef, role, streamType, inScope, hop, elementCount, null, unresolvedRefs);
     }
 
     /// @return the node's id, unique within the graph. Not necessarily the document's UUID.
@@ -127,6 +156,12 @@ public class GraphNode {
         return elementCount;
     }
 
+    /// @return for a pipeline, its elements in the order data flows through them; null otherwise, or if
+    /// they are not known.
+    public List<GraphElement> getElements() {
+        return elements;
+    }
+
     /// @return how many of the document's references could not be resolved; null if none.
     public Integer getUnresolvedRefs() {
         return unresolvedRefs;
@@ -148,12 +183,13 @@ public class GraphNode {
                && Objects.equals(streamType, that.streamType)
                && Objects.equals(hop, that.hop)
                && Objects.equals(elementCount, that.elementCount)
+               && Objects.equals(elements, that.elements)
                && Objects.equals(unresolvedRefs, that.unresolvedRefs);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, docRef, role, streamType, inScope, hop, elementCount, unresolvedRefs);
+        return Objects.hash(id, docRef, role, streamType, inScope, hop, elementCount, elements, unresolvedRefs);
     }
 
     @Override

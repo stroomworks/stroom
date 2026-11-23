@@ -19,6 +19,7 @@ package stroom.dependency.client.component;
 import stroom.dependency.client.layout.Instance;
 import stroom.dependency.client.layout.LayoutEdge;
 import stroom.dependency.client.layout.LayoutResult;
+import stroom.dependency.shared.GraphElement;
 import stroom.dependency.shared.GraphNode;
 
 import java.util.ArrayList;
@@ -54,7 +55,7 @@ public final class StructureGraphNotes {
             notes.add("Stream type: " + node.getStreamType());
         }
         if (node != null && node.getElementCount() != null && node.getElementCount() > 0) {
-            notes.add(plural(node.getElementCount(), "element"));
+            notes.add(elements(node));
         }
         if (instance.getShared() != null && instance.getShared() > 1) {
             notes.add("Used in " + instance.getShared() + " lanes");
@@ -76,7 +77,26 @@ public final class StructureGraphNotes {
         return notes;
     }
 
-    /// @param count A count, or null for none.
+    // How many elements a pipeline has, and, when they are known, each one's name and type in the order
+    // data flows through them: what an expanded pipeline draws, said in words too.
+    private static String elements(final GraphNode node) {
+        final String count = plural(node.getElementCount(), "element");
+        final List<GraphElement> elements = node.getElements();
+        if (elements == null || elements.isEmpty()) {
+            return count;
+        }
+        final StringBuilder text = new StringBuilder(count).append(": ");
+        for (int i = 0; i < elements.size(); i++) {
+            if (i > 0) {
+                text.append(", ");
+            }
+            final GraphElement element = elements.get(i);
+            text.append(element.getDisplayName()).append(" (").append(element.getType()).append(')');
+        }
+        return text.toString();
+    }
+
+        /// @param count A count, or null for none.
     /// @param noun  What is counted, singular.
     /// @return e.g. `1 element` or `6 elements`.
     static String plural(final Integer count, final String noun) {

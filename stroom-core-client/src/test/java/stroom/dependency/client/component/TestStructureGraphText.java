@@ -22,6 +22,7 @@ import stroom.dependency.client.layout.GraphScenarios;
 import stroom.dependency.client.layout.Instance;
 import stroom.dependency.client.layout.InstanceKind;
 import stroom.dependency.client.layout.LayoutResult;
+import stroom.dependency.shared.GraphElement;
 
 import org.junit.jupiter.api.Test;
 
@@ -153,5 +154,56 @@ class TestStructureGraphText {
                 .filter(instance -> instance.getId().equals(id))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    // An element is called by the name the user gave it, else by its id
+    @Test
+    void testElementNameIsItsNameElseItsId() {
+        assertThat(StructureGraphText.elementName(new GraphElement("translationFilter", "FW Translation",
+                "XSLTFilter"), 1)).isEqualTo("FW Translation");
+        assertThat(StructureGraphText.elementName(new GraphElement("translationFilter", null, "XSLTFilter"), 1))
+                .isEqualTo("translationFilter");
+        assertThat(StructureGraphText.elementName(new GraphElement("translationFilter", " ", "XSLTFilter"), 1))
+                .isEqualTo("translationFilter");
+        assertThat(StructureGraphText.elementType(new GraphElement("translationFilter", null, "XSLTFilter"), 1))
+                .isEqualTo("XSLTFilter");
+    }
+
+    // Labels are enlarged as the graph zooms out, so fewer characters fit in an element's box; at actual
+    // size and above, as many fit as at actual size
+    @Test
+    void testElementLabelsShortenAsTheGraphZoomsOut() {
+        final GraphElement element = new GraphElement("aVeryLongElementIdThatWillNotFitAnywhere", null,
+                "AVeryLongElementTypeName");
+
+        final String atActualSize = StructureGraphText.elementName(element, 1);
+        final String zoomedOut = StructureGraphText.elementName(element, 0.5);
+        final String zoomedIn = StructureGraphText.elementName(element, 2);
+
+        assertThat(atActualSize).endsWith("…");
+        assertThat(zoomedOut.length()).isLessThan(atActualSize.length());
+        assertThat(zoomedIn).isEqualTo(atActualSize);
+        assertThat(StructureGraphText.elementType(element, 0.5).length())
+                .isLessThan(StructureGraphText.elementType(element, 1).length());
+    }
+
+    // However far the graph zooms out, a label keeps a few characters
+    @Test
+    void testElementLabelsAreNeverCutToNothing() {
+        final GraphElement element = new GraphElement("aVeryLongElementId", null, "AVeryLongElementType");
+
+        assertThat(StructureGraphText.elementName(element, 0.01).length()).isGreaterThanOrEqualTo(3);
+        assertThat(StructureGraphText.elementType(element, 0.01).length()).isGreaterThanOrEqualTo(3);
+    }
+
+    // A type is short and says what the element does, so it gets the room it needs, and a long name is
+    // cut short first
+    @Test
+    void testALongNameIsCutBeforeTheType() {
+        final GraphElement element = new GraphElement("aVeryLongElementIdThatWillNotFitAnywhere", null,
+                "XSLTFilter");
+
+        assertThat(StructureGraphText.elementType(element, 1)).isEqualTo("XSLTFilter");
+        assertThat(StructureGraphText.elementName(element, 1)).endsWith("…");
     }
 }

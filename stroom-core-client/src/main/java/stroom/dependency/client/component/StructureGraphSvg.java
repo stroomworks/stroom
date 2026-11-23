@@ -25,6 +25,7 @@ import stroom.dependency.client.layout.LaneBox;
 import stroom.dependency.client.layout.LayoutConstants;
 import stroom.dependency.client.layout.LayoutEdge;
 import stroom.dependency.client.layout.LayoutResult;
+import stroom.dependency.shared.GraphElement;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 
@@ -74,6 +75,7 @@ public final class StructureGraphSvg {
     private static final SafeHtml PATH = SafeHtmlUtils.fromSafeConstant("path");
     private static final SafeHtml POLYGON = SafeHtmlUtils.fromSafeConstant("polygon");
     private static final SafeHtml TEXT = SafeHtmlUtils.fromSafeConstant("text");
+    private static final SafeHtml TITLE = SafeHtmlUtils.fromSafeConstant("title");
 
     private static final String BLOCK = "structure-graph";
     // How far a lane's background extends beyond its outermost instances.
@@ -82,6 +84,10 @@ public final class StructureGraphSvg {
     private static final int NODE_RADIUS = 8;
     private static final int EXPANDED_RADIUS = 10;
     private static final int CHIP_RADIUS = 6;
+    // Where an expanded pipeline's element boxes start, from its left edge.
+    private static final int CHIP_X = 13;
+    // How far below the middle of an element's box its text's baseline sits, which centres it.
+    private static final double ELEMENT_BASELINE_OFFSET = 4;
     // An endpoint's hexagon's corner inset.
     private static final double HEX_INSET = 13;
 
@@ -427,15 +433,23 @@ public final class StructureGraphSvg {
 
             if (expanded) {
                 final int elementCount = instance.getNode().getElementCount();
+                // Named when the server sent the elements; a graph from before it did draws them unnamed
+                final List<GraphElement> elements = instance.getNode().getElements();
+                final boolean named = elements != null && elements.size() == elementCount;
                 for (int i = 0; i < elementCount; i++) {
-                    g.elem(RECT,
-                            elementClass("chip"),
-                            number("x", 13),
-                            number("y", LayoutConstants.EXPANDED_HEADER
-                                        + i * (LayoutConstants.EH + LayoutConstants.EXPANDED_CHIP_GAP)),
-                            number("width", LayoutConstants.EW),
-                            number("height", LayoutConstants.EH),
-                            number("rx", CHIP_RADIUS));
+                    final double chipY = LayoutConstants.EXPANDED_HEADER
+                                         + i * (LayoutConstants.EH + LayoutConstants.EXPANDED_CHIP_GAP);
+                    if (named) {
+                        final GraphElement element = elements.get(i);
+                        g.elem(chip -> {
+                            // Its full name and type, as a tooltip, for when the zoom cuts them short
+                            chip.elem(element.getDisplayName() + " (" + element.getType() + ")", TITLE);
+                            appendChip(chip, chipY);
+                            appendElementText(chip, element, chipY, zoom);
+                        }, G, elementClass("element"));
+                    } else {
+                        appendChip(g, chipY);
+                    }
                 }
             }
 
@@ -448,6 +462,36 @@ public final class StructureGraphSvg {
                         new Attribute("text-anchor", "middle"));
             }
         }, G, attributes.toArray(new Attribute[0]));
+    }
+
+    private static void appendChip(final HtmlBuilder g, final double chipY) {
+        g.elem(RECT,
+                elementClass("chip"),
+                number("x", CHIP_X),
+                number("y", chipY),
+                number("width", LayoutConstants.EW),
+                number("height", LayoutConstants.EH),
+                number("rx", CHIP_RADIUS));
+    }
+
+    // An element's name, on the left of its box, and its type, on the right. Both are fitted to the zoom,
+    // and refitted as it changes (StructureGraph#setElementText).
+    private static void appendElementText(final HtmlBuilder g,
+                                          final GraphElement element,
+                                          final double chipY,
+                                          final double zoom) {
+        final double baseline = chipY + LayoutConstants.EH / 2.0 + ELEMENT_BASELINE_OFFSET;
+        g.elem(StructureGraphText.elementName(element, zoom),
+                TEXT,
+                elementClass("element-name"),
+                number("x", CHIP_X + StructureGraphText.ELEMENT_PAD),
+                number("y", baseline));
+        g.elem(StructureGraphText.elementType(element, zoom),
+                TEXT,
+                elementClass("element-type"),
+                number("x", CHIP_X + LayoutConstants.EW - StructureGraphText.ELEMENT_PAD),
+                number("y", baseline),
+                new Attribute("text-anchor", "end"));
     }
 
     private static String edgeModifier(final LayoutEdge edge) {

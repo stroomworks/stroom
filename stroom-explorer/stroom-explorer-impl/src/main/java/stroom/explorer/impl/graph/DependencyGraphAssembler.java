@@ -435,6 +435,9 @@ public final class DependencyGraphAssembler {
                 pipeline == null
                         ? null
                         : pipeline.elementCount(),
+                pipeline == null
+                        ? null
+                        : pipeline.elements(),
                 count);
     }
 

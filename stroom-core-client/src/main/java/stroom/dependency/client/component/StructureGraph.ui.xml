@@ -19,6 +19,7 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:b="urn:import:stroom.widget.button.client"
              xmlns:dg="urn:import:stroom.widget.datagrid.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
              xmlns:split="urn:import:stroom.widget.layout.client"
              xmlns:v="urn:import:stroom.widget.quickfilter.client"
              xmlns:tx="urn:import:stroom.widget.text.client">
@@ -27,16 +28,19 @@
             <b:Toolbar name="Structure actions" addStyleNames="toolbar--icons">
                 <b:ToolbarButton ui:field="fitButton" svg="MAXIMISE" title="Fit the Whole Graph in View"
                                  label="Fit"/>
-                <b:ToolbarToggleButton ui:field="tableButton" svg="TABLE" title="Show as Table"/>
             </b:Toolbar>
+            <!-- Graph, Table or Both: what the view shows. A radio group of its own, beside the toolbar
+                 rather than in it, so its arrow keys move between the views (StructureGraphView). -->
+            <form:RadioGroup ui:field="viewChoice" accessibleName="View" segmented="true"/>
             <v:QuickFilter ui:field="searchFilter" accessibleName="Find documents in the graph"
                            addStyleNames="structure-graph__search"/>
         </g:FlowPanel>
         <g:FlowPanel styleName="dock-max structure-graph__views">
             <!-- The graph above, and the table of its documents below: the table says in words what the
                  graph shows, a row per document, and is what a screen reader reads and the keyboard
-                 moves through, so it is always shown. Its focused row is ringed on the graph. Shown as a
-                 table, the graph's pane is hidden. -->
+                 moves through. Its focused row is ringed on the graph. The view chosen shows the graph,
+                 the table or both; a pane not shown is display:none, so nothing in it can take the
+                 focus unseen (WCAG 2.4.11). -->
             <split:SplitPane ui:field="split" vertical="true" sizes="*, 35%" names="Graph, Documents"
                              addStyleNames="max">
                 <!-- The canvas's pointer and keyboard host: GWT gives the FocusPanel tabindex="0", and
@@ -50,10 +54,14 @@
                              the canvas. -->
                         <div ui:field="drawing" class="max structure-graph__drawing" role="img"
                              aria-label="Structure of the folder"></div>
-                        <!-- What the canvas's keys do, which is its description -->
+                        <!-- What the canvas's keys do, and where the table of its documents is: its
+                             description. Which table hint describes it depends on the view chosen. -->
                         <div ui:field="canvasKeys" class="sr-only">Arrow keys move the graph, plus and
-                            minus zoom, and Escape clears the selection. The table that follows lists
-                            the documents.</div>
+                            minus zoom, and Escape clears the selection.</div>
+                        <div ui:field="tableBelowHint" class="sr-only">The table that follows lists the
+                            documents.</div>
+                        <div ui:field="tableHiddenHint" class="sr-only">To list the documents, for the
+                            keyboard or a screen reader, choose Table or Both under View.</div>
                         <!-- Describes the node under the pointer. Anchored to the node rather than the
                              pointer, so it holds still while the pointer moves across one node. -->
                         <g:FlowPanel ui:field="hoverCard" addStyleNames="structure-graph__hover-card">
@@ -62,7 +70,7 @@
                         </g:FlowPanel>
                     </g:HTMLPanel>
                 </g:FocusPanel>
-                <g:SimplePanel styleName="max structure-graph__table">
+                <g:SimplePanel ui:field="tablePane" styleName="max structure-graph__table">
                     <dg:DataGrid ui:field="table" tableName="Documents in the folder"/>
                 </g:SimplePanel>
             </split:SplitPane>

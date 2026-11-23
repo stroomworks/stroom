@@ -20,6 +20,7 @@ import stroom.dependency.shared.DependencyGraph;
 import stroom.dependency.shared.DependencyGraphRequest;
 import stroom.dependency.shared.EdgeKind;
 import stroom.dependency.shared.GraphEdge;
+import stroom.dependency.shared.GraphElement;
 import stroom.dependency.shared.GraphNode;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DependencyEdge;
@@ -174,8 +175,12 @@ class TestDependencyGraphService {
                 .filter(node -> node.getId().equals("inst:parser:raw:events"))
                 .findFirst()
                 .orElseThrow();
-        // The template's appender and the parser's own translation
+        // The template's appender and the parser's own translation, named. Nothing links them, so each is
+        // a chain of its own, in order of id
         assertThat(parser.getElementCount()).isEqualTo(2);
+        assertThat(parser.getElements())
+                .extracting(GraphElement::getId, GraphElement::getType)
+                .containsExactly(tuple("appender", "StreamAppender"), tuple("translation", "XSLTFilter"));
     }
 
     @Test

@@ -19,9 +19,9 @@ package stroom.dependency.client.component;
 import stroom.cell.client.ActionCell;
 import stroom.util.client.DataGridUtil;
 import stroom.widget.button.client.ToolbarButton;
-import stroom.widget.button.client.ToolbarToggleButton;
 import stroom.widget.component.client.Component;
 import stroom.widget.datagrid.client.DataGrid;
+import stroom.widget.form.client.RadioGroup;
 import stroom.widget.layout.client.SplitPane;
 import stroom.widget.popup.client.PopupPosition;
 import stroom.widget.quickfilter.client.QuickFilter;
@@ -56,6 +56,7 @@ import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.gwt.user.client.ui.RequiresResize;
+import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 
 import java.util.ArrayList;
@@ -68,8 +69,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/// The Structure view's canvas: a folder's dependency graph drawn as SVG, with a toolbar to fit it and
-/// a box to find documents in it, a hover card, and a message for the loading, failed and empty states.
+/// The Structure view's canvas: a folder's dependency graph drawn as SVG, with a toolbar to fit it, a
+/// choice of view (the graph, the table of its documents, or both), a box to find documents in it, a
+/// hover card, and a message for the loading, failed and empty states.
 ///
 /// It draws what it is given ([#setSvg]) and changes it only by setting classes and attributes on the
 /// elements drawn, which it finds by their `data-id`; [StructureGraphController] decides what to draw.
@@ -83,6 +85,8 @@ public class StructureGraph extends Component implements RequiresResize {
     private static final String EDGE = BLOCK + "__edge";
     private static final String NAME = BLOCK + "__name";
     private static final String META = BLOCK + "__meta";
+    private static final String ELEMENT_NAME = BLOCK + "__element-name";
+    private static final String ELEMENT_TYPE = BLOCK + "__element-type";
     private static final String WORLD = BLOCK + "__world";
     // The attribute the grid marks each row with, holding its index on the page.
     private static final String DATA_ROW = "data-row";
@@ -96,7 +100,9 @@ public class StructureGraph extends Component implements RequiresResize {
     @UiField
     ToolbarButton fitButton;
     @UiField
-    ToolbarToggleButton tableButton;
+    RadioGroup<StructureGraphView> viewChoice;
+    @UiField
+    SimplePanel tablePane;
     @UiField
     DataGrid<StructureGraphRow> table;
     @UiField
@@ -107,6 +113,10 @@ public class StructureGraph extends Component implements RequiresResize {
     FocusPanel canvas;
     @UiField
     DivElement canvasKeys;
+    @UiField
+    DivElement tableBelowHint;
+    @UiField
+    DivElement tableHiddenHint;
     @UiField
     DivElement drawing;
     @UiField
@@ -125,6 +135,8 @@ public class StructureGraph extends Component implements RequiresResize {
     // Each node's name and type lines, and what they last said, so a zoom rewrites only what changed.
     private final Map<String, Element[]> nodeTexts = new HashMap<>();
     private final Map<String, String[]> nodeTextValues = new HashMap<>();
+    // An expanded pipeline's element names and types, in order, name then type for each element.
+    private final Map<String, List<Element>> elementTexts = new HashMap<>();
     private final List<Element> edges = new ArrayList<>();
     private Element world;
     private Element focusedNode;
@@ -145,9 +157,14 @@ public class StructureGraph extends Component implements RequiresResize {
         // FloorMapCanvas names its map)
         final String keysId = AriaUtil.uniqueId("structure-graph-keys");
         canvasKeys.setId(keysId);
+        tableBelowHint.setId(AriaUtil.uniqueId("structure-graph-table-below"));
+        tableHiddenHint.setId(AriaUtil.uniqueId("structure-graph-table-hidden"));
         canvas.getElement().setAttribute("role", "group");
         canvas.getElement().setAttribute("aria-label", "Graph of the folder's structure");
-        canvas.getElement().setAttribute("aria-describedby", keysId);
+        for (final StructureGraphView view : StructureGraphView.values()) {
+            viewChoice.addItem(view, view.getLabel(), view.getTitle());
+        }
+        setView(StructureGraphView.DEFAULT);
         hoverCard.setVisible(false);
         message.setVisible(false);
         table.setKeyProvider(StructureGraphRow::id);
@@ -209,15 +226,24 @@ public class StructureGraph extends Component implements RequiresResize {
         this.onRowFocus = onRowFocus;
     }
 
-    /// @param shown True to show the table alone; false to show the graph above it.
-    public void setTableShown(final boolean shown) {
-        tableButton.setPressed(shown);
-        split.setPaneHidden(canvas, shown);
+    /// Shows the graph, the table of its documents, or both, and chooses that view's option. A pane
+    /// not shown is taken out of the page, so nothing in it can take the focus.
+    ///
+    /// @param view What to show.
+    public void setView(final StructureGraphView view) {
+        viewChoice.setValue(view, false);
+        split.setPaneHidden(canvas, !view.isGraphShown());
+        split.setPaneHidden(tablePane, !view.isTableShown());
+        // The canvas's description says where the table is, or how to show it
+        final String hintId = view.isTableShown()
+                ? tableBelowHint.getId()
+                : tableHiddenHint.getId();
+        canvas.getElement().setAttribute("aria-describedby", canvasKeys.getId() + " " + hintId);
     }
 
-    /// @param onTableToggle Given true when the user asks to see the table, false for the graph.
-    public void setOnTableToggle(final Consumer<Boolean> onTableToggle) {
-        tableButton.setOnToggle(onTableToggle);
+    /// @param onViewChange Given the view the user chooses.
+    public void setOnViewChange(final Consumer<StructureGraphView> onViewChange) {
+        viewChoice.setOnChange(onViewChange);
     }
 
     /// Draws a focus ring around the node whose row has the keyboard focus.
@@ -243,6 +269,7 @@ public class StructureGraph extends Component implements RequiresResize {
         nodes.clear();
         nodeTexts.clear();
         nodeTextValues.clear();
+        elementTexts.clear();
         edges.clear();
         world = null;
         focusedNode = null;
@@ -253,6 +280,10 @@ public class StructureGraph extends Component implements RequiresResize {
                 final String id = group.getAttribute(StructureGraphSvg.DATA_ID);
                 nodes.put(id, group);
                 nodeTexts.put(id, textsOf(group));
+                final List<Element> elementLabels = elementTextsOf(group);
+                if (!elementLabels.isEmpty()) {
+                    elementTexts.put(id, elementLabels);
+                }
             } else if (hasClass(group, WORLD)) {
                 world = group;
             }
@@ -302,6 +333,38 @@ public class StructureGraph extends Component implements RequiresResize {
             texts[1].setInnerText(meta);
             values[1] = meta;
         }
+    }
+
+    /// Refits an expanded pipeline's element names and types to the zoom.
+    ///
+    /// @param id    The pipeline's node id.
+    /// @param texts Each element's name then its type, in the order they are drawn, as they fit at the
+    ///              current zoom.
+    public void setElementText(final String id, final List<String> texts) {
+        final List<Element> labels = elementTexts.get(id);
+        if (labels == null) {
+            return;
+        }
+        for (int i = 0; i < labels.size() && i < texts.size(); i++) {
+            final Element label = labels.get(i);
+            final String text = texts.get(i);
+            if (!text.equals(label.getInnerText())) {
+                label.setInnerText(text);
+            }
+        }
+    }
+
+    // An expanded pipeline's element name and type elements, in the order they are drawn.
+    private static List<Element> elementTextsOf(final Element node) {
+        final List<Element> labels = new ArrayList<>();
+        final NodeList<Element> elements = node.getElementsByTagName("text");
+        for (int i = 0; i < elements.getLength(); i++) {
+            final Element text = elements.getItem(i);
+            if (hasClass(text, ELEMENT_NAME) || hasClass(text, ELEMENT_TYPE)) {
+                labels.add(text);
+            }
+        }
+        return labels;
     }
 
     // A node's name and type line elements.

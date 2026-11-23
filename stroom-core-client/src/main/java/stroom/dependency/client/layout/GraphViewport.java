@@ -87,6 +87,12 @@ public final class GraphViewport {
     /// @return the factor to multiply label font sizes by, so labels stay legible when zoomed out: `1/zoom`
     /// below actual size, up to 2, and 1 otherwise.
     public double getLabelScale() {
+        return labelScale(zoom);
+    }
+
+    /// @param zoom A zoom.
+    /// @return the factor label font sizes are multiplied by at that zoom (see [#getLabelScale()]).
+    public static double labelScale(final double zoom) {
         return zoom < 1
                 ? Math.min(1 / zoom, MAX_LABEL_SCALE)
                 : 1;

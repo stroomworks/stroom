@@ -20,6 +20,7 @@ import stroom.dependency.shared.DependencyGraph;
 import stroom.dependency.shared.EdgeCertainty;
 import stroom.dependency.shared.EdgeKind;
 import stroom.dependency.shared.GraphEdge;
+import stroom.dependency.shared.GraphElement;
 import stroom.dependency.shared.GraphNode;
 import stroom.dependency.shared.NodeRole;
 import stroom.docref.DocRef;
@@ -54,6 +55,15 @@ class TestDependencyGraphAssembler {
     private static final DocRef DASHBOARD = new DocRef("Dashboard", "dash", "Overview");
     private static final DocRef SUB_FOLDER = new DocRef(ExplorerConstants.FOLDER_TYPE, "sub", "Sub");
     private static final DocRef SECRET = new DocRef("XSLT", "secret", "Secret Translation");
+
+    // A parser pipeline's elements, in the order data flows through them
+    private static final List<GraphElement> ELEMENTS = List.of(
+            new GraphElement("dsParser", null, "DSParser"),
+            new GraphElement("translationFilter", "Translation", "XSLTFilter"),
+            new GraphElement("schemaFilter", null, "SchemaFilter"),
+            new GraphElement("recordOutputFilter", null, "RecordOutputFilter"),
+            new GraphElement("writer", null, "XMLWriter"),
+            new GraphElement("appender", null, "StreamAppender"));
 
     @Test
     void testProcessorFilterBecomesFlowFromFeedToPipeline() {
@@ -157,7 +167,7 @@ class TestDependencyGraphAssembler {
                 .holding(PARSER, EVENTS, lookupFeed)
                 .edge(PARSER, EVENTS)
                 .edge(PARSER, lookupFeed)
-                .facts(PARSER, new PipelineFacts(null, Set.of("events"), 6));
+                .facts(PARSER, new PipelineFacts(null, Set.of("events"), ELEMENTS));
 
         final DependencyGraph graph = assemble(source);
 
@@ -165,6 +175,13 @@ class TestDependencyGraphAssembler {
                 .containsExactlyInAnyOrder(
                         tuple("inst:parser::events", "events", EdgeKind.FLOW, EdgeCertainty.CONFIGURED),
                         tuple("inst:parser::events", "lookup", EdgeKind.REFERENCE, EdgeCertainty.CONFIGURED));
+        // The pipeline's node counts its elements and names them, in order, so an expanded pipeline can
+        // say what each is
+        final GraphNode parser = node(graph, "inst:parser::events");
+        assertThat(parser.getElementCount()).isEqualTo(6);
+        assertThat(parser.getElements()).containsExactlyElementsOf(ELEMENTS);
+        // A feed has no elements
+        assertThat(node(graph, "events").getElements()).isNull();
     }
 
     @Test
@@ -184,7 +201,7 @@ class TestDependencyGraphAssembler {
                 .holding(TEMPLATE, PARSER, loader)
                 .edge(PARSER, TEMPLATE)
                 .edge(PARSER, loader)
-                .facts(PARSER, new PipelineFacts(TEMPLATE, Set.of(), 6));
+                .facts(PARSER, new PipelineFacts(TEMPLATE, Set.of(), ELEMENTS));
 
         assertThat(edges(assemble(source)))
                 .containsExactlyInAnyOrder(
@@ -222,7 +239,7 @@ class TestDependencyGraphAssembler {
         final FakeSource source = new FakeSource()
                 .holding(RAW, PARSER, EVENTS)
                 .filter("filter-1", PARSER, RAW)
-                .facts(PARSER, new PipelineFacts(TEMPLATE, Set.of("events"), 6));
+                .facts(PARSER, new PipelineFacts(TEMPLATE, Set.of("events"), ELEMENTS));
 
         assertThat(edges(assemble(source)))
                 .containsExactlyInAnyOrder(
@@ -429,7 +446,7 @@ class TestDependencyGraphAssembler {
         for (final DocRef output : outputs) {
             uuids.add(output.getUuid());
         }
-        return new PipelineFacts(null, uuids, 6);
+        return new PipelineFacts(null, uuids, ELEMENTS);
     }
 
     private static List<String> ids(final DependencyGraph graph) {

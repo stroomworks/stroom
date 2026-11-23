@@ -101,6 +101,30 @@ public final class RadioGroupStories {
                     // Each option's tooltip says what it does
                     play.expect(play.getByText("Shape").closest("label"))
                             .toHaveAttribute("title", "Draw a coloured shape");
+                })
+                // Segmented, for a choice in a toolbar: the options are joined buttons, the chosen one
+                // pressed, and it is still a radio group, one tab stop with the arrow keys between them
+                .story("Segmented", context -> {
+                    final RadioGroup<String> radioGroup = radioGroup(context);
+                    radioGroup.setAccessibleName("Mode");
+                    radioGroup.setSegmented(true);
+                    return StoryPanels.column(10, namedTextBox("Before"), radioGroup, namedTextBox("After"));
+                })
+                .withPlay(play -> {
+                    final Query group = play.getByRole("radiogroup", "Mode");
+                    play.expect(group).toHaveClass("radio-group--segmented");
+                    play.expect(play.getByRole("radio", "Shape")).toBeChecked();
+                    // Clicking an option's text chooses it
+                    play.click(play.getByText("Icon"));
+                    play.expect(play.getByRole("radio", "Icon")).toBeChecked();
+                    play.expect(play.spy(ON_CHANGE)).toHaveBeenLastCalledWith("ICON");
+                    // The arrow keys move between the options, choosing as they go
+                    play.keyboard("{ArrowRight}");
+                    play.expect(play.getByRole("radio", "Image")).toBeChecked();
+                    play.expect(play.getByRole("radio", "Image")).toHaveFocus();
+                    // One tab stop
+                    play.tab();
+                    play.expect(play.getByRole("textbox", "After")).toHaveFocus();
                 });
     }
 

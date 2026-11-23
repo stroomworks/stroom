@@ -16818,6 +16818,15 @@ components:
           - LOOKUP
         to:
           type: string
+    GraphElement:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
     GraphNode:
       type: object
       properties:
@@ -16826,6 +16835,10 @@ components:
         elementCount:
           type: integer
           format: int32
+        elements:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphElement"
         hop:
           type: integer
           format: int32

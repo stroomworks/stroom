@@ -45,3 +45,72 @@
     color: var(--control__text-color--disabled);
     cursor: default;
 }
+
+/* Segmented (RadioGroup.setSegmented): the options are a row of joined buttons, the chosen one
+   pressed (in a contained primary button's colours, whose text has enough contrast), for a choice in a
+   toolbar. Each radio button is still there, and focusable, but unseen:
+   its option draws the focus ring instead */
+.radio-group--segmented {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 0;
+}
+
+.radio-group--segmented .radio-group__option {
+    position: relative;
+    padding: 2px 10px;
+    border: 1px solid var(--control__border-color);
+    background-color: var(--control__background-color);
+    white-space: nowrap;
+}
+
+.radio-group--segmented .radio-group__option + .radio-group__option {
+    margin-left: -1px;
+}
+
+.radio-group--segmented .radio-group__option:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.radio-group--segmented .radio-group__option:last-child {
+    border-radius: 0 4px 4px 0;
+}
+
+.radio-group--segmented .radio-group__option:hover {
+    background-color: var(--icon-button__background-color--hover);
+}
+
+.radio-group--segmented .radio-group__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.radio-group--segmented .radio-group__option:has(.radio-group__input:checked) {
+    z-index: 1;
+    border-color: var(--button--contained-primary__background-color);
+    background-color: var(--button--contained-primary__background-color);
+    color: var(--button--contained-primary__color);
+}
+
+.radio-group--segmented .radio-group__option:has(.radio-group__input:focus-visible) {
+    z-index: 2;
+    border-color: var(--focus-border);
+    box-shadow: var(--focus-shadow);
+}
+
+/* Forced colours drop backgrounds, so the chosen option is filled in the system's Highlight */
+@media (forced-colors: active) {
+    .radio-group--segmented .radio-group__option {
+        border-color: CanvasText;
+    }
+
+    .radio-group--segmented .radio-group__option:has(.radio-group__input:checked) {
+        forced-color-adjust: none;
+        border-color: Highlight;
+        background-color: Highlight;
+        color: HighlightText;
+    }
+}

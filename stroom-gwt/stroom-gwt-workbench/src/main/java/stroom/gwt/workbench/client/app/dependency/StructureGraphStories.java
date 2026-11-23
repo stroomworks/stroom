@@ -17,6 +17,8 @@
 package stroom.gwt.workbench.client.app.dependency;
 
 import stroom.dependency.client.component.StructureGraphController;
+import stroom.dependency.client.component.StructureGraphView;
+import stroom.dependency.client.component.StructureGraphViewStore;
 import stroom.docref.DocRef;
 import stroom.document.client.event.OpenDocumentEvent;
 import stroom.explorer.client.event.LocateDocEvent;
@@ -28,6 +30,7 @@ import stroom.gwt.workbench.client.app.screen.ScreenHarness;
 import stroom.gwt.workbench.client.app.screen.StroomDom;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.play.Query;
+import stroom.gwt.workbench.framework.client.play.TextMatch;
 import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
 import stroom.gwt.workbench.framework.client.story.StoryRegistry;
@@ -41,6 +44,9 @@ import com.google.gwt.user.client.ui.Widget;
 /// The controller asks `DependencyGraphResource` for the graph (`POST /dependency/v1/graph`), which each
 /// story answers with one of [StructureGraphFixtures], most of them the layout's own test scenarios. The
 /// controller comes from GIN.
+///
+/// The view (Graph, Table or Both) the user chooses is kept in the browser's local storage, which the
+/// stories share, so each story forgets it when it starts and when it ends, and opens on the graph.
 public final class StructureGraphStories {
 
     private static final String GRAPH_PATH = "/dependency/v1/graph";
@@ -51,6 +57,7 @@ public final class StructureGraphStories {
     private static final String SELECTED = "structure-graph__node--selected";
     private static final String DIMMED = "structure-graph__node--dimmed";
     private static final String FOCUSED = "structure-graph__node--focused";
+    private static final String ELEMENT_NAME = ".structure-graph__element-name";
 
     private StructureGraphStories() {
         // Static utility
@@ -74,6 +81,12 @@ public final class StructureGraphStories {
                     // A referenced document is drawn once in each lane that uses it
                     play.expect(play.querySelectorAll("[data-id^='ref:'][data-id$=':sch']")).toHaveLength(4);
                     play.expect(play.querySelectorAll(".structure-graph__ghost")).toHaveLength(0);
+                    // The graph is shown alone; the table of its documents is a choice of view away,
+                    // which the canvas's description says
+                    play.expect(play.getByRole("radio", "Graph")).toBeChecked();
+                    play.expect(play.querySelector(".structure-graph__table")).not().toBeVisible();
+                    play.expect(play.querySelector(".structure-graph__canvas"))
+                            .toHaveAccessibleDescription(TextMatch.containing("choose Table or Both under View"));
                     expectNoProblems(play);
                 })
                 // An empty folder shows create slots where its documents would go
@@ -170,15 +183,33 @@ public final class StructureGraphStories {
                     play.waitFor(() -> play.expect(node(play, "lane:0")).not().toBeInTheDocument());
                     expectNoProblems(play);
                 })
-                // A pipeline's toggle shows its elements
+                // A pipeline's toggle shows its elements, each named (by the name given it, else its id) with
+                // its type, in the order data flows through them; the table says the same in words
                 .story("ExpandPipeline", context ->
-                        render(context, RestReply.json(StructureGraphFixtures.EVENTS)))
+                        render(context, RestReply.json(StructureGraphFixtures.EVENTS_WITH_ELEMENTS)))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(node(play, "fw_par")).toBeInTheDocument());
                     play.click(play.querySelector("[data-id='fw_par'] .structure-graph__toggle-hit"));
                     play.waitFor(() -> play.expect(node(play, "fw_par"))
                             .toHaveClass("structure-graph__node--expanded"));
                     play.expect(play.querySelectorAll("[data-id='fw_par'] .structure-graph__chip")).toHaveLength(7);
+                    play.expect(play.querySelectorAll("[data-id='fw_par'] .structure-graph__element-name"))
+                            .toHaveLength(7);
+                    // Each element's full name and type is its tooltip; what is drawn is cut to fit the zoom
+                    final Play pipeline = play.within(node(play, "fw_par"));
+                    final String titles = "[data-id='fw_par'] .structure-graph__element > title";
+                    play.expect(play.querySelectorAll(titles)).toHaveLength(7);
+                    play.expect(play.querySelectorAll(titles).nth(0)).toHaveTextContent("dsParser (DSParser)");
+                    play.expect(play.querySelectorAll(titles).nth(2))
+                            .toHaveTextContent("FW Translation (XSLTFilter)");
+                    play.expect(play.querySelectorAll(titles).nth(6))
+                            .toHaveTextContent("streamAppender (StreamAppender)");
+                    // The element's name, not its id, is drawn, however much of it fits
+                    play.expect(pipeline.getByText(TextMatch.startingWith("FW Tr"), ELEMENT_NAME))
+                            .toBeInTheDocument();
+                    play.expect(table(play).getByText(TextMatch.containing(
+                            "7 elements: dsParser (DSParser), readRecordCountFilter (RecordCountFilter), "
+                            + "FW Translation (XSLTFilter)"))).toBeInTheDocument();
                     expectNoProblems(play);
                 })
                 // Finding documents marks them, and says how many match
@@ -210,26 +241,45 @@ public final class StructureGraphStories {
                     play.unhover(play.querySelector(".structure-graph__hover-card"));
                     expectNoProblems(play);
                 })
-                // The table lists every document, a row each, and shown as a table replaces the graph
+                // The view: Table shows the table of every document, a row each, in place of the graph;
+                // Both shows the graph above it; Graph hides it again
                 .story("Table", context -> render(context, RestReply.json(StructureGraphFixtures.EVENTS)))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(node(play, "fw_raw")).toBeInTheDocument());
                     play.expect(play.querySelector(".structure-graph__canvas")).toBeVisible();
-                    play.click(play.getByTitle("Show as Table"));
+                    chooseView(play, "Table");
                     play.waitFor(() -> play.expect(play.querySelector(".structure-graph__canvas"))
                             .not().toBeVisible());
+                    play.expect(play.getByRole("radio", "Table")).toBeChecked();
                     play.expect(table(play).getByText("Event Parser Template")).toBeVisible();
                     play.expect(play.querySelectorAll(".structure-graph__table [data-row]")).toHaveLength(44);
-                    play.click(play.getByTitle("Show as Table"));
+                    chooseView(play, "Both");
                     play.waitFor(() -> play.expect(play.querySelector(".structure-graph__canvas")).toBeVisible());
+                    play.expect(table(play).getByText("Event Parser Template")).toBeVisible();
+                    play.expect(play.querySelector(".structure-graph__canvas"))
+                            .toHaveAccessibleDescription(TextMatch.containing("The table that follows lists"));
+                    chooseView(play, "Graph");
+                    play.waitFor(() -> play.expect(play.querySelector(".structure-graph__table")).not().toBeVisible());
+                    play.expect(play.querySelector(".structure-graph__canvas")).toBeVisible();
                     expectNoProblems(play);
                 })
-                // The keyboard moves through the table under the canvas, and the canvas rings the node of
+                // The view last chosen is remembered, so the next Structure view opens on it
+                .story("OpensOnTheRememberedView", context ->
+                        render(context, RestReply.json(StructureGraphFixtures.EVENTS), StructureGraphView.TABLE))
+                .withPlay(play -> {
+                    play.waitFor(() -> play.expect(table(play).getByText("Event Parser Template")).toBeVisible());
+                    play.expect(play.getByRole("radio", "Table")).toBeChecked();
+                    play.expect(play.querySelector(".structure-graph__canvas")).not().toBeVisible();
+                    expectNoProblems(play);
+                })
+                // Shown with the graph, the keyboard moves through the table under the canvas, and the
+                // canvas rings the node of
                 // the row with the focus; selecting a row selects its node
                 .story("KeyboardFollowsTheTable", context ->
                         render(context, RestReply.json(StructureGraphFixtures.EVENTS)))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(node(play, "tmpl")).toBeInTheDocument());
+                    chooseView(play, "Both");
                     play.click(table(play).getByText("Event Parser Template"));
                     play.waitFor(() -> play.expect(node(play, "tmpl")).toHaveClass(FOCUSED));
                     play.expect(node(play, "tmpl")).toHaveClass(SELECTED);
@@ -244,7 +294,7 @@ public final class StructureGraphStories {
                         render(context, RestReply.json(StructureGraphFixtures.EVENTS)))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(node(play, "tmpl")).toBeInTheDocument());
-                    play.click(play.getByTitle("Show as Table"));
+                    chooseView(play, "Table");
                     play.dblClick(table(play).getByText("Event Parser Template"));
                     play.waitFor(() -> play.expect(play.spy(ON_OPEN))
                             .toHaveBeenCalledWith("Pipeline Event Parser Template"));
@@ -254,7 +304,7 @@ public final class StructureGraphStories {
                 .story("ActionMenu", context -> render(context, RestReply.json(StructureGraphFixtures.EVENTS)))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(node(play, "tmpl")).toBeInTheDocument());
-                    play.click(play.getByTitle("Show as Table"));
+                    chooseView(play, "Table");
                     final Play row = play.within(table(play).getByText("Event Parser Template")
                             .closest(StroomDom.GRID_ROW));
                     // Each row's button is named for its document, as its menu is
@@ -275,11 +325,16 @@ public final class StructureGraphStories {
                         render(context, RestReply.json(StructureGraphFixtures.EVENTS)))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(node(play, "fw_par")).toBeInTheDocument());
+                    chooseView(play, "Both");
                     // Each row's Actions button is named for its document, so it is found by that alone
                     play.click(table(play).getByTitle("Actions for Pipeline 'FW Events Parser'"));
                     play.click(play.screen().findByText("Show Pipeline Elements"));
                     play.waitFor(() -> play.expect(node(play, "fw_par"))
                             .toHaveClass("structure-graph__node--expanded"));
+                    // A graph whose pipelines' elements are counted but not named draws them unnamed
+                    play.expect(play.querySelectorAll("[data-id='fw_par'] .structure-graph__chip")).toHaveLength(7);
+                    play.expect(play.querySelectorAll("[data-id='fw_par'] .structure-graph__element-name"))
+                            .toHaveLength(0);
                     expectNoProblems(play);
                 })
                 // A node's context menu has the same actions
@@ -312,6 +367,11 @@ public final class StructureGraphStories {
         return play.within(play.querySelector(".structure-graph__hover-card"));
     }
 
+    // Chooses a view (Graph, Table or Both) by clicking its option, as the user does
+    private static void chooseView(final Play play, final String label) {
+        play.click(play.within(play.getByRole("radiogroup", "View")).getByText(label));
+    }
+
     private static Play table(final Play play) {
         return play.within(play.querySelector(".structure-graph__table"));
     }
@@ -326,6 +386,20 @@ public final class StructureGraphStories {
     }
 
     private static Widget render(final StoryContext context, final RestReply reply) {
+        return render(context, reply, null);
+    }
+
+    // Opens on the view given, as if the user had chosen it in an earlier Structure view, or on the
+    // default if it is null
+    private static Widget render(final StoryContext context,
+                                 final RestReply reply,
+                                 final StructureGraphView rememberedView) {
+        // The choice is kept in local storage, which the stories share
+        final StructureGraphViewStore viewStore = new StructureGraphViewStore();
+        viewStore.clear();
+        if (rememberedView != null) {
+            viewStore.set(rememberedView);
+        }
         final RestFixtures fixtures = RestFixtures.builder()
                 .post(GRAPH_PATH, reply)
                 .build();
@@ -333,6 +407,7 @@ public final class StructureGraphStories {
         final ScreenHarness harness = ScreenHarness.builder(context, fixtures)
                 .injector(injector)
                 .build();
+        harness.addRegistration(viewStore::clear);
         harness.fn(ON_OPEN);
         harness.fn(ON_LOCATE);
         harness.addRegistration(harness.getEventBus().addHandler(LocateDocEvent.getType(), event ->

@@ -280,7 +280,9 @@
 }
 
 .structure-graph__node--dimmed .structure-graph__name,
-.structure-graph__node--dimmed .structure-graph__meta {
+.structure-graph__node--dimmed .structure-graph__meta,
+.structure-graph__node--dimmed .structure-graph__element-name,
+.structure-graph__node--dimmed .structure-graph__element-type {
     fill: var(--structure-graph__dimmed-text-color);
 }
 
@@ -289,7 +291,9 @@
 .structure-graph--names-hidden .structure-graph__glyph-text,
 .structure-graph--names-hidden .structure-graph__toggle,
 .structure-graph--meta-hidden .structure-graph__meta,
-.structure-graph--meta-hidden .structure-graph__badge {
+.structure-graph--meta-hidden .structure-graph__badge,
+.structure-graph--meta-hidden .structure-graph__element-name,
+.structure-graph--meta-hidden .structure-graph__element-type {
     display: none;
 }
 
@@ -341,6 +345,20 @@
     fill: var(--structure-graph__chip-fill);
     stroke: var(--structure-graph__node-stroke);
     stroke-width: 1;
+}
+
+/* An expanded pipeline's element: its name on the left of its box, its type on the right. Sized as a
+   node's type line is, and hidden with it when zoomed out too far to read */
+.structure-graph__element-name {
+    fill: var(--structure-graph__text-color);
+    font-family: var(--regular-font-family), sans-serif;
+    font-size: calc(12px * var(--structure-graph__label-scale));
+}
+
+.structure-graph__element-type {
+    fill: var(--structure-graph__meta-color);
+    font-family: var(--regular-font-family), sans-serif;
+    font-size: calc(11px * var(--structure-graph__label-scale));
 }
 
 /* An empty folder's create slots */
@@ -425,6 +443,8 @@
 
     .structure-graph__name,
     .structure-graph__meta,
+    .structure-graph__element-name,
+    .structure-graph__element-type,
     .structure-graph__glyph-text,
     .structure-graph__badge,
     .structure-graph__toggle,

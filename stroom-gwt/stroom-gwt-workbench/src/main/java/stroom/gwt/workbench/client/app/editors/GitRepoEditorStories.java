@@ -40,20 +40,23 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.function.Supplier;
 
 /// The `App/Editors/GitRepoEditor` stories, showing Stroom's real
-/// [GitRepoEditor] (a Git Repository's tab: Settings, Documentation and Permissions) with fake
-/// REST replies.
+/// [GitRepoEditor] (a Git Repository's tab: Structure, Settings, Documentation and Permissions) with
+/// fake REST replies.
 ///
 /// As `GitRepoPlugin` does, the story fetches the document (`GET /gitRepo/v1/{uuid}`) and reads it
 /// into the editor ([DocEditors#open]); Save sends it to `PUT /gitRepo/v1/{uuid}`. The other routes:
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
+/// | `POST /dependency/v1/graph` | the Structure tab's graph (see `App/Folder/Structure`) |
 /// | `POST /gitRepo/v1/pushToGit` | Push |
 /// | `POST /gitRepo/v1/pullFromGit` | Pull |
 /// | `POST /gitRepo/v1/areUpdatesAvailable` | checking for updates |
 /// | `POST /gitRepo/v1/getDefaultHttpClientConfig` | the default HTTP client config |
 /// | `POST /credentials/findCredentialsWithPermissions` | the credentials list |
 /// | `POST /credentials/getByName` | the saved credential |
+///
+/// Structure is the tab shown first, so the plays of the Settings stories start by showing Settings.
 ///
 /// A spy records `RefreshExplorerTreeEvent`, and the plays count the credential and default config
 /// requests with the request spy.
@@ -100,6 +103,23 @@ public final class GitRepoEditorStories {
     private static final String FIND_CREDENTIALS = "/credentials/findCredentials";
     private static final String GET_DEFAULT_CONFIG = "/gitRepo/v1/getDefaultHttpClientConfig";
     private static final String UPDATE = "/gitRepo/v1/git-1";
+    private static final String GRAPH_PATH = "/dependency/v1/graph";
+
+    // DependencyGraphResource.fetchGraph(): a feed in the repository processed by a pipeline
+    private static final String GRAPH = """
+            {
+              "nodes": [
+                {"id": "raw", "role": "FLOW", "inScope": true,
+                 "docRef": {"type": "Feed", "uuid": "raw", "name": "FW-LOGS:RAW_EVENTS"}},
+                {"id": "par", "role": "FLOW", "inScope": true, "elementCount": 6,
+                 "docRef": {"type": "Pipeline", "uuid": "par", "name": "FW Parser"}}
+              ],
+              "edges": [
+                {"from": "raw", "to": "par", "kind": "FLOW", "certainty": "CONFIGURED"}
+              ],
+              "truncations": [],
+              "nodeLimitReached": false
+            }""";
 
     // A FormGroup gives its control the group's identity as its id
     // (GitRepoSettings.ui.xml)
@@ -118,9 +138,19 @@ public final class GitRepoEditorStories {
                 .layout(StoryLayout.FULLSCREEN)
                 .story("Default", context -> render(context, new Fixtures()))
                 .withPlay(play -> {
-                    for (final String label : new String[]{"Settings", "Documentation", "Permissions"}) {
+                    for (final String label : new String[]{"Structure", "Settings", "Documentation", "Permissions"}) {
                         play.waitFor(() -> play.expect(DocEditors.tab(play, label)).toBeInTheDocument());
                     }
+                    // Structure is the default tab, as for a folder: the repository's graph, fetched
+                    // for the repository
+                    play.expect(DocEditors.tab(play, "Structure").closest("[role=tab]"))
+                            .toHaveAttribute("aria-selected", "true");
+                    play.waitFor(() -> play.expect(play.querySelector("[data-id='par']")).toBeInTheDocument());
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post(GRAPH_PATH)
+                                    .withJsonBodyContaining("{\"root\": {\"type\": \"GitRepo\", \"uuid\": \"git-1\"}}")
+                                    .toSpyMatcher());
+                    showSettings(play);
                     // Settings shows the git fields, and (no commit) the Auto-push group and Push
                     play.waitFor(() -> play.expect(play.getByText("Git repository URL", "label")).toBeInTheDocument());
                     play.expect(play.getByText("Git branch", "label")).toBeInTheDocument();
@@ -138,6 +168,7 @@ public final class GitRepoEditorStories {
                 // disabled, saying why (they were once hidden, so it wasn't clear pushing exists)
                 .story("CommitDisablesPush", context -> render(context, new Fixtures().commit("abc123")))
                 .withPlay(play -> {
+                    showSettings(play);
                     play.findByRole("button", StroomDom.button("Pull from Git"));
                     final Query push = play.getByRole("button", StroomDom.button("Push to Git"));
                     play.expect(push).toBeDisabled();
@@ -150,6 +181,7 @@ public final class GitRepoEditorStories {
                 .story("PushViaCommitDialog", context -> render(context, new Fixtures()
                         .reply("/gitRepo/v1/pushToGit", "{\"ok\": true, \"message\": \"Pushed 5 files.\"}")))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.click(play.findByRole("button", StroomDom.button("Push to Git")));
                     // The dialog is a popup on the page's body
@@ -175,6 +207,7 @@ public final class GitRepoEditorStories {
                 .story("PushBlankMessageAndCancel", context -> render(context, new Fixtures()
                         .reply("/gitRepo/v1/pushToGit", "{\"ok\": true, \"message\": \"Pushed 5 files.\"}")))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.click(play.findByRole("button", StroomDom.button("Push to Git")));
                     screen.findByText("Git Push", StroomDom.DIALOG_TITLE);
@@ -193,6 +226,7 @@ public final class GitRepoEditorStories {
                 // Git Push left open (the screenshot and the dialog measurement show it)
                 .story("GitPushOpen", context -> render(context, new Fixtures()))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.click(play.findByRole("button", StroomDom.button("Push to Git")));
                     final Play dialog = screen.within(screen.findByText("Git Push", StroomDom.DIALOG_TITLE)
@@ -203,6 +237,7 @@ public final class GitRepoEditorStories {
                 .story("PullSuccess", context -> render(context, new Fixtures()
                         .reply("/gitRepo/v1/pullFromGit", "{\"ok\": true, \"message\": \"Pulled 7 files.\"}")))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.click(play.findByRole("button", StroomDom.button("Pull from Git")));
                     play.waitFor(() -> play.expect(screen.getByText("Pull Success")).toBeInTheDocument());
@@ -216,6 +251,7 @@ public final class GitRepoEditorStories {
                 .story("CheckUpdatesFailure", context -> render(context, new Fixtures()
                         .reply("/gitRepo/v1/areUpdatesAvailable", "{\"ok\": false, \"message\": \"Auth failed.\"}")))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.click(play.findByRole("button", StroomDom.button("Check for updates")));
                     play.waitFor(() -> play.expect(screen.getByText("Update Check Failure")).toBeInTheDocument());
@@ -226,6 +262,7 @@ public final class GitRepoEditorStories {
                 // onRangeChange), not when the editor is shown
                 .story("CredentialListLoadsOnOpenNotMount", context -> render(context, new Fixtures()))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.waitFor(() -> play.expect(play.getByText("Credentials", "label")).toBeInTheDocument());
                     // The document's credential is shown (fetched by name) ...
@@ -250,6 +287,7 @@ public final class GitRepoEditorStories {
                 .story("SelectedCredentialShownWithoutTheList", context -> render(context, new Fixtures()
                         .credentials(NO_CREDENTIALS)))
                 .withPlay(play -> {
+                    showSettings(play);
                     // The box is a text box showing the credential's name
                     play.expect(play.findByDisplayValue("my-token")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
@@ -260,6 +298,7 @@ public final class GitRepoEditorStories {
                         .credentials(NO_CREDENTIALS)
                         .credentialByName(RestReply.noContent())))
                 .withPlay(play -> {
+                    showSettings(play);
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post("/credentials/getByName").toSpyMatcher()));
                     final Query label = play.findByText("Credentials", "label");
@@ -270,10 +309,11 @@ public final class GitRepoEditorStories {
                     play.expect(label).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The default HTTP client configuration is fetched when the document is read, and
+                // The default HTTP client configuration is fetched when Settings reads the document, and
                 // seeding it doesn't make the document dirty
                 .story("HttpClientConfigSeedsWithoutDirtying", context -> render(context, new Fixtures()))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post(GET_DEFAULT_CONFIG).toSpyMatcher()));
@@ -290,6 +330,7 @@ public final class GitRepoEditorStories {
                 // every save, so editing the URL is enough to save the server's default
                 .story("HttpClientConfigSeedRidesAlongWithAnyEdit", context -> render(context, new Fixtures()))
                 .withPlay(play -> {
+                    showSettings(play);
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post(GET_DEFAULT_CONFIG).toSpyMatcher()));
                     play.type(play.getByLabelText("Git repository URL"), "/x");
@@ -309,6 +350,7 @@ public final class GitRepoEditorStories {
                 // OK writes the configuration onto the document, which makes it dirty
                 .story("HttpClientConfigOkDirtiesTheDoc", context -> render(context, new Fixtures()))
                 .withPlay(play -> {
+                    showSettings(play);
                     final Play screen = play.screen();
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post(GET_DEFAULT_CONFIG).toSpyMatcher()));
@@ -326,6 +368,7 @@ public final class GitRepoEditorStories {
                 // The configuration button has no URL precondition; the remote actions do
                 .story("HttpClientConfigEnabledWithoutAUrl", context -> render(context, new Fixtures().noUrl()))
                 .withPlay(play -> {
+                    showSettings(play);
                     play.expect(play.findByRole("button", StroomDom.button("Set HTTP Client Config")))
                             .not().toBeDisabled();
                     play.waitFor(() -> play.expect(play.getByRole("button", StroomDom.button("Pull from Git")))
@@ -336,12 +379,20 @@ public final class GitRepoEditorStories {
                 // Settings, read only: the partner of Default
                 .story("SettingsReadOnly", context -> render(context, new Fixtures(), true))
                 .withPlay(play -> {
+                    showSettings(play);
                     play.waitFor(() -> play.expect(play.getByText("Git repository URL", "label")).toBeInTheDocument());
                     play.waitFor(() -> play.expect(play.querySelector(URL_INPUT))
                             .toHaveValue("https://github.com/example/repo.git"));
                     play.expect(play.getByText("Read only", ".link-tab-panel__read-only-note")).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 });
+    }
+
+    // Shows the Settings tab (Structure is shown first) and waits for its fields
+    private static void showSettings(final Play play) {
+        play.waitFor(() -> play.expect(DocEditors.tab(play, "Settings")).toBeInTheDocument());
+        play.click(DocEditors.tab(play, "Settings"));
+        play.waitFor(() -> play.expect(play.getByText("Git repository URL", "label")).toBeInTheDocument());
     }
 
     // The number of credential list fetches, read when the step runs
@@ -413,6 +464,7 @@ public final class GitRepoEditorStories {
                     .post(GET_DEFAULT_CONFIG, RestReply.json(DEFAULT_HTTP_CLIENT_CONFIG))
                     .post(FIND_CREDENTIALS, RestReply.json(credentials))
                     .post("/credentials/getByName", credentialByName)
+                    .post(GRAPH_PATH, RestReply.json(GRAPH))
                     .build();
         }
     }

@@ -27,6 +27,7 @@ import stroom.dependency.client.layout.LayoutResult;
 import stroom.dependency.shared.DependencyGraph;
 import stroom.dependency.shared.EdgeKind;
 import stroom.dependency.shared.GraphEdge;
+import stroom.dependency.shared.GraphElement;
 import stroom.dependency.shared.GraphNode;
 import stroom.dependency.shared.NodeRole;
 import stroom.docref.DocRef;
@@ -41,6 +42,7 @@ import org.xml.sax.InputSource;
 
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -189,6 +191,43 @@ class TestStructureGraphSvg {
                 .isZero();
     }
 
+    // An expanded pipeline whose elements the server named draws each one's name (or id) and type, in
+    // order, in its box
+    @Test
+    void testExpandedPipelineNamesItsElements() {
+        final List<GraphElement> elements = List.of(
+                new GraphElement("dsParser", null, "DSParser"),
+                new GraphElement("translationFilter", "FW Translation", "XSLTFilter"),
+                new GraphElement("<writer>", null, "XMLWriter"));
+        final Element pipeline = nodeGroup(parse(buildPipeline(3, elements)), "p");
+
+        assertThat(countByClass(pipeline, "structure-graph__chip")).isEqualTo(3);
+        assertThat(textsOfClass(pipeline, "structure-graph__element-name"))
+                .containsExactly("dsParser", "FW Translation", "<writer>");
+        assertThat(textsOfClass(pipeline, "structure-graph__element-type"))
+                .containsExactly("DSParser", "XSLTFilter", "XMLWriter");
+        // Each element's full name and type is its tooltip, for when the zoom cuts them short
+        final List<String> titles = new ArrayList<>();
+        final NodeList titleElements = pipeline.getElementsByTagName("title");
+        for (int i = 0; i < titleElements.getLength(); i++) {
+            titles.add(titleElements.item(i).getTextContent());
+        }
+        assertThat(titles).containsExactly("dsParser (DSParser)", "FW Translation (XSLTFilter)",
+                "<writer> (XMLWriter)");
+    }
+
+    // Elements the server didn't name, or named only some of, are drawn as unnamed boxes, as before
+    @Test
+    void testExpandedPipelineWithoutAllItsElementsNamedDrawsThemUnnamed() {
+        final List<GraphElement> some = List.of(new GraphElement("dsParser", null, "DSParser"));
+        for (final List<GraphElement> elements : Arrays.asList(null, some)) {
+            final Element pipeline = nodeGroup(parse(buildPipeline(3, elements)), "p");
+
+            assertThat(countByClass(pipeline, "structure-graph__chip")).isEqualTo(3);
+            assertThat(countByClass(pipeline, "structure-graph__element-name")).isZero();
+        }
+    }
+
     @Test
     void testSummariesAreControlsAndCollapsedLanesHaveNoToggle() {
         final Document svg = parse(build("deep", DetailLevel.LANES_COLLAPSED, Set.of()));
@@ -223,6 +262,21 @@ class TestStructureGraphSvg {
     private static String build(final String scenarioId, final DetailLevel detail, final Set<String> expanded) {
         final LayoutResult layout = GraphLayout.layout(
                 GraphScenarios.get(scenarioId).build(), expanded, detail, Map.of());
+        return StructureGraphSvg.build(layout, MARKER, 1).asString();
+    }
+
+    // One pipeline, expanded, with the elements given (or none named)
+    private static String buildPipeline(final int elementCount, final List<GraphElement> elements) {
+        final DependencyGraph graph = new DependencyGraph(
+                null,
+                List.of(new GraphNode("p", new DocRef("Pipeline", "p", "Parser"), NodeRole.FLOW, null, true,
+                        null, elementCount, elements, null)),
+                null,
+                null,
+                null,
+                null,
+                null);
+        final LayoutResult layout = GraphLayout.layout(graph, Set.of("p"), DetailLevel.EVERYTHING, Map.of());
         return StructureGraphSvg.build(layout, MARKER, 1).asString();
     }
 
@@ -283,6 +337,18 @@ class TestStructureGraphSvg {
             }
         }
         throw new AssertionError("No text of class " + className);
+    }
+
+    private static List<String> textsOfClass(final Element root, final String className) {
+        final List<String> texts = new ArrayList<>();
+        final NodeList all = root.getElementsByTagName("text");
+        for (int i = 0; i < all.getLength(); i++) {
+            final Element text = (Element) all.item(i);
+            if (className.equals(text.getAttribute("class"))) {
+                texts.add(text.getTextContent());
+            }
+        }
+        return texts;
     }
 
     private static int countByClass(final Element root, final String className) {

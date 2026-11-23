@@ -16,16 +16,21 @@
 
 package stroom.explorer.impl.graph;
 
+import stroom.dependency.shared.GraphElement;
 import stroom.docref.DocRef;
 import stroom.pipeline.shared.PipelineDataMerger;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineLayer;
+import stroom.pipeline.shared.data.PipelineLink;
 import stroom.pipeline.shared.data.PipelineProperty;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /// What a pipeline's configuration says about where its data goes, which `doc_dependency` does not
 /// record: a pipeline's edge to a feed may be its output or a reference loader's input, and its edge to
@@ -36,12 +41,15 @@ import java.util.Set;
 /// A feed edge that is not an output is a reference loader's input, and a pipeline edge that is not the
 /// parent is a reference loader's pipeline, so those need no facts of their own.
 ///
-/// @param parent       The pipeline it inherits from, or null.
-/// @param outputs      The UUIDs of the feeds and stores it writes to.
-/// @param elementCount How many elements it has.
+/// Its elements are listed too, in the order data flows through them, so an expanded pipeline can name
+/// each one.
+///
+/// @param parent   The pipeline it inherits from, or null.
+/// @param outputs  The UUIDs of the feeds and stores it writes to.
+/// @param elements Its elements, in the order data flows through them, without the merger's `Source`.
 public record PipelineFacts(DocRef parent,
                             Set<String> outputs,
-                            int elementCount) {
+                            List<GraphElement> elements) {
 
     /// Document types a pipeline writes to through whatever element names them, e.g. an index named by an
     /// indexing filter.
@@ -80,13 +88,69 @@ public record PipelineFacts(DocRef parent,
             }
         }
 
-        int elementCount = 0;
-        for (final String id : elements.keySet()) {
-            if (!SOURCE_ELEMENT_ID.equals(id)) {
-                elementCount++;
+        return new PipelineFacts(parent, outputs, inFlowOrder(elements, merger.getLinks()));
+    }
+
+    /// @return how many elements the pipeline has.
+    public int elementCount() {
+        return elements.size();
+    }
+
+    /// Lists a pipeline's elements in the order data flows through them: depth first along the links from
+    /// `Source`, a branch's links in the order they were added. Elements `Source` doesn't reach (e.g. an
+    /// unlinked chain) follow, each chain from its first element, the chains in order of that element's
+    /// id; any left, e.g. in a loop, follow by id. `Source` itself is left out: the merger adds it, and
+    /// the user doesn't.
+    ///
+    /// @param elements The merged elements, by id.
+    /// @param links    The merged links, by the id of the element they leave.
+    /// @return the elements, each once.
+    static List<GraphElement> inFlowOrder(final Map<String, PipelineElement> elements,
+                                          final Map<String, List<PipelineLink>> links) {
+        final Set<String> ordered = new LinkedHashSet<>();
+        visit(SOURCE_ELEMENT_ID, links, elements, ordered);
+
+        // Chains Source doesn't reach start from an element nothing links to
+        final Set<String> linkedTo = new HashSet<>();
+        links.values().forEach(list -> list.forEach(link -> linkedTo.add(link.getTo())));
+        final Set<String> remaining = new TreeSet<>(elements.keySet());
+        for (final String id : remaining) {
+            if (!linkedTo.contains(id)) {
+                visit(id, links, elements, ordered);
             }
         }
-        return new PipelineFacts(parent, outputs, elementCount);
+        for (final String id : remaining) {
+            visit(id, links, elements, ordered);
+        }
+
+        final List<GraphElement> result = new ArrayList<>(ordered.size());
+        for (final String id : ordered) {
+            if (!SOURCE_ELEMENT_ID.equals(id)) {
+                final PipelineElement element = elements.get(id);
+                result.add(new GraphElement(id, element.getName(), element.getType()));
+            }
+        }
+        return result;
+    }
+
+    // Adds an element, then those it links to, depth first, once each. Iterative, so a long chain can't
+    // overflow the stack.
+    private static void visit(final String startId,
+                              final Map<String, List<PipelineLink>> links,
+                              final Map<String, PipelineElement> elements,
+                              final Set<String> ordered) {
+        final List<String> stack = new ArrayList<>();
+        stack.add(startId);
+        while (!stack.isEmpty()) {
+            final String id = stack.removeLast();
+            if (elements.containsKey(id) && ordered.add(id)) {
+                final List<PipelineLink> out = links.getOrDefault(id, List.of());
+                // Pushed in reverse, so the first link added is followed first
+                for (int i = out.size() - 1; i >= 0; i--) {
+                    stack.add(out.get(i).getTo());
+                }
+            }
+        }
     }
 
     // A store is written to by whatever element names it; a feed or dictionary only by an appender, since

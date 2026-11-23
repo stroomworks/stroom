@@ -17,10 +17,12 @@
 package stroom.dependency.client.component;
 
 import stroom.dependency.client.layout.Dims;
+import stroom.dependency.client.layout.GraphViewport;
 import stroom.dependency.client.layout.Instance;
 import stroom.dependency.client.layout.InstanceKind;
 import stroom.dependency.client.layout.LayoutConstants;
 import stroom.dependency.client.layout.LayoutResult;
+import stroom.dependency.shared.GraphElement;
 
 /// The text drawn on each node of the Structure view, which depends on the zoom.
 ///
@@ -37,6 +39,16 @@ public final class StructureGraphText {
     static final double META_SIZE = 12;
     /// Font size of a referenced document's or endpoint's type line, before counter-scaling.
     static final double SMALL_META_SIZE = 11;
+    /// Font size of an element's name on an expanded pipeline, before counter-scaling.
+    static final double ELEMENT_NAME_SIZE = 12;
+    /// Font size of an element's type on an expanded pipeline, before counter-scaling.
+    static final double ELEMENT_TYPE_SIZE = 11;
+    /// How far an element's name and type sit in from the sides of its box, and apart.
+    static final double ELEMENT_PAD = 10;
+    /// The most of an element's box its type may take, right-aligned; its name has the rest. A type is
+    /// short and says what the element does, so it gets the room it needs up to this, and the name
+    /// (often a long id) is cut short first.
+    static final double ELEMENT_TYPE_MOST_SHARE = 0.45;
 
     // A monospace character is about this wide, as a fraction of its font size; the type line's sans
     // capitals a little narrower.
@@ -50,6 +62,9 @@ public final class StructureGraphText {
     private static final double BADGE_HIDDEN_AT_OR_BELOW = 0.62;
     private static final int BADGE_WIDTH = 30;
     private static final String ELLIPSIS = "…";
+    private static final double FIT_TOLERANCE = 1e-9;
+    // The width of an element's box the name and type share, less the padding at each side and between.
+    private static final double ELEMENT_TEXT_WIDTH = LayoutConstants.EW - 3 * ELEMENT_PAD;
 
     private StructureGraphText() {
         // Static methods only.
@@ -127,6 +142,31 @@ public final class StructureGraphText {
         return truncate(text, cap);
     }
 
+    /// @param element An element of an expanded pipeline.
+    /// @param zoom    The canvas zoom.
+    /// @return the element's name (or id, if it has no name), cut short to fit the left of its box at this
+    /// zoom.
+    public static String elementName(final GraphElement element, final double zoom) {
+        final double nameWidth = ELEMENT_TEXT_WIDTH - typeWidth(element, zoom);
+        return truncate(element.getDisplayName(), fitsSans(nameWidth, ELEMENT_NAME_SIZE, zoom));
+    }
+
+    /// @param element An element of an expanded pipeline.
+    /// @param zoom    The canvas zoom.
+    /// @return the element's type, e.g. `XSLTFilter`, cut short to fit the right of its box at this zoom.
+    public static String elementType(final GraphElement element, final double zoom) {
+        return truncate(element.getType(), fitsSans(typeWidth(element, zoom), ELEMENT_TYPE_SIZE, zoom));
+    }
+
+    // The width an element's type takes in its box at a zoom: all it needs, up to its most share.
+    private static double typeWidth(final GraphElement element, final double zoom) {
+        final String type = element.getType() == null
+                ? ""
+                : element.getType();
+        final double needed = type.length() * SANS_CHAR_WIDTH * ELEMENT_TYPE_SIZE * GraphViewport.labelScale(zoom);
+        return Math.min(needed, ELEMENT_TEXT_WIDTH * ELEMENT_TYPE_MOST_SHARE);
+    }
+
     /// @param text A label, or null.
     /// @param cap  The most characters to show.
     /// @return the label, or its first `cap - 1` characters and an ellipsis if it is longer than `cap`.
@@ -162,6 +202,14 @@ public final class StructureGraphText {
     private static boolean isReferenceRow(final Instance instance) {
         return instance.getKind() == InstanceKind.REFERENCE
                || instance.getKind() == InstanceKind.REFERENCE_SUMMARY;
+    }
+
+    // How many characters of the sans font fit across a width of the graph, at a zoom: labels are drawn
+    // in the graph's units, multiplied by the label scale. At least 3, so a label is never cut to nothing.
+    private static int fitsSans(final double width, final double size, final double zoom) {
+        final double scale = GraphViewport.labelScale(zoom);
+        // The tolerance keeps a width worked out as exactly n characters from rounding down to n - 1
+        return Math.max(3, (int) Math.floor(width / (SANS_CHAR_WIDTH * size * scale) + FIT_TOLERANCE));
     }
 
     // How many characters of a monospace font fit across a width, less padding, at a zoom.

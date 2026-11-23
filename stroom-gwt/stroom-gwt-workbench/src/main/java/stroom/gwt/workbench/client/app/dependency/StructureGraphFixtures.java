@@ -26,6 +26,11 @@ package stroom.gwt.workbench.client.app.dependency;
 /// template, which the harness marks as outside the folder.
 final class StructureGraphFixtures {
 
+    /// [#EVENTS], with the FW Events Parser's seven elements named, in the order data flows through them,
+    /// as the server sends them. The layout's scenarios only count elements, so the names are added here
+    /// rather than to [#EVENTS], which is copied from the layout's reference files.
+    static final String EVENTS_WITH_ELEMENTS = StructureGraphFixtures.withElements();
+
     /// The layout's `events` scenario: Event sources — uneven chains.
     static final String EVENTS = """
             {
@@ -736,5 +741,18 @@ final class StructureGraphFixtures {
 
     private StructureGraphFixtures() {
         // Constants only.
+    }
+
+    private static String withElements() {
+        final String elements = """
+                "elementCount": 7, "elements": [
+                  {"id": "dsParser", "type": "DSParser"},
+                  {"id": "readRecordCountFilter", "type": "RecordCountFilter"},
+                  {"id": "translationFilter", "name": "FW Translation", "type": "XSLTFilter"},
+                  {"id": "schemaFilter", "type": "SchemaFilter"},
+                  {"id": "writeRecordCountFilter", "type": "RecordCountFilter"},
+                  {"id": "xmlWriter", "type": "XMLWriter"},
+                  {"id": "streamAppender", "type": "StreamAppender"}],""";
+        return EVENTS.replace("\"elementCount\": 7,", elements.strip());
     }
 }

@@ -3,6 +3,8 @@
 <module>
   <!-- Inherit the core Web Toolkit stuff. -->
   <inherits name='com.google.gwt.user.User' />
+  <!-- The browser's local storage, which remembers the Structure view's chosen view. -->
+  <inherits name='com.google.gwt.storage.Storage' />
 
   <!-- The Structure view: a folder's dependency graph, its layout and its renderer. -->
   <source path="client" />

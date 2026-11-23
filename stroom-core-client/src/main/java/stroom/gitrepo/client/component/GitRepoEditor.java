@@ -16,6 +16,7 @@
 
 package stroom.gitrepo.client.component;
 
+import stroom.dependency.client.component.StructureGraphController;
 import stroom.document.client.component.DocumentationTabController;
 import stroom.document.client.editor.DocumentEditor;
 import stroom.document.client.editor.LinkTabPanel;
@@ -28,10 +29,15 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
-/// A Git repository's editor: its Settings, Documentation and Permissions tabs (see
+/// A Git repository's editor: its Structure, Settings, Documentation and Permissions tabs (see
 /// [DocumentEditor]).
+///
+/// A Git repository holds documents as a folder does, and is often used as one, so Structure (the
+/// documents in it and how they depend on each other, as a graph, read only) is its first tab and the
+/// one shown, as it is for a folder (`FolderTabs`).
 public class GitRepoEditor extends DocumentEditor<GitRepoDoc> {
 
+    private static final TabData STRUCTURE = new TabDataImpl("Structure");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
@@ -40,17 +46,24 @@ public class GitRepoEditor extends DocumentEditor<GitRepoDoc> {
     ///
     /// @param eventBus             The application's event bus.
     /// @param view                 Its component.
+    /// @param structureProvider    Makes the Structure tab.
     /// @param settingsProvider     Makes the Settings tab.
     /// @param documentationTabProvider Makes the Documentation tab's editor.
     /// @param permissionsProvider  Makes the Permissions tab.
     @Inject
     public GitRepoEditor(final EventBus eventBus,
                          final LinkTabPanel view,
+                         final Provider<StructureGraphController> structureProvider,
                          final Provider<GitRepoSettingsController> settingsProvider,
                          final Provider<DocumentationTabController> documentationTabProvider,
                          final Provider<DocumentUserPermissionsTabController> permissionsProvider) {
         super(eventBus, view);
 
+        // The server leaves out of the graph whatever the user may not see, so the tab needs no
+        // permission of its own
+        addTab(STRUCTURE,
+                structureProvider::get,
+                (structure, docRef, doc) -> structure.read(docRef));
         addTab(SETTINGS,
                 settingsProvider::get,
                 GitRepoSettingsController::read,
@@ -60,6 +73,6 @@ public class GitRepoEditor extends DocumentEditor<GitRepoDoc> {
                 GitRepoDoc::getDescription,
                 (doc, description) -> doc.copy().description(description).build());
         addPermissionsTab(PERMISSIONS, permissionsProvider);
-        setDefaultTab(SETTINGS);
+        setDefaultTab(STRUCTURE);
     }
 }

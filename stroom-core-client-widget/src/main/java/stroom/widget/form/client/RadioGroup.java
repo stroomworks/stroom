@@ -45,7 +45,8 @@ import java.util.function.Consumer;
 ///
 /// The BEM block `radio-group` (`radio-group.css`, markup `RadioGroup.ui.xml`): its options
 /// (`radio-group__option`, a label), each holding its radio button (`radio-group__input`) and text
-/// (`radio-group__label`).
+/// (`radio-group__label`). Segmented (`radio-group--segmented`, [#setSegmented(boolean)]), its options
+/// are drawn as a row of joined buttons, for a choice in a toolbar, e.g. of a view.
 ///
 /// @param <T> The type of the options' values.
 public class RadioGroup<T> extends Widget implements HasValue<T>, Focus {
@@ -53,6 +54,7 @@ public class RadioGroup<T> extends Widget implements HasValue<T>, Focus {
     private static final Binder BINDER = GWT.create(Binder.class);
     private static final String BLOCK = "radio-group";
     private static final String ARIA_LABEL = "aria-label";
+    private static final String SEGMENTED = BLOCK + "--segmented";
 
     // The name the radio buttons share, which makes them one group to the browser
     private final String name = DOM.createUniqueId();
@@ -123,6 +125,19 @@ public class RadioGroup<T> extends Widget implements HasValue<T>, Focus {
             getElement().removeAttribute(ARIA_LABEL);
         } else {
             getElement().setAttribute(ARIA_LABEL, accessibleName);
+        }
+    }
+
+    /// Draws the options as a row of joined buttons, the chosen one pressed, for a choice in a toolbar
+    /// (e.g. of a view), rather than as radio buttons with text beside them. It is still a radio
+    /// group: one tab stop, with the arrow keys moving between the options.
+    ///
+    /// @param segmented Whether the options are drawn as joined buttons.
+    public void setSegmented(final boolean segmented) {
+        if (segmented) {
+            addStyleName(SEGMENTED);
+        } else {
+            removeStyleName(SEGMENTED);
         }
     }
 
