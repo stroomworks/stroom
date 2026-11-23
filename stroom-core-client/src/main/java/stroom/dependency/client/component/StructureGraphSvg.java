@@ -85,7 +85,7 @@ public final class StructureGraphSvg {
     private static final int EXPANDED_RADIUS = 10;
     private static final int CHIP_RADIUS = 6;
     // Where an expanded pipeline's element boxes start, from its left edge.
-    private static final int CHIP_X = 13;
+    private static final int CHIP_X = LayoutConstants.EXPANDED_CHIP_X;
     // How far below the middle of an element's box its text's baseline sits, which centres it.
     private static final double ELEMENT_BASELINE_OFFSET = 4;
     // An endpoint's hexagon's corner inset.
@@ -442,13 +442,14 @@ public final class StructureGraphSvg {
                     if (named) {
                         final GraphElement element = elements.get(i);
                         g.elem(chip -> {
-                            // Its full name and type, as a tooltip, for when the zoom cuts them short
-                            chip.elem(element.getDisplayName() + " (" + element.getType() + ")", TITLE);
-                            appendChip(chip, chipY);
+                            // Its full name and type, and where it is inherited from, as a tooltip, for
+                            // when the zoom cuts them short
+                            chip.elem(StructureGraphText.elementDescription(element), TITLE);
+                            appendChip(chip, chipY, element.getInheritedFrom() != null);
                             appendElementText(chip, element, chipY, zoom);
                         }, G, elementClass("element"));
                     } else {
-                        appendChip(g, chipY);
+                        appendChip(g, chipY, false);
                     }
                 }
             }
@@ -464,9 +465,13 @@ public final class StructureGraphSvg {
         }, G, attributes.toArray(new Attribute[0]));
     }
 
-    private static void appendChip(final HtmlBuilder g, final double chipY) {
+    // An element's box; an element the pipeline inherits has a dashed one, so it is told apart by more than
+    // colour.
+    private static void appendChip(final HtmlBuilder g, final double chipY, final boolean inherited) {
         g.elem(RECT,
-                elementClass("chip"),
+                Attribute.className(inherited
+                        ? element("chip") + " " + element("chip") + "--inherited"
+                        : element("chip")),
                 number("x", CHIP_X),
                 number("y", chipY),
                 number("width", LayoutConstants.EW),

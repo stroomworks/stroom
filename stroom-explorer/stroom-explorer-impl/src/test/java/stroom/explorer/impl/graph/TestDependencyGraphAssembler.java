@@ -138,6 +138,25 @@ class TestDependencyGraphAssembler {
                 .contains(tuple("xslt", "dict", EdgeKind.REFERENCE));
     }
 
+    // A pipeline's reference is drawn from each element that names the document, so an expanded pipeline
+    // can draw it from the element that uses it; one no element names is drawn from the whole pipeline
+    @Test
+    void testAPipelinesReferenceComesFromEachElementThatNamesIt() {
+        final FakeSource source = new FakeSource()
+                .holding(PARSER, XSLT, DICTIONARY)
+                .edge(PARSER, XSLT)
+                .edge(PARSER, DICTIONARY)
+                .facts(PARSER, new PipelineFacts(null, Set.of(), ELEMENTS,
+                        Map.of("xslt", List.of("translationFilter", "decorationFilter"))));
+
+        assertThat(assemble(source).getEdges())
+                .extracting(GraphEdge::getFrom, GraphEdge::getTo, GraphEdge::getElement)
+                .containsExactlyInAnyOrder(
+                        tuple("parser", "xslt", "translationFilter"),
+                        tuple("parser", "xslt", "decorationFilter"),
+                        tuple("parser", "dict", null));
+    }
+
     @Test
     void testPipelineIsDrawnOncePerSourceAndDestination() {
         final DocRef other = new DocRef("Feed", "other", "IDS:RAW_EVENTS");

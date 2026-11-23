@@ -23,8 +23,10 @@ import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineLayer;
 import stroom.pipeline.shared.data.PipelineLink;
 import stroom.pipeline.shared.data.PipelineProperty;
+import stroom.pipeline.shared.data.PipelineReference;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,15 +43,28 @@ import java.util.TreeSet;
 /// A feed edge that is not an output is a reference loader's input, and a pipeline edge that is not the
 /// parent is a reference loader's pipeline, so those need no facts of their own.
 ///
-/// Its elements are listed too, in the order data flows through them, so an expanded pipeline can name
-/// each one.
+/// Its elements are listed too, in the order data flows through them, each saying which ancestor defines
+/// it if it is inherited, so an expanded pipeline can name each one; and which of them names each
+/// document it refers to, so a reference can be drawn from the element that uses it.
 ///
-/// @param parent   The pipeline it inherits from, or null.
-/// @param outputs  The UUIDs of the feeds and stores it writes to.
-/// @param elements Its elements, in the order data flows through them, without the merger's `Source`.
+/// @param parent        The pipeline it inherits from, or null.
+/// @param outputs       The UUIDs of the feeds and stores it writes to.
+/// @param elements      Its elements, in the order data flows through them, without the merger's `Source`.
+/// @param elementsUsing The ids of the elements that name each document, by the document's UUID, in the
+///                      order of [#elements]. A document no element names (e.g. its parent) has none.
 public record PipelineFacts(DocRef parent,
                             Set<String> outputs,
-                            List<GraphElement> elements) {
+                            List<GraphElement> elements,
+                            Map<String, List<String>> elementsUsing) {
+
+    /// Facts that say no element names any document.
+    ///
+    /// @param parent   The pipeline it inherits from, or null.
+    /// @param outputs  The UUIDs of the feeds and stores it writes to.
+    /// @param elements Its elements, in the order data flows through them.
+    public PipelineFacts(final DocRef parent, final Set<String> outputs, final List<GraphElement> elements) {
+        this(parent, outputs, elements, Map.of());
+    }
 
     /// Document types a pipeline writes to through whatever element names them, e.g. an index named by an
     /// indexing filter.
@@ -88,12 +103,73 @@ public record PipelineFacts(DocRef parent,
             }
         }
 
-        return new PipelineFacts(parent, outputs, inFlowOrder(elements, merger.getLinks()));
+        final List<GraphElement> ordered = inFlowOrder(elements, merger.getLinks(), definedIn(layers));
+        return new PipelineFacts(parent, outputs, ordered, elementsUsing(ordered, merger));
     }
 
     /// @return how many elements the pipeline has.
     public int elementCount() {
         return elements.size();
+    }
+
+    /// @param documentUuid A document's UUID.
+    /// @return the ids of the elements that name the document, in the order data flows through them; empty
+    /// if none does.
+    public List<String> elementsUsing(final String documentUuid) {
+        return elementsUsing.getOrDefault(documentUuid, List.of());
+    }
+
+    // Which ancestor added each inherited element: every layer but the last, which is the pipeline itself.
+    // The merger refuses an element added twice, so each element has one layer.
+    private static Map<String, DocRef> definedIn(final List<PipelineLayer> layers) {
+        final Map<String, DocRef> definedIn = new HashMap<>();
+        for (int i = 0; i < layers.size() - 1; i++) {
+            final PipelineLayer layer = layers.get(i);
+            if (layer != null && layer.getPipelineData() != null) {
+                for (final PipelineElement element : layer.getPipelineData().getAddedElements()) {
+                    definedIn.put(element.getId(), layer.getSourcePipeline());
+                }
+            }
+        }
+        return definedIn;
+    }
+
+    // The elements naming each document, through a property (e.g. an XSLT filter's xslt) or a pipeline
+    // reference (a reference loader's pipeline and feed), in the order of the elements given.
+    private static Map<String, List<String>> elementsUsing(final List<GraphElement> ordered,
+                                                           final PipelineDataMerger merger) {
+        final Map<String, List<String>> using = new HashMap<>();
+        for (final GraphElement element : ordered) {
+            final Set<String> named = new LinkedHashSet<>();
+            final Map<String, PipelineProperty> properties = merger.getProperties().get(element.getId());
+            if (properties != null) {
+                for (final PipelineProperty property : properties.values()) {
+                    if (property.getValue() != null) {
+                        addUuid(named, property.getValue().getEntity());
+                    }
+                }
+            }
+            final Map<String, List<PipelineReference>> references =
+                    merger.getPipelineReferences().get(element.getId());
+            if (references != null) {
+                for (final List<PipelineReference> list : references.values()) {
+                    for (final PipelineReference reference : list) {
+                        addUuid(named, reference.getPipeline());
+                        addUuid(named, reference.getFeed());
+                    }
+                }
+            }
+            for (final String uuid : named) {
+                using.computeIfAbsent(uuid, k -> new ArrayList<>()).add(element.getId());
+            }
+        }
+        return using;
+    }
+
+    private static void addUuid(final Set<String> uuids, final DocRef docRef) {
+        if (docRef != null && docRef.getUuid() != null) {
+            uuids.add(docRef.getUuid());
+        }
     }
 
     /// Lists a pipeline's elements in the order data flows through them: depth first along the links from
@@ -102,11 +178,13 @@ public record PipelineFacts(DocRef parent,
     /// id; any left, e.g. in a loop, follow by id. `Source` itself is left out: the merger adds it, and
     /// the user doesn't.
     ///
-    /// @param elements The merged elements, by id.
-    /// @param links    The merged links, by the id of the element they leave.
+    /// @param elements  The merged elements, by id.
+    /// @param links     The merged links, by the id of the element they leave.
+    /// @param definedIn The ancestor that defines each inherited element, by id.
     /// @return the elements, each once.
     static List<GraphElement> inFlowOrder(final Map<String, PipelineElement> elements,
-                                          final Map<String, List<PipelineLink>> links) {
+                                          final Map<String, List<PipelineLink>> links,
+                                          final Map<String, DocRef> definedIn) {
         final Set<String> ordered = new LinkedHashSet<>();
         visit(SOURCE_ELEMENT_ID, links, elements, ordered);
 
@@ -127,7 +205,7 @@ public record PipelineFacts(DocRef parent,
         for (final String id : ordered) {
             if (!SOURCE_ELEMENT_ID.equals(id)) {
                 final PipelineElement element = elements.get(id);
-                result.add(new GraphElement(id, element.getName(), element.getType()));
+                result.add(new GraphElement(id, element.getName(), element.getType(), definedIn.get(id)));
             }
         }
         return result;

@@ -366,11 +366,17 @@ public final class DependencyGraphAssembler {
         final List<GraphEdge> graphEdges = new ArrayList<>();
         final Set<String> seen = new LinkedHashSet<>();
         for (final ClassifiedEdge edge : edges) {
+            final List<String> elements = elementsUsing(edge);
             for (final String[] ends : instanceEnds(edge, instances)) {
-                if (keptIds.contains(ends[0]) && keptIds.contains(ends[1])
-                    && seen.add(ends[0] + ">" + ends[1] + ">" + edge.kind())) {
-                    graphEdges.add(new GraphEdge(ends[0], ends[1], edge.kind(), edge.certainty(), null,
-                            edge.ambiguous()));
+                if (keptIds.contains(ends[0]) && keptIds.contains(ends[1])) {
+                    // A pipeline's reference is drawn from each element that names the document, so it
+                    // comes from the element that uses it when the pipeline is expanded
+                    for (final String element : elements) {
+                        if (seen.add(ends[0] + ">" + ends[1] + ">" + edge.kind() + ">" + element)) {
+                            graphEdges.add(new GraphEdge(ends[0], ends[1], edge.kind(), edge.certainty(),
+                                    element, edge.ambiguous()));
+                        }
+                    }
                 }
             }
         }
@@ -439,6 +445,18 @@ public final class DependencyGraphAssembler {
                         ? null
                         : pipeline.elements(),
                 count);
+    }
+
+    // The elements a reference comes from: those of the referring pipeline that name the document, or a
+    // single null (the whole document) for any other edge, or a document no element names.
+    private List<String> elementsUsing(final ClassifiedEdge edge) {
+        if (edge.kind() == EdgeKind.REFERENCE && isPipeline(edge.from())) {
+            final PipelineFacts pipeline = facts(docs.get(edge.from()).docRef());
+            if (pipeline != null && !pipeline.elementsUsing(edge.to()).isEmpty()) {
+                return pipeline.elementsUsing(edge.to());
+            }
+        }
+        return Collections.singletonList(null);
     }
 
     private boolean isPipeline(final String uuid) {

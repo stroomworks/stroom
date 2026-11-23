@@ -17,6 +17,9 @@
 package stroom.dependency.client.layout;
 
 import stroom.dependency.shared.EdgeKind;
+import stroom.dependency.shared.GraphElement;
+
+import java.util.List;
 
 /// Routes an edge as a cubic Bézier curve.
 ///
@@ -26,6 +29,9 @@ import stroom.dependency.shared.EdgeKind;
 /// An edge to something in a row above or below leaves from the node's top or bottom rather than its end,
 /// because routing it end to end sent endpoint edges sideways across other nodes. An edge along a row bows
 /// over anything sitting between its ends.
+///
+/// A reference from an expanded pipeline leaves from the right of the element that uses the document,
+/// rather than from the pipeline as a whole.
 public final class EdgePaths {
 
     // Points in the array returned by points(): start, two control points, end.
@@ -62,6 +68,12 @@ public final class EdgePaths {
         final boolean down = ay + da.h() <= by;
         final boolean up = by + db.h() <= ay;
         final EdgeKind kind = edge.kind();
+
+        final double[] fromElement = elementAnchor(layout, edge);
+        if (fromElement != null) {
+            return fromElement(fromElement[0], fromElement[1], bx, by, db, down, up);
+        }
+
         final boolean stacked = (kind == EdgeKind.REFERENCE || kind == EdgeKind.INHERITANCE || kind == EdgeKind.HTTP)
                                 && (down || up);
 
@@ -90,6 +102,68 @@ public final class EdgePaths {
                 : 0;
         final double dx = Math.max(MIN_HORIZONTAL_PULL, Math.abs(x2 - x1) * HORIZONTAL_PULL);
         return new double[]{x1, y1, x1 + dx, y1 - bow, x2 - dx, y2 - bow, x2, y2};
+    }
+
+    // Where a reference leaves an expanded pipeline: the middle of the right side of the element that uses
+    // the document, as {x, y}. Null if the edge names no element, the pipeline isn't expanded, or its
+    // elements weren't sent, so the edge leaves the pipeline as a whole.
+    private static double[] elementAnchor(final LayoutResult layout, final LayoutEdge edge) {
+        final Instance a = edge.a();
+        if (edge.element() == null
+            || edge.kind() != EdgeKind.REFERENCE
+            || a.getKind() != InstanceKind.FLOW
+            || !a.isExpandable()
+            || !layout.getExpanded().contains(a.getId())) {
+            return null;
+        }
+        final List<GraphElement> elements = a.getNode().getElements();
+        if (elements == null || elements.size() != a.getNode().getElementCount()) {
+            return null;
+        }
+        for (int i = 0; i < elements.size(); i++) {
+            if (edge.element().equals(elements.get(i).getId())) {
+                final double x = a.getX() + LayoutConstants.EXPANDED_CHIP_X + LayoutConstants.EW;
+                final double y = a.getY() + LayoutConstants.EXPANDED_HEADER
+                                 + i * (LayoutConstants.EH + LayoutConstants.EXPANDED_CHIP_GAP)
+                                 + LayoutConstants.EH / 2.0;
+                return new double[]{x, y};
+            }
+        }
+        return null;
+    }
+
+    // A curve that leaves an element sideways, then turns to meet the other end: from its top or bottom if
+    // it is in a row above or below, otherwise from its start.
+    private static double[] fromElement(final double x1,
+                                        final double y1,
+                                        final double bx,
+                                        final double by,
+                                        final Dims db,
+                                        final boolean down,
+                                        final boolean up) {
+        final double x2;
+        final double y2;
+        final double cx2;
+        final double cy2;
+        if (down || up) {
+            x2 = bx + db.w() / 2.0;
+            y2 = down
+                    ? by
+                    : by + db.h();
+            final double dy = Math.max(MIN_VERTICAL_PULL, Math.abs(y2 - y1) * VERTICAL_PULL);
+            cx2 = x2;
+            cy2 = down
+                    ? y2 - dy
+                    : y2 + dy;
+        } else {
+            x2 = bx;
+            y2 = by + db.h() / 2.0;
+            cx2 = x2 - Math.max(MIN_HORIZONTAL_PULL, Math.abs(x2 - x1) * HORIZONTAL_PULL);
+            cy2 = y2;
+        }
+        // Out to the right first, clear of the pipeline's edge
+        final double cx1 = x1 + Math.max(MIN_HORIZONTAL_PULL, Math.abs(x2 - x1) * HORIZONTAL_PULL);
+        return new double[]{x1, y1, cx1, y1, cx2, cy2, x2, y2};
     }
 
     /// @param layout The layout the edge belongs to.

@@ -199,17 +199,22 @@ public final class StructureGraphStories {
                     final Play pipeline = play.within(node(play, "fw_par"));
                     final String titles = "[data-id='fw_par'] .structure-graph__element > title";
                     play.expect(play.querySelectorAll(titles)).toHaveLength(7);
-                    play.expect(play.querySelectorAll(titles).nth(0)).toHaveTextContent("dsParser (DSParser)");
+                    play.expect(play.querySelectorAll(titles).nth(0))
+                            .toHaveTextContent("dsParser (DSParser, inherited from Event Parser Template)");
                     play.expect(play.querySelectorAll(titles).nth(2))
                             .toHaveTextContent("FW Translation (XSLTFilter)");
                     play.expect(play.querySelectorAll(titles).nth(6))
                             .toHaveTextContent("streamAppender (StreamAppender)");
+                    // The two elements the template defines have dashed boxes
+                    play.expect(play.querySelectorAll("[data-id='fw_par'] .structure-graph__chip--inherited"))
+                            .toHaveLength(2);
                     // The element's name, not its id, is drawn, however much of it fits
                     play.expect(pipeline.getByText(TextMatch.startingWith("FW Tr"), ELEMENT_NAME))
                             .toBeInTheDocument();
                     play.expect(table(play).getByText(TextMatch.containing(
-                            "7 elements: dsParser (DSParser), readRecordCountFilter (RecordCountFilter), "
-                            + "FW Translation (XSLTFilter)"))).toBeInTheDocument();
+                            "7 elements: dsParser (DSParser, inherited from Event Parser Template), "
+                            + "readRecordCountFilter (RecordCountFilter), FW Translation (XSLTFilter)")))
+                            .toBeInTheDocument();
                     expectNoProblems(play);
                 })
                 // Finding documents marks them, and says how many match

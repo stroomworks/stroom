@@ -347,6 +347,12 @@
     stroke-width: 1;
 }
 
+/* An element the pipeline inherits from an ancestor: a dashed box, as a context node outside the folder
+   has, so it is told apart by more than colour */
+.structure-graph__chip--inherited {
+    stroke-dasharray: 4 3;
+}
+
 /* An expanded pipeline's element: its name on the left of its box, its type on the right. Sized as a
    node's type line is, and hidden with it when zoomed out too far to read */
 .structure-graph__element-name {

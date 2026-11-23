@@ -22,6 +22,9 @@ import stroom.pipeline.shared.data.PipelineDataBuilder;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineLayer;
 import stroom.pipeline.shared.data.PipelineLink;
+import stroom.pipeline.shared.data.PipelineProperty;
+import stroom.pipeline.shared.data.PipelinePropertyValue;
+import stroom.pipeline.shared.data.PipelineReference;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +39,10 @@ class TestPipelineFacts {
 
     private static final DocRef TEMPLATE = new DocRef("Pipeline", "template", "Parser Template");
     private static final DocRef PARSER = new DocRef("Pipeline", "parser", "FW Parser");
+    private static final DocRef XSLT = new DocRef("XSLT", "xslt", "FW Translation");
+    private static final DocRef EVENTS = new DocRef("Feed", "events", "FW:EVENTS");
+    private static final DocRef LOOKUP = new DocRef("Feed", "lookup", "HOSTS:REFERENCE");
+    private static final DocRef LOADER = new DocRef("Pipeline", "loader", "Reference Loader");
 
     @Test
     void testElementsFollowTheLinksFromSource() {
@@ -48,7 +55,7 @@ class TestPipelineFacts {
                 .link("parser", "translation")
                 .link("translation", "writer");
 
-        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links)))
+        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links, Map.of())))
                 .containsExactly("parser", "translation", "writer");
     }
 
@@ -67,7 +74,7 @@ class TestPipelineFacts {
                 .link("splitter", "alertsWriter")
                 .link("eventsWriter", "eventsAppender");
 
-        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links)))
+        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links, Map.of())))
                 .containsExactly("parser", "splitter", "eventsWriter", "eventsAppender", "alertsWriter");
     }
 
@@ -82,7 +89,7 @@ class TestPipelineFacts {
                 .link("Source", "parser")
                 .link("zWriter", "zAppender");
 
-        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links)))
+        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links, Map.of())))
                 .containsExactly("parser", "aOrphan", "zWriter", "zAppender");
     }
 
@@ -95,7 +102,7 @@ class TestPipelineFacts {
                 .link("a", "b")
                 .link("b", "a");
 
-        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links)))
+        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links, Map.of())))
                 .containsExactly("a", "b");
     }
 
@@ -107,7 +114,7 @@ class TestPipelineFacts {
                 .link("Source", "parser")
                 .link("parser", "gone");
 
-        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links)))
+        assertThat(ids(PipelineFacts.inFlowOrder(elements.byId, elements.links, Map.of())))
                 .containsExactly("parser");
     }
 
@@ -136,13 +143,72 @@ class TestPipelineFacts {
 
         final PipelineFacts facts = PipelineFacts.of(TEMPLATE, List.of(template, parser));
 
+        // The template's elements are inherited from it; the child's own appender is not
         assertThat(facts.elements()).containsExactly(
-                new GraphElement("parser", null, "DSParser"),
-                new GraphElement("translation", "Translation", "XSLTFilter"),
-                new GraphElement("appender", null, "StreamAppender"));
+                new GraphElement("parser", null, "DSParser", TEMPLATE),
+                new GraphElement("translation", "Translation", "XSLTFilter", TEMPLATE),
+                new GraphElement("appender", null, "StreamAppender", null));
         assertThat(facts.elementCount()).isEqualTo(3);
         assertThat(facts.elements().get(1).getDisplayName()).isEqualTo("Translation");
         assertThat(facts.elements().get(0).getDisplayName()).isEqualTo("parser");
+    }
+
+    // Each document an element names, through a property or a pipeline reference, is said to be used by
+    // that element; one named by two elements, by both, in the order data flows through them
+    @Test
+    void testTheElementsUsingEachDocument() {
+        final PipelineLayer pipeline = new PipelineLayer(PARSER, new PipelineDataBuilder()
+                .addElement(new PipelineElement("parser", "DSParser"))
+                .addElement(new PipelineElement("translation", "XSLTFilter"))
+                .addElement(new PipelineElement("decoration", "XSLTFilter"))
+                .addElement(new PipelineElement("appender", "StreamAppender"))
+                .addLink("parser", "translation")
+                .addLink("translation", "decoration")
+                .addLink("decoration", "appender")
+                .addProperty(property("translation", "xslt", XSLT))
+                .addProperty(property("decoration", "xslt", XSLT))
+                .addProperty(property("appender", "feed", EVENTS))
+                .addPipelineReference(new PipelineReference.Builder()
+                        .element("decoration")
+                        .name("pipelineReference")
+                        .pipeline(LOADER)
+                        .feed(LOOKUP)
+                        .build())
+                .build());
+
+        final PipelineFacts facts = PipelineFacts.of(null, List.of(pipeline));
+
+        assertThat(facts.elementsUsing(XSLT.getUuid())).containsExactly("translation", "decoration");
+        assertThat(facts.elementsUsing(EVENTS.getUuid())).containsExactly("appender");
+        assertThat(facts.elementsUsing(LOOKUP.getUuid())).containsExactly("decoration");
+        assertThat(facts.elementsUsing(LOADER.getUuid())).containsExactly("decoration");
+        assertThat(facts.elementsUsing("nothing")).isEmpty();
+        assertThat(facts.elements()).extracting(GraphElement::getInheritedFrom).containsOnlyNulls();
+    }
+
+    // A document named by an inherited element is used by it, so a child's reference comes from the
+    // element its parent defines
+    @Test
+    void testAnInheritedElementUsesWhatItNames() {
+        final PipelineLayer template = new PipelineLayer(TEMPLATE, new PipelineDataBuilder()
+                .addElement(new PipelineElement("translation", "XSLTFilter"))
+                .build());
+        final PipelineLayer parser = new PipelineLayer(PARSER, new PipelineDataBuilder()
+                .addProperty(property("translation", "xslt", XSLT))
+                .build());
+
+        final PipelineFacts facts = PipelineFacts.of(TEMPLATE, List.of(template, parser));
+
+        assertThat(facts.elementsUsing(XSLT.getUuid())).containsExactly("translation");
+        assertThat(facts.elements().getFirst().getInheritedFrom()).isEqualTo(TEMPLATE);
+    }
+
+    private static PipelineProperty property(final String element, final String name, final DocRef value) {
+        return PipelineProperty.builder()
+                .element(element)
+                .name(name)
+                .value(new PipelinePropertyValue(value))
+                .build();
     }
 
     private static List<String> ids(final List<GraphElement> elements) {

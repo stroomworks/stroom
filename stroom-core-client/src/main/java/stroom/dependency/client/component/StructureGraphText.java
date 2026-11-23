@@ -151,6 +151,22 @@ public final class StructureGraphText {
         return truncate(element.getDisplayName(), fitsSans(nameWidth, ELEMENT_NAME_SIZE, zoom));
     }
 
+    /// @param element An element of a pipeline.
+    /// @return the element in full, e.g. `translationFilter (XSLTFilter)`, and, if the pipeline inherits it,
+    /// where from, e.g. `translationFilter (XSLTFilter, inherited from Event Parser Template)`.
+    public static String elementDescription(final GraphElement element) {
+        final StringBuilder text = new StringBuilder(element.getDisplayName())
+                .append(" (")
+                .append(element.getType());
+        if (element.getInheritedFrom() != null) {
+            final String ancestor = element.getInheritedFrom().getName() == null
+                    ? element.getInheritedFrom().getUuid()
+                    : element.getInheritedFrom().getName();
+            text.append(", inherited from ").append(ancestor);
+        }
+        return text.append(')').toString();
+    }
+
     /// @param element An element of an expanded pipeline.
     /// @param zoom    The canvas zoom.
     /// @return the element's type, e.g. `XSLTFilter`, cut short to fit the right of its box at this zoom.

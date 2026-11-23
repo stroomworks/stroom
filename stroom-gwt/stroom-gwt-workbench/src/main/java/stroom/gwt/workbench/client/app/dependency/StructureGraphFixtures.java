@@ -27,8 +27,9 @@ package stroom.gwt.workbench.client.app.dependency;
 final class StructureGraphFixtures {
 
     /// [#EVENTS], with the FW Events Parser's seven elements named, in the order data flows through them,
-    /// as the server sends them. The layout's scenarios only count elements, so the names are added here
-    /// rather than to [#EVENTS], which is copied from the layout's reference files.
+    /// as the server sends them, two of them inherited from the Event Parser Template. The layout's
+    /// scenarios only count elements, so the names are added here rather than to [#EVENTS], which is
+    /// copied from the layout's reference files.
     static final String EVENTS_WITH_ELEMENTS = StructureGraphFixtures.withElements();
 
     /// The layout's `events` scenario: Event sources — uneven chains.
@@ -746,10 +747,12 @@ final class StructureGraphFixtures {
     private static String withElements() {
         final String elements = """
                 "elementCount": 7, "elements": [
-                  {"id": "dsParser", "type": "DSParser"},
+                  {"id": "dsParser", "type": "DSParser",
+                   "inheritedFrom": {"type": "Pipeline", "uuid": "u4", "name": "Event Parser Template"}},
                   {"id": "readRecordCountFilter", "type": "RecordCountFilter"},
                   {"id": "translationFilter", "name": "FW Translation", "type": "XSLTFilter"},
-                  {"id": "schemaFilter", "type": "SchemaFilter"},
+                  {"id": "schemaFilter", "type": "SchemaFilter",
+                   "inheritedFrom": {"type": "Pipeline", "uuid": "u4", "name": "Event Parser Template"}},
                   {"id": "writeRecordCountFilter", "type": "RecordCountFilter"},
                   {"id": "xmlWriter", "type": "XMLWriter"},
                   {"id": "streamAppender", "type": "StreamAppender"}],""";

@@ -90,8 +90,7 @@ public final class StructureGraphNotes {
             if (i > 0) {
                 text.append(", ");
             }
-            final GraphElement element = elements.get(i);
-            text.append(element.getDisplayName()).append(" (").append(element.getType()).append(')');
+            text.append(StructureGraphText.elementDescription(elements.get(i)));
         }
         return text.toString();
     }

@@ -23173,6 +23173,9 @@
           "id" : {
             "type" : "string"
           },
+          "inheritedFrom" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
           "name" : {
             "type" : "string"
           },

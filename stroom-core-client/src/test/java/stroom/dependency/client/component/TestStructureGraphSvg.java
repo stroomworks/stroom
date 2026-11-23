@@ -197,7 +197,8 @@ class TestStructureGraphSvg {
     void testExpandedPipelineNamesItsElements() {
         final List<GraphElement> elements = List.of(
                 new GraphElement("dsParser", null, "DSParser"),
-                new GraphElement("translationFilter", "FW Translation", "XSLTFilter"),
+                new GraphElement("translationFilter", "FW Translation", "XSLTFilter",
+                        new DocRef("Pipeline", "t", "Parser Template")),
                 new GraphElement("<writer>", null, "XMLWriter"));
         final Element pipeline = nodeGroup(parse(buildPipeline(3, elements)), "p");
 
@@ -212,8 +213,11 @@ class TestStructureGraphSvg {
         for (int i = 0; i < titleElements.getLength(); i++) {
             titles.add(titleElements.item(i).getTextContent());
         }
-        assertThat(titles).containsExactly("dsParser (DSParser)", "FW Translation (XSLTFilter)",
+        assertThat(titles).containsExactly("dsParser (DSParser)",
+                "FW Translation (XSLTFilter, inherited from Parser Template)",
                 "<writer> (XMLWriter)");
+        // The inherited element's box is dashed, so it is told apart by more than colour
+        assertThat(countByClass(pipeline, "structure-graph__chip--inherited")).isEqualTo(1);
     }
 
     // Elements the server didn't name, or named only some of, are drawn as unnamed boxes, as before

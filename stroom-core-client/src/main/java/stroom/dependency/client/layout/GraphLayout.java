@@ -785,7 +785,14 @@ public final class GraphLayout {
         if (a == null || b == null || a == b) {
             return;
         }
-        if (seen.add(a.getId() + ">" + b.getId() + ">" + kind)) {
+        // A reference from each element of an expanded pipeline is an edge of its own, drawn from that
+        // element's box. Otherwise (collapsed, or either end folded into a summary) they are one edge, as
+        // there is only one place to draw it from
+        final boolean fromElement = element != null && a == from && b == to && expanded.contains(a.getId());
+        final String elementKey = fromElement
+                ? element
+                : "";
+        if (seen.add(a.getId() + ">" + b.getId() + ">" + kind + ">" + elementKey)) {
             out.add(new LayoutEdge(a, b, kind, isBack, certainty, element, ambiguous));
         }
     }

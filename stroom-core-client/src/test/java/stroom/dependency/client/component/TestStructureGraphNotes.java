@@ -42,10 +42,12 @@ class TestStructureGraphNotes {
     void testAPipelinesElementsAreListed() {
         final List<GraphElement> elements = List.of(
                 new GraphElement("dsParser", null, "DSParser"),
-                new GraphElement("translationFilter", "FW Translation", "XSLTFilter"));
+                new GraphElement("translationFilter", "FW Translation", "XSLTFilter",
+                        new DocRef("Pipeline", "t", "Parser Template")));
 
         assertThat(notesOfPipeline(2, elements))
-                .containsExactly("2 elements: dsParser (DSParser), FW Translation (XSLTFilter)");
+                .containsExactly("2 elements: dsParser (DSParser), "
+                                 + "FW Translation (XSLTFilter, inherited from Parser Template)");
     }
 
     // A graph that only counts a pipeline's elements says how many there are

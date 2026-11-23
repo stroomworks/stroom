@@ -72,6 +72,8 @@ public final class LayoutConstants {
     public static final int EXPANDED_FOOTER = 26;
     /// How much wider an expanded pipeline is than its element chips.
     public static final int EXPANDED_MARGIN = 26;
+    /// How far an expanded pipeline's element chips sit in from its left edge.
+    public static final int EXPANDED_CHIP_X = EXPANDED_MARGIN / 2;
 
     private LayoutConstants() {
         // Constants only.

@@ -16,6 +16,8 @@
 
 package stroom.dependency.shared;
 
+import stroom.docref.DocRef;
+
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -27,9 +29,9 @@ import java.util.Objects;
 
 /// One element of a pipeline drawn in a [DependencyGraph] (see [GraphNode#getElements()]), e.g. its
 /// `translationFilter`, an `XSLTFilter`. An element is not a document: it has no DocRef, and nothing to
-/// open.
+/// open. An element the pipeline inherits says which ancestor defines it.
 @JsonInclude(Include.NON_NULL)
-@JsonPropertyOrder({"id", "name", "type"})
+@JsonPropertyOrder({"id", "name", "type", "inheritedFrom"})
 public class GraphElement {
 
     @JsonProperty
@@ -38,17 +40,32 @@ public class GraphElement {
     private final String name;
     @JsonProperty
     private final String type;
+    @JsonProperty
+    private final DocRef inheritedFrom;
 
-    /// @param id   The element's id within its pipeline, e.g. `translationFilter`.
-    /// @param name The name the user gave it, or null if it has none.
-    /// @param type The element's type, e.g. `XSLTFilter`.
+    /// @param id            The element's id within its pipeline, e.g. `translationFilter`.
+    /// @param name          The name the user gave it, or null if it has none.
+    /// @param type          The element's type, e.g. `XSLTFilter`.
+    /// @param inheritedFrom The ancestor pipeline that defines the element, or null if the pipeline defines
+    ///                      it itself.
     @JsonCreator
     public GraphElement(@JsonProperty("id") final String id,
                         @JsonProperty("name") final String name,
-                        @JsonProperty("type") final String type) {
+                        @JsonProperty("type") final String type,
+                        @JsonProperty("inheritedFrom") final DocRef inheritedFrom) {
         this.id = id;
         this.name = name;
         this.type = type;
+        this.inheritedFrom = inheritedFrom;
+    }
+
+    /// An element the pipeline defines itself.
+    ///
+    /// @param id   The element's id within its pipeline, e.g. `translationFilter`.
+    /// @param name The name the user gave it, or null if it has none.
+    /// @param type The element's type, e.g. `XSLTFilter`.
+    public GraphElement(final String id, final String name, final String type) {
+        this(id, name, type, null);
     }
 
     /// @return the element's id within its pipeline, e.g. `translationFilter`.
@@ -64,6 +81,11 @@ public class GraphElement {
     /// @return the element's type, e.g. `XSLTFilter`.
     public String getType() {
         return type;
+    }
+
+    /// @return the ancestor pipeline that defines the element, or null if the pipeline defines it itself.
+    public DocRef getInheritedFrom() {
+        return inheritedFrom;
     }
 
     /// @return what the element is called where it is shown: its name if it has one, otherwise its id,
@@ -86,12 +108,13 @@ public class GraphElement {
         final GraphElement that = (GraphElement) o;
         return Objects.equals(id, that.id)
                && Objects.equals(name, that.name)
-               && Objects.equals(type, that.type);
+               && Objects.equals(type, that.type)
+               && Objects.equals(inheritedFrom, that.inheritedFrom);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, type);
+        return Objects.hash(id, name, type, inheritedFrom);
     }
 
     @Override

@@ -23,6 +23,7 @@ import stroom.dependency.client.layout.Instance;
 import stroom.dependency.client.layout.InstanceKind;
 import stroom.dependency.client.layout.LayoutResult;
 import stroom.dependency.shared.GraphElement;
+import stroom.docref.DocRef;
 
 import org.junit.jupiter.api.Test;
 
@@ -205,5 +206,18 @@ class TestStructureGraphText {
 
         assertThat(StructureGraphText.elementType(element, 1)).isEqualTo("XSLTFilter");
         assertThat(StructureGraphText.elementName(element, 1)).endsWith("…");
+    }
+
+    // An element in full: its name and type, and the ancestor it is inherited from, if it is
+    @Test
+    void testElementDescription() {
+        assertThat(StructureGraphText.elementDescription(new GraphElement("dsParser", null, "DSParser")))
+                .isEqualTo("dsParser (DSParser)");
+        assertThat(StructureGraphText.elementDescription(new GraphElement("translationFilter", "FW Translation",
+                "XSLTFilter", new DocRef("Pipeline", "t", "Event Parser Template"))))
+                .isEqualTo("FW Translation (XSLTFilter, inherited from Event Parser Template)");
+        assertThat(StructureGraphText.elementDescription(new GraphElement("translationFilter", null,
+                "XSLTFilter", new DocRef("Pipeline", "t-uuid", null))))
+                .isEqualTo("translationFilter (XSLTFilter, inherited from t-uuid)");
     }
 }
