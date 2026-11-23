@@ -18,7 +18,7 @@ package stroom.pipeline.xslt;
 
 import stroom.dictionary.api.DictionaryStore;
 import stroom.docref.DocRef;
-import stroom.docstore.impl.dao.DocDependencyDao;
+import stroom.docstore.impl.database.DocDependencyDao;
 import stroom.importexport.shared.Dependency;
 import stroom.importexport.shared.DependencyCriteria;
 import stroom.test.AbstractCoreIntegrationTest;

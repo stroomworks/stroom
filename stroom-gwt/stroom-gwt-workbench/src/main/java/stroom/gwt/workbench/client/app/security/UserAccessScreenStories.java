@@ -27,6 +27,7 @@ import stroom.gwt.workbench.client.app.security.SecurityPlays;
 import stroom.gwt.workbench.framework.client.play.EventInit;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.play.Query;
+import stroom.gwt.workbench.framework.client.play.Spy;
 import stroom.gwt.workbench.framework.client.play.TextMatch;
 import stroom.gwt.workbench.framework.client.story.StoryContext;
 import stroom.gwt.workbench.framework.client.story.StoryLayout;
@@ -49,6 +50,7 @@ import com.google.gwt.user.client.ui.Widget;
 /// | `POST /userAccess/v1/revoke?subjectId=...` | revoking a user's access |
 /// | `POST /session/v1/terminateSession?sessionHandle=...&nodeName=...` | terminating a session |
 /// | the extended UI config's `externalIdentityProvider` | an internal or external IdP |
+/// | the extended UI config's `edgeAuthentication` | an authenticating edge proxy in front |
 ///
 /// The calls are checked on the request spy, and the `openScreen` spy records Stroom's
 /// `OpenUserEvent`. The user holds `MANAGE_USERS_PERMISSION`.
@@ -61,6 +63,8 @@ public final class UserAccessScreenStories {
 
     private static final String REVOKE_TITLE = "End Sessions and Revoke Tokens for Selected User";
     private static final String OPEN_USER_TITLE = "Open Selected User (to disable them)";
+    private static final String END_SESSION_TITLE = "End Selected Session";
+    private static final String EDGE_NOTE = "Users here sign in through an authenticating load balancer or proxy";
 
     // UserAccessResource.find(): the second row is a subject with no stroom user
     private static final String ROWS = """
@@ -87,6 +91,42 @@ public final class UserAccessScreenStories {
             .post("/userAccess/v1/revoke", RestReply.json("3"))
             .post("/session/v1/terminateSession", RestReply.json("true"))
             .build();
+
+    // The second find (a refresh) has orphan.subject on another node as well
+    private static final RestFixtures REFRESHED_FIXTURES = RestFixtures.builder()
+            .post("/userAccess/v1/find", RestReply.json(ROWS),
+                    RestReply.json(ROWS.replace("\"nodeNames\": [\"node1\"]", "\"nodeNames\": [\"node1\", \"node3\"]")))
+            .build()
+            .followedBy(FIXTURES);
+
+    // Alice's access revoked, so she is no longer listed
+    private static final String ROWS_WITHOUT_ALICE = """
+            {"values": [
+              {"displayName": "orphan.subject", "subjectId": "orphan.subject", "sessionCount": 1,
+               "tokenCount": 0, "nodeNames": ["node1"], "lastAccessedMs": 1700000000000}
+            ], "pageResponse": {"offset": 0, "length": 1, "total": 1, "exact": true}}""";
+
+    private static final RestFixtures REVOKED_FIXTURES = RestFixtures.builder()
+            .post("/userAccess/v1/find", RestReply.json(ROWS), RestReply.json(ROWS_WITHOUT_ALICE))
+            .build()
+            .followedBy(FIXTURES);
+
+    // The second fetch of Alice's sessions, once s-2 (node2) is ended
+    private static final RestFixtures ENDED_FIXTURES = RestFixtures.builder()
+            .post("/userAccess/v1/sessions", RestReply.json(SESSIONS), RestReply.json("""
+                    [{"sessionHandle": "s-1", "nodeName": "node1", "createMs": 1700000000000,
+                      "lastAccessedMs": 1700000500000, "lastAccessedAgent": "Mozilla/5.0 (X11; Linux x86_64)"}]"""))
+            .build()
+            .followedBy(FIXTURES);
+
+    // A filter that finds nobody
+    private static final RestFixtures NOBODY_FIXTURES = RestFixtures.builder()
+            .post("/userAccess/v1/find", request -> request.getBody() != null && request.getBody().contains("nobody")
+                    ? RestReply.json("{\"values\": [], \"pageResponse\": {\"offset\": 0, \"length\": 0, "
+                                     + "\"total\": 0, \"exact\": true}}")
+                    : RestReply.json(ROWS))
+            .build()
+            .followedBy(FIXTURES);
 
     private UserAccessScreenStories() {
         // Static utility
@@ -116,18 +156,23 @@ public final class UserAccessScreenStories {
                     // Moment.js says e.g. 'in 3 years' or '2 days ago'
                     play.expect(users.getAllByText(TextMatch.regex("\\((.* ago|in .*)\\)$")).count())
                             .toBeGreaterThan(1);
+                    // Tokens are tracked by the internal IdP, and there is no edge proxy note
+                    play.expect(users.queryByText("n/a")).toBeNull();
+                    play.expect(play.getByText(TextMatch.containing(EDGE_NOTE))).not().toBeVisible();
                     SecurityPlays.expectNoProblems(play);
                 })
-                // Multi-select, and a split pane between the two grids
-                .story("MultiSelectAndSplitPane", context -> render(context, false))
+                // One user at a time, as every action is on one, and a split pane between the two grids
+                .story("OneUserAtATimeAndSplitPane", context -> render(context, false))
                 .withPlay(play -> {
                     play.click(play.findByText("Alice Smith"));
-                    // Selection is applied on mousedown; a held modifier is given to fireEvent
+                    // Selection is applied on mousedown; a held modifier is given to fireEvent. Ctrl
+                    // chooses the other user in place of the first
                     play.fireEvent().mouseDown(play.getAllByText("orphan.subject").nth(0),
                             EventInit.create().ctrlKey());
                     final Play users = usersGrid(play);
-                    play.waitFor(() -> play.expect(users.querySelectorAll("." + StroomDom.SELECTED_ROW))
-                            .toHaveLength(2));
+                    play.waitFor(() -> play.expect(users.getAllByText("orphan.subject").nth(0)
+                            .closest(StroomDom.GRID_ROW)).toHaveAttribute("aria-selected", "true"));
+                    play.expect(users.querySelectorAll("." + StroomDom.SELECTED_ROW)).toHaveLength(1);
                     // The two panes are split, by a splitter that can be dragged or moved from the
                     // keyboard, named by the pane it resizes
                     play.expect(play.getByRole("separator", "Sessions"))
@@ -156,15 +201,16 @@ public final class UserAccessScreenStories {
                     SecurityPlays.expectNoProblems(play);
                 })
                 // Both buttons are dead without a selection
-                .story("ButtonsGatedOnSelection", context -> render(context, false))
+                .story("ButtonsGatedOnSelection", context -> render(context, NOBODY_FIXTURES, false))
                 .withPlay(play -> {
                     play.findByText("Alice Smith");
                     final Query revoke = play.getByRole("button", TextMatch.containing(REVOKE_TITLE));
                     final Query openUser = play.getByRole("button", OPEN_USER_TITLE);
-                    // GWT selects the first user when the list loads, so both buttons start live; with
-                    // the selection cleared (a ctrl-click on the selected row) they go dead
+                    // The first user is selected when the list loads, so both buttons start live; a
+                    // filter that finds nobody leaves none selected, and they go dead
                     play.expect(revoke).not().toHaveAttribute("aria-disabled");
-                    play.fireEvent().mouseDown(play.getByText("Alice Smith"), EventInit.create().ctrlKey());
+                    play.type(play.getByPlaceholderText(StroomDom.QUICK_FILTER_PLACEHOLDER), "nobody");
+                    play.waitFor(3000, () -> play.expect(play.queryByText("Alice Smith")).toBeNull());
                     play.waitFor(() -> play.expect(usersGrid(play).querySelectorAll("." + StroomDom.SELECTED_ROW))
                             .toHaveLength(0));
                     play.expect(revoke).toHaveAttribute("aria-disabled", "true");
@@ -213,6 +259,35 @@ public final class UserAccessScreenStories {
                     play.expect(screen.queryByText(TextMatch.containing("stops working at once"))).toBeNull();
                     SecurityPlays.expectNoProblems(play);
                 })
+                // An external IdP's tokens are not tracked here, so the token columns say so rather than
+                // showing a misleading zero
+                .story("ExternalIdpTokensNotTracked", context -> render(context, true))
+                .withPlay(play -> {
+                    play.findByText("Alice Smith");
+                    final Query aliceRow = usersGrid(play).getByText("Alice Smith").closest(StroomDom.GRID_ROW);
+                    // Tokens and Access Expires
+                    play.expect(play.within(aliceRow).getAllByText("n/a").count()).toBe(2);
+                    // The ending of sessions is still offered
+                    play.expect(play.getByRole("button", TextMatch.containing(REVOKE_TITLE))).toBeVisible();
+                    play.expect(play.getByText(TextMatch.containing(EDGE_NOTE))).not().toBeVisible();
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // Behind an authenticating edge proxy, ending sessions would not sign anyone out, so the
+                // actions are hidden and a note says how to stop a user's access instead
+                .story("EdgeAuthentication", context -> render(context, FIXTURES, edgeAuthenticationConfig()))
+                .withPlay(play -> {
+                    play.findByText("Alice Smith");
+                    play.expect(play.getByText(TextMatch.containing(EDGE_NOTE))).toBeVisible();
+                    play.expect(play.queryByRole("button", TextMatch.containing(REVOKE_TITLE))).toBeNull();
+                    play.expect(play.queryByRole("button", END_SESSION_TITLE)).toBeNull();
+                    // Opening the user, to disable them, is what does work
+                    play.expect(play.getByRole("button", OPEN_USER_TITLE)).not().toHaveAttribute("aria-disabled");
+                    // The selected user's sessions are still listed, and their tokens aren't tracked
+                    play.expect(play.findByText("curl/8.5.0")).toBeInTheDocument();
+                    final Query aliceRow = usersGrid(play).getByText("Alice Smith").closest(StroomDom.GRID_ROW);
+                    play.expect(play.within(aliceRow).getAllByText("n/a").count()).toBe(2);
+                    SecurityPlays.expectNoProblems(play);
+                })
                 // Ending one session names the node
                 .story("EndOneSession", context -> render(context, false))
                 .withPlay(play -> {
@@ -230,6 +305,43 @@ public final class UserAccessScreenStories {
                                     .toSpyMatcher()));
                     SecurityPlays.expectNoProblems(play);
                 })
+                // Revoking a user's access selects the user now in their place, whose sessions are
+                // shown (UI-GUIDE.md, "What a list selects"); it once selected the first
+                .story("RevokeSelectsNext", context -> render(context, REVOKED_FIXTURES, false))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.click(play.findByText("Alice Smith"));
+                    play.click(play.getByRole("button", TextMatch.containing(REVOKE_TITLE)));
+                    screen.findByText(TextMatch.containing(
+                            "End all sessions and revoke all tokens for 'Alice Smith'?"));
+                    play.click(screen.getByRole("button", StroomDom.button("OK")));
+                    final Play users = usersGrid(play);
+                    play.waitFor(() -> play.expect(users.queryByText("Alice Smith")).toBeNull());
+                    play.waitFor(() -> play.expect(users.getAllByText("orphan.subject").nth(0)
+                            .closest(StroomDom.GRID_ROW)).toHaveAttribute("aria-selected", "true"));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post("/userAccess/v1/sessions").withQuery("subjectId=orphan.subject")
+                                    .toSpyMatcher()));
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // Ending a session selects the session now in its place; the list once lost its
+                // selection on every fetch
+                .story("EndSessionSelectsNext", context -> render(context, ENDED_FIXTURES, false))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.click(play.findByText("Alice Smith"));
+                    play.click(play.findByText("curl/8.5.0"));
+                    play.click(play.getByRole("button", "End Selected Session"));
+                    screen.findByText(TextMatch.containing("end this session for 'Alice Smith' on node 'node2'?"));
+                    play.click(screen.getByRole("button", StroomDom.button("OK")));
+                    final Play sessions = sessionsGrid(play);
+                    play.waitFor(() -> play.expect(sessions.queryByText("curl/8.5.0")).toBeNull());
+                    play.waitFor(() -> play.expect(sessions.getByText("Mozilla/5.0 (X11; Linux x86_64)")
+                            .closest(StroomDom.GRID_ROW)).toHaveAttribute("aria-selected", "true"));
+                    play.expect(play.getByRole("button", "End Selected Session"))
+                            .not().toHaveAttribute("aria-disabled");
+                    SecurityPlays.expectNoProblems(play);
+                })
                 // The quick filter goes to the server
                 .story("FilterIsServerSide", context -> render(context, false))
                 .withPlay(play -> {
@@ -240,6 +352,30 @@ public final class UserAccessScreenStories {
                             RequestMatcher.post("/userAccess/v1/find")
                                     .withJsonBodyContaining("{\"filter\": \"ali\"}")
                                     .toSpyMatcher()));
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // The pager's Refresh keeps the user chosen selected, with their sessions shown (once,
+                // every fetch selected the first user, so their sessions were shown instead)
+                .story("RefreshKeepsSelection", context -> render(context, REFRESHED_FIXTURES, false))
+                .withPlay(play -> {
+                    play.findByText("Alice Smith");
+                    final Play users = usersGrid(play);
+                    play.click(users.getAllByText("orphan.subject").nth(0));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post("/userAccess/v1/sessions").withQuery("subjectId=orphan.subject")
+                                    .toSpyMatcher()));
+                    play.click(users.getByRole("button", "Refresh"));
+                    // The refreshed users have arrived
+                    play.waitFor(() -> play.expect(users.getByText("node1, node3")).toBeInTheDocument());
+                    play.expect(users.getByText("node1, node3").closest(StroomDom.GRID_ROW))
+                            .toHaveAttribute("aria-selected", "true");
+                    play.expect(users.getByText("Alice Smith").closest(StroomDom.GRID_ROW))
+                            .toHaveAttribute("aria-selected", "false");
+                    // Alice's sessions were fetched only once, when the list first loaded
+                    final Spy requests = play.spy(ScreenHarness.REQUEST_SPY);
+                    play.expect("requests for Alice's sessions", () -> SecurityPlays.requests(requests,
+                            RequestMatcher.post("/userAccess/v1/sessions").withQuery("subjectId=alice")).size())
+                            .toBe(1);
                     SecurityPlays.expectNoProblems(play);
                 });
     }
@@ -253,17 +389,35 @@ public final class UserAccessScreenStories {
 
     /// @return The selected user's sessions grid (with its toolbar and pager).
     private static Play sessionsGrid(final Play play) {
-        return play.within(play.getByTitle("End Selected Session").closest(".dock-container-vertical"));
+        return play.within(play.getByTitle(END_SESSION_TITLE).closest(".dock-container-vertical"));
     }
 
     private static Widget render(final StoryContext context, final boolean externalIdp) {
+        return render(context, FIXTURES, externalIdp);
+    }
+
+    /// @param fixtures    The story's fixtures.
+    /// @param externalIdp Whether Stroom uses an external identity provider.
+    private static Widget render(final StoryContext context,
+                                 final RestFixtures fixtures,
+                                 final boolean externalIdp) {
+        return render(context, fixtures, externalIdp
+                ? externalIdpConfig()
+                : null);
+    }
+
+    /// @param fixtures         The story's fixtures.
+    /// @param extendedUiConfig The extended UI config, or `null` for the default (an internal IdP).
+    private static Widget render(final StoryContext context,
+                                 final RestFixtures fixtures,
+                                 final String extendedUiConfig) {
         final SecurityScreenGinjector injector = GWT.create(SecurityScreenGinjector.class);
-        final ScreenHarness harness = ScreenHarness.builder(context, FIXTURES)
+        final ScreenHarness harness = ScreenHarness.builder(context, fixtures)
                 .injector(injector)
                 .appPermissions(AppPermission.MANAGE_USERS_PERMISSION)
                 .startup(startup -> {
-                    if (externalIdp) {
-                        startup.extendedUiConfig(externalIdpConfig());
+                    if (extendedUiConfig != null) {
+                        startup.extendedUiConfig(extendedUiConfig);
                     }
                 })
                 .realAlerts()
@@ -283,8 +437,19 @@ public final class UserAccessScreenStories {
 
     /// @return The default extended UI config with an external identity provider.
     private static String externalIdpConfig() {
+        return extendedUiConfig(false);
+    }
+
+    /// @return The default extended UI config with an external identity provider behind an
+    ///         authenticating edge proxy.
+    private static String edgeAuthenticationConfig() {
+        return extendedUiConfig(true);
+    }
+
+    private static String extendedUiConfig(final boolean edgeAuthentication) {
         return "{\"uiConfig\":" + StartupFixtures.DEFAULT_UI_CONFIG
-                + ",\"externalIdentityProvider\":true,\"dependencyWarningsEnabled\":false"
+                + ",\"externalIdentityProvider\":true,\"edgeAuthentication\":" + edgeAuthentication
+                + ",\"dependencyWarningsEnabled\":false"
                 + ",\"maxApiKeyExpiryAgeMs\":31536000000,\"obfuscatedFields\":[]}";
     }
 }

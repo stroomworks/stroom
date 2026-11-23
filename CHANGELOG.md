@@ -13,6 +13,104 @@ DO NOT ADD CHANGES HERE - ADD THEM USING log_change.sh
 ~~~
 
 
+## [v7.14-beta.18] - 2026-11-18
+
+* Feature : Add joins to StroomQL: `join`, `left join`, `semi join` and `anti join` lines after `from` (also written `inner join`, `left outer join`, `left semi join` and `left anti join`) join another data source or a bracketed query to the query's rows, as the rows arrive.
+
+* Bug : Fix StroomQL `in (a, b)` matching only the last value when filtering text fields of Data Connections and other sources filtered in Stroom.
+
+* Feature : Add event-to-event joins to StroomQL, e.g. `join "File events" as export on logon.UserId = export.UserId within 10m after logon.EventTime`, joining events whose times fall in a window of the first source's events.
+
+* Feature : Add `where exists`, `where not exists`, `where X in (from ...)` and `where X not in (from ...)` to StroomQL, as the SQL forms of semi and anti joins.
+
+* Feature : Add `right join` and `full join` (also written `right outer join` and `full outer join`) to StroomQL, giving the joined rows with no match once the first source has been searched.
+
+* Bug **#6039** : Fix REST S3 event notifications being accepted without S3 metadata when there is no matching S3 Client Config; they are now rejected, as SQS messages are.
+
+* Bug : Fix Test Connection and Detect Columns on an Excel Data Connection using a workbook sent in the request instead of the document's own.
+
+
+## [v7.14-beta.17] - 2026-11-18
+
+* Bug **#6025** : Fix a null pointer error when choosing Excel for a Data Connection that has never had a workbook.
+
+* Bug **#6036** : Fix a NUL character (U+0000) in data turning off XML escaping in the XMLWriter, so that the rest of the text was written unescaped. NUL is now always removed from the output, and the `preventEscapeSwitching` property now only affects `xsl:character-map` output.
+
+* Bug : Fix Detect Columns on a Data Connection giving columns whose names differ only in case, which queries then refused.
+
+* Bug : Fix a Data Connection being marked as changed after an edit was undone, and saving empty JDBC and Athena settings for other types.
+
+* Bug **#6039** : Fix incorrect handling of SQS messages when there is no matching S3 Client Config for the S3 location. It no longer attempts to consume the message.
+
+* Bug **#6027** : Fix NPE when refreshing OAuth tokens.
+
+* Bug **#6023** : Fix S3 stream processing when optional metadata or context streams are absent.
+
+* Bug **#6022** : Fix the User Access screen and session list showing no sessions when an authenticating edge proxy (e.g. an AWS ALB) is in use.
+
+
+## [v7.14-beta.16] - 2026-11-12
+
+* Bug **#5995** : Fix filtering of selection lists, e.g. time zone IDs in User Preferences, so that it ignores case. Filter text with upper case letters used to find nothing.
+
+* Bug **#6011** : Fix node startup and content searches waiting for a content index re-build to finish.
+
+
+## [v7.14-beta.15] - 2026-11-11
+
+* Bug **#6017** : Fix Ask Stroom AI ignoring the timeouts in the OpenAI Model document's HTTP client configuration. Requests to chat and embedding models always used a 60 second read timeout and a 15 second connect timeout.
+
+
+## [v7.14-beta.14] - 2026-11-11
+
+* Bug **#5953** : Change BCrypt Data Feed Key hashing to always truncate input on hashing and verification.
+
+
+## [v7.14-beta.13] - 2026-11-11
+
+* Bug **#5986** : Fix stepping a large stream failing with the stepping store byte limit before the first record is shown. The background capture of the stream now leaves 10% of `stroom.pipeline.stepping.maxBytesPerStream` free for the records being stepped to.
+
+
+## [v7.14-beta.12] - 2026-11-11
+
+* Bug **#6008** : Fix duplicate key error when replaying a report or rule execution.
+
+
+## [v7.14-beta.11] - 2026-11-10
+
+* Feature : Add field-level query options to dashboard query expression terms on Elasticsearch fields, set with a cog button beside the term's value: case-insensitive and fuzzy matching for `keyword` and `wildcard` fields, and matching all words, phrase matching with slop and fuzzy matching for text fields.
+
+* Feature : Replace the Elasticsearch term suggestions in dashboard query expressions with a value picker that lists a field's most common values in the dashboard's time range, with the share of documents that have each, and can be filtered. Fields within `nested` objects are included, with each value's share counted by the documents that have it rather than by the nested objects. The number of values is set by `stroom.elastic.search.suggestions.topValuesCount`.
+
+* Feature : Change Elasticsearch `keyword` wildcard values to be matched case-sensitively unless the term's case-insensitive query option is set, and search `wildcard` fields with term-level queries like `keyword` fields. See BREAKING_CHANGES.md.
+
+* Feature : Allow wildcard values, e.g. `1.*`, in the `=`, `!=`, `in` and dictionary conditions of Elasticsearch `version` fields, which previously matched nothing.
+
+* Feature **#5976** : Add Elasticsearch per-field settings (enable/disable fields and per-field `dense_vector` settings), field information and sampled statistics in the index Fields tab, and virtual fields that group the values of keyword fields.
+
+* Bug **#5986** : Fix stepping waiting for the whole stream to be captured, and failing with the stepping store's byte limit, when the pipeline has an element that isn't linked to anything.
+
+* Bug **#6000** : Fix pooled XSLTs, schemas and parsers that were borrowed or being created when their pool was invalidated being returned to the pool, e.g. a stepping or processing pipeline continuing to use an old version of an imported XSLT after it has been saved.
+
+* Bug **#5961** : Change error handling when a dashboard's config cannot be deserialised to include the dashboard's identity.
+
+* Bug : Fix bug in display of the `None` item in the DocRef pickers. Was incorrectly using instance equality.
+
+* Dependency : Uplift `com.google.guava:guava` from 33.6.0-jre to 33.7.2-jre.
+
+* Dependency : Uplift `com.hubspot.jinjava:jinjava` from 2.8.4 to 2.8.5.
+
+* Dependency : Uplift base docker image to eclipse-temurin:25.0.5_8-jdk-alpine-3.23@sha256:b903bc22d49da99a0af3d50cf08f6056eaf39646b71bf3a51f74720f8243b34b.
+
+* Bug **#5985** : Fix NPE when trying to set perms on a Credential.
+
+* Bug **#5979** : Fix processor filter dependencies showing as missing. Filters no longer record a dependency on the stream store (including legacy references to it), and deleting a pipeline or processor now removes the dependencies of its filters. Existing processor filter dependencies are rebuilt once on the next start.
+
+* Bug **#5989** : Fix Ask Stroom AI so that a user only requires USE permission on the Credential associalted with the AI model doc.
+
+* Bug **#5992** : Fix AskStroomAI permission logic so a user with only USE permission on an AIModelDoc can pick it as a model to use. Fix AIModelDoc permissions, so if a user has VIEW on the AI model doc but only USE on the credential in it, they can open the model doc and see the credential name.
+
+
 ## [v7.14-beta.10] - 2026-11-05
 
 * Bug **#5933** : Fix `Null DocRef UUID` error shown when setting permissions on a credential, annotation or annotation tag, and fix the document permissions list not scrolling, which required resizing the dialog to see all users and groups.
@@ -2831,7 +2929,15 @@ DO NOT ADD CHANGES HERE - ADD THEM USING log_change.sh
 * Issue **#3830** : Add S3 data storage option.
 
 
-[Unreleased]: https://github.com/gchq/stroom/compare/v7.14-beta.10...HEAD
+[Unreleased]: https://github.com/gchq/stroom/compare/v7.14-beta.18...HEAD
+[v7.14-beta.18]: https://github.com/gchq/stroom/compare/v7.14-beta.17...v7.14-beta.18
+[v7.14-beta.17]: https://github.com/gchq/stroom/compare/v7.14-beta.16...v7.14-beta.17
+[v7.14-beta.16]: https://github.com/gchq/stroom/compare/v7.14-beta.15...v7.14-beta.16
+[v7.14-beta.15]: https://github.com/gchq/stroom/compare/v7.14-beta.14...v7.14-beta.15
+[v7.14-beta.14]: https://github.com/gchq/stroom/compare/v7.14-beta.13...v7.14-beta.14
+[v7.14-beta.13]: https://github.com/gchq/stroom/compare/v7.14-beta.12...v7.14-beta.13
+[v7.14-beta.12]: https://github.com/gchq/stroom/compare/v7.14-beta.11...v7.14-beta.12
+[v7.14-beta.11]: https://github.com/gchq/stroom/compare/v7.14-beta.10...v7.14-beta.11
 [v7.14-beta.10]: https://github.com/gchq/stroom/compare/v7.14-beta.9...v7.14-beta.10
 [v7.14-beta.9]: https://github.com/gchq/stroom/compare/v7.14-beta.8...v7.14-beta.9
 [v7.14-beta.8]: https://github.com/gchq/stroom/compare/v7.14-beta.7...v7.14-beta.8

@@ -19,6 +19,7 @@ package stroom.credentials.impl;
 import stroom.ai.shared.KeyStoreType;
 import stroom.credentials.api.StoredSecret;
 import stroom.credentials.shared.AccessTokenSecret;
+import stroom.credentials.shared.AwsKeySecret;
 import stroom.credentials.shared.Credential;
 import stroom.credentials.shared.CredentialType;
 import stroom.credentials.shared.KeyStoreFileSecret;
@@ -184,6 +185,30 @@ class TestCredentialsService {
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(credentialsDao, never()).putStoredSecret(any(), anyBoolean());
+    }
+
+    @Test
+    void testAwsKeySecretMustBeStoredAsAnAwsKeyCredential() {
+        when(credentialsDao.getCredentialByUuid(UUID)).thenReturn(null);
+
+        assertThatThrownBy(() -> credentialsService.storeCredentials(new PutCredentialRequest(
+                createCredential("a credential", CredentialType.USERNAME_PASSWORD, null),
+                new AwsKeySecret("AKIAEXAMPLE", "secret"))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(credentialsDao, never()).putStoredSecret(any(), anyBoolean());
+    }
+
+    @Test
+    void testAwsKeyCredentialIsStored() {
+        when(credentialsDao.getCredentialByUuid(UUID)).thenReturn(null);
+        when(securityContext.getUserIdentityForAudit()).thenReturn("creator");
+
+        credentialsService.storeCredentials(new PutCredentialRequest(
+                createCredential("aws", CredentialType.AWS_KEY, null),
+                new AwsKeySecret("AKIAEXAMPLE", "secret")));
+
+        verify(credentialsDao).putStoredSecret(any(), anyBoolean());
     }
 
     /// gh-5815: changing the name or expiry of existing credentials must not need the secret
@@ -492,7 +517,9 @@ class TestCredentialsService {
         when(credentialsDao.getCredentialByUuid(UUID)).thenReturn(null);
 
         credentialsService.storeCredentials(new PutCredentialRequest(
-                createCredential("file creds", CredentialType.KEY_STORE_FILE, null),
+                createCredential("file creds",
+                        CredentialType.KEY_STORE_FILE,
+                        null),
                 new KeyStoreFileSecret(KeyStoreType.PKCS12, keyStoreFile.toString(), "changeit")));
 
         final ArgumentCaptor<StoredSecret> stored = ArgumentCaptor.forClass(StoredSecret.class);
@@ -678,7 +705,7 @@ class TestCredentialsService {
     void testGetKeyStoreOfAKeyStoreFileCredentialUsesTheFileWhereItIs(@TempDir final Path tempDir)
             throws Exception {
         final Path keyStoreFile = createAllowedKeyStoreFile(tempDir, "changeit");
-        when(securityContext.hasDocumentPermission(any(DocRef.class), eq(DocumentPermission.VIEW)))
+        when(securityContext.hasDocumentPermission(any(DocRef.class), eq(DocumentPermission.USE)))
                 .thenReturn(true);
         when(credentialsDao.getStoredSecretByName("file creds")).thenReturn(new StoredSecret(
                 createStoredCredential(CredentialType.KEY_STORE_FILE, KeyStoreType.PKCS12),
@@ -703,7 +730,7 @@ class TestCredentialsService {
             throws Exception {
         final Path keyStoreFile = createAllowedKeyStoreFile(tempDir, "changeit");
         credentialsConfig = new CredentialsConfig();
-        when(securityContext.hasDocumentPermission(any(DocRef.class), eq(DocumentPermission.VIEW)))
+        when(securityContext.hasDocumentPermission(any(DocRef.class), eq(DocumentPermission.USE)))
                 .thenReturn(true);
         when(credentialsDao.getStoredSecretByName("file creds")).thenReturn(new StoredSecret(
                 createStoredCredential(CredentialType.KEY_STORE_FILE, KeyStoreType.PKCS12),

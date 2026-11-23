@@ -47,6 +47,7 @@ import stroom.query.api.DestroyReason;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.QueryKey;
+import stroom.query.client.DataSourceClient;
 import stroom.query.client.DateTimeSettingsFactory;
 import stroom.query.client.ErrorMessageTemplates;
 import stroom.query.client.SearchErrorListener;
@@ -54,6 +55,7 @@ import stroom.query.client.SearchStateListener;
 import stroom.query.client.component.ExpressionTreeController;
 import stroom.query.client.component.QueryInfo;
 import stroom.query.client.model.DynamicFieldSelectionListModel;
+import stroom.query.client.model.FieldValuesScope;
 import stroom.query.client.model.ResultStoreModel;
 import stroom.query.shared.ResultStoreResource;
 import stroom.security.client.api.ClientSecurityContext;
@@ -108,6 +110,7 @@ public class QueryPaneController
     private final IndexLoader indexLoader;
     private final DynamicFieldSelectionListModel fieldSelectionBoxModel;
     private final QueryPane view;
+    private final DataSourceClient dataSourceClient;
     private final SearchModel searchModel;
     private ErrorMessages currentErrors;
     private boolean initialised;
@@ -149,7 +152,8 @@ public class QueryPaneController
                                final LocationManager locationManager,
                                final DateTimeSettingsFactory dateTimeSettingsFactory,
                                final ResultStoreModel resultStoreModel,
-                               final DynamicFieldSelectionListModel fieldSelectionBoxModel) {
+                               final DynamicFieldSelectionListModel fieldSelectionBoxModel,
+                               final DataSourceClient dataSourceClient) {
         super(eventBus, settingsControllerProvider);
         this.view = view;
         initWidget(view);
@@ -166,6 +170,7 @@ public class QueryPaneController
         this.clientPropertyCache = clientPropertyCache;
         this.locationManager = locationManager;
         this.fieldSelectionBoxModel = fieldSelectionBoxModel;
+        this.dataSourceClient = dataSourceClient;
         // Shows its requests' progress as this controller's owners do (its context's)
         fieldSelectionBoxModel.setTaskMonitorFactory(taskMonitor());
 
@@ -306,6 +311,16 @@ public class QueryPaneController
         // We only want queryable fields.
         fieldSelectionBoxModel.setQueryable(true);
         expressionTree.init(dataSourceRef, fieldSelectionBoxModel);
+        expressionTree.setValueScopeSupplier(this::getValueScope);
+
+        // Some data sources, such as Amazon Athena, cost money on every run, so may set a minimum.
+        setDataSourceMinRefreshInterval(null);
+        dataSourceClient.fetchMinRefreshInterval(dataSourceRef, guard(minimum -> {
+            // Ignore the answer if the data source has changed since.
+            if (Objects.equals(indexLoader.getLoadedDataSourceRef(), dataSourceRef)) {
+                setDataSourceMinRefreshInterval(minimum);
+            }
+        }), taskMonitor());
 
         if (!Objects.equals(getQuerySettings().getDataSource(), dataSourceRef)) {
             setSettings(getQuerySettings()
@@ -327,6 +342,19 @@ public class QueryPaneController
                 init();
             }
         });
+    }
+
+    // The value picker counts values within the dashboard's time range. The query's expression,
+    // resolved as for a search, is passed too, so the data source can also apply the query's own
+    // conditions, e.g. on its time field.
+    private FieldValuesScope getValueScope() {
+        final DashboardContext dashboardContext = getDashboardContext();
+        if (dashboardContext == null) {
+            return null;
+        }
+        return new FieldValuesScope(
+                dashboardContext.getResolvedTimeRange(),
+                dashboardContext.replaceExpression(expressionTree.write(), true));
     }
 
     private void addOperator() {
