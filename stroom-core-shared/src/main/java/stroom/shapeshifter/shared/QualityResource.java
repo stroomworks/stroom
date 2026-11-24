@@ -40,8 +40,8 @@ import java.util.List;
 /// and records an assessment, which changes nothing about how it translates; resolving an issue is for someone
 /// who may edit the pipeline, who fixes it there. A deleted pipeline's are read by its Learning Flow's viewers,
 /// and nothing is recorded of it.
-@Tag(name = "Shapeshifter AI Quality")
-@Path("/shapeshifterAiQuality" + ResourcePaths.V1)
+@Tag(name = "Smart Pipelines Quality")
+@Path("/smartPipelinesQuality" + ResourcePaths.V1)
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public interface QualityResource extends RestResource, DirectRestService {
@@ -53,9 +53,9 @@ public interface QualityResource extends RestResource, DirectRestService {
     @Path("/pipelines/{pipelineUuid}/elements/{elementId}")
     @Operation(
             summary = "The volume a Smart Pipeline translated lately, and the cardinality of its translation",
-            operationId = "fetchShapeshifterAiQuality")
-    QualityReport report(@PathParam("pipelineUuid") String pipelineUuid,
-                         @PathParam("elementId") String elementId);
+            operationId = "fetchSmartPipelinesQuality")
+    QualityReport fetchReport(@PathParam("pipelineUuid") String pipelineUuid,
+                              @PathParam("elementId") String elementId);
 
     /// @param pipelineUuid The pipeline.
     /// @param elementId    Its AI Translator element.
@@ -65,9 +65,9 @@ public interface QualityResource extends RestResource, DirectRestService {
     @Path("/pipelines/{pipelineUuid}/elements/{elementId}/samples")
     @Operation(
             summary = "Samples of a Smart Pipeline's source records beside its translated output",
-            operationId = "fetchShapeshifterAiQualitySamples")
-    List<QualitySample> samples(@PathParam("pipelineUuid") String pipelineUuid,
-                                @PathParam("elementId") String elementId);
+            operationId = "fetchSmartPipelinesQualitySamples")
+    List<QualitySample> fetchSamples(@PathParam("pipelineUuid") String pipelineUuid,
+                                     @PathParam("elementId") String elementId);
 
     /// @param pipelineUuid The pipeline.
     /// @param elementId    Its AI Translator element.
@@ -76,9 +76,9 @@ public interface QualityResource extends RestResource, DirectRestService {
     @Path("/pipelines/{pipelineUuid}/elements/{elementId}/assessments")
     @Operation(
             summary = "The assessments recorded of a Smart Pipeline's translated output",
-            operationId = "fetchShapeshifterAiAssessments")
-    List<QualityAssessment> assessments(@PathParam("pipelineUuid") String pipelineUuid,
-                                        @PathParam("elementId") String elementId);
+            operationId = "fetchSmartPipelinesAssessments")
+    List<QualityAssessment> fetchAssessments(@PathParam("pipelineUuid") String pipelineUuid,
+                                             @PathParam("elementId") String elementId);
 
     /// @param request What is said, and of which pipeline's element.
     /// @return The assessments recorded of it, newest first, the new one among them.
@@ -87,8 +87,8 @@ public interface QualityResource extends RestResource, DirectRestService {
     @Operation(
             summary = "Record an assessment of a Smart Pipeline's translated output, flagging any issue to the "
                       + "Data Provider",
-            operationId = "addShapeshifterAiAssessment")
-    List<QualityAssessment> assess(AssessmentRequest request);
+            operationId = "addSmartPipelinesAssessment")
+    List<QualityAssessment> addAssessment(AssessmentRequest request);
 
     /// @param id The assessment, an issue.
     /// @return The assessments recorded of its pipeline's element, newest first, it resolved among them.
@@ -96,6 +96,6 @@ public interface QualityResource extends RestResource, DirectRestService {
     @Path("/assessments/{id}/resolve")
     @Operation(
             summary = "Resolve an issue recorded of a Smart Pipeline's translated output, once it is fixed",
-            operationId = "resolveShapeshifterAiAssessment")
-    List<QualityAssessment> resolve(@PathParam("id") long id);
+            operationId = "resolveSmartPipelinesAssessment")
+    List<QualityAssessment> resolveAssessment(@PathParam("id") long id);
 }

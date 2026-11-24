@@ -186,7 +186,7 @@ public class PipelineAiTabController extends Controller {
         }
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.pipelineLearners(pipeline.getUuid()))
+                .method(resource -> resource.fetchPipelineLearners(pipeline.getUuid()))
                 .onSuccess(learners -> {
                     final SupervisorLearner row = NullSafe.list(learners).stream()
                             .filter(learner -> element.getId().equals(learner.getLearner().getElementId()))
@@ -227,7 +227,7 @@ public class PipelineAiTabController extends Controller {
         }
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.settings(docUuid, row.getLearner().getPipelineUuid(),
+                .method(resource -> resource.fetchSettings(row.getLearner().getPipelineUuid(),
                         row.getLearner().getElementId()))
                 .onSuccess(doc -> {
                     settings.put(docUuid, doc);

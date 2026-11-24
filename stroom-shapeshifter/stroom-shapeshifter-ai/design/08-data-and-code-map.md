@@ -113,9 +113,9 @@ migrations have not been released, so they are rewritten rather than added to (A
 
 | Resource | Path | Does |
 |---|---|---|
-| `ShapeshifterAiResource` | `/shapeshifterAi/v1` | Fetch and update a document; the built-in template text and its version |
-| `SupervisorResource` | `/shapeshifterAiSupervisor/v1` | `learners` (the pipelines list), `learners/{doc}/waiting`, `relearn`, `giveUp`; `find` and `{id}` for sessions; `{id}/turns/{n}` (amend), `approve`, `reject`, `grant`, `exhaust`; `serving/{doc}/{binding}/improve`, `accept`, `retract`; `guidance/{doc}` (get, post, delete); `backlog` (only for the editor header's count, ISSUES item 11) |
-| `QualityResource` | `/shapeshifterAiQuality/v1` | `pipelines/{pipeline}/elements/{element}` (volume per day and what the kept records became), `…/samples` (kept records beside what they became), `…/assessments`; `assessments` (record one), `assessments/{id}/resolve` |
+| `ShapeshifterAiResource` | `/smartPipelines/v1` | `{uuid}` (fetch and update a Learning Flow); `templates` (the built-in template text and its version) |
+| `SupervisorResource` | `/smartPipelinesSupervisor/v1` | `learners/find` (the pipelines list, only pipelines the caller may view); `pipelines/{pipeline}/learners`; per learner at `pipelines/{pipeline}/elements/{element}/`: `settings`, `waiting`, `relearn`, `giveUp`, `guidance` (get, post), `guidance/{id}` (delete); `attempts/find`, `attempts/{id}`, `attempts/{id}/turns/{n}` (amend), `approve`, `reject`, `grant`, `exhaust`; `bindings/{binding}/improve`, `accept`, `retract`. The Learning Flow is never sent: the server takes the one the learner's element names |
+| `QualityResource` | `/smartPipelinesQuality/v1` | `pipelines/{pipeline}/elements/{element}` (volume per day and what the kept records became), `…/samples` (kept records beside what they became), `…/assessments`; `assessments` (record one), `assessments/{id}/resolve` |
 | `PipelineFactoryResource` | `/pipelineFactory/v1` | Fetch and update a factory; `combinations`; `forget` |
 
 Each Supervisor and Quality request checks the person's permission on the learner's pipeline (`LearnerAccess`;

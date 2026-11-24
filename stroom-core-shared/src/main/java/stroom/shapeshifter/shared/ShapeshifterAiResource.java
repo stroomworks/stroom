@@ -32,32 +32,40 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
-@Tag(name = "Shapeshifter AI")
-@Path("/shapeshifterAi" + ResourcePaths.V1)
+/// A Smart Pipelines Learning Flow document: how its pipelines' AI Translators learn. Reading and writing it,
+/// and the built-in templates its Setup tab starts from.
+@Tag(name = "Smart Pipelines Learning Flow")
+@Path("/smartPipelines" + ResourcePaths.V1)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public interface ShapeshifterAiResource
         extends RestResource, DirectRestService, FetchWithUuid<ShapeshifterAiDoc> {
 
+    /// @param uuid The Learning Flow's uuid.
+    /// @return The Learning Flow.
     @GET
     @Path("/{uuid}")
     @Operation(
-            summary = "Fetch a Shapeshifter AI document by its UUID",
-            operationId = "fetchShapeshifterAi")
+            summary = "Fetch a Learning Flow by its UUID",
+            operationId = "fetchSmartPipelinesLearningFlow")
     ShapeshifterAiDoc fetch(@PathParam("uuid") String uuid);
 
+    /// @return The built-in text of a Learning Flow's templates, and the version they are at.
     @GET
     @Path("/templates")
     @Operation(
-            summary = "The built-in text of the flow's templates and its version",
-            operationId = "fetchShapeshifterAiTemplates")
-    BuiltInTemplates templates();
+            summary = "The built-in text of a Learning Flow's templates and its version",
+            operationId = "fetchSmartPipelinesTemplates")
+    BuiltInTemplates fetchTemplates();
 
+    /// @param uuid The Learning Flow's uuid, which must be the document's.
+    /// @param doc  The Learning Flow as it should be.
+    /// @return The Learning Flow as saved.
     @PUT
     @Path("/{uuid}")
     @Operation(
-            summary = "Update a Shapeshifter AI document",
-            operationId = "updateShapeshifterAi")
+            summary = "Update a Learning Flow",
+            operationId = "updateSmartPipelinesLearningFlow")
     ShapeshifterAiDoc update(
             @PathParam("uuid") String uuid,
             @Parameter(description = "doc", required = true) ShapeshifterAiDoc doc);

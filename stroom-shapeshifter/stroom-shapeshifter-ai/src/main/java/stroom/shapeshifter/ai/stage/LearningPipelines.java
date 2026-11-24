@@ -38,7 +38,7 @@ public interface LearningPipelines {
     /// @param showDeleted Whether the learning of pipelines since deleted is shown too (A137).
     /// @param offset      The first row of the page.
     /// @param limit       How many rows.
-    /// @return The page, as [#learners(Collection, Set, Collection, boolean, String, long, int)] answers.
+    /// @return The page, as [#learners(Collection, Set, Collection, boolean, Collection, long, int)] answers.
     default Page learners(final Collection<String> docUuids,
                           final Set<String> learningOff,
                           final Collection<LearnerState> states,
@@ -54,8 +54,8 @@ public interface LearningPipelines {
     /// @param learningOff  Those of them with learning turned off, whose learners are said to be so.
     /// @param states       The states asked for; empty for every state.
     /// @param showDeleted  Whether the learning of pipelines since deleted is shown too (A137).
-    /// @param pipelineUuid The one pipeline whose learners are asked for, e.g. from its own editor; null for
-    ///                     every pipeline.
+    /// @param pipelineUuids The pipelines whose learners may be listed: e.g. those the person may view, or
+    ///                     one pipeline from its own editor. Null for every pipeline; empty answers empty.
     /// @param offset       The first row of the page.
     /// @param limit        How many rows.
     /// @return The page, its rows naming their pipeline and document by uuid alone, and none raised: the
@@ -64,9 +64,15 @@ public interface LearningPipelines {
                   Set<String> learningOff,
                   Collection<LearnerState> states,
                   boolean showDeleted,
-                  String pipelineUuid,
+                  Collection<String> pipelineUuids,
                   long offset,
                   int limit);
+
+    /// Every pipeline any learning table knows a learner of, deleted or not: the few pipelines whose
+    /// permissions decide which rows of the lists a person sees.
+    ///
+    /// @return The pipelines' uuids.
+    Set<String> pipelines();
 
     /// The document a learner is listed under, worked out as the list works it out. For a learner whose
     /// pipeline has been deleted, and so names no document of its own, this is the document its learning

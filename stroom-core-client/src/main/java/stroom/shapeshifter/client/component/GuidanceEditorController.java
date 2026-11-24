@@ -57,7 +57,6 @@ public class GuidanceEditorController extends Controller {
     private final GuidanceEditor view;
     private final RestFactory restFactory;
     private final Provider<SupervisorPromptController> promptProvider;
-    private String docUuid;
     private LearnerRef learner;
     private Runnable onChange = () -> {
     };
@@ -91,17 +90,14 @@ public class GuidanceEditorController extends Controller {
     /// once it has been read: shown first, so that it is owned while it is read.
     ///
     /// @param opener   What shows it.
-    /// @param docUuid  The learner's document.
     /// @param learner  The learner, as the row names it.
     /// @param readOnly Whether it may only be read, as a deleted pipeline's learner may.
     /// @param onChange Run when something is said or taken back, so that the count on the row the dialog
     ///                 was opened from is read again.
     public void show(final HasControllerNode opener,
-                     final String docUuid,
                      final LearnerRef learner,
                      final boolean readOnly,
                      final Runnable onChange) {
-        this.docUuid = docUuid;
         this.learner = learner;
         this.readOnly = readOnly;
         this.onChange = onChange;
@@ -120,7 +116,6 @@ public class GuidanceEditorController extends Controller {
         // Which learner this is about, taken now rather than when OK is pressed: the dialog can be
         // reopened on another while a prompt is up.
         final LearnerRef whose = learner;
-        final String onDocument = docUuid;
         promptProvider.get().ask(this,
                 "Tell this learner something",
                 "What should this learner know? It is kept against the learner, so every question it "
@@ -132,8 +127,8 @@ public class GuidanceEditorController extends Controller {
                     }
                     restFactory
                             .create(SUPERVISOR_RESOURCE)
-                            .method(resource -> resource.hint(onDocument,
-                                    new GuidanceRequest(whose, message)))
+                            .method(resource -> resource.addGuidance(whose.getPipelineUuid(),
+                                    whose.getElementId(), new GuidanceRequest(message)))
                             .onSuccess(this::changed)
                             .owner(this)
                             .taskMonitorFactory(taskMonitor())
@@ -149,7 +144,6 @@ public class GuidanceEditorController extends Controller {
             return;
         }
         final LearnerRef whose = learner;
-        final String onDocument = docUuid;
         ConfirmEvent.fire(this,
                 "Take this back? It stops being carried into what this learner asks. The turns "
                 + "that already carried it still say they did.",
@@ -157,8 +151,8 @@ public class GuidanceEditorController extends Controller {
                     if (ok) {
                         restFactory
                                 .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.withdraw(onDocument, said.getId(),
-                                        whose.getPipelineUuid(), whose.getElementId()))
+                                .method(resource -> resource.deleteGuidance(whose.getPipelineUuid(),
+                                        whose.getElementId(), said.getId()))
                                 .onSuccess(this::changed)
                                 .owner(this)
                                 .taskMonitorFactory(taskMonitor())
@@ -176,7 +170,7 @@ public class GuidanceEditorController extends Controller {
     private void read(final Consumer<List<SupervisorGuidance>> consumer) {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.guidance(docUuid, learner.getPipelineUuid(),
+                .method(resource -> resource.fetchGuidance(learner.getPipelineUuid(),
                         learner.getElementId()))
                 .onSuccess(consumer::accept)
                 .owner(this)

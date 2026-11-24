@@ -29,8 +29,7 @@ import stroom.shapeshifter.shared.AttemptCriteria;
 import stroom.shapeshifter.shared.FlowStep;
 import stroom.shapeshifter.shared.GuidanceRequest;
 import stroom.shapeshifter.shared.ImproveRequest;
-import stroom.shapeshifter.shared.LearnerRequest;
-import stroom.shapeshifter.shared.RejectRequest;
+import stroom.shapeshifter.shared.ReasonRequest;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.StepOutcome;
 import stroom.shapeshifter.shared.SuggestionAction;
@@ -233,7 +232,7 @@ public class FeedDetailController extends Controller {
         final SupervisorLearner whose = learner;
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.find(AttemptCriteria.forLearner(new PageRequest(0, RUNS),
+                .method(resource -> resource.findAttempts(AttemptCriteria.forLearner(new PageRequest(0, RUNS),
                         whose.getLearner())))
                 .onSuccess(page -> {
                     if (request == asked) {
@@ -264,7 +263,7 @@ public class FeedDetailController extends Controller {
         final int request = ++asked;
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.fetch(row.getId()))
+                .method(resource -> resource.fetchAttempt(row.getId()))
                 .onSuccess(detail -> {
                     if (request == asked) {
                         final boolean another = run == null || run.getId() != detail.getId();
@@ -299,7 +298,7 @@ public class FeedDetailController extends Controller {
                 : doc.getFlow().getSteps();
         view.setProgress(FeedProgress.of(steps, run));
         view.setConversation(rows(steps), fresh, !readOnly && run != null && !run.isPipelineDeleted());
-        view.setNotes(!readOnly && !learner.isPipelineDeleted(), learner.getGuidance());
+        view.setNotes(!readOnly && !learner.isPipelineDeleted(), learner.getGuidanceCount());
         final boolean waiting = learner.getWaiting() > 0;
         view.setHistory(!runs.isEmpty() || waiting, waiting);
         final boolean wanted = FeedSituation.needsHistory(learner, run);
@@ -446,7 +445,7 @@ public class FeedDetailController extends Controller {
                 + "someone says Learn again.",
                 reason -> {
                     if (!NullSafe.isBlankString(reason)) {
-                        actOnRun(resource -> resource.reject(draft.getId(), new RejectRequest(reason)));
+                        actOnRun(resource -> resource.reject(draft.getId(), new ReasonRequest(reason)));
                     }
                 });
     }
@@ -494,7 +493,7 @@ public class FeedDetailController extends Controller {
         answerProvider.get().edit(this, caption, NullSafe.string(turn.getAnswer()), readOnly,
                 answer -> restFactory
                         .create(SUPERVISOR_RESOURCE)
-                        .method(resource -> resource.amend(shown.getId(), number, new AmendTurnRequest(answer)))
+                        .method(resource -> resource.amendTurn(shown.getId(), number, new AmendTurnRequest(answer)))
                         .onSuccess(amended -> acted())
                         .owner(this)
                         .taskMonitorFactory(taskMonitor())
@@ -512,7 +511,7 @@ public class FeedDetailController extends Controller {
                     if (ok) {
                         restFactory
                                 .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.accept(trial.getDoc().getUuid(), trial.getBindingUuid()))
+                                .method(resource -> resource.accept(trial.getBindingUuid()))
                                 .onSuccess(done -> acted())
                                 .owner(this)
                                 .taskMonitorFactory(taskMonitor())
@@ -531,8 +530,7 @@ public class FeedDetailController extends Controller {
                 + "write is kept as a note for this feed, so every question asked about it from now on carries it.",
                 message -> restFactory
                         .create(SUPERVISOR_RESOURCE)
-                        .method(resource -> resource.improve(serving.getDoc().getUuid(), serving.getBindingUuid(),
-                                new ImproveRequest(message)))
+                        .method(resource -> resource.improve(serving.getBindingUuid(), new ImproveRequest(message)))
                         .onSuccess(outcome -> AlertEvent.fireInfo(this, outcome.getSaid(), this::acted))
                         // The run goes on while the request is open, so one that times out may yet finish
                         .onFailure(error -> AlertEvent.fireError(this,
@@ -557,8 +555,8 @@ public class FeedDetailController extends Controller {
                     if (ok) {
                         restFactory
                                 .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.relearnLearner(whose.getDoc().getUuid(),
-                                        new LearnerRequest(whose.getLearner(), null)))
+                                .method(resource -> resource.relearn(whose.getLearner().getPipelineUuid(),
+                                        whose.getLearner().getElementId(), new ReasonRequest(null)))
                                 .onSuccess(done -> acted())
                                 .owner(this)
                                 .taskMonitorFactory(taskMonitor())
@@ -579,8 +577,8 @@ public class FeedDetailController extends Controller {
                     if (!NullSafe.isBlankString(reason)) {
                         restFactory
                                 .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.giveUp(whose.getDoc().getUuid(),
-                                        new LearnerRequest(whose.getLearner(), reason)))
+                                .method(resource -> resource.giveUp(whose.getLearner().getPipelineUuid(),
+                                        whose.getLearner().getElementId(), new ReasonRequest(reason)))
                                 .onSuccess(done -> acted())
                                 .owner(this)
                                 .taskMonitorFactory(taskMonitor())
@@ -603,8 +601,7 @@ public class FeedDetailController extends Controller {
                     }
                     restFactory
                             .create(SUPERVISOR_RESOURCE)
-                            .method(resource -> resource.retract(serving.getDoc().getUuid(),
-                                    serving.getBindingUuid(), new RejectRequest(reason)))
+                            .method(resource -> resource.retract(serving.getBindingUuid(), new ReasonRequest(reason)))
                             .onSuccess(produced -> AlertEvent.fireInfo(this, produced == null || produced == 0
                                     ? "The translation has been removed. It had made nothing."
                                     : "The translation has been removed. " + PlainWords.count(produced, "stream")
@@ -627,8 +624,8 @@ public class FeedDetailController extends Controller {
         final SupervisorLearner whose = learner;
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.hint(whose.getDoc().getUuid(),
-                        new GuidanceRequest(whose.getLearner(), message.trim())))
+                .method(resource -> resource.addGuidance(whose.getLearner().getPipelineUuid(),
+                        whose.getLearner().getElementId(), new GuidanceRequest(message.trim())))
                 .onSuccess(notes -> {
                     view.clearNote();
                     view.setNotes(true, NullSafe.list(notes).size());
@@ -642,7 +639,7 @@ public class FeedDetailController extends Controller {
     /// The notes left for this feed, to read and take back, in the guidance dialog.
     private void showNotes() {
         if (learner != null) {
-            guidanceProvider.get().show(this, learner.getDoc().getUuid(), learner.getLearner(),
+            guidanceProvider.get().show(this, learner.getLearner(),
                     learner.isPipelineDeleted(), this::acted);
         }
     }

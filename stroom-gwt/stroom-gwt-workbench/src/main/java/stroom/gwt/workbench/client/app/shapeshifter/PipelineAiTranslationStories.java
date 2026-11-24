@@ -47,6 +47,8 @@ public final class PipelineAiTranslationStories {
 
     private static final String PAUSED = "Paused: ran out of time at \"Write the parser\" (question 4).";
     private static final String TAB = "Learning Status";
+    // The firewall's learner, as the Supervisor addresses it
+    private static final String FIREWALL = "/smartPipelinesSupervisor/v1/pipelines/p-1/elements/shapeshifterAi";
     private static final String TRANSLATING_WITH = "Translating with";
     private static final String HISTORY = "Learning history";
     // The firewall's pipeline just translating, with nothing waiting
@@ -193,7 +195,7 @@ public final class PipelineAiTranslationStories {
                     play.tab();
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/grant")
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/attempts/7/grant")
                                     .withJsonBodyContaining("{\"ms\": 600000}").toSpyMatcher()));
                     DocEditors.expectNoProblems(play);
                 })
@@ -205,7 +207,7 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(screen.queryByText("Give this session more to spend",
                             StroomDom.DIALOG_TITLE)).toBeNull());
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/grant").toSpyMatcher());
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/attempts/7/grant").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
                 // The question the run stopped at, answered by hand: OK sends it
@@ -219,7 +221,7 @@ public final class PipelineAiTranslationStories {
                             .toHaveTextContent(TextMatch.containing("x")));
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/turns/4").toSpyMatcher()));
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/attempts/7/turns/4").toSpyMatcher()));
                     DocEditors.expectNoProblems(play);
                 })
                 .story("AnswerDialogCancel", context -> render(context, false))
@@ -230,7 +232,7 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(screen.queryByText(TextMatch.startingWith("Answer question 4"),
                             StroomDom.DIALOG_TITLE)).toBeNull());
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/7/turns/4").toSpyMatcher());
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/attempts/7/turns/4").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
                 // Stop learning, from More: the prompt asks why, and OK sends it
@@ -241,7 +243,7 @@ public final class PipelineAiTranslationStories {
                     play.type(screen.getByLabelText("Answer"), "Not a feed we translate.");
                     play.click(screen.getByRole("button", StroomDom.button("OK")));
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners/ss-1/giveUp")
+                            RequestMatcher.post(FIREWALL + "/giveUp")
                                     .withJsonBodyContaining("{\"reason\": \"Not a feed we translate.\"}")
                                     .toSpyMatcher()));
                     DocEditors.expectNoProblems(play);
@@ -254,7 +256,7 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(screen.queryByText("Stop learning this feed",
                             StroomDom.DIALOG_TITLE)).toBeNull());
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners/ss-1/giveUp").toSpyMatcher());
+                            RequestMatcher.post(FIREWALL + "/giveUp").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
                 // A note left for the AI, sent from beneath the conversation
@@ -264,7 +266,7 @@ public final class PipelineAiTranslationStories {
                     play.type(play.getByLabelText("Note to the AI"), "Ports are numbers.");
                     play.click(play.getByRole("button", StroomDom.button("Send note")));
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/guidance/ss-1")
+                            RequestMatcher.post(FIREWALL + "/guidance")
                                     .withJsonBodyContaining("{\"message\": \"Ports are numbers.\"}")
                                     .toSpyMatcher()));
                     // Sent, the box is emptied for the next

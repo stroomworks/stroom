@@ -69,8 +69,7 @@ public class WaitingStreamListController extends Controller {
                 final SupervisorLearner whose = learner;
                 restFactory
                         .create(SUPERVISOR_RESOURCE)
-                        .method(resource -> resource.waiting(whose.getDoc().getUuid(),
-                                whose.getLearner().getPipelineUuid(),
+                        .method(resource -> resource.findWaiting(whose.getLearner().getPipelineUuid(),
                                 whose.getLearner().getElementId(),
                                 new PageRequest(range.getStart(), range.getLength())))
                         .onSuccess(dataConsumer)

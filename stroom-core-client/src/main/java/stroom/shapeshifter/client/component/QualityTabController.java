@@ -148,7 +148,7 @@ public class QualityTabController extends Controller {
         final int request = ++asked;
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.pipelineLearners(pipeline.getUuid()))
+                .method(resource -> resource.fetchPipelineLearners(pipeline.getUuid()))
                 .onSuccess(learners -> {
                     if (request != asked) {
                         return;
@@ -172,7 +172,7 @@ public class QualityTabController extends Controller {
     private void readRuns(final int request, final SupervisorLearner row, final ShapeshifterAiDoc doc) {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.find(AttemptCriteria.forLearner(new PageRequest(0, RUNS),
+                .method(resource -> resource.findAttempts(AttemptCriteria.forLearner(new PageRequest(0, RUNS),
                         row.getLearner())))
                 .onSuccess(page -> {
                     if (request == asked) {
@@ -194,7 +194,7 @@ public class QualityTabController extends Controller {
         final String elementId = row.getLearner().getElementId();
         restFactory
                 .create(QUALITY_RESOURCE)
-                .method(resource -> resource.report(pipelineUuid, elementId))
+                .method(resource -> resource.fetchReport(pipelineUuid, elementId))
                 .onSuccess(report -> {
                     if (request == asked) {
                         view.showReport(report);
@@ -205,7 +205,7 @@ public class QualityTabController extends Controller {
                 .exec();
         restFactory
                 .create(QUALITY_RESOURCE)
-                .method(resource -> resource.samples(pipelineUuid, elementId))
+                .method(resource -> resource.fetchSamples(pipelineUuid, elementId))
                 .onSuccess(samples -> {
                     if (request == asked) {
                         view.showSamples(NullSafe.list(samples));
@@ -241,7 +241,7 @@ public class QualityTabController extends Controller {
         }
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.settings(docUuid, row.getLearner().getPipelineUuid(),
+                .method(resource -> resource.fetchSettings(row.getLearner().getPipelineUuid(),
                         row.getLearner().getElementId()))
                 .onSuccess(doc -> {
                     settings.put(docUuid, doc);

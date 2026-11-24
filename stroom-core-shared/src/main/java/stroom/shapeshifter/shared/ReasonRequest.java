@@ -20,29 +20,24 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/// A person acting on a learner from its row in the learning pipelines list (design 06 A115): sending it
-/// back to learn again, or giving it up. Says why, since the reason is what the learner's next session
-/// opens with, or what its streams error with.
+/// Why a person is acting on a Smart Pipeline's learning: rejecting a drafted translation (A25), retracting
+/// one that is serving (A28), giving a learner up, or sending it back to learn afresh (A115).
+///
+/// The reason is recorded: a rejection or retraction against the attempt that wrote the translation, and a
+/// give-up as what the learner's streams error with.
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class LearnerRequest {
+public class ReasonRequest {
 
-    @JsonProperty
-    private final LearnerRef learner;
     @JsonProperty
     private final String reason;
 
+    /// @param reason Why; required by reject, retract and give up, optional when sending a learner back.
     @JsonCreator
-    public LearnerRequest(@JsonProperty("learner") final LearnerRef learner,
-                          @JsonProperty("reason") final String reason) {
-        this.learner = learner;
+    public ReasonRequest(@JsonProperty("reason") final String reason) {
         this.reason = reason;
     }
 
-    /// The learner, as the row named it (A128).
-    public LearnerRef getLearner() {
-        return learner;
-    }
-
+    /// @return Why, as the person wrote it; may be null or blank.
     public String getReason() {
         return reason;
     }

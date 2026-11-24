@@ -106,7 +106,7 @@ class TestALearnerKeepsWhatItLearned {
         assertThat(scenarios.learningPipelines.learners(List.of("doc-1"), Set.of(), List.of(), false, 0, 10).learners())
                 .describedAs("and the old one's no longer does")
                 .isEmpty();
-        scenarios.guidance.withdraw("doc-2", hint);
+        scenarios.guidance.withdraw(Scenarios.LEARNER, "doc-2", hint);
         assertThat(scenarios.guidance.standing(Scenarios.LEARNER))
                 .describedAs("and what was said about its learners, withdrawn by the document it is under now")
                 .isEmpty();

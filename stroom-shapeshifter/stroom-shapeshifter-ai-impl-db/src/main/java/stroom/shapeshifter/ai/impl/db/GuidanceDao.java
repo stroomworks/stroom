@@ -79,12 +79,15 @@ public class GuidanceDao implements Guidance {
                         row.get(SHAPESHIFTER_GUIDANCE.CREATE_TIME_MS))));
     }
 
-    /// By document as well as id, so that a mistyped id cannot take back somebody else's hint.
+    /// By learner and document as well as id, so that an id naming another pipeline's hint cannot take it
+    /// back, even under the same document.
     @Override
-    public void withdraw(final String docUuid, final long id) {
+    public void withdraw(final Learner learner, final String docUuid, final long id) {
         JooqUtil.context(connProvider, context -> context
                 .deleteFrom(SHAPESHIFTER_GUIDANCE)
-                .where(SHAPESHIFTER_GUIDANCE.DOC_UUID.eq(docUuid))
+                .where(SHAPESHIFTER_GUIDANCE.PIPELINE_UUID.eq(learner.pipelineUuid()))
+                .and(SHAPESHIFTER_GUIDANCE.ELEMENT_ID.eq(learner.elementId()))
+                .and(SHAPESHIFTER_GUIDANCE.DOC_UUID.eq(docUuid))
                 .and(SHAPESHIFTER_GUIDANCE.ID.eq(id))
                 .execute());
     }

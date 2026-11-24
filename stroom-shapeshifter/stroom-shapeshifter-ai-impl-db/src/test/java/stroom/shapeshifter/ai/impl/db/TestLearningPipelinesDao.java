@@ -128,7 +128,7 @@ class TestLearningPipelinesDao {
         assertThat(servingRow.getPromotedScore()).isEqualTo(0.93);
         assertThat(servingRow.getRollingScore()).isEqualTo(0.9);
         assertThat(servingRow.getRecords()).isEqualTo(10);
-        assertThat(servingRow.getGuidance()).isEqualTo(1);
+        assertThat(servingRow.getGuidanceCount()).isEqualTo(1);
         assertThat(servingRow.getDoc().getUuid()).isEqualTo(doc);
         assertThat(listed.getFirst().getGivenUpReason()).isEqualTo("Unlearnable");
         assertThat(listed.get(1).getOldestWaitMs()).isNotNull();
@@ -149,14 +149,21 @@ class TestLearningPipelinesDao {
         // One pipeline's learners, as its own editor asks for them
         final String onePipeline = rows.learners(readable, learningOff, List.of(), false, 0L, 100).learners()
                 .getFirst().getLearner().getPipelineUuid();
-        final List<SupervisorLearner> ofOne = rows.learners(readable, learningOff, List.of(), false, onePipeline,
-                0L, 100).learners();
+        final List<SupervisorLearner> ofOne = rows.learners(readable, learningOff, List.of(), false,
+                List.of(onePipeline), 0L, 100).learners();
         assertThat(ofOne).isNotEmpty()
                 .allSatisfy(row -> assertThat(row.getLearner().getPipelineUuid()).isEqualTo(onePipeline));
         assertThat(summarise(ofOne))
                 .describedAs("one pipeline's")
-                .isEqualTo(summarise(memory.learners(readable, learningOff, List.of(), false, onePipeline, 0L, 100)
-                        .learners()));
+                .isEqualTo(summarise(memory.learners(readable, learningOff, List.of(), false,
+                        List.of(onePipeline), 0L, 100).learners()));
+        assertThat(rows.learners(readable, learningOff, List.of(), true, List.of(), 0L, 100).learners())
+                .describedAs("no pipeline the person may view, no rows")
+                .isEmpty();
+        assertThat(rows.pipelines())
+                .describedAs("every pipeline a learning table knows, among the rows other tests left")
+                .contains(onePipeline)
+                .containsAll(memory.pipelines());
     }
 
     @Test
@@ -252,7 +259,7 @@ class TestLearningPipelinesDao {
         return learners.stream()
                 .map(row -> row.getLearner() + " " + row.getDoc().getUuid() + " " + row.getState()
                             + " " + row.getBindingUuid() + " waiting " + row.getWaiting()
-                            + " rolling " + row.getRollingScore() + " said " + row.getGuidance()
+                            + " rolling " + row.getRollingScore() + " said " + row.getGuidanceCount()
                             + " deleted " + row.isPipelineDeleted())
                 .toList();
     }

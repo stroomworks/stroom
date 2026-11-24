@@ -313,9 +313,13 @@ public final class InMemoryAttempts implements Attempts {
     }
 
     @Override
-    public synchronized Page found(final AttemptCriteria criteria, final Collection<String> docUuids) {
+    public synchronized Page found(final AttemptCriteria criteria,
+                                   final Collection<String> docUuids,
+                                   final Collection<String> pipelineUuids) {
         final List<Recorded> matching = attempts.values().stream()
                 .filter(attempt -> docUuids.contains(attempt.attempt().docUuid()))
+                .filter(attempt -> pipelineUuids == null
+                                   || pipelineUuids.contains(attempt.attempt().learner().pipelineUuid()))
                 .filter(attempt -> matches(attempt, criteria))
                 .filter(attempt -> criteria.isShowDeletedPipelines()
                                    || !deletedPipelines.isDeleted(attempt.attempt().learner().pipelineUuid()))

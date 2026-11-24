@@ -73,7 +73,7 @@ class TestLearnersDao {
         assertThat(deferrals.forDocument(after))
                 .singleElement()
                 .satisfies(row -> assertThat(row.learner()).isEqualTo(learner));
-        guidance.withdraw(after, hint);
+        guidance.withdraw(learner, after, hint);
         assertThat(guidance.standing(learner))
                 .describedAs("withdrawn by the document it is under now, which is who may change it")
                 .isEmpty();

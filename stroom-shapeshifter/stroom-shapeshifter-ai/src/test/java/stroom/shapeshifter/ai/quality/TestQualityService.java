@@ -105,11 +105,11 @@ class TestQualityService {
 
         final QualityReport report = service(viewer()).report("p-1", "shapeshifterAi");
 
-        assertThat(report.getBindingUuid()).isEqualTo("b-1");
+        assertThat(report.getServingBindingUuid()).isEqualTo("b-1");
         assertThat(report.getTranslated()).isEqualTo(3);
         assertThat(report.getUnknown()).isEqualTo(1);
-        assertThat(report.getNone()).isEqualTo(1);
-        assertThat(report.getKinds()).describedAs("two kinds of record settled").isEqualTo(2);
+        assertThat(report.getNoOutput()).isEqualTo(1);
+        assertThat(report.getDistinctTargets()).describedAs("two kinds of record settled").isEqualTo(2);
         Mockito.verify(regressionSet, Mockito.never()).accepted("b-2");
     }
 
@@ -118,7 +118,7 @@ class TestQualityService {
         final Binding draft = binding("b-2", true);
         Mockito.when(bindings.forLearner(FIREWALL)).thenReturn(List.of(draft));
         final QualityReport report = service(viewer()).report("p-1", "shapeshifterAi");
-        assertThat(report.getBindingUuid()).isNull();
+        assertThat(report.getServingBindingUuid()).isNull();
         assertThat(report.getTranslated()).isZero();
         Mockito.verifyNoInteractions(regressionSet);
     }

@@ -44,9 +44,9 @@ import com.google.gwt.user.client.ui.Widget;
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
-/// | `GET /shapeshifterAiSupervisor/v1/pipelines/p-1/learners` | the AI Translator's learner |
-/// | `POST /shapeshifterAiSupervisor/v1/find` | its learning runs |
-/// | `GET /shapeshifterAiSupervisor/v1/learners/ss-1/settings` | the lines its Learning Flow draws |
+/// | `GET /smartPipelinesSupervisor/v1/pipelines/p-1/learners` | the AI Translator's learner |
+/// | `POST /smartPipelinesSupervisor/v1/attempts/find` | its learning runs |
+/// | `GET /smartPipelinesSupervisor/v1/pipelines/p-1/elements/shapeshifterAi/settings` | its Learning Flow's lines |
 /// | `POST /pipeline/v1/fetchPipelineLayers` for `f-2` | the learned translation's elements |
 public final class PipelineQualityStories {
 
@@ -79,7 +79,7 @@ public final class PipelineQualityStories {
                   {"element": "xsltFilter", "name": "xslt",
                     "value": {"entity": {"type": "XSLT", "uuid": "x-1", "name": "Firewall transform"}}}]}}}]""";
 
-    private static final String QUALITY = "/shapeshifterAiQuality/v1/pipelines/p-1/elements/shapeshifterAi";
+    private static final String QUALITY = "/smartPipelinesQuality/v1/pipelines/p-1/elements/shapeshifterAi";
     // A fortnight, oldest first, from the 30th of October 2025 (UTC), busiest on the twelfth day
     private static final long FIRST_DAY = 1_761_782_400_000L;
     // Its regression set holds the two records below
@@ -348,8 +348,9 @@ public final class PipelineQualityStories {
             days.append("{\"dayMs\": ").append(FIRST_DAY + i * 86_400_000L).append(", \"streams\": ")
                     .append(streams[i]).append(", \"records\": ").append(records[i]).append('}');
         }
-        return "{\"days\": [" + days + "], \"bindingUuid\": \"b-2\", \"translated\": " + translated
-               + ", \"unknown\": " + unknown + ", \"none\": " + none + ", \"kinds\": " + kinds + "}";
+        return "{\"days\": [" + days + "], \"servingBindingUuid\": \"b-2\", \"translated\": " + translated
+               + ", \"unknown\": " + unknown + ", \"noOutput\": " + none + ", \"distinctTargets\": " + kinds
+               + "}";
     }
 
     // The newest records of a regression set, newest first: "line N" down to "line 1", each translated

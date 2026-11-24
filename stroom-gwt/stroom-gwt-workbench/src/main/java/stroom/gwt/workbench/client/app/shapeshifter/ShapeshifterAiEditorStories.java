@@ -58,14 +58,14 @@ import java.util.Map;
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
-/// | `GET` and `PUT /shapeshifterAi/v1/{uuid}` | the document, fetched and saved |
-/// | `GET /shapeshifterAi/v1/templates` | the built-in texts the Setup tab's question texts start from |
-/// | `POST /shapeshifterAiSupervisor/v1/learners` | the document's feeds |
+/// | `GET` and `PUT /smartPipelines/v1/{uuid}` | the document, fetched and saved |
+/// | `GET /smartPipelines/v1/templates` | the built-in texts the Setup tab's question texts start from |
+/// | `POST /smartPipelinesSupervisor/v1/learners/find` | the document's feeds |
 /// | `POST /explorer/v2/decorate` and `getFromDocRef` | the Setup tab's model and target schema pickers |
 /// | the Permissions tab's routes | the Permissions tab |
 public final class ShapeshifterAiEditorStories {
 
-    private static final String SAVE_PATH = "/shapeshifterAi/v1/ss-1";
+    private static final String SAVE_PATH = "/smartPipelines/v1/ss-1";
     // A FormGroup gives its control the group's identity as its id
     private static final String THRESHOLD = "#checkThreshold";
     private static final String RULES = "Meets the business rules";
@@ -142,7 +142,7 @@ public final class ShapeshifterAiEditorStories {
                     play.waitFor(() -> play.expect(grid.queryByText("Firewall pipeline")).toBeNull());
                     play.expect(grid.getByText("Proxy pipeline")).toBeInTheDocument();
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners")
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/learners/find")
                                     .withJsonBodyContaining("{\"showDeletedPipelines\": true}")
                                     .toSpyMatcher());
                     play.expect(play.getByRole("button", FEEDS_FILTERED)).toBeInTheDocument();

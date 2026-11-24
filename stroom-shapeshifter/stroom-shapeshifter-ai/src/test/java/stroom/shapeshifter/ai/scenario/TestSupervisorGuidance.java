@@ -109,7 +109,7 @@ class TestSupervisorGuidance {
         final Carrying carrying = new Carrying(script(scenarios));
         final Stage stage = scenarios.stage(document -> carrying, scenarios.learnerBindings);
         final long wrong = scenarios.guidance.given(Scenarios.LEARNER, "doc-1", "Something mistaken.", "jo");
-        scenarios.guidance.withdraw("doc-1", wrong);
+        scenarios.guidance.withdraw(Scenarios.LEARNER, "doc-1", wrong);
 
         scenarios.process(carrying, doc(), stream()).learned();
 

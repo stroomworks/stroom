@@ -604,7 +604,7 @@ public class ApproachSectionController extends Controller {
         builtInsRequested = true;
         restFactory
                 .create(RESOURCE)
-                .method(ShapeshifterAiResource::templates)
+                .method(ShapeshifterAiResource::fetchTemplates)
                 .onSuccess(served -> {
                     builtIns = new HashMap<>(served.getTemplates());
                     builtInVersion = served.getVersion();

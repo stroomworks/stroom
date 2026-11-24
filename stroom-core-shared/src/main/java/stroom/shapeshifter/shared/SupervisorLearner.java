@@ -70,7 +70,7 @@ public class SupervisorLearner {
     private final Long lastSessionMs;
     /// How much a supervisor has said to it (A46).
     @JsonProperty
-    private final int guidance;
+    private final int guidanceCount;
     @JsonProperty
     private final boolean pipelineDeleted;
     /// Whether what it scores lately is below its document's relearn threshold: the one place the
@@ -94,7 +94,7 @@ public class SupervisorLearner {
                              @JsonProperty("oldestWaitMs") final Long oldestWaitMs,
                              @JsonProperty("raised") final boolean raised,
                              @JsonProperty("lastSessionMs") final Long lastSessionMs,
-                             @JsonProperty("guidance") final int guidance,
+                             @JsonProperty("guidanceCount") final int guidanceCount,
                              @JsonProperty("pipelineDeleted") final boolean pipelineDeleted,
                              @JsonProperty("belowThreshold") final boolean belowThreshold) {
         this.learner = learner;
@@ -112,7 +112,7 @@ public class SupervisorLearner {
         this.oldestWaitMs = oldestWaitMs;
         this.raised = raised;
         this.lastSessionMs = lastSessionMs;
-        this.guidance = guidance;
+        this.guidanceCount = guidanceCount;
         this.pipelineDeleted = pipelineDeleted;
         this.belowThreshold = belowThreshold;
     }
@@ -126,7 +126,7 @@ public class SupervisorLearner {
                                    final boolean belowThreshold) {
         return new SupervisorLearner(learner, pipeline, doc, state, givenUpReason, bindingUuid, fragment,
                 provisional, promotedScore, rollingScore, records, waiting, oldestWaitMs, raised, lastSessionMs,
-                guidance, pipelineDeleted, belowThreshold);
+                guidanceCount, pipelineDeleted, belowThreshold);
     }
 
     public LearnerRef getLearner() {
@@ -189,8 +189,9 @@ public class SupervisorLearner {
         return lastSessionMs;
     }
 
-    public int getGuidance() {
-        return guidance;
+    /// @return How many notes people have left the learner that it still carries.
+    public int getGuidanceCount() {
+        return guidanceCount;
     }
 
     public boolean isPipelineDeleted() {

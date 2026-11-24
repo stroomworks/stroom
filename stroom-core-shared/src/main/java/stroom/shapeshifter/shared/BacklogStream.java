@@ -46,7 +46,7 @@ public class BacklogStream {
     @JsonProperty
     private final long firstDeferredMs;
     @JsonProperty
-    private final int tries;
+    private final int timesDeferred;
     @JsonProperty
     private final boolean raised;
 
@@ -59,7 +59,7 @@ public class BacklogStream {
                          @JsonProperty("reason") final String reason,
                          @JsonProperty("failingRecords") final int failingRecords,
                          @JsonProperty("firstDeferredMs") final long firstDeferredMs,
-                         @JsonProperty("tries") final int tries,
+                         @JsonProperty("timesDeferred") final int timesDeferred,
                          @JsonProperty("raised") final boolean raised) {
         this.doc = doc;
         this.inputId = inputId;
@@ -69,7 +69,7 @@ public class BacklogStream {
         this.reason = reason;
         this.failingRecords = failingRecords;
         this.firstDeferredMs = firstDeferredMs;
-        this.tries = tries;
+        this.timesDeferred = timesDeferred;
         this.raised = raised;
     }
 
@@ -107,8 +107,8 @@ public class BacklogStream {
     }
 
     /// How many times a task has decided the stream and deferred it.
-    public int getTries() {
-        return tries;
+    public int getTimesDeferred() {
+        return timesDeferred;
     }
 
     /// Whether the stream has waited past the document's maximum deferral age (A57).

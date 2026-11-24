@@ -101,7 +101,7 @@ public class WaitingStreamList extends Component {
                 ColumnSizeConstants.DATE_COL);
         dataGrid.addResizableColumn(
                 DataGridUtil.htmlColumnBuilder((BacklogStream stream) ->
-                        text(Integer.toString(stream.getTries()))).rightAligned().build(),
+                        text(Integer.toString(stream.getTimesDeferred()))).rightAligned().build(),
                 DataGridUtil.headingBuilder("Tries")
                         .withToolTip("How many times a task has decided this stream and held it again.")
                         .rightAligned()

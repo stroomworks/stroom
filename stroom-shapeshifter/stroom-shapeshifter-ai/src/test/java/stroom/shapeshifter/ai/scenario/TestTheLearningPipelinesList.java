@@ -91,13 +91,13 @@ class TestTheLearningPipelinesList {
         scenarios.deferrals.deferred(LIFT, "doc-1", 1L, "LIFT", "Raw Events", null, "Learning.", 0);
 
         final LearningPipelines.Page lift = scenarios.learningPipelines
-                .learners(List.of("doc-1"), Set.of(), List.of(), false, LIFT.pipelineUuid(), 0L, 100);
+                .learners(List.of("doc-1"), Set.of(), List.of(), false, List.of(LIFT.pipelineUuid()), 0L, 100);
 
         assertThat(lift.total()).isEqualTo(1L);
         assertThat(lift.learners()).extracting(row -> row.getLearner().getPipelineUuid())
                 .containsExactly(LIFT.pipelineUuid());
         assertThat(scenarios.learningPipelines
-                .learners(List.of("doc-1"), Set.of(), List.of(), false, "pipeline-none", 0L, 100)
+                .learners(List.of("doc-1"), Set.of(), List.of(), false, List.of("pipeline-none"), 0L, 100)
                 .learners()).isEmpty();
     }
 
@@ -138,7 +138,7 @@ class TestTheLearningPipelinesList {
 
         assertThat(scenarios.learningPipelines
                 .learners(List.of("doc-1"), Set.of(), List.of(), false, 0L, 100).learners())
-                .extracting(SupervisorLearner::getGuidance)
+                .extracting(SupervisorLearner::getGuidanceCount)
                 .containsExactly(2);
     }
 

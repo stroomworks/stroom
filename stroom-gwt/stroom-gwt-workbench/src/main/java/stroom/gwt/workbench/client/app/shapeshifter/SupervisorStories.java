@@ -45,7 +45,7 @@ import com.google.gwt.user.client.ui.Widget;
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
-/// | `POST /shapeshifterAiSupervisor/v1/learners` | the Smart Pipelines, every Learning Flow's |
+/// | `POST /smartPipelinesSupervisor/v1/learners/find` | the Smart Pipelines, every Learning Flow's |
 public final class SupervisorStories {
 
     private static final String FILTER = "Which pipelines to show";
@@ -59,14 +59,14 @@ public final class SupervisorStories {
               "doc": {"type": "ShapeshifterAi", "uuid": "ss-2", "name": "Audit logs"},
               "pipeline": {"type": "Pipeline", "uuid": "p-4", "name": "Audit pipeline"},
               "state": "Given up", "givenUpReason": "No passing configuration for the parser after 5 attempts",
-              "waiting": 0, "records": 0, "guidance": 0, "raised": false, "belowThreshold": false,
+              "waiting": 0, "records": 0, "guidanceCount": 0, "raised": false, "belowThreshold": false,
               "provisional": false, "pipelineDeleted": false, "lastSessionMs": 1761500000000}""";
     // A pipeline since deleted, listed only when deleted pipelines are asked for
     private static final String DELETED_LEARNER = """
             {"learner": {"pipelineUuid": "p-2", "elementId": "shapeshifterAi"},
               "doc": {"type": "ShapeshifterAi", "uuid": "ss-1", "name": "Firewall logs"},
               "pipeline": {"type": "Pipeline", "uuid": "p-2", "name": "Old proxy pipeline"},
-              "state": "Given up", "waiting": 0, "records": 0, "guidance": 0, "raised": false,
+              "state": "Given up", "waiting": 0, "records": 0, "guidanceCount": 0, "raised": false,
               "belowThreshold": false, "provisional": false, "pipelineDeleted": true}""";
     private static final String LEARNERS = page(ShapeshifterAiFixtures.FIREWALL_LEARNER,
             ShapeshifterAiFixtures.PROXY_LEARNER, AUDIT_LEARNER);
@@ -135,7 +135,7 @@ public final class SupervisorStories {
                     play.waitFor(() -> play.expect(screen.queryByText(FILTER, StroomDom.DIALOG_TITLE)).toBeNull());
                     play.waitFor(() -> play.expect(grid.getByText("Old proxy pipeline")).toBeInTheDocument());
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners")
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/learners/find")
                                     .withJsonBodyContaining("{\"showDeletedPipelines\": true}").toSpyMatcher());
                     play.expect(play.getByRole("button", FILTERED)).toBeInTheDocument();
                     expectNoProblems(play);
@@ -151,7 +151,7 @@ public final class SupervisorStories {
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
                     play.waitFor(() -> play.expect(screen.queryByText(FILTER, StroomDom.DIALOG_TITLE)).toBeNull());
                     play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
-                            RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners")
+                            RequestMatcher.post("/smartPipelinesSupervisor/v1/learners/find")
                                     .withJsonBodyContaining("{\"showDeletedPipelines\": true}").toSpyMatcher());
                     play.expect(grid.queryByText("Old proxy pipeline")).toBeNull();
                     play.expect(play.getByRole("button", "Filter Pipelines")).toBeInTheDocument();
@@ -202,16 +202,17 @@ public final class SupervisorStories {
 
     private static Widget render(final StoryContext context) {
         return render(context, RestFixtures.builder()
-                .route(RequestMatcher.post("/shapeshifterAiSupervisor/v1/learners")
+                .route(RequestMatcher.post("/smartPipelinesSupervisor/v1/learners/find")
                                 .withJsonBodyContaining("{\"showDeletedPipelines\": true}"),
                         RestReply.json(WITH_DELETED))
-                .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(LEARNERS)));
+                .post("/smartPipelinesSupervisor/v1/learners/find", RestReply.json(LEARNERS)));
     }
 
     // The refresh stories': the pipelines as first read, then with the firewall's pipeline moved on
     private static Widget renderMovingOn(final StoryContext context) {
         return render(context, RestFixtures.builder()
-                .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(LEARNERS), RestReply.json(MOVED_ON)));
+                .post("/smartPipelinesSupervisor/v1/learners/find", RestReply.json(LEARNERS),
+                        RestReply.json(MOVED_ON)));
     }
 
     private static Widget render(final StoryContext context, final RestFixtures.Builder learners) {

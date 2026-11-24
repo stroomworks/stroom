@@ -32,29 +32,29 @@ public class QualityReport {
     @JsonProperty
     private final List<VolumeDay> days;
     @JsonProperty
-    private final String bindingUuid;
+    private final String servingBindingUuid;
     @JsonProperty
     private final int translated;
     @JsonProperty
     private final int unknown;
     @JsonProperty
-    private final int none;
+    private final int noOutput;
     @JsonProperty
-    private final int kinds;
+    private final int distinctTargets;
 
     @JsonCreator
     public QualityReport(@JsonProperty("days") final List<VolumeDay> days,
-                         @JsonProperty("bindingUuid") final String bindingUuid,
+                         @JsonProperty("servingBindingUuid") final String servingBindingUuid,
                          @JsonProperty("translated") final Integer translated,
                          @JsonProperty("unknown") final Integer unknown,
-                         @JsonProperty("none") final Integer none,
-                         @JsonProperty("kinds") final Integer kinds) {
+                         @JsonProperty("noOutput") final Integer noOutput,
+                         @JsonProperty("distinctTargets") final Integer distinctTargets) {
         this.days = days;
-        this.bindingUuid = bindingUuid;
+        this.servingBindingUuid = servingBindingUuid;
         this.translated = Objects.requireNonNullElse(translated, 0);
         this.unknown = Objects.requireNonNullElse(unknown, 0);
-        this.none = Objects.requireNonNullElse(none, 0);
-        this.kinds = Objects.requireNonNullElse(kinds, 0);
+        this.noOutput = Objects.requireNonNullElse(noOutput, 0);
+        this.distinctTargets = Objects.requireNonNullElse(distinctTargets, 0);
     }
 
     /// @return Each day of the window, oldest first, including days it translated nothing.
@@ -63,8 +63,8 @@ public class QualityReport {
     }
 
     /// @return The translation in use, whose records are counted; null where none is.
-    public String getBindingUuid() {
-        return bindingUuid;
+    public String getServingBindingUuid() {
+        return servingBindingUuid;
     }
 
     /// @return How many of the kept records became a real translation.
@@ -78,12 +78,12 @@ public class QualityReport {
     }
 
     /// @return How many became nothing, e.g. a header line.
-    public int getNone() {
-        return none;
+    public int getNoOutput() {
+        return noOutput;
     }
 
     /// @return How many kinds of record were settled (the targets the flow named), or 0 where none was named.
-    public int getKinds() {
-        return kinds;
+    public int getDistinctTargets() {
+        return distinctTargets;
     }
 }

@@ -28,7 +28,7 @@ final class ShapeshifterAiFixtures {
 
     static final DocRef DOC_REF = new DocRef(ShapeshifterAiDoc.TYPE, "ss-1", "Firewall logs");
 
-    /// `GET /shapeshifterAi/v1/{uuid}`: learning on, a model, event-logging v3.0.0 as its target schema,
+    /// `GET /smartPipelines/v1/{uuid}`: learning on, a model, event-logging v3.0.0 as its target schema,
     /// checks of its own (the Standard ones, with business rules as advice, with one assertion), and a flow
     /// of two steps, the second going back to the first when it doesn't read all the input.
     static final String DOC = """
@@ -116,7 +116,7 @@ final class ShapeshifterAiFixtures {
             "\"targetSchema\": {\"type\": \"XMLSchema\", \"uuid\": \"4fe14042-770e-4297-8711-d92e607bc4d5\",\n"
             + "    \"name\": \"event-logging v3.0.0\"},\n  ", "");
 
-    /// `GET /shapeshifterAi/v1/templates`: the built-in texts.
+    /// `GET /smartPipelines/v1/templates`: the built-in texts.
     static final String TEMPLATES = """
             {"version": 1, "templates": {
               "SYSTEM": "You write Stroom pipelines.",
@@ -131,7 +131,7 @@ final class ShapeshifterAiFixtures {
     static final String FIREWALL_LEARNER = """
             {"learner": {"pipelineUuid": "p-1", "elementId": "shapeshifterAi"}, "doc": DOC,
               "pipeline": {"type": "Pipeline", "uuid": "p-1", "name": "Firewall pipeline"},
-              "state": "Waiting for a person", "waiting": 2, "records": 0, "guidance": 1, "raised": false,
+              "state": "Waiting for a person", "waiting": 2, "records": 0, "guidanceCount": 1, "raised": false,
               "belowThreshold": false, "provisional": false, "pipelineDeleted": false,
               "lastSessionMs": 1761800600000, "oldestWaitMs": 1761700000000}""".replace("DOC", DOC_JSON);
 
@@ -148,10 +148,10 @@ final class ShapeshifterAiFixtures {
               "state": "Serving", "bindingUuid": "b-1",
               "fragment": {"type": "Pipeline", "uuid": "f-1", "name": "Proxy translation"},
               "promotedScore": 0.95, "rollingScore": 0.98, "records": 1204,
-              "waiting": 0, "guidance": 0, "raised": false, "belowThreshold": false, "provisional": false,
+              "waiting": 0, "guidanceCount": 0, "raised": false, "belowThreshold": false, "provisional": false,
               "pipelineDeleted": false, "lastSessionMs": 1761600000000}""".replace("DOC", DOC_JSON);
 
-    /// `POST /shapeshifterAiSupervisor/v1/learners` for the document: the firewall's pipeline and the
+    /// `POST /smartPipelinesSupervisor/v1/learners/find` for the document: the firewall's pipeline and the
     /// proxy's.
     static final String LEARNERS = "{\"values\": [" + FIREWALL_LEARNER + ", " + PROXY_LEARNER + "], "
                                    + "\"pageResponse\": {\"offset\": 0, \"length\": 2, \"total\": 2, "
@@ -182,7 +182,7 @@ final class ShapeshifterAiFixtures {
                "question": "Configure: dsParser TextConverter",
                "answer": "PARSER",
                "outcome": "COVERAGE_SHORT", "answeredBy": "model",
-               "score": {"scorer": "INPUT_COVERAGE", "score": 0.42, "threshold": 0.9}},
+               "score": {"check": "COVERAGE", "score": 0.42, "threshold": 0.9}},
              {"number": 3, "stepId": "chain", "kind": "CHAIN", "candidate": 1,
                "question": "Chain: choose from [dsParser, xmlFragmentParser, xslt], after 1 shortfall(s)",
                "answer": "dsParser\\nxslt", "outcome": "PASSED", "answeredBy": "model"},
@@ -191,7 +191,7 @@ final class ShapeshifterAiFixtures {
             .replace("PARSER", PARSER)
             .replace("TURN_4", TURN_4);
 
-    /// `GET /shapeshifterAiSupervisor/v1/7`: the firewall's run, paused out of time, with its report as the
+    /// `GET /smartPipelinesSupervisor/v1/attempts/7`: the firewall's run, paused out of time, with its report as the
     /// engine writes it: the error, the details and the suggestions.
     static final String PAUSED = """
             {"id": 7, "learner": {"pipelineUuid": "p-1", "elementId": "shapeshifterAi"}, "doc": DOC,
@@ -247,7 +247,7 @@ final class ShapeshifterAiFixtures {
     }
 
     /// The firewall's pipeline's learners ([#FIREWALL_LEARNER]) with its learner given up, for the reason
-    /// given, as `GET /shapeshifterAiSupervisor/v1/pipelines/p-1/learners` lists them.
+    /// given, as `GET /smartPipelinesSupervisor/v1/pipelines/p-1/learners` lists them.
     ///
     /// @param reason Why it gave up: its run's error line.
     /// @return The learners, as JSON.
@@ -261,7 +261,7 @@ final class ShapeshifterAiFixtures {
         return text.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    /// `GET /shapeshifterAiSupervisor/v1/9`: the proxy's run, which put its translation to use.
+    /// `GET /smartPipelinesSupervisor/v1/attempts/9`: the proxy's run, which put its translation to use.
     static final String PROMOTED = """
             {"id": 9, "learner": {"pipelineUuid": "p-3", "elementId": "shapeshifterAi"}, "doc": DOC,
               "status": "Promoted", "feed": "PROXY", "type": "Raw Events", "node": "node1a",
@@ -289,9 +289,16 @@ final class ShapeshifterAiFixtures {
 
     private static final String WAITING = """
             {"values": [{"inputId": 101, "doc": DOC, "feed": "FIREWALL", "type": "Raw Events",
-                "firstDeferredMs": 1761700000000, "tries": 1, "failingRecords": 12, "raised": false,
+                "firstDeferredMs": 1761700000000, "timesDeferred": 1, "failingRecords": 12, "raised": false,
                 "reason": "Coverage short"}],
               "pageResponse": {"offset": 0, "length": 1, "total": 1, "exact": true}}""".replace("DOC", DOC_JSON);
+
+    private static final String NOTHING_WAITING = """
+            {"values": [], "pageResponse": {"offset": 0, "length": 0, "total": 0, "exact": true}}""";
+
+    // The firewall's and the proxy's learners, as the Supervisor addresses them
+    private static final String FIREWALL = "/smartPipelinesSupervisor/v1/pipelines/p-1/elements/shapeshifterAi";
+    private static final String PROXY = "/smartPipelinesSupervisor/v1/pipelines/p-3/elements/shapeshifterAi";
 
     private ShapeshifterAiFixtures() {
         // Static utility
@@ -332,22 +339,24 @@ final class ShapeshifterAiFixtures {
                                              final String firewall,
                                              final String learners) {
         return builder
-                .get("/shapeshifterAi/v1/templates", RestReply.json(TEMPLATES))
-                .get("/shapeshifterAi/v1/ss-1", RestReply.json(doc))
-                .put("/shapeshifterAi/v1/ss-1", request -> RestReply.json(request.getBody()))
-                .post("/shapeshifterAiSupervisor/v1/learners", RestReply.json(learners))
-                .route(RequestMatcher.post("/shapeshifterAiSupervisor/v1/find")
+                .get("/smartPipelines/v1/templates", RestReply.json(TEMPLATES))
+                .get("/smartPipelines/v1/ss-1", RestReply.json(doc))
+                .put("/smartPipelines/v1/ss-1", request -> RestReply.json(request.getBody()))
+                .post("/smartPipelinesSupervisor/v1/learners/find", RestReply.json(learners))
+                .route(RequestMatcher.post("/smartPipelinesSupervisor/v1/attempts/find")
                                 .withJsonBodyContaining("{\"learner\": {\"pipelineUuid\": \"p-3\"}}"),
                         RestReply.json(page(PROMOTED)))
-                .post("/shapeshifterAiSupervisor/v1/find", RestReply.json(page(firewall)))
-                .get("/shapeshifterAiSupervisor/v1/7", RestReply.json(firewall))
-                .get("/shapeshifterAiSupervisor/v1/9", RestReply.json(PROMOTED))
-                .post("/shapeshifterAiSupervisor/v1/7/grant", RestReply.json(PAUSED))
-                .post("/shapeshifterAiSupervisor/v1/7/turns/4", RestReply.json(PAUSED))
-                .post("/shapeshifterAiSupervisor/v1/learners/ss-1/giveUp", RestReply.json("true"))
-                .post("/shapeshifterAiSupervisor/v1/learners/ss-1/waiting", RestReply.json(WAITING))
-                .get("/shapeshifterAiSupervisor/v1/guidance/ss-1", RestReply.json(GUIDANCE))
-                .post("/shapeshifterAiSupervisor/v1/guidance/ss-1", RestReply.json(MORE_GUIDANCE));
+                .post("/smartPipelinesSupervisor/v1/attempts/find", RestReply.json(page(firewall)))
+                .get("/smartPipelinesSupervisor/v1/attempts/7", RestReply.json(firewall))
+                .get("/smartPipelinesSupervisor/v1/attempts/9", RestReply.json(PROMOTED))
+                .post("/smartPipelinesSupervisor/v1/attempts/7/grant", RestReply.json(PAUSED))
+                .post("/smartPipelinesSupervisor/v1/attempts/7/turns/4", RestReply.json(PAUSED))
+                .post(FIREWALL + "/giveUp", RestReply.json(FIREWALL_LEARNER))
+                .post(FIREWALL + "/waiting", RestReply.json(WAITING))
+                .get(FIREWALL + "/guidance", RestReply.json(GUIDANCE))
+                .post(FIREWALL + "/guidance", RestReply.json(MORE_GUIDANCE))
+                .post(PROXY + "/waiting", RestReply.json(NOTHING_WAITING))
+                .get(PROXY + "/guidance", RestReply.json("[]"));
     }
 
     /// Adds the routes a pipeline's AI Translation tab asks for: what the Supervisor says about the firewall's
@@ -364,13 +373,14 @@ final class ShapeshifterAiFixtures {
                                                final String firewall,
                                                final String firewallLearners) {
         return editorRoutes(builder, doc, firewall)
-                .get("/shapeshifterAiSupervisor/v1/pipelines/p-1/learners", RestReply.json(firewallLearners))
-                .get("/shapeshifterAiSupervisor/v1/pipelines/p-3/learners",
+                .get("/smartPipelinesSupervisor/v1/pipelines/p-1/learners", RestReply.json(firewallLearners))
+                .get("/smartPipelinesSupervisor/v1/pipelines/p-3/learners",
                         RestReply.json("[" + PROXY_LEARNER + "]"))
-                .get("/shapeshifterAiSupervisor/v1/learners/ss-1/settings", RestReply.json(doc))
+                .get(FIREWALL + "/settings", RestReply.json(doc))
+                .get(PROXY + "/settings", RestReply.json(doc))
                 // Nothing from the quality resource; a story of the Quality Assurance tab gives its own replies
                 // first
-                .route(RequestMatcher.get("/shapeshifterAiQuality/v1/*"), RestReply.json("[]"));
+                .route(RequestMatcher.get("/smartPipelinesQuality/v1/*"), RestReply.json("[]"));
     }
 
     private static String page(final String run) {

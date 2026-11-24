@@ -112,16 +112,16 @@ public final class QualityFigures {
         if (report == null) {
             return null;
         }
-        final int total = report.getTranslated() + report.getUnknown() + report.getNone();
-        if (report.getBindingUuid() == null || total == 0) {
+        final int total = report.getTranslated() + report.getUnknown() + report.getNoOutput();
+        if (report.getServingBindingUuid() == null || total == 0) {
             return "The regression set is empty: no translation is in use, or it keeps no records.";
         }
         final StringBuilder summary = new StringBuilder(PlainWords.count(total, "record"))
                 .append(": ").append(PlainWords.number(report.getTranslated())).append(" translated, ")
                 .append(PlainWords.number(report.getUnknown())).append(" marked Unknown, ")
-                .append(PlainWords.number(report.getNone())).append(" with no event.");
-        if (report.getKinds() > 0) {
-            summary.append(' ').append(PlainWords.count(report.getKinds(), "kind")).append(" of record.");
+                .append(PlainWords.number(report.getNoOutput())).append(" with no event.");
+        if (report.getDistinctTargets() > 0) {
+            summary.append(' ').append(PlainWords.count(report.getDistinctTargets(), "kind")).append(" of record.");
         }
         if (shown > 0 && shown < total) {
             summary.append(" The newest ").append(PlainWords.number(shown)).append(" are shown.");

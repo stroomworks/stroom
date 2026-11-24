@@ -17,6 +17,7 @@
 package stroom.shapeshifter.ai.doc;
 
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.shapeshifter.ai.quality.QualityService;
 import stroom.shapeshifter.shared.AssessmentRequest;
 import stroom.shapeshifter.shared.QualityAssessment;
@@ -42,27 +43,32 @@ public class QualityResourceImpl implements QualityResource {
     }
 
     @Override
-    public QualityReport report(final String pipelineUuid, final String elementId) {
+    @AutoLogged(OperationType.VIEW)
+    public QualityReport fetchReport(final String pipelineUuid, final String elementId) {
         return qualityServiceProvider.get().report(pipelineUuid, elementId);
     }
 
     @Override
-    public List<QualitySample> samples(final String pipelineUuid, final String elementId) {
+    @AutoLogged(OperationType.VIEW)
+    public List<QualitySample> fetchSamples(final String pipelineUuid, final String elementId) {
         return qualityServiceProvider.get().samples(pipelineUuid, elementId);
     }
 
     @Override
-    public List<QualityAssessment> assessments(final String pipelineUuid, final String elementId) {
+    @AutoLogged(OperationType.VIEW)
+    public List<QualityAssessment> fetchAssessments(final String pipelineUuid, final String elementId) {
         return qualityServiceProvider.get().assessments(pipelineUuid, elementId);
     }
 
     @Override
-    public List<QualityAssessment> assess(final AssessmentRequest request) {
+    @AutoLogged(OperationType.CREATE)
+    public List<QualityAssessment> addAssessment(final AssessmentRequest request) {
         return qualityServiceProvider.get().assess(request);
     }
 
     @Override
-    public List<QualityAssessment> resolve(final long id) {
+    @AutoLogged(value = OperationType.PROCESS, verb = "Resolving a Smart Pipeline quality issue")
+    public List<QualityAssessment> resolveAssessment(final long id) {
         return qualityServiceProvider.get().resolve(id);
     }
 }

@@ -43,6 +43,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /// The learning pipelines list over the in-memory stores: what a node's query does as joins, done here in
 /// Java over every learner each store knows. An agreement test holds the two to one answer.
@@ -79,23 +80,20 @@ public final class InMemoryLearningPipelines implements LearningPipelines {
                          final Set<String> learningOff,
                          final Collection<LearnerState> wanted,
                          final boolean showDeleted,
-                         final String pipelineUuid,
+                         final Collection<String> pipelineUuids,
                          final long offset,
                          final int limit) {
-        if (NullSafe.isEmptyCollection(docUuids)) {
+        if (NullSafe.isEmptyCollection(docUuids) || (pipelineUuids != null && pipelineUuids.isEmpty())) {
             return new Page(List.of(), 0L);
         }
         final List<Held> held = bindings.all();
         final List<Recorded> recorded = attempts.all();
         final List<Deferral> waiting = deferrals.all();
-        final Set<Learner> learners = new LinkedHashSet<>(states.learners());
-        held.forEach(row -> learners.add(row.learner()));
-        recorded.forEach(attempt -> learners.add(attempt.attempt().learner()));
-        waiting.forEach(row -> learners.add(row.learner()));
+        final Set<Learner> learners = everyLearner(held, recorded, waiting);
 
         final List<SupervisorLearner> matched = new ArrayList<>();
         for (final Learner learner : learners) {
-            if (pipelineUuid != null && !pipelineUuid.equals(learner.pipelineUuid())) {
+            if (pipelineUuids != null && !pipelineUuids.contains(learner.pipelineUuid())) {
                 continue;
             }
             final List<Held> mine = held.stream().filter(row -> row.learner().equals(learner)).toList();
@@ -147,6 +145,24 @@ public final class InMemoryLearningPipelines implements LearningPipelines {
                 .skip(Math.max(0L, offset))
                 .limit(Math.max(0, limit))
                 .toList(), matched.size());
+    }
+
+    @Override
+    public Set<String> pipelines() {
+        return everyLearner(bindings.all(), attempts.all(), deferrals.all()).stream()
+                .map(Learner::pipelineUuid)
+                .collect(Collectors.toSet());
+    }
+
+    // Every learner any store knows
+    private Set<Learner> everyLearner(final List<Held> held,
+                                      final List<Recorded> recorded,
+                                      final List<Deferral> waiting) {
+        final Set<Learner> learners = new LinkedHashSet<>(states.learners());
+        held.forEach(row -> learners.add(row.learner()));
+        recorded.forEach(attempt -> learners.add(attempt.attempt().learner()));
+        waiting.forEach(row -> learners.add(row.learner()));
+        return learners;
     }
 
     @Override

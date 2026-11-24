@@ -106,7 +106,7 @@ public class FeedListController extends Controller {
                         null, showDeleted);
                 restFactory
                         .create(SUPERVISOR_RESOURCE)
-                        .method(resource -> resource.learners(asked))
+                        .method(resource -> resource.findLearners(asked))
                         .onSuccess(page -> dataConsumer.accept(ResultPage.createPageLimitedList(
                                 filtered(NullSafe.list(page.getValues())),
                                 new PageRequest(range.getStart(), range.getLength()))))

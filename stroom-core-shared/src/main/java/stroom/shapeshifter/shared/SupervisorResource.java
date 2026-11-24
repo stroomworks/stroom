@@ -31,180 +31,243 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
 import java.util.List;
 
-/**
- * The Supervisor of ruling A28: attempts across every Shapeshifter AI document, not a tab on one. A row
- * opens to the conversation turn by turn, and what a person may do to an attempt they are reading — answer a
- * turn instead, edit one and run it again, approve or reject what it drafted, or send its learner back to
- * be learned afresh — is here rather than spread across the documents.
- * <p>
- * A binding outlives the attempt that wrote it, so what is done to a binding that is serving — improving,
- * accepting or retracting it — begins from the binding rather than from an attempt.
- */
-@Tag(name = "Shapeshifter AI Supervisor")
-@Path("/shapeshifterAiSupervisor" + ResourcePaths.V1)
+/// The learning of Smart Pipelines (ruling A28): their learners, the attempts each made to learn a
+/// translation, the translations (bindings) serving them, and the notes (guidance) people have left them.
+///
+/// Three kinds of thing are addressed:
+///
+/// - **A learner** is one pipeline's AI Translator element, at `/pipelines/{pipelineUuid}/elements/{elementId}`.
+///   The Learning Flow it runs under is the one its element names (or, for a pipeline since deleted, the one
+///   its learning is listed under), and is never sent.
+/// - **An attempt** is one run at learning a feed, at `/attempts/{id}`.
+/// - **A binding** is one learned translation, at `/bindings/{bindingUuid}`.
+///
+/// Everything is held to the learner's pipeline's permissions: VIEW to read, EDIT to change. A pipeline since
+/// deleted has none to ask; its learning is read by its Learning Flow's VIEW, and nothing is changed for it
+/// (A137). The lists across Learning Flows show only the learners whose pipelines the person may view, under
+/// the Learning Flows they may view.
+@Tag(name = "Smart Pipelines Supervisor")
+@Path("/smartPipelinesSupervisor" + ResourcePaths.V1)
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public interface SupervisorResource extends RestResource, DirectRestService {
 
-    @POST
-    @Path("/find")
-    @Operation(summary = "Find attempts across every Shapeshifter AI document",
-            operationId = "findShapeshifterAiAttempts")
-    ResultPage<SupervisorAttempt> find(AttemptCriteria criteria);
+    // Learners
 
-    @GET
-    @Path("/{id}")
-    @Operation(summary = "Read one attempt with its turns",
-            operationId = "fetchShapeshifterAiAttempt")
-    SupervisorAttempt fetch(@PathParam("id") long id);
-
+    /// @param criteria Which learners: by Learning Flow, state, and whether deleted pipelines' are shown.
+    /// @return A page of learners, most waiting streams first, of the pipelines the person may view.
     @POST
-    @Path("/{id}/turns/{number}")
-    @Operation(summary = "Answer a turn instead, or edit one and run the attempt again from there",
-            operationId = "amendShapeshifterAiTurn")
-    SupervisorAttempt amend(@PathParam("id") long id,
-                            @PathParam("number") int number,
-                            AmendTurnRequest request);
-
-    @POST
-    @Path("/{id}/approve")
-    @Operation(summary = "Approve what an attempt drafted",
-            operationId = "approveShapeshifterAiAttempt")
-    SupervisorAttempt approve(@PathParam("id") long id);
-
-    @POST
-    @Path("/{id}/reject")
-    @Operation(summary = "Reject what an attempt drafted, and give its learner up",
-            operationId = "rejectShapeshifterAiAttempt")
-    SupervisorAttempt reject(@PathParam("id") long id, RejectRequest request);
-
-    @POST
-    @Path("/{id}/grant")
-    @Operation(summary = "Give a parked attempt more to spend, and carry it on",
-            operationId = "grantShapeshifterAiAttempt")
-    SupervisorAttempt grant(@PathParam("id") long id, GrantRequest request);
-
-    @POST
-    @Path("/{id}/exhaust")
-    @Operation(summary = "Send a parked attempt to the exhaustion step, and carry it on",
-            operationId = "exhaustShapeshifterAiAttempt")
-    SupervisorAttempt exhaust(@PathParam("id") long id);
-
-    @POST
-    @Path("/backlog")
+    @Path("/learners/find")
     @Operation(
-            summary = "What is waiting on a session, a row per stream, the raised ones first",
-            operationId = "findShapeshifterAiBacklog")
-    ResultPage<BacklogStream> backlog(@QueryParam("docUuid") String docUuid,
-                                      @Parameter(description = "page", required = true) PageRequest pageRequest);
+            summary = "Find the learners of Smart Pipelines: each pipeline's AI Translator element that has "
+                      + "learned or is learning, where it stands, what serves it and what waits on it",
+            operationId = "findSmartPipelinesLearners")
+    ResultPage<SupervisorLearner> findLearners(LearnerCriteria criteria);
 
-
-    @POST
-    @Path("/serving/{docUuid}/{bindingUuid}/improve")
-    @Operation(
-            summary = "Ask for a binding that is already serving to be made better",
-            operationId = "improveShapeshifterAiBinding")
-    ImproveOutcome improve(@PathParam("docUuid") String docUuid,
-                           @PathParam("bindingUuid") String bindingUuid,
-                           ImproveRequest request);
-
-    @POST
-    @Path("/serving/{docUuid}/{bindingUuid}/accept")
-    @Operation(
-            summary = "Accept a provisional binding now, rather than waiting for the records that would "
-                      + "promote it",
-            operationId = "acceptShapeshifterAiBinding")
-    Boolean accept(@PathParam("docUuid") String docUuid, @PathParam("bindingUuid") String bindingUuid);
-
-    @POST
-    @Path("/serving/{docUuid}/{bindingUuid}/retract")
-    @Operation(
-            summary = "Take back a binding that is serving, and say how many streams it "
-                      + "produced output for",
-            operationId = "retractShapeshifterAiBinding")
-    Integer retract(@PathParam("docUuid") String docUuid,
-                    @PathParam("bindingUuid") String bindingUuid,
-                    RejectRequest request);
-
-    @GET
-    @Path("/guidance/{docUuid}")
-    @Operation(
-            summary = "What a supervisor has told a learner",
-            operationId = "fetchShapeshifterAiGuidance")
-    List<SupervisorGuidance> guidance(@PathParam("docUuid") String docUuid,
-                                      @QueryParam("pipelineUuid") String pipelineUuid,
-                                      @QueryParam("elementId") String elementId);
-
-    @POST
-    @Path("/guidance/{docUuid}")
-    @Operation(
-            summary = "Tell a learner something, without asking for anything to be run",
-            operationId = "addShapeshifterAiGuidance")
-    List<SupervisorGuidance> hint(@PathParam("docUuid") String docUuid, GuidanceRequest request);
-
-    @DELETE
-    @Path("/guidance/{docUuid}/{id}")
-    @Operation(
-            summary = "Take back something said to a learner, so that it stops being carried",
-            operationId = "withdrawShapeshifterAiGuidance")
-    List<SupervisorGuidance> withdraw(@PathParam("docUuid") String docUuid,
-                                      @PathParam("id") long id,
-                                      @QueryParam("pipelineUuid") String pipelineUuid,
-                                      @QueryParam("elementId") String elementId);
-
-    @POST
-    @Path("/learners")
-    @Operation(
-            summary = "The learning pipelines: each pipeline's Shapeshifter AI element that has learned or is "
-                      + "learning, where it stands, what serves it and what waits on it",
-            operationId = "findShapeshifterAiLearners")
-    ResultPage<SupervisorLearner> learners(LearnerCriteria criteria);
-
+    /// @param pipelineUuid The pipeline.
+    /// @return Each of its AI Translator elements that has learned or is learning, under whichever Learning
+    ///         Flow it runs under.
     @GET
     @Path("/pipelines/{pipelineUuid}/learners")
     @Operation(
-            summary = "The learners of one pipeline: each of its Shapeshifter AI elements that has learned or is "
-                      + "learning, where it stands, what serves it and what waits on it",
-            operationId = "findShapeshifterAiPipelineLearners")
-    List<SupervisorLearner> pipelineLearners(@PathParam("pipelineUuid") String pipelineUuid);
+            summary = "The learners of one Smart Pipeline, for its own editor",
+            operationId = "fetchSmartPipelinesPipelineLearners")
+    List<SupervisorLearner> fetchPipelineLearners(@PathParam("pipelineUuid") String pipelineUuid);
 
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @return The Learning Flow the learner runs under, for its pipeline's editor to show where it stands.
     @GET
-    @Path("/learners/{docUuid}/settings")
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/settings")
     @Operation(
-            summary = "The settings of the Shapeshifter AI document a learner runs under, for its pipeline's editor",
-            operationId = "fetchShapeshifterAiLearnerSettings")
-    ShapeshifterAiDoc settings(@PathParam("docUuid") String docUuid,
-                               @QueryParam("pipelineUuid") String pipelineUuid,
-                               @QueryParam("elementId") String elementId);
+            summary = "The Learning Flow a learner runs under, for its pipeline's viewers",
+            operationId = "fetchSmartPipelinesLearnerSettings")
+    ShapeshifterAiDoc fetchSettings(@PathParam("pipelineUuid") String pipelineUuid,
+                                    @PathParam("elementId") String elementId);
 
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @param pageRequest  The page.
+    /// @return The streams waiting on the learner, oldest first.
     @POST
-    @Path("/learners/{docUuid}/waiting")
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/waiting")
     @Operation(
-            summary = "The streams waiting on one learner, oldest first",
-            operationId = "findShapeshifterAiLearnerWaiting")
-    ResultPage<BacklogStream> waiting(@PathParam("docUuid") String docUuid,
-                                      @QueryParam("pipelineUuid") String pipelineUuid,
-                                      @QueryParam("elementId") String elementId,
-                                      @Parameter(description = "page", required = true) PageRequest pageRequest);
+            summary = "Find the streams waiting on one learner, oldest first",
+            operationId = "findSmartPipelinesLearnerWaiting")
+    ResultPage<BacklogStream> findWaiting(@PathParam("pipelineUuid") String pipelineUuid,
+                                          @PathParam("elementId") String elementId,
+                                          @Parameter(description = "page", required = true) PageRequest pageRequest);
 
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @param request      Why, optionally.
+    /// @return The learner as it now stands.
     @POST
-    @Path("/learners/{docUuid}/relearn")
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/relearn")
     @Operation(
             summary = "Send a learner back to learn afresh from its next stream",
-            operationId = "relearnShapeshifterAiLearner")
-    Boolean relearnLearner(@PathParam("docUuid") String docUuid, LearnerRequest request);
+            operationId = "relearnSmartPipelinesLearner")
+    SupervisorLearner relearn(@PathParam("pipelineUuid") String pipelineUuid,
+                              @PathParam("elementId") String elementId,
+                              ReasonRequest request);
 
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @param request      Why, which is required: its streams error with it.
+    /// @return The learner as it now stands.
     @POST
-    @Path("/learners/{docUuid}/giveUp")
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/giveUp")
     @Operation(
             summary = "Give a learner up: it learns no more, and its streams nothing serves error",
-            operationId = "giveUpShapeshifterAiLearner")
-    Boolean giveUp(@PathParam("docUuid") String docUuid, LearnerRequest request);
+            operationId = "giveUpSmartPipelinesLearner")
+    SupervisorLearner giveUp(@PathParam("pipelineUuid") String pipelineUuid,
+                             @PathParam("elementId") String elementId,
+                             ReasonRequest request);
 
+    // Guidance
+
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @return What people have told the learner, oldest first.
+    @GET
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/guidance")
+    @Operation(
+            summary = "What people have told a learner",
+            operationId = "fetchSmartPipelinesGuidance")
+    List<SupervisorGuidance> fetchGuidance(@PathParam("pipelineUuid") String pipelineUuid,
+                                           @PathParam("elementId") String elementId);
+
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @param request      What to tell it.
+    /// @return What people have told the learner, oldest first, this among it.
+    @POST
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/guidance")
+    @Operation(
+            summary = "Tell a learner something, without asking for anything to be run",
+            operationId = "addSmartPipelinesGuidance")
+    List<SupervisorGuidance> addGuidance(@PathParam("pipelineUuid") String pipelineUuid,
+                                         @PathParam("elementId") String elementId,
+                                         GuidanceRequest request);
+
+    /// @param pipelineUuid The learner's pipeline.
+    /// @param elementId    Its AI Translator element.
+    /// @param id           The guidance to take back; one said to another learner is left alone.
+    /// @return What people have told the learner, oldest first, without it.
+    @DELETE
+    @Path("/pipelines/{pipelineUuid}/elements/{elementId}/guidance/{id}")
+    @Operation(
+            summary = "Take back something said to a learner, so that it stops being carried",
+            operationId = "deleteSmartPipelinesGuidance")
+    List<SupervisorGuidance> deleteGuidance(@PathParam("pipelineUuid") String pipelineUuid,
+                                            @PathParam("elementId") String elementId,
+                                            @PathParam("id") long id);
+
+    // Attempts
+
+    /// @param criteria Which attempts: by Learning Flow, learner, feed, status or promotion mode.
+    /// @return A page of attempts, newest first, without their turns, of the pipelines the person may view.
+    @POST
+    @Path("/attempts/find")
+    @Operation(
+            summary = "Find attempts at learning, across every Learning Flow",
+            operationId = "findSmartPipelinesAttempts")
+    ResultPage<SupervisorAttempt> findAttempts(AttemptCriteria criteria);
+
+    /// @param id The attempt.
+    /// @return The attempt with its turns.
+    @GET
+    @Path("/attempts/{id}")
+    @Operation(
+            summary = "Read one attempt with its turns",
+            operationId = "fetchSmartPipelinesAttempt")
+    SupervisorAttempt fetchAttempt(@PathParam("id") long id);
+
+    /// @param id      The attempt.
+    /// @param number  The turn.
+    /// @param request The answer to give instead.
+    /// @return The attempt as it now stands.
+    @POST
+    @Path("/attempts/{id}/turns/{number}")
+    @Operation(
+            summary = "Answer a turn instead, or edit one and run the attempt again from there",
+            operationId = "amendSmartPipelinesTurn")
+    SupervisorAttempt amendTurn(@PathParam("id") long id,
+                                @PathParam("number") int number,
+                                AmendTurnRequest request);
+
+    /// @param id The attempt.
+    /// @return The attempt as it now stands.
+    @POST
+    @Path("/attempts/{id}/approve")
+    @Operation(
+            summary = "Approve the translation an attempt drafted",
+            operationId = "approveSmartPipelinesAttempt")
+    SupervisorAttempt approve(@PathParam("id") long id);
+
+    /// @param id      The attempt.
+    /// @param request Why, which is required: the learner gives up with it.
+    /// @return The attempt as it now stands.
+    @POST
+    @Path("/attempts/{id}/reject")
+    @Operation(
+            summary = "Reject the translation an attempt drafted, and give its learner up",
+            operationId = "rejectSmartPipelinesAttempt")
+    SupervisorAttempt reject(@PathParam("id") long id, ReasonRequest request);
+
+    /// @param id      The attempt, which is parked.
+    /// @param request How many more tokens and how much more time it may spend.
+    /// @return The attempt as it now stands.
+    @POST
+    @Path("/attempts/{id}/grant")
+    @Operation(
+            summary = "Give a parked attempt more to spend, and carry it on",
+            operationId = "grantSmartPipelinesAttempt")
+    SupervisorAttempt grant(@PathParam("id") long id, GrantRequest request);
+
+    /// @param id The attempt, which is parked.
+    /// @return The attempt as it now stands.
+    @POST
+    @Path("/attempts/{id}/exhaust")
+    @Operation(
+            summary = "Send a parked attempt to the exhaustion step, and carry it on",
+            operationId = "exhaustSmartPipelinesAttempt")
+    SupervisorAttempt exhaust(@PathParam("id") long id);
+
+    // Bindings
+
+    /// @param bindingUuid The binding, which is serving.
+    /// @param request     What should be better, optionally.
+    /// @return What came of it, in words.
+    @POST
+    @Path("/bindings/{bindingUuid}/improve")
+    @Operation(
+            summary = "Ask for a translation that is serving to be made better",
+            operationId = "improveSmartPipelinesBinding")
+    ImproveOutcome improve(@PathParam("bindingUuid") String bindingUuid, ImproveRequest request);
+
+    /// @param bindingUuid The binding, which is provisional.
+    /// @return Its learner as it now stands.
+    @POST
+    @Path("/bindings/{bindingUuid}/accept")
+    @Operation(
+            summary = "Accept a provisional translation now, rather than waiting for the records that would "
+                      + "promote it",
+            operationId = "acceptSmartPipelinesBinding")
+    SupervisorLearner accept(@PathParam("bindingUuid") String bindingUuid);
+
+    /// @param bindingUuid The binding, which is serving.
+    /// @param request     Why, which is required: it is recorded against the attempt that wrote the binding.
+    /// @return How many streams the binding produced output for, which a person may want to reprocess.
+    @POST
+    @Path("/bindings/{bindingUuid}/retract")
+    @Operation(
+            summary = "Take back a translation that is serving, and say how many streams it produced output for",
+            operationId = "retractSmartPipelinesBinding")
+    Integer retract(@PathParam("bindingUuid") String bindingUuid, ReasonRequest request);
 }

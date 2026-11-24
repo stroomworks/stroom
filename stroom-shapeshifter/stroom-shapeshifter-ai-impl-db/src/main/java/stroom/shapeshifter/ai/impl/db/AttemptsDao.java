@@ -490,13 +490,18 @@ public class AttemptsDao implements Attempts {
     /// Across every document, newest first (A28): what the Supervisor view lists. Without their turns —
     /// a page of transcripts is a page nobody reads — which the detail reads for one attempt.
     @Override
-    public Page found(final AttemptCriteria criteria, final Collection<String> docUuids) {
-        if (docUuids.isEmpty()) {
+    public Page found(final AttemptCriteria criteria,
+                      final Collection<String> docUuids,
+                      final Collection<String> pipelineUuids) {
+        if (docUuids.isEmpty() || (pipelineUuids != null && pipelineUuids.isEmpty())) {
             // Nothing this person may see: not every attempt, and not a count of them either.
             return new Page(List.of(), 0L);
         }
         final List<Condition> conditions = new ArrayList<>();
         conditions.add(SHAPESHIFTER_ATTEMPT.DOC_UUID.in(docUuids));
+        if (pipelineUuids != null) {
+            conditions.add(SHAPESHIFTER_ATTEMPT.PIPELINE_UUID.in(pipelineUuids));
+        }
         if (criteria.getDocUuid() != null) {
             conditions.add(SHAPESHIFTER_ATTEMPT.DOC_UUID.eq(criteria.getDocUuid()));
         }

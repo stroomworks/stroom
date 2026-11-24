@@ -19,6 +19,7 @@ package stroom.shapeshifter.ai.doc;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocFinder;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.shapeshifter.ai.element.LearnerDocuments;
@@ -30,7 +31,6 @@ import stroom.shapeshifter.ai.stage.Attempts.Recorded;
 import stroom.shapeshifter.ai.stage.Attempts.Turn;
 import stroom.shapeshifter.ai.stage.Decision;
 import stroom.shapeshifter.ai.stage.Deferrals;
-import stroom.shapeshifter.ai.stage.Deferrals.Deferral;
 import stroom.shapeshifter.ai.stage.DeletedPipelines;
 import stroom.shapeshifter.ai.stage.Guidance;
 import stroom.shapeshifter.ai.stage.Learner;
@@ -45,9 +45,8 @@ import stroom.shapeshifter.shared.ImproveOutcome;
 import stroom.shapeshifter.shared.ImproveRequest;
 import stroom.shapeshifter.shared.LearnerCriteria;
 import stroom.shapeshifter.shared.LearnerRef;
-import stroom.shapeshifter.shared.LearnerRequest;
 import stroom.shapeshifter.shared.LearningMode;
-import stroom.shapeshifter.shared.RejectRequest;
+import stroom.shapeshifter.shared.ReasonRequest;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
 import stroom.shapeshifter.shared.SupervisorAttempt;
 import stroom.shapeshifter.shared.SupervisorGuidance;
@@ -67,27 +66,27 @@ import stroom.util.shared.ResultPage;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-/// The Supervisor of A28: attempts across every Shapeshifter AI document, and what a person may do to
-/// one they are reading.
+/// The Supervisor of A28: the learners of every Smart Pipeline, their attempts, the translations serving them
+/// and the notes left for them, and what a person may do to each.
 ///
 /// What is learned for a feed belongs to the feed's pipeline, and is held to the pipeline's permissions: a
 /// person who may view a pipeline may read its learners' sessions, waiting streams and notes (an attempt's
 /// transcript carries what the model was told about that feed's data), and a person who may edit it may
 /// act on them: leave a note, approve, reject, give more, relearn, give up, improve, accept or retract. A
-/// pipeline since deleted has no permissions to ask; its learning is read by its document's VIEW instead,
-/// and nothing more is done with it (A137). The lists across documents (the learners and attempts of every
-/// document, the backlog) are of the documents a person may view, as an administrator's overview.
+/// pipeline since deleted has no permissions to ask; its learning is read by its Learning Flow's VIEW
+/// instead, and nothing more is done with it (A137). The lists across Learning Flows (the learners and
+/// attempts) are of the Learning Flows a person may view, and of the pipelines they may view.
+///
+/// A request names a learner by its pipeline and element alone. The Learning Flow it runs under is the one
+/// its element names, or, for a pipeline since deleted, the one its learning is listed under.
 @AutoLogged
 public class SupervisorResourceImpl implements SupervisorResource {
 
@@ -139,89 +138,74 @@ public class SupervisorResourceImpl implements SupervisorResource {
         this.docFinderProvider = docFinderProvider;
     }
 
+    // --------------------------------------------------------------------------------
+    // Learners
+
     /// The learning pipelines (design 06 A115, A142): read and paged where the rows are, each named with
-    /// its pipeline and document, and its oldest wait judged against its document's maximum deferral age
-    /// (A57). The documents this person may read go into the query, as they do for the other lists.
+    /// its pipeline and Learning Flow, and its oldest wait judged against its Learning Flow's maximum
+    /// deferral age (A57). The Learning Flows and pipelines this person may view go into the query, so the
+    /// count and the pages are of what they may read.
     @Override
-    public ResultPage<SupervisorLearner> learners(final LearnerCriteria criteria) {
+    @AutoLogged(OperationType.SEARCH)
+    public ResultPage<SupervisorLearner> findLearners(final LearnerCriteria criteria) {
         final LearnerCriteria asked = criteria == null
                 ? new LearnerCriteria()
                 : criteria;
         final Map<String, DocRef> readable = readable(asked.getDocUuid());
         final Map<String, ShapeshifterAiDoc> docs = documents(readable.values());
-        final Set<String> learningOff = docs.values().stream()
-                .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
-                .map(ShapeshifterAiDoc::getUuid)
-                .collect(Collectors.toSet());
         final PageRequest page = asked.getPageRequest() == null
                 ? new PageRequest(0, 100)
                 : asked.getPageRequest();
         final long offset = Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
         final LearningPipelines.Page found = learningPipelinesProvider.get().learners(readable.keySet(),
-                learningOff, asked.getStates(), asked.isShowDeletedPipelines(), offset, pageLength(page));
-        final DocFinder docFinder = docFinderProvider.get();
-        final long now = System.currentTimeMillis();
-        final List<SupervisorLearner> rows = found.learners().stream()
-                .map(row -> row.named(docFinder.decorate(row.getPipeline()),
-                        readable.get(row.getDoc().getUuid()),
-                        row.getOldestWaitMs() != null
-                        && now - row.getOldestWaitMs() > maxDeferralAge(docs, row.getDoc().getUuid()),
-                        belowThreshold(docs.get(row.getDoc().getUuid()), row.getRollingScore())))
-                .toList();
+                learningOff(docs), asked.getStates(), asked.isShowDeletedPipelines(), viewablePipelines(),
+                offset, pageLength(page));
+        final List<SupervisorLearner> rows = named(found.learners(), readable, docs);
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), found.total(), true));
     }
 
-    /// The learners of one pipeline, as its own editor shows them: those of its Shapeshifter AI elements that
-    /// have learned or are learning, under whichever documents they run under. Held to the pipeline's VIEW.
+    /// The learners of one pipeline, as its own editor shows them: those of its AI Translator elements that
+    /// have learned or are learning, under whichever Learning Flows they run under. Held to the pipeline's
+    /// VIEW.
     @Override
-    public List<SupervisorLearner> pipelineLearners(final String pipelineUuid) {
+    @AutoLogged(OperationType.VIEW)
+    public List<SupervisorLearner> fetchPipelineLearners(final String pipelineUuid) {
         if (NullSafe.isBlankString(pipelineUuid) || !mayPipeline(pipelineUuid, DocumentPermission.VIEW)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to read this pipeline");
         }
-        final Map<String, DocRef> every = new LinkedHashMap<>();
-        storeProvider.get().listDocuments().forEach(docRef -> every.put(docRef.getUuid(), docRef));
-        final Map<String, ShapeshifterAiDoc> docs = documents(every.values());
-        final Set<String> learningOff = docs.values().stream()
-                .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
-                .map(ShapeshifterAiDoc::getUuid)
-                .collect(Collectors.toSet());
-        final LearningPipelines.Page found = learningPipelinesProvider.get().learners(every.keySet(),
-                learningOff, List.of(), false, pipelineUuid, 0L, PAGE_LIMIT);
-        final DocFinder docFinder = docFinderProvider.get();
-        final long now = System.currentTimeMillis();
-        return found.learners().stream()
-                .map(row -> row.named(docFinder.decorate(row.getPipeline()),
-                        every.get(row.getDoc().getUuid()),
-                        row.getOldestWaitMs() != null
-                        && now - row.getOldestWaitMs() > maxDeferralAge(docs, row.getDoc().getUuid()),
-                        belowThreshold(docs.get(row.getDoc().getUuid()), row.getRollingScore())))
-                .toList();
+        return pipelineRows(pipelineUuid);
     }
 
-    /// The document a learner runs under, for its pipeline's editor to show where it stands: its flow,
+    /// The Learning Flow a learner runs under, for its pipeline's editor to show where it stands: its flow,
     /// pass mark and limits. Held to the pipeline's VIEW: the settings are how that pipeline's feed is
     /// learned, which a person who may see the pipeline may read without being able to open the document.
     @Override
-    public ShapeshifterAiDoc settings(final String docUuid, final String pipelineUuid, final String elementId) {
-        readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid);
-        return document(docUuid);
+    @AutoLogged(OperationType.VIEW)
+    public ShapeshifterAiDoc fetchSettings(final String pipelineUuid, final String elementId) {
+        final Learner learner = readable(learner(pipelineUuid, elementId));
+        return document(documentOf(learner).orElseThrow(() -> namesNoLearningFlow(learner)));
     }
 
     /// What waits on one learner (design 06 A115), oldest first, a page at a time.
     @Override
-    public ResultPage<BacklogStream> waiting(final String docUuid,
-                                             final String pipelineUuid,
-                                             final String elementId,
-                                             final PageRequest pageRequest) {
-        final Learner learner = readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid);
+    @AutoLogged(OperationType.SEARCH)
+    public ResultPage<BacklogStream> findWaiting(final String pipelineUuid,
+                                                 final String elementId,
+                                                 final PageRequest pageRequest) {
+        final Learner learner = readable(learner(pipelineUuid, elementId));
         final PageRequest page = pageRequest == null
                 ? new PageRequest(0, 100)
                 : pageRequest;
         final long offset = Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
         final Deferrals.Waiting waiting = deferralsProvider.get().waitingOn(learner, offset, pageLength(page));
-        final DocRef doc = new DocRef(ShapeshifterAiDoc.TYPE, docUuid);
-        final long maxAge = maxDeferralAge(documents(List.of(doc)), docUuid);
+        final String docUuid = documentOf(learner).orElse(null);
+        final DocRef doc = docUuid == null
+                ? null
+                : new DocRef(ShapeshifterAiDoc.TYPE, docUuid);
+        final long maxAge = maxDeferralAge(doc == null
+                ? Map.of()
+                : documents(List.of(doc)), docUuid);
         final long now = System.currentTimeMillis();
         final List<BacklogStream> rows = waiting.rows().stream()
                 .map(row -> new BacklogStream(doc, row.inputId(), row.feed(), row.type(), row.failedAgainst(),
@@ -231,43 +215,304 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), waiting.total(), true));
     }
 
-    /// Send a learner back to learn afresh from its next stream (A28, A29), from its row.
+    /// Send a learner back to learn afresh from its next stream (A28, A29).
     @Override
-    public Boolean relearnLearner(final String docUuid, final LearnerRequest request) {
-        final Learner learner = changeable(docUuid, request);
+    @AutoLogged(value = OperationType.PROCESS, verb = "Sending a Smart Pipeline learner back to learn afresh")
+    public SupervisorLearner relearn(final String pipelineUuid,
+                                     final String elementId,
+                                     final ReasonRequest request) {
+        final Learner learner = changeable(learner(pipelineUuid, elementId));
         final String who = securityContextProvider.get().getUserIdentityForAudit();
-        final String reason = NullSafe.isBlankString(request.getReason())
+        final String given = request == null
+                ? null
+                : request.getReason();
+        final String reason = NullSafe.isBlankString(given)
                 ? "Sent back to be learned again by " + who
-                : "Sent back to be learned again by " + who + ": " + request.getReason();
-        final ShapeshifterAiDoc doc = document(docUuid);
+                : "Sent back to be learned again by " + who + ": " + given;
+        final ShapeshifterAiDoc doc = document(runningDocument(learner));
         pipelineScopeProvider.get().scopeRunnable(() ->
                 stageFactoryProvider.get().create().relearn(doc, learner, reason));
-        return Boolean.TRUE;
+        return row(learner);
     }
 
     /// Give a learner up (design 06 A115). The reason is asked for rather than assumed: its streams error
     /// with it.
     @Override
-    public Boolean giveUp(final String docUuid, final LearnerRequest request) {
+    @AutoLogged(value = OperationType.PROCESS, verb = "Giving up a Smart Pipeline learner")
+    public SupervisorLearner giveUp(final String pipelineUuid,
+                                    final String elementId,
+                                    final ReasonRequest request) {
         if (request == null || NullSafe.isBlankString(request.getReason())) {
             throw new IllegalArgumentException("Giving a learner up says why: its streams error with the "
                                                + "reason");
         }
-        final Learner learner = changeable(docUuid, request);
+        final Learner learner = changeable(learner(pipelineUuid, elementId));
         final String by = securityContextProvider.get().getUserIdentityForAudit();
-        final ShapeshifterAiDoc doc = document(docUuid);
+        final ShapeshifterAiDoc doc = document(runningDocument(learner));
         pipelineScopeProvider.get().scopeRunnable(() ->
                 stageFactoryProvider.get().create().giveUp(doc, learner, request.getReason(), by));
-        return Boolean.TRUE;
+        return row(learner);
     }
 
-    /// The learner a request about a row names, where this person may edit its pipeline and the pipeline has
-    /// not been deleted (A137).
-    private Learner changeable(final String docUuid, final LearnerRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("Say which learner: its pipeline and element");
+    // --------------------------------------------------------------------------------
+    // Guidance
+
+    /// What has been said to a learner (A46), oldest first.
+    @Override
+    @AutoLogged(OperationType.VIEW)
+    public List<SupervisorGuidance> fetchGuidance(final String pipelineUuid, final String elementId) {
+        return said(readable(learner(pipelineUuid, elementId)));
+    }
+
+    /// Tell a learner something, without asking for anything to be run.
+    ///
+    /// Held to EDIT on the pipeline rather than VIEW: what is written here is carried into every question
+    /// the learner asks from now on, which is a change to how its feed is learned.
+    @Override
+    @AutoLogged(OperationType.CREATE)
+    public List<SupervisorGuidance> addGuidance(final String pipelineUuid,
+                                                final String elementId,
+                                                final GuidanceRequest request) {
+        if (request == null || NullSafe.isBlankString(request.getMessage())) {
+            throw new IllegalArgumentException("There is nothing to record: the message is empty");
         }
-        return changeable(live(learnerOf(docUuid, request.getLearner())));
+        final Learner learner = changeable(learner(pipelineUuid, elementId));
+        guidanceProvider.get().given(learner, runningDocument(learner), request.getMessage(),
+                securityContextProvider.get().getUserIdentityForAudit());
+        return said(learner);
+    }
+
+    /// Take back something said to a learner. A hint that turned out to be wrong is worse than no hint:
+    /// it is carried into every question the learner asks until it is withdrawn.
+    ///
+    /// Only a hint said to this learner is taken back: an id naming another learner's, even under the same
+    /// Learning Flow, takes nothing back, as permission to change that one is its own pipeline's.
+    ///
+    /// The turns that already carried it still say they did (A45), which is what a re-walk replays: what
+    /// was withdrawn stops being carried, and does not stop having been.
+    @Override
+    @AutoLogged(OperationType.DELETE)
+    public List<SupervisorGuidance> deleteGuidance(final String pipelineUuid,
+                                                   final String elementId,
+                                                   final long id) {
+        final Learner learner = changeable(learner(pipelineUuid, elementId));
+        guidanceProvider.get().withdraw(learner, runningDocument(learner), id);
+        return said(learner);
+    }
+
+    // --------------------------------------------------------------------------------
+    // Attempts
+
+    @Override
+    @AutoLogged(OperationType.SEARCH)
+    public ResultPage<SupervisorAttempt> findAttempts(final AttemptCriteria criteria) {
+        final AttemptCriteria asked = criteria == null
+                ? new AttemptCriteria()
+                : criteria;
+        // The Learning Flows and pipelines this person may see go into the query rather than filtering its
+        // answer: a count taken before the filtering would tell them how many attempts exist that they may
+        // not see, and the pages they turned would come back short with no way to reach the end. One
+        // learner's sessions, as its pipeline's editor asks for them, are held to the pipeline instead, and
+        // may be under any Learning Flow.
+        final Page page = asked.getLearner() == null
+                ? attemptsProvider.get().found(asked, mayRead(asked.getDocUuid()), viewablePipelines())
+                : attemptsProvider.get().found(asked, learnersDocuments(asked.getLearner()));
+        // Which of the page's pipelines are deleted, asked once for the page rather than once a row.
+        final Set<String> deleted = deletedPipelinesProvider.get().deletedOf(page.attempts().stream()
+                .map(attempt -> attempt.attempt().learner().pipelineUuid())
+                .collect(Collectors.toSet()));
+        final List<SupervisorAttempt> rows = page.attempts().stream()
+                .map(attempt -> attempt(attempt, List.of(),
+                        deleted.contains(attempt.attempt().learner().pipelineUuid())))
+                .toList();
+        final long offset = asked.getPageRequest() == null || asked.getPageRequest().getOffset() == null
+                ? 0L
+                : asked.getPageRequest().getOffset();
+        return new ResultPage<>(rows, new PageResponse(offset, rows.size(), page.total(), true));
+    }
+
+    @Override
+    @AutoLogged(OperationType.VIEW)
+    public SupervisorAttempt fetchAttempt(final long id) {
+        return detail(read(id));
+    }
+
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Answering or editing a learning attempt turn")
+    public SupervisorAttempt amendTurn(final long id, final int number, final AmendTurnRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("No answer was given for turn " + number);
+        }
+        final Recorded attempt = stillUnder(live(change(id)));
+        final String answeredBy = securityContextProvider.get().getUserIdentityForAudit();
+        onStage(attempt, (stage, doc) -> stage.amend(doc, id, number, request.getAnswer(), answeredBy));
+        return detail(read(id));
+    }
+
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Approving a drafted translation")
+    public SupervisorAttempt approve(final long id) {
+        final Recorded attempt = stillUnder(live(change(id)));
+        onStage(attempt, (stage, doc) -> stage.approve(doc, bindingOf(attempt)));
+        return detail(read(id));
+    }
+
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Rejecting a drafted translation")
+    public SupervisorAttempt reject(final long id, final ReasonRequest request) {
+        if (request == null || NullSafe.isBlankString(request.getReason())) {
+            throw new IllegalArgumentException("A rejection says why: the learner gives up with the reason");
+        }
+        final Recorded attempt = stillUnder(live(change(id)));
+        onStage(attempt, (stage, doc) -> stage.reject(doc, bindingOf(attempt), request.getReason()));
+        return detail(read(id));
+    }
+
+    /// Give a parked session more to spend (A77), and carry it on.
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Granting a parked learning attempt more to spend")
+    public SupervisorAttempt grant(final long id, final GrantRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Nothing was granted");
+        }
+        final Recorded attempt = stillUnder(live(change(id)));
+        onStage(attempt, (stage, doc) -> stage.grant(doc, id, request.getTokens(), request.getMs()));
+        return detail(read(id));
+    }
+
+    /// Send a parked session to the exhaustion step (A65), and carry it on.
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Sending a parked learning attempt to its exhaustion step")
+    public SupervisorAttempt exhaust(final long id) {
+        final Recorded attempt = stillUnder(live(change(id)));
+        onStage(attempt, (stage, doc) -> stage.exhaust(doc, id));
+        return detail(read(id));
+    }
+
+    // --------------------------------------------------------------------------------
+    // Bindings
+
+    /// Ask for a binding that is already serving to be made better (A46).
+    ///
+    /// Held to EDIT on the binding's pipeline, as approving a draft is: it spends a model's tokens and may
+    /// rebind the learner.
+    ///
+    /// It runs while the request is open, which is the one thing here that is not yet what A46 asks for:
+    /// the ruling says an improvement is taken by the deferred worker. The stage says why in
+    /// `Stage.improve` — the worker would need the attempt to remember that it is an improvement and to
+    /// find its sample in the regression set rather than in the stream store. Nothing waits on it
+    /// meanwhile: the incumbent serves every stream throughout, and a candidate takes over only through
+    /// the ordinary gate.
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Asking for a serving translation to be improved")
+    public ImproveOutcome improve(final String bindingUuid, final ImproveRequest request) {
+        final Learner learner = changeableBinding(bindingUuid);
+        final String by = securityContextProvider.get().getUserIdentityForAudit();
+        final String message = request == null
+                ? null
+                : request.getMessage();
+        final ShapeshifterAiDoc doc = document(runningDocument(learner));
+        final Decision decision = pipelineScopeProvider.get().scopeResult(() ->
+                stageFactoryProvider.get().create().improve(doc, bindingUuid, message, by).decision());
+        // Described from the one switch that describes every decision: the stage pane, the error stream
+        // and this button say the same thing because they say it from the same place.
+        return new ImproveOutcome(StepDetails.describe(decision));
+    }
+
+    /// Accept a provisional binding now (design 01 §6, §11.6), rather than waiting for the records
+    /// that would promote it.
+    ///
+    /// Held to EDIT on the binding's pipeline, as the other acts that change what serves a learner are.
+    /// Not a way round the gate: the binding cleared the promotion floor when it was bound, and what is
+    /// skipped is the wait for more records to judge it on.
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Accepting a provisional translation")
+    public SupervisorLearner accept(final String bindingUuid) {
+        final Learner learner = changeableBinding(bindingUuid);
+        final String by = securityContextProvider.get().getUserIdentityForAudit();
+        final ShapeshifterAiDoc doc = document(runningDocument(learner));
+        pipelineScopeProvider.get().scopeRunnable(() ->
+                stageFactoryProvider.get().create().accept(doc, bindingUuid, by));
+        return row(learner);
+    }
+
+    /// Take back a binding that is serving (A28, design 01 §11.6).
+    ///
+    /// The reason is asked for rather than assumed: it is recorded against the attempt that wrote the binding.
+    ///
+    /// Answers how many streams the binding produced output for, which is the one consequence the person
+    /// cannot see for themselves, and what they would reprocess (A129).
+    ///
+    /// Held to EDIT on the binding's pipeline, as approving a draft is: it changes what serves it.
+    @Override
+    @AutoLogged(value = OperationType.PROCESS, verb = "Retracting a serving translation")
+    public Integer retract(final String bindingUuid, final ReasonRequest request) {
+        if (request == null || NullSafe.isBlankString(request.getReason())) {
+            throw new IllegalArgumentException("A retraction says why: the reason is recorded against "
+                                               + "the attempt that wrote the binding");
+        }
+        final Learner learner = changeableBinding(bindingUuid);
+        final String by = securityContextProvider.get().getUserIdentityForAudit();
+        final ShapeshifterAiDoc doc = document(runningDocument(learner));
+        return pipelineScopeProvider.get().scopeResult(() ->
+                stageFactoryProvider.get().create().retract(doc, bindingUuid, request.getReason(), by));
+    }
+
+    // --------------------------------------------------------------------------------
+    // Rows
+
+    /// One pipeline's learners, under every Learning Flow, named.
+    private List<SupervisorLearner> pipelineRows(final String pipelineUuid) {
+        final Map<String, DocRef> every = new LinkedHashMap<>();
+        storeProvider.get().listDocuments().forEach(docRef -> every.put(docRef.getUuid(), docRef));
+        final Map<String, ShapeshifterAiDoc> docs = documents(every.values());
+        final LearningPipelines.Page found = learningPipelinesProvider.get().learners(every.keySet(),
+                learningOff(docs), List.of(), false, List.of(pipelineUuid), 0L, PAGE_LIMIT);
+        return named(found.learners(), every, docs);
+    }
+
+    /// The learner's row as it now stands, for an act on it to answer with; null where it is no longer listed.
+    private SupervisorLearner row(final Learner learner) {
+        return pipelineRows(learner.pipelineUuid()).stream()
+                .filter(row -> learner.elementId().equals(row.getLearner().getElementId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /// The rows, each named with its pipeline and Learning Flow, its wait judged against its Learning Flow's
+    /// maximum deferral age, and its rolling score against its relearn threshold.
+    private List<SupervisorLearner> named(final List<SupervisorLearner> rows,
+                                          final Map<String, DocRef> docRefs,
+                                          final Map<String, ShapeshifterAiDoc> docs) {
+        final DocFinder docFinder = docFinderProvider.get();
+        final long now = System.currentTimeMillis();
+        return rows.stream()
+                .map(row -> row.named(docFinder.decorate(row.getPipeline()),
+                        docRefs.get(row.getDoc().getUuid()),
+                        row.getOldestWaitMs() != null
+                        && now - row.getOldestWaitMs() > maxDeferralAge(docs, row.getDoc().getUuid()),
+                        belowThreshold(docs.get(row.getDoc().getUuid()), row.getRollingScore())))
+                .toList();
+    }
+
+    /// The Learning Flows given with learning turned off, whose learners are said to be so.
+    private static Set<String> learningOff(final Map<String, ShapeshifterAiDoc> docs) {
+        return docs.values().stream()
+                .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
+                .map(ShapeshifterAiDoc::getUuid)
+                .collect(Collectors.toSet());
+    }
+
+    /// The pipelines with learning this person may see in a list: those they may view, and those since
+    /// deleted, whose learning is read by the Learning Flow it is listed under, which the lists also require.
+    /// Only the few pipelines that have learning are asked about.
+    private Set<String> viewablePipelines() {
+        final Set<String> pipelines = learningPipelinesProvider.get().pipelines();
+        final Set<String> deleted = deletedPipelinesProvider.get().deletedOf(pipelines);
+        return pipelines.stream()
+                .filter(pipelineUuid -> deleted.contains(pipelineUuid)
+                                        || mayPipeline(pipelineUuid, DocumentPermission.VIEW))
+                .collect(Collectors.toSet());
     }
 
     /// The documents, read once each; one that cannot be read is left out, and its rows take the defaults.
@@ -298,227 +543,8 @@ public class SupervisorResourceImpl implements SupervisorResource {
     private static long maxDeferralAge(final Map<String, ShapeshifterAiDoc> docs, final String docUuid) {
         final ShapeshifterAiDoc doc = docs.get(docUuid);
         return doc == null
-                ? ShapeshifterAiDoc.builder().build().getMaxDeferralAgeMs()
+                ? ShapeshifterAiDoc.builder().uuid("defaults").build().getMaxDeferralAgeMs()
                 : doc.getMaxDeferralAgeMs();
-    }
-
-    /// What is waiting on a session (design 04 §6), a row per stream, the raised ones first and then the
-    /// longest waiting: the backlog an operator watches form and drain. Raised is computed as it is read,
-    /// against each document's maximum deferral age (A78, A79).
-    @Override
-    public ResultPage<BacklogStream> backlog(final String docUuid, final PageRequest pageRequest) {
-        final PageRequest page = pageRequest == null
-                ? new PageRequest(0, 100)
-                : pageRequest;
-        final Map<String, DocRef> readable = readable(docUuid);
-        final long now = System.currentTimeMillis();
-        final List<BacklogStream> all = new ArrayList<>();
-        for (final DocRef docRef : readable.values()) {
-            // A document that cannot be read — deleted since it was listed — must not take the whole
-            // backlog down with it: its rows are shown against the default age.
-            long maxAge = ShapeshifterAiDoc.builder().build().getMaxDeferralAgeMs();
-            try {
-                final ShapeshifterAiDoc doc = storeProvider.get().readDocument(docRef);
-                if (doc != null) {
-                    maxAge = doc.getMaxDeferralAgeMs();
-                }
-            } catch (final RuntimeException e) {
-                LOGGER.debug(() -> LogUtil.message("Document {} could not be read for the backlog: {}",
-                        docRef.getUuid(), e.getMessage()));
-            }
-            for (final Deferral row : deferralsProvider.get().forDocument(docRef.getUuid())) {
-                all.add(new BacklogStream(docRef, row.inputId(), row.feed(), row.type(), row.failedAgainst(),
-                        row.reason(), row.failingRecords(), row.firstDeferredMs(), row.attempts(),
-                        row.raised(maxAge, now)));
-            }
-        }
-        all.sort(Comparator.comparing(BacklogStream::isRaised).reversed()
-                .thenComparingLong(BacklogStream::getFirstDeferredMs));
-        final int offset = (int) Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
-        final int length = pageLength(page);
-        final List<BacklogStream> rows = all.stream().skip(offset).limit(length).toList();
-        return new ResultPage<>(rows, new PageResponse((long) offset, rows.size(), (long) all.size(), true));
-    }
-
-    /// Give a parked session more to spend (A77), and carry it on.
-    @Override
-    public SupervisorAttempt grant(final long id, final GrantRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("Nothing was granted");
-        }
-        final Recorded attempt = live(change(id));
-        onStage(attempt, (stage, doc) -> stage.grant(doc, id, request.getTokens(), request.getMs()));
-        return detail(read(id));
-    }
-
-    /// Send a parked session to the exhaustion step (A65), and carry it on.
-    @Override
-    public SupervisorAttempt exhaust(final long id) {
-        final Recorded attempt = live(change(id));
-        onStage(attempt, (stage, doc) -> stage.exhaust(doc, id));
-        return detail(read(id));
-    }
-
-    @Override
-    public ResultPage<SupervisorAttempt> find(final AttemptCriteria criteria) {
-        final AttemptCriteria asked = criteria == null
-                ? new AttemptCriteria()
-                : criteria;
-        // The documents this person may see go into the query rather than filtering its answer: a count
-        // taken before the filtering would tell them how many attempts exist on documents they may not
-        // see, and the pages they turned would come back short with no way to reach the end. One learner's
-        // sessions, as its pipeline's editor asks for them, are held to the pipeline instead, and may be
-        // under any document.
-        final Page page = attemptsProvider.get().found(asked, asked.getLearner() == null
-                ? mayRead(asked.getDocUuid())
-                : learnersDocuments(asked.getLearner()));
-        // Which of the page's pipelines are deleted, asked once for the page rather than once a row.
-        final Set<String> deleted = deletedPipelinesProvider.get().deletedOf(page.attempts().stream()
-                .map(attempt -> attempt.attempt().learner().pipelineUuid())
-                .collect(Collectors.toSet()));
-        final List<SupervisorAttempt> rows = page.attempts().stream()
-                .map(attempt -> attempt(attempt, List.of(),
-                        deleted.contains(attempt.attempt().learner().pipelineUuid())))
-                .toList();
-        final long offset = asked.getPageRequest() == null || asked.getPageRequest().getOffset() == null
-                ? 0L
-                : asked.getPageRequest().getOffset();
-        return new ResultPage<>(rows, new PageResponse(offset, rows.size(), page.total(), true));
-    }
-
-    /// Ask for a binding that is already serving to be made better (A46).
-    ///
-    /// Held to EDIT on the binding's pipeline, as approving a draft is: it spends a model's tokens and may
-    /// rebind the learner.
-    ///
-    /// It runs while the request is open, which is the one thing here that is not yet what A46 asks for:
-    /// the ruling says an improvement is taken by the deferred worker. The stage says why in
-    /// `Stage.improve` — the worker would need the attempt to remember that it is an improvement and to
-    /// find its sample in the regression set rather than in the stream store. Nothing waits on it
-    /// meanwhile: the incumbent serves every stream throughout, and a candidate takes over only through
-    /// the ordinary gate.
-    @Override
-    public ImproveOutcome improve(final String docUuid, final String bindingUuid, final ImproveRequest request) {
-        changeableBinding(docUuid, bindingUuid);
-        final String by = securityContextProvider.get().getUserIdentityForAudit();
-        final String message = request == null
-                ? null
-                : request.getMessage();
-        final ShapeshifterAiDoc doc = document(docUuid);
-        final Decision decision = pipelineScopeProvider.get().scopeResult(() ->
-                stageFactoryProvider.get().create().improve(doc, bindingUuid, message, by).decision());
-        // Described from the one switch that describes every decision: the stage pane, the error stream
-        // and this button say the same thing because they say it from the same place.
-        return new ImproveOutcome(StepDetails.describe(decision));
-    }
-
-    /// Accept a provisional binding now (design 01 §6, §11.6), rather than waiting for the records
-    /// that would promote it.
-    ///
-    /// Held to EDIT on the binding's pipeline, as the other acts that change what serves a learner are.
-    /// Not a way round the gate: the binding cleared the promotion floor when it was bound, and what is
-    /// skipped is the wait for more records to judge it on.
-    @Override
-    public Boolean accept(final String docUuid, final String bindingUuid) {
-        changeableBinding(docUuid, bindingUuid);
-        final String by = securityContextProvider.get().getUserIdentityForAudit();
-        final ShapeshifterAiDoc doc = document(docUuid);
-        pipelineScopeProvider.get().scopeRunnable(() ->
-                stageFactoryProvider.get().create().accept(doc, bindingUuid, by));
-        return Boolean.TRUE;
-    }
-
-    /// Take back a binding that is serving (A28, design 01 §11.6).
-    ///
-    /// The reason is asked for rather than assumed: it is recorded against the attempt that wrote the binding.
-    ///
-    /// Answers how many streams the binding produced output for, which is the one consequence the person
-    /// cannot see for themselves, and what they would reprocess (A129).
-    ///
-    /// Held to EDIT on the binding's pipeline, as approving a draft is: it changes what serves it.
-    @Override
-    public Integer retract(final String docUuid, final String bindingUuid, final RejectRequest request) {
-        if (request == null || NullSafe.isBlankString(request.getReason())) {
-            throw new IllegalArgumentException("A retraction says why: the reason is recorded against "
-                                               + "the attempt that wrote the binding");
-        }
-        changeableBinding(docUuid, bindingUuid);
-        final String by = securityContextProvider.get().getUserIdentityForAudit();
-        final ShapeshifterAiDoc doc = document(docUuid);
-        return pipelineScopeProvider.get().scopeResult(() ->
-                stageFactoryProvider.get().create().retract(doc, bindingUuid, request.getReason(), by));
-    }
-
-    /// What has been said to a learner (A46), oldest first.
-    @Override
-    public List<SupervisorGuidance> guidance(final String docUuid,
-                                             final String pipelineUuid,
-                                             final String elementId) {
-        return said(readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid));
-    }
-
-    /// Tell a learner something, without asking for anything to be run.
-    ///
-    /// Held to EDIT on the pipeline rather than VIEW: what is written here is carried into every question
-    /// the learner asks from now on, which is a change to how its feed is learned.
-    @Override
-    public List<SupervisorGuidance> hint(final String docUuid, final GuidanceRequest request) {
-        if (request == null || NullSafe.isBlankString(request.getMessage())) {
-            throw new IllegalArgumentException("There is nothing to record: the message is empty");
-        }
-        final Learner learner = changeable(live(learnerOf(docUuid, request.getLearner())));
-        guidanceProvider.get().given(learner, docUuid, request.getMessage(),
-                securityContextProvider.get().getUserIdentityForAudit());
-        return said(learner);
-    }
-
-    /// Take back something said to a learner. A hint that turned out to be wrong is worse than no hint:
-    /// it is carried into every question the learner asks until it is withdrawn.
-    ///
-    /// The turns that already carried it still say they did (A45), which is what a re-walk replays: what
-    /// was withdrawn stops being carried, and does not stop having been.
-    @Override
-    public List<SupervisorGuidance> withdraw(final String docUuid,
-                                             final long id,
-                                             final String pipelineUuid,
-                                             final String elementId) {
-        final Learner learner = changeable(live(learnerOf(docUuid,
-                new LearnerRef(pipelineUuid, elementId))));
-        guidanceProvider.get().withdraw(docUuid, id);
-        return said(learner);
-    }
-
-    @Override
-    public SupervisorAttempt fetch(final long id) {
-        return detail(read(id));
-    }
-
-    @Override
-    public SupervisorAttempt amend(final long id, final int number, final AmendTurnRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("No answer was given for turn " + number);
-        }
-        final Recorded attempt = stillUnder(live(change(id)));
-        final String answeredBy = securityContextProvider.get().getUserIdentityForAudit();
-        onStage(attempt, (stage, doc) -> stage.amend(doc, id, number, request.getAnswer(), answeredBy));
-        return detail(read(id));
-    }
-
-    @Override
-    public SupervisorAttempt approve(final long id) {
-        final Recorded attempt = live(change(id));
-        onStage(attempt, (stage, doc) -> stage.approve(doc, bindingOf(attempt)));
-        return detail(read(id));
-    }
-
-    @Override
-    public SupervisorAttempt reject(final long id, final RejectRequest request) {
-        if (request == null || request.getReason() == null || request.getReason().isBlank()) {
-            throw new IllegalArgumentException("A rejection says why: the learner gives up with the reason");
-        }
-        final Recorded attempt = live(change(id));
-        onStage(attempt, (stage, doc) -> stage.reject(doc, bindingOf(attempt), request.getReason()));
-        return detail(read(id));
     }
 
     private List<SupervisorGuidance> said(final Learner learner) {
@@ -537,6 +563,54 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return Math.max(1, Math.min(asked, PAGE_LIMIT));
     }
 
+    // --------------------------------------------------------------------------------
+    // Learners and the Learning Flows they run under
+
+    /// The learner a request names by its pipeline and element.
+    private static Learner learner(final String pipelineUuid, final String elementId) {
+        if (NullSafe.isBlankString(pipelineUuid) || NullSafe.isBlankString(elementId)) {
+            throw new IllegalArgumentException("Say which learner: its pipeline and element");
+        }
+        return new Learner(pipelineUuid, elementId);
+    }
+
+    /// The learner a row names.
+    private static Learner learner(final LearnerRef ref) {
+        if (ref == null) {
+            throw new IllegalArgumentException("Say which learner: its pipeline and element");
+        }
+        return learner(ref.getPipelineUuid(), ref.getElementId());
+    }
+
+    /// The Learning Flow the learner runs under: as its pipeline's element says now, or for a pipeline since
+    /// deleted, which says nothing, as the learning pipelines list says, so that what it learned can still be
+    /// read from the Learning Flow it is listed under (A137), whether or not it ever bound anything.
+    private Optional<String> documentOf(final Learner learner) {
+        return deletedPipelinesProvider.get().isDeleted(learner.pipelineUuid())
+                ? learningPipelinesProvider.get().documentOf(learner)
+                : learnerDocumentsProvider.get().documentOf(learner);
+    }
+
+    /// The Learning Flow a live learner runs under, which a change to it is made under.
+    private String runningDocument(final Learner learner) {
+        return learnerDocumentsProvider.get().documentOf(learner)
+                .orElseThrow(() -> namesNoLearningFlow(learner));
+    }
+
+    private static IllegalStateException namesNoLearningFlow(final Learner learner) {
+        return new IllegalStateException("Element " + learner.elementId() + " of pipeline "
+                                         + learner.pipelineUuid() + " doesn't name a Learning Flow");
+    }
+
+    private ShapeshifterAiDoc document(final String docUuid) {
+        final ShapeshifterAiDoc doc = storeProvider.get().readDocument(
+                new DocRef(ShapeshifterAiDoc.TYPE, docUuid));
+        if (doc == null) {
+            throw new IllegalArgumentException("There is no Learning Flow " + docUuid);
+        }
+        return doc;
+    }
+
     /// The documents this person may read, by uuid and keeping their names, narrowed to the one they
     /// asked about if they asked about one. A handful per installation, so asking the store about each
     /// costs nothing next to the query it saves.
@@ -549,25 +623,59 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return readable;
     }
 
-    /// The learner a request names, as the row it was made from carried it (design 06 phase J slice 2b).
-    private static Learner learner(final LearnerRef ref) {
-        if (ref == null || NullSafe.isBlankString(ref.getPipelineUuid())
-            || NullSafe.isBlankString(ref.getElementId())) {
-            throw new IllegalArgumentException("Say which learner: its pipeline and element");
-        }
-        return new Learner(ref.getPipelineUuid(), ref.getElementId());
+    /// The documents a learner's sessions may be under, where this person may read its pipeline: every
+    /// document, since its pipeline may have run under more than one; none where they may not.
+    private List<String> learnersDocuments(final LearnerRef ref) {
+        final Learner learner = learner(ref);
+        return storeProvider.get().listDocuments().stream()
+                .map(DocRef::getUuid)
+                .filter(uuid -> mayLearner(learner, uuid, DocumentPermission.VIEW))
+                .toList();
     }
 
-    /// The learner a request names, held to the document the request was permitted on. The request names
-    /// the two separately and the permission was the document's: without this, a person who may edit one
-    /// document could act on another's learner by naming it.
-    private Learner learnerOf(final String docUuid, final LearnerRef ref) {
-        final Learner learner = learner(ref);
-        if (!runsUnder(learner, docUuid)) {
-            throw new IllegalArgumentException("Element " + learner.elementId() + " of pipeline "
-                                               + learner.pipelineUuid() + " does not run under this document");
+    /// The documents this person may see, narrowed to the one they asked about if they asked about one.
+    private List<String> mayRead(final String asked) {
+        return storeProvider.get().listDocuments().stream()
+                .map(DocRef::getUuid)
+                .filter(uuid -> asked == null || asked.equals(uuid))
+                .filter(uuid -> may(uuid, DocumentPermission.VIEW))
+                .toList();
+    }
+
+    // --------------------------------------------------------------------------------
+    // Permissions
+
+    /// The learner, where this person may view its pipeline (or, for a pipeline since deleted, the Learning
+    /// Flow its learning is listed under).
+    private Learner readable(final Learner learner) {
+        if (!mayLearner(learner, documentOf(learner).orElse(null), DocumentPermission.VIEW)) {
+            throw new PermissionException(securityContextProvider.get().getUserRef(),
+                    "You do not have permission to read the pipeline of element " + learner.elementId());
         }
         return learner;
+    }
+
+    /// The learner, where this person may edit its pipeline and the pipeline has not been deleted (A137).
+    /// Permission is asked first, so a person who may not read the pipeline isn't told it was deleted.
+    private Learner changeable(final Learner learner) {
+        live(readable(learner));
+        if (!mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
+            throw new PermissionException(securityContextProvider.get().getUserRef(),
+                    "You do not have permission to change how the pipeline of element " + learner.elementId()
+                    + " learns");
+        }
+        return learner;
+    }
+
+    /// The learner of a binding this person may change. A binding that isn't there answers as one they may
+    /// not read, or the answer would say which bindings exist.
+    private Learner changeableBinding(final String bindingUuid) {
+        final Learner learner = learnerBindingsProvider.get().byUuid(bindingUuid)
+                .map(LearnerBindings.Held::learner)
+                .filter(held -> mayLearner(held, documentOf(held).orElse(null), DocumentPermission.VIEW))
+                .orElseThrow(() -> new PermissionException(securityContextProvider.get().getUserRef(),
+                        "You do not have permission to change binding " + bindingUuid));
+        return changeable(learner);
     }
 
     /// An attempt whose pipeline has not been deleted. A deleted pipeline's learning is kept to be read
@@ -588,52 +696,20 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return learner;
     }
 
-    /// A binding this person may change: its learner runs under the document named, its pipeline has not
-    /// been deleted, and they may edit the pipeline. A binding that isn't there answers as one they may not
-    /// change, or the answer would say which bindings exist.
-    private void changeableBinding(final String docUuid, final String bindingUuid) {
-        final Learner learner = learnerBindingsProvider.get().byUuid(bindingUuid)
-                .map(held -> held.learner())
-                .filter(held -> runsUnder(held, docUuid))
-                .orElseThrow(() -> new PermissionException(securityContextProvider.get().getUserRef(),
-                        "You do not have permission to change binding " + bindingUuid));
-        changeable(live(learner));
-    }
-
-    /// An attempt whose learner still runs under the document it was learning for. An attempt is history
-    /// and keeps its document, but a change made from one is a change to its learner: once the pipeline
-    /// has been pointed at another document, the old document's editors are no longer the ones to make it.
+    /// An attempt whose learner still runs under the Learning Flow it was learning for. An attempt is history
+    /// and keeps its Learning Flow, but a change made from one is a change to its learner, made with its
+    /// Learning Flow's settings: once the pipeline has been pointed at another Learning Flow, those settings
+    /// are no longer the ones it learns by, so the change is made from the Learning Flow it names now.
     private Recorded stillUnder(final Recorded attempt) {
-        if (!runsUnder(attempt.attempt().learner(), attempt.attempt().docUuid())) {
+        final boolean runsUnder = documentOf(attempt.attempt().learner())
+                .filter(attempt.attempt().docUuid()::equals)
+                .isPresent();
+        if (!runsUnder) {
             throw new IllegalStateException("Attempt " + attempt.id() + " was learning for a pipeline that no "
-                                            + "longer runs under its document; act on it from the document "
-                                            + "the pipeline names now");
+                                            + "longer runs under its Learning Flow; act on it from the "
+                                            + "Learning Flow the pipeline names now");
         }
         return attempt;
-    }
-
-    /// Whether the learner runs under the document: as its pipeline says now, or for a pipeline since
-    /// deleted, which says nothing, as the learning pipelines list says, so that what it learned can still
-    /// be read from the document it is listed under (A137) — whether or not it ever bound anything.
-    /// Nothing is changed for a deleted pipeline's learner, so this lets a person read and no more.
-    private boolean runsUnder(final Learner learner, final String docUuid) {
-        final Optional<String> runsUnder = deletedPipelinesProvider.get().isDeleted(learner.pipelineUuid())
-                ? learningPipelinesProvider.get().documentOf(learner)
-                : learnerDocumentsProvider.get().documentOf(learner);
-        return runsUnder.filter(docUuid::equals).isPresent();
-    }
-
-    private static LearnerRef ref(final Learner learner) {
-        return new LearnerRef(learner.pipelineUuid(), learner.elementId());
-    }
-
-    private ShapeshifterAiDoc document(final String docUuid) {
-        final ShapeshifterAiDoc doc = storeProvider.get().readDocument(
-                new DocRef(ShapeshifterAiDoc.TYPE, docUuid));
-        if (doc == null) {
-            throw new IllegalArgumentException("There is no Learning Flow " + docUuid);
-        }
-        return doc;
     }
 
     /// An attempt a person may read. An attempt they may not see and an attempt that never existed
@@ -660,25 +736,6 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return attempt;
     }
 
-    /// The learner, where this person may view its pipeline (or, for a pipeline since deleted, its document).
-    private Learner readable(final Learner learner, final String docUuid) {
-        if (!mayLearner(learner, docUuid, DocumentPermission.VIEW)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to read the pipeline of element " + learner.elementId());
-        }
-        return learner;
-    }
-
-    /// The learner, where this person may edit its pipeline. Called once the pipeline is known to be live.
-    private Learner changeable(final Learner learner) {
-        if (!mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContextProvider.get().getUserRef(),
-                    "You do not have permission to change how the pipeline of element " + learner.elementId()
-                    + " learns");
-        }
-        return learner;
-    }
-
     /// Whether this person may do a thing to a learner: by its pipeline's permission, or, for a pipeline since
     /// deleted, which has none to ask, by its document's, to read alone. Nothing is changed for a deleted
     /// pipeline's learner (A137), so a change asked of one is refused.
@@ -699,26 +756,8 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return new LearnerAccess(securityContextProvider, deletedPipelinesProvider);
     }
 
-    /// The documents a learner's sessions may be under, where this person may read its pipeline: every
-    /// document, since its pipeline may have run under more than one; none where they may not.
-    private List<String> learnersDocuments(final LearnerRef ref) {
-        final Learner learner = learner(ref);
-        return storeProvider.get().listDocuments().stream()
-                .map(DocRef::getUuid)
-                .filter(uuid -> mayLearner(learner, uuid, DocumentPermission.VIEW))
-                .toList();
-    }
-
-    /// The documents this person may see, narrowed to the one they asked about if they asked about one.
-    /// A handful of documents per installation, so asking the store about each costs nothing next to the
-    /// query it saves.
-    private List<String> mayRead(final String asked) {
-        return storeProvider.get().listDocuments().stream()
-                .map(DocRef::getUuid)
-                .filter(uuid -> asked == null || asked.equals(uuid))
-                .filter(uuid -> may(uuid, DocumentPermission.VIEW))
-                .toList();
-    }
+    // --------------------------------------------------------------------------------
+    // Attempts as the client reads them
 
     private String bindingOf(final Recorded attempt) {
         if (attempt.bindingUuid() == null) {
@@ -753,7 +792,7 @@ public class SupervisorResourceImpl implements SupervisorResource {
         return new SupervisorAttempt(
                 attempt.id(),
                 new DocRef(ShapeshifterAiDoc.TYPE, attempt.attempt().docUuid()),
-                ref(attempt.attempt().learner()),
+                new LearnerRef(attempt.attempt().learner().pipelineUuid(), attempt.attempt().learner().elementId()),
                 attempt.attempt().feed(),
                 attempt.attempt().type(),
                 attempt.attempt().inputId(),

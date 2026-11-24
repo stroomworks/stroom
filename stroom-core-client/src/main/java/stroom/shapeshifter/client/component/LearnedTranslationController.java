@@ -124,7 +124,7 @@ public class LearnedTranslationController extends Controller {
         final String element = elementId;
         restFactory
                 .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.pipelineLearners(pipeline.getUuid()))
+                .method(resource -> resource.fetchPipelineLearners(pipeline.getUuid()))
                 .onSuccess(learners -> {
                     if (request != asked) {
                         return;

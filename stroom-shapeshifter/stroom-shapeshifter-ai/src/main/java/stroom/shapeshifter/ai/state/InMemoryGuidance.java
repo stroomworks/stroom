@@ -52,8 +52,10 @@ public final class InMemoryGuidance implements Guidance {
     }
 
     @Override
-    public synchronized void withdraw(final String docUuid, final long id) {
-        rows.removeIf(row -> row.docUuid().equals(docUuid) && row.given().id() == id);
+    public synchronized void withdraw(final Learner learner, final String docUuid, final long id) {
+        rows.removeIf(row -> row.learner().equals(learner)
+                             && row.docUuid().equals(docUuid)
+                             && row.given().id() == id);
     }
 
     /// What has been said to the learner, brought to the document it runs under (see

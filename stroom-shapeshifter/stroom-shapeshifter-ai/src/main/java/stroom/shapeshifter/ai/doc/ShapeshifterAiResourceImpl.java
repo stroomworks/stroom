@@ -18,6 +18,7 @@ package stroom.shapeshifter.ai.doc;
 
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.shapeshifter.ai.learning.Templates;
 import stroom.shapeshifter.shared.BuiltInTemplates;
 import stroom.shapeshifter.shared.ShapeshifterAiDoc;
@@ -44,6 +45,7 @@ public class ShapeshifterAiResourceImpl implements ShapeshifterAiResource {
     }
 
     @Override
+    @AutoLogged(OperationType.VIEW)
     public ShapeshifterAiDoc fetch(final String uuid) {
         return documentResourceHelperProvider.get().read(
                 storeProvider.get(),
@@ -51,11 +53,13 @@ public class ShapeshifterAiResourceImpl implements ShapeshifterAiResource {
     }
 
     @Override
-    public BuiltInTemplates templates() {
+    @AutoLogged(OperationType.VIEW)
+    public BuiltInTemplates fetchTemplates() {
         return new BuiltInTemplates(Templates.VERSION, Templates.builtIns());
     }
 
     @Override
+    @AutoLogged(OperationType.UPDATE)
     public ShapeshifterAiDoc update(final String uuid, final ShapeshifterAiDoc doc) {
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new EntityServiceException("The document UUID must match the update UUID");

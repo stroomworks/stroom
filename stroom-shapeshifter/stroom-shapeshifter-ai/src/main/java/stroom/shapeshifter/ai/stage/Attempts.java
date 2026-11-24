@@ -193,7 +193,18 @@ public interface Attempts {
     ///                 are given and the pages they turn are of what they may read and not of what
     ///                 exists. Empty means none, and answers with nothing.
     /// @return The page the criteria asked for, and how many attempts match it in all.
-    Page found(AttemptCriteria criteria, Collection<String> docUuids);
+    default Page found(final AttemptCriteria criteria, final Collection<String> docUuids) {
+        return found(criteria, docUuids, null);
+    }
+
+    /// Attempts across every document, newest first, of the pipelines given.
+    ///
+    /// @param criteria      What a person looking for one would know.
+    /// @param docUuids      The documents to look in, as [#found(AttemptCriteria, Collection)] takes them.
+    /// @param pipelineUuids The pipelines to look in: those the person asking may view, so that the count
+    ///                      and pages are of what they may read. Null for every pipeline; empty answers empty.
+    /// @return The page the criteria asked for, and how many attempts match it in all.
+    Page found(AttemptCriteria criteria, Collection<String> docUuids, Collection<String> pipelineUuids);
 
 
     // --------------------------------------------------------------------------------

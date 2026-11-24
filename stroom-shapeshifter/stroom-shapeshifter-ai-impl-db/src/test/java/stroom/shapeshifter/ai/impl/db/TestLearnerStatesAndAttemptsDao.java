@@ -661,6 +661,17 @@ class TestLearnerStatesAndAttemptsDao {
                 .doesNotContain(first, second);
         assertThat(attempts.found(new AttemptCriteria(), List.of()).total())
                 .describedAs("nor counted, or the count says how many exist elsewhere").isZero();
+        final Page ofOnePipeline = attempts.found(new AttemptCriteria(), List.of(doc, other),
+                List.of("pipeline-" + doc));
+        assertThat(ofOnePipeline.attempts())
+                .extracting(Recorded::id)
+                .describedAs("of the pipelines the person may view, and of no other")
+                .containsExactly(first);
+        assertThat(ofOnePipeline.total())
+                .describedAs("counted the same way, so pages don't come back short")
+                .isOne();
+        assertThat(attempts.found(new AttemptCriteria(), List.of(doc, other), List.of()).total())
+                .describedAs("no pipeline the person may view, nothing counted").isZero();
         assertThat(found(new AttemptCriteria(null, null, doc, null, null, null)))
                 .containsExactly(second, first);
         assertThat(found(new AttemptCriteria(null, null, doc, "OTHER-FEED", null, null)))
@@ -753,18 +764,23 @@ class TestLearnerStatesAndAttemptsDao {
                 .hasSize(1);
         assertThat(guidance.standing(learner("nobody"))).isEmpty();
 
-        guidance.withdraw(DOC, first);
+        guidance.withdraw(LEARNER, DOC, first);
         assertThat(guidance.standing(LEARNER))
                 .describedAs("a hint that turned out to be wrong is worse than no hint")
                 .extracting(Given::id).containsExactly(second);
-        guidance.withdraw("another-document", second);
+        guidance.withdraw(LEARNER, "another-document", second);
         assertThat(guidance.standing(LEARNER))
                 .describedAs("and taking one back is by document as well as id, so a mistyped id cannot "
                              + "take back somebody else's")
                 .hasSize(1);
+        guidance.withdraw(OTHER, DOC, second);
+        assertThat(guidance.standing(LEARNER))
+                .describedAs("nor by naming another learner under the same document, whose pipeline's "
+                             + "permission is not this one's")
+                .hasSize(1);
 
-        guidance.withdraw(DOC, second);
-        guidance.standing(OTHER).forEach(given -> guidance.withdraw(DOC, given.id()));
+        guidance.withdraw(LEARNER, DOC, second);
+        guidance.standing(OTHER).forEach(given -> guidance.withdraw(OTHER, DOC, given.id()));
     }
 
 }

@@ -51,7 +51,15 @@ public interface Guidance {
 
     /// Take one back. A hint that turned out to be wrong is worse than no hint: it is carried into every
     /// question the learner asks from then on.
-    void withdraw(String docUuid, long id);
+    ///
+    /// Only a hint said to this learner, under this document, is taken back. Several pipelines' learners
+    /// may run under one document, and permission to change one is its own pipeline's: an id naming
+    /// another learner's hint takes nothing back.
+    ///
+    /// @param learner The learner the hint was said to.
+    /// @param docUuid The document the learner runs under.
+    /// @param id      The hint.
+    void withdraw(Learner learner, String docUuid, long id);
 
 
     // --------------------------------------------------------------------------------

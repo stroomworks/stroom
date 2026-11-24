@@ -39,6 +39,7 @@ import org.jooq.Table;
 import org.jooq.impl.DSL;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -78,10 +79,10 @@ public class LearningPipelinesDao implements LearningPipelines {
                          final Set<String> learningOff,
                          final Collection<LearnerState> states,
                          final boolean showDeleted,
-                         final String pipelineUuid,
+                         final Collection<String> pipelineUuids,
                          final long offset,
                          final int limit) {
-        if (NullSafe.isEmptyCollection(docUuids)) {
+        if (NullSafe.isEmptyCollection(docUuids) || (pipelineUuids != null && pipelineUuids.isEmpty())) {
             return new Page(List.of(), 0L);
         }
         // Every learner any table knows.
@@ -197,8 +198,8 @@ public class LearningPipelinesDao implements LearningPipelines {
         if (!showDeleted) {
             matching = matching.and(view.field("deleted", Boolean.class).isFalse());
         }
-        if (pipelineUuid != null) {
-            matching = matching.and(view.field("p", String.class).eq(pipelineUuid));
+        if (pipelineUuids != null) {
+            matching = matching.and(view.field("p", String.class).in(pipelineUuids));
         }
         if (!NullSafe.isEmptyCollection(states)) {
             matching = matching.and(view.field("state", String.class)
@@ -221,6 +222,17 @@ public class LearningPipelinesDao implements LearningPipelines {
             final long total = context.fetchCount(DSL.selectFrom(view).where(where));
             return new Page(rows, total);
         });
+    }
+
+    @Override
+    public Set<String> pipelines() {
+        return JooqUtil.contextResult(connProvider, context -> new HashSet<>(context
+                .select(SHAPESHIFTER_LEARNER_STATE.PIPELINE_UUID)
+                .from(SHAPESHIFTER_LEARNER_STATE)
+                .union(DSL.select(SHAPESHIFTER_BINDING.PIPELINE_UUID).from(SHAPESHIFTER_BINDING))
+                .union(DSL.select(SHAPESHIFTER_ATTEMPT.PIPELINE_UUID).from(SHAPESHIFTER_ATTEMPT))
+                .union(DSL.select(DEFERRAL.PIPELINE_UUID).from(DEFERRAL))
+                .fetch(0, String.class)));
     }
 
     /// The list's document for one learner: the same order of tables as the list's, asked of that learner
