@@ -25,12 +25,13 @@ import stroom.util.shared.ElementId;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
+import stroom.util.xml.SaxonPolicy;
+import stroom.util.xml.SaxonSecurity;
 
 import net.sf.saxon.Configuration;
-import net.sf.saxon.TransformerFactoryImpl;
+import net.sf.saxon.jaxp.SaxonTransformerFactory;
 import net.sf.saxon.jaxp.TransformerImpl;
 import net.sf.saxon.lib.ExtensionFunctionDefinition;
-import net.sf.saxon.lib.FeatureKeys;
 import net.sf.saxon.s9api.XdmNode;
 import net.sf.saxon.s9api.XdmNodeKind;
 import net.sf.saxon.trans.XPathException;
@@ -115,7 +116,7 @@ public final class XsltStep implements StepRunner {
     @Override
     public Prepared prepare(final String configuration) {
         final Diagnostics compiling = new Diagnostics();
-        final TransformerFactoryImpl factory = new TransformerFactoryImpl();
+        final SaxonTransformerFactory factory = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED);
         factory.setErrorListener(compiling);
         confine(factory);
         for (final ExtensionFunctionDefinition standIn : StroomStandIns.definitions(facts)) {
@@ -163,7 +164,7 @@ public final class XsltStep implements StepRunner {
      * {@code document()} with a warning and an empty sequence, which is not a failure; recovery is turned
      * off so that the attempt fails as the attempt it was.
      */
-    private static void confine(final TransformerFactoryImpl factory) {
+    private static void confine(final SaxonTransformerFactory factory) {
         final Configuration configuration = factory.getConfiguration();
         factory.setURIResolver(REFUSING_URI_RESOLVER);
         configuration.setUnparsedTextURIResolver((uri, encoding, config) -> {
@@ -173,11 +174,9 @@ public final class XsltStep implements StepRunner {
         configuration.setCollectionFinder((context, uri) -> {
             throw new XPathException(REFUSED + uri);
         });
-        // Registered functions need this on. It does not open the door to anything else: Saxon-HE has no
-        // reflexive extension functions, so the only `stroom:` functions a stylesheet can reach are the
-        // stand-ins registered above, which are the ones the allow-list permits. A call to any other is an
-        // unknown function, which is what the list says of it.
-        configuration.setConfigurationProperty(FeatureKeys.ALLOW_EXTERNAL_FUNCTIONS, true);
+        // External functions stay off, as SaxonSecurity leaves them, which refuses xsl:result-document
+        // and limits system-property(). The `stroom:` stand-ins registered above still work: they are
+        // registered in Java, which this setting does not govern.
         configuration.setRecoveryPolicy(Configuration.DO_NOT_RECOVER);
     }
 

@@ -19,6 +19,8 @@ package stroom.learningflow.extraction;
 import stroom.learningflow.scoring.ConfinedXml;
 import stroom.pipeline.filter.AbstractXMLFilter;
 import stroom.pipeline.filter.SplitFilter;
+import stroom.util.xml.SaxonPolicy;
+import stroom.util.xml.SaxonSecurity;
 
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
@@ -172,7 +174,7 @@ public final class RecordSplit {
             try {
                 // Saxon's, as every other transform in this module uses: one processor family, one set
                 // of serialisation rules.
-                final SAXTransformerFactory factory = new net.sf.saxon.TransformerFactoryImpl();
+                final SAXTransformerFactory factory = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED);
                 final TransformerHandler handler = factory.newTransformerHandler();
                 handler.getTransformer().setOutputProperty(OutputKeys.INDENT, "no");
                 handler.getTransformer().setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");

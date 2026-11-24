@@ -16,6 +16,7 @@
 
 package stroom.learningflow.transformation;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -233,6 +234,73 @@ class TestLearnedStylesheetCheck {
         assertThat(LearnedStylesheetCheck.withoutLiterals("concat('a(', $b)"))
                 .hasSameSizeAs("concat('a(', $b)")
                 .isEqualTo("concat('  ', $b)");
+    }
+
+    // Security review finding 1 (23 November 2026): an apostrophe inside an XPath comment opens a
+    // "literal" that blanks the real call after it.
+    @Test
+    @Disabled("Security review finding 1: fails until Track 3 task 1 makes the check sound")
+    void aCallHiddenBetweenCommentsHoldingQuotesIsRefused() {
+        assertRefusesHttpCall(wrapping("""
+                <xsl:template match="/">
+                  <xsl:value-of select="(: ' :) stroom:http-call('http://x') (: ' :)"/>
+                </xsl:template>"""));
+    }
+
+    // Security review N1 (24 November 2026): a declared function is matched on its lexical name only, so
+    // a stylesheet that declares its own `stroom:http-call` makes the check pass the real one.
+    @Test
+    @Disabled("Security review N1: fails until Track 3 task 1 keys declared functions by namespace")
+    void aDeclaredFunctionDoesNotExcuseACallToTheRealOneOfTheSameName() {
+        assertRefusesHttpCall(wrapping("""
+                <xsl:function name="stroom:http-call">
+                  <xsl:param name="u"/>
+                  <xsl:sequence select="$u"/>
+                </xsl:function>
+                <xsl:template match="/">
+                  <xsl:value-of select="stroom:http-call('http://x')"/>
+                </xsl:template>"""));
+    }
+
+    // Security review N1 (24 November 2026): `for-each-source` holds XPath but is not scanned.
+    @Test
+    @Disabled("Security review N1: fails until Track 3 task 1 scans every attribute that holds XPath")
+    void aCallInAMergeSourceIsRefused() {
+        assertRefusesHttpCall(wrapping("""
+                <xsl:template match="/">
+                  <xsl:merge>
+                    <xsl:merge-source for-each-source="stroom:http-call('http://x')" select="item">
+                      <xsl:merge-key select="@id"/>
+                    </xsl:merge-source>
+                    <xsl:merge-action><xsl:value-of select="1"/></xsl:merge-action>
+                  </xsl:merge>
+                </xsl:template>"""));
+    }
+
+    // Security review N1 (24 November 2026): `use-when` holds XPath that runs at compile time, and is
+    // not scanned.
+    @Test
+    @Disabled("Security review N1: fails until Track 3 task 1 scans every attribute that holds XPath")
+    void aCallInUseWhenIsRefused() {
+        assertRefusesHttpCall(wrapping("""
+                <xsl:template match="/">
+                  <xsl:value-of use-when="stroom:http-call('http://x') = ''" select="1"/>
+                </xsl:template>"""));
+    }
+
+    @Test
+    void aPlainCallToABannedStroomFunctionIsRefused() {
+        // The control for the four tests above: without a trick, the same call is refused.
+        assertRefusesHttpCall(wrapping("""
+                <xsl:template match="/">
+                  <xsl:value-of select="stroom:http-call('http://x')"/>
+                </xsl:template>"""));
+    }
+
+    private static void assertRefusesHttpCall(final String stylesheet) {
+        assertThat(LearnedStylesheetCheck.refusals(stylesheet, LIST))
+                .describedAs("the check must refuse the call to stroom:http-call")
+                .anyMatch(refusal -> refusal.contains("stroom:http-call"));
     }
 
     /// Puts a fragment in a stylesheet that declares the prefixes the tests use.

@@ -23,8 +23,9 @@ import stroom.pipeline.xml.converter.json.JSONParserFactory;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
+import stroom.util.xml.SaxonPolicy;
+import stroom.util.xml.SaxonSecurity;
 
-import net.sf.saxon.TransformerFactoryImpl;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -38,8 +39,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.xml.transform.OutputKeys;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.sax.SAXTransformerFactory;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
@@ -82,7 +81,7 @@ public final class JsonStep implements StepRunner {
         final List<StoredError> diagnostics = new ArrayList<>();
         final StringWriter output = new StringWriter();
         try {
-            final TransformerHandler serialiser = ((SAXTransformerFactory) new TransformerFactoryImpl())
+            final TransformerHandler serialiser = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED)
                     .newTransformerHandler();
             serialiser.getTransformer().setOutputProperty(OutputKeys.INDENT, "yes");
             serialiser.setResult(new StreamResult(output));
@@ -105,7 +104,7 @@ public final class JsonStep implements StepRunner {
                 }
             });
             reader.parse(new InputSource(new StringReader(input)));
-        } catch (final TransformerConfigurationException | SAXException | IOException e) {
+        } catch (final SAXException | IOException e) {
             if (diagnostics.stream().noneMatch(error -> error.getSeverity() == Severity.FATAL_ERROR)) {
                 diagnostics.add(new StoredError(Severity.FATAL_ERROR, null, ELEMENT, String.valueOf(e.getMessage())));
             }

@@ -18,6 +18,7 @@
 2. [learning-flow-checks-model-design.md](learning-flow-checks-model-design.md): the design for Track 1 task 10 (one model of checks), now being built. Its "Step 1 as built" and "Step 2a as built" sections record where the code differs from the design.
 3. [learning-flow-test-protocol.md](learning-flow-test-protocol.md): how to check the 19 November work, part by part, with the commands and what each proves.
 4. This file: what is done, what is uncommitted, and what comes next.
+5. [learning-flow-security-review.md](learning-flow-security-review.md): the Fable security review of 23 November against the OWASP Top 10, the OWASP Top 10 for LLM Applications and the OWASP Top 10 for Agentic Applications, with a suggested order for fixing. Nothing in it has been fixed yet.
 
 ## The names
 
@@ -1170,6 +1171,70 @@ Done in one go on a tree the user had just committed (`21cec95284`), by a script
   OpenAPI spec and `expected.yaml` follow from the code. **Any dev or demo database must be rebuilt**, as N5
   says: the tables and the document and element type ids have all changed.
 
+## The XSLT sandbox brought in (24 November)
+
+gchq/stroom PR #6081 (issue #6079) is the separate XSLT security project's code. It is already merged on
+gchq master, which is 476 commits ahead of this branch, so it was not merged here. AGENTS.md forbids an
+agent running `git merge` in any case. Instead, four commits were applied as unstaged changes:
+
+| Commit | What it is |
+|---|---|
+| `70ca3fb0fb` | #6000, pool invalidation. A prerequisite: the sandbox changes `AbstractPoolCache`. Its hunk on `TestSteppingServiceImportedXslt` was left out, because it only removes an `@Isolated` that this branch never had |
+| `af5b07d5ba` | #6036, NUL in `XMLWriter`. A prerequisite: the sandbox changes `TransformerFactoryFactory` |
+| `a042d23fb0` | #6079 *Add XSLT sandbox*: `SaxonSecurity`, `SaxonPolicy`, `XsltSecuritySettings`, `XsltConfig.secureMode` and `allowedUriPrefixes`, and the guard test |
+| `34af1d51f9` | #6079 *Extend XSLT sandbox*: `AddressCheckingDnsResolver` for XSLT's HTTP functions; `send-email` recipients and a per-run cap |
+
+Their three `unreleased_changes/` entries came with them. A later real merge of master should find the
+same content.
+
+**Changed on this branch to fit:**
+
+- **The module's five Saxon sites** use `SaxonSecurity` with `SaxonPolicy.LOCKED`: `XsltStep`,
+  `OutputRecords`, `RecordJoin`, `RecordSplit` and `JsonStep`. The guard test failed until they did.
+- **`XsltStep.confine()` no longer sets `ALLOW_EXTERNAL_FUNCTIONS` to true.** That setting would have
+  reopened `xsl:result-document` and `system-property()`. The `stroom:` stand-ins still work, because they
+  are registered in Java.
+- **`Conversation`** writes `new Question.Configuration(...)`, so that the guard's regular expression does
+  not take the module's record for Saxon's `Configuration`.
+- **`TestAiServiceImpl`:** `HttpClientProviderCache` gained `getAddressChecked`, so the test's lambda became
+  an anonymous class.
+
+**Passes:**
+
+- compile of all main and test code, and `checkstyleMain checkstyleTest`;
+- `stroom.util.xml.*` (127, including the guard);
+- the module's 632;
+- the `stroom-pipeline` cache, filter, writer and XSLT-function tests (394);
+- `TestXPath`, `stroom-ai-impl` (35), `stroom-config-app` and `stroom-config-global-impl`;
+- in `stroom-app`, `stroom.learningflow.*`, `stroom.pipeline.cache.*` and
+  `TestSteppingServiceImportedXslt` (65).
+
+**Not run:** the full build and the Docker images.
+
+**What it means for Track 3:**
+
+- **Re-reviewed the same day by Fable** (see the security review's *Re-review, 24 November 2026*, and
+  the plan's Track 3 table of changes):
+  - Finding 2 is fixed while `secureMode` is on.
+  - Finding 1 is wider: three more bypasses. In the pool a bypass reaches every `stroom:` function,
+    because the sandbox does not govern Java-registered functions.
+  - On a node, learned stylesheets run in the real pool, not through the module's `LOCKED` sites.
+  - Nothing in the module checks `secureMode`.
+- **Two of the four agents were stopped by a safety classifier** when writing attack harnesses: the
+  sandbox reviewer and the verifier. N1 and finding 2's fix are therefore reproduced by one reviewer's
+  harness, not independently verified. The harnesses are in the session scratchpad
+  (`rereview-part1/`).
+- **Regression tests added (24 November):**
+  - `TestLearnedStylesheetCheck`: the four bypasses, `@Disabled` until Track 3 task 1, shown to fail
+    today; a control that passes.
+  - `TestXsltStep`: `parse-xml` with a DOCTYPE, and the environment. These pass, and were shown to fail
+    without the sandbox.
+  - New `stroom-app` `TestPipelineStepRunner`: the real node path, with a control, and `parse-xml` and
+    file reads refused. Also `stroom:host-address` running on the node, `@Disabled` until task 1, which
+    verifies C2 on the real path.
+
+  When task 1 is done, remove the `@Disabled` annotations: the tests are the definition of done.
+
 ## What passes now
 
 > **Re-run 23 November, after stage R (the rename):** checkstyle passes across the whole project
@@ -1209,13 +1274,20 @@ Not run: the full build (`clean build shadowJar buildDistribution`) and `./build
 *Rewritten 23 November. Everything in the Done table above is committed (`67d54e0648`); the 23 November
 work is uncommitted.*
 
-1. **Stage R is done.** What the plan has left before the first release is the full build and Docker
+1. **XSLT sandbox brought in and re-reviewed (24 November):** see *The XSLT sandbox brought in*, and
+   Track 3's table of changes. Track 3 task 1 is larger and still first. Decision S-D8 is new.
+2. **Security review (23 November):** [learning-flow-security-review.md](learning-flow-security-review.md) has 28
+   findings: two Critical (1, 2) and four High (3, 4, 17, 18). The fixes are now **Track 3** of the plan:
+   17 tasks in three groups, with tasks 1–7 before the first release. Tasks 1, 3 and 7 need nothing; tasks
+   2, 4, 5, 6 and 10 need decisions S-D1 to S-D5, which are the user's, each with a recommendation in the
+   plan.
+3. **Stage R is done.** What the plan has left before the first release is the full build and Docker
    images, and the blocked items below; ii and the rest of i are post-release. Options iv is done; ii and the rest of i are
    post-release.
-2. Track 2 step 6 is out of scope (23 November): XSLT egress is managed by a separate project, whose code
+4. Track 2 step 6 is out of scope (23 November): XSLT egress is managed by a separate project, whose code
    arrives in due course, so the rename no longer waits for an egress merge.
-3. **When Track 1 is done** (it now is): re-run the demo evaluation, which needs the dev instance.
-4. **Blocked on a live model or the dev instance:** the `ESCALATING` default (Track 2 step 1c), re-learning
+5. **When Track 1 is done** (it now is): re-run the demo evaluation, which needs the dev instance.
+6. **Blocked on a live model or the dev instance:** the `ESCALATING` default (Track 2 step 1c), re-learning
    stream 2152 on `OTEL-TRACES`, and the demo evaluation.
 
 ## Known gaps, recorded in the design or plan
@@ -1233,4 +1305,4 @@ work is uncommitted.*
 
 ## Uncommitted files
 
-Run `git status` for the full list. In summary: the docs above, the delivery plan and the new test protocol; `smart-pipelines-demo-v1.0.zip`; shared `Check*` classes, `FlowProblem`, `LearningFlow` and `ShapeshifterAiDoc`; server scoring, `Stage`, `Conversation`, `TargetChecks`, `StopReports`, `QuestionText`, `StepDetails`, `RecordGate`, `RecordJoin`, `ShapeshifterAiStoreImpl`; client Shapeshifter components, `step-card.css`; workbench fixtures and stories; their tests; and four changelog entries in `unreleased_changes/` (task 1, task 6, task 10 step 1–2a, task 10 steps 2b–2c).
+Run `git status` for the full list. **24 November:** the XSLT sandbox, its prerequisites and the module's changes to fit it (see *The XSLT sandbox brought in*); the Track 3 additions to the plan; the security review. **Not part of the rename commit, and belonging with it:** `settings.gradle`, `config/checkstyle/checkstyle.xml`, and the demo pack renamed to `smart-pipelines-demo-v1.0.zip`. Earlier, in summary: the docs above, the delivery plan and the new test protocol; `smart-pipelines-demo-v1.0.zip`; shared `Check*` classes, `FlowProblem`, `LearningFlow` and `ShapeshifterAiDoc`; server scoring, `Stage`, `Conversation`, `TargetChecks`, `StopReports`, `QuestionText`, `StepDetails`, `RecordGate`, `RecordJoin`, `ShapeshifterAiStoreImpl`; client Shapeshifter components, `step-card.css`; workbench fixtures and stories; their tests; and four changelog entries in `unreleased_changes/` (task 1, task 6, task 10 step 1–2a, task 10 steps 2b–2c).

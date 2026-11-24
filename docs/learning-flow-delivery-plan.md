@@ -33,6 +33,7 @@ The plan is still two tracks that run side by side, after a short round of decis
 | Track 1 | Correctness fixes (mostly server) | Tasks 1, 4, 5, 6, 8, 9 and 10 can start now (every decision they need is made), as can the parts of task 7 that don't touch checks. The new checks in tasks 2 and 3 wait for task 10's design (task 2's also for the declared-skips design, task 3's for Track 2 step 2's list); the rest of each task can start now. Task 7's check-related parts follow tasks 3 and 10 |
 | Track 2 | Server simplification, the Smart Pipelines list, the other safety items and the server additions the UI would show; the UI itself is done. (The egress policy, step 6, moved to a separate project on 23 November 2026.) | Stages 0a and 0b; steps 1, 1b, 2 and 3 can start now (step 1's factory removal waits for Track 1 task 5's trial) |
 | R | The rename: `shapeshifter` out of the code, packages, modules, tables, doc type, element type, REST paths, config and document filenames | Track 2 step 5, on a quiet tree; and it **must** land before the first release (see [Stage R](#stage-r-the-rename)) |
+| Track 3 | Security fixes from the [security review](learning-flow-security-review.md) of 23 November 2026, in three groups; tasks 1–7 before the first release. The XSLT sandbox (gchq/stroom #6079) was brought in on 24 November and covers most of task 2 | Tasks 1, 3, 7, 8, 9, 12, 14 and 16 can start now; the others need a decision from [Decisions Track 3 needs](#decisions-track-3-needs) first |
 | Later | Calibration and larger step sizes | Track 1 |
 
 ## The names
@@ -1659,16 +1660,154 @@ Where an assumption has been checked, the evidence is given; the rest should be 
 - ~~**Track 2 step 2, the hard-coded Smart Pipelines list**~~ — **done, 20 November 2026** ([Step 2 as built](#step-2-as-built-20-november-2026)). With `format-date` and `meta` on the list and standing in in the harness, **Track 1 task 3 is unblocked**.
 - **Track 2 steps 1, 1b and 3**, which need no further decisions; step 1's removal of the Pipeline Factory waits for Track 1 task 5's trial.
 - **Not yet: stage R, the rename.** It is decided, and its work is written out, but it waits for the outstanding branches to merge and must land before the first release ([Stage R](#stage-r-the-rename)). Until it runs, write new code under the old names rather than renaming as you go, so that the rename stays one mechanical change.
+- **Track 3, the security fixes** (added 23 November 2026): tasks 1, 3 and 7 need nothing and are first; tasks 2, 4, 5, 6 and 10 need decisions S-D1 to S-D5 settled. See [Track 3](#track-3-security-fixes).
 - **Bringing the module's design notes into line** with the final UI (`design/07-ui.md` and `05-learning-flow.md`), which the code's javadoc cites.
 
 ## To review when the XSLT egress project's code arrives
 
 *Added 23 November 2026.* XSLT egress is now managed by a separate project (see [Track 2 step 6](#step-6-the-egress-policy-and-the-list-on-its-screen)). Until its code arrives, this project keeps the Smart Pipelines list — the functions and instructions a learned stylesheet may use — hard-coded in `HardCodedXsltAllowList`, behind the `AiXsltAllowList` interface, with the static stylesheet check and the test harness applying it (Track 2 step 2, decision N1).
 
-When the new project's code arrives, review:
+**It arrived on 24 November 2026** as gchq/stroom PR #6081 (issue #6079, *Add XSLT sandbox* and *Extend
+XSLT sandbox*). It was brought onto this branch as unstaged changes, not by a merge. Its two prerequisites
+on master came with it: #6000 (pool invalidation) and #6036 (NUL in `XMLWriter`). See the work-in-progress
+notes, *The XSLT sandbox brought in*. What it provides:
+
+- `SaxonSecurity` and `SaxonPolicy` (`stroom-util`, `stroom.util.xml`). Every Saxon processor, configuration
+  and factory in Stroom must be made through `SaxonSecurity`, and a guard test
+  (`TestSaxonSecurity.testSaxonOnlyCreatedThroughSaxonSecurity`) fails the build on any that is not. A
+  secured configuration:
+  - refuses `doc()`, `document()`, `unparsed-text()`, `collection()` and `uri-collection()` beyond the
+    policy;
+  - removes `transform()`, `load-xquery-module()` and `saxon:doc()`;
+  - refuses `xsl:result-document` and limits `system-property()`;
+  - hides environment variables;
+  - stops the XML that Saxon parses itself (`parse-xml()`, `doc()`) from declaring a DOCTYPE or loading
+    external entities.
+- `XsltConfig.secureMode` (default true) and `allowedUriPrefixes` for the pipeline's pool
+  (`XsltSecuritySettings`, `XsltPoolImpl`).
+- `AddressCheckingDnsResolver` for the HTTP clients that XSLT's `http-call` and `fetch-json` use.
+  `send-email` gets a recipient allow-list and a per-run cap.
+
+The review below is done in part:
+
+- **The module's Saxon sites:** done. `XsltStep`, `OutputRecords`, `RecordJoin`, `RecordSplit` and
+  `JsonStep` now use `SaxonSecurity` with `SaxonPolicy.LOCKED`. `XsltStep.confine()` no longer turns
+  external functions back on. The registered `stroom:` stand-ins work without them. **But these are the
+  stand-in runners and serialisers.** On a node, candidates and promoted fragments run in the real pool
+  (`PipelineStepRunner`, `PipelineFragmentRunner`), confined by `secureMode`, with the full `stroom:`
+  function library (re-review, 24 November).
+- **The pool that promoted fragments run in:** it is secured only while `secureMode` is true. That setting
+  is Stroom-wide, so an administrator who turns it off also unconfines learned stylesheets. Decide whether
+  learned fragments should be secured whatever the setting (AS20).
+- **The other items below are still open:** the list, the static check, the stand-ins, and AS19 to AS21.
+  Track 3 task 1 (the sound check) stands. The sandbox confines what a stylesheet can reach at run time,
+  but it does not enforce the Smart Pipelines list.
+
+Items to review (written before the code arrived):
 
 - **The list itself**: whether it stays in code, moves to wherever the new project keeps its policy, or is replaced by it. The `AiXsltAllowList` interface is there so its source can change without its callers changing.
 - **The static check**: whether it is still needed once the new project enforces at run time, or stays as an early refusal that tells the model why a candidate was turned down.
 - **The harness's stand-ins** for the allowed `stroom:` functions (`StroomStandIns`), which must agree with whatever the new project allows.
 - **The module's Saxon sites** (`XsltStep`, `OutputRecords`): that the new project confines them, as the egress branch did when it was cut.
 - **Assumptions AS19 to AS21**, and decision N1's wording, against what the new project actually provides.
+
+## Track 3: security fixes
+
+*Added 23 November 2026, from the [security review](learning-flow-security-review.md).* That review
+checked the module against the OWASP Top 10, the OWASP Top 10 for LLM Applications and the OWASP Top 10 for
+Agentic Applications. Each task names the findings it fixes, by the review's numbers. Re-find each finding
+in the code before starting: the review's line numbers are from 23 November.
+
+Findings 1 and 2 are flaws in this project's own check and allow-list, so they are fixed here rather than
+left to the XSLT egress project. What is built should be reviewed with that project's code when it arrives
+(see *To review when the XSLT egress project's code arrives*, above).
+
+**24 November 2026:** the XSLT sandbox (gchq/stroom #6079) has been brought in, and the module's Saxon sites
+use it. That covers most of finding 2 (task 2), but not finding 1 (task 1), which is about the static
+check. The security review is being run again against the code with the sandbox in, and the tasks below
+will be revised from its results.
+
+**The re-review (24 November)** is in the [security review](learning-flow-security-review.md), section
+*Re-review, 24 November 2026*. Two of its four Fable agents were stopped by a safety classifier when they
+began writing attack harnesses, so some results are reproduced by one reviewer, not verified.
+
+What it changes in the tasks below:
+
+| Task | Change |
+|---|---|
+| 1 | **Larger, and still first.** The check has three more bypasses that need no comment (N1): a shadowed function name, `merge-source/@for-each-source`, and `use-when`. The comment-stripping stopgap is therefore not enough. Add: key declared functions by namespace URI; scan every attribute that holds XPath, or refuse unknown ones; take `merge-source` off the list. **Add run-time enforcement:** compile learned stylesheets with a function library that holds only the allowed `stroom:` functions. In the pool, a bypass reaches `http-call`, `send-email`, `lookup` and the rest; the sandbox does not stop Java-registered functions. Turn the scratchpad harnesses into regression tests over `LearnedStylesheetCheck` and the pool |
+| 2 | **Finding 2 is fixed in secure mode.** What is left: refuse to learn or promote while `XsltConfig.secureMode` is off, or compile learned stylesheets `LOCKED` whatever it is (N2); a regression test for the `parse-xml` payloads through `XsltStep` and the pool; `Records.java` and `RecordSkeleton.java` onto `ConfinedXml`; give learned stylesheets an opaque base URI so diagnostics don't carry the working directory (N9) |
+| 3 | Unchanged, and more pressing. A plain `stroom:http-call` in a candidate is called once during judging, before the check |
+| 5 | Add N7: check a fragment's element types in `Promotion.promote` and `freshened`, against an allowed list, not only "no writer". Wire up or delete `FragmentCheckImpl`, which nothing calls |
+| 7 | Add N3: cap, fence and label the failing records quoted in relearn feedback |
+| 10 | Add N4: on an AUTOMATIC flow, require `APPROVE_SMART_PIPELINES_AUTOMATICALLY` to change its instructions, checks, thresholds or model, or drop the flow to REVIEW on such a save |
+| 12 | Add N5: record each corpus entry's source feed, and write re-accepted entries back to it |
+| 17 | Add the rest of N9, and the `amend` reset that strands a draft (finding 21's addition) |
+| Not this project's | N6 (the guard test's gaps; the JVM default `TransformerFactory`) and N8 (private networks allowed for `http-call`; the model client not using the address check) are Stroom-wide. Raise them with the sandbox's owners |
+
+Decision S-D1 is settled as B, as far as it goes. Whether learned stylesheets should stay secured
+when `secureMode` is off is a new decision (**S-D8**, below).
+
+The tasks are in three groups, in the review's suggested order. The groups are a proposal: each task can
+be taken or deferred on its own. Eight tasks (2, 4, 5, 6, 10, 11, 15 and 17) need one of seven decisions
+first; these are listed under
+[Decisions Track 3 needs](#decisions-track-3-needs), each with a recommendation.
+
+### Before the first release
+
+| # | Task | Fixes to do | Needs | Effort | Findings |
+|---|---|---|---|---|---|
+| 1 | A sound stylesheet check | Stop scanning XPath with regular expressions. Compile each expression (`select`, `test`, AVTs, text-value templates) with Saxon and walk the expression tree for real function calls, so comments and literals cannot hide one. Until then, as a stopgap, strip nested `(: :)` comments before blanking literals. The check stays one function, used by the `PERMITTED` scorer and the promotion re-check. | Nothing | M | 1 |
+| 2 | `parse-xml` and the allow-list's breadth | **In large part done by the XSLT sandbox (24 November)**: the module's Saxon sites and the pool, while `secureMode` is on, now refuse a DOCTYPE and external entities in `parse-xml`. Still to do: a regression test that reproduces finding 2 through `XsltStep` and through the pool; settle the `secureMode`-off case (see *To review when the XSLT egress project's code arrives*); review `error`, `trace`, `serialize`, `merge-source`, `try`/`catch` and `json-to-xml` on the list. | Decision S-D1, now probably settled (see below) | S | 2, 16 (allow-list breadth) |
+| 3 | Check before running, and on every promotion route | Run the static check before a candidate is run (`Conversation.java:872-875, 913, 922`), and refuse it without running it. Move the promotion-time re-check from `bind()` into `Promotion.promote` and `freshened`, so that approval, relearn and improve all pass it. Correct the comment at `Learning.java:690-693`. | Task 1 (the same function, made sound) | S | 3, 19 (the route part), 7 (the imported-document gap) |
+| 4 | Model credentials and USE | On saving a Learning Flow, require USE on its model and its target schema when they change. On saving a model document, require VIEW on the named credential. In the learning job, resolve the credential as a real user rather than as the processing user. | Decision S-D2 | M | 4, 8 |
+| 5 | Promotion touches only its own documents | Record the UUIDs that `FragmentWriter` created against the snapshot. Let `copyInto` overwrite, read or delete only those, and refuse otherwise with a stop report. Refuse approval when the draft's versions differ from its snapshot, and require the draft to be judged again (`freshened` already compares versions, `Promotion.java:262`). On saving a pipeline, check that the saver may create in `learnedFolder`, or confine learned content beneath the pipeline's own folder. | Decision S-D3 (for `learnedFolder`) | M | 17, 19 (the approval part), 27 |
+| 6 | Relearning that one sender cannot steer | Apply `minRecordsToLearn` to a relearn opened by a shortfall. Treat corpus entries that cannot be read as a gate failure, and show "n of m corpus records readable". Limit what one promotion may add to the corpus, and keep a pinned set from the first reviewed promotion that eviction cannot remove. Make Regression a forced gate on automatic flows (`CheckSettings`, beside `PERMITTED`). On an automatic flow, require review when a relearn would replace a binding that has been scoring well. Cap automatic relearns per learner per day. Correct the *Records before a translation is trusted* help text (`SetupTab.ui.xml:152-153`). | Decision S-D4 (the numbers) | M to L | 18 |
+| 7 | Stream text as data in the prompt | Fence the sample with a per-prompt random delimiter (or escape fences inside it), and treat failing-record text and improve samples the same way. Say in the system text that the sample is data, not instructions. Send guidance as a delimited block of lower authority than the document's instructions, with a length cap. Flag predicates on literal values that select a skip or empty output (`StylesheetScan.literals()` is already collected), and show conditional skips in the evidence. Raise `Templates.VERSION`. | Nothing | M | 12, 28 (guidance, corpus replay), 16 (guidance size) |
+
+### Next
+
+| # | Task | Fixes to do | Needs | Effort | Findings |
+|---|---|---|---|---|---|
+| 8 | Fencing, and stopping a run | Carry the claim's `VERSION` as a fencing token in `heartbeat`, `turn`, `parked` and `closed` (`WHERE version = ? AND node = ?`), and abort the walk when a heartbeat updates no row. Re-verify the claim in the same transaction as the binding change, before `copyInto`, and stop ignoring `replace`'s result. Heartbeat on a timer for the whole walk, including `fullPass`, the whole-stream re-run and the regression loop. Re-read learner state and learning mode at each heartbeat and before `writeDraft` and `promote`. Never clear a give-up from a run that began before it. Add an explicit cancel for a running attempt, and release the claim of a parked attempt that is given up. | Nothing | M | 20, 21 |
+| 9 | Bounded candidate runs | Run each candidate, and the prompt rebuild's re-runs, under a bounded executor with a wall-clock timeout and interruption. Cap output bytes. Catch `Error` around the transform so that an `OutOfMemoryError` stops one candidate, not the pass. Cache the prompt rebuild per attempt, and rate-limit it. | Nothing | M | 5, 16 (prompt rebuild) |
+| 10 | Copy, import and the demo pack | Override `copyDocument` to reset the copy to REVIEW unless the caller holds `APPROVE_SMART_PIPELINES_AUTOMATICALLY`. Override `importDocument` to run the same validation and permission check as `writeDocument`, and correct the javadoc at `LearningFlowStoreImpl.java:132`. Ship the demo pack in `REVIEW` with a blank `baseUrl` and a spend ceiling, and regenerate the zip. Warn on import when a model document's endpoint changes. Test import and copy. | Decision S-D5 (the demo pack's defaults) | S to M | 6, 7, 26 |
+| 11 | Spend that one learner cannot exhaust | Cap grants, and use saturating arithmetic. Check the breaker on resume and on reopen, and make the check and the open atomic. Count calls as attempted, in a `finally`. Estimate tokens when usage is missing (`SimpleTokenCountEstimator`). Set a completion limit and a token-budget default. Turn on per-document and per-learner ceilings by default, with a share reserved so that one learner cannot use the whole allowance. Cap promotions per learner per period, whatever translation is in use, and park for a person on the second automatic replacement in a window. | Decision S-D4 (the numbers) | M | 10, 23 |
+| 12 | Who may see what | Filter `learners`, `backlog` and `find` rows by pipeline VIEW. Gate stored answers and evidence on View Data, cap their length, and prune turns with the stream. Delete guidance on the learner as well as the id, and fail when no row is deleted. Check permission before `learnerOf` answers. Store an HTTP error's status and type, not its body, in stop reports. | Nothing | M | 9, 11, 14, 15, 16 (enumeration) |
+
+### Then
+
+| # | Task | Fixes to do | Needs | Effort | Findings |
+|---|---|---|---|---|---|
+| 13 | What the reviewer sees | Link the draft itself from the Learning Status tab, not the serving fragment. Show the stylesheet diff against the incumbent, before-and-after output for corpus records, conditional skips, literal predicates and the standing guidance. Beside the Approve button, list the gates passed, the record count and what was not checked. Say how many feeds and waiting streams the approval affects. Make Literals a gate in the Standard preset. Take held-out records from a different stream. Rename the headline figures (for example, "passes its checks"). Client work, with its workbench stories. | Tasks 5 and 7 (what to show) | L | 22 |
+| 14 | Provenance and audit | Store `modelId`, the base-URL host and the model document's version on the attempt and the binding, and show them in review. Flag or refuse a resume when they differ. Raise an audit event per automatic promotion, naming the flow, its last editor, the model, the attempt and the fragment versions. Keep an attempt while its binding is in use (add PROMOTED to `KEPT`). Give each `@AutoLogged` Supervisor and quality method its operation type, and log `prompt` and `samples` as data views. | Nothing | M | 25, 16 (auditing) |
+| 15 | Which feeds may go to which model | Per model document, an allow-list of feeds or classifications, or a flag that the model runs on the premises. Refuse learning when a feed's classification exceeds it. Optional masking patterns applied to the sample and to check feedback. Stop attributing guidance to its author in the prompt. | Decision S-D6 | M | 24, 16 (data sent to the provider) |
+| 16 | Bounded result sets | Page in SQL, as `waitingOn` already does: `DeferralsDao.forDocument`, `OutputsDao.boundBy`, `CorpusIndexDao.rows` and `trim`, `SnapshotsDao.forBinding`. Push the pipeline filter into `LearningPipelinesDao`'s derived tables. | Nothing | M | 13 |
+| 17 | The low items | Collation: `utf8mb4_bin` on the identity columns, by editing the unreleased migration (N5 option A) and regenerating jOOQ. Indexes for retention pruning and `OutputsDao.asProcessed`, and a unique key on the corpus. Remove a deleted Learning Flow's spend, output and snapshot rows. Make the pipeline's time zone setting beat the sender's `TimeZone` header, or make the order a setting. Length limits on guidance, amend answers and reasons, numeric ranges in `writeDocument`, and a 400 for a null body. Offer roll-back to the previous snapshot on retract, and hold the learner for review after a retraction. Gate the `__stub__` model behind a development setting. Add the document or learner to `AttemptsDao`'s mutator `WHERE` clauses. Label the model's reply more plainly in stop reports. Decide on a separate approve permission. | Decision S-D7 (separation of duties) | M in total, S each | 16, 28 |
+
+Dependency verification for the whole build (`gradle/verification-metadata.xml`, finding 28) is
+Stroom-wide, not this module's, and is left to the Stroom team.
+
+Each fix comes with a regression test that fails before it and passes after it (AGENTS.md):
+
+- the two Critical exploits as unit tests over `LearnedStylesheetCheck` and `XsltStep`;
+- tasks 5, 6, 8 and 10 as scenario tests;
+- task 3's refusal-before-run as a `Conversation` test;
+- task 2 and task 9 also need a `stroom-app` test, because only the real pipeline runs Stroom's own
+  XSLTFilter and pool.
+
+After task 3, re-run the review's two Critical reproductions against a promoted fragment on the dev
+instance. That is the path the review could not run.
+
+### Decisions Track 3 needs
+
+| Id | Question | Options | Recommendation |
+|---|---|---|---|
+| S-D1 | `parse-xml` (task 2) | A: take `parse-xml` and `parse-xml-fragment` off the list. B: keep them, and harden every Saxon configuration. | **B is now built**: the XSLT sandbox arrived on 24 November and hardens every configuration. Keep them on the list, unless the re-review finds a route that the sandbox misses, or the `secureMode`-off case is left open. (Was: A now, B with the egress project.) |
+| S-D2 | Whose identity resolves a model's credential in the learning job (task 4) | A: the user who last saved the Learning Flow's model setting. B: the model document's owner. C: a run-as user set on the Learning Flow, like a processor filter's. | **C**, because it matches how processor filters already run, and it is visible and changeable. A is simplest but silently changes when someone else saves. |
+| S-D3 | Where learned content may be created (task 5) | A: beneath the learner pipeline's own folder only. B: anywhere the pipeline's saver may create. | **B**, with the check on save, because `learnedFolder` exists for a reason. A is simpler if nobody uses the property. |
+| S-D4 | The numbers for tasks 6 and 11 | The relearn minimum, how much one promotion may add to the corpus, the pinned set's size, automatic relearns and promotions per learner per period, and the default ceilings. | Start from the review's suggestions: `minRecordsToLearn` for a relearn, 20% of the cap, the first reviewed promotion's entries, and 3 automatic replacements a day. Set them as Learning Flow settings with these defaults. |
+| S-D5 | The demo pack (task 10) | A: `REVIEW`, a blank `baseUrl`, a spend ceiling. B: keep `AUTOMATIC` for the demo, with a ceiling and a README warning. | **A**: a demo that is copied should start safe. Automatic is a setting the demo can show being turned on. |
+| S-D6 | Data to the model endpoint (task 15) | A: a per-model allow-list of feeds. B: a per-model maximum classification, checked against the feed's. C: only an "on the premises" flag and a warning. | **B**, if Stroom's feed classification is reliably set on the target deployments; otherwise A. |
+| S-D7 | Separation of duties (task 17) | A: a distinct approve permission. B: also require a second person where the approver answered a turn or gave guidance in that run. C: leave approval with pipeline EDIT. | **A** now, and B as a setting later. |
+| S-D8 | Learned stylesheets when `XsltConfig.secureMode` is off (task 2, N2) | A: refuse to learn or promote while it is off. B: compile learned stylesheets with `SaxonPolicy.LOCKED` and a restricted function library whatever the setting, in a pool of their own. C: allow it, with a warning on the Learning Flow screen. | **B** if task 1's restricted function library already needs learned stylesheets compiled apart, which it probably does; otherwise **A**. |

@@ -860,7 +860,7 @@ public final class Conversation {
                 // translated, and the exhaustion step's own are not, since it is where the sending goes.
                 final boolean exhaustible = !admitting && !runner.parser();
                 final Visit asked = candidates(step, walk, (candidate, feedback) -> {
-                    final String reply = ask(walk, step, candidate, new Configuration(runner.elementType(),
+                    final String reply = ask(walk, step, candidate, new Question.Configuration(runner.elementType(),
                             configured.get().documentType(), walk.sample, shown, walk.previous[index], split,
                             walk.targets, oneAtATime, carried(perRecord), otherKinds, admitting, feedback));
                     final Optional<String> configuration = ConfigurationReply.configuration(reply);

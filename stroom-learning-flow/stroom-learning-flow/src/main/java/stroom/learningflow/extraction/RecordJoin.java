@@ -17,8 +17,9 @@
 package stroom.learningflow.extraction;
 
 import stroom.learningflow.scoring.ConfinedXml;
+import stroom.util.xml.SaxonPolicy;
+import stroom.util.xml.SaxonSecurity;
 
-import net.sf.saxon.TransformerFactoryImpl;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -89,7 +90,7 @@ public final class RecordJoin {
 
     private static TransformerHandler newHandler(final StringWriter writing)
             throws TransformerConfigurationException {
-        final SAXTransformerFactory factory = new TransformerFactoryImpl();
+        final SAXTransformerFactory factory = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED);
         final TransformerHandler handler = factory.newTransformerHandler();
         // Laid out as the transform would have laid out the one document, had it been given the stream
         // whole: the same serialiser with the same indentation, so that what a chain run per record

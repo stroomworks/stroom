@@ -138,6 +138,62 @@ class TestXsltStep {
         }
     }
 
+    // Security review finding 2 (23 November 2026): parse-xml() parsed a DOCTYPE with Saxon's own
+    // parser, so an external entity read a local file. The XSLT sandbox refuses the DOCTYPE.
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "<!DOCTYPE d [<!ENTITY x SYSTEM 'FILE'>]><d>&x;</d>",
+            "<!DOCTYPE d [<!ENTITY % p SYSTEM 'FILE'> %p;]><d/>",
+            "<!DOCTYPE d SYSTEM 'FILE'><d/>",
+    })
+    void parseXmlMayNotReadAFileThroughADoctype(final String document) throws Exception {
+        final Path secret = Files.createTempFile("xslt-step", ".txt");
+        try {
+            Files.writeString(secret, "CANARY");
+            final String parsed = escapedForAnAttribute(document.replace("FILE", secret.toUri().toString()));
+            final String candidate = stylesheet3("<out><xsl:value-of select=\"parse-xml('" + parsed + "')\"/></out>");
+
+            final StepResult result = new XsltStep().run(candidate, INPUT);
+
+            assertThat(result.passed()).isFalse();
+            assertThat(String.valueOf(result.output())).doesNotContain("CANARY");
+            assertThat(result.diagnostics()).extracting(StoredError::getMessage)
+                    .anyMatch(message -> message.contains("DOCTYPE"));
+        } finally {
+            Files.deleteIfExists(secret);
+        }
+    }
+
+    // Security review finding 1 (23 November 2026) reproduced environment-variable() returning the
+    // process's environment through this runner. The XSLT sandbox hides it.
+    @Test
+    void aStylesheetMayNotReadTheEnvironment() {
+        final String path = System.getenv("PATH");
+        assertThat(path).describedAs("the test needs PATH set to prove anything").isNotBlank();
+        final String candidate = stylesheet3(
+                "<out><xsl:value-of select=\"environment-variable('PATH')\"/>"
+                + "<xsl:value-of select=\"count(available-environment-variables())\"/></out>");
+
+        final StepResult result = new XsltStep().run(candidate, INPUT);
+
+        assertThat(String.valueOf(result.output()))
+                .doesNotContain(path)
+                .contains("<out>0</out>");
+    }
+
+    private static String stylesheet3(final String body) {
+        return "<xsl:stylesheet xmlns:xsl='http://www.w3.org/1999/XSL/Transform' version='3.0'>"
+               + "<xsl:template match='/'>" + body + "</xsl:template></xsl:stylesheet>";
+    }
+
+    // A document written as an XPath string literal in double-quoted attribute.
+    private static String escapedForAnAttribute(final String document) {
+        return document.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("'", "''");
+    }
+
     private static String stylesheet(final String body) {
         return "<xsl:stylesheet xmlns:xsl='http://www.w3.org/1999/XSL/Transform' version='2.0'>"
                + "<xsl:template match='/'>" + body + "</xsl:template></xsl:stylesheet>";

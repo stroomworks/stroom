@@ -124,9 +124,17 @@ class TestAiServiceImpl {
     /// Records the configuration of every call, then fails it as a model that answers too slowly does,
     /// so nothing is sent anywhere.
     private HttpClientProviderCache recordingHttpClientCache() {
-        return httpClientConfiguration -> {
-            callsMadeWith.add(httpClientConfiguration);
-            return failingProvider();
+        return new HttpClientProviderCache() {
+            @Override
+            public HttpClientProvider get(final HttpClientConfiguration httpClientConfiguration) {
+                callsMadeWith.add(httpClientConfiguration);
+                return failingProvider();
+            }
+
+            @Override
+            public HttpClientProvider getAddressChecked(final HttpClientConfiguration httpClientConfiguration) {
+                return get(httpClientConfiguration);
+            }
         };
     }
 

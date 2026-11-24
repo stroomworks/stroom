@@ -294,9 +294,9 @@ include 'stroom-security:stroom-security-openid-api'
 include 'stroom-security:stroom-security-user-api'
 
 
-// Shapeshifter
-include 'stroom-shapeshifter:stroom-shapeshifter-ai'
-include 'stroom-shapeshifter:stroom-shapeshifter-ai-impl-db'
+// Learning Flow
+include 'stroom-learning-flow:stroom-learning-flow'
+include 'stroom-learning-flow:stroom-learning-flow-impl-db'
 
 // SQL Store
 include 'stroom-sqlstore:stroom-sqlstore-api'

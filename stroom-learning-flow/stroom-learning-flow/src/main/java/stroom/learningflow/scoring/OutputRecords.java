@@ -18,6 +18,8 @@ package stroom.learningflow.scoring;
 
 import stroom.learningflow.shared.RecordBoundary;
 import stroom.learningflow.stage.RecordSkeleton;
+import stroom.util.xml.SaxonPolicy;
+import stroom.util.xml.SaxonSecurity;
 
 import net.sf.saxon.s9api.Processor;
 import net.sf.saxon.s9api.QName;
@@ -43,7 +45,7 @@ import java.util.OptionalInt;
  */
 public final class OutputRecords {
 
-    private static final Processor PROCESSOR = new Processor(false);
+    private static final Processor PROCESSOR = SaxonSecurity.newProcessor(SaxonPolicy.LOCKED);
 
     private final XdmNode root;
     private final List<XdmNode> records;
