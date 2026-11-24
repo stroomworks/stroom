@@ -28,6 +28,7 @@ import stroom.gwt.workbench.client.app.rest.RestReply;
 import stroom.gwt.workbench.client.app.screen.ContentStorySupport;
 import stroom.gwt.workbench.client.app.screen.ScreenHarness;
 import stroom.gwt.workbench.client.app.screen.StroomDom;
+import stroom.gwt.workbench.client.widgets.selectors.UserFixture;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.play.Query;
 import stroom.gwt.workbench.framework.client.play.TextMatch;
@@ -54,6 +55,10 @@ import java.util.Map;
 public final class AnnotationEditorStories {
 
     private static final String CHANGE_PATH = "/annotation/v1/change";
+    private static final String FIND_ANNOTATIONS_PATH = "/annotation/v1/findAnnotations";
+    // An annotation found (to link to, or linked to), with who created it and when
+    private static final String RELATED_ALERT = "{\"type\": \"Annotation\", \"uuid\": \"ann-99\", \"id\": 99, "
+            + "\"name\": \"Related alert\", \"createUser\": \"admin\", \"createTimeMs\": 1700000000000}";
     // The comment entry's actions button, and the menu it opens
     private static final String COMMENT_ACTIONS = "Actions for history entry 'Comment' by Alice";
 
@@ -105,10 +110,7 @@ public final class AnnotationEditorStories {
                 // Link To tab: "Add Annotation Link" opens a chooser; OK links the chosen annotation.
                 // The annotation found has who created it and when, which Stroom's list cell shows
                 .story("LinkAnnotation", context -> render(context, AnnotationFixtures.editorRoutes(
-                        RestFixtures.builder(), ENTRIES, "[]", AnnotationFixtures.page(
-                                "{\"type\": \"Annotation\", \"uuid\": \"ann-99\", \"id\": 99, "
-                                        + "\"name\": \"Related alert\", \"createUser\": \"admin\", "
-                                        + "\"createTimeMs\": 1700000000000}")).build()))
+                        RestFixtures.builder(), ENTRIES, "[]", AnnotationFixtures.page(RELATED_ALERT)).build()))
                 .withPlay(play -> {
                     final Play screen = play.screen();
                     play.findByDisplayValue("Investigate alert");
@@ -132,6 +134,41 @@ public final class AnnotationEditorStories {
                     play.expect(play.spy(ScreenHarness.ALERT_SPY)).not().toHaveBeenCalled();
                     play.expect(play.spy(ScreenHarness.UNHANDLED_REQUEST_SPY)).not().toHaveBeenCalled();
                 })
+                // Choose Annotation left open (the screenshot and the dialog measurement show it)
+                .story("ChooseAnnotationOpen", context -> render(context, AnnotationFixtures.editorRoutes(
+                        RestFixtures.builder(), ENTRIES, "[]", AnnotationFixtures.page(RELATED_ALERT)).build()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByDisplayValue("Investigate alert");
+                    play.click(tab(play, "Link To"));
+                    play.click(play.findByTitle("Add Annotation Link"));
+                    final Play chooser = screen.within(screen.findByText("Choose Annotation", StroomDom.DIALOG_TITLE)
+                            .closest(StroomDom.DIALOG));
+                    chooser.findByText("Related alert");
+                })
+                // Link To tab: removing the link to the annotation selected (once confirmed) leaves
+                // nothing selected, so Remove is disabled. Before, the annotation stayed selected
+                // once it was no longer listed, with Remove enabled for it
+                .story("RemoveLink", context -> render(context, linkedFixtures()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    openTab(play, "Link To", "Add Annotation Link");
+                    final Query remove = play.getByTitle("Remove Annotation Link");
+                    play.click(play.findByText("Related alert"));
+                    play.waitFor(() -> play.expect(remove).not().toHaveAttribute("aria-disabled"));
+                    play.click(remove);
+                    play.click(screen.within(screen.findByText("Are you sure you want to remove this reference?")
+                            .closest(StroomDom.DIALOG)).getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post(CHANGE_PATH)
+                                    .withJsonBodyContaining("{\"change\": {\"type\": \"unlinkAnnotations\", "
+                                            + "\"annotations\": [99]}}")
+                                    .toSpyMatcher()));
+                    // Found again, without the annotation unlinked
+                    play.waitFor(() -> play.expect(play.queryByText("Related alert")).toBeNull());
+                    play.waitFor(() -> play.expect(remove).toHaveAttribute("aria-disabled", "true"));
+                    ContentStorySupport.expectNoProblems(play);
+                })
                 // Events tab: "Add Event Link" asks for streamId:eventId and links it
                 .story("AddEventLink", context -> render(context, fixtures(ENTRIES).build()))
                 .withPlay(play -> {
@@ -149,6 +186,17 @@ public final class AnnotationEditorStories {
                                             + "\"events\": [{\"streamId\": 1234, \"eventId\": 5}]}}")
                                     .toSpyMatcher()));
                     ContentStorySupport.expectNoProblems(play);
+                })
+                // Link An Event left open (the screenshot and the dialog measurement show it)
+                .story("LinkAnEventOpen", context -> render(context, fixtures(ENTRIES).build()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByDisplayValue("Investigate alert");
+                    play.click(tab(play, "Events"));
+                    play.click(play.findByTitle("Add Event Link"));
+                    final Play dialog = screen.within(screen.findByText("Link An Event", StroomDom.DIALOG_TITLE)
+                            .closest(StroomDom.DIALOG));
+                    dialog.findByRole("textbox");
                 })
                 // Link An Event refuses an id that isn't streamId:eventId, and stays open; Cancel
                 // then links nothing
@@ -194,6 +242,16 @@ public final class AnnotationEditorStories {
                     play.waitFor(() -> play.expect(screen.queryByText("Set Retention Period", StroomDom.DIALOG_TITLE))
                             .toBeNull());
                     ContentStorySupport.expectNoProblems(play);
+                })
+                // Set Retention Period left open (the screenshot and the dialog measurement show it)
+                .story("SetRetentionPeriodOpen", context -> render(context, fixtures(ENTRIES).build()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByDisplayValue("Investigate alert");
+                    play.click(play.getByRole("button", "Change Retention Period"));
+                    final Play dialog = screen.within(screen.findByText("Set Retention Period", StroomDom.DIALOG_TITLE)
+                            .closest(StroomDom.DIALOG));
+                    dialog.findByRole("checkbox", "Keep Forever");
                 })
                 // Events tab preview: the first linked event is selected and its data shown (record
                 // index = event id - 1); selecting another shows its data
@@ -269,6 +327,18 @@ public final class AnnotationEditorStories {
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post("/annotation/v1/deleteAnnotationEntry").toSpyMatcher()));
                     ContentStorySupport.expectNoProblems(play);
+                })
+                // Edit Comment left open (the screenshot and the dialog measurement show it)
+                .story("EditCommentOpen", context -> render(context, fixtures(ENTRIES).build()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByText("Looking into it.");
+                    play.fireEvent().mouseDown(play.querySelectorAll(".annotation-history__comment-header").nth(0));
+                    play.click(screen.findByText("Edit Comment", StroomDom.MENU_ITEM_TEXT));
+                    final Play dialog = screen.within(screen.findByText("Edit Comment", StroomDom.DIALOG_TITLE)
+                            .closest(StroomDom.DIALOG));
+                    // The comment is in a code editor, which shows it in its lines, not its text box
+                    dialog.findByText("Looking into it.");
                 })
                 // An entry's menu also opens from the keyboard: each entry's actions icon is a button,
                 // named for the entry, that opens the menu with Enter or Space, or Shift+F10 or the
@@ -543,6 +613,31 @@ public final class AnnotationEditorStories {
                                             + "\"tag\": {\"name\": \"Closed\"}}}")
                                     .toSpyMatcher()));
                     ContentStorySupport.expectNoProblems(play);
+                })
+                // The status chooser open with its filter focused: the filter's focus ring is whole,
+                // not cut by the chooser's edges (the screenshot shows it)
+                .story("StatusChooserFilterFocused", context -> render(context, fixtures(ENTRIES).build()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByDisplayValue("Investigate alert");
+                    play.click(play.getByText("Status"));
+                    screen.findByRole("listbox", "Statuses");
+                    final Query filter = screen.getByRole("searchbox", "Filter choices");
+                    play.click(filter);
+                    play.expect(filter).toHaveFocus();
+                })
+                // The Assigned To picker open with its filter focused, as above
+                .story("AssignedToFilterFocused", context -> render(context, fixtures(ENTRIES)
+                        .post(UserFixture.FIND, request -> RestReply.json(
+                                UserFixture.fixtureUsers().find(request.getBody())))
+                        .build()))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByDisplayValue("Investigate alert");
+                    play.click(play.getByText("Assigned To"));
+                    final Query filter = screen.findByRole("searchbox", "Filter users and groups");
+                    play.click(filter);
+                    play.expect(filter).toHaveFocus();
                 });
     }
 
@@ -562,6 +657,27 @@ public final class AnnotationEditorStories {
     // A sub-tab of the annotation (Stroom's LinkTabPanel has no tab role)
     private static Query tab(final Play play, final String name) {
         return play.getByText(name, StroomDom.LINK_TAB_LABEL);
+    }
+
+    // Annotation 42 links to annotation 99 until the link is removed (an unlinkAnnotations change
+    // is sent), as the server would find its links. Made with each rendering, so a rerun starts
+    // linked again
+    private static RestFixtures linkedFixtures() {
+        final boolean[] unlinked = {false};
+        return RestFixtures.builder()
+                .post(CHANGE_PATH, request -> {
+                    if (request.getBody() != null && request.getBody().contains("unlinkAnnotations")) {
+                        unlinked[0] = true;
+                    }
+                    return RestReply.json("true");
+                })
+                // The Link To tab's find (the annotations 42 links to)
+                .route(RequestMatcher.post(FIND_ANNOTATIONS_PATH).withJsonBodyContaining("{\"sourceId\": 42}"),
+                        request -> RestReply.json(unlinked[0]
+                                ? AnnotationFixtures.page()
+                                : AnnotationFixtures.page(RELATED_ALERT)))
+                .addAll(fixtures(ENTRIES).build())
+                .build();
     }
 
     private static RestFixtures.Builder fixtures(final String entries) {

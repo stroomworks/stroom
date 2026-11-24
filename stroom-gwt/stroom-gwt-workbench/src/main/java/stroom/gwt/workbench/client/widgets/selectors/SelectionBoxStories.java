@@ -16,6 +16,7 @@
 
 package stroom.gwt.workbench.client.widgets.selectors;
 
+import stroom.gwt.workbench.client.a11y.FocusRings;
 import stroom.gwt.workbench.client.widgets.StoryPopups;
 import stroom.gwt.workbench.framework.client.play.Play;
 import stroom.gwt.workbench.framework.client.play.Query;
@@ -123,6 +124,19 @@ public final class SelectionBoxStories {
                         play.expect(box).toHaveFocus();
                     }
                     play.expect(play.spy(ON_CHANGE)).not().toHaveBeenCalled();
+                })
+                // Keyboard focus shows a ring round a box that can't be typed in: its text box, which
+                // has the focus, is unseen, so the value, which draws the field, shows it (there was
+                // none to see)
+                .story("KeyboardFocusShowsARing", context -> named(selectionBox(context, NAMES)))
+                .withPlay(play -> {
+                    final Query field = play.querySelector(".selection-box__value");
+                    play.expect("the ring before the box has the focus", FocusRings.drawn(field))
+                            .toBe(FocusRings.NONE);
+                    play.tab();
+                    play.expect(play.getByRole("combobox")).toHaveFocus();
+                    play.expect("the ring with the box focused from the keyboard", FocusRings.drawn(field))
+                            .not().toBe(FocusRings.NONE);
                 })
                 // A right-click on an option shows no menu: the list's options are to choose, not a
                 // table. The grid under them had a private bus, which hid its menu (Copy, Export
@@ -398,7 +412,7 @@ public final class SelectionBoxStories {
     private static Widget withEcho(final SelectionBox<String> box) {
         final Html echo = new Html();
         echo.getElement().getStyle().setProperty("marginTop", "8px");
-        echo.getElement().getStyle().setProperty("fontSize", "12px");
+        echo.getElement().getStyle().setProperty("fontSize", "var(--font-size-11)");
         echo.setText("Selected: none");
         box.addValueChangeHandler(event -> echo.setText("Selected: " + (event.getValue() == null
                 ? "none"

@@ -21,6 +21,7 @@ import stroom.credentials.api.KeyStore;
 import stroom.credentials.api.StoredSecret;
 import stroom.credentials.api.StoredSecrets;
 import stroom.credentials.shared.AccessTokenSecret;
+import stroom.credentials.shared.AwsKeySecret;
 import stroom.credentials.shared.Credential;
 import stroom.credentials.shared.CredentialType;
 import stroom.credentials.shared.CredentialWithPerms;
@@ -83,10 +84,9 @@ public class CredentialsService implements StoredSecrets {
     private final PathCreator pathCreator;
     private final Provider<CredentialsConfig> credentialsConfigProvider;
     private final KeyStoreFilePathChecker keyStoreFilePathChecker;
+    private final CredentialExpiryChecker credentialExpiryChecker;
+    private final KeyStoreCertificateExpiryReader certificateExpiryReader;
 
-    /**
-     * Injected constructor.
-     */
     @SuppressWarnings("unused")
     @Inject
     public CredentialsService(final CredentialsDao credentialsDao,
@@ -95,7 +95,9 @@ public class CredentialsService implements StoredSecrets {
                               final Provider<ResourceStore> resourceStoreProvider,
                               final PathCreator pathCreator,
                               final Provider<CredentialsConfig> credentialsConfigProvider,
-                              final KeyStoreFilePathChecker keyStoreFilePathChecker) {
+                              final KeyStoreFilePathChecker keyStoreFilePathChecker,
+                              final CredentialExpiryChecker credentialExpiryChecker,
+                              final KeyStoreCertificateExpiryReader certificateExpiryReader) {
         this.credentialsDao = credentialsDao;
         this.securityContext = securityContext;
         this.permissionServiceProvider = permissionServiceProvider;
@@ -103,75 +105,68 @@ public class CredentialsService implements StoredSecrets {
         this.pathCreator = pathCreator;
         this.credentialsConfigProvider = credentialsConfigProvider;
         this.keyStoreFilePathChecker = keyStoreFilePathChecker;
+        this.credentialExpiryChecker = credentialExpiryChecker;
+        this.certificateExpiryReader = certificateExpiryReader;
     }
 
-    /**
-     * Provides a decoration function that will add security permissions to supplied credentials.
-     */
-    private Function<Credential, CredentialWithPerms> createPermissionDecorator() {
+    /// Provides a decoration function that will add security permissions to supplied credentials.
+    private Function<Credential, CredentialWithPerms> createPermissionDecorator(
+            final FindCredentialRequest request) {
+
         return credential -> {
-            final DocRef docRef = new DocRef(Credential.TYPE, credential.getUuid());
-            if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+            final DocRef docRef = credential.asDocRef();
+            // requiredPermission is non-null so that effectively means the user must hold at least USE
+            if (!securityContext.hasDocumentPermission(docRef, request.getRequiredPermission())) {
                 return null;
             }
 
             final boolean canEdit = securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT);
             final boolean canDelete = securityContext.hasDocumentPermission(docRef, DocumentPermission.DELETE);
-            final boolean owner = securityContext.hasDocumentPermission(docRef, DocumentPermission.OWNER);
-            return new CredentialWithPerms(credential,
-                    canEdit || owner,
-                    canDelete || owner);
+            return new CredentialWithPerms(credential, canEdit, canDelete);
         };
     }
 
-    private Predicate<Credential> createPermissionFilter() {
-        return credential -> {
-            final DocRef docRef = new DocRef(Credential.TYPE, credential.getUuid());
-            return securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW);
-        };
+    /// Adds when the certificates expire and the warning period, for the list's expiry column.
+    /// Done only for the credentials on the page being returned, as reading a key store means
+    /// loading its secret.
+    private CredentialWithPerms addExpiry(final CredentialWithPerms credentialWithPerms,
+                                          final long warningPeriodMs) {
+        final Credential credential = credentialWithPerms.getCredential();
+        final Instant certificateExpiry = certificateExpiryReader.getExpiry(
+                credential,
+                () -> credentialsDao.getStoredSecretByUuid(credential.getUuid()));
+        return new CredentialWithPerms(credential,
+                credentialWithPerms.isEdit(),
+                credentialWithPerms.isDelete(),
+                NullSafe.get(certificateExpiry, Instant::toEpochMilli),
+                warningPeriodMs);
     }
 
-    /**
-     * Wraps the given credentials object with UI permissions.
-     *
-     * @param credential The credentials to wrap. Can be null in which case null is returned.
-     * @return Credentials with permissions. Null if credentials are null or user doesn't have
-     * permission to view these credentials.
-     */
-    private CredentialWithPerms permissionWrap(final Credential credential) {
-        CredentialWithPerms retval = null;
-        if (credential != null) {
-
-            final DocRef docRef = new DocRef(Credential.TYPE, credential.getUuid());
-            if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-                final boolean canEdit = securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT);
-                final boolean canDelete = securityContext.hasDocumentPermission(docRef, DocumentPermission.DELETE);
-                final boolean owner = securityContext.hasDocumentPermission(docRef, DocumentPermission.OWNER);
-                retval = new CredentialWithPerms(credential,
-                        canEdit || owner,
-                        canDelete || owner);
-            }
-        }
-
-        return retval;
+    private Predicate<Credential> createPermissionFilter(final FindCredentialRequest request) {
+        // requiredPermission is non-null so that effectively means the user must hold at least USE
+        final DocumentPermission requiredPermission = request.getRequiredPermission();
+        return credential ->
+                securityContext.hasDocumentPermission(credential.asDocRef(), requiredPermission);
     }
 
-    /**
-     * Returns a list of all the credentials in the database.
-     * Permissions: App, View|Edit|Owner (for all individual permissions)
-     */
+    /// Returns a list of all the credentials in the database.
+    /// Permissions: App, View|Edit|Owner (for all individual permissions)
     public ResultPage<CredentialWithPerms> findCredentialsWithPermissions(final FindCredentialRequest request) {
-        checkAppPermission();
-        return credentialsDao.findCredentialsWithPermissions(request, createPermissionDecorator());
+        final ResultPage<CredentialWithPerms> resultPage = credentialsDao.findCredentialsWithPermissions(
+                request, createPermissionDecorator(request));
+        final long warningPeriodMs = credentialExpiryChecker.getWarningPeriod().toMillis();
+        return resultPage.copy()
+                .values(resultPage.getValues()
+                        .stream()
+                        .map(credentialWithPerms -> addExpiry(credentialWithPerms, warningPeriodMs))
+                        .toList())
+                .build();
     }
 
-    /**
-     * Returns a list of all the credentials in the database.
-     * Permissions: App, View|Edit|Owner (for all individual permissions)
-     */
+    /// Returns a list of all the credentials in the database.
+    /// Permissions: App, View|Edit|Owner (for all individual permissions)
     public ResultPage<Credential> findCredentials(final FindCredentialRequest request) {
-        checkAppPermission();
-        return credentialsDao.findCredentials(request, createPermissionFilter());
+        return credentialsDao.findCredentials(request, createPermissionFilter(request));
     }
 
     /**
@@ -201,7 +196,8 @@ public class CredentialsService implements StoredSecrets {
             checkName(credential.getName(), uuid);
             checkKeyStoreFile(secret, uuid);
 
-            final Credential newCredential = new Credential(uuid,
+            final Credential newCredential = new Credential(
+                    uuid,
                     credential.getName(),
                     now,
                     now,
@@ -211,6 +207,7 @@ public class CredentialsService implements StoredSecrets {
                     getKeyStoreType(secret),
                     getKeyStorePath(secret),
                     credential.getExpiryTimeMs());
+
             credentialsDao.putStoredSecret(
                     new StoredSecret(newCredential, secret, readKeyStore(secret)),
                     false);
@@ -222,7 +219,7 @@ public class CredentialsService implements StoredSecrets {
                     DocumentPermission.OWNER);
         } else {
             // Check we are allowed to update this existing credential.
-            checkEditPermission(uuid);
+            checkPermission(uuid, DocumentPermission.EDIT);
             if (credential.getCredentialType() != null
                 && credential.getCredentialType() != existing.getCredentialType()) {
                 throw new IllegalArgumentException("The type of an existing credential cannot be changed");
@@ -254,46 +251,60 @@ public class CredentialsService implements StoredSecrets {
     /// @return The updated credential.
     public Credential replaceSecret(final ReplaceSecretRequest request) {
         checkAppPermission();
-        final String uuid = request.getUuid();
+        final Credential credential = request.getCredential();
+        final String uuid = credential.getUuid();
         // Check permission before looking the credential up so that a user without permission
         // can't tell whether a credential exists or not
-        checkEditPermission(uuid);
-        final StoredSecret existing = credentialsDao.getStoredSecretByUuid(uuid);
-        if (existing == null) {
+        checkPermission(credential.asDocRef(), DocumentPermission.EDIT);
+        final StoredSecret existingSecret = credentialsDao.getStoredSecretByUuid(uuid);
+        if (existingSecret == null) {
             throw new IllegalArgumentException("Credentials not found");
         }
 
-        final Secret secret = request.getSecret();
-        if (secret == null) {
+        final Secret newSecret = request.getSecret();
+        if (newSecret == null) {
             throw new IllegalArgumentException("A new secret must be supplied");
         }
-        checkSecretMatchesType(secret, existing.credential().getCredentialType());
-        checkKeyStoreFile(secret, uuid);
+        checkSecretMatchesType(newSecret, existingSecret.credential().getCredentialType());
+        checkKeyStoreFile(newSecret, uuid);
 
         // Only the secret, its expiry and the update audit fields are written, so a rename made
         // at the same time is not undone
-        final Credential secretFields = new Credential(uuid,
-                null,
-                null,
+        final Credential newCredential = new Credential(
+                uuid,
+                credential.getName(),
+                credential.getCreateTimeMs(),
                 System.currentTimeMillis(),
-                null,
+                credential.getCreateUser(),
                 securityContext.getUserIdentityForAudit(),
-                null,
-                getKeyStoreType(secret),
-                getKeyStorePath(secret),
+                credential.getCredentialType(),
+                getKeyStoreType(newSecret),
+                getKeyStorePath(newSecret),
                 request.getExpiryTimeMs());
-        final boolean updated = credentialsDao.updateSecret(
-                new StoredSecret(secretFields, secret, readKeyStore(secret)));
+
+//        final UpdateSecretState updateSecretState = new UpdateSecretState(
+//                request.getUuid(),
+//                getKeyStoreType(secret),
+//                getKeyStorePath(secret),
+//                System.currentTimeMillis(),
+//                securityContext.getUserIdentityForAudit(),
+//                request.getExpiryTimeMs(),
+//                secret,
+//                readKeyStore(secret));
+
+//        final boolean updated = credentialsDao.updateSecret(updateSecretState);
+        final boolean updated = credentialsDao.updateSecret(new StoredSecret(
+                newCredential, newSecret, readKeyStore(newSecret)));
         if (!updated) {
             throw new IllegalArgumentException("Credentials not found");
         }
-        deleteCachedKeyStore(existing.secret());
+        deleteCachedKeyStore(existingSecret.secret());
 
-        final Credential updatedCredential = credentialsDao.getCredentialByUuid(uuid);
+        final Credential persistedCredential = credentialsDao.getCredentialByUuid(uuid);
         LOGGER.info(() -> LogUtil.message("Secret replaced for credential '{}' ({})",
-                NullSafe.get(updatedCredential, Credential::getName),
+                NullSafe.get(persistedCredential, Credential::getName),
                 uuid));
-        return updatedCredential;
+        return persistedCredential;
     }
 
     /// Checks that a credential name is not blank and is not used by any other credential.
@@ -351,6 +362,7 @@ public class CredentialsService implements StoredSecrets {
     private static void checkSecretMatchesType(final Secret secret, final CredentialType credentialType) {
         final CredentialType secretType = switch (secret) {
             case final AccessTokenSecret ignored -> CredentialType.ACCESS_TOKEN;
+            case final AwsKeySecret ignored -> CredentialType.AWS_KEY;
             case final KeyStoreSecret ignored -> CredentialType.KEY_STORE;
             case final KeyStoreFileSecret ignored -> CredentialType.KEY_STORE_FILE;
             case final SshKeySecret ignored -> CredentialType.SSH_KEY;
@@ -404,7 +416,7 @@ public class CredentialsService implements StoredSecrets {
                 null,
                 null,
                 Set.of(CredentialType.KEY_STORE_FILE),
-                null);
+                DocumentPermission.USE);
         // Not filtered by permission, as the file must not be used by credentials the user can't see
         final boolean usedElsewhere = credentialsDao.findCredentials(request, credential -> true)
                 .stream()
@@ -455,41 +467,36 @@ public class CredentialsService implements StoredSecrets {
         }
     }
 
-    /**
-     * Returns the credential matching the UUID.
-     * Permissions: App, View|Edit|Owner
-     *
-     * @return The credential matching the UUID.
-     */
+    /// Returns the credential matching the UUID.
+    /// Permissions: App, View|Edit|Owner
+    ///
+    /// @return The credential matching the UUID.
     public Credential getCredentialByUuid(final String uuid) {
-        checkAppPermission();
-        checkViewPermission(uuid);
+        checkPermission(uuid, DocumentPermission.USE);
         return credentialsDao.getCredentialByUuid(uuid);
     }
 
-    /**
-     * Returns the credential matching the name.
-     * Permissions: App, View|Edit|Owner
-     *
-     * @return The credential matching the name.
-     */
+    /// Returns the credential matching the name.
+    /// Permissions: App, View|Edit|Owner
+    ///
+    /// @return The credential matching the name.
     public Credential getCredentialByName(final String name) {
-        checkAppPermission();
         final Credential credential = credentialsDao.getCredentialByName(name);
         if (credential != null) {
-            checkViewPermission(credential.getUuid());
+            checkPermission(credential.asDocRef(), DocumentPermission.USE);
         }
         return credential;
     }
 
-    /**
-     * Deletes the credentials and secrets matching the UUID.
-     * Permissions: App, Delete|Owner
-     */
+    /// Deletes the credentials and secrets matching the UUID.
+    /// Permissions: App, Delete|Owner
     public void deleteCredentialsAndSecret(final String uuid) {
+        Objects.requireNonNull(uuid, "uuid must not be null");
         checkAppPermission();
-        checkDeletePermission(uuid);
+        checkPermission(uuid, DocumentPermission.DELETE);
         credentialsDao.deleteCredentialsAndSecret(uuid);
+        certificateExpiryReader.forget(uuid);
+        credentialExpiryChecker.forget(uuid);
         // Creating a credential made its creator the owner (storeCredentials), so the permissions
         // go with it, as the explorer's delete does for a document. Done after the delete so that a
         // failed delete leaves the credential still usable by its owner.
@@ -498,13 +505,24 @@ public class CredentialsService implements StoredSecrets {
 
     @Override
     public StoredSecret get(final String name) {
+        final StoredSecret storedSecret = getUsable(name);
+        if (storedSecret != null) {
+            credentialExpiryChecker.check(storedSecret.credential());
+        }
+        return storedSecret;
+    }
+
+    /// Gets a stored secret that the user may use, without checking its expiry.
+    ///
+    /// @return The stored secret, or null if there is none with this name.
+    private StoredSecret getUsable(final String name) {
         final StoredSecret storedSecret = credentialsDao.getStoredSecretByName(name);
         if (storedSecret == null) {
             return null;
         }
 
         final DocRef docRef = storedSecret.credential().asDocRef();
-        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.USE)) {
             return storedSecret;
         } else {
             throw new PermissionException(securityContext.getUserRef(),
@@ -512,9 +530,7 @@ public class CredentialsService implements StoredSecrets {
         }
     }
 
-    /**
-     * Throws exception if the user does not have permission to access credentials.
-     */
+    /// Throws exception if the user does not have permission to access credentials.
     private void checkAppPermission() {
         if (!securityContext.hasAppPermission(AppPermission.CREDENTIALS)) {
             throw new PermissionException(
@@ -523,64 +539,29 @@ public class CredentialsService implements StoredSecrets {
         }
     }
 
-    /**
-     * Throws exception if the user does not have permission to view the given credentials.
-     *
-     * @param uuid ID of the credentials to check.
-     */
-    @SuppressWarnings("StatementWithEmptyBody")
-    private void checkViewPermission(final String uuid) {
-        if (uuid == null) {
-            throw new RuntimeException("Credentials not found");
-        }
-        final DocRef docRef = new DocRef(Credential.TYPE, uuid);
-        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)
-            || securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)
-            || securityContext.hasDocumentPermission(docRef, DocumentPermission.OWNER)) {
-            // OK
-        } else {
-            throw new PermissionException(securityContext.getUserRef(),
-                    "You do not have permission to view these credentials");
-        }
+    /// Throws exception if the user does not have permission to delete the given credentials.
+    ///
+    /// @param credentialUuid     UUID of the credentials to check.
+    /// @param requiredPermission Required permission to check.
+    private void checkPermission(final String credentialUuid,
+                                 final DocumentPermission requiredPermission) {
+        Objects.requireNonNull(credentialUuid, "Credentials UUID must not be null");
+        final DocRef docRef = Credential.getDocRef(credentialUuid);
+        checkPermission(docRef, requiredPermission);
     }
 
-    /**
-     * Throws exception if the user does not have permission to edit the given credentials.
-     *
-     * @param uuid ID of the credentials to check.
-     */
-    @SuppressWarnings("StatementWithEmptyBody")
-    private void checkEditPermission(final String uuid) {
-        if (uuid == null) {
-            throw new RuntimeException("Credentials not found");
-        }
-        final DocRef docRef = new DocRef(Credential.TYPE, uuid);
-        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)
-            || securityContext.hasDocumentPermission(docRef, DocumentPermission.OWNER)) {
-            // OK
-        } else {
+    /// Throws exception if the user does not have permission to delete the given credentials.
+    ///
+    /// @param credentialDocRef   [DocRef] of the credentials to check.
+    /// @param requiredPermission Required permission to check.
+    private void checkPermission(final DocRef credentialDocRef,
+                                 final DocumentPermission requiredPermission) {
+        Objects.requireNonNull(credentialDocRef, "credentialDocRef must not be null");
+        Objects.requireNonNull(requiredPermission, "Required permission must not be null");
+        if (!securityContext.hasDocumentPermission(credentialDocRef, requiredPermission)) {
             throw new PermissionException(securityContext.getUserRef(),
-                    "You do not have permission to edit these credentials");
-        }
-    }
-
-    /**
-     * Throws exception if the user does not have permission to delete the given credentials.
-     *
-     * @param uuid ID of the credentials to check.
-     */
-    @SuppressWarnings("StatementWithEmptyBody")
-    private void checkDeletePermission(final String uuid) {
-        if (uuid == null) {
-            throw new RuntimeException("Credentials not found");
-        }
-        final DocRef docRef = new DocRef(Credential.TYPE, uuid);
-        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.DELETE)
-            || securityContext.hasDocumentPermission(docRef, DocumentPermission.OWNER)) {
-            // OK
-        } else {
-            throw new PermissionException(securityContext.getUserRef(),
-                    "You do not have permission to delete these credentials");
+                    "You do not have " + requiredPermission.getDisplayValue()
+                    + " permission on credentials with UUID '" + credentialDocRef.getUuid() + "'");
         }
     }
 
@@ -590,10 +571,13 @@ public class CredentialsService implements StoredSecrets {
             return null;
         }
 
-        final StoredSecret storedSecret = get(name);
+        final StoredSecret storedSecret = getUsable(name);
         if (storedSecret == null) {
             throw new RuntimeException("Unable to find secret '" + name + "'");
         }
+        // Checked here rather than by get(), as a key store's certificates may expire first
+        credentialExpiryChecker.check(storedSecret.credential(),
+                certificateExpiryReader.getExpiry(storedSecret.credential(), () -> storedSecret));
 
         if (storedSecret.secret() instanceof final KeyStoreSecret keyStoreSecret) {
             final Path path = getKeyStoreCachePath();

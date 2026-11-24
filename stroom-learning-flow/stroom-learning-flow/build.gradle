@@ -78,6 +78,7 @@ dependencies {
 
     testFixturesImplementation platform(libs.junit.bom)
     testFixturesImplementation platform(libs.dropwizard.dependencies)
+    testFixturesImplementation platform(libs.langchain4j.bom)
     testFixturesImplementation libs.assertj.core
     testFixturesImplementation libs.guice
     testFixturesImplementation libs.jakarta.inject

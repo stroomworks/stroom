@@ -24,14 +24,21 @@
  * Floor Map Grid — theme-aware colours
  *
  * These variables are used by the SVG grid background
- * (FloorMapGridBackground.java) so that the grid respects
- * the current light/dark theme.
+ * (FloorMapGrid.java) so that the grid respects
+ * the current light/dark theme. It is a design surface's grid,
+ * as a dashboard's in design mode: its background and its minor
+ * lines the dashboard's grid colours (the minor lines faded in by
+ * FloorMapGrid as the map is zoomed in), and its major lines, a
+ * round distance apart, a step stronger, in a control's border
+ * colour. As minor lines become major (once every ten times zoom)
+ * they brighten a step: a quieter grid, the rest of the time, than
+ * minor lines faded in to the major colour.
  * ============================================================ */
 
 :root {
     --floormap-grid__background-color: var(--dashboard-panel__grid-background-color);
-    --floormap-grid__major-stroke:     var(--vis-axis__color);
-    --floormap-grid__minor-stroke:     var(--vis-text__color--faint);
+    --floormap-grid__major-stroke:     var(--control__border-color);
+    --floormap-grid__minor-stroke:     var(--dashboard-panel__grid-color);
     --floormap-grid__highlight-color:  var(--blue-600);
 
     /* Out-of-range chevron. This is a meaningful non-text indicator — it is the
@@ -87,6 +94,7 @@
 /* The Set Scale line's running length: a halo in the page's colour keeps it legible over the map */
 .floor-map-canvas__measure-label {
     stroke: var(--page__background-color);
+    font-size: var(--font-size-11);
 }
 
 /* -----------------------------------------------------------------------
@@ -108,7 +116,7 @@
     transform: translateX(-50%);
     background-color: var(--page__background-color);
     color: var(--floormap-accent__color);
-    font-size: 12px;
+    font-size: var(--font-size-11);
     font-weight: 500;
     white-space: nowrap;
     padding: 4px 10px;
@@ -142,7 +150,7 @@
     top: var(--floor-map-canvas__gesture-readout-top, 0);
     background-color: var(--page__background-color);
     color: var(--floormap-accent__color);
-    font-size: 11px;
+    font-size: var(--font-size-9);
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
@@ -178,7 +186,7 @@
     top: var(--floor-map-canvas__hover-tooltip-top, 0);
     background-color: var(--page__background-color);
     color: var(--text-color);
-    font-size: 11px;
+    font-size: var(--font-size-9);
     padding: 5px 9px;
     border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
@@ -189,7 +197,7 @@
     pointer-events: none;
     z-index: 26;
     display: none;
-    max-width: 260px;
+    max-width: calc(260px * var(--text-scale));
 }
 
 .floor-map-canvas__hover-tooltip--visible {
@@ -233,7 +241,7 @@
     stroke: var(--page__background-color);
     stroke-width: 3px;
     paint-order: stroke;
-    font-size: 11px;
+    font-size: var(--font-size-9);
     font-weight: 500;
     font-family: sans-serif;
 }
@@ -275,7 +283,7 @@
     max-width: calc(100% - 20px);
     box-sizing: border-box;
     text-align: center;
-    font-size: 12px;
+    font-size: var(--font-size-11);
     color: var(--vis-text__color--faint);
     background-color: var(--page__background-color);
     padding: 3px 10px;
@@ -310,7 +318,7 @@
 
 .floor-map-canvas__scale-bar-label {
     color: var(--floormap-grid__highlight-color);
-    font-size: 11px;
+    font-size: var(--font-size-9);
     font-weight: 600;
     white-space: nowrap;
     margin-bottom: 2px;
@@ -329,4 +337,20 @@
     border-right: 2px solid var(--floormap-grid__highlight-color);
     border-bottom: 2px solid var(--floormap-grid__highlight-color);
     box-sizing: border-box;
+}
+
+/* In forced colours (Windows High Contrast) the map's own SVG text is in the system's colours, its
+   halo the page's: their theme colours (an SVG's fill and stroke) would otherwise stay, a dark
+   theme's dark halo behind the system's dark text in a light palette. Objects, areas, groups and
+   the selection marks keep their colours, as visualisations' data does */
+@media (forced-colors: active) {
+    .floor-map-canvas__glyph-caption {
+        fill: CanvasText;
+        stroke: Canvas;
+    }
+
+    .floor-map-canvas__measure-label {
+        fill: CanvasText;
+        stroke: Canvas;
+    }
 }

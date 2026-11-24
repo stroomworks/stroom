@@ -128,10 +128,12 @@ public final class ProcessorFilterListStories {
                 .story("InfoShowsBackoffRows", context -> render(context, BACKOFF_ROWS))
                 .withPlay(play -> {
                     final Play screen = openInfo(play);
-                    play.waitFor(() -> play.expect(screen.getByText("Max Task Creation Delay")).toBeInTheDocument());
+                    // Each row twice: in the popup, and in the details pane, which shows the first
+                    // filter as it is selected when the list loads
+                    play.waitFor(() -> play.expect(screen.getAllByText("Max Task Creation Delay")).toHaveLength(2));
                     // SimpleDuration.toLongString(): the title case unit, not the wire's MINUTES
-                    play.expect(screen.getByText("5 Minutes")).toBeInTheDocument();
-                    play.expect(screen.getByText("Next Poll")).toBeInTheDocument();
+                    play.expect(screen.getAllByText("5 Minutes")).toHaveLength(2);
+                    play.expect(screen.getAllByText("Next Poll")).toHaveLength(2);
                     expectNoProblems(play);
                 })
                 // A filter with no per-filter delay: GWT omits the delay row
@@ -139,19 +141,21 @@ public final class ProcessorFilterListStories {
                 .withPlay(play -> {
                     final Play screen = openInfo(play);
                     // ProcessorInfoBuilder labels the row 'Max Concurrent Tasks'
-                    play.waitFor(() -> play.expect(screen.getByText("Max Concurrent Tasks")).toBeInTheDocument());
+                    // In the popup and the details pane (the first filter is selected)
+                    play.waitFor(() -> play.expect(screen.getAllByText("Max Concurrent Tasks")).toHaveLength(2));
                     play.expect(screen.queryByText("Max Task Creation Delay")).toBeNull();
                     // addRowDateString leaves out the 'Next Poll' row when the filter is not backing off
                     // (no nextPollMs)
                     play.expect(screen.queryByText("Next Poll")).toBeNull();
-                    play.expect(screen.getByText("Last Poll")).toBeInTheDocument();
+                    play.expect(screen.getAllByText("Last Poll")).toHaveLength(2);
                     expectNoProblems(play);
                 })
                 // 0 max processing tasks reads as "Unlimited" rather than "0"
                 .story("InfoShowsUnlimitedTasks", context -> render(context, PLAIN_ROWS))
                 .withPlay(play -> {
                     final Play screen = openInfo(play);
-                    play.waitFor(() -> play.expect(screen.getByText("Unlimited")).toBeInTheDocument());
+                    // In the popup and the details pane (the first filter is selected)
+                    play.waitFor(() -> play.expect(screen.getAllByText("Unlimited")).toHaveLength(2));
                     expectNoProblems(play);
                 })
                 // The expander column: GWT's ExpanderCell via TreeRowHandler
@@ -195,6 +199,25 @@ public final class ProcessorFilterListStories {
                     play.click(play.querySelector(STREAM_LINK_OPEN));
                     play.expect(play.spy(SHOW_DATA_SPY)).toHaveBeenCalledTimes(1);
                     expectNoProblems(play);
+                })
+                // Batch Change All Filtered Processors left open (the screenshot and the dialog
+                // measurement show it)
+                .story("BatchChangeAllFilteredProcessorsOpen", context -> render(context, PLAIN_ROWS))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findAllByText("Events Pipeline");
+                    play.click(play.getByTitle("Batch Edit Filtered Processors"));
+                    final Play batch = dialog(screen, "Batch Change All Filtered Processors");
+                    play.waitFor(() -> play.expect(batch.getByText("Change", "label")).toBeVisible());
+                })
+                // Filter Processors left open (the screenshot and the dialog measurement show it)
+                .story("FilterProcessorsOpen", context -> render(context, PLAIN_ROWS))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findAllByText("Events Pipeline");
+                    play.click(play.getByTitle("Filter Processors"));
+                    final Play filter = dialog(screen, "Filter Processors");
+                    play.waitFor(() -> play.expect(filter.getByRole("tree", "Expression")).toBeVisible());
                 });
     }
 
@@ -203,6 +226,10 @@ public final class ProcessorFilterListStories {
     private static Play openInfo(final Play play) {
         play.click(play.findAllByTitle("Info").nth(0));
         return play.screen();
+    }
+
+    private static Play dialog(final Play screen, final String caption) {
+        return screen.within(screen.findByText(caption, StroomDom.DIALOG_TITLE).closest(StroomDom.DIALOG));
     }
 
     private static void expectNoProblems(final Play play) {
