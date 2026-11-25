@@ -20,11 +20,11 @@
 */
 
 .grant-editor__tokens {
-    width: 160px;
+    width: calc(160px * var(--text-scale));
 }
 
 .grant-editor__minutes {
-    width: 120px;
+    width: calc(120px * var(--text-scale));
 }
 
 /* What the session has spent and been granted so far, which wraps */

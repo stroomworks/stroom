@@ -22,6 +22,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /// One row of the Supervisor's learning pipelines list (design 06 A115): a pipeline's Learning Flow
 /// element that has learned or is learning, where it stands, what serves it, and what waits on it. The
 /// pipeline-level actions are taken from it (A141).
@@ -110,16 +112,16 @@ public class SupervisorLearner {
                              @JsonProperty("fragment") final DocRef fragment,
                              @JsonProperty("promotedScore") final Double promotedScore,
                              @JsonProperty("rollingScore") final Double rollingScore,
-                             @JsonProperty("records") final int records,
-                             @JsonProperty("skips") final int skips,
-                             @JsonProperty("waiting") final int waiting,
+                             @JsonProperty("records") final Integer records,
+                             @JsonProperty("skips") final Integer skips,
+                             @JsonProperty("waiting") final Integer waiting,
                              @JsonProperty("oldestWaitMs") final Long oldestWaitMs,
-                             @JsonProperty("raised") final boolean raised,
+                             @JsonProperty("raised") final Boolean raised,
                              @JsonProperty("lastSessionMs") final Long lastSessionMs,
-                             @JsonProperty("guidance") final int guidance,
-                             @JsonProperty("pipelineDeleted") final boolean pipelineDeleted,
-                             @JsonProperty("belowThreshold") final boolean belowThreshold,
-                             @JsonProperty("fallbackUnavailable") final boolean fallbackUnavailable,
+                             @JsonProperty("guidance") final Integer guidance,
+                             @JsonProperty("pipelineDeleted") final Boolean pipelineDeleted,
+                             @JsonProperty("belowThreshold") final Boolean belowThreshold,
+                             @JsonProperty("fallbackUnavailable") final Boolean fallbackUnavailable,
                              @JsonProperty("spendPaused") final String spendPaused,
                              @JsonProperty("timeZone") final String timeZone,
                              @JsonProperty("timeZoneSource") final TimeZoneSource timeZoneSource,
@@ -133,16 +135,16 @@ public class SupervisorLearner {
         this.fragment = fragment;
         this.promotedScore = promotedScore;
         this.rollingScore = rollingScore;
-        this.records = records;
-        this.skips = skips;
-        this.waiting = waiting;
+        this.records = Objects.requireNonNullElse(records, 0);
+        this.skips = Objects.requireNonNullElse(skips, 0);
+        this.waiting = Objects.requireNonNullElse(waiting, 0);
         this.oldestWaitMs = oldestWaitMs;
-        this.raised = raised;
+        this.raised = Objects.requireNonNullElse(raised, false);
         this.lastSessionMs = lastSessionMs;
-        this.guidance = guidance;
-        this.pipelineDeleted = pipelineDeleted;
-        this.belowThreshold = belowThreshold;
-        this.fallbackUnavailable = fallbackUnavailable;
+        this.guidance = Objects.requireNonNullElse(guidance, 0);
+        this.pipelineDeleted = Objects.requireNonNullElse(pipelineDeleted, false);
+        this.belowThreshold = Objects.requireNonNullElse(belowThreshold, false);
+        this.fallbackUnavailable = Objects.requireNonNullElse(fallbackUnavailable, false);
         this.spendPaused = spendPaused;
         this.timeZone = timeZone;
         this.timeZoneSource = timeZoneSource;

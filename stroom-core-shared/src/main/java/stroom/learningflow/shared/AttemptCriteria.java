@@ -25,6 +25,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Which attempts the Supervisor view is asking for (A28): across every document by default, and
@@ -73,10 +74,10 @@ public class AttemptCriteria extends BaseCriteria {
                            @JsonProperty("feed") final String feed,
                            @JsonProperty("promotionMode") final PromotionMode promotionMode,
                            @JsonProperty("statuses") final List<AttemptStatus> statuses,
-                           @JsonProperty("showDeletedPipelines") final boolean showDeletedPipelines,
+                           @JsonProperty("showDeletedPipelines") final Boolean showDeletedPipelines,
                            @JsonProperty("learner") final LearnerRef learner) {
         super(pageRequest, sortList);
-        this.showDeletedPipelines = showDeletedPipelines;
+        this.showDeletedPipelines = Objects.requireNonNullElse(showDeletedPipelines, false);
         this.learner = learner;
         this.docUuid = docUuid;
         this.feed = feed;

@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /**
  * What one check made of one step of a chain, as a surface shows it (design 01 §8): the number, what it
  * was measured against, and whether that was a gate it failed or a threshold it merely fell short of.
@@ -41,15 +43,15 @@ public class StageScore {
 
     @JsonCreator
     public StageScore(@JsonProperty("check") final Check check,
-                      @JsonProperty("value") final double value,
-                      @JsonProperty("threshold") final double threshold,
-                      @JsonProperty("gate") final boolean gate,
-                      @JsonProperty("met") final boolean met) {
+                      @JsonProperty("value") final Double value,
+                      @JsonProperty("threshold") final Double threshold,
+                      @JsonProperty("gate") final Boolean gate,
+                      @JsonProperty("met") final Boolean met) {
         this.check = check;
-        this.value = value;
-        this.threshold = threshold;
-        this.gate = gate;
-        this.met = met;
+        this.value = Objects.requireNonNullElse(value, 0.0);
+        this.threshold = Objects.requireNonNullElse(threshold, 0.0);
+        this.gate = Objects.requireNonNullElse(gate, false);
+        this.met = Objects.requireNonNullElse(met, false);
     }
 
     public Check getCheck() {

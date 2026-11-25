@@ -25,6 +25,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 
 /// Which learning pipelines the Supervisor lists (design 06 A142): every one the person may read by
 /// default, narrowed by document, by state, and to those whose pipeline still exists unless deleted ones
@@ -48,13 +49,13 @@ public class LearnerCriteria extends BaseCriteria {
                            @JsonProperty("sortList") final List<CriteriaFieldSort> sortList,
                            @JsonProperty("docUuid") final String docUuid,
                            @JsonProperty("states") final List<LearnerState> states,
-                           @JsonProperty("showDeletedPipelines") final boolean showDeletedPipelines) {
+                           @JsonProperty("showDeletedPipelines") final Boolean showDeletedPipelines) {
         super(pageRequest, sortList);
         this.docUuid = docUuid;
         this.states = states == null
                 ? List.of()
                 : List.copyOf(states);
-        this.showDeletedPipelines = showDeletedPipelines;
+        this.showDeletedPipelines = Objects.requireNonNullElse(showDeletedPipelines, false);
     }
 
     /// One document's learners, or those of every document the person may read when null.

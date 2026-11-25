@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The scorecard's verdict on one step of a chain, as a surface shows it (design 01 §8.4): every check
@@ -43,13 +44,13 @@ public class StageVerdict {
     private final List<StageScore> scores;
 
     @JsonCreator
-    public StageVerdict(@JsonProperty("step") final int step,
-                        @JsonProperty("score") final double score,
-                        @JsonProperty("passed") final boolean passed,
+    public StageVerdict(@JsonProperty("step") final Integer step,
+                        @JsonProperty("score") final Double score,
+                        @JsonProperty("passed") final Boolean passed,
                         @JsonProperty("scores") final List<StageScore> scores) {
-        this.step = step;
-        this.score = score;
-        this.passed = passed;
+        this.step = Objects.requireNonNullElse(step, 0);
+        this.score = Objects.requireNonNullElse(score, 0.0);
+        this.passed = Objects.requireNonNullElse(passed, false);
         this.scores = scores;
     }
 

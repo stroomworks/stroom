@@ -31,11 +31,11 @@
 }
 
 .rule-row__condition {
-    min-width: 260px;
+    min-width: calc(260px * var(--text-scale));
 }
 
 .rule-row__destination {
-    min-width: 260px;
+    min-width: calc(260px * var(--text-scale));
 }
 
 /* Its delete button, at the end of the line */

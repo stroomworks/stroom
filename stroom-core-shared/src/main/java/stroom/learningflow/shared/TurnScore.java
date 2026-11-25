@@ -41,11 +41,11 @@ public class TurnScore {
     /// @param threshold The document's threshold for it.
     @JsonCreator
     public TurnScore(@JsonProperty("check") final Check check,
-                     @JsonProperty("score") final double score,
-                     @JsonProperty("threshold") final double threshold) {
+                     @JsonProperty("score") final Double score,
+                     @JsonProperty("threshold") final Double threshold) {
         this.check = check;
-        this.score = score;
-        this.threshold = threshold;
+        this.score = Objects.requireNonNullElse(score, 0.0);
+        this.threshold = Objects.requireNonNullElse(threshold, 0.0);
     }
 
     /// @return The check that decided the turn.

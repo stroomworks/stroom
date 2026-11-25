@@ -36,7 +36,7 @@
 
 .learned-translation__message {
     color: var(--text-color--low-emphasis);
-    max-width: 760px;
+    max-width: calc(760px * var(--text-scale));
 }
 
 .learned-translation__line {
@@ -65,7 +65,7 @@
 }
 
 .learned-translation__type {
-    min-width: 140px;
+    min-width: calc(140px * var(--text-scale));
     color: var(--text-color--low-emphasis);
 }
 

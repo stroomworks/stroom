@@ -20,6 +20,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /**
  * One thing a supervisor has told a learner (A46): a hint, a correction, or a fact about the feed that
  * no sample of it shows.
@@ -41,14 +43,14 @@ public class SupervisorGuidance {
     private final long timeMs;
 
     @JsonCreator
-    public SupervisorGuidance(@JsonProperty("id") final long id,
+    public SupervisorGuidance(@JsonProperty("id") final Long id,
                               @JsonProperty("message") final String message,
                               @JsonProperty("author") final String author,
-                              @JsonProperty("timeMs") final long timeMs) {
-        this.id = id;
+                              @JsonProperty("timeMs") final Long timeMs) {
+        this.id = Objects.requireNonNullElse(id, 0L);
         this.message = message;
         this.author = author;
-        this.timeMs = timeMs;
+        this.timeMs = Objects.requireNonNullElse(timeMs, 0L);
     }
 
     public long getId() {

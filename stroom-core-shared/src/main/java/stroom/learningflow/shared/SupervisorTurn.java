@@ -20,6 +20,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /**
  * One turn of an attempt as the Supervisor view shows it (A28): what was asked, what was answered and
  * by whom, and what the answer scored. A turn with no answer is the question the attempt stopped at and
@@ -61,18 +63,18 @@ public class SupervisorTurn {
     }
 
     @JsonCreator
-    public SupervisorTurn(@JsonProperty("number") final int number,
+    public SupervisorTurn(@JsonProperty("number") final Integer number,
                           @JsonProperty("stepId") final String stepId,
-                          @JsonProperty("candidate") final int candidate,
+                          @JsonProperty("candidate") final Integer candidate,
                           @JsonProperty("kind") final QuestionKind kind,
                           @JsonProperty("question") final String question,
                           @JsonProperty("answer") final String answer,
                           @JsonProperty("answeredBy") final String answeredBy,
                           @JsonProperty("outcome") final StepOutcome outcome,
                           @JsonProperty("score") final TurnScore score) {
-        this.number = number;
+        this.number = Objects.requireNonNullElse(number, 0);
         this.stepId = stepId;
-        this.candidate = candidate;
+        this.candidate = Objects.requireNonNullElse(candidate, 0);
         this.kind = kind;
         this.question = question;
         this.answer = answer;

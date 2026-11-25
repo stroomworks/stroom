@@ -27,6 +27,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * What a supervised stage did with the stream at the cursor (A30, design 01 §11.7): the stage pane's
@@ -67,7 +68,7 @@ public class LearningFlowStepDetails extends ElementStepDetails {
     private final List<NestedElementData> nested;
 
     @JsonCreator
-    public LearningFlowStepDetails(@JsonProperty("dryRun") final boolean dryRun,
+    public LearningFlowStepDetails(@JsonProperty("dryRun") final Boolean dryRun,
                                      @JsonProperty("document") final DocRef document,
                                      @JsonProperty("stream") final Map<String, String> stream,
                                      @JsonProperty("decision") final String decision,
@@ -79,7 +80,7 @@ public class LearningFlowStepDetails extends ElementStepDetails {
                                      @JsonProperty("verdicts") final List<StageVerdict> verdicts,
                                      @JsonProperty("transcript") final List<SupervisorTurn> transcript,
                                      @JsonProperty("nested") final List<NestedElementData> nested) {
-        this.dryRun = dryRun;
+        this.dryRun = Objects.requireNonNullElse(dryRun, false);
         this.document = document;
         this.stream = stream;
         this.decision = decision;

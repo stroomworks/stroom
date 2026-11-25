@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * One attempt as the Supervisor view shows it (A28): when, where, in what mode, what it was learning
@@ -144,7 +145,7 @@ public class SupervisorAttempt {
     }
 
     @JsonCreator
-    public SupervisorAttempt(@JsonProperty("id") final long id,
+    public SupervisorAttempt(@JsonProperty("id") final Long id,
                              @JsonProperty("doc") final DocRef doc,
                              @JsonProperty("learner") final LearnerRef learner,
                              @JsonProperty("feed") final String feed,
@@ -156,19 +157,19 @@ public class SupervisorAttempt {
                              @JsonProperty("decision") final String decision,
                              @JsonProperty("bindingUuid") final String bindingUuid,
                              @JsonProperty("score") final Double score,
-                             @JsonProperty("tokensSpent") final long tokensSpent,
-                             @JsonProperty("grantedTokens") final long grantedTokens,
-                             @JsonProperty("grantedMs") final long grantedMs,
-                             @JsonProperty("exhaustNext") final boolean exhaustNext,
-                             @JsonProperty("createTimeMs") final long createTimeMs,
-                             @JsonProperty("updateTimeMs") final long updateTimeMs,
+                             @JsonProperty("tokensSpent") final Long tokensSpent,
+                             @JsonProperty("grantedTokens") final Long grantedTokens,
+                             @JsonProperty("grantedMs") final Long grantedMs,
+                             @JsonProperty("exhaustNext") final Boolean exhaustNext,
+                             @JsonProperty("createTimeMs") final Long createTimeMs,
+                             @JsonProperty("updateTimeMs") final Long updateTimeMs,
                              @JsonProperty("turns") final List<SupervisorTurn> turns,
-                             @JsonProperty("pipelineDeleted") final boolean pipelineDeleted,
+                             @JsonProperty("pipelineDeleted") final Boolean pipelineDeleted,
                              @JsonProperty("report") final StopReport report,
                              @JsonProperty("evidence") final List<CheckResult> evidence,
                              @JsonProperty("reviewedBy") final String reviewedBy,
                              @JsonProperty("reviewedTimeMs") final Long reviewedTimeMs) {
-        this.id = id;
+        this.id = Objects.requireNonNullElse(id, 0L);
         this.doc = doc;
         this.learner = learner;
         this.feed = feed;
@@ -180,16 +181,16 @@ public class SupervisorAttempt {
         this.decision = decision;
         this.bindingUuid = bindingUuid;
         this.score = score;
-        this.tokensSpent = tokensSpent;
-        this.grantedTokens = grantedTokens;
-        this.grantedMs = grantedMs;
-        this.exhaustNext = exhaustNext;
-        this.createTimeMs = createTimeMs;
-        this.updateTimeMs = updateTimeMs;
+        this.tokensSpent = Objects.requireNonNullElse(tokensSpent, 0L);
+        this.grantedTokens = Objects.requireNonNullElse(grantedTokens, 0L);
+        this.grantedMs = Objects.requireNonNullElse(grantedMs, 0L);
+        this.exhaustNext = Objects.requireNonNullElse(exhaustNext, false);
+        this.createTimeMs = Objects.requireNonNullElse(createTimeMs, 0L);
+        this.updateTimeMs = Objects.requireNonNullElse(updateTimeMs, 0L);
         this.turns = turns == null
                 ? List.of()
                 : List.copyOf(turns);
-        this.pipelineDeleted = pipelineDeleted;
+        this.pipelineDeleted = Objects.requireNonNullElse(pipelineDeleted, false);
         this.report = report;
         this.evidence = evidence == null
                 ? List.of()

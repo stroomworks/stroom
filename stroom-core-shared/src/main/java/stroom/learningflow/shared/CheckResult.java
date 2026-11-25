@@ -46,12 +46,12 @@ public class CheckResult {
     @JsonCreator
     public CheckResult(@JsonProperty("check") final Check check,
                        @JsonProperty("state") final CheckState state,
-                       @JsonProperty("score") final double score,
-                       @JsonProperty("threshold") final double threshold) {
+                       @JsonProperty("score") final Double score,
+                       @JsonProperty("threshold") final Double threshold) {
         this.check = check;
         this.state = state;
-        this.score = score;
-        this.threshold = threshold;
+        this.score = Objects.requireNonNullElse(score, 0.0);
+        this.threshold = Objects.requireNonNullElse(threshold, 0.0);
     }
 
     /// @return The check.

@@ -23,6 +23,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /// One stream of the Supervisor's backlog (design 04 §6): a stream that is waiting on a session, with what
 /// it was run through and fell short of, since when, how often it has been tried, and whether it has
 /// waited past the document's maximum deferral age (A57, A78, A79) — raised, and still waiting.
@@ -52,25 +54,25 @@ public class BacklogStream {
 
     @JsonCreator
     public BacklogStream(@JsonProperty("doc") final DocRef doc,
-                         @JsonProperty("inputId") final long inputId,
+                         @JsonProperty("inputId") final Long inputId,
                          @JsonProperty("feed") final String feed,
                          @JsonProperty("type") final String type,
                          @JsonProperty("failedAgainst") final String failedAgainst,
                          @JsonProperty("reason") final String reason,
-                         @JsonProperty("failingRecords") final int failingRecords,
-                         @JsonProperty("firstDeferredMs") final long firstDeferredMs,
-                         @JsonProperty("tries") final int tries,
-                         @JsonProperty("raised") final boolean raised) {
+                         @JsonProperty("failingRecords") final Integer failingRecords,
+                         @JsonProperty("firstDeferredMs") final Long firstDeferredMs,
+                         @JsonProperty("tries") final Integer tries,
+                         @JsonProperty("raised") final Boolean raised) {
         this.doc = doc;
-        this.inputId = inputId;
+        this.inputId = Objects.requireNonNullElse(inputId, 0L);
         this.feed = feed;
         this.type = type;
         this.failedAgainst = failedAgainst;
         this.reason = reason;
-        this.failingRecords = failingRecords;
-        this.firstDeferredMs = firstDeferredMs;
-        this.tries = tries;
-        this.raised = raised;
+        this.failingRecords = Objects.requireNonNullElse(failingRecords, 0);
+        this.firstDeferredMs = Objects.requireNonNullElse(firstDeferredMs, 0L);
+        this.tries = Objects.requireNonNullElse(tries, 0);
+        this.raised = Objects.requireNonNullElse(raised, false);
     }
 
     public DocRef getDoc() {

@@ -20,5 +20,5 @@
 */
 
 .feed-filter-editor__filter {
-    width: 280px;
+    width: calc(280px * var(--text-scale));
 }

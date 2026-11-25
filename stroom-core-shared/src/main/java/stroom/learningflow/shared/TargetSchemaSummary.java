@@ -46,11 +46,11 @@ public class TargetSchemaSummary {
     /// @param rootChildren The elements that root may hold, in the order the XSD gives them.
     @JsonCreator
     public TargetSchemaSummary(@JsonProperty("name") final String name,
-                               @JsonProperty("eventLogging") final boolean eventLogging,
+                               @JsonProperty("eventLogging") final Boolean eventLogging,
                                @JsonProperty("rootElement") final String rootElement,
                                @JsonProperty("rootChildren") final List<String> rootChildren) {
         this.name = name;
-        this.eventLogging = eventLogging;
+        this.eventLogging = Objects.requireNonNullElse(eventLogging, false);
         this.rootElement = rootElement;
         this.rootChildren = rootChildren == null
                 ? List.of()

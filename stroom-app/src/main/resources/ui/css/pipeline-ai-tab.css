@@ -25,7 +25,7 @@
 }
 
 .pipeline-ai-tab__element {
-    width: 360px;
+    width: calc(360px * var(--text-scale));
     max-width: 100%;
 }
 

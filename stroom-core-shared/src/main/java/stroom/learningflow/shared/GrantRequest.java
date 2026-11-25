@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /// What a person grants a parked session beyond the document's budgets (A77): tokens, milliseconds, or
 /// both, recorded against the attempt alone. Tokens add to what the session may spend over its life;
 /// milliseconds to how long each run of it may take (design 06 A145).
@@ -33,9 +35,9 @@ public class GrantRequest {
     private final long ms;
 
     @JsonCreator
-    public GrantRequest(@JsonProperty("tokens") final long tokens, @JsonProperty("ms") final long ms) {
-        this.tokens = tokens;
-        this.ms = ms;
+    public GrantRequest(@JsonProperty("tokens") final Long tokens, @JsonProperty("ms") final Long ms) {
+        this.tokens = Objects.requireNonNullElse(tokens, 0L);
+        this.ms = Objects.requireNonNullElse(ms, 0L);
     }
 
     public long getTokens() {

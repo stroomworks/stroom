@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * The built-in text of every template and its version, as the node serves it to the Setup tab, so that an
@@ -38,9 +39,9 @@ public class BuiltInTemplates {
     private final Map<Template, String> templates;
 
     @JsonCreator
-    public BuiltInTemplates(@JsonProperty("version") final int version,
+    public BuiltInTemplates(@JsonProperty("version") final Integer version,
                             @JsonProperty("templates") final Map<Template, String> templates) {
-        this.version = version;
+        this.version = Objects.requireNonNullElse(version, 0);
         this.templates = templates;
     }
 

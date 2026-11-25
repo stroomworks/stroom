@@ -1235,6 +1235,32 @@ same content.
 
   When task 1 is done, remove the `@Disabled` annotations: the tests are the definition of done.
 
+## gchq master merged (24 November)
+
+The user merged `origin/master` (`3d7f4ca611`, 476 commits) into this branch and committed it as
+`404b1916fb`. It brought in the XSLT sandbox's own commits as well, on top of the copies applied earlier
+(`db65b2525b`). The twelve conflicts were resolved by hand and checked file by file against both sides:
+
+- **Master's version taken:** `ApacheHttpClientBuilder` and its test (master has the same timeout fix,
+  #6017, with more tests), and `CommonHttpClient` and its test (master's holds the sandbox's secure-mode
+  code we had applied, and adds the OkHttp/Apache format detection).
+- **Combined:** `TestAiServiceImpl` (our four tests and master's two), `stroom-config-global-impl`'s
+  `build.gradle`, and `ProcessorTaskService` with its implementation and mock (`wakeDeferredTasks` beside
+  master's `fetch`, `returnToCreated` and `markFailed`).
+- **One addition of neither side's:** `ProcessorTaskServiceImpl.markFailed()` also accepts `DEFERRED`, a
+  status only this branch has, so that a deferred task can be marked failed. No test covers it yet.
+- **The swagger files** were merged by hand, then regenerated with `:stroom-app:resolve`: identical.
+- **`DashboardApp.gwt.xml`** is deleted, as master deleted it (the dashboard GWT app was removed). Our
+  change to it, inheriting `stroom.learningflow.LearningFlow`, is already in `App.gwt.xml`.
+
+**Passes after the merge:** `compileJava compileTestJava` everywhere, `checkstyleMain checkstyleTest`,
+`stroom-ai-impl` (40), `stroom-processor-impl` (278), `stroom-config-global-impl` (95) and the
+`stroom.pipeline.xsltfunctions` tests (330). **Not run since the merge:** `gwtCompile`, the Learning Flow
+module's tests, `stroom-app`, the full build and the Docker images.
+
+`stroom-app/src/main/resources/ui/dashboard/` is untracked compiled output of the removed dashboard app,
+and can be deleted.
+
 ## What passes now
 
 > **Re-run 23 November, after stage R (the rename):** checkstyle passes across the whole project
@@ -1275,7 +1301,8 @@ Not run: the full build (`clean build shadowJar buildDistribution`) and `./build
 work is uncommitted.*
 
 1. **XSLT sandbox brought in and re-reviewed (24 November):** see *The XSLT sandbox brought in*, and
-   Track 3's table of changes. Track 3 task 1 is larger and still first. Decision S-D8 is new.
+   Track 3's table of changes. Track 3 task 1 is larger and still first, and was started on 24 November
+   after the master merge (see *gchq master merged*). Decision S-D8 is new.
 2. **Security review (23 November):** [learning-flow-security-review.md](learning-flow-security-review.md) has 28
    findings: two Critical (1, 2) and four High (3, 4, 17, 18). The fixes are now **Track 3** of the plan:
    17 tasks in three groups, with tasks 1–7 before the first release. Tasks 1, 3 and 7 need nothing; tasks
