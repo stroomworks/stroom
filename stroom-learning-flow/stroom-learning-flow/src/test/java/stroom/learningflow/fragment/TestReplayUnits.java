@@ -21,9 +21,12 @@ import stroom.learningflow.extraction.JsonStep;
 import stroom.learningflow.extraction.XmlFragmentStep;
 import stroom.learningflow.learning.StepRunner;
 import stroom.learningflow.shared.ReplayUnit;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
+import stroom.pipeline.factory.ElementRegistry;
+import stroom.pipeline.shared.data.PipelineElementType;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.Map;
@@ -40,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestReplayUnits {
 
     private static final Map<String, StepRunner> RUNNERS = List.of(
-                    new DataSplitterStep(null), new JsonStep(), new XmlFragmentStep(), new XsltStep())
+                    new DataSplitterStep(null), new JsonStep(), new XmlFragmentStep(), new StandInXsltStep())
             .stream()
             .collect(Collectors.toMap(StepRunner::elementType, Function.identity()));
 
@@ -66,6 +69,25 @@ class TestReplayUnits {
         assertThat(ReplayUnits.mismatch(ReplayUnit.STREAM, "Pipeline y"))
                 .isEqualTo("Pipeline y has a parser, but the document's allowed elements have none: its "
                            + "stage expects markup it does not parse");
+    }
+
+    @Test
+    void anElementParsesWhereTheRegistryGivesItTheParserRole() {
+        final ElementRegistry registry = Mockito.mock(ElementRegistry.class);
+        Mockito.when(registry.getElementType("DSParser")).thenReturn(type("DSParser",
+                PipelineElementType.ROLE_PARSER, PipelineElementType.ROLE_HAS_TARGETS));
+        Mockito.when(registry.getElementType("XSLTFilter")).thenReturn(type("XSLTFilter",
+                PipelineElementType.ROLE_TARGET, PipelineElementType.ROLE_HAS_TARGETS));
+
+        assertThat(ReplayUnits.parses(registry, "DSParser")).isTrue();
+        assertThat(ReplayUnits.parses(registry, "XSLTFilter")).isFalse();
+        assertThat(ReplayUnits.parses(registry, "NotAnElement"))
+                .describedAs("a type the registry does not know does not parse")
+                .isFalse();
+    }
+
+    private static PipelineElementType type(final String name, final String... roles) {
+        return new PipelineElementType(name, name, null, roles, null);
     }
 
     private static ReplayUnit unitOf(final List<String> chain) {

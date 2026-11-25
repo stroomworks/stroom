@@ -86,13 +86,6 @@ public final class SetupStop {
         return step;
     }
 
-    /// @return The section it shows beside the map: a step is shown under Learning steps.
-    public SetupSection sectionShown() {
-        return section == null
-                ? SetupSection.APPROACH
-                : section;
-    }
-
     /// @return Its key in the map's markup, e.g. "section:QUALITY" or "step:2".
     public String key() {
         return section == null

@@ -19,6 +19,7 @@ package stroom.learningflow.element;
 import stroom.docref.DocRef;
 import stroom.learningflow.learning.TargetSchema;
 import stroom.learningflow.learning.TargetSchemas;
+import stroom.learningflow.scoring.ConfinedXml;
 import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.security.api.SecurityContext;
@@ -32,17 +33,14 @@ import jakarta.inject.Singleton;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
-import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
 /// [TargetSchemas] over Stroom's `XMLSchema` documents: what a node uses.
@@ -191,13 +189,7 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
         }
         try {
             // Hardened as ContentModels hardens its own read of an XSD, with the same parser.
-            final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            return Optional.of(factory.newDocumentBuilder()
-                    .parse(new InputSource(new StringReader(text)))
-                    .getDocumentElement());
+            return Optional.of(ConfinedXml.document(text).getDocumentElement());
         } catch (final ParserConfigurationException | SAXException | IOException e) {
             LOGGER.debug(() -> LogUtil.message("A target schema cannot be parsed: {}", e.getMessage()), e);
             return Optional.empty();

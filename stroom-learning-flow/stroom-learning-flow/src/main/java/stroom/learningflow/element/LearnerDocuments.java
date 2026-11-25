@@ -26,6 +26,7 @@ import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelinePropertyValue;
 import stroom.security.api.SecurityContext;
+import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -42,10 +43,6 @@ import java.util.Optional;
 /// decided by its pipeline. Asking the pipeline is what joins learner and document: rows record the
 /// document too, but only as of when they were written.
 public class LearnerDocuments {
-
-    /// The element's property naming its document: the name Stroom gives
-    /// [LearningFlowParser#setLearningFlow].
-    static final String DOCUMENT_PROPERTY = LearningFlowElements.DOCUMENT_PROPERTY;
 
     private final Provider<PipelineStore> pipelineStoreProvider;
     private final Provider<PipelineDataCache> pipelineDataCacheProvider;
@@ -71,7 +68,7 @@ public class LearnerDocuments {
     /// naming one.
     public Optional<String> documentOf(final Learner learner) {
         return elementOf(learner)
-                .map(element -> element.properties().get(DOCUMENT_PROPERTY))
+                .map(element -> element.properties().get(LearningFlowElements.DOCUMENT_PROPERTY))
                 .map(PipelinePropertyValue::getEntity)
                 .map(DocRef::getUuid);
     }
@@ -126,5 +123,15 @@ public class LearnerDocuments {
     /// @param properties The element's properties as merged, by name.
     record Element(PipelineDoc pipeline, Map<String, PipelinePropertyValue> properties) {
 
+        /// A property's text, where it has any: a blank value is an unset one.
+        ///
+        /// @param property The property's name.
+        /// @return Its value as text, stripped, or empty where it is unset or blank.
+        Optional<String> text(final String property) {
+            return Optional.ofNullable(properties.get(property))
+                    .map(PipelinePropertyValue::getString)
+                    .map(String::strip)
+                    .filter(value -> !NullSafe.isBlankString(value));
+        }
     }
 }

@@ -213,72 +213,54 @@ public class LearnerBindingsDao implements LearnerBindings {
     }
 
     private static String type(final Binding binding) {
-        return binding.getPipeline() == null
-                ? null
-                : binding.getPipeline().getType();
+        return NullSafe.get(binding, Binding::getPipeline, DocRef::getType);
     }
 
     private static String uuid(final Binding binding) {
-        return binding.getPipeline() == null
-                ? null
-                : binding.getPipeline().getUuid();
+        return NullSafe.get(binding, Binding::getPipeline, DocRef::getUuid);
     }
 
     private static String name(final Binding binding) {
-        return binding.getPipeline() == null
-                ? null
-                : binding.getPipeline().getName();
+        return NullSafe.get(binding, Binding::getPipeline, DocRef::getName);
     }
 
     /// The boundary a row holds, in whichever of its three shapes it was written
-    /// (`docs/learning-flow-mixed-record-elements.md`).
+    /// (`docs/learning-flow-mixed-record-elements.md`): the inverse of writing a boundary's four columns,
+    /// shared by every table that keeps one.
     ///
     /// @param element  The element that is one record, or null.
     /// @param children The element whose children are records, or null.
     /// @param array    The array whose items are records, or null.
     /// @param depth    How deep a record sits, or null.
     /// @return The boundary, or null where the row holds none.
-    private static RecordBoundary recordBoundary(final String element,
-                                                 final String children,
-                                                 final String array,
-                                                 final Integer depth) {
-        if (element != null) {
-            return RecordBoundary.ofElement(element).atDepth(depth);
+    static RecordBoundary recordBoundary(final String element,
+                                         final String children,
+                                         final String array,
+                                         final Integer depth) {
+        if (element == null && children == null && array == null) {
+            return null;
         }
-        if (children != null) {
-            return RecordBoundary.ofChildrenOf(children).atDepth(depth);
-        }
-        return array == null
-                ? null
-                : RecordBoundary.ofArray(array).atDepth(depth);
+        return new RecordBoundary(element, children, array, depth);
     }
 
     /// @param binding A binding.
     /// @return The element whose children are its records, or null.
     private static String children(final Binding binding) {
-        return binding.getRecordBoundary() == null
-                ? null
-                : binding.getRecordBoundary().getChildren();
+        return NullSafe.get(binding, Binding::getRecordBoundary, RecordBoundary::getChildren);
     }
 
     private static String element(final Binding binding) {
-        return binding.getRecordBoundary() == null
-                ? null
-                : binding.getRecordBoundary().getElement();
+        return NullSafe.get(binding, Binding::getRecordBoundary, RecordBoundary::getElement);
     }
 
     private static String array(final Binding binding) {
-        return binding.getRecordBoundary() == null
-                ? null
-                : binding.getRecordBoundary().getArray();
+        return NullSafe.get(binding, Binding::getRecordBoundary, RecordBoundary::getArray);
     }
 
     /// How deep the records the boundary names sit, which is part of the boundary and not derivable from
     /// it: a binding read back without it would write a fragment that splits in the wrong place (§12 item
     /// 25).
     private static Integer depth(final Binding binding) {
-        return binding.getRecordBoundary() == null
-                ? null
-                : binding.getRecordBoundary().getDepth();
+        return NullSafe.get(binding, Binding::getRecordBoundary, RecordBoundary::getDepth);
     }
 }

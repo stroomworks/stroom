@@ -109,15 +109,6 @@ public interface SupervisorResource extends RestResource, DirectRestService {
     SupervisorAttempt exhaust(@PathParam("id") long id);
 
     @POST
-    @Path("/backlog")
-    @Operation(
-            summary = "What is waiting on a session, a row per stream, the raised ones first",
-            operationId = "findLearningFlowBacklog")
-    ResultPage<BacklogStream> backlog(@QueryParam("docUuid") String docUuid,
-                                      @Parameter(description = "page", required = true) PageRequest pageRequest);
-
-
-    @POST
     @Path("/serving/{docUuid}/{bindingUuid}/improve")
     @Operation(
             summary = "Ask for a binding that is already serving to be made better",

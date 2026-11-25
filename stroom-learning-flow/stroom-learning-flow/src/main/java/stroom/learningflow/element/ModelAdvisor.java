@@ -24,6 +24,7 @@ import stroom.learningflow.learning.Question;
 import stroom.learningflow.learning.QuestionText;
 import stroom.learningflow.stage.Guidance;
 import stroom.learningflow.stage.Guidance.Given;
+import stroom.util.shared.NullSafe;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -100,17 +101,12 @@ public final class ModelAdvisor implements Advisor {
                     ? 0
                     : response.tokenUsage().totalTokenCount();
             tokens.addAndGet(used);
-            final String reply = response.aiMessage() == null
-                    ? ""
-                    : response.aiMessage().text();
+            // A reply with no message, or a message with no text, is an empty answer
+            final String reply = NullSafe.getOrElse(response.aiMessage(), AiMessage::text, "");
             eventLog.process(document, EVENT_TYPE, "Asked " + modelName + " a " + kind + " question, turn "
                                                    + (transcript.size() + 1) + ": " + used + " tokens, "
-                                                   + (reply == null
-                    ? 0
-                    : reply.length()) + " characters back", null);
-            return reply == null
-                    ? ""
-                    : reply;
+                                                   + reply.length() + " characters back", null);
+            return reply;
         } catch (final RuntimeException e) {
             eventLog.process(document, EVENT_TYPE, "Asked " + modelName + " a " + kind + " question, turn "
                                                    + (transcript.size() + 1) + ": failed", e);

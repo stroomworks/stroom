@@ -146,7 +146,7 @@ class TestScenario22ReviewMode {
         final StageRun waiting = drafted(scenarios);
         final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        scenarios.stage(Script.of()).approve(waiting.doc(), draft.getUuid());
+        scenarios.promotion().approve(waiting.doc(), draft.getUuid(), null);
 
         // The document is untouched: what approval changed is rows (A41).
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
@@ -173,7 +173,7 @@ class TestScenario22ReviewMode {
         final StageRun waiting = drafted(scenarios);
         final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        scenarios.stage(Script.of()).reject(waiting.doc(), draft.getUuid(), "the wrong parser");
+        scenarios.promotion().reject(waiting.doc(), draft.getUuid(), "the wrong parser", null);
 
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
         assertThat(scenarios.regressionSet.accepted(draft.getUuid())).isEmpty();
@@ -196,12 +196,12 @@ class TestScenario22ReviewMode {
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
         final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
-        scenarios.stage(Script.of()).approve(waiting.doc(), draft.getUuid());
+        scenarios.promotion().approve(waiting.doc(), draft.getUuid(), null);
 
-        assertThatThrownBy(() -> scenarios.stage(Script.of()).approve(waiting.doc(), draft.getUuid()))
+        assertThatThrownBy(() -> scenarios.promotion().approve(waiting.doc(), draft.getUuid(), null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not a draft");
-        assertThatThrownBy(() -> scenarios.stage(Script.of()).reject(waiting.doc(), "no-such-rule", "whatever"))
+        assertThatThrownBy(() -> scenarios.promotion().reject(waiting.doc(), "no-such-rule", "whatever", null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -215,10 +215,10 @@ class TestScenario22ReviewMode {
         final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final LearningFlowDoc other = review().copy().uuid("doc-2").name("gate-access").build();
 
-        assertThatThrownBy(() -> scenarios.stage(Script.of()).approve(other, draft.getUuid()))
+        assertThatThrownBy(() -> scenarios.promotion().approve(other, draft.getUuid(), null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not a draft on document gate-access");
-        assertThatThrownBy(() -> scenarios.stage(Script.of()).reject(other, draft.getUuid(), "whatever"))
+        assertThatThrownBy(() -> scenarios.promotion().reject(other, draft.getUuid(), "whatever", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not a draft on document gate-access");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
@@ -234,8 +234,8 @@ class TestScenario22ReviewMode {
     void retractingTheIncumbentLeavesItsDraftAwaitingReview() {
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
-        scenarios.stage(Script.of()).approve(waiting.doc(),
-                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid());
+        scenarios.promotion().approve(waiting.doc(),
+                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid(), null);
         final LearningFlowDoc bound = waiting.doc();
         final Binding incumbent = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final String withAlarms = lines(20, 3);
@@ -244,12 +244,12 @@ class TestScenario22ReviewMode {
                 stream(4, withAlarms)).learned();
         final Binding draft = ((Drafted) relearned.decision()).binding();
 
-        scenarios.stage(Script.of()).retract(bound, incumbent.getUuid(), "The timestamps are wrong.", "jo");
+        scenarios.promotion().retract(bound, incumbent.getUuid(), "The timestamps are wrong.", "jo");
 
         assertThat(scenarios.states.draftAwaiting(Scenarios.LEARNER))
                 .describedAs("the draft is still what awaits review")
                 .contains(draft.getUuid());
-        scenarios.stage(Script.of()).approve(bound, draft.getUuid());
+        scenarios.promotion().approve(bound, draft.getUuid(), null);
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
                 .describedAs("and approving it makes it what serves, there being nothing to rebind")
                 .singleElement()
@@ -266,8 +266,8 @@ class TestScenario22ReviewMode {
     void aStreamThatFallsShortWhileADraftAwaitsReviewWaitsForTheReview() {
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
-        scenarios.stage(Script.of()).approve(waiting.doc(),
-                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid());
+        scenarios.promotion().approve(waiting.doc(),
+                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid(), null);
         final LearningFlowDoc bound = waiting.doc();
         final Binding incumbent = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final String withAlarms = lines(20, 3);
@@ -296,8 +296,8 @@ class TestScenario22ReviewMode {
     void aRelearnedCandidateIsADraftBehindTheIncumbentUntilApproved() {
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
-        scenarios.stage(Script.of()).approve(waiting.doc(),
-                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid());
+        scenarios.promotion().approve(waiting.doc(),
+                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid(), null);
         final LearningFlowDoc bound = waiting.doc();
         final Binding incumbent = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final String withAlarms = lines(20, 3);
@@ -332,7 +332,7 @@ class TestScenario22ReviewMode {
         // the incumbent's own fragment holding what the draft learned, and a regression set that carries
         // both histories.
         final int incumbentHeld = scenarios.regressionSet.accepted(incumbent.getUuid()).size();
-        scenarios.stage(Script.of()).approve(relearned.doc(), draft.getUuid());
+        scenarios.promotion().approve(relearned.doc(), draft.getUuid(), null);
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
         final Binding rebound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(rebound.getUuid()).isEqualTo(incumbent.getUuid());
@@ -356,8 +356,8 @@ class TestScenario22ReviewMode {
     void rejectingARelearnedDraftLeavesTheIncumbentServing() {
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
-        scenarios.stage(Script.of()).approve(waiting.doc(),
-                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid());
+        scenarios.promotion().approve(waiting.doc(),
+                scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0).getUuid(), null);
         final LearningFlowDoc bound = waiting.doc();
         final Binding incumbent = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final String withAlarms = lines(20, 3);
@@ -368,7 +368,7 @@ class TestScenario22ReviewMode {
                 withAlarms)).learned();
         final Binding draft = ((Drafted) relearned.decision()).binding();
 
-        scenarios.stage(Script.of()).reject(relearned.doc(), draft.getUuid(), "no");
+        scenarios.promotion().reject(relearned.doc(), draft.getUuid(), "no", null);
 
         // The incumbent serves on; the rejection is recorded against the learner, and the same falling
         // score does not mark it or produce the same draft again until an operator says otherwise.
@@ -395,7 +395,7 @@ class TestScenario22ReviewMode {
         final Binding draft = ((Drafted) first.decision()).binding();
         assertThat(draft.isDraft()).isTrue();
 
-        scenarios.stage(Script.of()).approve(first.doc(), draft.getUuid());
+        scenarios.promotion().approve(first.doc(), draft.getUuid(), null);
 
         final Binding live = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(live.isDraft()).isFalse();
@@ -414,7 +414,7 @@ class TestScenario22ReviewMode {
         assertThat(scenarios.attempts.forDocument(DOC, 10).get(0).status())
                 .isEqualTo(AttemptStatus.AWAITING_REVIEW);
 
-        scenarios.stage(Script.of()).approve(waiting.doc(), draft.getUuid());
+        scenarios.promotion().approve(waiting.doc(), draft.getUuid(), null);
 
         final Recorded approved = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(approved.status()).isEqualTo(AttemptStatus.PROMOTED);
@@ -425,7 +425,7 @@ class TestScenario22ReviewMode {
         final StageRun second = drafted(other);
         final Binding rejectable = other.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        other.stage(Script.of()).reject(second.doc(), rejectable.getUuid(), "the wrong parser");
+        other.promotion().reject(second.doc(), rejectable.getUuid(), "the wrong parser", null);
 
         final Recorded rejected = other.attempts.forDocument(DOC, 10).get(0);
         assertThat(rejected.status()).isEqualTo(AttemptStatus.REJECTED);
@@ -450,7 +450,7 @@ class TestScenario22ReviewMode {
                 });
         assertThat(awaiting.review().reviewedBy()).isNull();
 
-        scenarios.stage(Script.of()).approve(waiting.doc(), draft.getUuid(), "jo");
+        scenarios.promotion().approve(waiting.doc(), draft.getUuid(), "jo");
 
         final Recorded approved = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(approved.review().reviewedBy()).isEqualTo("jo");
@@ -462,7 +462,7 @@ class TestScenario22ReviewMode {
         final StageRun second = drafted(other);
         final Binding rejectable = other.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        other.stage(Script.of()).reject(second.doc(), rejectable.getUuid(), "the wrong parser", "ann");
+        other.promotion().reject(second.doc(), rejectable.getUuid(), "the wrong parser", "ann");
 
         assertThat(other.attempts.forDocument(DOC, 10).get(0).review().reviewedBy()).isEqualTo("ann");
     }

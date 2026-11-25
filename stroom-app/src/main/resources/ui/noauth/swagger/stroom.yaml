@@ -5503,31 +5503,6 @@ paths:
         output
       tags:
       - Learning Flow Quality
-  /learningFlowSupervisor/v1/backlog:
-    post:
-      operationId: findLearningFlowBacklog
-      parameters:
-      - in: query
-        name: docUuid
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PageRequest"
-        description: page
-        required: true
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultPageBacklogStream"
-          description: default response
-      summary: "What is waiting on a session, a row per stream, the raised ones first"
-      tags:
-      - Learning Flow Supervisor
   /learningFlowSupervisor/v1/find:
     post:
       operationId: findLearningFlowAttempts

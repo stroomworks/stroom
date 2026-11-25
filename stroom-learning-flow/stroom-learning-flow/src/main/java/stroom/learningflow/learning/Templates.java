@@ -339,25 +339,16 @@ public final class Templates {
         final String text = text(template);
         final StringBuilder out = new StringBuilder(text.length());
         int from = 0;
-        while (true) {
-            final int open = text.indexOf("${", from);
-            if (open < 0) {
-                out.append(text, from, text.length());
-                return out.toString();
-            }
-            final int close = text.indexOf('}', open);
-            if (close < 0) {
-                out.append(text, from, text.length());
-                return out.toString();
-            }
-            final String name = text.substring(open + 2, close);
-            final String value = variables.get(name);
-            out.append(text, from, open);
+        for (final Slot slot : scan(text)) {
+            final String value = variables.get(slot.name(text));
+            out.append(text, from, slot.open());
             out.append(value == null
-                    ? text.substring(open, close + 1)
+                    ? text.substring(slot.open(), slot.close() + 1)
                     : value);
-            from = close + 1;
+            from = slot.close() + 1;
         }
+        out.append(text, from, text.length());
+        return out.toString();
     }
 
     /**
@@ -382,18 +373,42 @@ public final class Templates {
 
     static List<String> slots(final String text) {
         final List<String> names = new ArrayList<>();
+        for (final Slot slot : scan(text)) {
+            names.add(slot.name(text));
+        }
+        return names;
+    }
+
+    /// The `${name}` slots of a text, in order. Scanning stops at a `${` with no `}` after it.
+    private static List<Slot> scan(final String text) {
+        final List<Slot> slots = new ArrayList<>();
         int from = 0;
         while (true) {
             final int open = text.indexOf("${", from);
             if (open < 0) {
-                return names;
+                return slots;
             }
             final int close = text.indexOf('}', open);
             if (close < 0) {
-                return names;
+                return slots;
             }
-            names.add(text.substring(open + 2, close));
+            slots.add(new Slot(open, close));
             from = close + 1;
+        }
+    }
+
+
+    // --------------------------------------------------------------------------------
+
+
+    /// One `${name}` slot of a text.
+    ///
+    /// @param open  The index of its `$`.
+    /// @param close The index of its `}`.
+    private record Slot(int open, int close) {
+
+        private String name(final String text) {
+            return text.substring(open + 2, close);
         }
     }
 }

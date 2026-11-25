@@ -47,7 +47,7 @@ class TestLearnerDocuments {
         final LearnerDocuments documents = documents(new PipelineDataBuilder()
                 .addElement(new PipelineElement("Source", "Source"))
                 .addElement(new PipelineElement("stage", LearningFlowElements.PARSER))
-                .addProperty(PipelineDataUtil.createProperty("stage", LearnerDocuments.DOCUMENT_PROPERTY, DOCUMENT))
+                .addProperty(PipelineDataUtil.createProperty("stage", LearningFlowElements.DOCUMENT_PROPERTY, DOCUMENT))
                 .build());
 
         assertThat(documents.documentOf(new Learner(PIPELINE, "stage"))).contains("doc-1");
@@ -58,7 +58,7 @@ class TestLearnerDocuments {
         final LearnerDocuments documents = documents(new PipelineDataBuilder()
                 .addElement(new PipelineElement("stage", LearningFlowElements.PARSER))
                 .addElement(new PipelineElement("other", "XSLTFilter"))
-                .addProperty(PipelineDataUtil.createProperty("other", LearnerDocuments.DOCUMENT_PROPERTY, DOCUMENT))
+                .addProperty(PipelineDataUtil.createProperty("other", LearningFlowElements.DOCUMENT_PROPERTY, DOCUMENT))
                 .build());
 
         assertThat(documents.documentOf(new Learner(PIPELINE, "missing")))

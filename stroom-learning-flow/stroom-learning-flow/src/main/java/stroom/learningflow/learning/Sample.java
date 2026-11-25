@@ -22,7 +22,6 @@ import stroom.meta.shared.MetaFields;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,11 +47,6 @@ import java.util.Map;
  */
 public record Sample(String text, Map<String, String> headers, StreamFacts facts, int cutFrom,
                      boolean beyondPrefix) {
-
-    /**
-     * What the model is shown of a stream's attributes: its feed and its type.
-     */
-    public static final List<String> SHOWN = List.of(MetaFields.FIELD_FEED, MetaFields.FIELD_TYPE);
 
     public Sample {
         // Order is kept: a prompt lists the values in order, strongest signal first.

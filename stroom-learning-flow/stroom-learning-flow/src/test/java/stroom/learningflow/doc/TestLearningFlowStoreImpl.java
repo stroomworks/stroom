@@ -171,9 +171,6 @@ class TestLearningFlowStoreImpl {
                 .build()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("The checks cannot be held: The compile check is always a gate.");
-        // The "isn't built yet" refusal has no case to answer now that the error load and event
-        // classification checks are gone (D5) and every check that is left is built. The refusal stays in
-        // CheckSettings.problems for a check added before its scorer is written; TestCheckSettings covers it.
     }
 
     @Test

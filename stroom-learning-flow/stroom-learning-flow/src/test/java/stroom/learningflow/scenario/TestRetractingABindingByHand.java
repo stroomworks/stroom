@@ -28,7 +28,6 @@ import stroom.learningflow.shared.LearningMode;
 import stroom.learningflow.shared.YieldBasis;
 import stroom.learningflow.shared.YieldParameters;
 import stroom.learningflow.stage.Input;
-import stroom.learningflow.stage.Stage;
 
 import org.junit.jupiter.api.Test;
 
@@ -59,7 +58,6 @@ class TestRetractingABindingByHand {
     @Test
     void theBindingGoesTheLearnerLearnsAgainAndWhatItProducedIsCounted() {
         final Scenarios scenarios = new Scenarios();
-        final Stage stage = scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings);
         final LearningFlowDoc doc = doc();
         scenarios.process(learn(scenarios), doc, stream(1L)).learned();
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
@@ -69,7 +67,7 @@ class TestRetractingABindingByHand {
                 .describedAs("the binding has produced output rows to take back")
                 .isNotEmpty();
 
-        final int produced = stage.retract(doc, bound.getUuid(),
+        final int produced = scenarios.promotion().retract(doc, bound.getUuid(),
                 "The timestamps are being read as UTC and the feed is local.", "jo");
 
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
@@ -100,7 +98,7 @@ class TestRetractingABindingByHand {
         final LearningFlowDoc doc = doc();
         scenarios.process(learn(scenarios), doc, stream(1L)).learned();
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
-        scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings)
+        scenarios.promotion()
                 .retract(doc, bound.getUuid(), "Wrong.", "jo");
 
         final Script asked = learn(scenarios);
@@ -120,17 +118,16 @@ class TestRetractingABindingByHand {
     @Test
     void whatCannotBeRetractedSaysSoRatherThanGuessing() {
         final Scenarios scenarios = new Scenarios();
-        final Stage stage = scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings);
         final LearningFlowDoc doc = doc();
         scenarios.process(learn(scenarios), doc, stream(1L)).learned();
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        assertThatThrownBy(() -> stage.retract(doc, "not-a-rule", "Wrong.", "jo"))
+        assertThatThrownBy(() -> scenarios.promotion().retract(doc, "not-a-rule", "Wrong.", "jo"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not a binding of this document");
 
         scenarios.learnerBindings.append(Scenarios.LEARNER, "doc-1", bound.copy().uuid("a-draft").draft(true).build());
-        assertThatThrownBy(() -> stage.retract(doc, "a-draft", "Wrong.", "jo"))
+        assertThatThrownBy(() -> scenarios.promotion().retract(doc, "a-draft", "Wrong.", "jo"))
                 .describedAs("a draft served nothing, so deciding it is Approve or Reject (A25)")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("draft awaiting review");
@@ -145,7 +142,6 @@ class TestRetractingABindingByHand {
     @Test
     void theAttemptThatBoundItSaysSo() {
         final Scenarios scenarios = new Scenarios();
-        final Stage stage = scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings);
         final LearningFlowDoc doc = doc();
         scenarios.process(learn(scenarios), doc, stream(1L)).learned();
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
@@ -153,7 +149,7 @@ class TestRetractingABindingByHand {
                 .describedAs("the attempt that bound it closed promoted")
                 .anySatisfy(attempt -> assertThat(attempt.status()).isEqualTo(AttemptStatus.PROMOTED));
 
-        stage.retract(doc, bound.getUuid(), "The timestamps are wrong.", "jo");
+        scenarios.promotion().retract(doc, bound.getUuid(), "The timestamps are wrong.", "jo");
 
         assertThat(scenarios.attempts.found(new AttemptCriteria(), List.of("doc-1")).attempts())
                 .describedAs("and now says it was retracted, with who asked and why")
@@ -173,12 +169,12 @@ class TestRetractingABindingByHand {
     @Test
     void aLearnerThatGaveUpLearnsAgainWhenSomebodyAsks() {
         final Scenarios scenarios = new Scenarios();
-        final Stage stage = scenarios.stage(document -> learn(scenarios), scenarios.learnerBindings);
         scenarios.states.giveUp(Scenarios.LEARNER, "doc-1", "The model could not make sense of it");
 
         // Sent back from the attempt that gave up (A28). The streams that errored are ordinary error
         // streams, reprocessed on the pipeline as any others are (A129, A131): this counts none of them.
-        stage.relearn(doc(), Scenarios.LEARNER, "Sent back to be learned again by jo: the feed has been fixed");
+        scenarios.supervisorActions().relearn(doc(), Scenarios.LEARNER,
+                "Sent back to be learned again by jo: the feed has been fixed");
 
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER))
                 .describedAs("the give-up goes, or the mark below it would never be reached")

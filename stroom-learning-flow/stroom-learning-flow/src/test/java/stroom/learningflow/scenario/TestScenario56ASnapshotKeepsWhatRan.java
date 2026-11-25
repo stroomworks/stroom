@@ -243,7 +243,7 @@ class TestScenario56ASnapshotKeepsWhatRan {
         final Binding learned = learn(scenarios, doc, TRANSLATES_BOTH);
         assertThat(scenarios.snapshots.forBinding(learned.getUuid())).hasSize(1);
 
-        scenarios.stage(document -> Script.of(), scenarios.learnerBindings).retract(doc, learned.getUuid(), "wrong",
+        scenarios.promotion().retract(doc, learned.getUuid(), "wrong",
                 "jo");
 
         assertThat(scenarios.snapshots.forBinding(learned.getUuid())).isEmpty();

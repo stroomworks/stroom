@@ -61,7 +61,7 @@ class TestALearnerThatGaveUpIsSentBack {
         assertThat(((Sentinel) errored.decision()).reason()).contains("Given up");
 
         // A person sends it back from the attempt list, as the Supervisor's Learn again does.
-        scenarios.stage(Script.of()).relearn(doc, Scenarios.LEARNER, "Sent back to be learned again by jo");
+        scenarios.supervisorActions().relearn(doc, Scenarios.LEARNER, "Sent back to be learned again by jo");
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).isEmpty();
 
         // And reprocesses the stream that errored: it is the learner's next stream, and it learns.

@@ -52,9 +52,12 @@ import stroom.learningflow.stage.DeferredWorker;
 import stroom.learningflow.stage.Input;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
+import stroom.learningflow.stage.Promotion;
 import stroom.learningflow.stage.SpendBreaker;
 import stroom.learningflow.stage.Stage;
 import stroom.learningflow.stage.StageRun;
+import stroom.learningflow.stage.StreamHeld;
+import stroom.learningflow.stage.SupervisorActions;
 import stroom.learningflow.state.InMemoryAttempts;
 import stroom.learningflow.state.InMemoryDeferrals;
 import stroom.learningflow.state.InMemoryDeletedPipelines;
@@ -71,7 +74,7 @@ import stroom.learningflow.state.InMemoryRegressionSet;
 import stroom.learningflow.state.InMemorySnapshots;
 import stroom.learningflow.state.InMemorySpend;
 import stroom.learningflow.state.InMemoryWake;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.processor.api.DeferTaskException;
 
 import java.io.IOException;
@@ -101,7 +104,6 @@ public final class Scenarios {
     public static final Instant NOW = Instant.parse("2026-09-17T09:00:00Z");
     /// A node's lease on a session (design 04 §4), as a node's configuration defaults it.
     public static final Duration LEASE = Duration.ofMinutes(10);
-    public static final long SEED = 42L;
     /// What a scenario's stage learns as (A114): one pipeline's Learning Flow element. A scenario sends
     /// every feed through the one stage, as a supervising pipeline did before design 06, and everything the
     /// stage keeps is this learner's (design 06 phase J slice 2b). Its pipeline is the one a scenario's
@@ -165,7 +167,7 @@ public final class Scenarios {
 
     public List<StepRunner> runners() {
         return List.of(new DataSplitterStep(NODE.compiler()), new JsonStep(), new XmlFragmentStep(),
-                new XsltStep());
+                new StandInXsltStep());
     }
 
     public List<Scorer> scorers() {
@@ -251,15 +253,34 @@ public final class Scenarios {
                 stores.codes(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 LEASE,
-                SEED,
-                node);
+                node,
+                // A harness, where a rebuilt prompt's caveat has no reader
+                null);
+    }
+
+    /// Promotion over this scenario's state (simplification option iii): approve, reject and retract, as
+    /// the Supervisor gets them from a node's stage factory.
+    ///
+    /// @return It, under the scenario's clock.
+    public Promotion promotion() {
+        return new Promotion(learnerBindings, states, regressionSet, snapshots, outputs, attempts, stores.writer(),
+                stores.codes(), places, wake, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    /// A person's actions on a run or a learner over this scenario's state (simplification option iii):
+    /// grant, exhaust, amend, relearn and give up, as the Supervisor gets them from a node's stage factory.
+    ///
+    /// @return Them, under the scenario's clock and lease.
+    public SupervisorActions supervisorActions() {
+        return new SupervisorActions(attempts, learnerBindings, states, regressionSet, snapshots, targetSchemas,
+                wake, Clock.fixed(NOW, ZoneOffset.UTC), LEASE);
     }
 
     /// The worker over this scenario's state (A5, A28), answering with a given script: the job that
     /// carries on the attempts a processing task parks. The stage is one of this scenario's,
     /// since a stage holds nothing of a stream between calls.
     public DeferredWorker worker(final Advisor answerer) {
-        return new DeferredWorker(stage(answerer), attempts, documents, inputs, deletedPipelines,
+        return new DeferredWorker(stage(answerer), attempts, documents, inputs, StreamHeld.NONE, deletedPipelines,
                 document -> answerer,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }

@@ -16,12 +16,12 @@
 
 package stroom.learningflow;
 
+import stroom.data.shared.StreamTypeNames;
 import stroom.data.store.mock.MockStore;
 import stroom.docref.DocRef;
 import stroom.learningflow.doc.LearningFlowStore;
 import stroom.learningflow.element.DeferredLearning;
 import stroom.learningflow.element.StageFactory;
-import stroom.learningflow.element.StoredRegressionSet;
 import stroom.learningflow.extraction.DataSplitterCompiler;
 import stroom.learningflow.extraction.DataSplitterStep;
 import stroom.learningflow.extraction.ExtractionCorpus.Golden;
@@ -47,7 +47,7 @@ import stroom.learningflow.stage.LearnerBindings;
 import stroom.learningflow.stage.RegressionSet;
 import stroom.learningflow.stage.RegressionSet.Accepted;
 import stroom.learningflow.stage.RegressionSet.Kind;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.mock.MockMetaService;
 import stroom.meta.shared.Meta;
 import stroom.meta.shared.MetaFields;
@@ -213,7 +213,7 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
 
     private List<Meta> corpusStreams() {
         return metaService.getMetaMap().values().stream()
-                .filter(meta -> StoredRegressionSet.CORPUS_TYPE.equals(meta.getTypeName()))
+                .filter(meta -> StreamTypeNames.LEARNING_FLOW_CORPUS.equals(meta.getTypeName()))
                 .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
                 .toList();
     }
@@ -266,7 +266,7 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
 
     private List<StepRunner> runners() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
-        return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new XsltStep());
+        return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new StandInXsltStep());
     }
 
     private Script script(final String splitter, final String stylesheet) {

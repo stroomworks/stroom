@@ -90,7 +90,7 @@ class TestStroomStandIns {
     @Test
     void aFunctionTheListRefusesIsNotThereToCall() {
         // The harness agrees with the static check: a refused function is an unknown function here
-        final StepResult result = new XsltStep(FACTS).prepare(wrapping("""
+        final StepResult result = new StandInXsltStep(FACTS).prepare(wrapping("""
                 <xsl:template match="/records">
                   <Event><xsl:value-of select="stroom:lookup('USERS', 'bob')"/></Event>
                 </xsl:template>""")).run("<records/>");
@@ -103,7 +103,7 @@ class TestStroomStandIns {
     void readingAFileIsStillRefusedHoweverTheCheckWent() {
         // The harness does not lean on the static check having run: the ways out of the process are shut
         // here too
-        final StepResult result = new XsltStep(FACTS).prepare(wrapping("""
+        final StepResult result = new StandInXsltStep(FACTS).prepare(wrapping("""
                 <xsl:template match="/records">
                   <Event><xsl:value-of select="unparsed-text('file:///etc/passwd')"/></Event>
                 </xsl:template>""")).run("<records/>");
@@ -115,7 +115,7 @@ class TestStroomStandIns {
     void withoutTheStreamAPartialDateFailsRatherThanReadingTheClock() {
         // Assumption AS6 from the other side: a year taken from the clock would differ between judging
         // and serving, so a run that does not know the stream says so instead
-        final StepResult result = new XsltStep().prepare(wrapping("""
+        final StepResult result = new StandInXsltStep().prepare(wrapping("""
                 <xsl:template match="/records">
                   <Event><xsl:value-of select="stroom:format-date('Jun 17 09:06:02', 'MMM dd HH:mm:ss')"/></Event>
                 </xsl:template>""")).run("<records/>");
@@ -138,7 +138,7 @@ class TestStroomStandIns {
     }
 
     private static String run(final String body) {
-        final StepResult result = new XsltStep(FACTS).prepare(wrapping(body)).run("<records/>");
+        final StepResult result = new StandInXsltStep(FACTS).prepare(wrapping(body)).run("<records/>");
         assertThat(result.diagnostics()).describedAs("diagnostics").isEmpty();
         assertThat(result.output()).describedAs("output").isNotNull();
         return result.output();

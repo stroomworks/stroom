@@ -22,7 +22,7 @@ import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.scoring.Attempted;
 import stroom.learningflow.scoring.Verdict;
 import stroom.learningflow.shared.RecordBoundary;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.util.shared.DocPath;
 
 import org.junit.jupiter.api.Test;
@@ -63,13 +63,13 @@ class TestStandInFragmentRunner {
         // second element would be re-splitting a document of events where the records used to be.
         final ContentStores stores = new ContentStores();
         final List<LearnedStep> chain = List.of(
-                new LearnedStep(new XsltStep(), ONE_EVENT, new StepResult("<Events/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), COUNT_EVENTS, new StepResult("<Out/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), ONE_EVENT, new StepResult("<Events/>", List.of()), UNSCORED),
+                new LearnedStep(new StandInXsltStep(), COUNT_EVENTS, new StepResult("<Out/>", List.of()), UNSCORED));
         final RecordBoundary boundary = RecordBoundary.ofElement("record").atDepth(2);
         final DocRef fragment = stores.writer().write(FOLDER, "two-pass", chain, boundary);
 
         final List<Attempted> steps = new StandInFragmentRunner(stores.pipelines, stores.stackLoader,
-                stores.textConverters, stores.xslts, List.of(new XsltStep()))
+                stores.textConverters, stores.xslts, List.of(new StandInXsltStep()))
                 .run(fragment, TWO_RECORDS, boundary);
 
         assertThat(steps).hasSize(2);

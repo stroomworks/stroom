@@ -31,6 +31,7 @@ import jakarta.inject.Inject;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 /// What a fragment is made of, as text (A61, A70): its structure, the code each of its elements runs
 /// with, and the versions of the documents all of that was read from. A snapshot is this, kept; a hand
@@ -60,22 +61,16 @@ public final class FragmentCodes {
         final Map<String, String> code = new LinkedHashMap<>();
         final Map<String, String> versions = new LinkedHashMap<>();
         versions.put(fragment.getUuid(), pipeline.getVersion());
-        for (final PipelineProperty property : data.getAddedProperties()) {
-            final DocRef referenced = property.getValue() == null
-                    ? null
-                    : property.getValue().getEntity();
-            if (referenced == null) {
-                continue;
-            }
+        eachReference(data, (element, referenced) -> {
             switch (referenced.getType()) {
                 case XsltDoc.TYPE -> {
                     final XsltDoc xslt = xsltStore.readDocument(referenced);
-                    code.put(property.getElement(), xslt.getData());
+                    code.put(element, xslt.getData());
                     versions.put(referenced.getUuid(), xslt.getVersion());
                 }
                 case TextConverterDoc.TYPE -> {
                     final TextConverterDoc converter = textConverterStore.readDocument(referenced);
-                    code.put(property.getElement(), converter.getData());
+                    code.put(element, converter.getData());
                     versions.put(referenced.getUuid(), converter.getVersion());
                 }
                 default -> {
@@ -83,7 +78,7 @@ public final class FragmentCodes {
                     // feed. Its version is not what a hand edit of the fragment's code changes.
                 }
             }
-        }
+        });
         return new Codes(JsonUtil.writeValueAsString(data, false), code, versions);
     }
 
@@ -96,15 +91,26 @@ public final class FragmentCodes {
     public Map<String, String> stylesheets(final DocRef fragment) {
         final PipelineDoc pipeline = pipelineStore.readDocument(fragment);
         final Map<String, String> stylesheets = new LinkedHashMap<>();
-        for (final PipelineProperty property : pipeline.getPipelineData().getAddedProperties()) {
+        eachReference(pipeline.getPipelineData(), (element, referenced) -> {
+            if (XsltDoc.TYPE.equals(referenced.getType())) {
+                stylesheets.put(element, xsltStore.readDocument(referenced).getData());
+            }
+        });
+        return stylesheets;
+    }
+
+    /// Each document the fragment's own properties reference, with the id of the element whose property
+    /// references it, in the order the properties are held. A property that references nothing is passed
+    /// over.
+    private static void eachReference(final PipelineData data, final BiConsumer<String, DocRef> action) {
+        for (final PipelineProperty property : data.getAddedProperties()) {
             final DocRef referenced = property.getValue() == null
                     ? null
                     : property.getValue().getEntity();
-            if (referenced != null && XsltDoc.TYPE.equals(referenced.getType())) {
-                stylesheets.put(property.getElement(), xsltStore.readDocument(referenced).getData());
+            if (referenced != null) {
+                action.accept(property.getElement(), referenced);
             }
         }
-        return stylesheets;
     }
 
     /// The versions alone, for asking whether a fragment has moved since a snapshot was taken.

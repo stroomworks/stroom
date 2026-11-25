@@ -39,10 +39,7 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Consumer;
 
 /// A Smart Pipeline's Quality Assurance tab ([QualityTab]; design 07), for a QA person judging one pipeline's
 /// translated output: the figures of the translation each of its Smart Pipeline elements has in use
@@ -67,8 +64,8 @@ public class QualityTabController extends Controller {
 
     private final QualityTab view;
     private final RestFactory restFactory;
-    /// The settings of each Learning Flow an element learns under, by its uuid, read once while the tab is open.
-    private final Map<String, LearningFlowDoc> settings = new HashMap<>();
+    /// The settings of each Learning Flow an element learns under, read once while the tab is open.
+    private final PipelineLearners learners;
     private DocRef pipeline;
     private List<PipelineAiElement> elements = List.of();
     private PipelineAiElement chosen;
@@ -92,6 +89,7 @@ public class QualityTabController extends Controller {
         super(eventBus);
         this.view = view;
         this.restFactory = restFactory;
+        this.learners = new PipelineLearners(SUPERVISOR_RESOURCE, restFactory, this, this::taskMonitor);
         initWidget(view);
         view.setDateFormat(dateTimeFormatter::format);
         view.setDayFormat(QualityTabController::day);
@@ -115,7 +113,7 @@ public class QualityTabController extends Controller {
     /// @param found       Its Smart Pipeline elements; empty for none.
     public void setElements(final DocRef pipelineRef, final List<PipelineAiElement> found) {
         if (pipeline == null || !pipeline.getUuid().equals(pipelineRef.getUuid())) {
-            settings.clear();
+            learners.clear();
         }
         pipeline = pipelineRef;
         elements = new ArrayList<>(found);
@@ -172,18 +170,15 @@ public class QualityTabController extends Controller {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
                 .method(resource -> resource.pipelineLearners(pipeline.getUuid()))
-                .onSuccess(learners -> {
+                .onSuccess(found -> {
                     if (request != asked) {
                         return;
                     }
-                    final SupervisorLearner row = NullSafe.list(learners).stream()
-                            .filter(learner -> element.getId().equals(learner.getLearner().getElementId()))
-                            .findFirst()
-                            .orElse(null);
+                    final SupervisorLearner row = PipelineLearners.learnerOf(found, element.getId());
                     if (row == null) {
                         view.showNothing(PipelineAiTabController.NOT_LEARNED);
                     } else {
-                        withSettings(row, doc -> readRuns(request, row, doc));
+                        learners.readOrNull(row, doc -> readRuns(request, row, doc));
                     }
                 })
                 .owner(this)
@@ -242,35 +237,8 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-
     // A day (UTC) as the volume's table and chart name it, e.g. "17 Nov"
     private static String day(final long dayMs) {
         return DAY_FORMAT.format(new Date(dayMs), UTC);
-    }
-
-    // The settings of the Learning Flow an element learns under, read once; null where they can't be read
-    private void withSettings(final SupervisorLearner row, final Consumer<LearningFlowDoc> then) {
-        if (row.getDoc() == null) {
-            then.accept(null);
-            return;
-        }
-        final String docUuid = row.getDoc().getUuid();
-        final LearningFlowDoc known = settings.get(docUuid);
-        if (known != null) {
-            then.accept(known);
-            return;
-        }
-        restFactory
-                .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.settings(docUuid, row.getLearner().getPipelineUuid(),
-                        row.getLearner().getElementId()))
-                .onSuccess(doc -> {
-                    settings.put(docUuid, doc);
-                    then.accept(doc);
-                })
-                .onFailure(error -> then.accept(null))
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
     }
 }

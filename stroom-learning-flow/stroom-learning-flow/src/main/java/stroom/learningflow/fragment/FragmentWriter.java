@@ -55,9 +55,7 @@ import java.util.Set;
  */
 public final class FragmentWriter {
 
-    private static final String SOURCE = "Source";
     private static final String SPLIT = "splitFilter";
-    private static final String SPLIT_FILTER = "SplitFilter";
     private static final String SPLIT_DEPTH = "splitDepth";
     private static final String SPLIT_COUNT = "splitCount";
     private static final Set<String> WRITABLE = Set.of(TextConverterDoc.TYPE, XsltDoc.TYPE);
@@ -214,8 +212,8 @@ public final class FragmentWriter {
         // learner's takes the first free number (A132), and its documents go with it.
         final String named = creator.unused(folder, name);
         final PipelineDataBuilder builder = new PipelineDataBuilder()
-                .addElement(new PipelineElement(SOURCE, SOURCE));
-        String previous = SOURCE;
+                .addElement(new PipelineElement(PipelineRuns.SOURCE, PipelineRuns.SOURCE));
+        String previous = PipelineRuns.SOURCE;
         // No depth, no filter: a boundary from a binding learned before the depth was recorded cannot say
         // where to split, and a guessed depth splits nothing (see RecordBoundary#splitDepth).
         final OptionalInt depth = boundary == null
@@ -232,7 +230,7 @@ public final class FragmentWriter {
             // after the source where the input is already markup. Raw text needs none: the Data Splitter
             // *is* the splitter, and a chain that cuts with a configuration has no boundary of this kind.
             if (!split && !step.runner().parser() && depth.isPresent()) {
-                builder.addElement(new PipelineElement(SPLIT, SPLIT_FILTER));
+                builder.addElement(new PipelineElement(SPLIT, PipelineRuns.SPLIT_FILTER));
                 builder.addLink(previous, SPLIT);
                 builder.addProperty(new PipelineProperty(SPLIT, SPLIT_DEPTH,
                         new PipelinePropertyValue(depth.getAsInt())));

@@ -99,8 +99,7 @@ public class LearningFlowStoreImpl
     /**
      * What the editor cannot check is checked on save, with the fault named, rather than at run time by the
      * supervisor: the flow must be one the stage can hold (A33), and the checks must keep to their rules
-     * (the one model of checks: compile always a gate, nothing turned on that isn't built, thresholds from 0
-     * to 1).
+     * (the one model of checks: compile and permitted always gates, thresholds from 0 to 1).
      */
     @Override
     public LearningFlowDoc writeDocument(final LearningFlowDoc document) {

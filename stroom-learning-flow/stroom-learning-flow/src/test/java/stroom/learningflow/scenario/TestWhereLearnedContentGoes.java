@@ -61,7 +61,7 @@ class TestWhereLearnedContentGoes {
         assertThat(binding.getPipeline().getName()).isEqualTo("DOOR-ACCESS Raw Events");
 
         // Taken back, and learned again: a new fragment (design 01 §7.3 rule 1), beside the first.
-        scenarios.stage(Script.of()).retract(doc(), binding.getUuid(), "The timestamps are wrong.", "jo");
+        scenarios.promotion().retract(doc(), binding.getUuid(), "The timestamps are wrong.", "jo");
         final StageRun second = scenarios.process(script(scenarios), doc(), stream(2L)).learned();
 
         assertThat(second.decision()).isInstanceOf(Promoted.class);

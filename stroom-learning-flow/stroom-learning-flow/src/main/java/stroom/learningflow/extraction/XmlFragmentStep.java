@@ -22,6 +22,7 @@ import stroom.learningflow.learning.StepRunner;
 import stroom.learningflow.scoring.ConfinedXml;
 import stroom.pipeline.shared.TextConverterDoc;
 import stroom.pipeline.shared.TextConverterDoc.TextConverterType;
+import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
@@ -52,7 +53,7 @@ import java.util.Optional;
 /// pipeline needs to run it.
 public final class XmlFragmentStep implements StepRunner {
 
-    public static final String ELEMENT_TYPE = "XMLFragmentParser";
+    public static final String ELEMENT_TYPE = PipelineElementType.TYPE_XML_FRAGMENT_PARSER;
 
     /// The wrapper as the pipeline's parser takes it: a root element with the entity where the stream's
     /// fragments go. `records` rather than anything cleverer, because the name is the model's to ignore
@@ -66,7 +67,6 @@ public final class XmlFragmentStep implements StepRunner {
     private static final ElementId ELEMENT = new ElementId("xmlFragmentParser");
     private static final Configured CONFIGURED = new Configured(TextConverterDoc.TYPE, "textConverter",
             TextConverterType.XML_FRAGMENT);
-    private static final String ROOT = "records";
 
     @Override
     public String elementType() {

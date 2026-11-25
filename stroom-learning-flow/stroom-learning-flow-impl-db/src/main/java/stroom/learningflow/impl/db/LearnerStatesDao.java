@@ -25,6 +25,7 @@ import jakarta.inject.Singleton;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
@@ -50,16 +51,7 @@ public class LearnerStatesDao implements LearnerStates {
 
     @Override
     public void giveUp(final Learner learner, final String docUuid, final String reason) {
-        JooqUtil.context(connProvider, context -> {
-            row(context, learner, docUuid);
-            context.update(LEARNING_FLOW_LEARNER_STATE)
-                    .set(LEARNING_FLOW_LEARNER_STATE.GIVEN_UP_REASON, reason)
-                    .set(LEARNING_FLOW_LEARNER_STATE.VERSION, LEARNING_FLOW_LEARNER_STATE.VERSION.plus(1))
-                    .set(LEARNING_FLOW_LEARNER_STATE.UPDATE_TIME_MS, System.currentTimeMillis())
-                    .set(LEARNING_FLOW_LEARNER_STATE.DOC_UUID, docUuid)
-                    .where(key(learner))
-                    .execute();
-        });
+        set(learner, docUuid, LEARNING_FLOW_LEARNER_STATE.GIVEN_UP_REASON, reason);
     }
 
     /// The rolling score of §5, folded in one transaction so that two nodes serving the same learner at once
@@ -204,34 +196,20 @@ public class LearnerStatesDao implements LearnerStates {
                 .and(LEARNING_FLOW_LEARNER_STATE.ELEMENT_ID.eq(learner.elementId()));
     }
 
-    /// The row for a learner, made where this node is the first to mention it. Two nodes meeting a new learner
-    /// at once both insert; the unique key decides, and the loser reads what the winner wrote. The row is
-    /// looked for first, so that the steady path — the row exists — takes no lock here. Where it is
-    /// missing, the insert takes the row's exclusive lock even on a duplicate, so that a following
-    /// `FOR UPDATE` has nothing to upgrade: a shared lock held by two transactions that each then want it
-    /// exclusively is a deadlock.
+    /// The row for a learner, made where this node is the first to mention it; see
+    /// [RowMaker#makeIfMissing] for why it is made as it is.
     private static void row(final DSLContext context,
                             final Learner learner,
                             final String docUuid) {
-        final boolean exists = context.fetchExists(context.selectFrom(LEARNING_FLOW_LEARNER_STATE)
-                .where(key(learner)));
-        if (exists) {
-            return;
-        }
         final long now = System.currentTimeMillis();
-        context.insertInto(LEARNING_FLOW_LEARNER_STATE)
-                .set(LEARNING_FLOW_LEARNER_STATE.VERSION, 1)
-                .set(LEARNING_FLOW_LEARNER_STATE.CREATE_TIME_MS, now)
-                .set(LEARNING_FLOW_LEARNER_STATE.UPDATE_TIME_MS, now)
-                .set(LEARNING_FLOW_LEARNER_STATE.PIPELINE_UUID, learner.pipelineUuid())
-                .set(LEARNING_FLOW_LEARNER_STATE.ELEMENT_ID, learner.elementId())
-                .set(LEARNING_FLOW_LEARNER_STATE.DOC_UUID, docUuid)
-                // Not IGNORE: on a duplicate that takes a shared lock, and the transactions that met the
-                // row missing together — the first streams of a new learner, scored at once — each then
-                // ask for the exclusive lock the others' shared locks refuse, and the database kills one.
-                // An update takes the exclusive lock at once, so they queue instead.
-                .onDuplicateKeyUpdate()
-                .set(LEARNING_FLOW_LEARNER_STATE.VERSION, LEARNING_FLOW_LEARNER_STATE.VERSION)
-                .execute();
+        RowMaker.makeIfMissing(context,
+                LEARNING_FLOW_LEARNER_STATE,
+                key(learner),
+                LEARNING_FLOW_LEARNER_STATE.VERSION,
+                Map.of(LEARNING_FLOW_LEARNER_STATE.CREATE_TIME_MS, now,
+                        LEARNING_FLOW_LEARNER_STATE.UPDATE_TIME_MS, now,
+                        LEARNING_FLOW_LEARNER_STATE.PIPELINE_UUID, learner.pipelineUuid(),
+                        LEARNING_FLOW_LEARNER_STATE.ELEMENT_ID, learner.elementId(),
+                        LEARNING_FLOW_LEARNER_STATE.DOC_UUID, docUuid));
     }
 }

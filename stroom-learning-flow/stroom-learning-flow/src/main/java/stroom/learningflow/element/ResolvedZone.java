@@ -17,6 +17,7 @@
 package stroom.learningflow.element;
 
 import stroom.learningflow.shared.TimeZoneSource;
+import stroom.util.shared.NullSafe;
 
 import java.time.DateTimeException;
 import java.time.ZoneId;
@@ -57,7 +58,7 @@ public record ResolvedZone(ZoneId zone, TimeZoneSource source, String problem) {
         }
         // A header that was given and could not be read is reported, and the resolution carries on to
         // the property: the sender said something wrong, which is not a reason to stop translating
-        final String headerProblem = stated(header) && fromHeader == null
+        final String headerProblem = NullSafe.isNonBlankString(header)
                 ? "The stream's " + HEADER + " header is \"" + header.trim()
                   + "\", which is not a time zone. "
                 : null;
@@ -67,7 +68,7 @@ public record ResolvedZone(ZoneId zone, TimeZoneSource source, String problem) {
                     ? null
                     : headerProblem + "The pipeline's time zone is being used instead.");
         }
-        final String propertyProblem = stated(property) && fromProperty == null
+        final String propertyProblem = NullSafe.isNonBlankString(property)
                 ? "The pipeline's time zone is \"" + property.trim() + "\", which is not a time zone. "
                 : null;
         final String problem = (headerProblem == null
@@ -88,7 +89,7 @@ public record ResolvedZone(ZoneId zone, TimeZoneSource source, String problem) {
     /// @param value A zone id.
     /// @return The zone, or null where the value is absent or is not one.
     private static ZoneId parse(final String value) {
-        if (!stated(value)) {
+        if (NullSafe.isBlankString(value)) {
             return null;
         }
         try {
@@ -96,11 +97,5 @@ public record ResolvedZone(ZoneId zone, TimeZoneSource source, String problem) {
         } catch (final DateTimeException e) {
             return null;
         }
-    }
-
-    /// @param value A value.
-    /// @return Whether anything was asked for at all.
-    public static boolean stated(final String value) {
-        return value != null && !value.isBlank();
     }
 }

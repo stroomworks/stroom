@@ -87,11 +87,6 @@ public class SupervisorResourceImpl implements SupervisorResource {
     }
 
     @Override
-    public ResultPage<BacklogStream> backlog(final String docUuid, final PageRequest pageRequest) {
-        return serviceProvider.get().backlog(docUuid, pageRequest);
-    }
-
-    @Override
     public SupervisorAttempt grant(final long id, final GrantRequest request) {
         return serviceProvider.get().grant(id, request);
     }

@@ -45,7 +45,7 @@ import stroom.learningflow.stage.Attempts;
 import stroom.learningflow.stage.Attempts.Recorded;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.mock.MockMetaService;
 import stroom.meta.shared.FindMetaCriteria;
 import stroom.meta.shared.Meta;
@@ -206,7 +206,7 @@ class TestScenario30DeferredWorkerInAPipeline extends AbstractProcessIntegration
     private Script script() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of().structure(new Structure(
-                List.of(new DataSplitterStep(compiler), new XsltStep()), CSV.configuration(), XSLT));
+                List.of(new DataSplitterStep(compiler), new StandInXsltStep()), CSV.configuration(), XSLT));
     }
 
     private DocRef document() {

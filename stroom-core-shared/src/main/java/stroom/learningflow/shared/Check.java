@@ -25,40 +25,37 @@ import stroom.docref.HasDisplayValue;
 /// `REGRESSION` (the regression corpus) when a relearn or Improve is promoted. `COMPILE` is always a gate.
 /// A new check is new code.
 public enum Check implements HasDisplayValue {
-    COMPILE("compile", "Compile", true, true, 1.0, false),
-    COVERAGE("coverage", "Input coverage", true, true, 0.9, false),
-    COMPLETENESS("completeness", "Completeness", true, true, null, false),
-    YIELD("yield", "Yield", true, true, 0.5, false),
-    WHOLENESS("wholeness", "Whole records", false, true, 0.9, false),
-    CONFORMANCE("conformance", "Schema conformance", true, true, 1.0, true),
-    QUALITY("quality", "Extraction quality", true, true, 0.7, true),
-    RULES("rules", "Business rules", true, true, 1.0, true),
-    TIMES("times", "Event times are plausible", true, true, 1.0, true),
-    LITERALS("literals", "No data written into the translation", true, true, 1.0, true),
-    PERMITTED("permitted", "Uses only what it may", true, true, null, false),
-    PRESERVATION("preservation", "Preservation", false, true, null, false),
-    FIDELITY("fidelity", "Fidelity", false, true, null, false),
-    REGRESSION("regression", "Regression corpus", false, true, null, false);
+    COMPILE("compile", "Compile", true, 1.0, false),
+    COVERAGE("coverage", "Input coverage", true, 0.9, false),
+    COMPLETENESS("completeness", "Completeness", true, null, false),
+    YIELD("yield", "Yield", true, 0.5, false),
+    WHOLENESS("wholeness", "Whole records", false, 0.9, false),
+    CONFORMANCE("conformance", "Schema conformance", true, 1.0, true),
+    QUALITY("quality", "Extraction quality", true, 0.7, true),
+    RULES("rules", "Business rules", true, 1.0, true),
+    TIMES("times", "Event times are plausible", true, 1.0, true),
+    LITERALS("literals", "No data written into the translation", true, 1.0, true),
+    PERMITTED("permitted", "Uses only what it may", true, null, false),
+    PRESERVATION("preservation", "Preservation", false, null, false),
+    FIDELITY("fidelity", "Fidelity", false, null, false),
+    REGRESSION("regression", "Regression corpus", false, null, false);
 
     private final String displayValue;
     /// The check's name as a message or a list shows it, e.g. "Input coverage": the name its scorer had
     /// before the one model of checks, so that what people read is unchanged.
     private final String name;
     private final boolean scored;
-    private final boolean built;
     private final Double defaultThreshold;
     private final boolean judgesRecords;
 
     Check(final String displayValue,
           final String name,
           final boolean scored,
-          final boolean built,
           final Double defaultThreshold,
           final boolean judgesRecords) {
         this.displayValue = displayValue;
         this.name = name;
         this.scored = scored;
-        this.built = built;
         this.defaultThreshold = defaultThreshold;
         this.judgesRecords = judgesRecords;
     }
@@ -96,12 +93,6 @@ public enum Check implements HasDisplayValue {
     ///         serving record bar.
     public boolean judgesRecords() {
         return judgesRecords;
-    }
-
-    /// @return Whether a check of this kind is built, so that a setting may turn it on. One declared before
-    ///         its code exists can only be Off.
-    public boolean isBuilt() {
-        return built;
     }
 
     /// @return Whether this check judges a step of a flow, and so has an outcome a step's rule can name.

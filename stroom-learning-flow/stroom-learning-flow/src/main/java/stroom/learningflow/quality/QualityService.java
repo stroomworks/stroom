@@ -17,7 +17,6 @@
 package stroom.learningflow.quality;
 
 import stroom.learningflow.doc.LearnerAccess;
-import stroom.learningflow.element.LearnerDocuments;
 import stroom.learningflow.shared.Binding;
 import stroom.learningflow.shared.LearnerRef;
 import stroom.learningflow.shared.QualityReport;
@@ -26,7 +25,6 @@ import stroom.learningflow.shared.RecordKind;
 import stroom.learningflow.shared.VolumeDay;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
-import stroom.learningflow.stage.LearningPipelines;
 import stroom.learningflow.stage.RegressionSet;
 import stroom.learningflow.stage.RegressionSet.Accepted;
 import stroom.security.api.SecurityContext;
@@ -65,8 +63,6 @@ public class QualityService {
 
     private final LearnerAccess access;
     private final Provider<SecurityContext> securityContextProvider;
-    private final Provider<LearnerDocuments> learnerDocumentsProvider;
-    private final Provider<LearningPipelines> learningPipelinesProvider;
     private final Provider<LearnerBindings> learnerBindingsProvider;
     private final Provider<Volumes> volumesProvider;
     private final Provider<RegressionSet> regressionSetProvider;
@@ -74,39 +70,30 @@ public class QualityService {
 
     /// Made by Guice.
     ///
-    /// @param access                    Who may do what with a learner.
-    /// @param securityContextProvider   Who is asking.
-    /// @param learnerDocumentsProvider  The Learning Flow a live pipeline's element names.
-    /// @param learningPipelinesProvider The Learning Flow a deleted pipeline's learning is read under.
-    /// @param learnerBindingsProvider   A learner's translations.
-    /// @param volumesProvider           What its translations translated, day by day.
-    /// @param regressionSetProvider     The records its translation was learned and checked on.
+    /// @param access                  Who may do what with a learner.
+    /// @param securityContextProvider Who is asking.
+    /// @param learnerBindingsProvider A learner's translations.
+    /// @param volumesProvider         What its translations translated, day by day.
+    /// @param regressionSetProvider   The records its translation was learned and checked on.
     @Inject
     public QualityService(final LearnerAccess access,
                           final Provider<SecurityContext> securityContextProvider,
-                          final Provider<LearnerDocuments> learnerDocumentsProvider,
-                          final Provider<LearningPipelines> learningPipelinesProvider,
                           final Provider<LearnerBindings> learnerBindingsProvider,
                           final Provider<Volumes> volumesProvider,
                           final Provider<RegressionSet> regressionSetProvider) {
-        this(access, securityContextProvider, learnerDocumentsProvider, learningPipelinesProvider,
-                learnerBindingsProvider, volumesProvider, regressionSetProvider,
+        this(access, securityContextProvider, learnerBindingsProvider, volumesProvider, regressionSetProvider,
                 System::currentTimeMillis);
     }
 
     /// For tests, with the time given.
     QualityService(final LearnerAccess access,
                    final Provider<SecurityContext> securityContextProvider,
-                   final Provider<LearnerDocuments> learnerDocumentsProvider,
-                   final Provider<LearningPipelines> learningPipelinesProvider,
                    final Provider<LearnerBindings> learnerBindingsProvider,
                    final Provider<Volumes> volumesProvider,
                    final Provider<RegressionSet> regressionSetProvider,
                    final LongSupplier clock) {
         this.access = access;
         this.securityContextProvider = securityContextProvider;
-        this.learnerDocumentsProvider = learnerDocumentsProvider;
-        this.learningPipelinesProvider = learningPipelinesProvider;
         this.learnerBindingsProvider = learnerBindingsProvider;
         this.volumesProvider = volumesProvider;
         this.regressionSetProvider = regressionSetProvider;
@@ -167,7 +154,7 @@ public class QualityService {
         if (serving.isEmpty()) {
             return List.of();
         }
-        final List<Accepted> accepted = new ArrayList<>(regressionSetProvider.get().accepted(serving.get()));
+        final List<Accepted> accepted = regressionSetProvider.get().accepted(serving.get());
         final List<QualitySample> samples = new ArrayList<>();
         for (int i = accepted.size() - 1; i >= 0 && samples.size() < MOST_SAMPLES; i--) {
             final Accepted entry = accepted.get(i);
@@ -183,28 +170,11 @@ public class QualityService {
             throw new IllegalArgumentException("Say which pipeline and which of its elements");
         }
         final Learner learner = new Learner(pipelineUuid, elementId);
-        if (!access.mayLearner(learner, documentOf(learner).orElse(null), DocumentPermission.VIEW)) {
+        if (!access.mayLearner(learner, access.documentOf(learner).orElse(null), DocumentPermission.VIEW)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to read the pipeline of element " + elementId);
         }
         return learner;
-    }
-
-    // Nothing is recorded of a deleted pipeline's learning, which is kept to be read and nothing more (A137)
-    private Learner live(final Learner learner) {
-        if (access.isDeleted(learner.pipelineUuid())) {
-            throw new IllegalStateException("The pipeline of element " + learner.elementId() + " has been "
-                                            + "deleted: what it learned is kept to be read, and nothing more "
-                                            + "is recorded of it");
-        }
-        return learner;
-    }
-
-    // The Learning Flow a learner runs under: its element's, or for a deleted pipeline the one it is listed under
-    private Optional<String> documentOf(final Learner learner) {
-        return access.isDeleted(learner.pipelineUuid())
-                ? learningPipelinesProvider.get().documentOf(learner)
-                : learnerDocumentsProvider.get().documentOf(learner);
     }
 
     // The translation in use: the binding that isn't a draft

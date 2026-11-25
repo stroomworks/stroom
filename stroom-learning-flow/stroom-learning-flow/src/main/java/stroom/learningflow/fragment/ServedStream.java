@@ -56,19 +56,6 @@ public record ServedStream(int records,
                 : input;
     }
 
-    /// A run with nothing declared skipped and nothing known of its input.
-    ///
-    /// @param records     How many records were judged.
-    /// @param meanTotal   The mean of their weighted totals.
-    /// @param diagnostics What the elements said.
-    /// @param shortfall   The record that fell short, where one did.
-    public ServedStream(final int records,
-                        final double meanTotal,
-                        final List<StoredError> diagnostics,
-                        final Optional<RecordShortfall> shortfall) {
-        this(records, meanTotal, diagnostics, shortfall, 0, List.of(), InputRead.UNKNOWN);
-    }
-
     /// Whether every record judged cleared the bar.
     public boolean clear() {
         return shortfall.isEmpty();

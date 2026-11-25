@@ -30,6 +30,7 @@ import stroom.learningflow.shared.FlowExample;
 import stroom.learningflow.shared.FlowProblem;
 import stroom.learningflow.shared.FlowProblem.Severity;
 import stroom.learningflow.shared.FlowStep;
+import stroom.learningflow.shared.FlowWords;
 import stroom.learningflow.shared.LearningFlow;
 import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.shared.LearningFlowResource;
@@ -332,7 +333,7 @@ public class ApproachSectionController extends Controller {
     private void fill(final StepCard card, final int index) {
         final FlowStep step = steps.get(index);
         final QuestionKind kind = step.getKind();
-        card.setStep(index + 1, PlainWords.stepName(steps, index));
+        card.setStep(index + 1, FlowWords.stepName(steps, index));
         card.setTools(ApproachFlow.canMove(steps, index, -1), ApproachFlow.canMove(steps, index, 1),
                 ApproachFlow.canCopy(step), ApproachFlow.canDelete(step));
         card.setWhen(kind != QuestionKind.CHAIN, step.getWhen());
@@ -435,7 +436,7 @@ public class ApproachSectionController extends Controller {
             final FlowStep other = steps.get(i);
             if (i != index && other.getTransitions().stream()
                     .anyMatch(rule -> step.effectiveId().equals(rule.getGoTo()))) {
-                pointing.add("'" + PlainWords.stepName(steps, i) + "'");
+                pointing.add("'" + FlowWords.stepName(steps, i) + "'");
             }
         }
         if (pointing.isEmpty()) {
@@ -444,7 +445,7 @@ public class ApproachSectionController extends Controller {
         }
         final List<FlowStep> before = steps;
         ConfirmEvent.fire(this,
-                "Delete '" + PlainWords.stepName(steps, index) + "'? Rules on " + PlainWords.list(pointing)
+                "Delete '" + FlowWords.stepName(steps, index) + "'? Rules on " + PlainWords.list(pointing)
                 + " go to it; they will be removed, and those steps will do what they usually do.",
                 ok -> {
                     // Only if the flow is as it was when this was asked
@@ -664,7 +665,7 @@ public class ApproachSectionController extends Controller {
             final FlowStep step = steps.get(selected);
             view.setTexts(step.getKind() == QuestionKind.ADMIT
                             ? "Question text of the fallback"
-                            : "Question text of step " + (selected + 1) + ": " + PlainWords.stepName(steps, selected),
+                            : "Question text of step " + (selected + 1) + ": " + FlowWords.stepName(steps, selected),
                     "Show the text every step shares", LearnFlow.textsOf(step));
         }
         showWords();

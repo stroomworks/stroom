@@ -187,7 +187,7 @@ class TestScenariosBindingBeforeLearning {
         assertThat(silent.asked()).isEmpty();
 
         // A person approves it: it goes live, with the records it was learned from behind it, and serves.
-        scenarios.stage(Script.of()).approve(first.doc(), draft.getUuid());
+        scenarios.promotion().approve(first.doc(), draft.getUuid(), null);
         final Binding live = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(live.getUuid()).isEqualTo(draft.getUuid());
         assertThat(live.isDraft()).isFalse();
@@ -457,7 +457,7 @@ class TestScenariosBindingBeforeLearning {
 
         // A person answers the chain, and the worker carries it on: the chain is answered from the
         // record, so the model is asked only what the attempt had not reached.
-        scenarios.stage(Script.of()).amend(doc, waiting.id(), waiting.turns().get(0).number(),
+        scenarios.supervisorActions().amend(doc, waiting.id(), waiting.turns().get(0).number(),
                 "DSParser -> XSLTFilter", "a person");
         final Script carrying = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))

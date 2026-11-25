@@ -100,11 +100,11 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
 
         // Sent to the exhaustion step: the row says so, and the attempt is opened again for the worker.
         // A sending to an attempt that is not parked is refused.
-        scenarios.stage(silent).exhaust(doc, parked.id());
+        scenarios.supervisorActions().exhaust(doc, parked.id());
         final Recorded sent = scenarios.attempts.byId(parked.id()).orElseThrow();
         assertThat(sent.status()).isEqualTo(AttemptStatus.AWAITING_MODEL);
         assertThat(sent.exhaustNext()).isTrue();
-        assertThatThrownBy(() -> scenarios.stage(silent).exhaust(doc, parked.id()))
+        assertThatThrownBy(() -> scenarios.supervisorActions().exhaust(doc, parked.id()))
                 .describedAs("not parked any more").isInstanceOf(IllegalStateException.class);
 
         // Carried on: the budget is spent before the first question, replayed or not, so the session
@@ -121,7 +121,7 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         // them — are replayed for nothing, the transform's question is not put, and the flow goes to the
         // exhaustion step, which asks for the admitted form and gets it. The sending is taken, and the
         // closed row no longer carries it.
-        scenarios.stage(silent).grant(doc, parked.id(), 10L, 0L);
+        scenarios.supervisorActions().grant(doc, parked.id(), 10L, 0L);
         assertThat(scenarios.attempts.byId(parked.id()).orElseThrow().exhaustNext())
                 .describedAs("stands through the grant").isTrue();
         final Script carryingOn = scenarios.script(CSV.configuration(), LOGON_ONLY).charging(1L)
@@ -165,11 +165,11 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         assertThat(parked.status()).isEqualTo(AttemptStatus.PARKED);
 
         // Sent, and parked again for the budget on the way; then granted enough to go on.
-        scenarios.stage(silent).exhaust(doc, parked.id());
+        scenarios.supervisorActions().exhaust(doc, parked.id());
         final Script stillOver = scenarios.script(CSV.configuration(), LOGON_ONLY).charging(1L);
         assertThat(scenarios.worker(stillOver).advance(10)).isEqualTo(1);
         assertThat(scenarios.attempts.byId(parked.id()).orElseThrow().status()).isEqualTo(AttemptStatus.PARKED);
-        scenarios.stage(silent).grant(doc, parked.id(), 10L, 0L);
+        scenarios.supervisorActions().grant(doc, parked.id(), 10L, 0L);
         final Script nothing = scenarios.script(CSV.configuration(), LOGON_ONLY).charging(1L);
         assertThat(scenarios.worker(nothing).advance(10)).isEqualTo(1);
         final Recorded again = scenarios.attempts.byId(parked.id()).orElseThrow();
@@ -214,9 +214,9 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
                                                       && turn.question().contains("XSLTFilter"))
                 .describedAs("the first candidate's turn is on the record").hasSize(1);
 
-        scenarios.stage(silent).exhaust(doc, parked.id());
+        scenarios.supervisorActions().exhaust(doc, parked.id());
         assertThat(scenarios.worker(Script.of()).advance(10)).describedAs("parked again for the budget").isEqualTo(1);
-        scenarios.stage(silent).grant(doc, parked.id(), 10L, 0L);
+        scenarios.supervisorActions().grant(doc, parked.id(), 10L, 0L);
         final Script carryingOn = scenarios.script(CSV.configuration(), LOGON_ONLY).charging(1L)
                 .expect(QuestionMatcher.admission("XSLTFilter")).reply(Scenarios.fenced(ADMITS_LOGOFF));
         assertThat(scenarios.worker(carryingOn).advance(10)).isEqualTo(1);

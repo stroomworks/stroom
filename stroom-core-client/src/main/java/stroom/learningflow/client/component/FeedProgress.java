@@ -18,6 +18,7 @@ package stroom.learningflow.client.component;
 
 import stroom.learningflow.shared.AttemptStatus;
 import stroom.learningflow.shared.FlowStep;
+import stroom.learningflow.shared.FlowWords;
 import stroom.learningflow.shared.QuestionKind;
 import stroom.learningflow.shared.StepOutcome;
 import stroom.learningflow.shared.SupervisorAttempt;
@@ -125,7 +126,7 @@ public final class FeedProgress {
     private static List<Stop> stops(final List<FlowStep> steps, final List<SupervisorTurn> turns) {
         final List<Stop> stops = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
-            stops.add(new Stop(steps.get(i).effectiveId(), PlainWords.stepName(steps, i), steps.get(i).getKind()));
+            stops.add(new Stop(steps.get(i).effectiveId(), FlowWords.stepName(steps, i), steps.get(i).getKind()));
         }
         boolean known = true;
         for (final SupervisorTurn turn : turns) {
@@ -140,7 +141,7 @@ public final class FeedProgress {
         for (final SupervisorTurn turn : turns) {
             final String id = lower(turn.getStepId());
             if (id != null && met.stream().noneMatch(stop -> stop.id.equals(id))) {
-                met.add(new Stop(id, PlainWords.stepName(turn.getKind(), null), turn.getKind()));
+                met.add(new Stop(id, FlowWords.stepName(turn.getKind(), null), turn.getKind()));
             }
         }
         return met;
@@ -203,11 +204,6 @@ public final class FeedProgress {
         /// @return Where it stands.
         public State getState() {
             return state;
-        }
-
-        /// @return How many times it was asked in this run.
-        public int getTries() {
-            return tries;
         }
 
         /// @return What the strip says of it, e.g. "Write the parser · 2 tries".

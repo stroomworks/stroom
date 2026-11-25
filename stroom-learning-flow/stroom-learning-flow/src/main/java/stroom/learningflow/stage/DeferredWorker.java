@@ -54,16 +54,6 @@ public final class DeferredWorker {
     private final Advisors advisors;
     private final Clock clock;
 
-    public DeferredWorker(final Stage stage,
-                          final Attempts attempts,
-                          final Documents documents,
-                          final Inputs inputs,
-                          final DeletedPipelines deletedPipelines,
-                          final Advisors advisors,
-                          final Clock clock) {
-        this(stage, attempts, documents, inputs, StreamHeld.NONE, deletedPipelines, advisors, clock);
-    }
-
     /// @param streamHeld Puts each attempt's stream into the pipeline's state before it is carried on, so
     ///                   that a judged run reads the stream it is judging (assumption AS6).
     public DeferredWorker(final Stage stage,

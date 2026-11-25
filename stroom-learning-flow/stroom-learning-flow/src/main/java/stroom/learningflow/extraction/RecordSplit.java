@@ -19,8 +19,6 @@ package stroom.learningflow.extraction;
 import stroom.learningflow.scoring.ConfinedXml;
 import stroom.pipeline.filter.AbstractXMLFilter;
 import stroom.pipeline.filter.SplitFilter;
-import stroom.util.xml.SaxonPolicy;
-import stroom.util.xml.SaxonSecurity;
 
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
@@ -31,11 +29,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.sax.SAXTransformerFactory;
 import javax.xml.transform.sax.TransformerHandler;
-import javax.xml.transform.stream.StreamResult;
 
 /// The documents a fragment's `SplitFilter` hands its transform: one per record, each with the parent
 /// element structure replicated above it, exactly as the pipeline gives them (§12 item 25).
@@ -106,7 +100,9 @@ public final class RecordSplit {
         @Override
         public void startDocument() throws SAXException {
             writing = new StringWriter();
-            handler = newHandler(writing);
+            // Saxon's, as every other transform in this module uses: one processor family, one set of
+            // serialisation rules.
+            handler = ConfinedXml.serialiser(writing, false, true);
             handler.startDocument();
             open = 0;
             cut = false;
@@ -168,21 +164,6 @@ public final class RecordSplit {
         @Override
         public void skippedEntity(final String name) throws SAXException {
             handler.skippedEntity(name);
-        }
-
-        private static TransformerHandler newHandler(final StringWriter writing) throws SAXException {
-            try {
-                // Saxon's, as every other transform in this module uses: one processor family, one set
-                // of serialisation rules.
-                final SAXTransformerFactory factory = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED);
-                final TransformerHandler handler = factory.newTransformerHandler();
-                handler.getTransformer().setOutputProperty(OutputKeys.INDENT, "no");
-                handler.getTransformer().setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-                handler.setResult(new StreamResult(writing));
-                return handler;
-            } catch (final TransformerConfigurationException e) {
-                throw new SAXException(e);
-            }
         }
     }
 }

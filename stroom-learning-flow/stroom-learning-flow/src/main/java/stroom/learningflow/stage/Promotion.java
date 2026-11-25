@@ -100,8 +100,8 @@ public final class Promotion {
         final LearnerBindings.Held held = draft(doc, bindingUuid);
         promote(doc, awaitingReview(doc, held), held.binding());
         // The attempt that wrote the draft is no longer awaiting review (A28).
-        record(() -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.PROMOTED, "Approved",
-                reviewedBy));
+        Bookkeeping.record(LOGGER, () -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.PROMOTED,
+                "Approved", reviewedBy));
     }
 
     /// Reject a draft (A25), saying who rejected it (Track 2 step 4): the binding goes, with its records; its
@@ -124,8 +124,8 @@ public final class Promotion {
         snapshots.discard(draft.getUuid());
         states.reset(learner);
         states.giveUp(learner, doc.getUuid(), "Rejected: " + reason);
-        record(() -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.REJECTED, "Rejected: " + reason,
-                reviewedBy));
+        Bookkeeping.record(LOGGER, () -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.REJECTED,
+                "Rejected: " + reason, reviewedBy));
         // The streams waiting behind the draft (design 04 §3) are woken to error, as a given-up learner's
         // always are (A52, A80): left waiting, they would wait for a review that is no longer coming.
         wake(learner);
@@ -174,7 +174,7 @@ public final class Promotion {
         final List<Replayable> produced = outputs.boundBy(binding.getUuid(), binding.getPipeline() == null
                 ? null
                 : binding.getPipeline().getUuid());
-        record(() -> attempts.settled(doc.getUuid(), bindingUuid, AttemptStatus.RETRACTED, said));
+        Bookkeeping.record(LOGGER, () -> attempts.settled(doc.getUuid(), bindingUuid, AttemptStatus.RETRACTED, said));
         return produced.size();
     }
 
@@ -342,15 +342,5 @@ public final class Promotion {
 
     private void wake(final Learner learner) {
         wake.wake(learner.pipelineUuid());
-    }
-
-    /// A run's record is written beside the binding it describes: failing to write it must not undo what
-    /// the binding change did, so it is logged rather than thrown.
-    private static void record(final Runnable write) {
-        try {
-            write.run();
-        } catch (final RuntimeException e) {
-            LOGGER.error(() -> LogUtil.message("The attempt could not be recorded: {}", e.getMessage()), e);
-        }
     }
 }

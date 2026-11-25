@@ -21,9 +21,7 @@ import stroom.learningflow.stage.Learner;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /// The deferral rows as a list: what scenarios inspect, node-local and gone on restart. Every method is
@@ -89,15 +87,10 @@ public final class InMemoryDeferrals implements Deferrals {
     @Override
     public synchronized List<Stamp> stampsWaiting() {
         // Rows with no stamp included (W7-4): a stream waiting for a first learning fell short of
-        // nothing, and leaving it out left it to the retry delay. The latest time one of them first
-        // waited tells those a promotion's wake could not have reached from those it did.
-        final Map<Stamp, Long> latest = new LinkedHashMap<>();
-        for (final Deferral row : rows) {
-            latest.merge(new Stamp(row.learner(), row.failedAgainst()), row.firstDeferredMs(), Math::max);
-        }
-        return latest.entrySet().stream()
-                .map(entry -> new Stamp(entry.getKey().learner(), entry.getKey().failedAgainst(),
-                        entry.getValue()))
+        // nothing, and leaving it out left it to the retry delay.
+        return rows.stream()
+                .map(row -> new Stamp(row.learner(), row.failedAgainst()))
+                .distinct()
                 .toList();
     }
 

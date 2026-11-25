@@ -54,7 +54,7 @@ public final class CheckSettings {
     }
 
     /// What is wrong with a set of settings, so that a document holding them is refused when it is saved
-    /// or imported: a check named twice, the compile gate not a gate, a check that isn't built turned on, or
+    /// or imported: a check named twice, the compile gate not a gate, the permitted check not a gate, or
     /// a threshold outside 0 to 1.
     ///
     /// @param settings The settings as they are held; null for none.
@@ -79,9 +79,6 @@ public final class CheckSettings {
             // stylesheet before it runs
             if (check == Check.PERMITTED && !setting.isGate()) {
                 problems.add("The permitted check is always a gate.");
-            }
-            if (!check.isBuilt() && setting.isOn()) {
-                problems.add("The " + name + " check isn't built yet, so it can only be off.");
             }
             final Double threshold = setting.getThreshold();
             if (threshold != null && (threshold < 0.0 || threshold > 1.0)) {

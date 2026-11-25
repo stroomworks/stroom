@@ -18,6 +18,7 @@ package stroom.learningflow.client.component;
 
 import stroom.learningflow.shared.FlowExample;
 import stroom.learningflow.shared.FlowStep;
+import stroom.learningflow.shared.FlowWords;
 import stroom.learningflow.shared.LearningFlowDoc;
 
 import org.junit.jupiter.api.Test;
@@ -51,7 +52,7 @@ class TestRouteMapDrawing {
         assertThat(buttons).extracting(button -> button.key).containsExactly(
                 "section:LEARNING", "section:APPROACH", "step:0", "step:1", "step:2", "step:3", "section:QUALITY",
                 "section:GOING_LIVE", "section:IN_SERVICE");
-        assertThat(buttons.get(2).label).isEqualTo("Step 1: " + PlainWords.stepName(DIRECT, 0));
+        assertThat(buttons.get(2).label).isEqualTo("Step 1: " + FlowWords.stepName(DIRECT, 0));
         assertThat(buttons.get(5).label).isEqualTo(RouteMapDrawing.FALLBACK);
     }
 

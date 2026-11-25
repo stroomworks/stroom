@@ -19,12 +19,12 @@ package stroom.learningflow.extraction;
 import stroom.learningflow.learning.InputKind;
 import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.learning.StepRunner;
+import stroom.learningflow.scoring.ConfinedXml;
+import stroom.pipeline.parser.JSONParser;
 import stroom.pipeline.xml.converter.json.JSONParserFactory;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
 import stroom.util.shared.StoredError;
-import stroom.util.xml.SaxonPolicy;
-import stroom.util.xml.SaxonSecurity;
 
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
@@ -38,16 +38,14 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import javax.xml.transform.OutputKeys;
 import javax.xml.transform.sax.TransformerHandler;
-import javax.xml.transform.stream.StreamResult;
 
 /// Stroom's `JSONParser` as a step: JSON in, the XML of the `http://www.w3.org/2013/XSL/json` vocabulary out,
 /// through the same reader the pipeline element uses. It takes no configuration, so it is a run-only step
 /// (design 01 §10): the chain question may choose it, and no configuration question is asked for it.
 public final class JsonStep implements StepRunner {
 
-    public static final String ELEMENT_TYPE = "JSONParser";
+    public static final String ELEMENT_TYPE = JSONParser.ELEMENT_TYPE;
     private static final ElementId ELEMENT = new ElementId("jsonParser");
 
     @Override
@@ -81,10 +79,7 @@ public final class JsonStep implements StepRunner {
         final List<StoredError> diagnostics = new ArrayList<>();
         final StringWriter output = new StringWriter();
         try {
-            final TransformerHandler serialiser = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED)
-                    .newTransformerHandler();
-            serialiser.getTransformer().setOutputProperty(OutputKeys.INDENT, "yes");
-            serialiser.setResult(new StreamResult(output));
+            final TransformerHandler serialiser = ConfinedXml.serialiser(output, true, false);
             final XMLReader reader = new JSONParserFactory().getParser();
             reader.setContentHandler(serialiser);
             reader.setErrorHandler(new ErrorHandler() {

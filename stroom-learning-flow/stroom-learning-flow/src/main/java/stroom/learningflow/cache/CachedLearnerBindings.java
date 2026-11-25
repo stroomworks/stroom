@@ -18,12 +18,10 @@ package stroom.learningflow.cache;
 
 import stroom.cache.api.CacheManager;
 import stroom.cache.api.LoadingStroomCache;
-import stroom.docref.DocRef;
 import stroom.learningflow.LearningFlowConfig;
 import stroom.learningflow.shared.Binding;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
-import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.entityevent.EntityEventBus;
 import stroom.util.entityevent.EntityEventHandler;
@@ -111,21 +109,10 @@ public class CachedLearnerBindings implements LearnerBindings, Clearable, Entity
 
     @Override
     public void onChange(final EntityEvent event) {
-        final String pipelineUuid = event.getDocRef() == null
-                ? null
-                : event.getDocRef().getUuid();
-        if (pipelineUuid == null) {
-            clear();
-        } else {
-            cache.invalidateEntries((learner, bindings) -> learner.pipelineUuid().equals(pipelineUuid));
-        }
+        LearnerCacheEvents.onChange(cache, event);
     }
 
-    /// What was learned here must be known everywhere: this node's entry goes at once, and the others'
-    /// go when the event reaches them.
     private void changed(final Learner learner) {
-        cache.invalidate(learner);
-        entityEventBus.fire(new EntityEvent(
-                new DocRef(Learner.EVENT_TYPE, learner.pipelineUuid()), EntityAction.CLEAR_CACHE));
+        LearnerCacheEvents.changed(cache, entityEventBus, learner);
     }
 }

@@ -25,6 +25,7 @@ import org.jooq.Record3;
 import org.jooq.impl.DSL;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowSpend.LEARNING_FLOW_SPEND;
 
@@ -45,21 +46,13 @@ public class SpendDao implements Spend {
     public Spent record(final String docUuid, final long tokens, final int calls, final long windowMs) {
         return JooqUtil.transactionResult(connProvider, context -> {
             final long now = System.currentTimeMillis();
-            // The row is looked for before it is made: an `INSERT ... ON DUPLICATE KEY IGNORE` that finds a
-            // duplicate leaves a shared lock the `FOR UPDATE` below would have to upgrade, and two nodes
-            // recording spend for one document at once would deadlock on that upgrade — which is the very
-            // thing this table is for.
-            final boolean exists = context.fetchExists(context.selectFrom(LEARNING_FLOW_SPEND)
-                    .where(LEARNING_FLOW_SPEND.DOC_UUID.eq(docUuid)));
-            if (!exists) {
-                context.insertInto(LEARNING_FLOW_SPEND)
-                        .set(LEARNING_FLOW_SPEND.VERSION, 1)
-                        .set(LEARNING_FLOW_SPEND.UPDATE_TIME_MS, now)
-                        .set(LEARNING_FLOW_SPEND.DOC_UUID, docUuid)
-                        .set(LEARNING_FLOW_SPEND.WINDOW_START_MS, now)
-                        .onDuplicateKeyIgnore()
-                        .execute();
-            }
+            RowMaker.makeIfMissing(context,
+                    LEARNING_FLOW_SPEND,
+                    LEARNING_FLOW_SPEND.DOC_UUID.eq(docUuid),
+                    LEARNING_FLOW_SPEND.VERSION,
+                    Map.of(LEARNING_FLOW_SPEND.UPDATE_TIME_MS, now,
+                            LEARNING_FLOW_SPEND.DOC_UUID, docUuid,
+                            LEARNING_FLOW_SPEND.WINDOW_START_MS, now));
             final Record3<Long, Long, Integer> current = context
                     .select(LEARNING_FLOW_SPEND.WINDOW_START_MS,
                             LEARNING_FLOW_SPEND.TOKENS_SPENT,

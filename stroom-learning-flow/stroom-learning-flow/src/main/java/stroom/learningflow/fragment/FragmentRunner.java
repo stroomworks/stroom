@@ -34,9 +34,9 @@ import java.util.Optional;
 ///
 /// Two implementations, and the difference matters. [PipelineFragmentRunner] runs the fragment as a
 /// pipeline — the real elements, the real pools, the real filters — and is what a node uses, so that
-/// what is judged is what will run. [StandInFragmentRunner] walks the chain with the module's step
-/// runners instead, which needs no node, no stores beyond the content ones and no pipeline scope, and is
-/// what the Tier 1 scenarios run on (design 02 §2).
+/// what is judged is what will run. `StandInFragmentRunner`, a test fixture, walks the chain with the
+/// module's step runners instead, which needs no node, no stores beyond the content ones and no pipeline
+/// scope, and is what the Tier 1 scenarios run on (design 02 §2).
 ///
 /// They are meant to agree, and where they do not the pipeline is right. A Tier 2 scenario holds them to
 /// the same events on the same fragment and input, because a stand-in that has drifted from the thing it
@@ -48,10 +48,6 @@ public interface FragmentRunner {
     /// @return One attempted step per element of the chain, in chain order. A step that produced nothing
     /// leaves the later ones unrun; the caller sees that from the last step's result.
     List<Attempted> run(DocRef fragment, String input, RecordBoundary boundary);
-
-    default List<Attempted> run(final DocRef fragment, final String input) {
-        return run(fragment, input, null);
-    }
 
     /// The same, with each element given the code of a snapshot in place of the document it references
     /// (A70): how an as-processed reprocess runs what produced an output, after the fragment has moved
@@ -98,7 +94,7 @@ public interface FragmentRunner {
     /// being served is not known until the decision is made — a candidate that fails the floor is run
     /// and discarded, and its events must not be the ones played on.
     ///
-    /// Empty from [StandInFragmentRunner], which has no pipeline and no events: Tier 1 asserts on what
+    /// Empty from `StandInFragmentRunner`, which has no pipeline and no events: Tier 1 asserts on what
     /// each step wrote and has no downstream to play anything on to.
     default Optional<EventList> lastOutput() {
         return Optional.empty();
@@ -119,7 +115,7 @@ public interface FragmentRunner {
     /// a caller that merely *read* the last capture would be handed the previous stream's chain and
     /// show it as this one's. Taking it means the second ask finds nothing, which is the truth.
     ///
-    /// Empty from [StandInFragmentRunner], which walks the chain rather than running a pipeline and so
+    /// Empty from `StandInFragmentRunner`, which walks the chain rather than running a pipeline and so
     /// has no elements to name. Tier 1 asserts on what each step wrote; the stepper is Tier 2's.
     default List<FragmentRecord> takeRecords() {
         return List.of();

@@ -18,7 +18,6 @@ package stroom.learningflow.doc;
 
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocFinder;
-import stroom.learningflow.element.LearnerDocuments;
 import stroom.learningflow.element.PipelineZones;
 import stroom.learningflow.element.ResolvedZone;
 import stroom.learningflow.element.StageFactory;
@@ -48,7 +47,6 @@ import stroom.learningflow.stage.Attempts.Turn;
 import stroom.learningflow.stage.Decision;
 import stroom.learningflow.stage.Decision.Sentinel;
 import stroom.learningflow.stage.Deferrals;
-import stroom.learningflow.stage.Deferrals.Deferral;
 import stroom.learningflow.stage.DeletedPipelines;
 import stroom.learningflow.stage.Guidance;
 import stroom.learningflow.stage.Input;
@@ -76,14 +74,12 @@ import jakarta.inject.Provider;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /// The Supervisor's logic, behind its REST resource ([SupervisorResourceImpl]), which does the auditing and
@@ -98,7 +94,7 @@ import java.util.stream.Collectors;
 /// act on them: leave a note, approve, reject, give more, relearn, give up, improve, accept or retract. A
 /// pipeline since deleted has no permissions to ask; its learning is read by its document's VIEW instead,
 /// and nothing more is done with it (A137). The lists across documents (the learners and attempts of every
-/// document, the backlog) are of the documents a person may view, as an administrator's overview.
+/// document) are of the documents a person may view, as an administrator's overview.
 public class SupervisorService {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SupervisorService.class);
@@ -108,6 +104,8 @@ public class SupervisorService {
     /// document could ask for the whole table in one request, and a negative length reached the database
     /// as `LIMIT -1`.
     private static final int PAGE_LIMIT = 1000;
+    /// The rows a page holds where the request does not say.
+    private static final int PAGE_LENGTH = 100;
 
     private final Provider<Attempts> attemptsProvider;
     private final Provider<LearningFlowStore> storeProvider;
@@ -116,7 +114,8 @@ public class SupervisorService {
     private final Provider<SecurityContext> securityContextProvider;
     private final Provider<Guidance> guidanceProvider;
     private final Provider<Deferrals> deferralsProvider;
-    private final Provider<LearnerDocuments> learnerDocumentsProvider;
+    /// Who may do what with a learner, as the Quality Assurance tab's resource also asks it.
+    private final LearnerAccess access;
     private final Provider<DeletedPipelines> deletedPipelinesProvider;
     private final Provider<LearnerBindings> learnerBindingsProvider;
     private final Provider<LearningPipelines> learningPipelinesProvider;
@@ -133,7 +132,7 @@ public class SupervisorService {
                              final Provider<SecurityContext> securityContextProvider,
                              final Provider<Guidance> guidanceProvider,
                              final Provider<Deferrals> deferralsProvider,
-                             final Provider<LearnerDocuments> learnerDocumentsProvider,
+                             final LearnerAccess access,
                              final Provider<DeletedPipelines> deletedPipelinesProvider,
                              final Provider<LearnerBindings> learnerBindingsProvider,
                              final Provider<LearningPipelines> learningPipelinesProvider,
@@ -148,7 +147,7 @@ public class SupervisorService {
         this.securityContextProvider = securityContextProvider;
         this.guidanceProvider = guidanceProvider;
         this.deferralsProvider = deferralsProvider;
-        this.learnerDocumentsProvider = learnerDocumentsProvider;
+        this.access = access;
         this.deletedPipelinesProvider = deletedPipelinesProvider;
         this.learnerBindingsProvider = learnerBindingsProvider;
         this.learningPipelinesProvider = learningPipelinesProvider;
@@ -167,61 +166,57 @@ public class SupervisorService {
                 : criteria;
         final Map<String, DocRef> readable = readable(asked.getDocUuid());
         final Map<String, LearningFlowDoc> docs = documents(readable.values());
-        final Set<String> learningOff = docs.values().stream()
-                .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
-                .map(LearningFlowDoc::getUuid)
-                .collect(Collectors.toSet());
-        final PageRequest page = asked.getPageRequest() == null
-                ? new PageRequest(0, 100)
-                : asked.getPageRequest();
-        final long offset = Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
+        final PageRequest page = pageOf(asked.getPageRequest());
+        final long offset = offsetOf(page);
         final LearningPipelines.Page found = learningPipelinesProvider.get().learners(readable.keySet(),
-                learningOff, asked.getStates(), asked.isShowDeletedPipelines(), offset, pageLength(page));
-        final DocFinder docFinder = docFinderProvider.get();
-        final long now = System.currentTimeMillis();
-        final Set<String> noFallback = noFallback(docs.values());
-        final Map<String, String> spendPaused = spendPaused(docs.values());
-        final List<SupervisorLearner> rows = found.learners().stream()
-                .map(row -> row.named(docFinder.decorate(row.getPipeline()),
-                        readable.get(row.getDoc().getUuid()),
-                        row.getOldestWaitMs() != null
-                        && now - row.getOldestWaitMs() > maxDeferralAge(docs, row.getDoc().getUuid()),
-                        belowThreshold(docs.get(row.getDoc().getUuid()), row.getRollingScore()),
-                        noFallback.contains(row.getDoc().getUuid()),
-                        spendPaused.get(row.getDoc().getUuid())))
-                .toList();
+                learningOff(docs), asked.getStates(), asked.isShowDeletedPipelines(), offset, pageLength(page));
+        final List<SupervisorLearner> rows = named(found, readable, docs);
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), found.total(), true));
     }
 
     /// The learners of one pipeline, as its own editor shows them: those of its Learning Flow elements that
     /// have learned or are learning, under whichever documents they run under. Held to the pipeline's VIEW.
     public List<SupervisorLearner> pipelineLearners(final String pipelineUuid) {
-        if (NullSafe.isBlankString(pipelineUuid) || !mayPipeline(pipelineUuid, DocumentPermission.VIEW)) {
+        if (NullSafe.isBlankString(pipelineUuid) || !access.mayPipeline(pipelineUuid, DocumentPermission.VIEW)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to read this pipeline");
         }
         final Map<String, DocRef> every = new LinkedHashMap<>();
         storeProvider.get().listDocuments().forEach(docRef -> every.put(docRef.getUuid(), docRef));
         final Map<String, LearningFlowDoc> docs = documents(every.values());
-        final Set<String> learningOff = docs.values().stream()
+        final LearningPipelines.Page found = learningPipelinesProvider.get().learners(every.keySet(),
+                learningOff(docs), List.of(), false, pipelineUuid, 0L, PAGE_LIMIT);
+        return named(found, every, docs).stream()
+                .map(this::withTimeZone)
+                .toList();
+    }
+
+    /// The documents with learning turned off, whose learners are listed as such.
+    private static Set<String> learningOff(final Map<String, LearningFlowDoc> docs) {
+        return docs.values().stream()
                 .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
                 .map(LearningFlowDoc::getUuid)
                 .collect(Collectors.toSet());
-        final LearningPipelines.Page found = learningPipelinesProvider.get().learners(every.keySet(),
-                learningOff, List.of(), false, pipelineUuid, 0L, PAGE_LIMIT);
+    }
+
+    /// A page of learners, each named with its pipeline and document, its oldest wait judged against its
+    /// document's maximum deferral age (A57), and what its document says of its score, its fallback and its
+    /// spend.
+    private List<SupervisorLearner> named(final LearningPipelines.Page found,
+                                          final Map<String, DocRef> docRefs,
+                                          final Map<String, LearningFlowDoc> docs) {
         final DocFinder docFinder = docFinderProvider.get();
         final long now = System.currentTimeMillis();
         final Set<String> noFallback = noFallback(docs.values());
         final Map<String, String> spendPaused = spendPaused(docs.values());
         return found.learners().stream()
                 .map(row -> row.named(docFinder.decorate(row.getPipeline()),
-                        every.get(row.getDoc().getUuid()),
+                        docRefs.get(row.getDoc().getUuid()),
                         row.getOldestWaitMs() != null
                         && now - row.getOldestWaitMs() > maxDeferralAge(docs, row.getDoc().getUuid()),
                         belowThreshold(docs.get(row.getDoc().getUuid()), row.getRollingScore()),
                         noFallback.contains(row.getDoc().getUuid()),
                         spendPaused.get(row.getDoc().getUuid())))
-                .map(this::withTimeZone)
                 .toList();
     }
 
@@ -239,10 +234,8 @@ public class SupervisorService {
                                              final String elementId,
                                              final PageRequest pageRequest) {
         final Learner learner = readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid);
-        final PageRequest page = pageRequest == null
-                ? new PageRequest(0, 100)
-                : pageRequest;
-        final long offset = Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
+        final PageRequest page = pageOf(pageRequest);
+        final long offset = offsetOf(page);
         final Deferrals.Waiting waiting = deferralsProvider.get().waitingOn(learner, offset, pageLength(page));
         final DocRef doc = new DocRef(LearningFlowDoc.TYPE, docUuid);
         final long maxAge = maxDeferralAge(documents(List.of(doc)), docUuid);
@@ -355,43 +348,6 @@ public class SupervisorService {
                 : doc.getMaxDeferralAgeMs();
     }
 
-    /// What is waiting on a session (design 04 §6), a row per stream, the raised ones first and then the
-    /// longest waiting: the backlog an operator watches form and drain. Raised is computed as it is read,
-    /// against each document's maximum deferral age (A78, A79).
-    public ResultPage<BacklogStream> backlog(final String docUuid, final PageRequest pageRequest) {
-        final PageRequest page = pageRequest == null
-                ? new PageRequest(0, 100)
-                : pageRequest;
-        final Map<String, DocRef> readable = readable(docUuid);
-        final long now = System.currentTimeMillis();
-        final List<BacklogStream> all = new ArrayList<>();
-        for (final DocRef docRef : readable.values()) {
-            // A document that cannot be read — deleted since it was listed — must not take the whole
-            // backlog down with it: its rows are shown against the default age.
-            long maxAge = LearningFlowDoc.builder().build().getMaxDeferralAgeMs();
-            try {
-                final LearningFlowDoc doc = storeProvider.get().readDocument(docRef);
-                if (doc != null) {
-                    maxAge = doc.getMaxDeferralAgeMs();
-                }
-            } catch (final RuntimeException e) {
-                LOGGER.debug(() -> LogUtil.message("Document {} could not be read for the backlog: {}",
-                        docRef.getUuid(), e.getMessage()));
-            }
-            for (final Deferral row : deferralsProvider.get().forDocument(docRef.getUuid())) {
-                all.add(new BacklogStream(docRef, row.inputId(), row.feed(), row.type(), row.failedAgainst(),
-                        row.reason(), row.failingRecords(), row.firstDeferredMs(), row.attempts(),
-                        row.raised(maxAge, now)));
-            }
-        }
-        all.sort(Comparator.comparing(BacklogStream::isRaised).reversed()
-                .thenComparingLong(BacklogStream::getFirstDeferredMs));
-        final int offset = (int) Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
-        final int length = pageLength(page);
-        final List<BacklogStream> rows = all.stream().skip(offset).limit(length).toList();
-        return new ResultPage<>(rows, new PageResponse((long) offset, rows.size(), (long) all.size(), true));
-    }
-
     /// Give a parked session more to spend (A77), and carry it on.
     public SupervisorAttempt grant(final long id, final GrantRequest request) {
         if (request == null) {
@@ -424,7 +380,7 @@ public class SupervisorService {
         // sessions, as its pipeline's editor asks for them, are held to the pipeline instead, and may be
         // under any document.
         final Page page = attemptsProvider.get().found(asked, asked.getLearner() == null
-                ? mayRead(asked.getDocUuid())
+                ? List.copyOf(readable(asked.getDocUuid()).keySet())
                 : learnersDocuments(asked.getLearner()));
         // Which of the page's pipelines are deleted, asked once for the page rather than once a row.
         final Set<String> deleted = deletedPipelinesProvider.get().deletedOf(page.attempts().stream()
@@ -571,13 +527,16 @@ public class SupervisorService {
             return RebuiltPrompt.refused("The stream this run learned from has been deleted, or can't be "
                                          + "read, so its prompt can't be rebuilt.");
         }
-        final List<Optional<Rebuilt>> rebuilt = new ArrayList<>();
-        onStage(attempt, (stage, doc) -> rebuilt.add(stage.rebuild(doc, id, input.get())));
-        if (rebuilt.isEmpty() || rebuilt.getFirst().isEmpty()) {
+        final LearningFlowDoc doc = documentOf(attempt);
+        // In a pipeline scope, though there is no pipeline: rebuilding runs pipelines, and what a stage is
+        // built from reports through the scoped error receiver, as it does for the deferred worker.
+        final Optional<Rebuilt> rebuilt = pipelineScopeProvider.get().scopeResult(() ->
+                stageFactoryProvider.get().create().rebuild(doc, id, input.get()));
+        if (rebuilt.isEmpty()) {
             return RebuiltPrompt.refused("This run was asked before the words it used were kept, so its "
                                          + "prompt can't be rebuilt without guessing.");
         }
-        final Rebuilt prompts = rebuilt.getFirst().get();
+        final Rebuilt prompts = rebuilt.get();
         final String prompt = prompts.prompts().get(number);
         if (prompt == null) {
             return RebuiltPrompt.refused("This question was asked in a later round of the run, after the "
@@ -636,8 +595,20 @@ public class SupervisorService {
     /// one call, and a negative one reaches the database as `LIMIT -1` and answers with a server error
     /// rather than a refusal.
     private static int pageLength(final PageRequest page) {
-        final int asked = NullSafe.getOrElse(page.getLength(), Integer::intValue, 100);
+        final int asked = NullSafe.getOrElse(page.getLength(), Integer::intValue, PAGE_LENGTH);
         return Math.max(1, Math.min(asked, PAGE_LIMIT));
+    }
+
+    /// The page asked for, or the first page where none was.
+    private static PageRequest pageOf(final PageRequest asked) {
+        return asked == null
+                ? new PageRequest(0, PAGE_LENGTH)
+                : asked;
+    }
+
+    /// Where a page starts: never before the first row.
+    private static long offsetOf(final PageRequest page) {
+        return Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
     }
 
     /// The documents this person may read, by uuid and keeping their names, narrowed to the one they
@@ -647,7 +618,7 @@ public class SupervisorService {
         final Map<String, DocRef> readable = new LinkedHashMap<>();
         storeProvider.get().listDocuments().stream()
                 .filter(docRef -> asked == null || asked.equals(docRef.getUuid()))
-                .filter(docRef -> may(docRef.getUuid(), DocumentPermission.VIEW))
+                .filter(docRef -> access.mayDocument(docRef.getUuid(), DocumentPermission.VIEW))
                 .forEach(docRef -> readable.put(docRef.getUuid(), docRef));
         return readable;
     }
@@ -720,10 +691,7 @@ public class SupervisorService {
     /// be read from the document it is listed under (A137) — whether or not it ever bound anything.
     /// Nothing is changed for a deleted pipeline's learner, so this lets a person read and no more.
     private boolean runsUnder(final Learner learner, final String docUuid) {
-        final Optional<String> runsUnder = deletedPipelinesProvider.get().isDeleted(learner.pipelineUuid())
-                ? learningPipelinesProvider.get().documentOf(learner)
-                : learnerDocumentsProvider.get().documentOf(learner);
-        return runsUnder.filter(docUuid::equals).isPresent();
+        return access.documentOf(learner).filter(docUuid::equals).isPresent();
     }
 
     private static LearnerRef ref(final Learner learner) {
@@ -731,12 +699,12 @@ public class SupervisorService {
     }
 
     private LearningFlowDoc document(final String docUuid) {
-        final LearningFlowDoc doc = storeProvider.get().readDocument(
-                new DocRef(LearningFlowDoc.TYPE, docUuid));
-        if (doc == null) {
-            throw new IllegalArgumentException("There is no Learning Flow " + docUuid);
-        }
-        return doc;
+        return stored(docUuid)
+                .orElseThrow(() -> new IllegalArgumentException("There is no Learning Flow " + docUuid));
+    }
+
+    private Optional<LearningFlowDoc> stored(final String docUuid) {
+        return Optional.ofNullable(storeProvider.get().readDocument(new DocRef(LearningFlowDoc.TYPE, docUuid)));
     }
 
     /// An attempt a person may read. An attempt they may not see and an attempt that never existed
@@ -756,7 +724,7 @@ public class SupervisorService {
     private Recorded permitted(final long id, final DocumentPermission permission) {
         final Recorded attempt = attemptsProvider.get().byId(id).orElse(null);
         if (attempt == null
-            || !mayLearner(attempt.attempt().learner(), attempt.attempt().docUuid(), permission)) {
+            || !access.mayLearner(attempt.attempt().learner(), attempt.attempt().docUuid(), permission)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to read attempt " + id);
         }
@@ -765,7 +733,7 @@ public class SupervisorService {
 
     /// The learner, where this person may view its pipeline (or, for a pipeline since deleted, its document).
     private Learner readable(final Learner learner, final String docUuid) {
-        if (!mayLearner(learner, docUuid, DocumentPermission.VIEW)) {
+        if (!access.mayLearner(learner, docUuid, DocumentPermission.VIEW)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to read the pipeline of element " + learner.elementId());
         }
@@ -774,32 +742,12 @@ public class SupervisorService {
 
     /// The learner, where this person may edit its pipeline. Called once the pipeline is known to be live.
     private Learner changeable(final Learner learner) {
-        if (!mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
+        if (!access.mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
                     "You do not have permission to change how the pipeline of element " + learner.elementId()
                     + " learns");
         }
         return learner;
-    }
-
-    /// Whether this person may do a thing to a learner: by its pipeline's permission, or, for a pipeline since
-    /// deleted, which has none to ask, by its document's, to read alone. Nothing is changed for a deleted
-    /// pipeline's learner (A137), so a change asked of one is refused.
-    private boolean mayLearner(final Learner learner, final String docUuid, final DocumentPermission permission) {
-        return access().mayLearner(learner, docUuid, permission);
-    }
-
-    private boolean mayPipeline(final String pipelineUuid, final DocumentPermission permission) {
-        return access().mayPipeline(pipelineUuid, permission);
-    }
-
-    private boolean may(final String docUuid, final DocumentPermission permission) {
-        return access().mayDocument(docUuid, permission);
-    }
-
-    // The rules, shared with the Quality Assurance tab's resource
-    private LearnerAccess access() {
-        return new LearnerAccess(securityContextProvider, deletedPipelinesProvider);
     }
 
     /// The documents a learner's sessions may be under, where this person may read its pipeline: every
@@ -808,18 +756,7 @@ public class SupervisorService {
         final Learner learner = learner(ref);
         return storeProvider.get().listDocuments().stream()
                 .map(DocRef::getUuid)
-                .filter(uuid -> mayLearner(learner, uuid, DocumentPermission.VIEW))
-                .toList();
-    }
-
-    /// The documents this person may see, narrowed to the one they asked about if they asked about one.
-    /// A handful of documents per installation, so asking the store about each costs nothing next to the
-    /// query it saves.
-    private List<String> mayRead(final String asked) {
-        return storeProvider.get().listDocuments().stream()
-                .map(DocRef::getUuid)
-                .filter(uuid -> asked == null || asked.equals(uuid))
-                .filter(uuid -> may(uuid, DocumentPermission.VIEW))
+                .filter(uuid -> access.mayLearner(learner, uuid, DocumentPermission.VIEW))
                 .toList();
     }
 
@@ -830,24 +767,11 @@ public class SupervisorService {
         return attempt.bindingUuid();
     }
 
-    /// In a pipeline scope, though there is no pipeline: what a stage is built from reports through the
-    /// scoped error receiver, as it does for the deferred worker.
     /// The Learning Flow an attempt ran under, which must still exist for anything to be done to it.
     private LearningFlowDoc documentOf(final Recorded attempt) {
-        final LearningFlowDoc doc = storeProvider.get().readDocument(
-                new DocRef(LearningFlowDoc.TYPE, attempt.attempt().docUuid()));
-        if (doc == null) {
-            throw new IllegalStateException("The Learning Flow of attempt " + attempt.id()
-                                            + " has been deleted");
-        }
-        return doc;
-    }
-
-    /// Runs what needs a whole stage — learning and rebuilding run pipelines — in a pipeline scope.
-    private void onStage(final Recorded attempt, final OnStage action) {
-        final LearningFlowDoc doc = documentOf(attempt);
-        pipelineScopeProvider.get().scopeRunnable(() ->
-                action.run(stageFactoryProvider.get().create(), doc));
+        return stored(attempt.attempt().docUuid())
+                .orElseThrow(() -> new IllegalStateException("The Learning Flow of attempt " + attempt.id()
+                                                             + " has been deleted"));
     }
 
     private SupervisorAttempt detail(final Recorded attempt) {
@@ -890,15 +814,5 @@ public class SupervisorService {
     private static SupervisorTurn turn(final Turn turn) {
         return new SupervisorTurn(turn.number(), turn.stepId(), turn.candidate(), turn.kind(),
                 turn.question(), turn.answer(), turn.answeredBy(), turn.outcome(), turn.score());
-    }
-
-
-    // --------------------------------------------------------------------------------
-
-
-    @FunctionalInterface
-    private interface OnStage {
-
-        void run(stroom.learningflow.stage.Stage stage, LearningFlowDoc doc);
     }
 }

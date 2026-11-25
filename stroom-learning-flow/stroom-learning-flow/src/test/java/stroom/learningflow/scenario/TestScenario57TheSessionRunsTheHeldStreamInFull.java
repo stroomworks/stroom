@@ -160,7 +160,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         // A person's answer carries it on (A28, A65): the stylesheet answered instead, the worker re-walks
         // the session from what it has now been told, the full pass clears and both streams are woken.
         final int stylesheetTurn = parked.turns().get(parked.turns().size() - 1).number();
-        task(scenarios, silent).amend(doc, parked.id(), stylesheetTurn, Scenarios.fenced(TRANSLATES_BOTH), "a person");
+        scenarios.supervisorActions().amend(doc, parked.id(), stylesheetTurn, Scenarios.fenced(TRANSLATES_BOTH),
+                "a person");
         assertThat(scenarios.attempts.awaiting(10)).extracting(Recorded::id).contains(parked.id());
         assertThat(scenarios.worker(silent).advance(10)).isEqualTo(1);
         assertThat(silent.asked()).describedAs("nothing is asked again: the turns are replayed").isEmpty();

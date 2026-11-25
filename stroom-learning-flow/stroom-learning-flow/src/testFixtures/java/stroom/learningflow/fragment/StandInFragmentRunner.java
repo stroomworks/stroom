@@ -66,16 +66,14 @@ import java.util.stream.Collectors;
  * was written: the chain is walked from {@code Source} along the links, each element's configuration
  * document read back from its store, each step's output the next step's input. The Tier 1 stand-in for
  * merging the fragment into a pipeline (design 02 §2). It runs the fragment as a pipeline would — the
- * whole inheritance stack merged, as {@link FragmentCheckImpl} judges it — so a fragment that inherits
- * its structure from a template (§3, {@code parentPipeline}) runs here as it will there.
+ * whole inheritance stack merged — so a fragment that inherits its structure from a template (§3,
+ * {@code parentPipeline}) runs here as it will there.
  */
 public final class StandInFragmentRunner implements FragmentRunner {
 
-    private static final String SOURCE = "Source";
-
     /// Elements that shape the stream into records without changing what any record says: run by the
     /// pipeline, passed over here (§12 item 25).
-    private static final Set<String> SHAPING = Set.of("SplitFilter");
+    private static final Set<String> SHAPING = Set.of(PipelineRuns.SPLIT_FILTER);
 
     private final PipelineStore pipelineStore;
     private final PipelineStackLoader pipelineStackLoader;
@@ -134,9 +132,9 @@ public final class StandInFragmentRunner implements FragmentRunner {
         boolean split = false;
         boolean ran = false;
         String current = input;
-        for (String id = next.get(SOURCE); id != null; id = next.get(id)) {
+        for (String id = next.get(PipelineRuns.SOURCE); id != null; id = next.get(id)) {
             final String elementId = id;
-            if (SOURCE.equals(elementId) || !visited.add(elementId)) {
+            if (PipelineRuns.SOURCE.equals(elementId) || !visited.add(elementId)) {
                 throw new IllegalStateException("Fragment " + fragment.getName()
                                                 + " links back to '" + elementId + "': a fragment is a chain");
             }

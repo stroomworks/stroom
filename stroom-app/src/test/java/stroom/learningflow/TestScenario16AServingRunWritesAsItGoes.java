@@ -45,7 +45,7 @@ import stroom.learningflow.stage.Deferrals;
 import stroom.learningflow.stage.Deferrals.Deferral;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.api.MetaService;
 import stroom.meta.shared.FindMetaCriteria;
 import stroom.meta.shared.Meta;
@@ -300,7 +300,7 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
 
     private List<StepRunner> runners() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
-        return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new XsltStep());
+        return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new StandInXsltStep());
     }
 
     private Script script(final String splitter, final String stylesheet) {

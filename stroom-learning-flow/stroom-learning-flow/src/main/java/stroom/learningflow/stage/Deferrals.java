@@ -153,19 +153,7 @@ public interface Deferrals {
     /// @param learner       The learner.
     /// @param failedAgainst The stamp of the transform they fell short of, or **null** where they wait
     ///                      for a first learning and so fell short of nothing (W7-4).
-    /// @param latestMs      When the most recently deferred of them first waited. Only read for a row
-    ///                      with no stamp, where it is what tells a stream deferred *after* a promotion
-    ///                      — which that promotion's wake could not have reached — from one deferred
-    ///                      before it and woken already.
-    record Stamp(Learner learner, String failedAgainst, long latestMs) {
-
-        /// A stamp with no time, for a caller that does not need one.
-        ///
-        /// @param learner       The learner.
-        /// @param failedAgainst What its streams fell short of.
-        public Stamp(final Learner learner, final String failedAgainst) {
-            this(learner, failedAgainst, 0L);
-        }
+    record Stamp(Learner learner, String failedAgainst) {
 
     }
 }

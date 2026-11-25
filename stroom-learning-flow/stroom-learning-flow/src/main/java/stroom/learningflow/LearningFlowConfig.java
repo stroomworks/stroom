@@ -32,6 +32,13 @@ import jakarta.validation.constraints.Min;
 /// deferred learning one pass of the worker does (A5), and how long an attempt's record is kept (A28).
 public class LearningFlowConfig extends AbstractConfig implements IsStroomConfig, HasDbConfig {
 
+    // A backstop against a runaway, not a budget: high enough that no honest cluster meets it, low
+    // enough that a loop cannot spend without limit. One feed learned from scratch cost about 550,000
+    // tokens over thirteen calls on the development instance, so this is roughly eighteen whole
+    // learnings an hour across every document on the cluster.
+    private static final long DEFAULT_SPEND_TOKENS_PER_HOUR = 10_000_000L;
+    private static final int DEFAULT_SPEND_CALLS_PER_HOUR = 1_000;
+
     private final LearningFlowDbConfig dbConfig;
     private final CacheConfig bindingCache;
     private final CacheConfig learnerStateCache;
@@ -64,12 +71,8 @@ public class LearningFlowConfig extends AbstractConfig implements IsStroomConfig
         deferredLearningBatchSize = 10;
         attemptRetention = StroomDuration.ofDays(90);
         sessionLease = StroomDuration.ofMinutes(10);
-        // A backstop against a runaway, not a budget: high enough that no honest cluster meets it, low
-        // enough that a loop cannot spend without limit. One feed learned from scratch cost about 550,000
-        // tokens over thirteen calls on the development instance, so this is roughly eighteen whole
-        // learnings an hour across every document on the cluster.
-        spendTokensPerHour = 10_000_000L;
-        spendCallsPerHour = 1_000;
+        spendTokensPerHour = DEFAULT_SPEND_TOKENS_PER_HOUR;
+        spendCallsPerHour = DEFAULT_SPEND_CALLS_PER_HOUR;
     }
 
     @SuppressWarnings("unused")
@@ -89,10 +92,10 @@ public class LearningFlowConfig extends AbstractConfig implements IsStroomConfig
         this.attemptRetention = attemptRetention;
         this.sessionLease = sessionLease;
         this.spendTokensPerHour = spendTokensPerHour == null
-                ? 10_000_000L
+                ? DEFAULT_SPEND_TOKENS_PER_HOUR
                 : spendTokensPerHour;
         this.spendCallsPerHour = spendCallsPerHour == null
-                ? 1_000
+                ? DEFAULT_SPEND_CALLS_PER_HOUR
                 : spendCallsPerHour;
     }
 

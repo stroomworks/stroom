@@ -117,9 +117,5 @@ public interface LearnerStates {
     /// @param skips   How many of those records the translation declared it deliberately skipped (A148).
     record Rolling(double score, int records, int skips) {
 
-        /// A learner scored before skips were counted.
-        public Rolling(final double score, final int records) {
-            this(score, records, 0);
-        }
     }
 }

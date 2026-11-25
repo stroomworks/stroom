@@ -83,12 +83,10 @@ import stroom.learningflow.stage.RegressionSet.Accepted;
 import stroom.learningflow.stage.Sessions.Recorder;
 import stroom.learningflow.transformation.AiXsltAllowList;
 import stroom.learningflow.transformation.LearnedStylesheetCheck;
+import stroom.learningflow.transformation.XsltStep;
 import stroom.meta.shared.MetaFields;
 import stroom.pipeline.xml.event.EventList;
 import stroom.processor.api.DeferTaskException;
-import stroom.util.logging.LambdaLogger;
-import stroom.util.logging.LambdaLoggerFactory;
-import stroom.util.logging.LogUtil;
 import stroom.util.shared.DocPath;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.NullSafe;
@@ -125,64 +123,38 @@ import java.util.stream.Collectors;
  * emit. This is the supervisor's logic without the pipeline element around it; the element (design 01
  * §12 item 4) will delegate to it. The fragment is run by the step runners here, as it was learned.
  * <p>
- * The seed fixes the held-out split for the run (design 02 §7). Where the input is raw text and records
- * do not yet exist, the learning sample is a prefix and the whole stream is held out, as §7 also says;
- * the seeded shuffle applies once the replay unit is a record and is not needed by the first scenarios.
+ * Where the input is raw text and records do not yet exist, the learning sample is a prefix and the whole
+ * stream is held out, as design 02 §7 says.
  * <p>
  * Runtime state is what the stage is given (A26): the learners' states, the outputs' bindings and the
  * regression set. A sentinel is an error stream and nothing more (A131): the attempt that gave up is the
  * record of why. Binding a learner wakes its pipeline, which puts its waiting streams through, and asks
- * for nothing to be reprocessed (A129). In review mode (A25) a binding is a draft until {@link #approve}
- * makes it the promotion or {@link #reject} discards it.
+ * for nothing to be reprocessed (A129). In review mode (A25) a binding is a draft until
+ * {@link Promotion#approve} makes it the promotion or {@link Promotion#reject} discards it.
  */
 public final class Stage {
 
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(Stage.class);
-
-    /**
-     * The window a document's spend is counted over (A44). A24 will make it a setting, with the budget it
-     * is measured against; until then it is an hour, which is long enough to see a feed burning spend and
-     * short enough that yesterday's does not hide it.
-     */
     /// The element a stage's own diagnostics are laid at.
     static final ElementId STAGE = new ElementId("Stage");
 
-    private final Advisors advisors;
-    private final List<StepRunner> runners;
     private final List<Scorer> scorers;
     /// Where the one schema a document's translations must write is read from (task 7).
     private final TargetSchemas targetSchemas;
-    private final FragmentWriter writer;
     private final FragmentRunner fragmentRunner;
     private final Attempts attempts;
     private final LearnerBindings learnerBindings;
     private final LearnerStates states;
-    private final Spend spend;
-    private final SpendBreaker breaker;
-    private final Guidance guidance;
     private final Outputs outputs;
-    private final RegressionSet regressionSet;
     private final Deferrals deferrals;
     private final Learners learners;
     private final Wake wake;
-    private final Places places;
     private final Snapshots snapshots;
-    private final FragmentCodes codes;
     /// What a record of the chain's output is judged as when it is served: the element type the scorers
     /// of meaning read it as, which is any element that is not a parser.
-    private static final String TRANSFORM = "XSLTFilter";
+    private static final String TRANSFORM = XsltStep.ELEMENT_TYPE;
     private final Clock clock;
-    /// How long a claim on an attempt lasts from its last renewal (design 04 §4).
-    private final Duration lease;
-    private final long seed;
-    private final String node;
-    /// The build of Stroom running, recorded against each attempt's words (N9) so that a prompt rebuilt
-    /// after an upgrade can say the checks' wording may have moved under it.
-    private final String build;
     /// Drafts, approval, rejection, promotion and retraction (simplification option iii).
     private final Promotion promotion;
-    /// A person's actions on a run or a learner (simplification option iii).
-    private final SupervisorActions actions;
     /// The record of each learning run (simplification option iii).
     private final Sessions sessions;
     /// How what a stage runs is judged, shared by serving and learning (simplification option iii).
@@ -190,11 +162,12 @@ public final class Stage {
     /// Learning, relearning, improving and resuming (simplification option iii).
     private final Learning learning;
 
-    /// A stage that does not know its build: a harness, where a rebuilt prompt's caveat has no reader.
+    /// A stage over its state and the elements it can learn.
     ///
     /// @param advisors        How the model is asked.
     /// @param runners         The elements it can learn.
     /// @param scorers         What judges what it learns.
+    /// @param targetSchemas   Where a document's target schema is read from; null for none.
     /// @param writer          Where learned content is written.
     /// @param fragmentRunner  How a fragment is run.
     /// @param attempts        Where attempts are recorded.
@@ -212,9 +185,11 @@ public final class Stage {
     /// @param snapshots       What each binding serves with.
     /// @param codes           A fragment as text.
     /// @param clock           The clock.
-    /// @param lease           How long a claim lasts.
-    /// @param seed            The seed for anything random.
+    /// @param lease           How long a claim on an attempt lasts from its last renewal (design 04 §4).
     /// @param node            Which node this is.
+    /// @param build           The build of Stroom running, recorded against each attempt's words (N9) so that
+    ///                        a prompt rebuilt after an upgrade can say the checks' wording may have moved
+    ///                        under it; null where it is not known, as in a harness.
     @SuppressWarnings("checkstyle:ParameterNumber")
     public Stage(final Advisors advisors,
                  final List<StepRunner> runners,
@@ -238,75 +213,29 @@ public final class Stage {
                  final FragmentCodes codes,
                  final Clock clock,
                  final Duration lease,
-                 final long seed,
-                 final String node) {
-        this(advisors, runners, scorers, targetSchemas, writer, fragmentRunner, attempts, learnerBindings,
-                states, spend,
-                breaker, guidance, outputs, regressionSet, deferrals, learners, wake, places, snapshots,
-                codes, clock, lease, seed, node, null);
-    }
-
-    public Stage(final Advisors advisors,
-                 final List<StepRunner> runners,
-                 final List<Scorer> scorers,
-                 final TargetSchemas targetSchemas,
-                 final FragmentWriter writer,
-                 final FragmentRunner fragmentRunner,
-                 final Attempts attempts,
-                 final LearnerBindings learnerBindings,
-                 final LearnerStates states,
-                 final Spend spend,
-                 final SpendBreaker breaker,
-                 final Guidance guidance,
-                 final Outputs outputs,
-                 final RegressionSet regressionSet,
-                 final Deferrals deferrals,
-                 final Learners learners,
-                 final Wake wake,
-                 final Places places,
-                 final Snapshots snapshots,
-                 final FragmentCodes codes,
-                 final Clock clock,
-                 final Duration lease,
-                 final long seed,
                  final String node,
                  final String build) {
-        this.advisors = advisors;
-        this.runners = List.copyOf(runners);
         this.scorers = List.copyOf(scorers);
         this.targetSchemas = targetSchemas == null
                 ? TargetSchemas.none()
                 : targetSchemas;
-        this.writer = writer;
         this.fragmentRunner = fragmentRunner;
         this.attempts = attempts;
         this.learnerBindings = learnerBindings;
         this.states = states;
-        this.spend = spend;
-        this.breaker = breaker;
-        this.guidance = guidance;
         this.outputs = outputs;
-        this.regressionSet = regressionSet;
         this.deferrals = deferrals;
         this.learners = learners;
         this.wake = wake;
-        this.places = places;
         this.snapshots = snapshots;
-        this.codes = codes;
         this.clock = clock;
-        this.lease = lease;
-        this.seed = seed;
-        this.node = node;
-        this.build = build;
         this.promotion = new Promotion(learnerBindings, states, regressionSet, snapshots, outputs, attempts, writer,
                 codes, places, wake, clock);
         this.judging = new Judging(scorers, this.targetSchemas, fragmentRunner);
         this.sessions = new Sessions(advisors, attempts, breaker, writer, places, clock, lease, node, build);
-        this.learning = new Learning(this.runners, this.scorers, this.targetSchemas, attempts, learnerBindings,
-                states, spend, breaker, guidance, outputs, regressionSet, wake, places, writer, codes, clock, lease,
-                node, promotion, sessions, judging, fragmentRunner);
-        this.actions = new SupervisorActions(attempts, learnerBindings, states, regressionSet, snapshots,
-                this.targetSchemas, wake, clock, lease);
+        this.learning = new Learning(List.copyOf(runners), this.scorers, this.targetSchemas, attempts,
+                learnerBindings, states, spend, breaker, guidance, outputs, regressionSet, wake, places, writer, codes,
+                clock, lease, node, promotion, sessions, judging, fragmentRunner);
     }
 
     /// As [Learning#resume].
@@ -351,58 +280,6 @@ public final class Stage {
     /// @return The prompts, or empty where the run's words were not kept.
     public Optional<Rebuilt> rebuild(final LearningFlowDoc doc, final long attemptId, final Input input) {
         return learning.rebuild(doc, attemptId, input);
-    }
-
-    /// As [SupervisorActions#grant].
-    ///
-    /// @param doc       The document.
-    /// @param attemptId The run.
-    /// @param tokens    Tokens to add; zero for none.
-    /// @param ms        Milliseconds to add; zero for none.
-    public void grant(final LearningFlowDoc doc, final long attemptId, final long tokens, final long ms) {
-        actions.grant(doc, attemptId, tokens, ms);
-    }
-
-    /// As [SupervisorActions#exhaust].
-    ///
-    /// @param doc       The document.
-    /// @param attemptId The run.
-    public void exhaust(final LearningFlowDoc doc, final long attemptId) {
-        actions.exhaust(doc, attemptId);
-    }
-
-    /// As [SupervisorActions#amend].
-    ///
-    /// @param doc        The document.
-    /// @param attemptId  The run.
-    /// @param turnNumber The turn answered.
-    /// @param answer     The answer.
-    /// @param answeredBy Who answered.
-    public void amend(final LearningFlowDoc doc,
-                      final long attemptId,
-                      final int turnNumber,
-                      final String answer,
-                      final String answeredBy) {
-        actions.amend(doc, attemptId, turnNumber, answer, answeredBy);
-    }
-
-    /// As [SupervisorActions#relearn].
-    ///
-    /// @param doc     The document.
-    /// @param learner The learner.
-    /// @param reason  Why.
-    public void relearn(final LearningFlowDoc doc, final Learner learner, final String reason) {
-        actions.relearn(doc, learner, reason);
-    }
-
-    /// As [SupervisorActions#giveUp].
-    ///
-    /// @param doc     The document.
-    /// @param learner The learner.
-    /// @param reason  Why.
-    /// @param by      Who gave it up.
-    public void giveUp(final LearningFlowDoc doc, final Learner learner, final String reason, final String by) {
-        actions.giveUp(doc, learner, reason, by);
     }
 
     /// What each of the fragment's own elements made of the stream on the run this stage just made, a
@@ -903,73 +780,6 @@ public final class Stage {
             }
         }
         return pipelines.stream().mapToInt(wake::wake).sum();
-    }
-
-    // What a paused attempt stopped on, in brackets, without its full stop; empty where it says nothing
-    /**
-     * Bookkeeping, which may not fail what it is a record of: an attempt is written after the fragment, the
-     * binding and the output are, so a database that refuses the row must not undo a stream that succeeded.
-     */
-    private static void record(final Runnable write) {
-        try {
-            write.run();
-        } catch (final RuntimeException e) {
-            LOGGER.error(() -> LogUtil.message("The attempt could not be recorded: {}", e.getMessage()), e);
-        }
-    }
-
-    /**
-     * Approve a draft (A25): the promotion. Where a binding already serves the learner — the draft came of
-     * relearning — that binding is rebound to the draft's fragment and keeps its {@code uuid} and its
-     * history; otherwise the draft itself goes live. Either way the learner's pipeline is woken, which puts
-     * what waited for the review through.
-     */
-    public void approve(final LearningFlowDoc doc, final String bindingUuid) {
-        promotion.approve(doc, bindingUuid, null);
-    }
-
-    /// As [Promotion#approve], saying who approved it.
-    ///
-    /// @param doc         The document.
-    /// @param bindingUuid The draft.
-    /// @param reviewedBy  Who approved it; null where nobody is named.
-    public void approve(final LearningFlowDoc doc, final String bindingUuid, final String reviewedBy) {
-        promotion.approve(doc, bindingUuid, reviewedBy);
-    }
-
-    /// As [Promotion#retract].
-    ///
-    /// @param doc         The document.
-    /// @param bindingUuid The binding.
-    /// @param reason      Why, in the person's words.
-    /// @param by          Who retracted it.
-    /// @return How many streams the binding produced output for.
-    public int retract(final LearningFlowDoc doc, final String bindingUuid, final String reason, final String by) {
-        return promotion.retract(doc, bindingUuid, reason, by);
-    }
-
-    /**
-     * Reject a draft (A25): the binding goes, with its records; its documents stay, as every document does.
-     * The learner gives up with the reason, so the model is not asked the same question again until an
-     * operator says otherwise: a learner with no binding sentinels its streams, and a relearned learner's
-     * incumbent carries on serving without being scored against or relearned.
-     *
-     */
-    public void reject(final LearningFlowDoc doc, final String bindingUuid, final String reason) {
-        promotion.reject(doc, bindingUuid, reason, null);
-    }
-
-    /// As [Promotion#reject], saying who rejected it.
-    ///
-    /// @param doc         The document.
-    /// @param bindingUuid The draft.
-    /// @param reason      Why.
-    /// @param reviewedBy  Who rejected it; null where nobody is named.
-    public void reject(final LearningFlowDoc doc,
-                       final String bindingUuid,
-                       final String reason,
-                       final String reviewedBy) {
-        promotion.reject(doc, bindingUuid, reason, reviewedBy);
     }
 
     /// How many times one stream may open a relearning session against the **same** translation before it

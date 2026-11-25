@@ -243,7 +243,7 @@ class TestScenario54TheTaskDecision {
         assertThat(((Deferred) waiting.decision()).reason()).contains("Awaiting review");
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 2L)).isPresent();
 
-        scenarios.stage(document -> silent, scenarios.learnerBindings).approve(doc, draft.getUuid());
+        scenarios.promotion().approve(doc, draft.getUuid(), null);
 
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
                 .describedAs("the stream the draft was learned on waited behind it too")

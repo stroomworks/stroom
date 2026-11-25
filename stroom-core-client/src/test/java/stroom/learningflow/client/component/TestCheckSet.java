@@ -66,11 +66,9 @@ class TestCheckSet {
     }
 
     @Test
-    void onlyTheChecksThatAreBuiltAreShown() {
+    void everyCheckIsShown() {
         final CheckSet set = new CheckSet();
         set.read(null);
-        // Every check is built now that the error load and event classification checks are gone (D5), so
-        // all of them are listed; the filter stays for a check added before its scorer is written
         assertThat(set.shown()).extracting(CheckSetting::getCheck)
                 .containsExactly(Check.values())
                 .contains(Check.COMPILE, Check.WHOLENESS, Check.REGRESSION);

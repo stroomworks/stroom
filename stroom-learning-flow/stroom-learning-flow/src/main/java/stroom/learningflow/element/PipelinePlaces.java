@@ -22,10 +22,8 @@ import stroom.learningflow.element.LearnerDocuments.Element;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.Places;
 import stroom.pipeline.shared.PipelineDoc;
-import stroom.pipeline.shared.data.PipelinePropertyValue;
 import stroom.security.api.SecurityContext;
 import stroom.util.shared.DocPath;
-import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -73,20 +71,12 @@ public class PipelinePlaces implements Places {
             return new Place(ORPHANED, learner.pipelineUuid());
         }
         final PipelineDoc pipeline = element.get().pipeline();
-        final DocPath folder = text(element.get(), FOLDER_PROPERTY)
+        final DocPath folder = element.get().text(FOLDER_PROPERTY)
                 .map(PipelinePlaces::folder)
                 .orElseGet(() -> beside(pipeline));
-        final String name = text(element.get(), NAME_PROPERTY)
+        final String name = element.get().text(NAME_PROPERTY)
                 .orElseGet(() -> pipeline.getName() + LEARNED);
         return new Place(folder, name);
-    }
-
-    /// A property's text, where it has any: a blank value is an unset one.
-    private static Optional<String> text(final Element element, final String property) {
-        return Optional.ofNullable(element.properties().get(property))
-                .map(PipelinePropertyValue::getString)
-                .map(String::strip)
-                .filter(value -> !NullSafe.isBlankString(value));
     }
 
     /// A folder as a person or a factory pattern writes it, `Feeds/DOOR-ACCESS`: a leading `/` or none,

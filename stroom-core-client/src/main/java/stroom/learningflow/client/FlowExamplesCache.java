@@ -16,11 +16,8 @@
 
 package stroom.learningflow.client;
 
-import stroom.dispatch.client.QuietTaskMonitorFactory;
 import stroom.dispatch.client.RestFactory;
 import stroom.learningflow.shared.BuiltInFlow;
-import stroom.learningflow.shared.FlowExample;
-import stroom.learningflow.shared.FlowStep;
 import stroom.learningflow.shared.LearningFlowResource;
 import stroom.widget.task.client.TaskMonitorFactory;
 
@@ -99,13 +96,6 @@ public class FlowExamplesCache {
                 .exec();
     }
 
-    /// The same, shown on this cache's own monitor.
-    ///
-    /// @param consumer Told the setups.
-    public void get(final Consumer<List<BuiltInFlow>> consumer) {
-        get(consumer, new QuietTaskMonitorFactory());
-    }
-
     /// What is in hand, for a screen that is drawing and cannot wait.
     ///
     /// @return The setups, or empty where they have not been fetched yet.
@@ -113,18 +103,5 @@ public class FlowExamplesCache {
         return examples == null
                 ? List.of()
                 : examples;
-    }
-
-    /// The steps of one setup.
-    ///
-    /// @param example The setup.
-    /// @return Its steps, or empty where the setups are not in hand.
-    public List<FlowStep> steps(final FlowExample example) {
-        for (final BuiltInFlow flow : known()) {
-            if (flow.getExample() == example) {
-                return flow.getSteps();
-            }
-        }
-        return List.of();
     }
 }

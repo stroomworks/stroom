@@ -440,7 +440,7 @@ class TestSupervisorService {
                 securityContext::get,
                 () -> guidance,
                 () -> null,
-                () -> documents,
+                new LearnerAccess(securityContext::get, () -> deletedPipelines, () -> documents, () -> pipelines),
                 () -> deletedPipelines,
                 () -> learnerBindings,
                 () -> pipelines,

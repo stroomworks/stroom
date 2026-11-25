@@ -17,15 +17,19 @@
 package stroom.learningflow.doc;
 
 import stroom.docref.DocRef;
+import stroom.learningflow.element.LearnerDocuments;
 import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.stage.DeletedPipelines;
 import stroom.learningflow.stage.Learner;
+import stroom.learningflow.stage.LearningPipelines;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
+
+import java.util.Optional;
 
 /// Who may do what with a learner, as the Supervisor and a Smart Pipeline's Quality Assurance tab both ask it.
 /// What is learned for a feed belongs to the feed's pipeline and is held to the pipeline's permissions. A pipeline
@@ -35,14 +39,22 @@ public class LearnerAccess {
 
     private final Provider<SecurityContext> securityContextProvider;
     private final Provider<DeletedPipelines> deletedPipelinesProvider;
+    private final Provider<LearnerDocuments> learnerDocumentsProvider;
+    private final Provider<LearningPipelines> learningPipelinesProvider;
 
-    /// @param securityContextProvider  Says what the person may do.
-    /// @param deletedPipelinesProvider Says which pipelines have been deleted.
+    /// @param securityContextProvider   Says what the person may do.
+    /// @param deletedPipelinesProvider  Says which pipelines have been deleted.
+    /// @param learnerDocumentsProvider  The Learning Flow a live pipeline's element names.
+    /// @param learningPipelinesProvider The Learning Flow a deleted pipeline's learning is read under.
     @Inject
     public LearnerAccess(final Provider<SecurityContext> securityContextProvider,
-                         final Provider<DeletedPipelines> deletedPipelinesProvider) {
+                         final Provider<DeletedPipelines> deletedPipelinesProvider,
+                         final Provider<LearnerDocuments> learnerDocumentsProvider,
+                         final Provider<LearningPipelines> learningPipelinesProvider) {
         this.securityContextProvider = securityContextProvider;
         this.deletedPipelinesProvider = deletedPipelinesProvider;
+        this.learnerDocumentsProvider = learnerDocumentsProvider;
+        this.learningPipelinesProvider = learningPipelinesProvider;
     }
 
     /// @param learner    The learner.
@@ -73,9 +85,15 @@ public class LearnerAccess {
                 new DocRef(LearningFlowDoc.TYPE, docUuid), permission);
     }
 
-    /// @param pipelineUuid The pipeline.
-    /// @return Whether it has been deleted, when what it learned is kept to be read and nothing more.
-    public boolean isDeleted(final String pipelineUuid) {
-        return deletedPipelinesProvider.get().isDeleted(pipelineUuid);
+    /// The Learning Flow a learner runs under: as its pipeline's element names it now, or for a pipeline since
+    /// deleted, which names nothing, as the learning pipelines list says, so that what it learned can still be
+    /// read from the Learning Flow it is listed under (A137).
+    ///
+    /// @param learner The learner.
+    /// @return The Learning Flow's uuid, or empty where it runs under none.
+    public Optional<String> documentOf(final Learner learner) {
+        return deletedPipelinesProvider.get().isDeleted(learner.pipelineUuid())
+                ? learningPipelinesProvider.get().documentOf(learner)
+                : learnerDocumentsProvider.get().documentOf(learner);
     }
 }

@@ -134,17 +134,4 @@ class TestDeferralsDao {
                 .extracting(Stamp::learner, Stamp::failedAgainst)
                 .containsExactlyInAnyOrder(tuple(LEARNER, "frag:1"), tuple(LEARNER, null));
     }
-
-    @Test
-    void eachStampCarriesWhenTheLatestOfItsStreamsFirstWaited() {
-        // Only read for a row with no stamp, where it is what tells a stream deferred after a promotion
-        // from one the promotion's own wake already reached
-        deferrals.deferred(LEARNER, DOC, 11L, "LIFT", "Raw Events", null, "no binding", 0);
-        deferrals.deferred(LEARNER, DOC, 12L, "LIFT", "Raw Events", null, "no binding", 0);
-
-        assertThat(deferrals.stampsWaiting())
-                .filteredOn(stamp -> stamp.learner().equals(LEARNER) && stamp.failedAgainst() == null)
-                .singleElement()
-                .satisfies(stamp -> assertThat(stamp.latestMs()).isPositive());
-    }
 }

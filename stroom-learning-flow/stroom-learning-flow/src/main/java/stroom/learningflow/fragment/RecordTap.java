@@ -62,11 +62,6 @@ public final class RecordTap implements ContentHandler {
     /// The elements open within the record being built, innermost last, for closing a record read mid-way.
     private final Deque<String[]> open = new ArrayDeque<>();
 
-    /// A tap over a parser whose records are the root's children, which is every parser with a stand-in.
-    public RecordTap() {
-        this(1);
-    }
-
     /// @param splitDepth How deep a record sits, as `RecordBoundary#splitDepth` counts it: the number of
     ///                   elements above it. One for the children of a root; three for the items of an
     ///                   array under a key.

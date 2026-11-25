@@ -20,8 +20,6 @@ import stroom.docstore.api.DocumentStoreBinder;
 import stroom.learningflow.element.LearningFlowElementModule;
 import stroom.learningflow.fragment.ContentCreator;
 import stroom.learningflow.fragment.ExplorerContentCreator;
-import stroom.learningflow.fragment.FragmentCheck;
-import stroom.learningflow.fragment.FragmentCheckImpl;
 import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
@@ -33,7 +31,6 @@ public class LearningFlowModule extends AbstractModule {
     @Override
     protected void configure() {
         install(new LearningFlowElementModule());
-        bind(FragmentCheck.class).to(FragmentCheckImpl.class);
         bind(ContentCreator.class).to(ExplorerContentCreator.class);
 
         DocumentStoreBinder.create(binder())

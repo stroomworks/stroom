@@ -81,24 +81,12 @@ public final class SupervisorActions {
     /// @param tokens Tokens to add; zero for none.
     /// @param ms     Milliseconds to add; zero for none.
     public void grant(final LearningFlowDoc doc, final long attemptId, final long tokens, final long ms) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
-                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
-        }
-        if (recorded.status() != AttemptStatus.PARKED) {
-            throw new IllegalStateException("Attempt " + attemptId + " is not parked for a person: it is "
-                                            + recorded.status().getDisplayValue());
-        }
+        final Recorded recorded = parked(doc, attemptId);
         if (tokens < 0 || ms < 0 || (tokens == 0 && ms == 0)) {
             throw new IllegalArgumentException("A grant is tokens, milliseconds or both, and not less than nothing");
         }
         attempts.granted(attemptId, tokens, ms);
-        if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
-            throw new IllegalStateException("Attempt " + attemptId + " cannot be carried on: another attempt is "
-                                            + "learning for " + recorded.attempt().learner());
-        }
+        carriedOn(recorded);
     }
 
     /// Send a parked session to the exhaustion step (A65, A76): the attempt is opened again for the
@@ -106,16 +94,7 @@ public final class SupervisorActions {
     /// put to the model, takes the flow's spent transition instead — to `ADMIT`, where the flow has one.
     /// Only a parked attempt is sent.
     public void exhaust(final LearningFlowDoc doc, final long attemptId) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
-                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
-        }
-        if (recorded.status() != AttemptStatus.PARKED) {
-            throw new IllegalStateException("Attempt " + attemptId + " is not parked for a person: it is "
-                                            + recorded.status().getDisplayValue());
-        }
+        final Recorded recorded = parked(doc, attemptId);
         // Marked Unknowns are event-logging's: another target has no fallback to finish with (task 7, W1-3)
         final Optional<TargetSchema> target = targetSchemas.of(doc);
         if (target.isPresent() && !target.get().isEventLogging()) {
@@ -126,10 +105,7 @@ public final class SupervisorActions {
         // The sending first, so that no worker takes the attempt between the reopening and it; on a
         // parked row it stands harmlessly until the attempt is reopened and closed.
         attempts.exhaustNext(attemptId);
-        if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
-            throw new IllegalStateException("Attempt " + attemptId + " cannot be carried on: another attempt is "
-                                            + "learning for " + recorded.attempt().learner());
-        }
+        carriedOn(recorded);
     }
 
     /**
@@ -152,12 +128,7 @@ public final class SupervisorActions {
                       final int turnNumber,
                       final String answer,
                       final String answeredBy) {
-        final Recorded recorded = attempts.byId(attemptId)
-                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
-        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
-            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
-                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
-        }
+        final Recorded recorded = attemptOf(doc, attemptId);
         // Before anything is changed: an attempt is not opened again for a turn it has not got, or a
         // person who mistyped a number would reopen a finished attempt, wipe what it came to and be told
         // their request failed.
@@ -229,6 +200,37 @@ public final class SupervisorActions {
         }
         states.giveUp(learner, doc.getUuid(), "Given up by " + by + ": " + reason);
         wake(learner);
+    }
+
+    /// The attempt, which must be the document's.
+    private Recorded attemptOf(final LearningFlowDoc doc, final long attemptId) {
+        final Recorded recorded = attempts.byId(attemptId)
+                .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
+        if (!doc.getUuid().equals(recorded.attempt().docUuid())) {
+            throw new IllegalArgumentException("Attempt " + attemptId + " belongs to document "
+                                               + recorded.attempt().docUuid() + ", not " + doc.getUuid());
+        }
+        return recorded;
+    }
+
+    /// The attempt, which must be the document's and parked for a person.
+    private Recorded parked(final LearningFlowDoc doc, final long attemptId) {
+        final Recorded recorded = attemptOf(doc, attemptId);
+        if (recorded.status() != AttemptStatus.PARKED) {
+            throw new IllegalStateException("Attempt " + attemptId + " is not parked for a person: it is "
+                                            + recorded.status().getDisplayValue());
+        }
+        return recorded;
+    }
+
+    /// The attempt opened again for the worker to carry on, which fails where another attempt holds its
+    /// learner's claim.
+    private void carriedOn(final Recorded recorded) {
+        final long attemptId = recorded.id();
+        if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
+            throw new IllegalStateException("Attempt " + attemptId + " cannot be carried on: another attempt is "
+                                            + "learning for " + recorded.attempt().learner());
+        }
     }
 
     /// When a claim taken now lapses if nothing renews it (A45).

@@ -38,7 +38,7 @@ import stroom.learningflow.stage.Decision.Sentinel;
 import stroom.learningflow.stage.Input;
 import stroom.learningflow.stage.Stage;
 import stroom.learningflow.stage.StageRun;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.util.shared.DocPath;
 
 import org.junit.jupiter.api.Test;
@@ -142,7 +142,7 @@ class TestReprocessingAsProcessed {
                 DocPath.fromParts("Learning Flow", FEED), "improved-v2",
                 List.of(new LearnedStep(scenarios.runners().getFirst(), CSV.configuration(),
                                 new StepResult("<records/>", List.of()), UNSCORED),
-                        new LearnedStep(new XsltStep(), DEGENERATE,
+                        new LearnedStep(new StandInXsltStep(), DEGENERATE,
                                 new StepResult("<Events/>", List.of()), UNSCORED)),
                 binding.getRecordBoundary());
         scenarios.learnerBindings.replace(Scenarios.LEARNER, "doc-1", binding.copy().pipeline(second).build());

@@ -26,8 +26,8 @@ import stroom.learningflow.learning.LearnedStep;
 import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.scoring.Attempted;
 import stroom.learningflow.shared.RecordBoundary;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.learningflow.transformation.StreamFacts;
-import stroom.learningflow.transformation.XsltStep;
 import stroom.meta.shared.Meta;
 import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
@@ -184,7 +184,7 @@ class TestJudgingTakesTheYearFromTheStream extends AbstractProcessIntegrationTes
 
     private DocRef write(final String name) {
         return fragmentWriter.write(FOLDER, name, List.of(
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), null)), null);
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), null)), null);
     }
 
     private String run(final DocRef fragment) {
@@ -198,7 +198,7 @@ class TestJudgingTakesTheYearFromTheStream extends AbstractProcessIntegrationTes
 
     /// The same date through the module's stand-in, which the scenario harness runs.
     private static String standIn() {
-        return when(new XsltStep(new StreamFacts(1L, "SYSLOG", "Raw Events", RECEIVED.toEpochMilli(),
+        return when(new StandInXsltStep(new StreamFacts(1L, "SYSLOG", "Raw Events", RECEIVED.toEpochMilli(),
                 Map.of())).prepare(XSLT).run(INPUT).output());
     }
 

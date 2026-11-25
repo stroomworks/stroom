@@ -331,11 +331,6 @@ public class FeedDetail extends Component {
         }
     }
 
-    /// @return Whether Learning history is unfolded.
-    public boolean isHistoryOpen() {
-        return history.isOpen();
-    }
-
     /// Shows the run's conversation.
     ///
     /// @param rows       Its questions, in order.

@@ -18,11 +18,9 @@ package stroom.learningflow.cache;
 
 import stroom.cache.api.CacheManager;
 import stroom.cache.api.LoadingStroomCache;
-import stroom.docref.DocRef;
 import stroom.learningflow.LearningFlowConfig;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerStates;
-import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.entityevent.EntityEventBus;
 import stroom.util.entityevent.EntityEventHandler;
@@ -133,24 +131,11 @@ public class CachedLearnerStates implements LearnerStates, Clearable, EntityEven
 
     @Override
     public void onChange(final EntityEvent event) {
-        // A pipeline's worth at a time: the event names the pipeline, and a pipeline's learners are few.
-        final String pipelineUuid = event.getDocRef() == null
-                ? null
-                : event.getDocRef().getUuid();
-        if (pipelineUuid == null) {
-            clear();
-        } else {
-            cache.invalidateEntries((learner, settled) -> learner.pipelineUuid().equals(pipelineUuid));
-        }
+        LearnerCacheEvents.onChange(cache, event);
     }
 
-    /// An event of the learner's own type, naming its pipeline: a learner's state is a row of the
-    /// feature's own, and an event on the pipeline would have every node drop its merged pipeline data
-    /// each time a learner was marked.
     private void changed(final Learner learner) {
-        cache.invalidate(learner);
-        entityEventBus.fire(new EntityEvent(
-                new DocRef(Learner.EVENT_TYPE, learner.pipelineUuid()), EntityAction.CLEAR_CACHE));
+        LearnerCacheEvents.changed(cache, entityEventBus, learner);
     }
 
 

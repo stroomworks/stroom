@@ -24,9 +24,7 @@ import stroom.learningflow.stage.Learner;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jooq.Condition;
-import org.jooq.Field;
 import org.jooq.Record;
-import org.jooq.impl.DSL;
 
 import java.util.List;
 import java.util.Optional;
@@ -126,28 +124,19 @@ public class DeferralsDao implements Deferrals {
 
     @Override
     public List<Stamp> stampsWaiting() {
-        final Field<Long> latest = DSL.max(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FIRST_DEFERRED_MS);
         return JooqUtil.contextResult(connProvider, context -> context
-                .select(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.PIPELINE_UUID,
+                .selectDistinct(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.PIPELINE_UUID,
                         LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.ELEMENT_ID,
-                        LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST,
-                        latest)
+                        LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST)
                 .from(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL)
                 // Rows with no stamp are included (audit finding W7-4). A stream deferred for a *first*
                 // learning has nothing to have failed against, and used to be left out of this sweep
                 // entirely — so a deferral written just after the promotion's wake waited the full
-                // five-minute retry for a translation that already existed. The latest time one of them
-                // first waited is what tells those from the ones that wake already reached.
-                .groupBy(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.PIPELINE_UUID,
-                        LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.ELEMENT_ID,
-                        LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST)
+                // five-minute retry for a translation that already existed.
                 .fetch(row -> new Stamp(
                         new Learner(row.get(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.PIPELINE_UUID),
                                 row.get(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.ELEMENT_ID)),
-                        row.get(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST),
-                        row.get(latest) == null
-                                ? 0L
-                                : row.get(latest))));
+                        row.get(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST))));
     }
 
     @Override

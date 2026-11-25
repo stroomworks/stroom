@@ -38,7 +38,6 @@ import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineDataBuilder;
 import stroom.pipeline.shared.data.PipelineElement;
-import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineLink;
 import stroom.pipeline.shared.stepping.NestedElementData;
 import stroom.pipeline.stepping.capture.HeadlessCapture;
@@ -89,14 +88,11 @@ public final class PipelineFragmentRunner implements FragmentRunner {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PipelineFragmentRunner.class);
 
-    private static final String SOURCE = "Source";
-
     /// What turns the text a stage is given into the events every element of a transformation-stage
     /// fragment expects. A fragment learned over markup input (A35) holds no parser of its own — the
     /// input is records already — but it is still handed a stream of bytes here, so one stands in front
     /// of it. It is no part of the chain: the walk that says what each element made of
     /// the input reads the fragment as the fragment has it.
-    private static final String XML_PARSER = "XMLParser";
     private static final String XML_PARSER_ID = "learningFlowFragmentParser";
 
     /// Where the chain's tail writes, so that the events it makes can be played on to the supervisor's
@@ -105,13 +101,9 @@ public final class PipelineFragmentRunner implements FragmentRunner {
     /// Where a serving run taps the parser's records (design 04 §4).
     private static final String TAP_ID = "learningFlowTap";
 
-    /// How many records of a run to keep. A judgement is made on a sample (§3), not on a production
-    /// stream, and the capture holds what it keeps in memory.
-    private static final int MOST_RECORDS = 10_000;
-
     /// Elements that shape the stream into records without changing what any record says: run by the
     /// pipeline, not a step anything scores (§12 item 25).
-    private static final Set<String> SHAPING = Set.of("SplitFilter");
+    private static final Set<String> SHAPING = Set.of(PipelineRuns.SPLIT_FILTER);
 
     private final PipelineStore pipelineStore;
     private final PipelineDataCache pipelineDataCache;
@@ -165,19 +157,12 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         final PipelineDoc fragmentDoc = pipelineStore.readDocument(fragment);
         final PipelineData merged = pipelineDataCache.get(fragmentDoc);
 
-        final Map<String, PipelineElement> elements = new HashMap<>();
-        merged.getAddedElements().forEach(element -> elements.put(element.getId(), element));
-        final Map<String, String> next = new HashMap<>();
-        for (final PipelineLink link : merged.getAddedLinks()) {
-            if (next.put(link.getFrom(), link.getTo()) != null) {
-                throw new IllegalStateException("Fragment " + fragment.getName()
-                                                + " forks: a fragment is a single chain");
-            }
-        }
+        final Map<String, PipelineElement> elements = elements(merged);
+        final Map<String, String> next = next(fragment, merged);
 
         // One capture per run: what this fragment did with this stream and nothing else.
         final HeadlessCapture capture = captureProvider.get();
-        capture.setMaxRecords(MOST_RECORDS);
+        capture.setMaxRecords(PipelineRuns.MOST_RECORDS);
         // Emptied before the run rather than after it, so that a run that throws leaves nothing of the
         // run before it to be shown as though it were this one's.
         lastRecords = List.of();
@@ -234,7 +219,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         final List<Attempted> steps = new ArrayList<>();
         final Set<String> visited = new HashSet<>();
         String current = input;
-        for (String id = next.get(SOURCE); id != null; id = next.get(id)) {
+        for (String id = next.get(PipelineRuns.SOURCE); id != null; id = next.get(id)) {
             if (!visited.add(id)) {
                 throw new IllegalStateException("Fragment " + fragment.getName() + " loops at " + id);
             }
@@ -256,7 +241,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                     ? remaining(id, next, elements)
                     : List.of(id);
             final StepResult result = new StepResult(output,
-                    diagnostics(capture, speaking, logging, output == null
+                    PipelineRuns.diagnostics(capture, speaking, logging, output == null
                             ? failure
                             : null));
             // Asked of the node's own element registry and not of the step runners, for the reason
@@ -274,6 +259,27 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         return steps;
     }
 
+    /// The fragment's own elements, by id.
+    private static Map<String, PipelineElement> elements(final PipelineData merged) {
+        final Map<String, PipelineElement> elements = new HashMap<>();
+        merged.getAddedElements().forEach(element -> elements.put(element.getId(), element));
+        return elements;
+    }
+
+    /// The fragment's links, as what each element hands on to.
+    ///
+    /// @throws IllegalStateException Where an element hands on to more than one: a fragment is a chain.
+    private static Map<String, String> next(final DocRef fragment, final PipelineData merged) {
+        final Map<String, String> next = new HashMap<>();
+        for (final PipelineLink link : merged.getAddedLinks()) {
+            if (next.put(link.getFrom(), link.getTo()) != null) {
+                throw new IllegalStateException("Fragment " + fragment.getName()
+                                                + " forks: a fragment is a single chain");
+            }
+        }
+        return next;
+    }
+
     @Override
     public ServedStream serve(final DocRef fragment,
                               final InputStream input,
@@ -282,15 +288,8 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                               final ContentHandler downstream) {
         final PipelineDoc fragmentDoc = pipelineStore.readDocument(fragment);
         final PipelineData merged = pipelineDataCache.get(fragmentDoc);
-        final Map<String, PipelineElement> elements = new HashMap<>();
-        merged.getAddedElements().forEach(element -> elements.put(element.getId(), element));
-        final Map<String, String> next = new HashMap<>();
-        for (final PipelineLink link : merged.getAddedLinks()) {
-            if (next.put(link.getFrom(), link.getTo()) != null) {
-                throw new IllegalStateException("Fragment " + fragment.getName()
-                                                + " forks: a fragment is a single chain");
-            }
-        }
+        final Map<String, PipelineElement> elements = elements(merged);
+        final Map<String, String> next = next(fragment, merged);
         // No capture: a serving run keeps nothing of what it read, which is the point of it. The tail's
         // events go to the gate, which judges each record and hands on what clears.
         lastRecords = List.of();
@@ -298,7 +297,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         // The parser's records, tapped as they are cut, so that a record whose output falls short can be
         // shown to a session as the parser had it. Only where the fragment has a parser: a fragment fed
         // records has nothing of its own to tap.
-        final boolean parsed = parses(elements.get(next.get(SOURCE)));
+        final boolean parsed = parses(elements.get(next.get(PipelineRuns.SOURCE)));
         // Cut where the split cuts, so that what the tap counts is what the transform was asked to turn
         // into events — the two ends of the completeness sum (Track 1 task 2, fix 1)
         final RecordTap tap = new RecordTap(boundary == null
@@ -328,7 +327,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         final ContentCountInputStream counted = new ContentCountInputStream(input);
         try {
             final Pipeline pipeline = pipelineFactoryProvider.get()
-                    .create(tapped(runnable(fragment, merged, elements, next), next.get(SOURCE), parsed),
+                    .create(tapped(runnable(fragment, merged, elements, next), next.get(PipelineRuns.SOURCE), parsed),
                             taskContextFactory.current());
             // A byte order mark is not content, and the whole-text path has always taken it off before the
             // fragment saw the stream; a fragment given the bytes as they are is given them without it.
@@ -365,11 +364,12 @@ public final class PipelineFragmentRunner implements FragmentRunner {
             }
         }
         if (diagnostics.isEmpty() && failure != null) {
-            diagnostics.add(new StoredError(Severity.FATAL_ERROR, null, new ElementId(next.get(SOURCE)), failure));
+            diagnostics.add(new StoredError(Severity.FATAL_ERROR, null, new ElementId(next.get(PipelineRuns.SOURCE)),
+                    failure));
         }
         return new ServedStream(gate.records(), gate.meanTotal(), PerRecord.told(diagnostics),
                 Optional.ofNullable(shortfall), gate.skips(), gate.skipReasons(),
-                read(parsed, tap, logging, next.get(SOURCE), counted.content()));
+                read(parsed, tap, logging, next.get(PipelineRuns.SOURCE), counted.content()));
     }
 
     /// What the parser made of the input.
@@ -426,7 +426,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                                                final Map<String, String> next) {
         final List<PipelineElement> chain = new ArrayList<>();
         final Set<String> seen = new HashSet<>();
-        for (String id = next.get(SOURCE); id != null && seen.add(id); id = next.get(id)) {
+        for (String id = next.get(PipelineRuns.SOURCE); id != null && seen.add(id); id = next.get(id)) {
             final PipelineElement element = elements.get(id);
             if (element != null) {
                 chain.add(element);
@@ -499,7 +499,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                                   final Map<String, PipelineElement> elements,
                                   final Map<String, String> next) {
         final PipelineDataBuilder builder = new PipelineDataBuilder(merged);
-        final String first = next.get(SOURCE);
+        final String first = next.get(PipelineRuns.SOURCE);
         if (first == null) {
             throw new IllegalStateException("Fragment " + fragment.getName() + " links nothing to its source");
         }
@@ -508,9 +508,9 @@ public final class PipelineFragmentRunner implements FragmentRunner {
             // an *inherited* pipeline, and this one is not inherited from anywhere. Left on, the source
             // would still be linked straight to an element that cannot take a stream.
             builder.getLinks().getAddList()
-                    .removeIf(link -> SOURCE.equals(link.getFrom()) && first.equals(link.getTo()));
-            builder.addElement(new PipelineElement(XML_PARSER_ID, XML_PARSER));
-            builder.addLink(SOURCE, XML_PARSER_ID);
+                    .removeIf(link -> PipelineRuns.SOURCE.equals(link.getFrom()) && first.equals(link.getTo()));
+            builder.addElement(new PipelineElement(XML_PARSER_ID, PipelineRuns.XML_PARSER));
+            builder.addLink(PipelineRuns.SOURCE, XML_PARSER_ID);
             builder.addLink(XML_PARSER_ID, first);
         }
         String tail = first;
@@ -543,11 +543,7 @@ public final class PipelineFragmentRunner implements FragmentRunner {
     /// XML parser, the combined parser, anything a person put there by hand — and a parser mistaken for
     /// a filter gets another parser spliced in front of it and a pipeline that cannot be linked.
     private boolean parses(final PipelineElement element) {
-        if (element == null) {
-            return false;
-        }
-        final PipelineElementType type = elementRegistryFactory.get().getElementType(element.getType());
-        return type != null && type.hasRole(PipelineElementType.ROLE_PARSER);
+        return element != null && ReplayUnits.parses(elementRegistryFactory.get(), element.getType());
     }
 
     /// This element and every one after it in the chain: who might have something to say about a run
@@ -568,42 +564,6 @@ public final class PipelineFragmentRunner implements FragmentRunner {
     /// What one element wrote for the whole stream: each record's output joined back into one document,
     /// since that is what the scorers and the goldens read (see [RecordJoin]).
     private static String written(final HeadlessCapture capture, final String elementId) {
-        final List<String> written = capture.outputOf(elementId).stream()
-                .filter(text -> text != null && !text.isBlank())
-                .toList();
-        return RecordJoin.join(written);
-    }
-
-    /// What one element logged over the whole stream, once each: the same rule the per-record runs
-    /// already apply, so that a re-ask says no more here than it does there.
-    private static List<StoredError> diagnostics(final HeadlessCapture capture,
-                                                 final List<String> elementIds,
-                                                 final LoggingErrorReceiver logging,
-                                                 final String failure) {
-        final List<StoredError> errors = new ArrayList<>();
-        for (final String elementId : elementIds) {
-            capture.getRecords().forEach(record -> {
-                final HeadlessCapture.ElementIo io = record.byElement().get(elementId);
-                final Indicators indicators = io == null
-                        ? null
-                        : io.indicators();
-                if (indicators != null) {
-                    errors.addAll(indicators.getErrorList());
-                }
-            });
-            // And whatever was logged outside a record: a parser that failed before it produced one, an
-            // element that refused before anything reached it, or a complaint on the way out. The
-            // capture takes what it finds at each record boundary and clears it, so what is left here is
-            // exactly what no record carried.
-            final Indicators outside = logging.getIndicators(new ElementId(elementId));
-            if (outside != null) {
-                errors.addAll(outside.getErrorList());
-            }
-        }
-        if (errors.isEmpty() && failure != null) {
-            errors.add(new StoredError(Severity.FATAL_ERROR, null, new ElementId(elementIds.getFirst()),
-                    failure));
-        }
-        return PerRecord.told(errors);
+        return RecordJoin.join(capture.outputOf(elementId));
     }
 }

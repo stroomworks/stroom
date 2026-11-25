@@ -55,17 +55,6 @@ class TestScoreValues {
     }
 
     @Test
-    void testZeroOrMore() {
-        final Function<String, String> check = ScoreValues.zeroOrMore();
-        assertThat(check.apply("0")).isNull();
-        assertThat(check.apply(" 2.5 ")).isNull();
-        assertThat(check.apply("-1")).isEqualTo("Must be a number of zero or more");
-        assertThat(check.apply("abc")).isEqualTo("Must be a number of zero or more");
-        assertThat(check.apply("")).isEqualTo("Must be a number of zero or more");
-        assertThat(check.apply(null)).isEqualTo("Must be a number of zero or more");
-    }
-
-    @Test
     void testAboveZero() {
         final Function<String, String> check = ScoreValues.aboveZero();
         assertThat(check.apply("0.1")).isNull();

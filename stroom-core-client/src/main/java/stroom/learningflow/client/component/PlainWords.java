@@ -19,12 +19,11 @@ package stroom.learningflow.client.component;
 import stroom.learningflow.shared.Check;
 import stroom.learningflow.shared.ConfigureRole;
 import stroom.learningflow.shared.FlowExample;
-import stroom.learningflow.shared.FlowStep;
-import stroom.learningflow.shared.FlowWords;
 import stroom.learningflow.shared.QuestionKind;
 import stroom.learningflow.shared.StepGuard;
 import stroom.learningflow.shared.StepOutcome;
 import stroom.learningflow.shared.TurnScore;
+import stroom.util.shared.ModelStringUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,23 +41,6 @@ public final class PlainWords {
 
     private PlainWords() {
         // Static utility
-    }
-
-    /// A step's name as the step cards and the progress strip show it, e.g. "Write the parser". A
-    /// second step of the same kind and role is "… again", so that two of them can be told apart.
-    ///
-    /// @param steps The flow's steps.
-    /// @param index The step's index.
-    /// @return Its name.
-    public static String stepName(final List<FlowStep> steps, final int index) {
-        return FlowWords.stepName(steps, index);
-    }
-
-    /// @param kind The kind of question.
-    /// @param role The role of a Configure step, or null.
-    /// @return The name of a step of that kind and role, e.g. "Find what one record is".
-    public static String stepName(final QuestionKind kind, final ConfigureRole role) {
-        return FlowWords.stepName(kind, role);
     }
 
     /// What a step is doing while a session is at it, e.g. "writing the parser", for "Learning: …".
@@ -136,15 +118,6 @@ public final class PlainWords {
         }
     }
 
-    /// The condition of a rule on a step, e.g. "the records don't read all the input", as "If … then …"
-    /// reads it.
-    ///
-    /// @param outcome The outcome the rule fires on, or null for the step running out of tries.
-    /// @return The condition.
-    public static String condition(final StepOutcome outcome) {
-        return FlowWords.condition(outcome);
-    }
-
     /// A check's name as the list of checks shows it, e.g. "Reads all the input".
     ///
     /// @param check The check.
@@ -178,10 +151,12 @@ public final class PlainWords {
                 return "Keeps what the targets need";
             case FIDELITY:
                 return "Matches the agreed targets";
+            case PERMITTED:
+                return "Uses only what it may";
             case REGRESSION:
                 return "No worse on records it was accepted on";
             default:
-                return check.getDisplayValue() + " (not built)";
+                return check.getName();
         }
     }
 
@@ -292,22 +267,12 @@ public final class PlainWords {
         return Math.round(fraction * 100) + "%";
     }
 
-    /// A whole number with its thousands grouped, e.g. "12,000".
+    /// A count with its thousands grouped, e.g. "12,000".
     ///
-    /// @param value The number.
+    /// @param value The count, zero or more.
     /// @return The number as text.
     public static String number(final long value) {
-        final String digits = Long.toString(Math.abs(value));
-        final StringBuilder grouped = new StringBuilder();
-        for (int i = 0; i < digits.length(); i++) {
-            if (i > 0 && (digits.length() - i) % 3 == 0) {
-                grouped.append(',');
-            }
-            grouped.append(digits.charAt(i));
-        }
-        return value < 0
-                ? "-" + grouped
-                : grouped.toString();
+        return ModelStringUtil.formatCsv(value);
     }
 
     /// A count of something, e.g. "1 stream", "2 streams".

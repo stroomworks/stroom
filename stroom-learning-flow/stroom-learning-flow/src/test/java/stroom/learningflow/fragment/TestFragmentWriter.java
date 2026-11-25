@@ -24,7 +24,7 @@ import stroom.learningflow.learning.LearnedStep;
 import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.scoring.Verdict;
 import stroom.learningflow.shared.RecordBoundary;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.TextConverterDoc;
 import stroom.pipeline.shared.TextConverterDoc.TextConverterType;
@@ -67,7 +67,7 @@ class TestFragmentWriter {
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new JsonStep(), null, new StepResult("<map/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "json-v1", chain,
                 RecordBoundary.ofArray("events").atDepth(2));
@@ -101,7 +101,7 @@ class TestFragmentWriter {
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "xml-v1", chain,
                 RecordBoundary.ofElement("Event").atDepth(1));
@@ -128,7 +128,7 @@ class TestFragmentWriter {
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new JsonStep(), null, new StepResult("<map/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "json-v0", chain, RecordBoundary.ofArray("events"));
 
@@ -146,7 +146,7 @@ class TestFragmentWriter {
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new DataSplitterStep(null), DS3, new StepResult("<records/>", List.of()),
                         UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "csv-v1", chain, null);
 
@@ -161,7 +161,7 @@ class TestFragmentWriter {
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new DataSplitterStep(null), DS3, new StepResult("<records/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "csv-logon-v1", chain, null);
 
@@ -214,7 +214,7 @@ class TestFragmentWriter {
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new XmlFragmentStep(), "<!-- fragment -->",
                         new StepResult("<records/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "xml-fragments-v1", chain, null);
 
@@ -230,8 +230,8 @@ class TestFragmentWriter {
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<a/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<b/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<a/>", List.of()), UNSCORED),
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<b/>", List.of()), UNSCORED));
 
         final DocRef fragment = writer.write(FOLDER, "two-pass", chain, null);
         final PipelineData data = stores.pipelines.readDocument(fragment).getPipelineData();
@@ -251,7 +251,7 @@ class TestFragmentWriter {
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef first = writer.write(FOLDER, "v1", chain, null);
         final DocRef second = writer.write(FOLDER, "v2", chain, null);
@@ -269,7 +269,7 @@ class TestFragmentWriter {
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final DocRef first = writer.write(FOLDER, "DOOR-ACCESS Raw Events", chain, null);
         final DocRef second = writer.write(FOLDER, "DOOR-ACCESS Raw Events", chain, null);

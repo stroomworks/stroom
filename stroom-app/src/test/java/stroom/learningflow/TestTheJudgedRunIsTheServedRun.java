@@ -30,7 +30,7 @@ import stroom.learningflow.learning.StepRunner;
 import stroom.learningflow.scenario.Scenarios;
 import stroom.learningflow.scoring.Attempted;
 import stroom.learningflow.shared.RecordBoundary;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.factory.ElementRegistryFactory;
@@ -103,11 +103,11 @@ class TestTheJudgedRunIsTheServedRun extends AbstractProcessIntegrationTest {
 
     @Test
     void theRunThatIsJudgedKeepsTheEventsThatWouldBeServed() {
-        final List<StepRunner> runners = List.of(new JsonStep(), new XsltStep());
+        final List<StepRunner> runners = List.of(new JsonStep(), new StandInXsltStep());
         final RecordBoundary boundary = RecordBoundary.ofArray("events").atDepth(3);
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new JsonStep(), null, new StepResult("<map/>", List.of()), null),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), null));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), null));
 
         final AtomicReference<String> judged = new AtomicReference<>();
         final AtomicReference<String> served = new AtomicReference<>();

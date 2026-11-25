@@ -42,16 +42,9 @@ public final class CheckSet {
         return new ArrayList<>(settings);
     }
 
-    /// @return The settings a person can change: those of the checks that are built, in the order of
-    ///         [Check]. One that isn't built can only be off, so it isn't shown.
+    /// @return The settings a person can change: every one, in the order of [Check].
     public List<CheckSetting> shown() {
-        final List<CheckSetting> shown = new ArrayList<>();
-        for (final CheckSetting setting : settings) {
-            if (setting.getCheck().isBuilt()) {
-                shown.add(setting);
-            }
-        }
-        return shown;
+        return write();
     }
 
     /// Replaces a check's setting, where it was.

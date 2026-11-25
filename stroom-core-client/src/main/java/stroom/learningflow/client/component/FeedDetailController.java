@@ -26,11 +26,11 @@ import stroom.learningflow.client.component.FeedSituation.Tone;
 import stroom.learningflow.shared.AmendTurnRequest;
 import stroom.learningflow.shared.AttemptCriteria;
 import stroom.learningflow.shared.FlowStep;
+import stroom.learningflow.shared.FlowWords;
 import stroom.learningflow.shared.GuidanceRequest;
 import stroom.learningflow.shared.ImproveRequest;
 import stroom.learningflow.shared.LearnerRequest;
 import stroom.learningflow.shared.LearningFlowDoc;
-import stroom.learningflow.shared.QualityResource;
 import stroom.learningflow.shared.RejectRequest;
 import stroom.learningflow.shared.StepOutcome;
 import stroom.learningflow.shared.SuggestionAction;
@@ -70,7 +70,6 @@ import java.util.function.Function;
 public class FeedDetailController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
-    private static final QualityResource QUALITY_RESOURCE = GWT.create(QualityResource.class);
     private static final int RUNS = 50;
 
     private final RestFactory restFactory;
@@ -363,10 +362,10 @@ public class FeedDetailController extends Controller {
     private static String stepName(final List<FlowStep> steps, final SupervisorTurn turn) {
         for (int i = 0; i < steps.size(); i++) {
             if (turn.getStepId() != null && steps.get(i).effectiveId().equalsIgnoreCase(turn.getStepId())) {
-                return PlainWords.stepName(steps, i);
+                return FlowWords.stepName(steps, i);
             }
         }
-        return PlainWords.stepName(turn.getKind(), null);
+        return FlowWords.stepName(turn.getKind(), null);
     }
 
     // ---- Acting ----
@@ -445,7 +444,7 @@ public class FeedDetailController extends Controller {
                 + "tried again.",
                 ok -> {
                     if (ok) {
-                        actOnRun(resource -> resource.approve(draft.getId()));
+                        callThenReread(resource -> resource.approve(draft.getId()));
                     }
                 });
     }
@@ -459,7 +458,7 @@ public class FeedDetailController extends Controller {
                 + "someone says Learn again.",
                 reason -> {
                     if (!NullSafe.isBlankString(reason)) {
-                        actOnRun(resource -> resource.reject(draft.getId(), new RejectRequest(reason)));
+                        callThenReread(resource -> resource.reject(draft.getId(), new RejectRequest(reason)));
                     }
                 });
     }
@@ -468,7 +467,7 @@ public class FeedDetailController extends Controller {
     private void grant() {
         final SupervisorAttempt paused = run;
         grantProvider.get().grant(this, paused, doc, granted ->
-                actOnRun(resource -> resource.grant(paused.getId(), granted)));
+                callThenReread(resource -> resource.grant(paused.getId(), granted)));
     }
 
     /// Sends a paused run to the fallback (A65, A76): the AI is asked to admit what can't be translated as
@@ -481,7 +480,7 @@ public class FeedDetailController extends Controller {
                 + "with them.",
                 ok -> {
                     if (ok) {
-                        actOnRun(resource -> resource.exhaust(paused.getId()));
+                        callThenReread(resource -> resource.exhaust(paused.getId()));
                     }
                 });
     }
@@ -505,13 +504,8 @@ public class FeedDetailController extends Controller {
                 ? "Answer question "
                 : "Change the answer to question ") + number + ": " + NullSafe.string(turn.getQuestion());
         answerProvider.get().edit(this, caption, NullSafe.string(turn.getAnswer()), readOnly,
-                answer -> restFactory
-                        .create(SUPERVISOR_RESOURCE)
-                        .method(resource -> resource.amend(shown.getId(), number, new AmendTurnRequest(answer)))
-                        .onSuccess(amended -> acted())
-                        .owner(this)
-                        .taskMonitorFactory(taskMonitor())
-                        .exec());
+                answer -> callThenReread(resource ->
+                        resource.amend(shown.getId(), number, new AmendTurnRequest(answer))));
     }
 
     /// Asks for the translation in use to be made better (A46). What is typed is kept as a note for the
@@ -547,14 +541,8 @@ public class FeedDetailController extends Controller {
                 + "error streams: reprocess them from the pipeline's filter to put them through.",
                 ok -> {
                     if (ok) {
-                        restFactory
-                                .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.relearnLearner(whose.getDoc().getUuid(),
-                                        new LearnerRequest(whose.getLearner(), null)))
-                                .onSuccess(done -> acted())
-                                .owner(this)
-                                .taskMonitorFactory(taskMonitor())
-                                .exec();
+                        callThenReread(resource -> resource.relearnLearner(whose.getDoc().getUuid(),
+                                new LearnerRequest(whose.getLearner(), null)));
                     }
                 });
     }
@@ -569,14 +557,8 @@ public class FeedDetailController extends Controller {
                 + "this reason. Its translation, if it has one, goes on translating; Learn again starts it again.",
                 reason -> {
                     if (!NullSafe.isBlankString(reason)) {
-                        restFactory
-                                .create(SUPERVISOR_RESOURCE)
-                                .method(resource -> resource.giveUp(whose.getDoc().getUuid(),
-                                        new LearnerRequest(whose.getLearner(), reason)))
-                                .onSuccess(done -> acted())
-                                .owner(this)
-                                .taskMonitorFactory(taskMonitor())
-                                .exec();
+                        callThenReread(resource -> resource.giveUp(whose.getDoc().getUuid(),
+                                new LearnerRequest(whose.getLearner(), reason)));
                     }
                 });
     }
@@ -639,12 +621,12 @@ public class FeedDetailController extends Controller {
         }
     }
 
-    // A call on the run shown, then everything read again
-    private void actOnRun(final Function<SupervisorResource, SupervisorAttempt> call) {
+    // A call on the run or the learner shown, then everything read again
+    private <R> void callThenReread(final Function<SupervisorResource, R> call) {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
                 .method(call::apply)
-                .onSuccess(decided -> acted())
+                .onSuccess(result -> acted())
                 .owner(this)
                 .taskMonitorFactory(taskMonitor())
                 .exec();

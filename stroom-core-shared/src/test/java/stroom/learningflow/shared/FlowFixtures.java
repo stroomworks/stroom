@@ -25,7 +25,7 @@ import java.util.List;
 /// `stroom-core-shared` cannot reach that module — it is the other way round — so a test here that
 /// needs the *shape* of a setup, because the turns it walks follow its steps, builds it.
 ///
-/// Only `FlowPath` and `FlowStep`'s tests need this. Anything that merely wants *a* valid flow should
+/// Only `FlowStep` and `LearningFlowDoc`'s tests need this. Anything that merely wants *a* valid flow should
 /// build the steps it means instead; a test that starts from a setup it does not care about says less
 /// than one that says what it is testing.
 final class FlowFixtures {

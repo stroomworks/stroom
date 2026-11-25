@@ -30,7 +30,6 @@ class TestSetupStop {
             assertThat(SetupStop.parse(stop.key())).isEqualTo(stop);
             assertThat(stop.isStep()).isFalse();
             assertThat(stop.getSection()).isEqualTo(section);
-            assertThat(stop.sectionShown()).isEqualTo(section);
         }
     }
 
@@ -42,11 +41,6 @@ class TestSetupStop {
         assertThat(stop.isStep()).isTrue();
         assertThat(stop.getStep()).isEqualTo(3);
         assertThat(stop.getSection()).isNull();
-    }
-
-    @Test
-    void aStepIsShownUnderLearningSteps() {
-        assertThat(SetupStop.step(0).sectionShown()).isEqualTo(SetupSection.APPROACH);
     }
 
     @Test

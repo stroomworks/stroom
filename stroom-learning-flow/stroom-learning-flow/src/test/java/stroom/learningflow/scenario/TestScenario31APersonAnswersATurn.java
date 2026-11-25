@@ -90,7 +90,7 @@ class TestScenario31APersonAnswersATurn {
         // and the attempt waits, since a person's request must not wait on a model.
         final Script carrying = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        scenarios.stage(carrying).amend(doc, abandoned.id(), theirs.number(), Scenarios.fenced(FOUR_FIELDS),
+        scenarios.supervisorActions().amend(doc, abandoned.id(), theirs.number(), Scenarios.fenced(FOUR_FIELDS),
                 OPERATOR);
 
         assertThat(carrying.asked()).describedAs("amending asks nothing").isEmpty();
@@ -145,7 +145,7 @@ class TestScenario31APersonAnswersATurn {
         final Script carrying = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        scenarios.stage(carrying).amend(doc, parked.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
+        scenarios.supervisorActions().amend(doc, parked.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
 
         assertThat(scenarios.worker(carrying).advance(10)).isEqualTo(1);
 
@@ -172,7 +172,7 @@ class TestScenario31APersonAnswersATurn {
         scenarios.process(script, doc, stream(1L)).learned();
         final Recorded abandoned = scenarios.attempts.forDocument(DOC, 10).get(0);
 
-        assertThatThrownBy(() -> scenarios.stage(Script.of())
+        assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(doc, abandoned.id(), 99, Scenarios.fenced(FOUR_FIELDS), OPERATOR))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no turn 99");
@@ -187,7 +187,7 @@ class TestScenario31APersonAnswersATurn {
         // The same of the wrong document: an attempt belongs to the document that raised it, and
         // resetting another document's learner would clear state that has nothing to do with this.
         final LearningFlowDoc other = doc().copy().uuid("doc-2").build();
-        assertThatThrownBy(() -> scenarios.stage(Script.of())
+        assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(other, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("belongs to document");
@@ -208,14 +208,14 @@ class TestScenario31APersonAnswersATurn {
         assertThat(scenarios.attempts.claimed(parked.id(), "node-1", Scenarios.NOW.toEpochMilli(),
                 Scenarios.NOW.toEpochMilli() + 60_000L)).isTrue();
 
-        assertThatThrownBy(() -> scenarios.stage(Script.of())
+        assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(doc, parked.id(), 1, "DSParser -> XSLTFilter", OPERATOR))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("being carried on now");
 
         // The node carrying it stops without finishing: its claim lapses, and the answer may be given.
         scenarios.attempts.heartbeat(parked.id(), Scenarios.NOW.toEpochMilli() - 1);
-        scenarios.stage(Script.of()).amend(doc, parked.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
+        scenarios.supervisorActions().amend(doc, parked.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
 
         final Recorded amended = scenarios.attempts.byId(parked.id()).orElseThrow();
         assertThat(amended.status()).isEqualTo(AttemptStatus.AWAITING_MODEL);
@@ -251,7 +251,7 @@ class TestScenario31APersonAnswersATurn {
                 .describedAs("review mode wrote a draft for somebody to decide (A25)")
                 .anySatisfy(binding -> assertThat(binding.isDraft()).isTrue());
 
-        scenarios.stage(Script.of()).amend(doc, drafted.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
+        scenarios.supervisorActions().amend(doc, drafted.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
 
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
                 .describedAs("the draft goes with the answer that produced it, or it is a draft nothing "
@@ -281,7 +281,7 @@ class TestScenario31APersonAnswersATurn {
                         2L, "node-2", PromotionMode.AUTOMATIC, Long.MAX_VALUE),
                 Scenarios.NOW.toEpochMilli()).orElseThrow();
 
-        assertThatThrownBy(() -> scenarios.stage(Script.of())
+        assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(doc, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cannot be run again");
@@ -289,14 +289,14 @@ class TestScenario31APersonAnswersATurn {
         // That node's lease lapses and it still holds the learner: a lapsed session is resumed by the next
         // worker, not swept aside for an answer to an older attempt (design 04 §4, scenario 58).
         scenarios.attempts.heartbeat(theirs, Scenarios.NOW.toEpochMilli() - 1);
-        assertThatThrownBy(() -> scenarios.stage(Script.of())
+        assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(doc, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(scenarios.attempts.byId(theirs).orElseThrow().status()).isEqualTo(AttemptStatus.IN_PROGRESS);
 
         // Once it has finished, the learner is free and the answer goes through.
         scenarios.attempts.closed(theirs, AttemptStatus.ABANDONED, "Given up", null, null, 0L);
-        scenarios.stage(Script.of()).amend(doc, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
+        scenarios.supervisorActions().amend(doc, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
 
         assertThat(scenarios.attempts.byId(abandoned.id()).orElseThrow().status())
                 .isEqualTo(AttemptStatus.AWAITING_MODEL);

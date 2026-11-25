@@ -95,7 +95,7 @@ class TestAParkedRunResumesInItsOwnWords {
 
     private static DeferredWorker worker(final Scenarios scenarios, final Advisors advisors) {
         return new DeferredWorker(scenarios.stage(advisors, scenarios.learnerBindings), scenarios.attempts,
-                scenarios.documents, scenarios.inputs, scenarios.deletedPipelines, advisors,
+                scenarios.documents, scenarios.inputs, StreamHeld.NONE, scenarios.deletedPipelines, advisors,
                 Clock.fixed(Scenarios.NOW, ZoneOffset.UTC));
     }
 

@@ -77,16 +77,6 @@ public final class ScoreValues {
                 : String.valueOf(number);
     }
 
-    /// @return A check that text is a number of zero or more, e.g. a scorer's weight.
-    public static Function<String, String> zeroOrMore() {
-        return text -> {
-            final Double number = InputChecks.parseNumber(text);
-            return number == null || number < 0
-                    ? "Must be a number of zero or more"
-                    : null;
-        };
-    }
-
     /// @return A check that text is a number above zero, e.g. a yield's expected ratio.
     public static Function<String, String> aboveZero() {
         return text -> {

@@ -17,6 +17,7 @@
 package stroom.learningflow.stage;
 
 import stroom.docref.DocRef;
+import stroom.learningflow.extraction.DataSplitterStep;
 import stroom.learningflow.fragment.FragmentCodes;
 import stroom.learningflow.fragment.FragmentRunner;
 import stroom.learningflow.fragment.FragmentWriter;
@@ -62,6 +63,7 @@ import stroom.learningflow.stage.RegressionSet.Accepted;
 import stroom.learningflow.stage.Sessions.Recorder;
 import stroom.learningflow.transformation.AiXsltAllowList;
 import stroom.learningflow.transformation.LearnedStylesheetCheck;
+import stroom.learningflow.transformation.XsltStep;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.logging.LogUtil;
@@ -97,10 +99,10 @@ public final class Learning {
     /// on the Egress Policy screen.
     private static final AiXsltAllowList ALLOW_LIST = AiXsltAllowList.hardCoded();
     /// The element whose output is always `records` over `record`.
-    private static final String DATA_SPLITTER = "DSParser";
+    private static final String DATA_SPLITTER = DataSplitterStep.ELEMENT_TYPE;
     /// What a record of the chain's output is judged as when it is served: the element type the scorers
     /// of meaning read it as, which is any element that is not a parser.
-    private static final String TRANSFORM = "XSLTFilter";
+    private static final String TRANSFORM = XsltStep.ELEMENT_TYPE;
     /// The most rounds a session runs before it parks regardless: the budgets are what bound a session
     /// (A65), and this is the guard behind them for a document whose budgets are generous.
     private static final int MOST_ROUNDS = 10;
@@ -230,7 +232,8 @@ public final class Learning {
         final Optional<Binding> matched = promotion.bindingFor(learner);
         final Optional<String> stop = whyNotToCarryOn(doc, learner, matched);
         if (stop.isPresent()) {
-            record(() -> attempts.closed(attemptId, AttemptStatus.ABANDONED, stop.get(), null, null, 0L));
+            Bookkeeping.record(LOGGER, () -> attempts.closed(attemptId, AttemptStatus.ABANDONED, stop.get(), null,
+                    null, 0L));
             return StageRun.refused(doc, learner, stop.get());
         }
         final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers, targetSchemas.of(doc).orElse(null));
@@ -257,7 +260,8 @@ public final class Learning {
                 // promotion in disguise.
                 final String gone = "The binding this was improving, or the records it was accepted on, "
                                     + "has gone since it was asked for";
-                record(() -> attempts.closed(attemptId, AttemptStatus.ABANDONED, gone, null, null, 0L));
+                Bookkeeping.record(LOGGER, () -> attempts.closed(attemptId, AttemptStatus.ABANDONED, gone, null,
+                        null, 0L));
                 return StageRun.refused(doc, learner, gone);
             }
             return sessions.carrying(doc, learner, input, attemptId, recorded.tokensSpent(), recorded.grant(),
@@ -999,14 +1003,5 @@ public final class Learning {
 
     private void wake(final Learner learner) {
         wake.wake(learner.pipelineUuid());
-    }
-
-    /// A run's record is written beside what the run did: failing to write it must not undo that.
-    private static void record(final Runnable write) {
-        try {
-            write.run();
-        } catch (final RuntimeException e) {
-            LOGGER.error(() -> LogUtil.message("The attempt could not be recorded: {}", e.getMessage()), e);
-        }
     }
 }

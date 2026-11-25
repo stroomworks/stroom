@@ -324,7 +324,7 @@ public final class ApproachFlow {
                 }
                 continue;
             }
-            final String place = (i + 1) + " · " + PlainWords.stepName(steps, i);
+            final String place = (i + 1) + " · " + FlowWords.stepName(steps, i);
             final String verb = i < index
                     ? "go back to "
                     : i == index + 1
@@ -339,14 +339,9 @@ public final class ApproachFlow {
         destinations.add(new Destination(Transition.END, "finish"));
         destinations.add(new Destination(Transition.PARK, "pause for a person"));
         destinations.add(new Destination(Transition.GIVE_UP, "stop learning"));
-        destinations.add(new Destination(null, "leave by its usual exit (" + usualExit(steps.get(index)) + ")"));
+        destinations.add(new Destination(null,
+                "leave by its usual exit (" + FlowWords.usualExit(steps.get(index)) + ")"));
         return destinations;
-    }
-
-    /// @param step A step.
-    /// @return What it does when it runs out of tries and no rule says otherwise ([FlowWords#usualExit]).
-    public static String usualExit(final FlowStep step) {
-        return FlowWords.usualExit(step);
     }
 
     /// What a step does where its rules say nothing, as the grey lines of its card.
@@ -371,7 +366,7 @@ public final class ApproachFlow {
                     : "If it passes, it goes on to the next step.");
         }
         if (step.transitionOnSpent() == null) {
-            lines.add("If it runs out of tries, it will " + usualExit(step) + ".");
+            lines.add("If it runs out of tries, it will " + FlowWords.usualExit(step) + ".");
         }
         return lines;
     }
@@ -686,7 +681,7 @@ public final class ApproachFlow {
 
         @Override
         public String getDisplayValue() {
-            return PlainWords.condition(outcome);
+            return FlowWords.condition(outcome);
         }
 
         @Override

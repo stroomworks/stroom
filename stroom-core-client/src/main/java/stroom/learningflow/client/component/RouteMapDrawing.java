@@ -17,6 +17,7 @@
 package stroom.learningflow.client.component;
 
 import stroom.learningflow.shared.FlowStep;
+import stroom.learningflow.shared.FlowWords;
 import stroom.learningflow.shared.QuestionKind;
 import stroom.learningflow.shared.Transition;
 import stroom.util.shared.NullSafe;
@@ -155,7 +156,7 @@ final class RouteMapDrawing {
             if (step.getKind() == QuestionKind.ADMIT) {
                 fallback = new Station(Kind.FALLBACK, SetupStop.step(i), FALLBACK, FALLBACK, problem);
             } else {
-                final String name = PlainWords.stepName(steps, i);
+                final String name = FlowWords.stepName(steps, i);
                 final Station station = new Station(Kind.STEP, SetupStop.step(i), (i + 1) + " " + name,
                         "Step " + (i + 1) + ": " + name, problem);
                 for (final String rule : ruleLines(steps, i)) {
@@ -360,7 +361,7 @@ final class RouteMapDrawing {
     private static String where(final List<FlowStep> steps, final int index, final Transition rule) {
         final String goTo = rule.getGoTo();
         if (goTo == null) {
-            return ApproachFlow.usualExit(steps.get(index));
+            return FlowWords.usualExit(steps.get(index));
         }
         if (Transition.END.equals(goTo)) {
             return "finish";

@@ -35,7 +35,7 @@ import stroom.learningflow.stage.Input;
 import stroom.learningflow.stage.LearnerStates.Rolling;
 import stroom.learningflow.stage.Stage;
 import stroom.learningflow.stage.StageRun;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.shared.MetaFields;
 import stroom.util.shared.DocPath;
 
@@ -173,7 +173,7 @@ class TestSteppingIsADryRun {
                 DocPath.fromParts("Learning Flow", FEED), "on-trial-v1",
                 List.of(new LearnedStep(scenarios.runners().getFirst(), CSV.configuration(),
                                 new StepResult("<records/>", List.of()), UNSCORED),
-                        new LearnedStep(new XsltStep(), YIELDS_NOTHING,
+                        new LearnedStep(new StandInXsltStep(), YIELDS_NOTHING,
                                 new StepResult("<Events/>", List.of()), UNSCORED)),
                 null);
         scenarios.learnerBindings.append(Scenarios.LEARNER, "doc-1", Binding.builder()

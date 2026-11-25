@@ -23,6 +23,7 @@ import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.learning.StepRunner;
 import stroom.pipeline.shared.TextConverterDoc;
 import stroom.pipeline.shared.TextConverterDoc.TextConverterType;
+import stroom.pipeline.shared.data.PipelineElementType;
 
 import java.util.Optional;
 
@@ -32,7 +33,7 @@ import java.util.Optional;
  */
 public final class DataSplitterStep implements StepRunner {
 
-    public static final String ELEMENT_TYPE = "DSParser";
+    public static final String ELEMENT_TYPE = PipelineElementType.TYPE_DS_PARSER;
     private static final Configured CONFIGURED = new Configured(TextConverterDoc.TYPE, "textConverter",
             TextConverterType.DATA_SPLITTER);
 

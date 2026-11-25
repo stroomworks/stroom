@@ -23,7 +23,6 @@ import stroom.widget.button.client.ToolbarButton;
 import stroom.widget.component.client.Component;
 import stroom.widget.datagrid.client.ColumnSizeConstants;
 import stroom.widget.datagrid.client.DataGrid;
-import stroom.widget.datagrid.client.PagerPanel;
 import stroom.widget.datepicker.client.ClientDateUtil;
 import stroom.widget.util.client.MultiSelectionModel;
 import stroom.widget.util.client.MultiSelectionModelImpl;
@@ -44,8 +43,6 @@ public class GuidanceEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
 
-    @UiField
-    PagerPanel pager;
     @UiField
     ToolbarButton addButton;
     @UiField
@@ -81,11 +78,6 @@ public class GuidanceEditor extends Component {
     /// @return The selection, one thing said at most.
     public MultiSelectionModel<SupervisorGuidance> getSelectionModel() {
         return selectionModel;
-    }
-
-    /// @return The task monitor that spins the pager's refresh button.
-    public PagerPanel getTaskMonitor() {
-        return pager;
     }
 
     /// @param enabled Whether something else may be said.

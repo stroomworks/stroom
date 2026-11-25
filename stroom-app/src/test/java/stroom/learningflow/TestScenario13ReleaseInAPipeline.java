@@ -43,7 +43,7 @@ import stroom.learningflow.stage.Deferrals;
 import stroom.learningflow.stage.Deferrals.Deferral;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.api.MetaService;
 import stroom.meta.shared.FindMetaCriteria;
 import stroom.meta.shared.Meta;
@@ -208,7 +208,7 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of()
                 .structure(new Structure(
-                        List.of(new DataSplitterStep(compiler), new XsltStep()), CSV.configuration(), XSLT))
+                        List.of(new DataSplitterStep(compiler), new StandInXsltStep()), CSV.configuration(), XSLT))
                 .expect(QuestionMatcher.chain()
                         .withKey("Feed", FEED)
                         .withKey("Type", StreamTypeNames.RAW_EVENTS))

@@ -55,7 +55,7 @@ class TestALearnerGivenUpByAPerson {
         final LearningFlowDoc doc = doc();
         scenarios.deferrals.deferred(Scenarios.LEARNER, DOC, 1L, FEED, "Raw Events", null, "Learning.", 0);
 
-        scenarios.stage(Script.of()).giveUp(doc, Scenarios.LEARNER, "The feed is retired", "jo");
+        scenarios.supervisorActions().giveUp(doc, Scenarios.LEARNER, "The feed is retired", "jo");
 
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER))
                 .hasValue("Given up by jo: The feed is retired");
@@ -77,7 +77,7 @@ class TestALearnerGivenUpByAPerson {
         final StageRun learned = scenarios.process(script(scenarios), doc, stream(1L)).learned();
         assertThat(learned.decision()).isInstanceOf(Promoted.class);
 
-        scenarios.stage(Script.of()).giveUp(doc, Scenarios.LEARNER, "Leave it as it is", "jo");
+        scenarios.supervisorActions().giveUp(doc, Scenarios.LEARNER, "Leave it as it is", "jo");
 
         final Script silent = Script.of();
         assertThat(scenarios.stage(silent).decide(doc, Scenarios.LEARNER, stream(2L)).decision())
@@ -85,7 +85,7 @@ class TestALearnerGivenUpByAPerson {
                 .isInstanceOf(Bound.class);
         assertThat(silent.asked()).isEmpty();
 
-        scenarios.stage(Script.of()).relearn(doc, Scenarios.LEARNER, "Sent back to be learned again by jo");
+        scenarios.supervisorActions().relearn(doc, Scenarios.LEARNER, "Sent back to be learned again by jo");
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).describedAs("sent back").isEmpty();
     }
 
@@ -97,7 +97,7 @@ class TestALearnerGivenUpByAPerson {
         final LearningFlowDoc doc = doc();
         scenarios.states.awaitReview(Scenarios.LEARNER, DOC, "a-draft");
 
-        assertThatThrownBy(() -> scenarios.stage(Script.of()).giveUp(doc, Scenarios.LEARNER, "Retired", "jo"))
+        assertThatThrownBy(() -> scenarios.supervisorActions().giveUp(doc, Scenarios.LEARNER, "Retired", "jo"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("reject it");
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).isEmpty();

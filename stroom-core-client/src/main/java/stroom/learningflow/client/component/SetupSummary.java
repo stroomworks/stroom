@@ -57,8 +57,7 @@ public final class SetupSummary {
         summaries.put(SetupSection.GOING_LIVE, doc.getPromotionMode() == PromotionMode.REVIEW
                 ? "Approved first"
                 : "Used once it passes");
-        summaries.put(SetupSection.IN_SERVICE, "Flagged below " + ScoreValues.toPercent(doc.getRelearnThreshold())
-                                               + "%");
+        summaries.put(SetupSection.IN_SERVICE, "Flagged below " + PlainWords.percent(doc.getRelearnThreshold()));
 
         final Map<SetupSection, String> problems = new EnumMap<>(SetupSection.class);
         for (final Readiness.Item item : Readiness.of(doc, examples).getItems()) {

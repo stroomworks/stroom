@@ -16,6 +16,10 @@
 
 package stroom.learningflow.learning;
 
+import stroom.learningflow.extraction.DataSplitterStep;
+import stroom.learningflow.extraction.JsonStep;
+import stroom.learningflow.extraction.XmlFragmentStep;
+import stroom.learningflow.fragment.PipelineRuns;
 import stroom.learningflow.learning.Question.Chain;
 import stroom.learningflow.learning.Question.Configuration;
 import stroom.learningflow.learning.Question.Records;
@@ -29,6 +33,7 @@ import stroom.learningflow.shared.LearningFlow;
 import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.shared.Template;
 import stroom.learningflow.stage.Input;
+import stroom.learningflow.transformation.XsltStep;
 import stroom.util.shared.StoredError;
 
 import java.util.HashMap;
@@ -65,17 +70,22 @@ public final class QuestionText {
      * the model understands rather than a list of tokens.
      */
     private static final Map<String, String> ELEMENTS = Map.of(
-            "DSParser", "parses raw text into records:2 XML with a Stroom Data Splitter 3.0 configuration",
+            DataSplitterStep.ELEMENT_TYPE,
+            "parses raw text into records:2 XML with a Stroom Data Splitter 3.0 configuration",
             // Not records:2 (audit finding W5-7): a stylesheet written for records:2 over this matches
             // nothing, writes the input's text and no elements, and fails without Saxon raising anything
-            "JSONParser", "parses JSON into the XML of the http://www.w3.org/2013/XSL/json vocabulary — "
-                          + "map, array, string, number and boolean elements, each with a key attribute — "
-                          + "with no configuration",
-            "XMLParser", "parses XML input as it is, with no configuration",
-            "XMLFragmentParser", "wraps a stream of XML fragments — one element per line, with no root — "
-                                 + "in a root so that they become one document, with no configuration",
+            JsonStep.ELEMENT_TYPE,
+            "parses JSON into the XML of the http://www.w3.org/2013/XSL/json vocabulary — "
+            + "map, array, string, number and boolean elements, each with a key attribute — "
+            + "with no configuration",
+            PipelineRuns.XML_PARSER,
+            "parses XML input as it is, with no configuration",
+            XmlFragmentStep.ELEMENT_TYPE,
+            "wraps a stream of XML fragments — one element per line, with no root — "
+            + "in a root so that they become one document, with no configuration",
             // The namespace is filled in from the document's target schema (task 7)
-            "XSLTFilter", "transforms XML records into ${targetNamespace} events with an XSLT 2.0 stylesheet");
+            XsltStep.ELEMENT_TYPE,
+            "transforms XML records into ${targetNamespace} events with an XSLT 2.0 stylesheet");
 
     /// However many kinds share the budget, each is shown enough to be recognisable.
     private static final int SHORTEST = 1000;
@@ -284,7 +294,7 @@ public final class QuestionText {
     }
 
     private String configuration(final Configuration question) {
-        final boolean extraction = "DSParser".equals(question.elementType());
+        final boolean extraction = DataSplitterStep.ELEMENT_TYPE.equals(question.elementType());
         final Map<String, String> variables = new HashMap<>();
         variables.put("headers", headers(question.sample()));
         variables.put("elementType", question.elementType());
@@ -570,14 +580,5 @@ public final class QuestionText {
         }
         final String cut = Input.withinBytes(input, budget);
         return fenced(cut) + "\n(cut after " + Input.bytes(cut) + " of " + length + " bytes)";
-    }
-
-    /// Whether a question would cut what it is given, and by how much: what a stop report says when a
-    /// step was judged on a sample the model was not shown the whole of (supervisor visibility item 3).
-    ///
-    /// @param input The text a question would carry.
-    /// @return How many bytes would be left out; zero where it fits.
-    public int wouldCut(final String input) {
-        return Math.max(0, Input.bytes(input) - sampleSizeLimit);
     }
 }

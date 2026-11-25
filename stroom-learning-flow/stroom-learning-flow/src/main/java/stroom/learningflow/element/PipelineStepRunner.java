@@ -16,8 +16,8 @@
 
 package stroom.learningflow.element;
 
-import stroom.learningflow.extraction.PerRecord;
 import stroom.learningflow.extraction.RecordJoin;
+import stroom.learningflow.fragment.PipelineRuns;
 import stroom.learningflow.learning.InputKind;
 import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.learning.StepRunner;
@@ -34,16 +34,11 @@ import stroom.pipeline.shared.data.PipelineDataUtil;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.stepping.capture.HeadlessCapture;
 import stroom.task.api.TaskContextFactory;
-import stroom.util.shared.ElementId;
-import stroom.util.shared.Indicators;
-import stroom.util.shared.Severity;
-import stroom.util.shared.StoredError;
 
 import jakarta.inject.Provider;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,15 +59,10 @@ import java.util.Optional;
 /// has drifted would have the model correcting a fault the pipeline does not have.
 public final class PipelineStepRunner implements StepRunner {
 
-    private static final String SOURCE = "Source";
     /// What turns text into the events a filter expects. The fragment uses a `SplitFilter` for this and
     /// this uses a parser, because the fragment is given a stream and this is given one element's
     /// worth of records; the events that reach the element are the same either way.
-    private static final String XML_PARSER = "XMLParser";
     private static final String XML_PARSER_ID = "xmlParser";
-
-    /// A judgement is made on a sample (§3), and the capture holds what it keeps in memory.
-    private static final int MOST_RECORDS = 10_000;
 
     private final StepRunner describes;
     private final Provider<PipelineFactory> pipelineFactoryProvider;
@@ -146,7 +136,7 @@ public final class PipelineStepRunner implements StepRunner {
     public Prepared prepare(final String configuration) {
         final String id = elementId();
         final HeadlessCapture capture = captureProvider.get();
-        capture.setMaxRecords(MOST_RECORDS);
+        capture.setMaxRecords(PipelineRuns.MOST_RECORDS);
 
         final ErrorReceiverProxy errorReceiverProxy = errorReceiverProvider.get();
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();
@@ -166,9 +156,13 @@ public final class PipelineStepRunner implements StepRunner {
                 : Map.of(id, code));
 
         final PipelineData chain = chain(id);
+        // What is said about an input is heard from every element of the little chain, because the
+        // element under test is not always the one that objects — text that is not well formed is refused
+        // by the parser standing in front of it, and a step that failed with nothing to say is a re-ask
+        // the model cannot act on.
         final List<String> speaking = chain.getAddedElements().stream()
                 .map(PipelineElement::getId)
-                .filter(element -> !SOURCE.equals(element))
+                .filter(element -> !PipelineRuns.SOURCE.equals(element))
                 .toList();
         Pipeline pipeline = null;
         String building = null;
@@ -189,29 +183,24 @@ public final class PipelineStepRunner implements StepRunner {
             @Override
             public StepResult run(final String input) {
                 if (built == null) {
-                    return new StepResult(null, diagnostics(capture, 0, speaking, logging, refused));
+                    return new StepResult(null, PipelineRuns.diagnostics(capture, speaking, logging, refused));
                 }
                 // This run's records and no others: one capture serves every run of a prepared chain,
                 // and a run that read past the last one would stop reading anything at all once the cap
                 // was reached — the count would stop advancing and every later run would report having
                 // produced nothing, with no diagnostic to say why.
                 capture.clear();
-                final int before = 0;
                 String failure = null;
                 try {
                     built.process(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)),
                             StandardCharsets.UTF_8.name());
                 } catch (final LoggedException e) {
-                    failure = null;
+                    // Said through the receiver already, which is where the diagnostics are read from.
                 } catch (final RuntimeException e) {
                     failure = e.getClass().getSimpleName() + ": " + e.getMessage();
                 }
-                final List<String> written = capture.outputOf(id).stream()
-                        .skip(before)
-                        .filter(text -> text != null && !text.isBlank())
-                        .toList();
-                return new StepResult(RecordJoin.join(written),
-                        diagnostics(capture, before, speaking, logging, truncated(capture, failure)));
+                return new StepResult(RecordJoin.join(capture.outputOf(id)),
+                        PipelineRuns.diagnostics(capture, speaking, logging, truncated(capture, failure)));
             }
 
             @Override
@@ -232,25 +221,18 @@ public final class PipelineStepRunner implements StepRunner {
     /// source, with a parser in between where the element is a filter and so expects events.
     private PipelineData chain(final String id) {
         final PipelineDataBuilder builder = new PipelineDataBuilder();
-        builder.addElement(PipelineDataUtil.createElement(SOURCE, SOURCE, null, null));
+        builder.addElement(PipelineDataUtil.createElement(PipelineRuns.SOURCE, PipelineRuns.SOURCE, null, null));
         builder.addElement(PipelineDataUtil.createElement(id, elementType(), null, null));
         if (parser()) {
-            builder.addLink(PipelineDataUtil.createLink(SOURCE, id));
+            builder.addLink(PipelineDataUtil.createLink(PipelineRuns.SOURCE, id));
         } else {
-            builder.addElement(PipelineDataUtil.createElement(XML_PARSER_ID, XML_PARSER, null, null));
-            builder.addLink(PipelineDataUtil.createLink(SOURCE, XML_PARSER_ID));
+            builder.addElement(PipelineDataUtil.createElement(XML_PARSER_ID, PipelineRuns.XML_PARSER, null, null));
+            builder.addLink(PipelineDataUtil.createLink(PipelineRuns.SOURCE, XML_PARSER_ID));
             builder.addLink(PipelineDataUtil.createLink(XML_PARSER_ID, id));
         }
         return builder.build();
     }
 
-    /// What was said about this input, once each: every element of the little chain, because the
-    /// element under test is not always the one that objects — text that is not well formed is refused
-    /// by the parser standing in front of it, and a step that failed with nothing to say is a re-ask
-    /// the model cannot act on.
-    ///
-    /// @param from Records before this one belong to an earlier input, since one prepared pipeline
-    ///             captures every record it is given.
     /// What a run failed with, and — where the capture kept less than the run produced — that it did.
     /// A candidate judged on the first ten thousand records of a longer stream is judged on a sample of
     /// its own output, and saying so is the difference between a low score a person can read and one
@@ -259,38 +241,10 @@ public final class PipelineStepRunner implements StepRunner {
         if (!capture.isTruncated()) {
             return failure;
         }
-        final String said = "More than " + MOST_RECORDS + " records went through; what is judged is the "
-                            + "first " + MOST_RECORDS + " of them";
+        final String said = "More than " + PipelineRuns.MOST_RECORDS + " records went through; what is "
+                            + "judged is the first " + PipelineRuns.MOST_RECORDS + " of them";
         return failure == null
                 ? said
                 : failure + ". " + said;
-    }
-
-    private static List<StoredError> diagnostics(final HeadlessCapture capture,
-                                                 final int from,
-                                                 final List<String> elementIds,
-                                                 final LoggingErrorReceiver logging,
-                                                 final String failure) {
-        final List<StoredError> errors = new ArrayList<>();
-        for (final String elementId : elementIds) {
-            capture.getRecords().stream().skip(from).forEach(record -> {
-                final HeadlessCapture.ElementIo io = record.byElement().get(elementId);
-                final Indicators indicators = io == null
-                        ? null
-                        : io.indicators();
-                if (indicators != null) {
-                    errors.addAll(indicators.getErrorList());
-                }
-            });
-            final Indicators outside = logging.getIndicators(new ElementId(elementId));
-            if (outside != null) {
-                errors.addAll(outside.getErrorList());
-            }
-        }
-        if (errors.isEmpty() && failure != null) {
-            errors.add(new StoredError(Severity.FATAL_ERROR, null, new ElementId(elementIds.getFirst()),
-                    failure));
-        }
-        return PerRecord.told(errors);
     }
 }

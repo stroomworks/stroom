@@ -45,7 +45,6 @@ import stroom.pipeline.errorhandler.ProcessException;
 import stroom.pipeline.factory.ElementRegistryFactory;
 import stroom.pipeline.factory.PipelineDataCache;
 import stroom.pipeline.shared.PipelineDoc;
-import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.stepping.NestedElementData;
 import stroom.pipeline.state.FeedHolder;
 import stroom.pipeline.state.MetaData;
@@ -58,6 +57,7 @@ import stroom.util.pipeline.scope.PipelineScoped;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
+import stroom.util.shared.StoredError;
 
 import jakarta.inject.Inject;
 import org.xml.sax.ContentHandler;
@@ -119,8 +119,6 @@ public class Supervision {
     /// hundred records, each of which the capture asks about separately.
     private final Map<String, List<FragmentRecord>> fragmentRecords = new HashMap<>();
 
-    /// Whether each supervisor was handed the whole stream rather than one record (A1), which is what
-    /// decides whether its chain's one run covered the record at the cursor or all of them.
     /// What separates the stage's name from the fragment element's in a nested element's id. A
     /// character an element id cannot hold, so that a namespaced id can never be mistaken for one a
     /// person gave an element of the pipeline.
@@ -308,14 +306,11 @@ public class Supervision {
         // rather than to the operator; the run that is served is the one the operator has to hear, and
         // each of its elements is named as itself. Once per distinct message over the stream, which is
         // the binding a re-ask already follows.
-        served.diagnostics().forEach(error -> errorReceiverProxy.log(error.getSeverity(),
-                error.getLocation(), error.getElementId(), error.getMessage(), null));
+        logDiagnostics(served.diagnostics());
         if (served.events() == null) {
             // Nothing downstream can be served from that, and silently writing an empty stream would
             // look like a feed that had nothing in it.
-            errorReceiverProxy.log(Severity.ERROR, null, elementId,
-                    "Bound to fragment " + NullSafe.get(produced, Produced::fragment, DocRef::getName)
-                    + ", which produced nothing for this stream", null);
+            producedNothing(elementId, NullSafe.get(produced, Produced::fragment, DocRef::getName));
             return;
         }
         served.events().fire(downstream);
@@ -352,14 +347,24 @@ public class Supervision {
         // attributes is this run's, and a run that deferred the stream writes no attributes at all,
         // because `stream` throws out of here before this line is reached.
         record(produced.scoring(served.meanTotal()), elementId);
-        served.diagnostics().forEach(error -> errorReceiverProxy.log(error.getSeverity(),
-                error.getLocation(), error.getElementId(), error.getMessage(), null));
+        logDiagnostics(served.diagnostics());
         if (served.records() == 0) {
-            errorReceiverProxy.log(Severity.ERROR, null, elementId,
-                    "Bound to fragment " + produced.fragment().getName()
-                    + ", which produced nothing for this stream", null);
+            producedNothing(elementId, produced.fragment().getName());
         }
         skipped(elementId, served);
+    }
+
+    /// What the fragment said, on this pipeline's error stream (A20), each of its elements named as itself.
+    private void logDiagnostics(final List<StoredError> diagnostics) {
+        diagnostics.forEach(error -> errorReceiverProxy.log(error.getSeverity(),
+                error.getLocation(), error.getElementId(), error.getMessage(), null));
+    }
+
+    /// That a bound fragment produced nothing for the stream: an error, since silently writing an empty
+    /// stream would look like a feed that had nothing in it.
+    private void producedNothing(final ElementId elementId, final String fragmentName) {
+        errorReceiverProxy.log(Severity.ERROR, null, elementId,
+                "Bound to fragment " + fragmentName + ", which produced nothing for this stream", null);
     }
 
     /// What the translation declared it deliberately skipped, said where a person reading the stream will
@@ -409,12 +414,11 @@ public class Supervision {
         }
         try {
             final byte[] prefix = bytes.readNBytes(Input.PREFIX_BYTES);
-            if (prefix.length < Input.PREFIX_BYTES) {
-                return input(RecordSkeleton.withoutBom(new String(prefix, StandardCharsets.UTF_8)),
-                        elementId);
-            }
             final Input whole = input(
                     RecordSkeleton.withoutBom(new String(prefix, StandardCharsets.UTF_8)), elementId);
+            if (prefix.length < Input.PREFIX_BYTES) {
+                return whole;
+            }
             return Input.streamed(whole.id(), whole.feed(), whole.type(), whole.attributes(), whole.data(),
                     whole.pipeline(),
                     () -> new SequenceInputStream(new ByteArrayInputStream(prefix), bytes))
@@ -433,14 +437,9 @@ public class Supervision {
                     : new InputStreamReader(inputSource.getByteStream(), inputSource.getEncoding() == null
                             ? StandardCharsets.UTF_8
                             : Charset.forName(inputSource.getEncoding()));
-            final StringBuilder text = new StringBuilder();
-            final char[] buffer = new char[8192];
-            for (int n = reader.read(buffer); n >= 0; n = reader.read(buffer)) {
-                text.append(buffer, 0, n);
-            }
             // A byte order mark is not content: read as text it would make XML or JSON look like a line
             // of text to every classification downstream.
-            return RecordSkeleton.withoutBom(text.toString());
+            return RecordSkeleton.withoutBom(reader.readAllAsString());
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -626,10 +625,10 @@ public class Supervision {
     }
 
     /// Whether an element type parses, as the node's own element registry has it — the same question
-    /// `FragmentCheckImpl` asks of a fragment, asked the same way, because the two must agree.
+    /// `PipelineFragmentRunner` asks of a fragment's elements, asked the same way, because the two must
+    /// agree.
     private boolean parses(final String elementType) {
-        final PipelineElementType type = elementRegistryFactory.get().getElementType(elementType);
-        return type != null && type.hasRole(PipelineElementType.ROLE_PARSER);
+        return ReplayUnits.parses(elementRegistryFactory.get(), elementType);
     }
 
 }

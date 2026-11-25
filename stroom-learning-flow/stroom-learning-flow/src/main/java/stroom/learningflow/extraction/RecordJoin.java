@@ -17,8 +17,6 @@
 package stroom.learningflow.extraction;
 
 import stroom.learningflow.scoring.ConfinedXml;
-import stroom.util.xml.SaxonPolicy;
-import stroom.util.xml.SaxonSecurity;
 
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
@@ -33,11 +31,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.sax.SAXTransformerFactory;
 import javax.xml.transform.sax.TransformerHandler;
-import javax.xml.transform.stream.StreamResult;
 
 /// What a transform wrote for each record, back as one document (§12 item 25).
 ///
@@ -70,7 +64,11 @@ public final class RecordJoin {
         }
         final StringWriter writing = new StringWriter();
         try {
-            final TransformerHandler handler = newHandler(writing);
+            // Laid out as the transform would have laid out the one document, had it been given the
+            // stream whole: the same serialiser with the same indentation, so that what a chain run per
+            // record produces reads the same as what the chain run over the whole text did, and a golden
+            // written against the one holds against the other.
+            final TransformerHandler handler = ConfinedXml.serialiser(writing, true, false);
             handler.startDocument();
             // What the first document declared stays open for all of them; a later document that
             // declares something of its own — a skip marker's namespace, say — carries it itself, or the
@@ -86,20 +84,6 @@ public final class RecordJoin {
             return null;
         }
         return writing.toString();
-    }
-
-    private static TransformerHandler newHandler(final StringWriter writing)
-            throws TransformerConfigurationException {
-        final SAXTransformerFactory factory = SaxonSecurity.newTransformerFactory(SaxonPolicy.LOCKED);
-        final TransformerHandler handler = factory.newTransformerHandler();
-        // Laid out as the transform would have laid out the one document, had it been given the stream
-        // whole: the same serialiser with the same indentation, so that what a chain run per record
-        // produces reads the same as what the chain run over the whole text did, and a golden written
-        // against the one holds against the other.
-        handler.getTransformer().setOutputProperty(OutputKeys.INDENT, "yes");
-        handler.getTransformer().setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
-        handler.setResult(new StreamResult(writing));
-        return handler;
     }
 
 

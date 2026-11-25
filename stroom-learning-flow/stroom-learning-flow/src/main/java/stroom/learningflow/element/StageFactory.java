@@ -75,7 +75,6 @@ import jakarta.inject.Provider;
 
 import java.time.Clock;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 /// A stage over this node's state, wherever one is wanted: in a pipeline task, where the supervisor
 /// element runs it over the stream in front of it, and in the worker (A5), which runs it
@@ -214,7 +213,7 @@ public class StageFactory {
                 wake, Clock.systemUTC(), configProvider.get().getSessionLease().getDuration());
     }
 
-    /// A stage on this node, under the wall clock and a fresh seed for the held-out split (A14).
+    /// A stage on this node, under the wall clock.
     public Stage create() {
         // A node judges a candidate with the element that will run it (§12 item 2) — but only where the
         // module re-implements one. The parsers here already drive stroom's own factories: the Data
@@ -260,7 +259,6 @@ public class StageFactory {
                 codes,
                 Clock.systemUTC(),
                 configProvider.get().getSessionLease().getDuration(),
-                ThreadLocalRandom.current().nextLong(),
                 nodeInfo.getThisNodeName(),
                 // Recorded against each attempt's words (N9), so a prompt rebuilt after an upgrade can
                 // say the checks' wording may have moved under it.

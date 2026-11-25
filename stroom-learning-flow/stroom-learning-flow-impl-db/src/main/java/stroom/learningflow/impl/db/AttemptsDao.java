@@ -85,13 +85,13 @@ public class AttemptsDao implements Attempts {
     /// would read every attempt every document has ever made.
     private static final int PAGE_LIMIT = 1000;
 
-    /// How many attempts one pass removes: a delete of every old row at once would hold locks across the
-    /// table, and the job runs again.
     /// The states in which an attempt's binding is one that was, or was about to be, serving: the ones a
     /// retraction is about.
     private static final List<String> BOUND = List.of(AttemptStatus.PROMOTED.name(),
             AttemptStatus.AWAITING_REVIEW.name());
 
+    /// How many attempts one pass removes: a delete of every old row at once would hold locks across the
+    /// table, and the job runs again.
     private static final int PRUNE_BATCH = 1000;
 
     private final LearningFlowDbConnProvider connProvider;

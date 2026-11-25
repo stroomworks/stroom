@@ -41,7 +41,7 @@ import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.shared.QuestionKind;
 import stroom.learningflow.shared.StepOutcome;
 import stroom.learningflow.shared.Transition;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.shared.MetaFields;
 import stroom.util.shared.ElementId;
 import stroom.util.shared.Severity;
@@ -86,7 +86,7 @@ class TestConversation {
     private static Conversation conversation(final Advisor advisor) {
         // These tests are about A21's mechanics — the chain, the re-ask, the refusal, the budgets — so they
         // run the direct shape; the split and target turns of A31 have their own tests.
-        return new Conversation(advisor, List.of(new DataSplitterStep(FIXTURE.compiler()), new XsltStep()),
+        return new Conversation(advisor, List.of(new DataSplitterStep(FIXTURE.compiler()), new StandInXsltStep()),
                 Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
                         List.of(new CompileScorer())), Clock.systemUTC());
     }
@@ -139,7 +139,7 @@ class TestConversation {
                 CannedAdvisor.fenced(CSV.configuration()),
                 CannedAdvisor.fenced("<not a stylesheet"));
         final Conversation conversation = new Conversation(model,
-                List.of(new DataSplitterStep(FIXTURE.compiler()), new XsltStep()),
+                List.of(new DataSplitterStep(FIXTURE.compiler()), new StandInXsltStep()),
                 Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
                         List.of(new CompileScorer()), sightings), Clock.systemUTC());
         final LearningFlowDoc doc = policy().copy()
@@ -175,7 +175,7 @@ class TestConversation {
                 CannedAdvisor.fenced(CSV.configuration()),
                 CannedAdvisor.fenced(XSLT));
         final Conversation conversation = new Conversation(model,
-                List.of(new DataSplitterStep(FIXTURE.compiler()), new XsltStep()),
+                List.of(new DataSplitterStep(FIXTURE.compiler()), new StandInXsltStep()),
                 Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
                         List.of(new CompileScorer())), ticking(60_000));
 
@@ -394,7 +394,7 @@ class TestConversation {
             }
         };
         final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
-        final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
+        final Conversation conversation = new Conversation(model, List.of(passThrough, new StandInXsltStep()),
                 Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
         // A run-only element with no runner in a node, named so that the conversation offers it
@@ -449,7 +449,7 @@ class TestConversation {
                     new FlowStep(null, QuestionKind.CONFIGURE, ConfigureRole.PARSER, null, null, null,
                             List.of(transition)),
                     FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()))).build();
-            final Conversation conversation = new Conversation(model, List.of(failing, new XsltStep()),
+            final Conversation conversation = new Conversation(model, List.of(failing, new StandInXsltStep()),
                     Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
             final Outcome outcome = conversation.run(doc, SAMPLE);
@@ -468,7 +468,7 @@ class TestConversation {
                         .goTo(StepOutcome.COMPILE_FAILED, "end")
                         .build(),
                 FlowStep.builder(QuestionKind.CONFIGURE).role(ConfigureRole.TRANSFORM).build()))).build();
-        final Outcome outcome = new Conversation(model, List.of(failing, new XsltStep()),
+        final Outcome outcome = new Conversation(model, List.of(failing, new StandInXsltStep()),
                 Scorecard.of(List.of(), List.of()), Clock.systemUTC()).run(doc, SAMPLE);
         assertThat(((Abandoned) outcome).reason()).describedAs("nothing was compiled, so compile-failed is not it")
                 .isEqualTo("Couldn't write the parser: XMLParser failed on its input.");
@@ -513,7 +513,7 @@ class TestConversation {
                         .role(ConfigureRole.TRANSFORM)
                         .goTo(StepOutcome.REFUSED, "parser")
                         .build()))).build();
-        final Conversation conversation = new Conversation(model, List.of(passThrough, new XsltStep()),
+        final Conversation conversation = new Conversation(model, List.of(passThrough, new StandInXsltStep()),
                 Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
         final Outcome outcome = conversation.run(doc, SAMPLE);

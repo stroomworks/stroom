@@ -17,14 +17,10 @@
 package stroom.learningflow.fragment;
 
 import stroom.learningflow.shared.ReplayUnit;
-import stroom.pipeline.shared.data.PipelineData;
+import stroom.pipeline.factory.ElementRegistry;
+import stroom.pipeline.shared.data.PipelineElementType;
 
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.function.Predicate;
 
 /// Which unit a chain of elements can be replayed over (A1, design 01 §4), by the one thing that
@@ -49,6 +45,17 @@ public final class ReplayUnits {
         return elementTypes.stream().anyMatch(isParser)
                 ? ReplayUnit.STREAM
                 : ReplayUnit.RECORD;
+    }
+
+    /// Whether an element type parses raw input into records, as a node's element registry has it: the
+    /// registry's `parser` role.
+    ///
+    /// @param registry    The node's element registry.
+    /// @param elementType The element type.
+    /// @return Whether the registry knows the type and gives it the parser role.
+    public static boolean parses(final ElementRegistry registry, final String elementType) {
+        final PipelineElementType type = registry.getElementType(elementType);
+        return type != null && type.hasRole(PipelineElementType.ROLE_PARSER);
     }
 
     /// Why a thing of one unit cannot serve a stage of another, in the words an operator needs: what the

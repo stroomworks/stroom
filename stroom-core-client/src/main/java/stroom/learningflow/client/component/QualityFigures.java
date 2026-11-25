@@ -28,9 +28,9 @@ import java.util.List;
 
 /// The overall figures a QA person judges a Smart Pipeline's translation by, on its Quality Assurance tab,
 /// without reading every record: what it scores lately and over how many records, against the line its Learning
-/// Flow flags it below; what it scored when it went live, against the pass mark; whether it is trusted or still on
-/// trial; and how many streams wait for a translation. Each is a figure with a sentence saying what it rests on,
-/// and a tone where it calls for attention. A plain class, so that it is tested without a browser.
+/// Flow flags it below; what it scored when it went live, against the pass mark; and how many streams wait for a
+/// translation. Each is a figure with a sentence saying what it rests on, and a tone where it calls for
+/// attention. A plain class, so that it is tested without a browser.
 public final class QualityFigures {
 
     /// Said where the pipeline has no translation in use, so has nothing to judge yet.

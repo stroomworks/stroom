@@ -50,7 +50,7 @@ public class Disclosure extends Composite implements HasWidgets.ForIsWidget {
         body.setStyleName("disclosure__body");
         final String id = Document.get().createUniqueId();
         body.getElement().setId(id);
-        toggle.getElement().setAttribute("aria-controls", id);
+        toggle.setAriaControls(id);
         root.add(toggle);
         root.add(body);
         initWidget(root);

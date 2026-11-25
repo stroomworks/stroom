@@ -25,6 +25,7 @@ import stroom.learningflow.extraction.XmlFragmentStep;
 import stroom.learningflow.learning.StepResult;
 import stroom.learningflow.learning.StepRunner;
 import stroom.learningflow.scenario.Scenarios;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.learningflow.transformation.XsltStep;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.factory.InjectedCode;
@@ -76,7 +77,7 @@ class TestStepRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void aStylesheetWritesTheSameEventsEitherWay() {
-        agree(XsltStep::new, XSLT, jsonRecords());
+        agree(StandInXsltStep::new, XSLT, jsonRecords());
     }
 
     @Test

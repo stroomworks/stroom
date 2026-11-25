@@ -167,9 +167,9 @@ class TestQualityService {
     }
 
     private QualityService service(final SecurityContext context) {
-        return new QualityService(new LearnerAccess(() -> context, () -> deletedPipelines), () -> context,
-                () -> documents, () -> pipelines, () -> bindings, () -> volumes, () -> regressionSet,
-                () -> NOW);
+        return new QualityService(
+                new LearnerAccess(() -> context, () -> deletedPipelines, () -> documents, () -> pipelines),
+                () -> context, () -> bindings, () -> volumes, () -> regressionSet, () -> NOW);
     }
 
     // Someone who may view the pipelines and data, and nothing more

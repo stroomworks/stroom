@@ -218,18 +218,19 @@ public final class Sessions {
             // The question it stopped at is recorded unanswered (A28), so that a person can see what is
             // being waited for and answer it instead, and so that the replay has something to check its
             // re-walk against when they do.
-            record(() -> attempts.turn(attemptId, new Attempts.Turn(recorder.numbered(awaiting.number()),
-                    awaiting.stepId(), awaiting.candidate(), Question.kindOf(awaiting.question()),
-                    awaiting.question().summary(), null, null, null)));
-            record(() -> attempts.parked(attemptId, AttemptStatus.AWAITING_MODEL, claimUntil(),
-                    Math.max(0L, advisor.tokensUsed() - before)));
+            Bookkeeping.record(LOGGER, () -> attempts.turn(attemptId,
+                    new Attempts.Turn(recorder.numbered(awaiting.number()),
+                            awaiting.stepId(), awaiting.candidate(), Question.kindOf(awaiting.question()),
+                            awaiting.question().summary(), null, null, null)));
+            Bookkeeping.record(LOGGER, () -> attempts.parked(attemptId, AttemptStatus.AWAITING_MODEL,
+                    claimUntil(), Math.max(0L, advisor.tokensUsed() - before)));
             return waiting.apply("Awaiting the model: attempt " + attemptId + " stopped at "
                                  + awaiting.question().summary());
         } catch (final RuntimeException e) {
             // The model, the node or the database failed: the attempt says so, with the turns it had got
             // to, rather than vanishing, and in words a person can act on. Nothing here may throw over the
             // failure that brought us.
-            record(() -> {
+            Bookkeeping.record(LOGGER, () -> {
                 final StopReport report = StopReports.failure(e, NullSafe.get(doc.getModel(), DocRef::getName));
                 attempts.closed(attemptId, AttemptStatus.ERROR, report.getError(), null, null, report,
                         Math.max(0L, advisor.tokensUsed() - before));
@@ -239,18 +240,18 @@ public final class Sessions {
         if (run.decision() instanceof final Parked parked) {
             // Parked for a person (A65): the attempt keeps its claim with a lease that does not lapse, and
             // the worker leaves it alone. Not closed — a person's answer carries it on.
-            record(() -> attempts.parked(attemptId, parked.reason(), parked.report(),
+            Bookkeeping.record(LOGGER, () -> attempts.parked(attemptId, parked.reason(), parked.report(),
                     Math.max(0L, advisor.tokensUsed() - before)));
             return run;
         }
         // The run is done and its binding is written: the record of it must not be what fails the stream.
-        record(() -> attempts.closed(attemptId, statusOf(run.decision()), reason(run.decision()),
+        Bookkeeping.record(LOGGER, () -> attempts.closed(attemptId, statusOf(run.decision()), reason(run.decision()),
                 bindingOf(run.decision()), scoreOf(run.decision()), reportOf(run.decision()),
                 Math.max(0L, advisor.tokensUsed() - before)));
         // What a person approving it is shown (Track 2 step 4): kept for whatever wrote a translation,
         // draft or not, so that what went live without a person can be read the same way
         if (bindingOf(run.decision()) != null) {
-            record(() -> attempts.evidence(attemptId, evidence(run.verdicts())));
+            Bookkeeping.record(LOGGER, () -> attempts.evidence(attemptId, evidence(run.verdicts())));
         }
         return run;
     }
@@ -398,16 +399,6 @@ public final class Sessions {
         }
     }
 
-    /// A run's record is written beside what the run did: failing to write it must not undo that, so it
-    /// is logged rather than thrown.
-    private static void record(final Runnable write) {
-        try {
-            write.run();
-        } catch (final RuntimeException e) {
-            LOGGER.error(() -> LogUtil.message("The attempt could not be recorded: {}", e.getMessage()), e);
-        }
-    }
-
 
     // --------------------------------------------------------------------------------
 
@@ -486,7 +477,7 @@ public final class Sessions {
         /// The claim pushed out, before every question: an attempt held up by one slow model call would
         /// otherwise run past its expiry and have its learner's work taken up by another node (A45).
         void heartbeat() {
-            record(() -> attempts.heartbeat(attemptId, claimUntil()));
+            Bookkeeping.record(LOGGER, () -> attempts.heartbeat(attemptId, claimUntil()));
         }
 
         void turn(final int number, final Exchange exchange) {
@@ -494,7 +485,7 @@ public final class Sessions {
             // Renewed as the turn completes as well as before it is asked, so a live session is never
             // mistaken for a dead one however long the model took.
             heartbeat();
-            record(() -> attempts.turn(attemptId, new Attempts.Turn(numbered, exchange.step(),
+            Bookkeeping.record(LOGGER, () -> attempts.turn(attemptId, new Attempts.Turn(numbered, exchange.step(),
                     exchange.candidate(), Question.kindOf(exchange.question()), exchange.question().summary(),
                     exchange.reply(), answeredBefore.getOrDefault(numbered, answeredBy),
                     exchange.outcome(), exchange.score(), exchange.carried())));

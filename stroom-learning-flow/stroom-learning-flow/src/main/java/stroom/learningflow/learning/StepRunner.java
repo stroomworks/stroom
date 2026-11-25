@@ -24,8 +24,11 @@ import java.util.Optional;
  * Runs one kind of pipeline element headlessly, for the conversation to try a candidate configuration before
  * anything is written to a store (design §7.3 rule 1). One runner per element type the stage can use.
  * <p>
- * This is the stand-in for the headless harness of design §12 item 2 until that is extracted from the
- * stepper. A runner is the element's behaviour with its Stroom plumbing removed, not the element itself.
+ * A runner is the element's behaviour with its Stroom plumbing removed, not the element itself. Where that
+ * would differ from the element in ways that matter, as a stylesheet's would, a node runs the real element
+ * in a pipeline instead (the headless harness of design §12 item 2,
+ * {@link stroom.learningflow.element.PipelineStepRunner}), which keeps the runner only for its description
+ * of the element.
  */
 public interface StepRunner {
 

@@ -17,7 +17,6 @@
 package stroom.learningflow.element;
 
 import stroom.learningflow.stage.Learner;
-import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -58,10 +57,7 @@ public class PipelineZones {
     private Optional<String> property(final Learner learner) {
         try {
             return learnerDocuments.elementOf(learner)
-                    .map(element -> element.properties().get(PROPERTY))
-                    .map(value -> value.getString())
-                    .map(String::strip)
-                    .filter(value -> !NullSafe.isBlankString(value));
+                    .flatMap(element -> element.text(PROPERTY));
         } catch (final RuntimeException e) {
             // A pipeline that cannot be read is not a reason to stop translating: the header, or UTC,
             // still gives a zone, and what is wrong with the pipeline is reported where it is found

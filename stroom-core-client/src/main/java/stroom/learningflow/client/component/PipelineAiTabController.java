@@ -32,9 +32,7 @@ import com.google.gwt.user.client.Timer;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -60,8 +58,8 @@ public class PipelineAiTabController extends Controller {
     private final PipelineAiTab view;
     private final FeedDetailController detail;
     private final RestFactory restFactory;
-    /// The settings of each document a feed learns under, by its uuid, read once while the tab is open.
-    private final Map<String, LearningFlowDoc> settings = new HashMap<>();
+    /// The settings of each document a feed learns under, read once while the tab is open.
+    private final PipelineLearners learners;
     private DocRef pipeline;
     private List<PipelineAiElement> elements = List.of();
     private PipelineAiElement chosen;
@@ -72,8 +70,6 @@ public class PipelineAiTabController extends Controller {
     private Consumer<Boolean> onAvailable = any -> {
     };
     private Consumer<List<PipelineAiElement>> onElements = found -> {
-    };
-    private Runnable onOpenQuality = () -> {
     };
 
     /// Made by GIN, with its tab and the feed's controller.
@@ -90,6 +86,7 @@ public class PipelineAiTabController extends Controller {
         super(eventBus);
         this.view = view;
         this.restFactory = restFactory;
+        this.learners = new PipelineLearners(SUPERVISOR_RESOURCE, restFactory, this, this::taskMonitor);
         initWidget(view);
         this.detail = own(detail).attach(view.getFeedDetail());
         detail.setOnActed(this::refresh);
@@ -119,7 +116,7 @@ public class PipelineAiTabController extends Controller {
     /// @param pipelineRef The pipeline.
     public void read(final DocRef pipelineRef) {
         if (pipeline == null || !pipeline.getUuid().equals(pipelineRef.getUuid())) {
-            settings.clear();
+            learners.clear();
             chosen = null;
         }
         pipeline = pipelineRef;
@@ -157,11 +154,6 @@ public class PipelineAiTabController extends Controller {
         this.onAvailable = onAvailable;
     }
 
-    /// @return The id of the Smart Pipeline element shown, or null for none.
-    public String getChosenElementId() {
-        return NullSafe.get(chosen, PipelineAiElement::getId);
-    }
-
     /// @param onElements Told the pipeline's Smart Pipeline elements, each time it is read, e.g. for its Quality
     ///                   Assurance tab, so that the pipeline isn't read twice.
     public void setOnElements(final Consumer<List<PipelineAiElement>> onElements) {
@@ -194,15 +186,12 @@ public class PipelineAiTabController extends Controller {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
                 .method(resource -> resource.pipelineLearners(pipeline.getUuid()))
-                .onSuccess(learners -> {
-                    final SupervisorLearner row = NullSafe.list(learners).stream()
-                            .filter(learner -> element.getId().equals(learner.getLearner().getElementId()))
-                            .findFirst()
-                            .orElse(null);
+                .onSuccess(found -> {
+                    final SupervisorLearner row = PipelineLearners.learnerOf(found, element.getId());
                     if (row == null || row.getDoc() == null) {
                         show(element, row, null);
                     } else {
-                        withSettings(row, doc -> show(element, row, doc));
+                        learners.read(row, doc -> show(element, row, doc));
                     }
                 })
                 .owner(this)
@@ -222,27 +211,6 @@ public class PipelineAiTabController extends Controller {
         return elements.isEmpty()
                 ? null
                 : elements.get(0);
-    }
-
-    // The settings of the document a feed learns under, read once
-    private void withSettings(final SupervisorLearner row, final Consumer<LearningFlowDoc> then) {
-        final String docUuid = row.getDoc().getUuid();
-        final LearningFlowDoc known = settings.get(docUuid);
-        if (known != null) {
-            then.accept(known);
-            return;
-        }
-        restFactory
-                .create(SUPERVISOR_RESOURCE)
-                .method(resource -> resource.settings(docUuid, row.getLearner().getPipelineUuid(),
-                        row.getLearner().getElementId()))
-                .onSuccess(doc -> {
-                    settings.put(docUuid, doc);
-                    then.accept(doc);
-                })
-                .owner(this)
-                .taskMonitorFactory(taskMonitor())
-                .exec();
     }
 
     // Shows a feed, where the element chosen still is the one it was read for

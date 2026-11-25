@@ -22,7 +22,6 @@ import stroom.learningflow.learning.Question;
 import stroom.learningflow.scoring.Judgement;
 import stroom.learningflow.scoring.Verdict;
 import stroom.learningflow.shared.Binding;
-import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.shared.LearningFlowStepDetails;
 import stroom.learningflow.shared.StageScore;
 import stroom.learningflow.shared.StageVerdict;
@@ -68,7 +67,7 @@ public final class StepDetails {
                 : null;
         return new LearningFlowStepDetails(
                 dryRun,
-                document(run.doc()),
+                run.doc().asDocRef(),
                 stream(input),
                 run.decision().getClass().getSimpleName(),
                 describe(run.decision()),
@@ -99,14 +98,6 @@ public final class StepDetails {
             stream.put(MetaFields.FIELD_TYPE, input.type());
         }
         return stream;
-    }
-
-    private static DocRef document(final LearningFlowDoc doc) {
-        return DocRef.builder()
-                .type(LearningFlowDoc.TYPE)
-                .uuid(doc.getUuid())
-                .name(doc.getName())
-                .build();
     }
 
     /// What was decided, in one line, in the terms design 02 §4 uses.
@@ -206,6 +197,6 @@ public final class StepDetails {
                     exchange.outcome(),
                     exchange.score()));
         }
-        return NullSafe.list(turns);
+        return turns;
     }
 }

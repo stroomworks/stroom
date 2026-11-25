@@ -39,7 +39,7 @@ import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
 import stroom.learningflow.stage.Produced;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.mock.MockMetaService;
 import stroom.meta.shared.Meta;
 import stroom.meta.shared.MetaFields;
@@ -291,7 +291,7 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
      */
     private List<StepRunner> runners() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
-        return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new XsltStep());
+        return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new StandInXsltStep());
     }
 
     private Script script(final String splitter, final String stylesheet) {

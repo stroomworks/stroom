@@ -59,10 +59,6 @@ import java.util.Optional;
 @Singleton
 public class StoredRegressionSet implements RegressionSet {
 
-    /// The stream type the corpus is written as, so that it can be told from the feed's own data and
-    /// from what the pipeline produced.
-    public static final String CORPUS_TYPE = StreamTypeNames.LEARNING_FLOW_CORPUS;
-
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(StoredRegressionSet.class);
 
     private final Store store;
@@ -152,7 +148,9 @@ public class StoredRegressionSet implements RegressionSet {
     private long write(final String feed, final List<Accepted> entries) {
         final MetaProperties properties = MetaProperties.builder()
                 .feedName(feed)
-                .typeName(CORPUS_TYPE)
+                // The stream type the corpus is written as, so that it can be told from the feed's own data and from
+                // what the pipeline produced
+                .typeName(StreamTypeNames.LEARNING_FLOW_CORPUS)
                 .build();
         try (final Target target = store.openTarget(properties)) {
             try (final SegmentOutputStream out = target.next().get()) {

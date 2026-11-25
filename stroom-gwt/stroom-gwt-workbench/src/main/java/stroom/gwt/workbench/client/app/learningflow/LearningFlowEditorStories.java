@@ -412,10 +412,10 @@ public final class LearningFlowEditorStories {
                     DocEditors.expectNoProblems(play);
                 })
                 // A check's dialog: a new threshold, OK and Save write it
-                .story("ScorerDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
+                .story("CheckDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, RULES);
+                    openCheckDialog(play, RULES);
                     final Query threshold = screen.querySelector(THRESHOLD);
                     play.clear(threshold);
                     play.type(threshold, "0.75");
@@ -427,10 +427,10 @@ public final class LearningFlowEditorStories {
                             "{\"check\": \"RULES\", \"state\": \"ADVICE\", \"threshold\": 0.75}")));
                 })
                 // A check's dialog, cancelled: nothing changes
-                .story("ScorerDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
+                .story("CheckDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, RULES);
+                    openCheckDialog(play, RULES);
                     final Query threshold = screen.querySelector(THRESHOLD);
                     play.clear(threshold);
                     play.type(threshold, "0.4");
@@ -446,7 +446,7 @@ public final class LearningFlowEditorStories {
                 .story("TimesDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, TIMES);
+                    openCheckDialog(play, TIMES);
                     final Query field = screen.querySelector(TIME_FIELD);
                     play.type(field, "When");
                     play.tab();
@@ -459,7 +459,7 @@ public final class LearningFlowEditorStories {
                 .story("TimesDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, TIMES);
+                    openCheckDialog(play, TIMES);
                     play.type(screen.querySelector(TIME_FIELD), "When");
                     play.tab();
                     play.click(screen.getByRole("button", StroomDom.button("Cancel")));
@@ -468,10 +468,10 @@ public final class LearningFlowEditorStories {
                     DocEditors.expectNoProblems(play);
                 })
                 // A threshold that isn't a number it can be is refused, not changed: OK says why and stays open
-                .story("ScorerDialogRefusesBadNumber", context -> render(context, false, LearningFlowFixtures.DOC))
+                .story("CheckDialogRefusesBadNumber", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, RULES);
+                    openCheckDialog(play, RULES);
                     final Query threshold = screen.querySelector(THRESHOLD);
                     play.clear(threshold);
                     play.type(threshold, "most");
@@ -485,7 +485,7 @@ public final class LearningFlowEditorStories {
                 .story("AssertionDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, RULES);
+                    openCheckDialog(play, RULES);
                     play.click(screen.getByRole("button", "Add assertion"));
                     play.expect(screen.findByText("Assertion", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
                     play.type(screen.getByLabelText("Name"), "events have a time");
@@ -505,7 +505,7 @@ public final class LearningFlowEditorStories {
                 .story("AssertionDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
-                    openScorer(play, RULES);
+                    openCheckDialog(play, RULES);
                     play.click(screen.getByRole("button", "Add assertion"));
                     play.expect(screen.findByText("Assertion", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
                     play.type(screen.getByLabelText("Name"), "never kept");
@@ -831,7 +831,7 @@ public final class LearningFlowEditorStories {
     }
 
     // Selects a check's row on the Setup tab and opens its dialog with Edit
-    private static void openScorer(final Play play, final String check) {
+    private static void openCheckDialog(final Play play, final String check) {
         final Play screen = play.screen();
         openStop(play, "Quality checks:");
         play.click(play.findByText(check));

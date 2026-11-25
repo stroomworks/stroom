@@ -35,7 +35,7 @@ import stroom.learningflow.scenario.Scenarios;
 import stroom.learningflow.scoring.Attempted;
 import stroom.learningflow.scoring.Verdict;
 import stroom.learningflow.shared.RecordBoundary;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.pipeline.PipelineStore;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.factory.ElementRegistryFactory;
@@ -139,11 +139,11 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void theStandInAndThePipelineMakeTheSameEventsOfTheSameFragment() {
-        final List<StepRunner> runners = List.of(new JsonStep(), new XsltStep());
+        final List<StepRunner> runners = List.of(new JsonStep(), new StandInXsltStep());
         final RecordBoundary boundary = RecordBoundary.ofArray("events").atDepth(3);
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new JsonStep(), null, new StepResult("<map/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final List<Attempted> stood = new ArrayList<>();
         final List<Attempted> ran = new ArrayList<>();
@@ -183,11 +183,11 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
      */
     @Test
     void theChainsCaptureIsTakenAndNotLeftBehind() {
-        final List<StepRunner> runners = List.of(new JsonStep(), new XsltStep());
+        final List<StepRunner> runners = List.of(new JsonStep(), new StandInXsltStep());
         final RecordBoundary boundary = RecordBoundary.ofArray("events").atDepth(3);
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new JsonStep(), null, new StepResult("<map/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), XSLT, new StepResult("<Events/>", List.of()), UNSCORED));
 
         pipelineScopeRunnable.scopeRunnable(() -> {
             final DocRef fragment = fragmentWriter.write(FOLDER, "taken-v1", chain, boundary);
@@ -229,9 +229,9 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
             return List.of(
                     new LearnedStep(splitter, CSV.configuration(), new StepResult("<records/>", List.of()),
                             UNSCORED),
-                    new LearnedStep(new XsltStep(), COUNTS, new StepResult("<counted/>", List.of()),
+                    new LearnedStep(new StandInXsltStep(), COUNTS, new StepResult("<counted/>", List.of()),
                             UNSCORED));
-        }, () -> List.of(new DataSplitterStep(dataSplitterCompilerProvider.get()), new XsltStep()),
+        }, () -> List.of(new DataSplitterStep(dataSplitterCompilerProvider.get()), new StandInXsltStep()),
                 null, CSV.input(), stood, ran);
 
         assertThat(canonical(last(ran)))
@@ -246,11 +246,11 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
     void aCandidateThatWillNotCompileIsScoredRatherThanThrown() {
         // Without an error receiver in place the first thing a failing element says is a
         // NullPointerException, and the attempt dies instead of being judged.
-        final List<StepRunner> runners = List.of(new JsonStep(), new XsltStep());
+        final List<StepRunner> runners = List.of(new JsonStep(), new StandInXsltStep());
         final RecordBoundary boundary = RecordBoundary.ofArray("events").atDepth(3);
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new JsonStep(), null, new StepResult("<map/>", List.of()), UNSCORED),
-                new LearnedStep(new XsltStep(), BROKEN, new StepResult("<Events/>", List.of()), UNSCORED));
+                new LearnedStep(new StandInXsltStep(), BROKEN, new StepResult("<Events/>", List.of()), UNSCORED));
 
         final List<Attempted> stood = new ArrayList<>();
         final List<Attempted> ran = new ArrayList<>();
@@ -275,11 +275,11 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
             final List<LearnedStep> chain = List.of(
                     new LearnedStep(new DataSplitterStep(dataSplitterCompilerProvider.get()), FIELDS,
                             new StepResult("<records/>", List.of()), UNSCORED),
-                    new LearnedStep(new XsltStep(), COUNTS, new StepResult("<counted/>", List.of()), UNSCORED));
+                    new LearnedStep(new StandInXsltStep(), COUNTS, new StepResult("<counted/>", List.of()), UNSCORED));
             final DocRef fragment = fragmentWriter.write(FOLDER, "input-read-" + System.nanoTime(), chain, null);
             final FragmentRunner standIn = new StandInFragmentRunner(pipelineStore, pipelineStackLoader,
                     textConverterStore, xsltStore,
-                    List.of(new DataSplitterStep(dataSplitterCompilerProvider.get()), new XsltStep()));
+                    List.of(new DataSplitterStep(dataSplitterCompilerProvider.get()), new StandInXsltStep()));
             final FragmentRunner pipeline = new PipelineFragmentRunner(pipelineStore, pipelineDataCache,
                     elementRegistryFactory, pipelineFactoryProvider, headlessCaptureProvider, errorReceiverProvider,
                     fragmentOutputProvider, fragmentTapProvider, injectedCodeProvider, taskContextFactory);

@@ -74,15 +74,15 @@ class TestScenario61AParkedSessionGivenMoreToSpendCarriesOn {
 
         // A grant to a running or finished attempt is refused; to the parked one it is recorded and the
         // attempt opened again.
-        assertThatThrownBy(() -> scenarios.stage(silent).grant(doc, parked.id(), 0L, 0L))
+        assertThatThrownBy(() -> scenarios.supervisorActions().grant(doc, parked.id(), 0L, 0L))
                 .isInstanceOf(IllegalArgumentException.class);
-        scenarios.stage(silent).grant(doc, parked.id(), 10L, 0L);
+        scenarios.supervisorActions().grant(doc, parked.id(), 10L, 0L);
         final Recorded reopened = scenarios.attempts.byId(parked.id()).orElseThrow();
         assertThat(reopened.status()).isEqualTo(AttemptStatus.AWAITING_MODEL);
         assertThat(reopened.grant().tokens()).isEqualTo(10L);
         assertThat(scenarios.documents.byUuid(DOC).orElseThrow().getTokenBudget())
                 .describedAs("the document's budget is as it was").isEqualTo(2L);
-        assertThatThrownBy(() -> scenarios.stage(silent).grant(doc, parked.id(), 1L, 0L))
+        assertThatThrownBy(() -> scenarios.supervisorActions().grant(doc, parked.id(), 1L, 0L))
                 .describedAs("not parked any more").isInstanceOf(IllegalStateException.class);
 
         // Carried on: the recorded turns are replayed for nothing, the transform is asked, and the

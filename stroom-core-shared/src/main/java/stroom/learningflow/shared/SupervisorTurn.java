@@ -117,13 +117,4 @@ public class SupervisorTurn {
     public TurnScore getScore() {
         return score;
     }
-
-    /**
-     * Whether this is the question the attempt stopped at: nobody has answered it, and a person may
-     * (A28).
-     */
-    @com.fasterxml.jackson.annotation.JsonIgnore
-    public boolean isUnanswered() {
-        return answer == null;
-    }
 }

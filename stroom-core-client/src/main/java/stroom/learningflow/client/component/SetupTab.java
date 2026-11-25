@@ -355,12 +355,6 @@ public class SetupTab extends Component {
         advanced.values().forEach(disclosure -> disclosure.setOpen(false));
     }
 
-    /// @param section A section.
-    /// @return Whether its Advanced options are open; false for one with none.
-    public boolean isAdvancedOpen(final SetupSection section) {
-        return NullSafe.test(advanced.get(section), Disclosure::isOpen);
-    }
-
     /// Says which default setup the flow is exactly, or that it is the document's own.
     ///
     /// @param example The example the steps are, or null for none.

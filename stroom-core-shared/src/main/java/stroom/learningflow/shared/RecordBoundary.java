@@ -82,16 +82,6 @@ public final class RecordBoundary {
         this.depth = depth;
     }
 
-    /// A boundary as it was written before the children shape existed, so that a stored binding still
-    /// reads.
-    ///
-    /// @param element The element that is one record, or null.
-    /// @param array   The array whose items are records, or null.
-    /// @param depth   How deep a record sits, or null.
-    public RecordBoundary(final String element, final String array, final Integer depth) {
-        this(element, null, array, depth);
-    }
-
     /// A boundary that is only enough to be one: what a serialisation test builds, since the real
     /// constructor refuses the empty one.
     @SerialisationTestConstructor

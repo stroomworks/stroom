@@ -44,7 +44,7 @@ import stroom.learningflow.shared.YieldParameters;
 import stroom.learningflow.stage.Learner;
 import stroom.learningflow.stage.LearnerBindings;
 import stroom.learningflow.stage.Produced;
-import stroom.learningflow.transformation.XsltStep;
+import stroom.learningflow.transformation.StandInXsltStep;
 import stroom.meta.mock.MockMetaService;
 import stroom.meta.shared.Meta;
 import stroom.meta.shared.MetaFields;
@@ -209,7 +209,7 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
     private Script script() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of().structure(new Structure(
-                List.of(new DataSplitterStep(compiler), new XsltStep()), CSV.configuration(), XSLT));
+                List.of(new DataSplitterStep(compiler), new StandInXsltStep()), CSV.configuration(), XSLT));
     }
 
     private DocRef document() {

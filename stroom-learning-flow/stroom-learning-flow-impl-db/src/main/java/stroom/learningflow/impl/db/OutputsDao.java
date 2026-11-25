@@ -23,9 +23,7 @@ import stroom.learningflow.stage.Outputs;
 import stroom.learningflow.stage.Produced;
 import stroom.learningflow.stage.Replayable;
 import stroom.pipeline.shared.PipelineDoc;
-import stroom.util.shared.DefaultLocation;
 import stroom.util.shared.NullSafe;
-import stroom.util.shared.TextRange;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -34,9 +32,6 @@ import org.jooq.impl.DSL;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 
 /// What each binding produced, as rows (design 01 §7.3 rule 3, A26): retracting a binding means finding the
@@ -180,7 +175,8 @@ public class OutputsDao implements Outputs {
                         PipelineDoc.buildDocRef()
                                 .uuid(row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.FRAGMENT_UUID))
                                 .build(),
-                        boundary(row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_ELEMENT),
+                        LearnerBindingsDao.recordBoundary(
+                                row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_ELEMENT),
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_CHILDREN),
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_ARRAY),
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_DEPTH)),
@@ -198,17 +194,6 @@ public class OutputsDao implements Outputs {
                 : pipeline;
     }
 
-    /// The boundary a row remembers, or null where the binding had none.
-    private static RecordBoundary boundary(final String element,
-                                           final String children,
-                                           final String array,
-                                           final Integer depth) {
-        if (element == null && children == null && array == null) {
-            return null;
-        }
-        return new RecordBoundary(element, children, array, depth);
-    }
-
     /// In batches, like the attempts': a delete of every old row at once would hold locks across the
     /// table, and the job runs again until there is nothing left to forget.
     @Override
@@ -218,8 +203,8 @@ public class OutputsDao implements Outputs {
                     .select(LearningFlowOutput.LEARNING_FLOW_OUTPUT.ID)
                     .from(LearningFlowOutput.LEARNING_FLOW_OUTPUT)
                     // By when the row was last *produced*, not when it was first inserted. A stream
-                    // served again updates the row in place, which is why migration 009 added the
-                    // column: pruning on the insert time would delete a stream processed sixty days ago
+                    // served again updates the row in place, which is why the row keeps that time:
+                    // pruning on the insert time would delete a stream processed sixty days ago
                     // and reprocessed this morning, and with it the bindings that make
                     // it reprocessable at all.
                     .where(LearningFlowOutput.LEARNING_FLOW_OUTPUT.PRODUCE_TIME_MS.lt(producedBeforeMs))

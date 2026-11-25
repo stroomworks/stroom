@@ -129,10 +129,7 @@ public class LearnedTranslationController extends Controller {
                     if (request != asked) {
                         return;
                     }
-                    final SupervisorLearner row = NullSafe.list(learners).stream()
-                            .filter(learner -> element.equals(learner.getLearner().getElementId()))
-                            .findFirst()
-                            .orElse(null);
+                    final SupervisorLearner row = PipelineLearners.learnerOf(learners, element);
                     fragment = NullSafe.get(row, SupervisorLearner::getFragment);
                     if (fragment == null) {
                         view.showMessage(NOT_LEARNED);

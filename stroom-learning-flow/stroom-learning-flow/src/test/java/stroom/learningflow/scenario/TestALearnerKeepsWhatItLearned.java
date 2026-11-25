@@ -29,7 +29,6 @@ import stroom.learningflow.shared.YieldBasis;
 import stroom.learningflow.shared.YieldParameters;
 import stroom.learningflow.stage.Input;
 import stroom.learningflow.stage.Learner;
-import stroom.learningflow.stage.Stage;
 
 import org.junit.jupiter.api.Test;
 
@@ -111,13 +110,12 @@ class TestALearnerKeepsWhatItLearned {
                 .describedAs("and what was said about its learners, withdrawn by the document it is under now")
                 .isEmpty();
 
-        final Stage stage = scenarios.stage(Script.of());
-        assertThatThrownBy(() -> stage.retract(before, bound.getUuid(), "Wrong.", "jo"))
+        assertThatThrownBy(() -> scenarios.promotion().retract(before, bound.getUuid(), "Wrong.", "jo"))
                 .describedAs("the old document's editors can no longer take back what serves another's "
                              + "pipeline")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not a binding of this document");
-        stage.retract(after, bound.getUuid(), "Wrong.", "jo");
+        scenarios.promotion().retract(after, bound.getUuid(), "Wrong.", "jo");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
                 .describedAs("while the new one's can")
                 .isEmpty();
